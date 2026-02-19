@@ -19,7 +19,6 @@ struct PlayerView: View {
     @State private var duration: Double = 0
     @State private var speed: Float = 1.0
     @State private var playerWindow: NSWindow?
-    @State private var playbackVideoView: NSView?
     @State private var didTeardown = false
 
     var body: some View {
@@ -62,6 +61,9 @@ struct PlayerView: View {
         .task(id: viewModel.selectedEngine?.rawValue ?? "none") {
             await syncProgressLoop()
         }
+        .onExitCommand {
+            viewModel.exitFullscreen(window: playerWindow)
+        }
         .onDisappear {
             teardownPlayer(notifyParent: true)
         }
@@ -70,18 +72,10 @@ struct PlayerView: View {
     @ViewBuilder
     private var playbackSurface: some View {
         if viewModel.selectedEngine == .vlc, let session = viewModel.vlcSession {
-            VLCPlayerSurfaceView(session: session) { view in
-                DispatchQueue.main.async {
-                    playbackVideoView = view
-                }
-            }
+            VLCPlayerSurfaceView(session: session)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let player = viewModel.avPlayer {
-            NativeAVPlayerView(player: player) { view in
-                DispatchQueue.main.async {
-                    playbackVideoView = view
-                }
-            }
+            NativeAVPlayerView(player: player)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             Rectangle().fill(Color.black)
@@ -115,7 +109,7 @@ struct PlayerView: View {
     }
 
     private var controlsPanel: some View {
-        let isFullscreen = viewModel.isFullscreen(window: playerWindow, videoView: playbackVideoView)
+        let isFullscreen = viewModel.isFullscreen(window: playerWindow)
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -162,9 +156,7 @@ struct PlayerView: View {
                 .buttonStyle(.bordered)
 
                 Button {
-                    Task {
-                        await viewModel.toggleFullscreen(window: playerWindow, videoView: playbackVideoView)
-                    }
+                    Task { await viewModel.toggleFullscreen(window: playerWindow) }
                 } label: {
                     Label(
                         isFullscreen ? "Windowed" : "Fullscreen",
@@ -175,6 +167,7 @@ struct PlayerView: View {
                 }
                 .buttonStyle(.bordered)
                 .help("Toggle fullscreen player window")
+                .keyboardShortcut("f", modifiers: [.control, .command])
 
                 Button("Close") {
                     closePlayer()
@@ -367,6 +360,7 @@ struct PlayerView: View {
     }
 
     private func closePlayer() {
+        viewModel.exitFullscreen(window: playerWindow)
         teardownPlayer(notifyParent: true)
         dismiss()
     }
@@ -375,6 +369,7 @@ struct PlayerView: View {
         guard !didTeardown else { return }
         didTeardown = true
 
+        viewModel.exitFullscreen(window: playerWindow)
         let snapshot = viewModel.playbackProgressSnapshot()
         viewModel.stop()
         if notifyParent {
@@ -398,13 +393,11 @@ struct PlayerView: View {
 
 private struct NativeAVPlayerView: NSViewRepresentable {
     let player: AVPlayer
-    let onViewAvailable: (NSView) -> Void
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
         view.controlsStyle = .none
         view.player = player
-        onViewAvailable(view)
         return view
     }
 
@@ -412,23 +405,18 @@ private struct NativeAVPlayerView: NSViewRepresentable {
         if nsView.player !== player {
             nsView.player = player
         }
-        onViewAvailable(nsView)
     }
 }
 
 private struct VLCPlayerSurfaceView: NSViewRepresentable {
     let session: any VLCPlaybackSession
-    let onViewAvailable: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {
-        let view = session.makeVideoView()
-        onViewAvailable(view)
-        return view
+        session.makeVideoView()
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         // Session owns drawable lifecycle.
-        onViewAvailable(nsView)
     }
 }
 

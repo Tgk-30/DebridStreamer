@@ -362,75 +362,6 @@ struct PlayerViewModelTests {
         #expect(resolved === provided)
     }
 
-    @Test("Fullscreen toggle uses view fullscreen mode for modal player windows")
-    func fullscreenToggleUsesViewFullscreenForModalWindow() async {
-        let targetWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        let videoView = NSView(frame: .zero)
-        var togglerCount = 0
-        var enterCount = 0
-
-        let model = PlayerViewModel(
-            fullscreenToggler: { _ in
-                togglerCount += 1
-            },
-            fullscreenWindowResolver: { _ in
-                targetWindow
-            },
-            isModalWindowProvider: { _ in true },
-            viewIsFullscreenProvider: { _ in false },
-            enterViewFullscreen: { _, _ in
-                enterCount += 1
-                return true
-            },
-            exitViewFullscreen: { _ in }
-        )
-
-        await model.toggleFullscreen(window: targetWindow, videoView: videoView)
-
-        #expect(enterCount == 1)
-        #expect(togglerCount == 0)
-        #expect(model.diagnostics?.contains("Entered fullscreen video mode") == true)
-    }
-
-    @Test("Fullscreen toggle exits view fullscreen mode for modal player windows")
-    func fullscreenToggleExitsViewFullscreenForModalWindow() async {
-        let targetWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        let videoView = NSView(frame: .zero)
-        var togglerCount = 0
-        var exitCount = 0
-
-        let model = PlayerViewModel(
-            fullscreenToggler: { _ in
-                togglerCount += 1
-            },
-            fullscreenWindowResolver: { _ in
-                targetWindow
-            },
-            isModalWindowProvider: { _ in true },
-            viewIsFullscreenProvider: { _ in true },
-            enterViewFullscreen: { _, _ in false },
-            exitViewFullscreen: { _ in
-                exitCount += 1
-            }
-        )
-
-        await model.toggleFullscreen(window: targetWindow, videoView: videoView)
-
-        #expect(exitCount == 1)
-        #expect(togglerCount == 0)
-        #expect(model.diagnostics?.contains("Exited fullscreen video mode") == true)
-    }
-
     @Test("isFullscreen uses resolved window state")
     func isFullscreenUsesResolvedWindow() async {
         let targetWindow = NSWindow(
@@ -448,17 +379,57 @@ struct PlayerViewModelTests {
         #expect(model.isFullscreen(window: nil) == true)
     }
 
-    @Test("isFullscreen reports true when video view is in fullscreen mode")
-    func isFullscreenUsesVideoViewState() {
-        let videoView = NSView(frame: .zero)
+    @Test("exitFullscreen leaves native fullscreen mode")
+    func exitFullscreenLeavesNativeFullscreenMode() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
+            styleMask: [.titled, .closable, .resizable, .fullScreen],
+            backing: .buffered,
+            defer: false
+        )
+        var togglerCount = 0
+
         let model = PlayerViewModel(
-            fullscreenWindowResolver: { _ in nil },
-            viewIsFullscreenProvider: { view in
-                view === videoView
+            fullscreenToggler: { _ in
+                togglerCount += 1
+            },
+            fullscreenWindowResolver: { _ in window }
+        )
+
+        model.exitFullscreen(window: window)
+
+        #expect(togglerCount == 1)
+        #expect(model.diagnostics?.contains("Exited fullscreen") == true)
+    }
+
+    @Test("exitFullscreen restores expanded fallback window frame")
+    func exitFullscreenRestoresExpandedFallbackWindowFrame() async {
+        let expandedFrame = NSRect(x: 0, y: 0, width: 1728, height: 1117)
+        let window = NSWindow(
+            contentRect: NSRect(x: 40, y: 40, width: 900, height: 540),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        let initialFrame = window.frame
+        var appliedFrames: [NSRect] = []
+
+        let model = PlayerViewModel(
+            fullscreenToggler: { _ in
+                // Simulate a no-op fullscreen request.
+            },
+            fullscreenWindowResolver: { _ in window },
+            windowVisibleFrameProvider: { _ in expandedFrame },
+            windowFrameApplier: { _, frame in
+                appliedFrames.append(frame)
             }
         )
 
-        #expect(model.isFullscreen(window: nil, videoView: videoView) == true)
+        await model.toggleFullscreen(window: window)
+        model.exitFullscreen(window: window)
+
+        #expect(appliedFrames == [expandedFrame, initialFrame])
+        #expect(model.diagnostics?.contains("windowed") == true)
     }
 
     @Test("Fullscreen toggle falls back to expanded mode when fullscreen transition fails")
