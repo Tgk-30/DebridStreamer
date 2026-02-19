@@ -61,6 +61,8 @@ struct UserLibraryEntry: Codable, Sendable, Identifiable, Equatable, FetchableRe
     var listType: ListType
     var addedAt: Date
     var customListName: String?
+    var releaseDateHint: String?
+    var renewalStatus: String?
 
     enum ListType: String, Codable, Sendable, CaseIterable {
         case watchlist
@@ -78,7 +80,7 @@ struct UserLibraryEntry: Codable, Sendable, Identifiable, Equatable, FetchableRe
     }
 
     enum Columns: String, ColumnExpression {
-        case id, mediaId, folderId, listType, addedAt, customListName
+        case id, mediaId, folderId, listType, addedAt, customListName, releaseDateHint, renewalStatus
     }
 
     init(
@@ -87,7 +89,9 @@ struct UserLibraryEntry: Codable, Sendable, Identifiable, Equatable, FetchableRe
         folderId: String? = nil,
         listType: ListType,
         addedAt: Date = Date(),
-        customListName: String? = nil
+        customListName: String? = nil,
+        releaseDateHint: String? = nil,
+        renewalStatus: String? = nil
     ) {
         self.id = id
         self.mediaId = mediaId
@@ -95,5 +99,7 @@ struct UserLibraryEntry: Codable, Sendable, Identifiable, Equatable, FetchableRe
         self.listType = listType
         self.addedAt = addedAt
         self.customListName = customListName
+        self.releaseDateHint = releaseDateHint
+        self.renewalStatus = renewalStatus
     }
 }

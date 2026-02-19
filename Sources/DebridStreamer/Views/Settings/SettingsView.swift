@@ -56,9 +56,9 @@ struct SettingsView: View {
     @State private var anthropicApiKey = ""
     @State private var openAIModelPresets = SettingsView.defaultOpenAIModelPresets
     @State private var anthropicModelPresets = SettingsView.defaultAnthropicModelPresets
-    @State private var openAIModelPreset = "gpt-4o-mini"
+    @State private var openAIModelPreset = "gpt-4.1-mini"
     @State private var openAIModelCustom = ""
-    @State private var anthropicModelPreset = "claude-3-5-haiku-latest"
+    @State private var anthropicModelPreset = "claude-3-7-sonnet-latest"
     @State private var anthropicModelCustom = ""
     @State private var isRefreshingModelCatalog = false
     @State private var modelCatalogStatus: String?
@@ -93,6 +93,7 @@ struct SettingsView: View {
     @State private var toneMoodTags = ""
     @State private var currentVibeNotes = ""
     @State private var recencySensitivity = 0.7
+    @State private var feedbackScaleMode: FeedbackScaleMode = .likeDislike
 
     var body: some View {
         @Bindable var state = appState
@@ -451,6 +452,11 @@ struct SettingsView: View {
             Section("Adaptive AI") {
                 Toggle("Enable Personalized AI", isOn: $personalizationEnabled)
                 Toggle("Generate AI-curated Discover on launch", isOn: $aiCurationOnLaunch)
+                Picker("Feedback Mode", selection: $feedbackScaleMode) {
+                    ForEach(FeedbackScaleMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
             }
             Section("Taste Profile") {
                 TextField("Favorite genres (comma separated)", text: $favoriteGenres)
@@ -574,13 +580,13 @@ struct SettingsView: View {
                 storedPreset: storedOpenAIPreset,
                 storedCustom: openAIModelCustom,
                 supportedPresets: openAIModelPresets,
-                defaultPreset: "gpt-4o-mini"
+                defaultPreset: "gpt-4.1-mini"
             )
             anthropicModelPreset = normalizedModelPreset(
                 storedPreset: storedAnthropicPreset,
                 storedCustom: anthropicModelCustom,
                 supportedPresets: anthropicModelPresets,
-                defaultPreset: "claude-3-5-haiku-latest"
+                defaultPreset: "claude-3-7-sonnet-latest"
             )
             ollamaEndpoint = try await settings.getValue(forKey: SettingsKeys.ollamaEndpoint) ?? "http://localhost:11434/api/chat"
             traktClientId = try await settings.getValue(forKey: SettingsKeys.traktClientId) ?? ""
@@ -601,6 +607,7 @@ struct SettingsView: View {
             toneMoodTags = try await settings.getValue(forKey: SettingsKeys.toneMoodTags) ?? ""
             currentVibeNotes = try await settings.getValue(forKey: SettingsKeys.currentVibeNotes) ?? ""
             recencySensitivity = Double(try await settings.getValue(forKey: SettingsKeys.recencySensitivity) ?? "0.7") ?? 0.7
+            feedbackScaleMode = try await settings.getFeedbackScaleMode()
 
             if let db = appState.databaseManager {
                 let configs = try await db.fetchAllDebridConfigs()
@@ -747,6 +754,7 @@ struct SettingsView: View {
             try await settings.setValue(toneMoodTags.nilIfEmpty, forKey: SettingsKeys.toneMoodTags)
             try await settings.setValue(currentVibeNotes.nilIfEmpty, forKey: SettingsKeys.currentVibeNotes)
             try await settings.setValue(String(recencySensitivity), forKey: SettingsKeys.recencySensitivity)
+            try await settings.setFeedbackScaleMode(feedbackScaleMode)
 
             if let db = appState.databaseManager {
                 let profile = UserTasteProfile(

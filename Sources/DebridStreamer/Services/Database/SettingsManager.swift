@@ -145,6 +145,7 @@ enum SettingsKeys {
     static let currentVibeNotes = "current_vibe_notes"
     static let recencySensitivity = "recency_sensitivity"
     static let onboardingTastePromptShown = "onboarding_taste_prompt_shown"
+    static let feedbackScaleMode = "feedback_scale_mode"
 }
 
 extension SettingsManager {
@@ -170,5 +171,17 @@ extension SettingsManager {
 
     func setOnboardingTastePromptShown(_ shown: Bool) async throws {
         try await setValue(shown ? "true" : "false", forKey: SettingsKeys.onboardingTastePromptShown)
+    }
+
+    func getFeedbackScaleMode() async throws -> FeedbackScaleMode {
+        guard let raw = try await getValue(forKey: SettingsKeys.feedbackScaleMode),
+              let mode = FeedbackScaleMode(rawValue: raw) else {
+            return .likeDislike
+        }
+        return mode
+    }
+
+    func setFeedbackScaleMode(_ mode: FeedbackScaleMode) async throws {
+        try await setValue(mode.rawValue, forKey: SettingsKeys.feedbackScaleMode)
     }
 }

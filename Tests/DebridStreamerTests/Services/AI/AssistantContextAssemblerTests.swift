@@ -95,6 +95,40 @@ struct AssistantContextAssemblerTests {
         #expect(context.contextNotes.contains(where: { $0.contains("Boosted Movie") && $0.contains("recency") }))
     }
 
+    @Test("Context includes watched and release wait folder signals")
+    func contextIncludesWatchedAndReleaseWaitSignals() async throws {
+        let db = try makeTestDatabase()
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "true")
+
+        let watchedFolder = try await db.fetchFolderByKind(listType: .favorites, kind: .watched)
+        let releaseWaitFolder = try await db.fetchFolderByKind(listType: .favorites, kind: .releaseWait)
+        let watchedFolderID = try #require(watchedFolder).id
+        let releaseWaitFolderID = try #require(releaseWaitFolder).id
+
+        try await db.saveMedia(MediaItem(id: "tt-watched-context", type: .movie, title: "Watched Context", year: 2024))
+        try await db.saveMedia(MediaItem(id: "tt-release-context", type: .series, title: "Release Context", year: 2025))
+
+        _ = try await db.addOrUpsertLibraryEntryPreservingExistingFolders(
+            mediaId: "tt-watched-context",
+            listType: .favorites,
+            folderId: watchedFolderID
+        )
+        _ = try await db.addOrUpsertLibraryEntryPreservingExistingFolders(
+            mediaId: "tt-release-context",
+            listType: .favorites,
+            folderId: releaseWaitFolderID,
+            releaseDateHint: "2027-01-01",
+            renewalStatus: "Returning Series"
+        )
+
+        let assembler = AssistantContextAssembler(database: db, metadataProvider: nil)
+        let context = await assembler.buildContext(prompt: "what next", folderId: nil)
+
+        #expect(context.contextNotes.contains(where: { $0.contains("Watched folder has") }))
+        #expect(context.contextNotes.contains(where: { $0.contains("Release Wait has") }))
+        #expect(context.contextNotes.contains(where: { $0.contains("Release Context") }))
+    }
+
     private func recencyWeight(from notes: [String]) -> Double {
         for note in notes {
             guard let markerRange = note.range(of: "recency ") else { continue }

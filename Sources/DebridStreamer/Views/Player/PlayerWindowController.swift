@@ -66,6 +66,7 @@ final class PlayerWindowController: NSObject, NSWindowDelegate {
             mediaTitle: request.mediaTitle,
             mediaId: request.mediaId,
             episodeId: request.episodeId,
+            sessionRequestID: request.id,
             onClose: { [weak self] in
                 self?.close()
             }
@@ -97,6 +98,7 @@ final class PlayerWindowController: NSObject, NSWindowDelegate {
     func close() {
         guard !isClosing else { return }
         isClosing = true
+        NotificationCenter.default.post(name: .debridPlayerWindowWillClose, object: request.id)
         guard let window else {
             finishCloseLifecycle()
             return
@@ -109,6 +111,7 @@ final class PlayerWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        NotificationCenter.default.post(name: .debridPlayerWindowWillClose, object: request.id)
         finishCloseLifecycle()
     }
 
@@ -135,4 +138,8 @@ final class PlayerWindowController: NSObject, NSWindowDelegate {
         didNotifyClose = true
         appState?.playerWindowDidClose(requestID: request.id)
     }
+}
+
+extension Notification.Name {
+    static let debridPlayerWindowWillClose = Notification.Name("debridPlayerWindowWillClose")
 }

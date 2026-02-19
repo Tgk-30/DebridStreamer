@@ -14,7 +14,8 @@ struct LibraryViewModelTests {
 
         #expect(viewModel.rootFolder != nil)
         #expect(viewModel.selectedFolderId == viewModel.rootFolder?.id)
-        #expect(viewModel.folderTree.isEmpty == true)
+        #expect(viewModel.folderTree.contains(where: { $0.folder.folderKind == .watched }))
+        #expect(viewModel.folderTree.contains(where: { $0.folder.folderKind == .releaseWait }))
         #expect(viewModel.isLibraryRootSelected() == true)
     }
 
@@ -51,7 +52,7 @@ struct LibraryViewModelTests {
 
         await viewModel.refresh(database: db)
         let names = Set(viewModel.folderTree.map { $0.folder.name })
-        #expect(viewModel.folderTree.count == 2)
+        #expect(viewModel.folderTree.count >= 4)
         #expect(names.contains("Release Wait"))
         #expect(names.contains("To Watch"))
     }

@@ -47,6 +47,10 @@ struct AppStatePlayerWindowTests {
 
         appState.playerWindowDidClose(requestID: request.id)
         #expect(appState.activePlayerSession == nil)
+
+        // Duplicate close callbacks should not resurrect or crash state.
+        appState.playerWindowDidClose(requestID: request.id)
+        #expect(appState.activePlayerSession == nil)
     }
 
     @Test("Fullscreen callbacks are scoped to active request")

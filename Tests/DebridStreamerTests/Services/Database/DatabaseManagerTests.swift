@@ -868,3 +868,88 @@ struct DatabaseTasteAndMemoryTests {
         #expect(query[0].id == "mem-a")
     }
 }
+
+@Suite("DatabaseManager - Migration v10-v12")
+struct DatabaseMigrationV10ToV12Tests {
+    @Test("v10-v12 adds feedback and release metadata columns plus behavior folders")
+    func migrationColumnsAndBehaviorFolders() async throws {
+        let db = try makeTestDatabase()
+
+        let tasteColumns = try await db.tableColumnNames("taste_events")
+        #expect(tasteColumns.contains("episodeId"))
+        #expect(tasteColumns.contains("watchedState"))
+        #expect(tasteColumns.contains("feedbackScale"))
+        #expect(tasteColumns.contains("feedbackValue"))
+        #expect(tasteColumns.contains("source"))
+
+        let libraryColumns = try await db.tableColumnNames("library_folders")
+        #expect(libraryColumns.contains("folderKind"))
+
+        let userLibraryColumns = try await db.tableColumnNames("user_library")
+        #expect(userLibraryColumns.contains("releaseDateHint"))
+        #expect(userLibraryColumns.contains("renewalStatus"))
+
+        let watchedFolder = try await db.fetchFolderByKind(listType: .favorites, kind: .watched)
+        let releaseWaitFolder = try await db.fetchFolderByKind(listType: .favorites, kind: .releaseWait)
+        #expect(watchedFolder?.folderKind == .watched)
+        #expect(releaseWaitFolder?.folderKind == .releaseWait)
+    }
+
+    @Test("Upsert preserving folders keeps multiple folder memberships")
+    func upsertPreservesMultipleFolderMembership() async throws {
+        let db = try makeTestDatabase()
+        let rootID = try await db.fetchSystemLibraryFolderID(listType: .favorites)
+        let folderA = try await db.createLibraryFolder(name: "A", listType: .favorites, parentId: rootID)
+        let folderB = try await db.createLibraryFolder(name: "B", listType: .favorites, parentId: rootID)
+
+        _ = try await db.addOrUpsertLibraryEntryPreservingExistingFolders(
+            mediaId: "tt-upsert-1",
+            listType: .favorites,
+            folderId: folderA.id
+        )
+        _ = try await db.addOrUpsertLibraryEntryPreservingExistingFolders(
+            mediaId: "tt-upsert-1",
+            listType: .favorites,
+            folderId: folderB.id
+        )
+
+        let entries = try await db.fetchLibraryEntries(mediaId: "tt-upsert-1", listType: .favorites)
+        #expect(entries.count == 2)
+        #expect(Set(entries.compactMap(\.folderId)) == Set([folderA.id, folderB.id]))
+    }
+
+    @Test("Latest watched state query returns newest event for media and episode")
+    func latestWatchedStateQuery() async throws {
+        let db = try makeTestDatabase()
+        let now = Date()
+        try await db.saveTasteEvents([
+            TasteEvent(
+                id: "state-1",
+                mediaId: "tt-state",
+                episodeId: "s1e1",
+                eventType: .watched,
+                signalStrength: 0.2,
+                watchedState: .watched,
+                feedbackScale: FeedbackScaleMode.none,
+                source: .auto,
+                createdAt: now.addingTimeInterval(-300)
+            ),
+            TasteEvent(
+                id: "state-2",
+                mediaId: "tt-state",
+                episodeId: "s1e1",
+                eventType: .notInterested,
+                signalStrength: -0.8,
+                watchedState: .notWatched,
+                feedbackScale: .likeDislike,
+                feedbackValue: 0,
+                source: .manual,
+                createdAt: now
+            )
+        ])
+
+        let latest = try await db.fetchLatestWatchedState(mediaId: "tt-state", episodeId: "s1e1")
+        #expect(latest?.watchedState == .notWatched)
+        #expect(latest?.source == .manual)
+    }
+}

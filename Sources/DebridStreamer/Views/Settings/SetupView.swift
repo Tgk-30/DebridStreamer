@@ -20,6 +20,7 @@ struct SetupView: View {
     @State private var preferredEras = ""
     @State private var currentVibe = ""
     @State private var recencySensitivity = 0.7
+    @State private var feedbackScaleMode: FeedbackScaleMode = .likeDislike
 
     var body: some View {
         VStack(spacing: 0) {
@@ -180,6 +181,12 @@ struct SetupView: View {
             Toggle("Enable personalized AI", isOn: $personalizationEnabled)
             Toggle("Generate AI-curated Discover on launch", isOn: $aiCurationOnLaunch)
                 .disabled(!personalizationEnabled)
+            Picker("Feedback mode", selection: $feedbackScaleMode) {
+                ForEach(FeedbackScaleMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .disabled(!personalizationEnabled)
 
             Group {
                 TextField("Favorite genres (comma separated)", text: $favoriteGenres)
@@ -334,6 +341,7 @@ struct SetupView: View {
             try await settings.setValue(preferredEras.nilIfEmpty, forKey: SettingsKeys.preferredEras)
             try await settings.setValue(currentVibe.nilIfEmpty, forKey: SettingsKeys.currentVibeNotes)
             try await settings.setValue(String(recencySensitivity), forKey: SettingsKeys.recencySensitivity)
+            try await settings.setFeedbackScaleMode(personalizationEnabled ? feedbackScaleMode : .likeDislike)
             try await settings.setOnboardingTastePromptShown(true)
 
             if personalizationEnabled, let db = appState.databaseManager {

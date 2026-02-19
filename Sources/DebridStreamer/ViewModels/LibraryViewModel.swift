@@ -50,6 +50,7 @@ final class LibraryViewModel {
     var folderTree: [FolderNode] = []
     var breadcrumbs: [LibraryFolder] = []
     var items: [MediaCardItem] = []
+    var folderBadgeCounts: [String: Int] = [:]
     var sortOption: SortOption = .recentlyAdded
     var isLoading = false
     var statusMessage: String?
@@ -188,6 +189,10 @@ final class LibraryViewModel {
 
         rootFolder = root
         flatFolders = folders
+        folderBadgeCounts = Dictionary(
+            grouping: try await database.fetchLibrary(listType: listType),
+            by: { $0.folderId ?? root.id }
+        ).mapValues(\.count)
 
         if selectedFolderId == nil || folders.contains(where: { $0.id == selectedFolderId }) == false {
             selectedFolderId = root.id
@@ -227,6 +232,10 @@ final class LibraryViewModel {
 
     func isLibraryRootSelected() -> Bool {
         selectedFolderId == rootFolder?.id
+    }
+
+    func badgeCount(for folderId: String) -> Int {
+        folderBadgeCounts[folderId] ?? 0
     }
 
     private func breadcrumbsFor(folderId: String, byID: [String: LibraryFolder]) -> [LibraryFolder] {

@@ -296,11 +296,19 @@ private struct LibraryCollectionView: View {
             }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: folder.isSystem ? "tray.full" : "folder")
+                Image(systemName: folderIcon(for: folder))
                     .foregroundStyle(folder.isSystem ? .secondary : Color.accentColor)
                 Text(folder.name)
                     .lineLimit(1)
                 Spacer()
+                let badgeCount = viewModel.badgeCount(for: folder.id)
+                if badgeCount > 0 {
+                    Text("\(badgeCount)")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.16), in: Capsule())
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
@@ -324,6 +332,19 @@ private struct LibraryCollectionView: View {
                     pendingDeleteFolder = folder
                 }
             }
+        }
+    }
+
+    private func folderIcon(for folder: LibraryFolder) -> String {
+        switch folder.folderKind {
+        case .systemRoot:
+            return "tray.full"
+        case .watched:
+            return "checkmark.circle"
+        case .releaseWait:
+            return "calendar.badge.clock"
+        case .manual:
+            return "folder"
         }
     }
 
@@ -483,6 +504,16 @@ private struct LibraryMediaCard: View {
 
                 if let history = item.history, history.hasResumePoint {
                     Text("Continue: \(history.progressString)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let renewalStatus = item.entry.renewalStatus, !renewalStatus.isEmpty {
+                    Text("Status: \(renewalStatus)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let releaseDateHint = item.entry.releaseDateHint, !releaseDateHint.isEmpty {
+                    Text("Expected: \(releaseDateHint)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

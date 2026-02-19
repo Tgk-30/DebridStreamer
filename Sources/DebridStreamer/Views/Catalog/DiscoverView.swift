@@ -4,6 +4,7 @@ struct DiscoverView: View {
     @Environment(AppState.self) private var appState
     @State private var selectedItem: MediaPreview?
     @State private var showPersonalizationPrompt = false
+    @State private var feedbackViewModel = DiscoverFeedbackViewModel()
 
     var body: some View {
         ScrollView {
@@ -54,6 +55,10 @@ struct DiscoverView: View {
             DetailView(mediaPreview: item)
                 .frame(minWidth: 700, minHeight: 500)
         }
+        .sheet(item: $feedbackViewModel.pendingFeedback) { pending in
+            watchedFeedbackSheet(pending: pending)
+                .frame(minWidth: 420, minHeight: 260)
+        }
     }
 
     @ViewBuilder
@@ -88,7 +93,7 @@ struct DiscoverView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(store.recommendations) { rec in
-                                VStack(alignment: .leading, spacing: 6) {
+                                VStack(alignment: .leading, spacing: 8) {
                                     Text(rec.title + (rec.year.map { " (\($0))" } ?? ""))
                                         .font(.headline)
                                         .lineLimit(1)
@@ -96,6 +101,9 @@ struct DiscoverView: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(3)
+
+                                    Spacer(minLength: 2)
+                                    actionRow(for: rec)
                                 }
                                 .frame(width: 260, height: 110, alignment: .topLeading)
                                 .padding(12)
@@ -106,6 +114,149 @@ struct DiscoverView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func actionRow(for recommendation: AIMovieRecommendation) -> some View {
+        let state = feedbackViewModel.cardState(for: recommendation)
+        HStack(spacing: 6) {
+            Button {
+                Task {
+                    let mode = await feedbackViewModel.beginWatchedFlow(
+                        recommendation: recommendation,
+                        settings: appState.settingsManager
+                    )
+                    if mode == .none {
+                        await feedbackViewModel.submitWatched(
+                            recommendation: recommendation,
+                            mode: .none,
+                            value: nil,
+                            service: appState.userFeedbackService
+                        )
+                    }
+                }
+            } label: {
+                Text("Watched")
+                    .font(.caption2.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                Task {
+                    await feedbackViewModel.markNotWatched(
+                        recommendation: recommendation,
+                        service: appState.userFeedbackService
+                    )
+                }
+            } label: {
+                Text("Not Watched")
+                    .font(.caption2.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
+
+            Button("Details") {
+                Task { await openRecommendationDetail(recommendation) }
+            }
+            .font(.caption2.weight(.semibold))
+            .buttonStyle(.borderedProminent)
+        }
+        .overlay(alignment: .topTrailing) {
+            switch state {
+            case .saving:
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(.top, -18)
+            case .watched:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .padding(.top, -18)
+            case .notWatched:
+                Image(systemName: "nosign")
+                    .foregroundStyle(.orange)
+                    .padding(.top, -18)
+            case .failed:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .padding(.top, -18)
+            case .idle:
+                EmptyView()
+            }
+        }
+    }
+
+    private func watchedFeedbackSheet(pending: DiscoverFeedbackViewModel.PendingFeedback) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Rate Watched Title")
+                .font(.title3.weight(.semibold))
+            Text(pending.recommendation.title + (pending.recommendation.year.map { " (\($0))" } ?? ""))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Group {
+                switch pending.mode {
+                case .none:
+                    EmptyView()
+                case .likeDislike:
+                    Picker("Feedback", selection: Binding(
+                        get: { (feedbackViewModel.pendingFeedback?.value ?? 1) >= 0.5 ? "like" : "dislike" },
+                        set: { newValue in
+                            feedbackViewModel.pendingFeedback?.value = newValue == "like" ? 1 : 0
+                        }
+                    )) {
+                        Text("Like").tag("like")
+                        Text("Dislike").tag("dislike")
+                    }
+                    .pickerStyle(.segmented)
+                case .scale1to10:
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Rating: \(Int((feedbackViewModel.pendingFeedback?.value ?? 8).rounded())) / 10")
+                            .font(.caption)
+                        Slider(
+                            value: Binding(
+                                get: { feedbackViewModel.pendingFeedback?.value ?? 8 },
+                                set: { feedbackViewModel.pendingFeedback?.value = $0.rounded() }
+                            ),
+                            in: 1...10,
+                            step: 1
+                        )
+                    }
+                case .scale1to100:
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Rating: \(Int((feedbackViewModel.pendingFeedback?.value ?? 80).rounded())) / 100")
+                            .font(.caption)
+                        Slider(
+                            value: Binding(
+                                get: { feedbackViewModel.pendingFeedback?.value ?? 80 },
+                                set: { feedbackViewModel.pendingFeedback?.value = $0.rounded() }
+                            ),
+                            in: 1...100,
+                            step: 1
+                        )
+                    }
+                }
+            }
+
+            Spacer()
+            HStack {
+                Button("Cancel") {
+                    feedbackViewModel.dismissPendingFeedback()
+                }
+                Spacer()
+                Button("Save Feedback") {
+                    guard let pending = feedbackViewModel.pendingFeedback else { return }
+                    Task {
+                        await feedbackViewModel.submitWatched(
+                            recommendation: pending.recommendation,
+                            mode: pending.mode,
+                            value: pending.value,
+                            service: appState.userFeedbackService
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(16)
     }
 
     @ViewBuilder
@@ -154,6 +305,36 @@ struct DiscoverView: View {
         let shouldShow = await appState.shouldShowPersonalizationPrompt()
         if shouldShow {
             showPersonalizationPrompt = true
+        }
+    }
+
+    private func openRecommendationDetail(_ recommendation: AIMovieRecommendation) async {
+        if let local = localPreview(for: recommendation) {
+            selectedItem = local
+            return
+        }
+        guard let metadataService = appState.metadataService else { return }
+        guard let result = try? await metadataService.search(query: recommendation.title, type: nil, page: 1) else {
+            return
+        }
+        if let matched = result.items.first(where: { item in
+            guard let year = recommendation.year else { return true }
+            return item.year == year
+        }) ?? result.items.first {
+            selectedItem = matched
+        }
+    }
+
+    private func localPreview(for recommendation: AIMovieRecommendation) -> MediaPreview? {
+        let allItems = appState.discoverStore.continueWatching
+            + appState.discoverStore.trendingMovies
+            + appState.discoverStore.trendingShows
+            + appState.discoverStore.popularMovies
+            + appState.discoverStore.topRatedMovies
+
+        return allItems.first { item in
+            item.title.compare(recommendation.title, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+                && (recommendation.year == nil || item.year == recommendation.year)
         }
     }
 }

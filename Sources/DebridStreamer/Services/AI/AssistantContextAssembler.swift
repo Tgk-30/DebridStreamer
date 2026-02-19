@@ -72,10 +72,59 @@ actor AssistantContextAssembler {
                 }
             }
 
+            if let watchedFolder = try? await database.fetchFolderByKind(listType: .favorites, kind: .watched),
+               let watchedMedia = try? await database.fetchLibraryMedia(folderId: watchedFolder.id, includeDescendants: true),
+               !watchedMedia.isEmpty {
+                titles.append(contentsOf: watchedMedia.map(\.title))
+                notes.append("Watched folder has \(watchedMedia.count) titles.")
+            }
+
+            if let releaseWaitFolder = try? await database.fetchFolderByKind(listType: .favorites, kind: .releaseWait),
+               let releaseWaitEntries = try? await database.fetchLibrary(folderId: releaseWaitFolder.id, includeDescendants: true),
+               !releaseWaitEntries.isEmpty {
+                notes.append("Release Wait has \(releaseWaitEntries.count) series being tracked.")
+                for entry in releaseWaitEntries.prefix(8) {
+                    if let media = try? await database.fetchMedia(id: entry.mediaId) {
+                        titles.append(media.title)
+                        var detail = "Release wait: \(media.title)"
+                        if let releaseDateHint = entry.releaseDateHint {
+                            detail += " (next: \(releaseDateHint))"
+                        }
+                        if let renewalStatus = entry.renewalStatus {
+                            detail += " [\(renewalStatus)]"
+                        }
+                        notes.append(detail)
+                    }
+                }
+            }
+
             if let watchlistRootID = try? await database.fetchSystemLibraryFolderID(listType: .watchlist),
                let watchlistMedia = try? await database.fetchLibraryMediaInFolderTree(rootFolderId: watchlistRootID) {
                 titles.append(contentsOf: watchlistMedia.map(\.title))
                 notes.append("Watchlist context includes \(watchlistMedia.count) titles.")
+            }
+
+            if personalizationEnabled, let tasteEvents = try? await database.fetchTasteEvents(limit: 140), !tasteEvents.isEmpty {
+                let decayWindowDays = 30 + ((1 - recencySensitivity) * 150)
+                let mediaByID = (try? await database.fetchMedia(
+                    ids: tasteEvents.compactMap(\.mediaId)
+                )) ?? [:]
+
+                for event in tasteEvents.prefix(40) {
+                    let daysAgo = max(0, Int(Date().timeIntervalSince(event.createdAt) / 86_400))
+                    let recencyWeight = max(0.1, 1.0 - min(Double(daysAgo) / decayWindowDays, 0.9))
+                    let title = event.mediaId.flatMap { mediaByID[$0]?.title } ?? event.metadata["title"] ?? "Unknown title"
+                    let feedback = event.feedbackValue.map { String(format: "%.0f", $0) } ?? "-"
+                    if let watchedState = event.watchedState {
+                        notes.append(
+                            "Feedback \(title): \(watchedState.rawValue) (\(event.feedbackScale?.displayName ?? "none")=\(feedback)) \(daysAgo)d ago (recency \(String(format: "%.2f", recencyWeight)))."
+                        )
+                    } else if event.eventType == .liked || event.eventType == .disliked {
+                        notes.append(
+                            "Preference \(title): \(event.eventType.rawValue) \(daysAgo)d ago (recency \(String(format: "%.2f", recencyWeight)))."
+                        )
+                    }
+                }
             }
 
             if let history = try? await database.fetchAllWatchHistory(limit: 80) {

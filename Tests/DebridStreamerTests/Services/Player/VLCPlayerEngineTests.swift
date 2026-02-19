@@ -85,6 +85,7 @@ struct VLCPlayerEngineTests {
 @MainActor
 private final class MockVLCSession: VLCPlaybackSession {
     var isPlaying: Bool = false
+    var isSeekable: Bool = true
     var position: Float = 0
     var playbackRate: Float = 1.0
     var currentTimeSeconds: Double = 0

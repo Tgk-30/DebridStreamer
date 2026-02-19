@@ -218,6 +218,7 @@ actor DatabaseManager {
                 t.column("name", .text).notNull()
                 t.column("parentId", .text).references("library_folders", onDelete: .cascade)
                 t.column("listType", .text).notNull()
+                t.column("folderKind", .text).notNull().defaults(to: LibraryFolder.FolderKind.manual.rawValue)
                 t.column("isSystem", .boolean).notNull().defaults(to: false)
                 t.column("createdAt", .datetime).notNull()
                 t.column("updatedAt", .datetime).notNull()
@@ -239,6 +240,7 @@ actor DatabaseManager {
                         id: LibraryFolder.systemFolderID(for: listType),
                         name: LibraryFolder.systemFolderName(for: listType),
                         listType: listType,
+                        folderKind: .systemRoot,
                         isSystem: true,
                         createdAt: now,
                         updatedAt: now
@@ -336,6 +338,13 @@ actor DatabaseManager {
         migrator.registerMigration("v9_watchlist_flatten") { db in
             guard try db.tableExists("user_library"), try db.tableExists("library_folders") else { return }
 
+            let folderColumns = try db.columns(in: "library_folders").map(\.name)
+            if !folderColumns.contains("folderKind") {
+                try db.alter(table: "library_folders") { t in
+                    t.add(column: "folderKind", .text).notNull().defaults(to: LibraryFolder.FolderKind.manual.rawValue)
+                }
+            }
+
             try Self.ensureSystemLibraryFolders(in: db)
             let watchlistRootID = Self.systemFolderID(for: .watchlist)
 
@@ -365,6 +374,76 @@ actor DatabaseManager {
             try db.execute(
                 sql: "DELETE FROM library_folders WHERE listType = 'watchlist' AND isSystem = 0"
             )
+        }
+
+        migrator.registerMigration("v10_feedback_preferences") { db in
+            guard try db.tableExists("taste_events") else { return }
+
+            let tasteColumns = try db.columns(in: "taste_events").map(\.name)
+            if !tasteColumns.contains("episodeId") {
+                try db.alter(table: "taste_events") { t in
+                    t.add(column: "episodeId", .text)
+                }
+            }
+            if !tasteColumns.contains("watchedState") {
+                try db.alter(table: "taste_events") { t in
+                    t.add(column: "watchedState", .text)
+                }
+            }
+            if !tasteColumns.contains("feedbackScale") {
+                try db.alter(table: "taste_events") { t in
+                    t.add(column: "feedbackScale", .text)
+                }
+            }
+            if !tasteColumns.contains("feedbackValue") {
+                try db.alter(table: "taste_events") { t in
+                    t.add(column: "feedbackValue", .double)
+                }
+            }
+            if !tasteColumns.contains("source") {
+                try db.alter(table: "taste_events") { t in
+                    t.add(column: "source", .text)
+                }
+            }
+
+            try db.execute(
+                sql: "CREATE INDEX IF NOT EXISTS idx_taste_events_media_episode_createdAt ON taste_events(mediaId, episodeId, createdAt DESC)"
+            )
+            try db.execute(
+                sql: "CREATE INDEX IF NOT EXISTS idx_taste_events_eventType_createdAt ON taste_events(eventType, createdAt DESC)"
+            )
+        }
+
+        migrator.registerMigration("v11_library_folder_kind") { db in
+            guard try db.tableExists("library_folders") else { return }
+            let folderColumns = try db.columns(in: "library_folders").map(\.name)
+            if !folderColumns.contains("folderKind") {
+                try db.alter(table: "library_folders") { t in
+                    t.add(column: "folderKind", .text).notNull().defaults(to: LibraryFolder.FolderKind.manual.rawValue)
+                }
+            }
+
+            try db.execute(
+                sql: "UPDATE library_folders SET folderKind = ? WHERE isSystem = 1",
+                arguments: [LibraryFolder.FolderKind.systemRoot.rawValue]
+            )
+
+            try Self.ensureSystemLibraryFolders(in: db)
+        }
+
+        migrator.registerMigration("v12_library_release_metadata") { db in
+            guard try db.tableExists("user_library") else { return }
+            let userLibraryColumns = try db.columns(in: "user_library").map(\.name)
+            if !userLibraryColumns.contains("releaseDateHint") {
+                try db.alter(table: "user_library") { t in
+                    t.add(column: "releaseDateHint", .text)
+                }
+            }
+            if !userLibraryColumns.contains("renewalStatus") {
+                try db.alter(table: "user_library") { t in
+                    t.add(column: "renewalStatus", .text)
+                }
+            }
         }
 
         return migrator
@@ -689,6 +768,29 @@ actor DatabaseManager {
         try await fetchSystemLibraryFolder(listType: listType).id
     }
 
+    func ensureDefaultBehaviorFolders() async throws {
+        try await dbPool.write { db in
+            try Self.ensureSystemLibraryFolders(in: db)
+        }
+    }
+
+    func fetchFolderByKind(
+        listType: UserLibraryEntry.ListType,
+        kind: LibraryFolder.FolderKind
+    ) async throws -> LibraryFolder? {
+        try await dbPool.write { db in
+            try Self.ensureSystemLibraryFolders(in: db)
+            if kind == .systemRoot {
+                return try LibraryFolder.fetchOne(db, key: Self.systemFolderID(for: listType))
+            }
+            return try LibraryFolder
+                .filter(LibraryFolder.Columns.listType == listType.rawValue)
+                .filter(LibraryFolder.Columns.folderKind == kind.rawValue)
+                .order(LibraryFolder.Columns.updatedAt.desc)
+                .fetchOne(db)
+        }
+    }
+
     func fetchAllLibraryFolders(listType: UserLibraryEntry.ListType? = nil) async throws -> [LibraryFolder] {
         try await dbPool.read { db in
             var request = LibraryFolder
@@ -750,6 +852,7 @@ actor DatabaseManager {
                 name: uniqueName,
                 parentId: resolvedParentId,
                 listType: listType,
+                folderKind: .manual,
                 isSystem: false,
                 createdAt: Date(),
                 updatedAt: Date()
@@ -808,6 +911,69 @@ actor DatabaseManager {
                 .filter(UserLibraryEntry.Columns.mediaId == mediaId)
                 .filter(UserLibraryEntry.Columns.folderId == folderId)
                 .deleteAll(db)
+        }
+    }
+
+    func addOrUpsertLibraryEntryPreservingExistingFolders(
+        mediaId: String,
+        listType: UserLibraryEntry.ListType,
+        folderId: String?,
+        addedAt: Date = Date(),
+        customListName: String? = nil,
+        releaseDateHint: String? = nil,
+        renewalStatus: String? = nil
+    ) async throws -> UserLibraryEntry {
+        try await dbPool.write { db in
+            try Self.ensureSystemLibraryFolders(in: db)
+
+            let resolvedFolderId: String
+            if listType.supportsFolders {
+                let trimmedFolderId = folderId?.trimmingCharacters(in: .whitespacesAndNewlines)
+                resolvedFolderId = (trimmedFolderId?.isEmpty == false)
+                    ? trimmedFolderId!
+                    : Self.systemFolderID(for: listType)
+            } else {
+                resolvedFolderId = Self.systemFolderID(for: listType)
+            }
+
+            if var existing = try UserLibraryEntry
+                .filter(UserLibraryEntry.Columns.mediaId == mediaId)
+                .filter(UserLibraryEntry.Columns.folderId == resolvedFolderId)
+                .fetchOne(db) {
+                if addedAt > existing.addedAt {
+                    existing.addedAt = addedAt
+                }
+                if let customListName {
+                    existing.customListName = customListName
+                }
+                if let releaseDateHint {
+                    existing.releaseDateHint = releaseDateHint
+                }
+                if let renewalStatus {
+                    existing.renewalStatus = renewalStatus
+                }
+                try existing.save(db)
+                return existing
+            }
+
+            let entry = UserLibraryEntry(
+                id: "lib-\(UUID().uuidString)",
+                mediaId: mediaId,
+                folderId: resolvedFolderId,
+                listType: listType,
+                addedAt: addedAt,
+                customListName: customListName,
+                releaseDateHint: releaseDateHint,
+                renewalStatus: renewalStatus
+            )
+            try entry.insert(db, onConflict: .ignore)
+            if let fetched = try UserLibraryEntry
+                .filter(UserLibraryEntry.Columns.mediaId == mediaId)
+                .filter(UserLibraryEntry.Columns.folderId == resolvedFolderId)
+                .fetchOne(db) {
+                return fetched
+            }
+            return entry
         }
     }
 
@@ -875,6 +1041,28 @@ actor DatabaseManager {
                 .order(TasteEvent.Columns.createdAt.desc)
                 .limit(limit)
                 .fetchAll(db)
+        }
+    }
+
+    func fetchLatestWatchedState(
+        mediaId: String,
+        episodeId: String? = nil,
+        userId: String = "default"
+    ) async throws -> TasteEvent? {
+        try await dbPool.read { db in
+            var request = TasteEvent
+                .filter(TasteEvent.Columns.userId == userId)
+                .filter(TasteEvent.Columns.mediaId == mediaId)
+                .filter(TasteEvent.Columns.watchedState != nil)
+            if let episodeId {
+                request = request.filter(TasteEvent.Columns.episodeId == episodeId)
+            } else {
+                request = request.filter(TasteEvent.Columns.episodeId == nil)
+            }
+
+            return try request
+                .order(TasteEvent.Columns.createdAt.desc)
+                .fetchOne(db)
         }
     }
 
@@ -1051,6 +1239,12 @@ actor DatabaseManager {
         }
     }
 
+    func tableColumnNames(_ table: String) async throws -> [String] {
+        try await dbPool.read { db in
+            try db.columns(in: table).map(\.name)
+        }
+    }
+
     // MARK: - Torrent Cache Operations
 
     func saveTorrentCache(_ torrent: CachedTorrent) async throws {
@@ -1087,6 +1281,14 @@ actor DatabaseManager {
                     existing.isSystem = true
                     changed = true
                 }
+                if existing.folderKind != .systemRoot {
+                    existing.folderKind = .systemRoot
+                    changed = true
+                }
+                if existing.parentId != nil {
+                    existing.parentId = nil
+                    changed = true
+                }
                 if changed {
                     existing.updatedAt = now
                     try existing.save(db)
@@ -1098,11 +1300,67 @@ actor DatabaseManager {
                 id: folderID,
                 name: LibraryFolder.systemFolderName(for: listType),
                 listType: listType,
+                folderKind: .systemRoot,
                 isSystem: true,
                 createdAt: now,
                 updatedAt: now
             )
             try folder.insert(db)
+        }
+
+        try ensureDefaultBehaviorFolders(in: db)
+    }
+
+    private static func ensureDefaultBehaviorFolders(in db: Database) throws {
+        let now = Date()
+        let libraryRootID = systemFolderID(for: .favorites)
+
+        let behaviorFolders: [(id: String, name: String, kind: LibraryFolder.FolderKind)] = [
+            (LibraryFolder.watchedFolderID, "Watched", .watched),
+            (LibraryFolder.releaseWaitFolderID, "Release Wait", .releaseWait)
+        ]
+
+        for behavior in behaviorFolders {
+            if var existing = try LibraryFolder.fetchOne(db, key: behavior.id) {
+                var changed = false
+                if existing.name != behavior.name {
+                    existing.name = behavior.name
+                    changed = true
+                }
+                if existing.parentId != libraryRootID {
+                    existing.parentId = libraryRootID
+                    changed = true
+                }
+                if existing.listType != .favorites {
+                    existing.listType = .favorites
+                    changed = true
+                }
+                if !existing.isSystem {
+                    existing.isSystem = true
+                    changed = true
+                }
+                if existing.folderKind != behavior.kind {
+                    existing.folderKind = behavior.kind
+                    changed = true
+                }
+                if changed {
+                    existing.updatedAt = now
+                    try existing.save(db)
+                }
+                continue
+            }
+
+            let folder = LibraryFolder(
+                id: behavior.id,
+                name: behavior.name,
+                parentId: libraryRootID,
+                listType: .favorites,
+                folderKind: behavior.kind,
+                isSystem: true,
+                createdAt: now,
+                updatedAt: now
+            )
+            try folder.insert(db, onConflict: .ignore)
         }
     }
 

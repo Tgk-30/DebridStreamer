@@ -295,6 +295,30 @@ struct PlayerViewModelTests {
         #expect(session.currentTimeSeconds == 500)
     }
 
+    @Test("Queued resume waits for seekable session readiness")
+    func queuedResumeWaitsForSeekableSession() async {
+        let model = PlayerViewModel()
+        let session = MockVLCSession()
+        session.isSeekable = false
+        session.durationSeconds = 4_000
+        model.vlcSession = session
+
+        let queued = model.queueResumeTarget(
+            progressSeconds: 800,
+            storedDurationSeconds: 4_000
+        )
+        let firstApply = model.applyPendingResumeIfPossible()
+        #expect(queued == true)
+        #expect(firstApply == false)
+        #expect(session.seekCallCount == 0)
+
+        session.isSeekable = true
+        let secondApply = model.applyPendingResumeIfPossible()
+        #expect(secondApply == true)
+        #expect(session.seekCallCount == 1)
+        #expect(session.currentTimeSeconds == 800)
+    }
+
     @Test("Track refresh and selection flows through VLC session")
     func trackSelectionFlow() async {
         let stream = makeStream(url: "https://cdn.example.com/movie.mkv")
@@ -407,6 +431,7 @@ private final class MockEngine: PlayerEngine {
 @MainActor
 private final class MockVLCSession: VLCPlaybackSession {
     var isPlaying: Bool = false
+    var isSeekable: Bool = true
     var position: Float = 0
     var playbackRate: Float = 1.0
     var currentTimeSeconds: Double = 0

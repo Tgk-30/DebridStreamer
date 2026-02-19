@@ -26,6 +26,7 @@ final class AppState {
     private(set) var indexerManager: IndexerManager?
     private(set) var aiAssistantManager: AIAssistantManager?
     private(set) var discoverAICurationService: DiscoverAICurationService?
+    private(set) var userFeedbackService: UserFeedbackService?
     private var playerWindowController: PlayerWindowController?
 
     init(secretStore: any SecretStore = KeychainSecretStore()) {
@@ -64,6 +65,7 @@ final class AppState {
     func initialize() async throws {
         let dbManager = try DatabaseManager()
         self.databaseManager = dbManager
+        try await dbManager.ensureDefaultBehaviorFolders()
 
         let settings = SettingsManager(database: dbManager, secretStore: secretStore)
         self.settingsManager = settings
@@ -72,6 +74,10 @@ final class AppState {
         if !tmdbKey.isEmpty {
             self.metadataService = TMDBService(apiKey: tmdbKey)
         }
+        self.userFeedbackService = UserFeedbackService(
+            database: dbManager,
+            metadataService: metadataService
+        )
 
         // Initialize indexer manager from saved configs (falls back to built-ins)
         let indexerConfigs = try await dbManager.fetchAllIndexerConfigs()
@@ -94,6 +100,10 @@ final class AppState {
         } else {
             self.metadataService = nil
         }
+        self.userFeedbackService = UserFeedbackService(
+            database: databaseManager,
+            metadataService: metadataService
+        )
 
         Task { [weak self] in
             guard let self else { return }
@@ -135,12 +145,12 @@ final class AppState {
         let openAIModel = resolveModelID(
             preset: try? await settings.getValue(forKey: SettingsKeys.openAIModelPreset),
             custom: try? await settings.getValue(forKey: SettingsKeys.openAIModelCustom),
-            defaultModel: "gpt-4o-mini"
+            defaultModel: "gpt-4.1-mini"
         )
         let anthropicModel = resolveModelID(
             preset: try? await settings.getValue(forKey: SettingsKeys.anthropicModelPreset),
             custom: try? await settings.getValue(forKey: SettingsKeys.anthropicModelCustom),
-            defaultModel: "claude-3-5-haiku-latest"
+            defaultModel: "claude-3-7-sonnet-latest"
         )
 
         if let openAIKey = try? await settings.getValue(forKey: SettingsKeys.openAIApiKey),

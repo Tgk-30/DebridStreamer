@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import AppKit
 
@@ -9,6 +10,7 @@ struct PlayerView: View {
     let mediaTitle: String
     let mediaId: String
     let episodeId: String?
+    let sessionRequestID: UUID
     var onClose: () -> Void = {}
 
     @State private var viewModel = PlayerViewModel()
@@ -19,6 +21,7 @@ struct PlayerView: View {
     @State private var speed: Float = 1.0
     @State private var playerWindow: NSWindow?
     @State private var didTeardown = false
+    @State private var lastPersistedCheckpointSeconds: Double = 0
 
     var body: some View {
         ZStack {
@@ -52,6 +55,9 @@ struct PlayerView: View {
         .task(id: viewModel.selectedEngine?.rawValue ?? "none") {
             await syncProgressLoop()
         }
+        .task(id: "checkpoint-\(viewModel.selectedEngine?.rawValue ?? "none")") {
+            await checkpointLoop()
+        }
         .onExitCommand {
             viewModel.registerUserInteraction()
             if viewModel.isFullscreenActive || viewModel.isFullscreen(window: playerWindow) {
@@ -65,6 +71,11 @@ struct PlayerView: View {
         }
         .onChange(of: appState.activePlayerIsFullscreen) { _, isFullscreen in
             viewModel.setFullscreenActive(isFullscreen)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .debridPlayerWindowWillClose)) { notification in
+            guard let requestID = notification.object as? UUID else { return }
+            guard requestID == sessionRequestID else { return }
+            teardownPlayer(notifyParent: false)
         }
         .onDisappear {
             teardownPlayer(notifyParent: false)
@@ -189,11 +200,6 @@ struct PlayerView: View {
                 .help("Toggle fullscreen player window")
                 .keyboardShortcut("f", modifiers: [.control, .command])
                 .disabled(viewModel.isFullscreenTransitioning)
-
-                Button("Close") {
-                    closePlayer()
-                }
-                .buttonStyle(.borderedProminent)
             }
             .foregroundStyle(.white)
 
@@ -343,11 +349,6 @@ struct PlayerView: View {
                     Task { await viewModel.retryLastPlayback() }
                 }
                 .buttonStyle(.borderedProminent)
-
-                Button("Close") {
-                    closePlayer()
-                }
-                .buttonStyle(.bordered)
             }
         }
         .padding(18)
@@ -378,6 +379,7 @@ struct PlayerView: View {
 
     private func syncProgressLoop() async {
         while !Task.isCancelled {
+            _ = viewModel.applyPendingResumeIfPossible()
             let current = viewModel.currentTimeSeconds
             let total = viewModel.durationSeconds ?? 0
 
@@ -392,6 +394,19 @@ struct PlayerView: View {
             }
 
             try? await Task.sleep(for: .milliseconds(250))
+        }
+    }
+
+    private func checkpointLoop() async {
+        while !Task.isCancelled {
+            if let snapshot = viewModel.playbackProgressSnapshot() {
+                let delta = abs(snapshot.progressSeconds - lastPersistedCheckpointSeconds)
+                if delta >= 15 {
+                    lastPersistedCheckpointSeconds = snapshot.progressSeconds
+                    await persistWatchProgress(snapshot: snapshot)
+                }
+            }
+            try? await Task.sleep(for: .seconds(4))
         }
     }
 
@@ -422,26 +437,32 @@ struct PlayerView: View {
         )
 
         try? await database.saveWatchHistory(entry)
+        if completed {
+            await appState.userFeedbackService?.recordAutoCompletion(
+                mediaId: mediaId,
+                episodeId: episodeId,
+                progressSeconds: current,
+                durationSeconds: duration
+            )
+        }
     }
 
     private func attemptResumeFromHistory() async {
         guard let database = appState.databaseManager else { return }
         guard let history = try? await database.fetchWatchHistory(mediaId: mediaId, episodeId: episodeId) else { return }
         guard history.completed == false else { return }
-
-        for _ in 0..<6 {
-            let applied = viewModel.resumePlaybackIfNeeded(
-                progressSeconds: history.progressSeconds,
-                storedDurationSeconds: history.durationSeconds
-            )
-            if applied {
-                return
-            }
-            try? await Task.sleep(for: .milliseconds(250))
-        }
+        _ = viewModel.queueResumeTarget(
+            progressSeconds: history.progressSeconds,
+            storedDurationSeconds: history.durationSeconds
+        )
+        _ = viewModel.applyPendingResumeIfPossible()
     }
 
     private func closePlayer() {
+        if let playerWindow {
+            playerWindow.performClose(nil)
+            return
+        }
         teardownPlayer(notifyParent: true)
     }
 
@@ -449,7 +470,6 @@ struct PlayerView: View {
         guard !didTeardown else { return }
         didTeardown = true
 
-        viewModel.exitFullscreen(window: playerWindow)
         let snapshot = viewModel.playbackProgressSnapshot()
         viewModel.stop()
         if notifyParent {

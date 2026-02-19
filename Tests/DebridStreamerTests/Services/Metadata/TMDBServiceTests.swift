@@ -226,6 +226,28 @@ struct TMDBDetailResponseTests {
         let item = response.toMediaItem(type: .movie)
         #expect(item.runtime == nil)
     }
+
+    @Test("Decode series renewal metadata fields")
+    func decodeSeriesRenewalMetadataFields() throws {
+        let json = """
+        {
+          "status": "Returning Series",
+          "in_production": true,
+          "next_episode_to_air": { "air_date": "2026-11-14" },
+          "last_air_date": "2025-11-14",
+          "number_of_seasons": 4
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(TMDBSeriesRenewalResponse.self, from: json)
+        #expect(response.status == "Returning Series")
+        #expect(response.inProduction == true)
+        #expect(response.nextEpisodeToAir?.airDate == "2026-11-14")
+        #expect(response.lastAirDate == "2025-11-14")
+        #expect(response.numberOfSeasons == 4)
+    }
 }
 
 @Suite("TMDBError Tests")

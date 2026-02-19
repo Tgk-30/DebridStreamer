@@ -10,6 +10,12 @@ final class PlayerViewModel {
         let durationSeconds: Double?
     }
 
+    private struct PendingResumeTarget: Sendable {
+        let progressSeconds: Double
+        let storedDurationSeconds: Double?
+        let completionThreshold: Double
+    }
+
     var runtimeState: PlayerRuntimeState = .preparing
     var diagnostics: String?
     var errorMessage: String?
@@ -44,6 +50,7 @@ final class PlayerViewModel {
     private var lastBackendPreference: InternalPlayerBackend = .automatic
     private var lastExternalPreference: PreferredPlayer = .auto
     private var didApplyResumePosition = false
+    private var pendingResumeTarget: PendingResumeTarget?
 
     var isLoading: Bool {
         runtimeState == .preparing || runtimeState == .buffering
@@ -207,23 +214,14 @@ final class PlayerViewModel {
         storedDurationSeconds: Double?,
         completionThreshold: Double = 0.95
     ) -> Bool {
-        guard !didApplyResumePosition else { return false }
-        guard let session = vlcSession else { return false }
-        guard progressSeconds.isFinite, progressSeconds >= 15 else { return false }
-
-        let duration = storedDurationSeconds ?? session.durationSeconds
-        if let duration, duration > 0 {
-            let ratio = progressSeconds / duration
-            if ratio >= completionThreshold {
-                return false
-            }
+        guard queueResumeTarget(
+            progressSeconds: progressSeconds,
+            storedDurationSeconds: storedDurationSeconds,
+            completionThreshold: completionThreshold
+        ) else {
+            return false
         }
-
-        session.seek(to: progressSeconds)
-        didApplyResumePosition = true
-        diagnostics = "Resumed from \(formatTime(progressSeconds))."
-        registerUserInteraction()
-        return true
+        return applyPendingResumeIfPossible()
     }
 
     func stop() {
@@ -326,6 +324,54 @@ final class PlayerViewModel {
         return PlaybackProgressSnapshot(progressSeconds: current, durationSeconds: durationSeconds)
     }
 
+    @discardableResult
+    func queueResumeTarget(
+        progressSeconds: Double,
+        storedDurationSeconds: Double?,
+        completionThreshold: Double = 0.95
+    ) -> Bool {
+        guard !didApplyResumePosition else { return false }
+        guard progressSeconds.isFinite, progressSeconds >= 15 else { return false }
+
+        if let storedDurationSeconds, storedDurationSeconds > 0 {
+            let ratio = progressSeconds / storedDurationSeconds
+            if ratio >= completionThreshold {
+                return false
+            }
+        }
+
+        pendingResumeTarget = PendingResumeTarget(
+            progressSeconds: progressSeconds,
+            storedDurationSeconds: storedDurationSeconds,
+            completionThreshold: completionThreshold
+        )
+        return true
+    }
+
+    @discardableResult
+    func applyPendingResumeIfPossible() -> Bool {
+        guard !didApplyResumePosition else { return false }
+        guard let pendingResumeTarget else { return false }
+        guard let session = vlcSession else { return false }
+        guard session.isSeekable else { return false }
+
+        let duration = pendingResumeTarget.storedDurationSeconds ?? session.durationSeconds
+        if let duration, duration > 0 {
+            let ratio = pendingResumeTarget.progressSeconds / duration
+            if ratio >= pendingResumeTarget.completionThreshold {
+                self.pendingResumeTarget = nil
+                return false
+            }
+        }
+
+        session.seek(to: pendingResumeTarget.progressSeconds)
+        didApplyResumePosition = true
+        self.pendingResumeTarget = nil
+        diagnostics = "Resumed from \(formatTime(pendingResumeTarget.progressSeconds))."
+        registerUserInteraction()
+        return true
+    }
+
     func registerUserInteraction() {
         controlsVisible = true
         scheduleControlsAutoHideIfNeeded()
@@ -387,6 +433,7 @@ final class PlayerViewModel {
         runtimeState = session.isPlaying ? .playing : .stalled
         diagnostics = session.isPlaying ? "Playing with VLC." : "VLC started but has not begun rendering yet."
         refreshTrackOptions()
+        _ = applyPendingResumeIfPossible()
         scheduleControlsAutoHideIfNeeded()
     }
 
@@ -396,6 +443,7 @@ final class PlayerViewModel {
         runtimeState = .preparing
         selectedEngine = nil
         didApplyResumePosition = false
+        pendingResumeTarget = nil
         controlsVisible = true
         cancelControlsAutoHide()
         stopInternalPlayback(clearSelection: false)
@@ -424,6 +472,7 @@ final class PlayerViewModel {
         if clearSelection {
             selectedEngine = nil
         }
+        pendingResumeTarget = nil
         isFullscreenTransitioning = false
         controlsVisible = true
     }

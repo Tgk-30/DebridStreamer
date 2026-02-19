@@ -81,6 +81,7 @@ struct VLCTrackOption: Identifiable, Equatable, Sendable {
 @MainActor
 protocol VLCPlaybackSession: AnyObject {
     var isPlaying: Bool { get }
+    var isSeekable: Bool { get }
     var position: Float { get set }
     var playbackRate: Float { get set }
     var currentTimeSeconds: Double { get }
@@ -129,6 +130,10 @@ final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
 
     var isPlaying: Bool {
         mediaPlayer.isPlaying
+    }
+
+    var isSeekable: Bool {
+        mediaPlayer.isSeekable
     }
 
     var position: Float {

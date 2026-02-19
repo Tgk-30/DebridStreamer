@@ -66,6 +66,31 @@ actor TMDBService: MetadataProvider {
         return response.toMediaItem(type: type)
     }
 
+    func getSeriesRenewalMetadata(id: String) async throws -> TMDBSeriesRenewalMetadata {
+        // Resolve series TMDB ID from tmdb-* or imdb id inputs.
+        let tmdbId: String
+        if id.hasPrefix("tmdb-") {
+            tmdbId = String(id.dropFirst(5))
+        } else if id.allSatisfy(\.isNumber) {
+            tmdbId = id
+        } else if let found = try await findByImdbId(id, type: .series) {
+            tmdbId = String(found)
+        } else {
+            throw TMDBError.notFound(id)
+        }
+
+        let path = "/tv/\(tmdbId)"
+        let params = ["language": "en-US"]
+        let response: TMDBSeriesRenewalResponse = try await request(path: path, params: params)
+        return TMDBSeriesRenewalMetadata(
+            status: response.status,
+            inProduction: response.inProduction,
+            nextEpisodeAirDate: response.nextEpisodeToAir?.airDate,
+            lastAirDate: response.lastAirDate,
+            numberOfSeasons: response.numberOfSeasons
+        )
+    }
+
     func getTrending(type: MediaType, timeWindow: TrendingWindow = .week, page: Int = 1) async throws -> MetadataSearchResult {
         let path = "/trending/\(type.tmdbPath)/\(timeWindow.rawValue)"
         let params = ["page": String(page), "language": "en-US"]
@@ -294,6 +319,10 @@ struct TMDBDetailResponse: Decodable {
     let runtime: Int?
     let episodeRunTime: [Int]?
     let status: String?
+    var inProduction: Bool? = nil
+    var nextEpisodeToAir: TMDBEpisodeToAir? = nil
+    var lastAirDate: String? = nil
+    var numberOfSeasons: Int? = nil
     let genres: [TMDBGenre]?
     let externalIds: ExternalIds?
 
@@ -337,6 +366,26 @@ struct TMDBDetailResponse: Decodable {
             lastFetched: Date()
         )
     }
+}
+
+struct TMDBSeriesRenewalMetadata: Sendable, Equatable {
+    let status: String?
+    let inProduction: Bool?
+    let nextEpisodeAirDate: String?
+    let lastAirDate: String?
+    let numberOfSeasons: Int?
+}
+
+struct TMDBSeriesRenewalResponse: Decodable {
+    let status: String?
+    let inProduction: Bool?
+    let nextEpisodeToAir: TMDBEpisodeToAir?
+    let lastAirDate: String?
+    let numberOfSeasons: Int?
+}
+
+struct TMDBEpisodeToAir: Decodable {
+    let airDate: String?
 }
 
 struct TMDBGenre: Decodable {

@@ -105,6 +105,22 @@ struct SettingsManagerTests {
         #expect(storedAnthropicCustom == "custom-anthropic")
     }
 
+    @Test("Feedback scale mode defaults to like/dislike and round-trips")
+    func feedbackScaleModeRoundTrip() async throws {
+        let db = try makeTestDatabase()
+        let settings = SettingsManager(database: db, secretStore: InMemorySecretStore())
+
+        let defaultMode = try await settings.getFeedbackScaleMode()
+        #expect(defaultMode == .likeDislike)
+
+        try await settings.setFeedbackScaleMode(.scale1to100)
+        let storedMode = try await settings.getFeedbackScaleMode()
+        #expect(storedMode == .scale1to100)
+
+        let raw = try await db.getSetting(key: SettingsKeys.feedbackScaleMode)
+        #expect(raw == FeedbackScaleMode.scale1to100.rawValue)
+    }
+
     @Test("Clearing secret setting removes keychain and database entries")
     func clearingSecretDeletesBackingData() async throws {
         let db = try makeTestDatabase()
@@ -237,7 +253,8 @@ struct SettingsManagerTests {
             SettingsKeys.toneMoodTags,
             SettingsKeys.currentVibeNotes,
             SettingsKeys.recencySensitivity,
-            SettingsKeys.onboardingTastePromptShown
+            SettingsKeys.onboardingTastePromptShown,
+            SettingsKeys.feedbackScaleMode
         ]
         let uniqueKeys = Set(keys)
         #expect(uniqueKeys.count == keys.count)
