@@ -372,6 +372,8 @@ struct PlayerView: View {
             backendPreference: backend,
             externalPlayerPreference: externalPreference
         )
+
+        await attemptResumeFromHistory()
     }
 
     private func syncProgressLoop() async {
@@ -420,6 +422,23 @@ struct PlayerView: View {
         )
 
         try? await database.saveWatchHistory(entry)
+    }
+
+    private func attemptResumeFromHistory() async {
+        guard let database = appState.databaseManager else { return }
+        guard let history = try? await database.fetchWatchHistory(mediaId: mediaId, episodeId: episodeId) else { return }
+        guard history.completed == false else { return }
+
+        for _ in 0..<6 {
+            let applied = viewModel.resumePlaybackIfNeeded(
+                progressSeconds: history.progressSeconds,
+                storedDurationSeconds: history.durationSeconds
+            )
+            if applied {
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
     }
 
     private func closePlayer() {

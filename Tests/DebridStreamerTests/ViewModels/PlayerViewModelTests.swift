@@ -246,6 +246,55 @@ struct PlayerViewModelTests {
         #expect(model.controlsVisible == true)
     }
 
+    @Test("Resume playback seeks to stored progress when valid")
+    func resumePlaybackSeeksWhenValid() async {
+        let model = PlayerViewModel()
+        let session = MockVLCSession()
+        session.durationSeconds = 7_200
+        model.vlcSession = session
+
+        let applied = model.resumePlaybackIfNeeded(
+            progressSeconds: 1_200,
+            storedDurationSeconds: 7_200
+        )
+
+        #expect(applied == true)
+        #expect(session.seekCallCount == 1)
+        #expect(session.currentTimeSeconds == 1_200)
+    }
+
+    @Test("Resume playback is skipped when near completion")
+    func resumePlaybackSkippedNearCompletion() async {
+        let model = PlayerViewModel()
+        let session = MockVLCSession()
+        session.durationSeconds = 3_600
+        model.vlcSession = session
+
+        let applied = model.resumePlaybackIfNeeded(
+            progressSeconds: 3_500,
+            storedDurationSeconds: 3_600
+        )
+
+        #expect(applied == false)
+        #expect(session.seekCallCount == 0)
+    }
+
+    @Test("Resume playback is applied only once")
+    func resumePlaybackAppliedOnce() async {
+        let model = PlayerViewModel()
+        let session = MockVLCSession()
+        session.durationSeconds = 4_000
+        model.vlcSession = session
+
+        let first = model.resumePlaybackIfNeeded(progressSeconds: 500, storedDurationSeconds: 4_000)
+        let second = model.resumePlaybackIfNeeded(progressSeconds: 900, storedDurationSeconds: 4_000)
+
+        #expect(first == true)
+        #expect(second == false)
+        #expect(session.seekCallCount == 1)
+        #expect(session.currentTimeSeconds == 500)
+    }
+
     @Test("Track refresh and selection flows through VLC session")
     func trackSelectionFlow() async {
         let stream = makeStream(url: "https://cdn.example.com/movie.mkv")
@@ -367,10 +416,12 @@ private final class MockVLCSession: VLCPlaybackSession {
     var selectedAudioTrackID: Int32?
     var selectedSubtitleTrackID: Int32?
     var stopCallCount = 0
+    var seekCallCount = 0
 
     func makeVideoView() -> NSView { NSView(frame: .zero) }
 
     func seek(to seconds: Double) {
+        seekCallCount += 1
         currentTimeSeconds = max(0, seconds)
     }
 

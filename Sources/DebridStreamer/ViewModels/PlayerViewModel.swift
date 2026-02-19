@@ -43,6 +43,7 @@ final class PlayerViewModel {
     private var lastStream: StreamInfo?
     private var lastBackendPreference: InternalPlayerBackend = .automatic
     private var lastExternalPreference: PreferredPlayer = .auto
+    private var didApplyResumePosition = false
 
     var isLoading: Bool {
         runtimeState == .preparing || runtimeState == .buffering
@@ -198,6 +199,31 @@ final class PlayerViewModel {
         playbackRate = max(0.25, min(2.0, rate))
         vlcSession?.playbackRate = playbackRate
         registerUserInteraction()
+    }
+
+    @discardableResult
+    func resumePlaybackIfNeeded(
+        progressSeconds: Double,
+        storedDurationSeconds: Double?,
+        completionThreshold: Double = 0.95
+    ) -> Bool {
+        guard !didApplyResumePosition else { return false }
+        guard let session = vlcSession else { return false }
+        guard progressSeconds.isFinite, progressSeconds >= 15 else { return false }
+
+        let duration = storedDurationSeconds ?? session.durationSeconds
+        if let duration, duration > 0 {
+            let ratio = progressSeconds / duration
+            if ratio >= completionThreshold {
+                return false
+            }
+        }
+
+        session.seek(to: progressSeconds)
+        didApplyResumePosition = true
+        diagnostics = "Resumed from \(formatTime(progressSeconds))."
+        registerUserInteraction()
+        return true
     }
 
     func stop() {
@@ -369,6 +395,7 @@ final class PlayerViewModel {
         diagnostics = "Preparing playback."
         runtimeState = .preparing
         selectedEngine = nil
+        didApplyResumePosition = false
         controlsVisible = true
         cancelControlsAutoHide()
         stopInternalPlayback(clearSelection: false)
@@ -434,5 +461,17 @@ final class PlayerViewModel {
     private func cancelControlsAutoHide() {
         controlsAutoHideTask?.cancel()
         controlsAutoHideTask = nil
+    }
+
+    private func formatTime(_ value: Double) -> String {
+        guard value.isFinite, value > 0 else { return "00:00" }
+        let total = Int(value.rounded())
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }

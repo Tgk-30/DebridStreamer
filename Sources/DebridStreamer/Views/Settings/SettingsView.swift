@@ -3,14 +3,14 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     private static let customModelPreset = "custom"
-    private let openAIModelPresets = [
+    private static let defaultOpenAIModelPresets = [
         "gpt-4o-mini",
         "gpt-4.1-mini",
         "gpt-4.1",
         "gpt-4o",
         SettingsView.customModelPreset
     ]
-    private let anthropicModelPresets = [
+    private static let defaultAnthropicModelPresets = [
         "claude-3-5-haiku-latest",
         "claude-3-7-sonnet-latest",
         "claude-sonnet-4-0",
@@ -21,6 +21,7 @@ struct SettingsView: View {
     private let secretStore = KeychainSecretStore()
     private let traktSyncService = TraktSyncService()
     private let imdbSyncService = IMDbCSVSyncService()
+    private let modelCatalogService = AIModelCatalogService()
 
     @State private var isSaving = false
     @State private var statusMessage: String?
@@ -53,10 +54,14 @@ struct SettingsView: View {
 
     @State private var openAIApiKey = ""
     @State private var anthropicApiKey = ""
+    @State private var openAIModelPresets = SettingsView.defaultOpenAIModelPresets
+    @State private var anthropicModelPresets = SettingsView.defaultAnthropicModelPresets
     @State private var openAIModelPreset = "gpt-4o-mini"
     @State private var openAIModelCustom = ""
     @State private var anthropicModelPreset = "claude-3-5-haiku-latest"
     @State private var anthropicModelCustom = ""
+    @State private var isRefreshingModelCatalog = false
+    @State private var modelCatalogStatus: String?
     @State private var ollamaEndpoint = "http://localhost:11434/api/chat"
     @State private var aiCompareMode = true
     @State private var traktClientId = ""
@@ -122,7 +127,10 @@ struct SettingsView: View {
                 .tag(SettingsTab.personalization)
         }
         .frame(width: 700, height: 560)
-        .task { await loadSettings() }
+        .task {
+            await loadSettings()
+            await refreshModelCatalog(silentIfNoKeys: true)
+        }
         .fileImporter(
             isPresented: $isImportingIMDb,
             allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText],
@@ -338,6 +346,31 @@ struct SettingsView: View {
                 Text("Selected model settings persist until you change them.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await refreshModelCatalog() }
+                    } label: {
+                        if isRefreshingModelCatalog {
+                            Label("Refreshing Models...", systemImage: "arrow.triangle.2.circlepath")
+                        } else {
+                            Label("Live Fetch Latest Models", systemImage: "arrow.clockwise.circle")
+                        }
+                    }
+                    .disabled(isRefreshingModelCatalog)
+                    .buttonStyle(.bordered)
+
+                    if let modelCatalogStatus {
+                        Text(modelCatalogStatus)
+                            .font(.caption)
+                            .foregroundStyle(
+                                modelCatalogStatus.lowercased().contains("fail")
+                                    || modelCatalogStatus.lowercased().contains("error")
+                                    ? .orange
+                                    : .secondary
+                            )
+                            .lineLimit(2)
+                    }
+                }
             }
 
             Section("Trakt") {
@@ -992,6 +1025,79 @@ struct SettingsView: View {
         }
     }
 
+    private func refreshModelCatalog(silentIfNoKeys: Bool = false) async {
+        if isRefreshingModelCatalog {
+            return
+        }
+
+        let openAIKey = openAIApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let anthropicKey = anthropicApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !openAIKey.isEmpty || !anthropicKey.isEmpty else {
+            if !silentIfNoKeys {
+                modelCatalogStatus = "Add an API key to fetch latest model IDs."
+            }
+            return
+        }
+
+        isRefreshingModelCatalog = true
+        defer { isRefreshingModelCatalog = false }
+
+        var resultNotes: [String] = []
+
+        if !openAIKey.isEmpty {
+            do {
+                let openAIModels = try await modelCatalogService.fetchOpenAIModelIDs(apiKey: openAIKey)
+                if !openAIModels.isEmpty {
+                    openAIModelPresets = mergedModelPresetList(
+                        liveModels: openAIModels,
+                        fallback: SettingsView.defaultOpenAIModelPresets
+                    )
+                    preserveOrConvertSelectionToCustom(
+                        availablePresets: openAIModelPresets,
+                        selectedPreset: &openAIModelPreset,
+                        customValue: &openAIModelCustom
+                    )
+                    resultNotes.append("OpenAI: \(openAIModels.count)")
+                } else {
+                    resultNotes.append("OpenAI: no models returned")
+                }
+            } catch {
+                resultNotes.append("OpenAI fetch failed")
+            }
+        }
+
+        if !anthropicKey.isEmpty {
+            do {
+                let anthropicModels = try await modelCatalogService.fetchAnthropicModelIDs(apiKey: anthropicKey)
+                if !anthropicModels.isEmpty {
+                    anthropicModelPresets = mergedModelPresetList(
+                        liveModels: anthropicModels,
+                        fallback: SettingsView.defaultAnthropicModelPresets
+                    )
+                    preserveOrConvertSelectionToCustom(
+                        availablePresets: anthropicModelPresets,
+                        selectedPreset: &anthropicModelPreset,
+                        customValue: &anthropicModelCustom
+                    )
+                    resultNotes.append("Anthropic: \(anthropicModels.count)")
+                } else {
+                    resultNotes.append("Anthropic: no models returned")
+                }
+            } catch {
+                resultNotes.append("Anthropic fetch failed")
+            }
+        }
+
+        if resultNotes.isEmpty {
+            if !silentIfNoKeys {
+                modelCatalogStatus = "Unable to fetch model catalogs."
+            }
+        } else {
+            modelCatalogStatus = "Live model catalogs updated (\(resultNotes.joined(separator: ", ")))."
+        }
+    }
+
     private func defaultFolderName(from url: URL) -> String {
         let base = url.deletingPathExtension().lastPathComponent
         let timestamp = ISO8601DateFormatter().string(from: Date())
@@ -1021,6 +1127,47 @@ struct SettingsView: View {
         }
 
         return defaultPreset
+    }
+
+    private func mergedModelPresetList(liveModels: [String], fallback: [String]) -> [String] {
+        var seen = Set<String>()
+        var merged: [String] = []
+
+        let combined = liveModels + fallback
+        for raw in combined {
+            let model = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !model.isEmpty else { continue }
+            if model == SettingsView.customModelPreset { continue }
+            let key = model.lowercased()
+            if seen.insert(key).inserted {
+                merged.append(model)
+            }
+        }
+
+        merged.sort { lhs, rhs in
+            lhs.localizedCaseInsensitiveCompare(rhs) == .orderedDescending
+        }
+        merged.append(SettingsView.customModelPreset)
+        return merged
+    }
+
+    private func preserveOrConvertSelectionToCustom(
+        availablePresets: [String],
+        selectedPreset: inout String,
+        customValue: inout String
+    ) {
+        if selectedPreset == SettingsView.customModelPreset {
+            return
+        }
+
+        if availablePresets.contains(selectedPreset) {
+            return
+        }
+
+        if !selectedPreset.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            customValue = selectedPreset
+            selectedPreset = SettingsView.customModelPreset
+        }
     }
 }
 
