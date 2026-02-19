@@ -3,6 +3,7 @@ import Foundation
 struct AssistantContext: Sendable {
     var candidateTitles: [String]
     var contextNotes: [String]
+    var personalizationEnabled: Bool
 }
 
 actor AssistantContextAssembler {
@@ -21,9 +22,17 @@ actor AssistantContextAssembler {
     ) async -> AssistantContext {
         var titles: [String] = []
         var notes: [String] = []
+        var personalizationEnabled = false
+        var recencySensitivity = 0.7
 
         if let database {
-            if let profile = try? await database.fetchUserTasteProfile() {
+            personalizationEnabled = (try? await database.getSetting(key: SettingsKeys.personalizationEnabled)) == "true"
+            if let storedSensitivity = try? await database.getSetting(key: SettingsKeys.recencySensitivity),
+               let parsed = Double(storedSensitivity) {
+                recencySensitivity = min(max(parsed, 0), 1)
+            }
+
+            if personalizationEnabled, let profile = try? await database.fetchUserTasteProfile() {
                 if !profile.likedGenres.isEmpty {
                     notes.append("Liked genres: \(profile.likedGenres.joined(separator: ", "))")
                 }
@@ -45,32 +54,37 @@ actor AssistantContextAssembler {
                 }
             }
 
-            if let history = try? await database.fetchAllWatchHistory(limit: 80) {
+            if personalizationEnabled, let history = try? await database.fetchAllWatchHistory(limit: 80) {
+                let decayWindowDays = 30 + ((1 - recencySensitivity) * 150)
                 for entry in history {
                     guard let media = try? await database.fetchMedia(id: entry.mediaId) else { continue }
                     titles.append(media.title)
                     let daysAgo = max(0, Int(Date().timeIntervalSince(entry.lastWatched) / 86_400))
+                    let recencyWeight = max(0.1, 1.0 - min(Double(daysAgo) / decayWindowDays, 0.9))
                     let progressPercent = Int((entry.progressPercent * 100).rounded())
-                    notes.append("Watched \(media.title) \(daysAgo)d ago at \(progressPercent)%")
+                    notes.append(
+                        "Watched \(media.title) \(daysAgo)d ago at \(progressPercent)% (recency \(String(format: "%.2f", recencyWeight)))"
+                    )
                 }
             }
 
-            if let favorites = try? await database.fetchLibrary(listType: .favorites) {
+            if personalizationEnabled, let favorites = try? await database.fetchLibrary(listType: .favorites) {
                 for entry in favorites {
                     guard let media = try? await database.fetchMedia(id: entry.mediaId) else { continue }
                     titles.append(media.title)
                 }
             }
 
-            if let watchlist = try? await database.fetchLibrary(listType: .watchlist) {
+            if personalizationEnabled, let watchlist = try? await database.fetchLibrary(listType: .watchlist) {
                 for entry in watchlist {
                     guard let media = try? await database.fetchMedia(id: entry.mediaId) else { continue }
                     titles.append(media.title)
                 }
             }
 
-            if let memory = try? await database.retrieveAssistantMemory(scope: "default", query: prompt, limit: 8) {
-                for chunk in memory {
+            if personalizationEnabled, let memory = try? await database.fetchAssistantMemoryChunks(scope: "default", limit: 120) {
+                let ranked = LocalContextRetriever().retrieve(query: prompt, chunks: memory, limit: 8)
+                for chunk in ranked {
                     notes.append(chunk.summary ?? chunk.content)
                 }
             }
@@ -83,7 +97,11 @@ actor AssistantContextAssembler {
 
         let uniqueTitles = deduplicated(titles).prefix(maxCandidates).map { $0 }
         let uniqueNotes = deduplicated(notes).prefix(30).map { $0 }
-        return AssistantContext(candidateTitles: uniqueTitles, contextNotes: uniqueNotes)
+        return AssistantContext(
+            candidateTitles: uniqueTitles,
+            contextNotes: uniqueNotes,
+            personalizationEnabled: personalizationEnabled
+        )
     }
 
     private func deduplicated(_ values: [String]) -> [String] {

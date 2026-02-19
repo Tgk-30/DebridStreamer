@@ -44,6 +44,7 @@ struct AIAssistantManagerTests {
     @Test("Fallback recommendations are used when providers fail")
     func fallbackWhenProvidersFail() async throws {
         let db = try makeTestDatabase()
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "true")
         try await db.saveMedia(MediaItem(id: "tt100", type: .movie, title: "Fallback Title", year: 2025))
         try await db.saveWatchHistory(
             WatchHistory(
@@ -75,6 +76,140 @@ struct AIAssistantManagerTests {
         #expect(result.mergedRecommendations.isEmpty == false)
         #expect(result.mergedRecommendations.map(\.title).contains("Fallback Title"))
     }
+
+    @Test("Personalization opt-in controls local context enrichment")
+    func personalizationOptInContext() async throws {
+        let db = try makeTestDatabase()
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "false")
+        try await db.saveMedia(MediaItem(id: "tt200", type: .movie, title: "Context Film", year: 2024))
+        try await db.saveWatchHistory(
+            WatchHistory(
+                id: "wh-ctx",
+                mediaId: "tt200",
+                progressSeconds: 300,
+                durationSeconds: 7200,
+                completed: false,
+                lastWatched: Date()
+            )
+        )
+
+        let captureProvider = CapturingProvider()
+        let manager = AIAssistantManager(
+            providers: [.openAI: captureProvider],
+            database: db,
+            metadataProvider: nil
+        )
+
+        _ = await manager.recommend(
+            request: AIAssistantRequest(
+                prompt: "Recommend something",
+                maxResults: 5,
+                compareMode: false,
+                providers: [.openAI]
+            )
+        )
+        let disabledCandidates = await captureProvider.snapshotCandidates()
+        #expect(disabledCandidates.isEmpty)
+
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "true")
+        _ = await manager.recommend(
+            request: AIAssistantRequest(
+                prompt: "Recommend something else",
+                maxResults: 5,
+                compareMode: false,
+                providers: [.openAI]
+            )
+        )
+        let enabledCandidates = await captureProvider.snapshotCandidates()
+        #expect(enabledCandidates.contains("Context Film"))
+    }
+
+    @Test("Context changes invalidate recommendation cache")
+    func cacheInvalidatesWhenPersonalizationContextChanges() async throws {
+        let db = try makeTestDatabase()
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "false")
+        try await db.saveMedia(MediaItem(id: "ttctx", type: .movie, title: "Context Shift", year: 2025))
+        try await db.saveWatchHistory(
+            WatchHistory(
+                id: "wh-shift",
+                mediaId: "ttctx",
+                progressSeconds: 120,
+                durationSeconds: 7200,
+                completed: false,
+                lastWatched: Date()
+            )
+        )
+
+        let provider = RecordingProvider()
+        let manager = AIAssistantManager(
+            providers: [.openAI: provider],
+            database: db,
+            metadataProvider: nil
+        )
+
+        _ = await manager.recommend(
+            request: AIAssistantRequest(
+                prompt: "same prompt",
+                maxResults: 5,
+                compareMode: false,
+                providers: [.openAI]
+            )
+        )
+
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "true")
+        _ = await manager.recommend(
+            request: AIAssistantRequest(
+                prompt: "same prompt",
+                maxResults: 5,
+                compareMode: false,
+                providers: [.openAI]
+            )
+        )
+
+        let calls = await provider.snapshots()
+        #expect(calls.count == 2)
+        #expect(calls[0].contains("Context Shift") == false)
+        #expect(calls[1].contains("Context Shift"))
+    }
+
+    @Test("Assistant memory persistence is gated by personalization opt-in")
+    func memoryPersistenceRespectsOptIn() async throws {
+        let db = try makeTestDatabase()
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "false")
+
+        let provider = MockAIProvider(
+            kind: .openAI,
+            recommendations: [AIMovieRecommendation(title: "Dune", year: 2021, reason: "Epic", score: 0.9)]
+        )
+        let manager = AIAssistantManager(
+            providers: [.openAI: provider],
+            database: db,
+            metadataProvider: nil
+        )
+
+        _ = await manager.recommend(
+            request: AIAssistantRequest(
+                prompt: "recommend sci-fi",
+                maxResults: 3,
+                compareMode: false,
+                providers: [.openAI]
+            )
+        )
+        let disabledChunks = try await db.fetchAssistantMemoryChunks(scope: "default", limit: 20)
+        #expect(disabledChunks.isEmpty)
+
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "true")
+        _ = await manager.recommend(
+            request: AIAssistantRequest(
+                prompt: "recommend sci-fi now",
+                maxResults: 3,
+                compareMode: false,
+                providers: [.openAI]
+            )
+        )
+        let enabledChunks = try await db.fetchAssistantMemoryChunks(scope: "default", limit: 20)
+        #expect(enabledChunks.isEmpty == false)
+    }
 }
 
 private struct MockAIProvider: AIAssistantProvider {
@@ -87,5 +222,47 @@ private struct MockAIProvider: AIAssistantProvider {
             throw AIAssistantProviderError.apiError("failed")
         }
         return Array(recommendations.prefix(maxResults))
+    }
+}
+
+private actor CapturingProvider: AIAssistantProvider {
+    nonisolated let kind: AIProviderKind = .openAI
+    private var candidates: [String] = []
+
+    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> [AIMovieRecommendation] {
+        candidates = candidateTitles
+        return [
+            AIMovieRecommendation(
+                title: "Captured",
+                year: 2024,
+                reason: "capture",
+                score: 0.9
+            )
+        ]
+    }
+
+    func snapshotCandidates() -> [String] {
+        candidates
+    }
+}
+
+private actor RecordingProvider: AIAssistantProvider {
+    nonisolated let kind: AIProviderKind = .openAI
+    private var calls: [[String]] = []
+
+    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> [AIMovieRecommendation] {
+        calls.append(candidateTitles)
+        return [
+            AIMovieRecommendation(
+                title: "Recorded",
+                year: 2025,
+                reason: "Recorded call",
+                score: 0.8
+            )
+        ]
+    }
+
+    func snapshots() -> [[String]] {
+        calls
     }
 }

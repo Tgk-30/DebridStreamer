@@ -202,7 +202,16 @@ struct SettingsManagerTests {
             SettingsKeys.traktClientId,
             SettingsKeys.traktClientSecret,
             SettingsKeys.traktAccessToken,
-            SettingsKeys.traktRefreshToken
+            SettingsKeys.traktRefreshToken,
+            SettingsKeys.personalizationEnabled,
+            SettingsKeys.discoverAICurationOnLaunch,
+            SettingsKeys.favoriteGenres,
+            SettingsKeys.avoidGenres,
+            SettingsKeys.preferredEras,
+            SettingsKeys.toneMoodTags,
+            SettingsKeys.currentVibeNotes,
+            SettingsKeys.recencySensitivity,
+            SettingsKeys.onboardingTastePromptShown
         ]
         let uniqueKeys = Set(keys)
         #expect(uniqueKeys.count == keys.count)

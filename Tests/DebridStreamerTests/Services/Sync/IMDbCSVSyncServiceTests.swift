@@ -4,10 +4,13 @@ import Foundation
 
 @Suite("IMDbCSVSyncService Tests")
 struct IMDbCSVSyncServiceTests {
-    @Test("Import is idempotent and skips duplicates")
+    @Test("Import is idempotent per destination folder")
     func importIdempotent() async throws {
         let db = try makeTestDatabase()
         let service = IMDbCSVSyncService()
+        let root = try await db.fetchSystemLibraryFolderID(listType: .watchlist)
+        let folderA = try await db.createLibraryFolder(name: "Import A", listType: .watchlist, parentId: root)
+        let folderB = try await db.createLibraryFolder(name: "Import B", listType: .watchlist, parentId: root)
 
         let csv = """
         Const,Title,Year
@@ -15,16 +18,40 @@ struct IMDbCSVSyncServiceTests {
         tt1234567,Example Movie,2026
         """
 
-        let first = try await service.importCSV(csv, listType: .watchlist, database: db)
+        let first = try await service.importCSV(csv, listType: .watchlist, folderId: folderA.id, database: db)
         #expect(first.added == 1)
         #expect(first.skippedDuplicates == 1)
 
-        let second = try await service.importCSV(csv, listType: .watchlist, database: db)
+        let second = try await service.importCSV(csv, listType: .watchlist, folderId: folderA.id, database: db)
         #expect(second.added == 0)
         #expect(second.skippedDuplicates == 2)
 
-        let watchlist = try await db.fetchLibrary(listType: .watchlist)
-        #expect(watchlist.count == 1)
+        let third = try await service.importCSV(csv, listType: .watchlist, folderId: folderB.id, database: db)
+        #expect(third.added == 1)
+
+        let all = try await db.fetchLibrary(listType: .watchlist)
+        #expect(all.count == 2)
+    }
+
+    @Test("Export supports folder-scope trees")
+    func exportFolderTreeCSV() async throws {
+        let db = try makeTestDatabase()
+        let service = IMDbCSVSyncService()
+        let root = try await db.fetchSystemLibraryFolderID(listType: .favorites)
+        let child = try await db.createLibraryFolder(name: "Imported", listType: .favorites, parentId: root)
+
+        try await db.saveMedia(MediaItem(id: "tt200", type: .movie, title: "Folder Movie", year: 2025))
+        try await db.addToLibrary(UserLibraryEntry(
+            id: "tt200-\(child.id)",
+            mediaId: "tt200",
+            folderId: child.id,
+            listType: .favorites,
+            addedAt: Date()
+        ))
+
+        let csv = try await service.exportCSV(database: db, folderId: root, includeDescendants: true)
+        #expect(csv.contains("Const,Title,Year"))
+        #expect(csv.contains("tt200,Folder Movie,2025"))
     }
 
     @Test("Export emits CSV with header and rows")

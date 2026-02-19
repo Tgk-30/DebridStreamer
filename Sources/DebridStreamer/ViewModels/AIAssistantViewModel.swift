@@ -8,6 +8,7 @@ final class AIAssistantViewModel {
     var compareMode = true
     var selectedProviders: Set<AIProviderKind> = []
     var contextFolderId: String?
+    var personalizationEnabled = false
     var isGenerating = false
     var compareResult: AICompareResult?
     var statusMessage: String?
@@ -30,10 +31,15 @@ final class AIAssistantViewModel {
         }
         if let settings {
             compareMode = (try? await settings.getValue(forKey: SettingsKeys.aiCompareMode)) != "false"
+            personalizationEnabled = (try? await settings.isPersonalizationEnabled()) == true
         }
         if selectedProviders.isEmpty {
             let available = await manager?.availableProviders ?? []
             selectedProviders = Set(available)
+        }
+
+        if !personalizationEnabled {
+            statusMessage = "Personalization is disabled. Recommendations use prompt-only context until enabled in Settings."
         }
     }
 
@@ -78,9 +84,12 @@ final class AIAssistantViewModel {
         )
 
         compareResult = result
-        statusMessage = result.usedFallback
-            ? "AI providers were unavailable, showing local adaptive fallback recommendations."
-            : "Personalized recommendations generated."
+        if result.usedFallback {
+            statusMessage = "AI providers were unavailable, showing local adaptive fallback recommendations."
+        } else if personalizationEnabled {
+            statusMessage = "Personalized recommendations generated."
+        } else {
+            statusMessage = "Recommendations generated. Enable personalization for adaptive context."
+        }
     }
 }
-

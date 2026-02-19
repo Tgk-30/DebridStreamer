@@ -1,9 +1,8 @@
 import Foundation
 import AVKit
 
-@MainActor
 protocol AVPlayerReadinessMonitoring {
-    func waitUntilReady(
+    @MainActor func waitUntilReady(
         player: AVPlayer,
         timeout: TimeInterval,
         onStateChange: (_ state: PlayerRuntimeState, _ diagnostics: String?) -> Void

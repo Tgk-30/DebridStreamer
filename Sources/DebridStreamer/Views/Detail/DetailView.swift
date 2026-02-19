@@ -27,6 +27,7 @@ struct DetailView: View {
     @State private var isInWatchlist = false
     @State private var isInFavorites = false
     @State private var libraryActionStatus: String?
+    @State private var availableFolders: [LibraryFolder] = []
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -61,13 +62,21 @@ struct DetailView: View {
         .task {
             await loadDetail()
         }
+        .onDisappear {
+            streamSearchTask?.cancel()
+            streamSearchTask = nil
+            activeStream = nil
+        }
         .sheet(item: $activeStream) { stream in
             if let detail = mediaDetail {
                 PlayerView(
                     stream: stream,
                     mediaTitle: detail.title,
                     mediaId: detail.id,
-                    episodeId: detail.type == .series ? "\(detail.id)-s\(selectedSeason)e\(selectedEpisode)" : nil
+                    episodeId: detail.type == .series ? "\(detail.id)-s\(selectedSeason)e\(selectedEpisode)" : nil,
+                    onClose: {
+                        activeStream = nil
+                    }
                 )
                     .frame(minWidth: 800, minHeight: 500)
             } else {
@@ -195,10 +204,37 @@ struct DetailView: View {
                 Button("Ask AI") {
                     let genres = detail.genres.joined(separator: ", ")
                     appState.assistantDraftPrompt = "Recommend \(detail.type == .movie ? "movies" : "series") similar to \(detail.title). Genres: \(genres)."
+                    appState.selectedLibraryFolderId = availableFolders.first(where: { $0.listType == .favorites && !$0.isSystem })?.id
                     appState.selectedSidebarItem = .assistant
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
+
+                if !availableFolders.isEmpty {
+                    Menu("Add To Folder") {
+                        let libraryFolders = availableFolders.filter { $0.listType == .favorites }
+                        if !libraryFolders.isEmpty {
+                            Section("Library") {
+                                ForEach(libraryFolders) { folder in
+                                    Button(folder.name) {
+                                        Task { await addToFolder(folder, detail: detail) }
+                                    }
+                                }
+                            }
+                        }
+
+                        let watchlistFolders = availableFolders.filter { $0.listType == .watchlist }
+                        if !watchlistFolders.isEmpty {
+                            Section("Watchlist") {
+                                ForEach(watchlistFolders) { folder in
+                                    Button(folder.name) {
+                                        Task { await addToFolder(folder, detail: detail) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             if let libraryActionStatus {
@@ -358,6 +394,7 @@ struct DetailView: View {
 
             if let detail = mediaDetail {
                 await refreshLibraryFlags(for: detail)
+                await loadAvailableFolders()
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -510,6 +547,11 @@ struct DetailView: View {
         isInFavorites = (try? await db.isInLibrary(mediaId: detail.id, listType: .favorites)) ?? false
     }
 
+    private func loadAvailableFolders() async {
+        guard let db = appState.databaseManager else { return }
+        availableFolders = (try? await db.fetchAllLibraryFolders()) ?? []
+    }
+
     private func toggleLibrary(type: UserLibraryEntry.ListType, detail: MediaItem) async {
         guard let db = appState.databaseManager else {
             libraryActionStatus = "Library database unavailable."
@@ -518,13 +560,14 @@ struct DetailView: View {
 
         do {
             let alreadyIn = try await db.isInLibrary(mediaId: detail.id, listType: type)
-            let entryID = "\(detail.id)-\(type.rawValue)"
             if alreadyIn {
-                try await db.removeFromLibrary(id: entryID)
+                try await db.removeFromLibrary(mediaId: detail.id, listType: type)
             } else {
+                let folderId = try await db.fetchSystemLibraryFolderID(listType: type)
                 let entry = UserLibraryEntry(
-                    id: entryID,
+                    id: "\(detail.id)-\(folderId)",
                     mediaId: detail.id,
+                    folderId: folderId,
                     listType: type,
                     addedAt: Date()
                 )
@@ -535,6 +578,35 @@ struct DetailView: View {
             libraryActionStatus = alreadyIn ? "Removed from \(type.rawValue)." : "Added to \(type.rawValue)."
         } catch {
             libraryActionStatus = "Library update failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func addToFolder(_ folder: LibraryFolder, detail: MediaItem) async {
+        guard let db = appState.databaseManager else {
+            libraryActionStatus = "Library database unavailable."
+            return
+        }
+
+        do {
+            let exists = try await db.isInLibrary(mediaId: detail.id, folderId: folder.id)
+            if exists {
+                libraryActionStatus = "\"\(detail.title)\" is already in \"\(folder.name)\"."
+                return
+            }
+
+            let entry = UserLibraryEntry(
+                id: "\(detail.id)-\(folder.id)",
+                mediaId: detail.id,
+                folderId: folder.id,
+                listType: folder.listType,
+                addedAt: Date()
+            )
+            try await db.addToLibrary(entry)
+            appState.selectedLibraryFolderId = folder.id
+            await refreshLibraryFlags(for: detail)
+            libraryActionStatus = "Added to \"\(folder.name)\"."
+        } catch {
+            libraryActionStatus = "Add to folder failed: \(error.localizedDescription)"
         }
     }
 }

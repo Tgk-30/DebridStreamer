@@ -860,6 +860,12 @@ struct SettingsView: View {
             return
         }
         do {
+            availableExportFolders = try await db.fetchAllLibraryFolders()
+            if let selectedExportFolderID,
+               availableExportFolders.contains(where: { $0.id == selectedExportFolderID }) == false {
+                self.selectedExportFolderID = nil
+            }
+
             let csv: String
             if let selectedExportFolderID {
                 csv = try await imdbSyncService.exportCSV(

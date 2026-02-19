@@ -29,15 +29,15 @@ actor AIAssistantManager {
 
     func recommend(request: AIAssistantRequest) async -> AICompareResult {
         let prompt = request.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cacheKey = buildCacheKey(prompt: prompt, request: request)
-        if let cached = cache[cacheKey], cached.expiresAt > Date() {
-            return cached.result
-        }
-
         let context = await contextAssembler.buildContext(
             prompt: prompt,
             folderId: request.contextFolderId
         )
+        let cacheKey = buildCacheKey(prompt: prompt, request: request, context: context)
+        if let cached = cache[cacheKey], cached.expiresAt > Date() {
+            return cached.result
+        }
+
         let candidates = context.candidateTitles
         let contextualPrompt = combinedPrompt(prompt: prompt, contextNotes: context.contextNotes)
         let providerKinds = request.providers.filter { providers[$0] != nil }
@@ -96,13 +96,19 @@ actor AIAssistantManager {
         )
 
         cache[cacheKey] = (expiresAt: Date().addingTimeInterval(cacheTTL), result: result)
-        await persistAssistantMemory(from: prompt, result: result)
+        await persistAssistantMemory(from: prompt, result: result, personalizationEnabled: context.personalizationEnabled)
         return result
     }
 
-    private func buildCacheKey(prompt: String, request: AIAssistantRequest) -> String {
+    private func buildCacheKey(
+        prompt: String,
+        request: AIAssistantRequest,
+        context: AssistantContext
+    ) -> String {
         let providersKey = request.providers.map(\.rawValue).sorted().joined(separator: ",")
-        return "\(prompt.lowercased())|\(request.maxResults)|\(request.compareMode)|\(providersKey)"
+        let folderKey = request.contextFolderId ?? "-"
+        let contextKey = contextSignature(context)
+        return "\(prompt.lowercased())|\(request.maxResults)|\(request.compareMode)|\(providersKey)|\(folderKey)|\(context.personalizationEnabled)|\(contextKey)"
     }
 
     private func fallbackRecommendations(from candidates: [String], maxResults: Int) -> [AIMovieRecommendation] {
@@ -181,8 +187,23 @@ actor AIAssistantManager {
         """
     }
 
-    private func persistAssistantMemory(from prompt: String, result: AICompareResult) async {
+    private func contextSignature(_ context: AssistantContext) -> String {
+        let titles = context.candidateTitles
+            .prefix(20)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        let notes = context.contextNotes
+            .prefix(20)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        return deduplicated(titles + notes).joined(separator: "|")
+    }
+
+    private func persistAssistantMemory(
+        from prompt: String,
+        result: AICompareResult,
+        personalizationEnabled: Bool
+    ) async {
         guard let database else { return }
+        guard personalizationEnabled else { return }
         guard !result.mergedRecommendations.isEmpty else { return }
 
         let top = result.mergedRecommendations.prefix(3)

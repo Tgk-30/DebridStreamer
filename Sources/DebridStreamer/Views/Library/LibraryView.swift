@@ -220,7 +220,7 @@ private struct LibraryCollectionView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ScrollView {
-                    OutlineGroup(viewModel.folderTree, children: \.children) { node in
+                    OutlineGroup(viewModel.folderTree, children: \.displayChildren) { node in
                         folderRow(node.folder)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -261,7 +261,7 @@ private struct LibraryCollectionView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: folder.isSystem ? "tray.full" : "folder")
-                    .foregroundStyle(folder.isSystem ? .secondary : .accent)
+                    .foregroundStyle(folder.isSystem ? .secondary : Color.accentColor)
                 Text(folder.name)
                     .lineLimit(1)
                 Spacer()
@@ -365,7 +365,7 @@ private struct LibraryCollectionView: View {
 
     private func loadData() async {
         guard let db = appState.databaseManager else { return }
-        await viewModel.load(database: db)
+        await viewModel.load(database: db, preferredFolderId: appState.selectedLibraryFolderId)
         appState.selectedLibraryFolderId = viewModel.selectedFolderId
     }
 
