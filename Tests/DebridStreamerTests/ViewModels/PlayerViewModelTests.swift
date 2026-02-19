@@ -349,6 +349,19 @@ struct PlayerViewModelTests {
         #expect(model.diagnostics?.contains("Fullscreen is unavailable") == true)
     }
 
+    @Test("Default fullscreen resolver prefers provided player window")
+    func defaultFullscreenResolverPrefersProvidedWindow() {
+        let provided = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+
+        let resolved = PlayerViewModel.defaultFullscreenWindowResolver(window: provided)
+        #expect(resolved === provided)
+    }
+
     @Test("isFullscreen uses resolved window state")
     func isFullscreenUsesResolvedWindow() async {
         let targetWindow = NSWindow(

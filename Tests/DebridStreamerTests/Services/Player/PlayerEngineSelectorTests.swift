@@ -40,6 +40,23 @@ struct PlayerEngineSelectorTests {
         #expect(order == [.vlc, .avPlayer])
     }
 
+    @Test("Automatic mode prefers VLC when manifest URL hides MKV container")
+    func automaticPrefersVLCWhenManifestURLHidesContainer() {
+        let stream = StreamInfo(
+            streamURL: "https://cdn.example.com/stream/master.m3u8",
+            quality: .hd1080p,
+            codec: .h264,
+            audio: .aac,
+            source: .webDL,
+            sizeBytes: 1_600_000_000,
+            fileName: "Movie.1080p.BluRay.mkv",
+            debridService: "Real-Debrid"
+        )
+
+        let order = selector.engineOrder(for: stream, backendPreference: .automatic)
+        #expect(order == [.vlc, .avPlayer])
+    }
+
     @Test("Explicit backend preference overrides heuristic order")
     func explicitPreferenceOverridesAutomatic() {
         let stream = StreamInfo(

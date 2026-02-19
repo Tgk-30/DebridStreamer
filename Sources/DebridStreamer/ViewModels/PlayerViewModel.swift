@@ -88,24 +88,7 @@ final class PlayerViewModel {
         fullscreenToggler: @escaping @MainActor (NSWindow) -> Void = { window in
             window.toggleFullScreen(nil)
         },
-        fullscreenWindowResolver: @escaping @MainActor (NSWindow?) -> NSWindow? = { window in
-            @MainActor
-            func rootWindow(from window: NSWindow?) -> NSWindow? {
-                var cursor = window
-                while let parent = cursor?.sheetParent {
-                    cursor = parent
-                }
-                return cursor
-            }
-
-            if let resolved = rootWindow(from: window) {
-                return resolved
-            }
-            if let resolved = rootWindow(from: NSApplication.shared.keyWindow) {
-                return resolved
-            }
-            return rootWindow(from: NSApplication.shared.mainWindow)
-        },
+        fullscreenWindowResolver: @escaping @MainActor (NSWindow?) -> NSWindow? = PlayerViewModel.defaultFullscreenWindowResolver(window:),
         windowVisibleFrameProvider: @escaping @MainActor (NSWindow) -> NSRect? = { window in
             if let frame = window.screen?.visibleFrame {
                 return frame
@@ -278,15 +261,19 @@ final class PlayerViewModel {
         stopInternalPlayback()
     }
 
+    static func defaultFullscreenWindowResolver(window: NSWindow?) -> NSWindow? {
+        if let window {
+            return window
+        }
+        if let keyWindow = NSApplication.shared.keyWindow {
+            return keyWindow
+        }
+        return NSApplication.shared.mainWindow
+    }
+
     func toggleFullscreen(window: NSWindow?) async {
         guard let resolvedWindow = fullscreenWindowResolver(window) else {
             diagnostics = "Fullscreen is unavailable because no active player window was found."
-            return
-        }
-
-        let isModalPresentation = resolvedWindow.attachedSheet != nil || resolvedWindow.sheetParent != nil
-        if isModalPresentation {
-            toggleExpandedWindow(on: resolvedWindow)
             return
         }
 
