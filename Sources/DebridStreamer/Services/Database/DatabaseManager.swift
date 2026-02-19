@@ -35,7 +35,9 @@ actor DatabaseManager {
         var migrator = DatabaseMigrator()
 
         #if DEBUG
-        migrator.eraseDatabaseOnSchemaChange = true
+        // Keep migrations additive in debug so upgrade paths are exercised in tests
+        // and local data is not silently wiped when schema evolves.
+        migrator.eraseDatabaseOnSchemaChange = false
         #endif
 
         migrator.registerMigration("v1_core") { db in

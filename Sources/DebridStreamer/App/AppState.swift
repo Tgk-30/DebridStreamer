@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 final class AppState {
     var selectedSidebarItem: SidebarItem = .discover
+    var selectedSettingsTab: SettingsTab = .general
     var isLoading = false
     var errorMessage: String?
     var assistantDraftPrompt = ""
@@ -67,6 +68,31 @@ final class AppState {
             await self.reloadAIAssistantManager()
             await self.preloadDiscoverAICuration(forceRefresh: true)
         }
+    }
+
+    func openSettings(tab: SettingsTab) {
+        selectedSettingsTab = tab
+        selectedSidebarItem = .settings
+    }
+
+    func shouldShowPersonalizationPrompt() async -> Bool {
+        guard metadataService != nil else { return false }
+        guard let settings = settingsManager else { return false }
+        guard let database = databaseManager else { return false }
+
+        let alreadyShown = (try? await settings.wasOnboardingTastePromptShown()) == true
+        if alreadyShown { return false }
+
+        let personalizationEnabled = (try? await settings.isPersonalizationEnabled()) == true
+        if personalizationEnabled { return false }
+
+        let hasProfile = (try? await database.fetchUserTasteProfile()) != nil
+        return !hasProfile
+    }
+
+    func markPersonalizationPromptShown() async {
+        guard let settings = settingsManager else { return }
+        try? await settings.setOnboardingTastePromptShown(true)
     }
 
     func reloadAIAssistantManager() async {

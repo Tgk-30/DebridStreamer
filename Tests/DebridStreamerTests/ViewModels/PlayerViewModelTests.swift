@@ -166,9 +166,14 @@ private struct MockEngine: PlayerEngine {
 private final class MockVLCSession: VLCPlaybackSession {
     var isPlaying: Bool = false
     var position: Float = 0
+    var currentTimeSeconds: Double = 0
+    var durationSeconds: Double? = 0
     var playCallCount = 0
 
     func makeVideoView() -> NSView { NSView(frame: .zero) }
+    func seek(to seconds: Double) {
+        currentTimeSeconds = max(0, seconds)
+    }
     func play() {
         playCallCount += 1
         isPlaying = true

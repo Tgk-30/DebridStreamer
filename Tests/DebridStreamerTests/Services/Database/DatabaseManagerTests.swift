@@ -541,7 +541,7 @@ struct DatabaseMigrationV5ToV8Tests {
         let dbPool = try makeLegacyV4DatabasePool()
         let now = Date()
 
-        try dbPool.write { db in
+        try await dbPool.write { db in
             try db.execute(
                 sql: "INSERT INTO user_library (id, mediaId, listType, addedAt) VALUES (?, ?, ?, ?)",
                 arguments: ["w-1", "tt-w1", "watchlist", now]

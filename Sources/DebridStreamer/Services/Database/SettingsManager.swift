@@ -159,4 +159,12 @@ extension SettingsManager {
     func setDiscoverAICurationOnLaunchEnabled(_ enabled: Bool) async throws {
         try await setValue(enabled ? "true" : "false", forKey: SettingsKeys.discoverAICurationOnLaunch)
     }
+
+    func wasOnboardingTastePromptShown() async throws -> Bool {
+        (try await getValue(forKey: SettingsKeys.onboardingTastePromptShown)) == "true"
+    }
+
+    func setOnboardingTastePromptShown(_ shown: Bool) async throws {
+        try await setValue(shown ? "true" : "false", forKey: SettingsKeys.onboardingTastePromptShown)
+    }
 }

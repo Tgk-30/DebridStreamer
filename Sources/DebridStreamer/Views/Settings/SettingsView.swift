@@ -1,23 +1,12 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-private enum SettingsTab: String, Hashable {
-    case general
-    case debrid
-    case indexers
-    case player
-    case aiSync
-    case importsSync
-    case personalization
-}
-
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
     private let secretStore = KeychainSecretStore()
     private let traktSyncService = TraktSyncService()
     private let imdbSyncService = IMDbCSVSyncService()
 
-    @State private var selectedTab: SettingsTab = .general
     @State private var isSaving = false
     @State private var statusMessage: String?
 
@@ -82,7 +71,9 @@ struct SettingsView: View {
     @State private var recencySensitivity = 0.7
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        @Bindable var state = appState
+
+        TabView(selection: $state.selectedSettingsTab) {
             generalTab
                 .tabItem { Label("General", systemImage: "gear") }
                 .tag(SettingsTab.general)
@@ -454,7 +445,7 @@ struct SettingsView: View {
 
     @ViewBuilder
     private func statusSection(for tabs: Set<SettingsTab>) -> some View {
-        if let statusMessage, tabs.contains(selectedTab) {
+        if let statusMessage, tabs.contains(appState.selectedSettingsTab) {
             Section {
                 Text(statusMessage)
                     .foregroundStyle(statusMessage.contains("Error") ? .red : .green)
@@ -819,7 +810,7 @@ struct SettingsView: View {
             importFolderName = defaultFolderName(from: url)
             importPreviewCount = imdbSyncService.parseCSV(text, listType: importDestination).count
             isShowingImportWizard = true
-            selectedTab = .importsSync
+            appState.selectedSettingsTab = .importsSync
         } catch {
             statusMessage = "Error: \(error.localizedDescription)"
         }
@@ -927,4 +918,3 @@ private struct CSVTextDocument: FileDocument {
         FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }
-

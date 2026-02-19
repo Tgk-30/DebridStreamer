@@ -3,6 +3,7 @@ import SwiftUI
 struct DiscoverView: View {
     @Environment(AppState.self) private var appState
     @State private var selectedItem: MediaPreview?
+    @State private var showPersonalizationPrompt = false
 
     var body: some View {
         ScrollView {
@@ -28,13 +29,26 @@ struct DiscoverView: View {
         .task {
             await appState.preloadDiscoverCatalog()
             await appState.preloadDiscoverAICuration()
+            await evaluatePersonalizationPrompt()
         }
         .onChange(of: appState.metadataService != nil) {
             guard appState.metadataService != nil else { return }
             Task {
                 await appState.preloadDiscoverCatalog(forceRefresh: true)
                 await appState.preloadDiscoverAICuration(forceRefresh: true)
+                await evaluatePersonalizationPrompt()
             }
+        }
+        .alert("Personalize Discover?", isPresented: $showPersonalizationPrompt) {
+            Button("Not Now", role: .cancel) {
+                Task { await appState.markPersonalizationPromptShown() }
+            }
+            Button("Open Personalization") {
+                Task { await appState.markPersonalizationPromptShown() }
+                appState.openSettings(tab: .personalization)
+            }
+        } message: {
+            Text("Share your current genres, vibe, and recency preferences to improve AI-curated recommendations.")
         }
         .sheet(item: $selectedItem) { item in
             DetailView(mediaPreview: item)
@@ -136,4 +150,10 @@ struct DiscoverView: View {
         .padding(.top, 100)
     }
 
+    private func evaluatePersonalizationPrompt() async {
+        let shouldShow = await appState.shouldShowPersonalizationPrompt()
+        if shouldShow {
+            showPersonalizationPrompt = true
+        }
+    }
 }

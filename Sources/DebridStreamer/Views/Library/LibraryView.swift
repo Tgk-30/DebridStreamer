@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct LibraryView: View {
     var body: some View {
@@ -38,7 +37,7 @@ struct HistoryView: View {
                         selectedPreview = item.media.toPreview()
                     } label: {
                         HStack {
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 Text(item.media.title)
                                     .fontWeight(.semibold)
                                 Text(item.history.progressString)
@@ -61,7 +60,7 @@ struct HistoryView: View {
         .refreshable { await loadHistory() }
         .sheet(item: $selectedPreview) { preview in
             DetailView(mediaPreview: preview)
-                .frame(minWidth: 700, minHeight: 500)
+                .frame(minWidth: 780, minHeight: 540)
         }
         .overlay(alignment: .bottom) {
             if let statusMessage {
@@ -101,84 +100,94 @@ private struct LibraryCollectionView: View {
     let listType: UserLibraryEntry.ListType
     let title: String
 
-    private let imdbSyncService = IMDbCSVSyncService()
-    private let traktSyncService = TraktSyncService()
-
-    @State private var items: [LibraryRow] = []
-    @State private var isLoading = false
-    @State private var statusMessage: String?
+    @State private var viewModel: LibraryViewModel
     @State private var selectedPreview: MediaPreview?
-    @State private var isImportingIMDb = false
-    @State private var isExportingIMDb = false
-    @State private var exportDocument: CSVTextDocument?
-    @State private var isSyncingTrakt = false
+    @State private var showCreateFolder = false
+    @State private var createFolderName = ""
+    @State private var createParentId: String?
+    @State private var showRenameFolder = false
+    @State private var renameFolderName = ""
+    @State private var renameFolderId: String?
+    @State private var pendingDeleteFolder: LibraryFolder?
+
+    init(listType: UserLibraryEntry.ListType, title: String) {
+        self.listType = listType
+        self.title = title
+        _viewModel = State(initialValue: LibraryViewModel(listType: listType))
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar
+        HStack(spacing: 0) {
+            folderSidebar
             Divider()
-
-            Group {
-                if isLoading {
-                    ProgressView("Loading \(title.lowercased())...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if items.isEmpty {
-                    emptyState(
-                        icon: listType == .watchlist ? "bookmark" : "books.vertical",
-                        title: "No items in \(title.lowercased())",
-                        subtitle: "Add titles from a detail page."
+            contentPane
+        }
+        .navigationTitle(title)
+        .task { await loadData() }
+        .refreshable { await loadData() }
+        .onChange(of: viewModel.sortOption) {
+            Task { await refreshData() }
+        }
+        .sheet(item: $selectedPreview) { preview in
+            DetailView(mediaPreview: preview)
+                .frame(minWidth: 780, minHeight: 540)
+        }
+        .alert("New Folder", isPresented: $showCreateFolder) {
+            TextField("Folder name", text: $createFolderName)
+            Button("Cancel", role: .cancel) {}
+            Button("Create") {
+                Task {
+                    guard let db = appState.databaseManager else { return }
+                    await viewModel.createFolder(
+                        name: createFolderName,
+                        parentId: createParentId,
+                        database: db
                     )
-                } else {
-                    List(items) { item in
-                        HStack {
-                            Button {
-                                selectedPreview = item.media.toPreview()
-                            } label: {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(item.media.title)
-                                        .fontWeight(.semibold)
-                                    Text(item.media.yearString)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .buttonStyle(.plain)
-
-                            Spacer()
-
-                            Button("Remove") {
-                                Task { await remove(item) }
-                            }
-                            .buttonStyle(.borderless)
-                        }
+                    createFolderName = ""
+                    createParentId = nil
+                    if let selected = viewModel.selectedFolderId {
+                        appState.selectedLibraryFolderId = selected
                     }
-                    .listStyle(.inset)
+                }
+            }
+        } message: {
+            Text("Create folders to organize imports and recommendations.")
+        }
+        .alert("Rename Folder", isPresented: $showRenameFolder) {
+            TextField("Folder name", text: $renameFolderName)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                Task {
+                    guard let db = appState.databaseManager, let renameFolderId else { return }
+                    await viewModel.renameFolder(id: renameFolderId, name: renameFolderName, database: db)
                 }
             }
         }
-        .navigationTitle(title)
-        .task { await loadItems() }
-        .refreshable { await loadItems() }
-        .fileImporter(
-            isPresented: $isImportingIMDb,
-            allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText],
-            allowsMultipleSelection: false
-        ) { result in
-            Task { await handleIMDbImport(result) }
-        }
-        .fileExporter(
-            isPresented: $isExportingIMDb,
-            document: exportDocument,
-            contentType: .commaSeparatedText,
-            defaultFilename: "debridstreamer-\(listType.rawValue)"
-        ) { _ in }
-        .sheet(item: $selectedPreview) { preview in
-            DetailView(mediaPreview: preview)
-                .frame(minWidth: 700, minHeight: 500)
+        .alert(
+            "Delete Folder?",
+            isPresented: .init(
+                get: { pendingDeleteFolder != nil },
+                set: { if !$0 { pendingDeleteFolder = nil } }
+            ),
+            presenting: pendingDeleteFolder
+        ) { folder in
+            Button("Cancel", role: .cancel) {
+                pendingDeleteFolder = nil
+            }
+            Button("Delete", role: .destructive) {
+                Task {
+                    guard let db = appState.databaseManager else { return }
+                    await viewModel.deleteFolder(id: folder.id, database: db)
+                    pendingDeleteFolder = nil
+                    appState.selectedLibraryFolderId = viewModel.selectedFolderId
+                }
+            }
+        } message: { folder in
+            Text("Media inside \"\(folder.name)\" will be moved to the list root.")
         }
         .overlay(alignment: .bottom) {
-            if let statusMessage {
-                Text(statusMessage)
+            if let status = viewModel.statusMessage {
+                Text(status)
                     .font(.caption)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -188,161 +197,253 @@ private struct LibraryCollectionView: View {
         }
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 10) {
-            Button("Import IMDb CSV") {
-                isImportingIMDb = true
+    private var folderSidebar: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Folders")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    createParentId = viewModel.selectedFolderId
+                    createFolderName = ""
+                    showCreateFolder = true
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                }
+                .buttonStyle(.plain)
+                .help("Create Folder")
+            }
+
+            if viewModel.folderTree.isEmpty {
+                Text("No folders yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    OutlineGroup(viewModel.folderTree, children: \.children) { node in
+                        folderRow(node.folder)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            Divider()
+
+            Button {
+                appState.openSettings(tab: .importsSync)
+            } label: {
+                Label("Imports & Sync", systemImage: "square.and.arrow.down.on.square")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.bordered)
 
-            Button("Export CSV") {
-                prepareExport()
+            Button {
+                appState.openSettings(tab: .personalization)
+            } label: {
+                Label("Personalization", systemImage: "brain.head.profile")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.bordered)
-
-            if listType == .watchlist {
-                Button("Pull Trakt") {
-                    Task { await pullFromTrakt() }
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSyncingTrakt)
-
-                Button("Push Trakt") {
-                    Task { await pushToTrakt() }
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSyncingTrakt)
-            }
-
-            Spacer()
-            Text("\(items.count) items")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
         .padding(12)
+        .frame(width: 280)
+        .background(.ultraThinMaterial.opacity(0.45))
     }
 
-    private func loadItems() async {
-        guard let db = appState.databaseManager else { return }
-        isLoading = true
-        defer { isLoading = false }
-
-        do {
-            let entries = try await db.fetchLibrary(listType: listType)
-            var rows: [LibraryRow] = []
-            for entry in entries {
-                guard let media = try await db.fetchMedia(id: entry.mediaId) else { continue }
-                rows.append(LibraryRow(id: entry.id, entry: entry, media: media))
+    private func folderRow(_ folder: LibraryFolder) -> some View {
+        let isSelected = viewModel.selectedFolderId == folder.id
+        return Button {
+            Task {
+                guard let db = appState.databaseManager else { return }
+                await viewModel.selectFolder(folder.id, database: db)
+                appState.selectedLibraryFolderId = folder.id
             }
-            items = rows
-            statusMessage = nil
-        } catch {
-            statusMessage = "Failed to load \(title.lowercased()): \(error.localizedDescription)"
-        }
-    }
-
-    private func remove(_ row: LibraryRow) async {
-        guard let db = appState.databaseManager else { return }
-        do {
-            try await db.removeFromLibrary(id: row.entry.id)
-            await loadItems()
-            statusMessage = "Removed \(row.media.title)."
-        } catch {
-            statusMessage = "Remove failed: \(error.localizedDescription)"
-        }
-    }
-
-    private func handleIMDbImport(_ result: Result<[URL], Error>) async {
-        guard let db = appState.databaseManager else { return }
-        do {
-            let urls = try result.get()
-            guard let url = urls.first else { return }
-            let data = try Data(contentsOf: url)
-            guard let text = String(data: data, encoding: .utf8) else {
-                statusMessage = "Could not read CSV file."
-                return
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: folder.isSystem ? "tray.full" : "folder")
+                    .foregroundStyle(folder.isSystem ? .secondary : .accent)
+                Text(folder.name)
+                    .lineLimit(1)
+                Spacer()
             }
-
-            let importResult = try await imdbSyncService.importCSV(text, listType: listType, database: db)
-            await loadItems()
-            statusMessage = "IMDb import complete. Added \(importResult.added), skipped \(importResult.skippedDuplicates)."
-        } catch {
-            statusMessage = "IMDb import failed: \(error.localizedDescription)"
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(isSelected ? Color.accentColor.opacity(0.20) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
-    }
-
-    private func prepareExport() {
-        let csv = imdbSyncService.exportCSV(mediaItems: items.map(\.media))
-        exportDocument = CSVTextDocument(text: csv)
-        isExportingIMDb = true
-    }
-
-    private func pullFromTrakt() async {
-        guard listType == .watchlist else { return }
-        guard let db = appState.databaseManager, let settings = appState.settingsManager else { return }
-
-        isSyncingTrakt = true
-        defer { isSyncingTrakt = false }
-
-        do {
-            guard let clientID = try await settings.getValue(forKey: SettingsKeys.traktClientId),
-                  let accessToken = try await settings.getValue(forKey: SettingsKeys.traktAccessToken),
-                  !clientID.isEmpty, !accessToken.isEmpty else {
-                statusMessage = "Set Trakt client ID and access token in Settings → AI & Sync."
-                return
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("New Subfolder") {
+                createParentId = folder.id
+                createFolderName = ""
+                showCreateFolder = true
             }
-
-            let watchlist = try await traktSyncService.fetchWatchlist(clientID: clientID, accessToken: accessToken)
-            var added = 0
-            for item in watchlist {
-                let mediaID = item.imdbID
-                if try await db.fetchMedia(id: mediaID) == nil {
-                    try await db.saveMedia(MediaItem(
-                        id: mediaID,
-                        type: .movie,
-                        title: item.title,
-                        year: item.year,
-                        lastFetched: Date()
-                    ))
+            if !folder.isSystem {
+                Button("Rename") {
+                    renameFolderId = folder.id
+                    renameFolderName = folder.name
+                    showRenameFolder = true
                 }
-                if try await db.isInLibrary(mediaId: mediaID, listType: .watchlist) == false {
-                    try await db.addToLibrary(UserLibraryEntry(
-                        id: "\(mediaID)-watchlist",
-                        mediaId: mediaID,
-                        listType: .watchlist,
-                        addedAt: Date()
-                    ))
-                    added += 1
+                Button("Delete", role: .destructive) {
+                    pendingDeleteFolder = folder
                 }
             }
-
-            await loadItems()
-            statusMessage = "Pulled Trakt watchlist. Added \(added) new items."
-        } catch {
-            statusMessage = "Trakt pull failed: \(error.localizedDescription)"
         }
     }
 
-    private func pushToTrakt() async {
-        guard listType == .watchlist else { return }
-        guard let settings = appState.settingsManager else { return }
+    private var contentPane: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
 
-        isSyncingTrakt = true
-        defer { isSyncingTrakt = false }
+            if viewModel.isLoading {
+                ProgressView("Loading \(title.lowercased())...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if viewModel.items.isEmpty {
+                emptyState(
+                    icon: "film.stack",
+                    title: "No items in this folder",
+                    subtitle: "Open Settings → Imports & Sync to import IMDb CSV into a named folder."
+                )
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 16)], spacing: 16) {
+                        ForEach(viewModel.items) { item in
+                            LibraryMediaCard(
+                                item: item,
+                                onOpen: { selectedPreview = item.media.toPreview() },
+                                onRemove: {
+                                    Task {
+                                        guard let db = appState.databaseManager else { return }
+                                        await viewModel.remove(item, database: db)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+        .padding(16)
+    }
 
-        do {
-            guard let clientID = try await settings.getValue(forKey: SettingsKeys.traktClientId),
-                  let accessToken = try await settings.getValue(forKey: SettingsKeys.traktAccessToken),
-                  !clientID.isEmpty, !accessToken.isEmpty else {
-                statusMessage = "Set Trakt client ID and access token in Settings → AI & Sync."
-                return
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(viewModel.breadcrumbs.map(\.name).joined(separator: " / "))
+                        .font(.headline)
+                    Text("\(viewModel.items.count) titles")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Picker("Sort", selection: $viewModel.sortOption) {
+                    ForEach(LibraryViewModel.SortOption.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 190)
             }
 
-            let imdbIDs = items.map(\.media.id).filter { $0.hasPrefix("tt") }
-            try await traktSyncService.pushWatchlist(clientID: clientID, accessToken: accessToken, imdbIDs: imdbIDs)
-            statusMessage = "Pushed \(imdbIDs.count) items to Trakt."
-        } catch {
-            statusMessage = "Trakt push failed: \(error.localizedDescription)"
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    HStack {
+                        Text("Folder-first library: import CSVs into dedicated folders from Settings.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                )
+                .frame(height: 44)
+        }
+    }
+
+    private func loadData() async {
+        guard let db = appState.databaseManager else { return }
+        await viewModel.load(database: db)
+        appState.selectedLibraryFolderId = viewModel.selectedFolderId
+    }
+
+    private func refreshData() async {
+        guard let db = appState.databaseManager else { return }
+        await viewModel.refresh(database: db)
+    }
+}
+
+private struct LibraryMediaCard: View {
+    let item: LibraryViewModel.MediaCardItem
+    let onOpen: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onOpen) {
+                AsyncImage(url: item.media.posterURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(2/3, contentMode: .fill)
+                    default:
+                        posterPlaceholder
+                    }
+                }
+                .frame(height: 260)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(alignment: .topTrailing) {
+                    Button(action: onRemove) {
+                        Image(systemName: "trash")
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                            .padding(8)
+                            .background(.black.opacity(0.55), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(8)
+                }
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.media.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                HStack(spacing: 8) {
+                    if let year = item.media.year {
+                        Text(String(year))
+                    }
+                    if let rating = item.media.imdbRating {
+                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                            .labelStyle(.titleAndIcon)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                if let history = item.history, history.hasResumePoint {
+                    Text("Continue: \(history.progressString)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(10)
+        .glassSurface()
+    }
+
+    private var posterPlaceholder: some View {
+        ZStack {
+            Rectangle()
+                .fill(.quaternary)
+            Image(systemName: "film")
+                .font(.title2)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -362,12 +463,6 @@ private func emptyState(icon: String, title: String, subtitle: String) -> some V
     .frame(maxWidth: .infinity, maxHeight: .infinity)
 }
 
-private struct LibraryRow: Identifiable {
-    let id: String
-    let entry: UserLibraryEntry
-    let media: MediaItem
-}
-
 private struct HistoryRow: Identifiable {
     let id: String
     let history: WatchHistory
@@ -385,27 +480,5 @@ private extension MediaItem {
             imdbRating: imdbRating,
             tmdbId: tmdbId
         )
-    }
-}
-
-private struct CSVTextDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.commaSeparatedText, .plainText] }
-    var text: String
-
-    init(text: String) {
-        self.text = text
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        if let data = configuration.file.regularFileContents,
-           let string = String(data: data, encoding: .utf8) {
-            text = string
-        } else {
-            text = ""
-        }
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }

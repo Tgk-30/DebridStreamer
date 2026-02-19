@@ -10,7 +10,16 @@ struct SetupView: View {
     @State private var tmdbValid: Bool?
     @State private var errorMessage: String?
     @State private var rdSaveStatus: String?
+    @State private var tasteSaveStatus: String?
     @State private var step = 1
+
+    @State private var personalizationEnabled = false
+    @State private var aiCurationOnLaunch = false
+    @State private var favoriteGenres = ""
+    @State private var avoidGenres = ""
+    @State private var preferredEras = ""
+    @State private var currentVibe = ""
+    @State private var recencySensitivity = 0.7
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,7 +43,8 @@ struct SetupView: View {
                 switch step {
                 case 1: tmdbStep
                 case 2: debridStep
-                case 3: completeStep
+                case 3: tasteStep
+                case 4: completeStep
                 default: tmdbStep
                 }
             }
@@ -155,6 +165,68 @@ struct SetupView: View {
         .padding()
     }
 
+    // MARK: - Step 3: Personalization
+
+    private var tasteStep: some View {
+        VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Step 3: Personalize Recommendations")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Text("Optional and local-only. You can edit this later in Settings → Personalization.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Toggle("Enable personalized AI", isOn: $personalizationEnabled)
+            Toggle("Generate AI-curated Discover on launch", isOn: $aiCurationOnLaunch)
+                .disabled(!personalizationEnabled)
+
+            Group {
+                TextField("Favorite genres (comma separated)", text: $favoriteGenres)
+                TextField("Avoid genres (comma separated)", text: $avoidGenres)
+                TextField("Preferred eras (e.g. 90s, 2000s)", text: $preferredEras)
+                TextField("Current vibe notes", text: $currentVibe)
+            }
+            .textFieldStyle(.roundedBorder)
+            .disabled(!personalizationEnabled)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Recency sensitivity")
+                    Spacer()
+                    Text(String(format: "%.2f", recencySensitivity))
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $recencySensitivity, in: 0...1)
+            }
+            .disabled(!personalizationEnabled)
+
+            if let tasteSaveStatus {
+                Text(tasteSaveStatus)
+                    .font(.caption)
+                    .foregroundStyle(tasteSaveStatus.contains("Error") ? .red : .green)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack {
+                Button("Back") { step = 2 }
+                Spacer()
+                Button("Skip") {
+                    Task {
+                        personalizationEnabled = false
+                        await saveTasteAndContinue()
+                    }
+                }
+                .buttonStyle(.bordered)
+                Button("Save & Continue") {
+                    Task { await saveTasteAndContinue() }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding()
+    }
+
     // MARK: - Step 3: Complete
 
     private var completeStep: some View {
@@ -246,5 +318,56 @@ struct SetupView: View {
         } catch {
             rdSaveStatus = "Error: \(error.localizedDescription)"
         }
+    }
+
+    private func saveTasteAndContinue() async {
+        guard let settings = appState.settingsManager else {
+            tasteSaveStatus = "Error: Settings unavailable."
+            return
+        }
+
+        do {
+            try await settings.setPersonalizationEnabled(personalizationEnabled)
+            try await settings.setDiscoverAICurationOnLaunchEnabled(personalizationEnabled && aiCurationOnLaunch)
+            try await settings.setValue(favoriteGenres.nilIfEmpty, forKey: SettingsKeys.favoriteGenres)
+            try await settings.setValue(avoidGenres.nilIfEmpty, forKey: SettingsKeys.avoidGenres)
+            try await settings.setValue(preferredEras.nilIfEmpty, forKey: SettingsKeys.preferredEras)
+            try await settings.setValue(currentVibe.nilIfEmpty, forKey: SettingsKeys.currentVibeNotes)
+            try await settings.setValue(String(recencySensitivity), forKey: SettingsKeys.recencySensitivity)
+            try await settings.setOnboardingTastePromptShown(true)
+
+            if personalizationEnabled, let db = appState.databaseManager {
+                let profile = UserTasteProfile(
+                    userId: "default",
+                    likedGenres: favoriteGenres.commaSeparated,
+                    dislikedGenres: avoidGenres.commaSeparated,
+                    preferredDecades: preferredEras.commaSeparated.compactMap {
+                        Int($0.filter(\.isNumber))
+                    },
+                    preferredLanguages: [],
+                    updatedAt: Date()
+                )
+                try await db.saveUserTasteProfile(profile)
+                await appState.preloadDiscoverAICuration(forceRefresh: true)
+            }
+
+            tasteSaveStatus = "Personalization saved."
+            step = 4
+        } catch {
+            tasteSaveStatus = "Error: \(error.localizedDescription)"
+        }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var commaSeparated: [String] {
+        split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 }
