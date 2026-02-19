@@ -21,6 +21,10 @@ struct PlayerEngineSelector {
     private func prefersVLC(for stream: StreamInfo) -> Bool {
         let urlExtension = stream.url?.pathExtension.lowercased() ?? ""
         let fileNameExtension = URL(fileURLWithPath: stream.fileName).pathExtension.lowercased()
+        if urlExtension == "m3u8" || urlExtension == "mpd" {
+            return true
+        }
+
         let extensionBased = [urlExtension, fileNameExtension]
             .first(where: { !$0.isEmpty && $0 != "m3u8" && $0 != "mpd" })
             ?? urlExtension

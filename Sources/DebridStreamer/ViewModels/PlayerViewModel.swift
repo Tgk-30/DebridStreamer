@@ -29,6 +29,10 @@ final class PlayerViewModel {
     private let externalLauncher: ExternalPlayerLauncher
     private let fullscreenToggler: @MainActor (NSWindow) -> Void
     private let fullscreenWindowResolver: @MainActor (NSWindow?) -> NSWindow?
+    private let isModalWindowProvider: @MainActor (NSWindow) -> Bool
+    private let viewIsFullscreenProvider: @MainActor (NSView) -> Bool
+    private let enterViewFullscreen: @MainActor (NSView, NSScreen?) -> Bool
+    private let exitViewFullscreen: @MainActor (NSView) -> Void
     private let windowVisibleFrameProvider: @MainActor (NSWindow) -> NSRect?
     private let windowFrameApplier: @MainActor (NSWindow, NSRect) -> Void
 
@@ -89,6 +93,21 @@ final class PlayerViewModel {
             window.toggleFullScreen(nil)
         },
         fullscreenWindowResolver: @escaping @MainActor (NSWindow?) -> NSWindow? = PlayerViewModel.defaultFullscreenWindowResolver(window:),
+        isModalWindowProvider: @escaping @MainActor (NSWindow) -> Bool = { window in
+            window.sheetParent != nil || window.attachedSheet != nil
+        },
+        viewIsFullscreenProvider: @escaping @MainActor (NSView) -> Bool = { view in
+            view.isInFullScreenMode
+        },
+        enterViewFullscreen: @escaping @MainActor (NSView, NSScreen?) -> Bool = { view, screen in
+            guard let targetScreen = screen ?? NSScreen.main else {
+                return false
+            }
+            return view.enterFullScreenMode(targetScreen, withOptions: nil)
+        },
+        exitViewFullscreen: @escaping @MainActor (NSView) -> Void = { view in
+            view.exitFullScreenMode(options: nil)
+        },
         windowVisibleFrameProvider: @escaping @MainActor (NSWindow) -> NSRect? = { window in
             if let frame = window.screen?.visibleFrame {
                 return frame
@@ -107,6 +126,10 @@ final class PlayerViewModel {
         self.externalLauncher = externalLauncher
         self.fullscreenToggler = fullscreenToggler
         self.fullscreenWindowResolver = fullscreenWindowResolver
+        self.isModalWindowProvider = isModalWindowProvider
+        self.viewIsFullscreenProvider = viewIsFullscreenProvider
+        self.enterViewFullscreen = enterViewFullscreen
+        self.exitViewFullscreen = exitViewFullscreen
         self.windowVisibleFrameProvider = windowVisibleFrameProvider
         self.windowFrameApplier = windowFrameApplier
     }
@@ -271,10 +294,24 @@ final class PlayerViewModel {
         return NSApplication.shared.mainWindow
     }
 
-    func toggleFullscreen(window: NSWindow?) async {
+    func toggleFullscreen(window: NSWindow?, videoView: NSView? = nil) async {
         guard let resolvedWindow = fullscreenWindowResolver(window) else {
             diagnostics = "Fullscreen is unavailable because no active player window was found."
             return
+        }
+
+        let isModalPresentation = isModalWindowProvider(resolvedWindow)
+        if isModalPresentation, let videoView {
+            if viewIsFullscreenProvider(videoView) {
+                exitViewFullscreen(videoView)
+                diagnostics = "Exited fullscreen video mode."
+                return
+            }
+
+            if enterViewFullscreen(videoView, resolvedWindow.screen) {
+                diagnostics = "Entered fullscreen video mode."
+                return
+            }
         }
 
         let wasFullscreen = resolvedWindow.styleMask.contains(.fullScreen)
@@ -288,7 +325,10 @@ final class PlayerViewModel {
         }
     }
 
-    func isFullscreen(window: NSWindow?) -> Bool {
+    func isFullscreen(window: NSWindow?, videoView: NSView? = nil) -> Bool {
+        if let videoView, viewIsFullscreenProvider(videoView) {
+            return true
+        }
         guard let resolvedWindow = fullscreenWindowResolver(window) else { return false }
         return resolvedWindow.styleMask.contains(.fullScreen)
     }

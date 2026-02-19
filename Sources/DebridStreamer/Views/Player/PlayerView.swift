@@ -19,6 +19,7 @@ struct PlayerView: View {
     @State private var duration: Double = 0
     @State private var speed: Float = 1.0
     @State private var playerWindow: NSWindow?
+    @State private var playbackVideoView: NSView?
     @State private var didTeardown = false
 
     var body: some View {
@@ -69,10 +70,18 @@ struct PlayerView: View {
     @ViewBuilder
     private var playbackSurface: some View {
         if viewModel.selectedEngine == .vlc, let session = viewModel.vlcSession {
-            VLCPlayerSurfaceView(session: session)
+            VLCPlayerSurfaceView(session: session) { view in
+                DispatchQueue.main.async {
+                    playbackVideoView = view
+                }
+            }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let player = viewModel.avPlayer {
-            NativeAVPlayerView(player: player)
+            NativeAVPlayerView(player: player) { view in
+                DispatchQueue.main.async {
+                    playbackVideoView = view
+                }
+            }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             Rectangle().fill(Color.black)
@@ -106,7 +115,7 @@ struct PlayerView: View {
     }
 
     private var controlsPanel: some View {
-        let isFullscreen = viewModel.isFullscreen(window: playerWindow)
+        let isFullscreen = viewModel.isFullscreen(window: playerWindow, videoView: playbackVideoView)
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -153,7 +162,9 @@ struct PlayerView: View {
                 .buttonStyle(.bordered)
 
                 Button {
-                    Task { await viewModel.toggleFullscreen(window: playerWindow) }
+                    Task {
+                        await viewModel.toggleFullscreen(window: playerWindow, videoView: playbackVideoView)
+                    }
                 } label: {
                     Label(
                         isFullscreen ? "Windowed" : "Fullscreen",
@@ -387,11 +398,13 @@ struct PlayerView: View {
 
 private struct NativeAVPlayerView: NSViewRepresentable {
     let player: AVPlayer
+    let onViewAvailable: (NSView) -> Void
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
         view.controlsStyle = .none
         view.player = player
+        onViewAvailable(view)
         return view
     }
 
@@ -399,18 +412,23 @@ private struct NativeAVPlayerView: NSViewRepresentable {
         if nsView.player !== player {
             nsView.player = player
         }
+        onViewAvailable(nsView)
     }
 }
 
 private struct VLCPlayerSurfaceView: NSViewRepresentable {
     let session: any VLCPlaybackSession
+    let onViewAvailable: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {
-        session.makeVideoView()
+        let view = session.makeVideoView()
+        onViewAvailable(view)
+        return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         // Session owns drawable lifecycle.
+        onViewAvailable(nsView)
     }
 }
 
