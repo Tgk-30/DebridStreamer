@@ -79,9 +79,11 @@ actor AssistantContextAssembler {
             }
 
             if let history = try? await database.fetchAllWatchHistory(limit: 80) {
+                let mediaIDs = history.map(\.mediaId)
+                let mediaByID = (try? await database.fetchMedia(ids: mediaIDs)) ?? [:]
                 let decayWindowDays = 30 + ((1 - recencySensitivity) * 150)
                 for entry in history {
-                    guard let media = try? await database.fetchMedia(id: entry.mediaId) else { continue }
+                    guard let media = mediaByID[entry.mediaId] else { continue }
                     titles.append(media.title)
                     let daysAgo = max(0, Int(Date().timeIntervalSince(entry.lastWatched) / 86_400))
                     let recencyWeight = max(0.1, 1.0 - min(Double(daysAgo) / decayWindowDays, 0.9))
@@ -107,8 +109,8 @@ actor AssistantContextAssembler {
             titles.append(contentsOf: trending.items.prefix(20).map(\.title))
         }
 
-        let uniqueTitles = deduplicated(titles).prefix(maxCandidates).map { $0 }
-        let uniqueNotes = deduplicated(notes).prefix(30).map { $0 }
+        let uniqueTitles = Array(deduplicated(titles).prefix(maxCandidates))
+        let uniqueNotes = Array(deduplicated(notes).prefix(30))
         return AssistantContext(
             candidateTitles: uniqueTitles,
             contextNotes: uniqueNotes,

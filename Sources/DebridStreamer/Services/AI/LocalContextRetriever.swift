@@ -13,15 +13,14 @@ struct LocalContextRetriever {
         let queryTokens = tokenize(query)
 
         if queryTokens.isEmpty {
-            return chunks
+            return Array(chunks
                 .sorted {
                     if $0.importance != $1.importance {
                         return $0.importance > $1.importance
                     }
                     return $0.createdAt > $1.createdAt
                 }
-                .prefix(limit)
-                .map { $0 }
+                .prefix(limit))
         }
 
         let scored = chunks.map { chunk -> (chunk: AssistantMemoryChunk, score: Double) in

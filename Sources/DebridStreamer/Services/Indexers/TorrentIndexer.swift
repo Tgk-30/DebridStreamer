@@ -83,26 +83,13 @@ actor IndexerManager {
 
         lastSearchErrors = errors
 
-        // If IMDB search found nothing, try text-based fallback with APIBay
         if allResults.isEmpty {
-            // The IMDB ID search on some indexers doesn't work well,
-            // so we try a broader query approach as fallback
             #if DEBUG
             print("[IndexerManager] IMDB search returned 0, errors: \(errors.map(\.indexer))")
             #endif
         }
 
-        // Deduplicate by infoHash, preferring higher seeders
-        let grouped = Dictionary(grouping: allResults, by: \.infoHash)
-        return grouped.values.compactMap { group in
-            group.max(by: { $0.seeders < $1.seeders })
-        }.sorted { lhs, rhs in
-            // Sort: quality desc, then seeders desc
-            if lhs.quality != rhs.quality {
-                return lhs.quality > rhs.quality
-            }
-            return lhs.seeders > rhs.seeders
-        }
+        return deduplicateAndSort(allResults)
     }
 
     /// Search by text query across all indexers.
@@ -136,8 +123,12 @@ actor IndexerManager {
         }
 
         lastSearchErrors = errors
+        return deduplicateAndSort(allResults)
+    }
 
-        let grouped = Dictionary(grouping: allResults, by: \.infoHash)
+    /// Deduplicate by infoHash (preferring higher seeders) and sort by quality then seeders.
+    private func deduplicateAndSort(_ results: [TorrentResult]) -> [TorrentResult] {
+        let grouped = Dictionary(grouping: results, by: \.infoHash)
         return grouped.values.compactMap { group in
             group.max(by: { $0.seeders < $1.seeders })
         }.sorted { lhs, rhs in

@@ -392,6 +392,14 @@ actor DatabaseManager {
         }
     }
 
+    func fetchMedia(ids: [String]) async throws -> [String: MediaItem] {
+        guard !ids.isEmpty else { return [:] }
+        return try await dbPool.read { db in
+            let items = try MediaItem.filter(ids.contains(MediaItem.Columns.id)).fetchAll(db)
+            return Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        }
+    }
+
     func searchMedia(query: String, limit: Int = 50) async throws -> [MediaItem] {
         try await dbPool.read { db in
             // Use FTS5 full-text search via raw SQL joining to the content table
@@ -550,32 +558,6 @@ actor DatabaseManager {
 
             return try UserLibraryEntry
                 .filter(UserLibraryEntry.Columns.folderId == folderId)
-                .order(UserLibraryEntry.Columns.addedAt.desc)
-                .fetchAll(db)
-        }
-    }
-
-    func fetchLibraryInFolderTree(rootFolderId: String? = nil) async throws -> [UserLibraryEntry] {
-        try await dbPool.read { db in
-            if let rootFolderId {
-                let sql = """
-                    WITH RECURSIVE folder_tree(id) AS (
-                        SELECT id FROM library_folders WHERE id = ?
-                        UNION ALL
-                        SELECT f.id
-                        FROM library_folders f
-                        JOIN folder_tree ft ON f.parentId = ft.id
-                    )
-                    SELECT user_library.*
-                    FROM user_library
-                    JOIN folder_tree ON user_library.folderId = folder_tree.id
-                    ORDER BY user_library.addedAt DESC
-                    """
-                return try UserLibraryEntry.fetchAll(db, sql: sql, arguments: [rootFolderId])
-            }
-
-            return try UserLibraryEntry
-                .filter(UserLibraryEntry.Columns.folderId != nil)
                 .order(UserLibraryEntry.Columns.addedAt.desc)
                 .fetchAll(db)
         }
@@ -820,15 +802,6 @@ actor DatabaseManager {
         }
     }
 
-    func moveLibraryEntry(id: String, toFolderId folderId: String) async throws {
-        try await dbPool.write { db in
-            guard var entry = try UserLibraryEntry.fetchOne(db, key: id) else { return }
-            entry.folderId = entry.listType.supportsFolders ? folderId : Self.systemFolderID(for: entry.listType)
-            entry.addedAt = Date()
-            try entry.save(db)
-        }
-    }
-
     func removeFromLibrary(mediaId: String, folderId: String) async throws {
         try await dbPool.write { db in
             _ = try UserLibraryEntry
@@ -866,109 +839,6 @@ actor DatabaseManager {
         }
     }
 
-    @discardableResult
-    func resolveLibraryFolderPath(
-        listType: UserLibraryEntry.ListType,
-        folderPath: String?
-    ) async throws -> LibraryFolder {
-        guard listType.supportsFolders else {
-            return try await fetchSystemLibraryFolder(listType: listType)
-        }
-        let normalizedPath = LibraryFoldering.normalizeStoredFolder(folderPath)
-        guard let normalizedPath else {
-            return try await fetchSystemLibraryFolder(listType: listType)
-        }
-
-        return try await dbPool.write { db in
-            try Self.ensureSystemLibraryFolders(in: db)
-            var parentID = Self.systemFolderID(for: listType)
-            var builtPath: [String] = []
-
-            for segment in normalizedPath.split(separator: "/").map(String.init) {
-                builtPath.append(segment)
-                let customListName = builtPath.joined(separator: "/")
-
-                if let existing = try LibraryFolder
-                    .filter(LibraryFolder.Columns.listType == listType.rawValue)
-                    .filter(LibraryFolder.Columns.parentId == parentID)
-                    .filter(LibraryFolder.Columns.name == segment)
-                    .fetchOne(db) {
-                    parentID = existing.id
-                    continue
-                }
-
-                let created = LibraryFolder(
-                    id: "folder-\(UUID().uuidString)",
-                    name: segment,
-                    parentId: parentID,
-                    listType: listType,
-                    isSystem: false
-                )
-                try created.save(db)
-
-                var folderMarker = UserLibraryEntry(
-                    id: "folder-marker-\(created.id)",
-                    mediaId: "__folder__:\(created.id)",
-                    folderId: created.id,
-                    listType: listType,
-                    addedAt: Date(),
-                    customListName: customListName
-                )
-                folderMarker.id = "folder-marker-\(created.id)"
-                try folderMarker.insert(db, onConflict: .ignore)
-
-                parentID = created.id
-            }
-
-            guard let resolved = try LibraryFolder.fetchOne(db, key: parentID) else {
-                throw NSError(domain: "DatabaseManager", code: 3, userInfo: [
-                    NSLocalizedDescriptionKey: "Failed to resolve folder path \(normalizedPath)"
-                ])
-            }
-            return resolved
-        }
-    }
-
-    @discardableResult
-    func addOrMoveInLibrary(
-        mediaId: String,
-        listType: UserLibraryEntry.ListType,
-        folderId: String,
-        customListName: String? = nil
-    ) async throws -> UserLibraryEntry {
-        try await dbPool.write { db in
-            try Self.ensureSystemLibraryFolders(in: db)
-            let targetFolderID = listType.supportsFolders ? folderId : Self.systemFolderID(for: listType)
-
-            _ = try UserLibraryEntry
-                .filter(UserLibraryEntry.Columns.mediaId == mediaId)
-                .filter(UserLibraryEntry.Columns.listType == listType.rawValue)
-                .filter(UserLibraryEntry.Columns.folderId != targetFolderID)
-                .deleteAll(db)
-
-            if var existing = try UserLibraryEntry
-                .filter(UserLibraryEntry.Columns.mediaId == mediaId)
-                .filter(UserLibraryEntry.Columns.listType == listType.rawValue)
-                .filter(UserLibraryEntry.Columns.folderId == targetFolderID)
-                .fetchOne(db) {
-                existing.addedAt = Date()
-                existing.customListName = LibraryFoldering.normalizeStoredFolder(customListName)
-                try existing.save(db)
-                return existing
-            }
-
-            let entry = UserLibraryEntry(
-                id: LibraryFoldering.entryID(mediaId: mediaId, listType: listType) + "-\(targetFolderID)",
-                mediaId: mediaId,
-                folderId: targetFolderID,
-                listType: listType,
-                addedAt: Date(),
-                customListName: LibraryFoldering.normalizeStoredFolder(customListName)
-            )
-            try entry.save(db)
-            return entry
-        }
-    }
 
     // MARK: Taste Profile Operations
 
