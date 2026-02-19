@@ -43,6 +43,7 @@ final class LibraryViewModel {
     }
 
     let listType: UserLibraryEntry.ListType
+    var supportsFolders: Bool { listType.supportsFolders }
 
     var rootFolder: LibraryFolder?
     var selectedFolderId: String?
@@ -62,7 +63,7 @@ final class LibraryViewModel {
         defer { isLoading = false }
 
         do {
-            if let preferredFolderId, !preferredFolderId.isEmpty {
+            if supportsFolders, let preferredFolderId, !preferredFolderId.isEmpty {
                 selectedFolderId = preferredFolderId
             }
             try await refreshFolderTree(database: database)
@@ -78,6 +79,10 @@ final class LibraryViewModel {
     }
 
     func selectFolder(_ folderId: String, database: DatabaseManager) async {
+        guard supportsFolders else {
+            selectedFolderId = rootFolder?.id
+            return
+        }
         selectedFolderId = folderId
         do {
             try await refreshFolderTree(database: database)
@@ -93,6 +98,10 @@ final class LibraryViewModel {
         parentId: String?,
         database: DatabaseManager
     ) async {
+        guard supportsFolders else {
+            statusMessage = "Watchlist does not support folders."
+            return
+        }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             statusMessage = "Folder name is required."
@@ -115,6 +124,10 @@ final class LibraryViewModel {
     }
 
     func renameFolder(id: String, name: String, database: DatabaseManager) async {
+        guard supportsFolders else {
+            statusMessage = "Watchlist does not support folders."
+            return
+        }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             statusMessage = "Folder name is required."
@@ -131,6 +144,10 @@ final class LibraryViewModel {
     }
 
     func deleteFolder(id: String, database: DatabaseManager) async {
+        guard supportsFolders else {
+            statusMessage = "Watchlist does not support folders."
+            return
+        }
         do {
             try await database.deleteLibraryFolder(id: id)
             if selectedFolderId == id {
@@ -162,7 +179,12 @@ final class LibraryViewModel {
 
     private func refreshFolderTree(database: DatabaseManager) async throws {
         let root = try await database.fetchSystemLibraryFolder(listType: listType)
-        let folders = try await database.fetchAllLibraryFolders(listType: listType)
+        let folders: [LibraryFolder]
+        if supportsFolders {
+            folders = try await database.fetchAllLibraryFolders(listType: listType)
+        } else {
+            folders = [root]
+        }
 
         rootFolder = root
         flatFolders = folders
@@ -220,7 +242,10 @@ final class LibraryViewModel {
             return
         }
 
-        let entries = try await database.fetchLibrary(folderId: selectedFolderId, includeDescendants: true)
+        let entries = try await database.fetchLibrary(
+            folderId: selectedFolderId,
+            includeDescendants: supportsFolders
+        )
         var next: [MediaCardItem] = []
         for entry in entries {
             guard let media = try await database.fetchMedia(id: entry.mediaId) else { continue }

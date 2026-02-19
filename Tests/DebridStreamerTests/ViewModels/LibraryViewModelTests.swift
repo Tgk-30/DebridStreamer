@@ -20,15 +20,30 @@ struct LibraryViewModelTests {
     @Test("Create folder selects new folder")
     func createFolderSelectsFolder() async throws {
         let db = try makeTestDatabase()
-        let viewModel = LibraryViewModel(listType: .watchlist)
+        let viewModel = LibraryViewModel(listType: .favorites)
         await viewModel.load(database: db)
 
         await viewModel.createFolder(name: "Sci-Fi", parentId: viewModel.rootFolder?.id, database: db)
 
-        let created = try await db.fetchAllLibraryFolders(listType: .watchlist)
+        let created = try await db.fetchAllLibraryFolders(listType: .favorites)
             .first(where: { $0.name == "Sci-Fi" })
         #expect(created != nil)
         #expect(viewModel.selectedFolderId == created?.id)
+    }
+
+    @Test("Watchlist is flat and folder create is blocked")
+    func watchlistFlatMode() async throws {
+        let db = try makeTestDatabase()
+        let viewModel = LibraryViewModel(listType: .watchlist)
+        await viewModel.load(database: db)
+
+        #expect(viewModel.supportsFolders == false)
+        await viewModel.createFolder(name: "ShouldNotCreate", parentId: viewModel.rootFolder?.id, database: db)
+        #expect(viewModel.statusMessage?.contains("does not support folders") == true)
+
+        let folders = try await db.fetchAllLibraryFolders(listType: .watchlist)
+        #expect(folders.count == 1)
+        #expect(folders.first?.isSystem == true)
     }
 
     @Test("Folder-scoped items are loaded and removable")

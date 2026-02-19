@@ -261,6 +261,9 @@ struct SettingsView: View {
                         Text(option.displayName).tag(option)
                     }
                 }
+                Text("Internal playback uses VLCKit with in-app fullscreen and advanced controls.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Picker("Preferred Quality", selection: $preferredQuality) {
                     ForEach(VideoQuality.allCases, id: \.self) { quality in
                         Text(quality.rawValue).tag(quality)
@@ -332,7 +335,7 @@ struct SettingsView: View {
     private var importsSyncTab: some View {
         Form {
             Section("IMDb CSV Import") {
-                Text("Import now creates a named folder before any rows are saved.")
+                Text("Library imports create a named folder. Watchlist imports go to the watchlist root.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button("Choose CSV File") {
@@ -346,11 +349,17 @@ struct SettingsView: View {
                     Text("Library").tag(UserLibraryEntry.ListType.favorites)
                     Text("Watchlist").tag(UserLibraryEntry.ListType.watchlist)
                 }
-                Picker("Folder Scope", selection: $selectedExportFolderID) {
-                    Text("Entire List Tree").tag(nil as String?)
-                    ForEach(availableExportFolders.filter { $0.listType == exportListType }) { folder in
-                        Text(folder.name).tag(folder.id as String?)
+                if exportListType.supportsFolders {
+                    Picker("Folder Scope", selection: $selectedExportFolderID) {
+                        Text("Entire List Tree").tag(nil as String?)
+                        ForEach(availableExportFolders.filter { $0.listType == exportListType }) { folder in
+                            Text(folder.name).tag(folder.id as String?)
+                        }
                     }
+                } else {
+                    Text("Watchlist exports always include the full watchlist root.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Button("Export CSV") {
                     Task { await prepareExport() }
@@ -409,7 +418,7 @@ struct SettingsView: View {
             Text("IMDb Import Wizard")
                 .font(.title3)
                 .fontWeight(.bold)
-            Text("Step 1: choose destination and folder name. Import will not start until you confirm.")
+            Text("Step 1: choose destination. Library requires a folder name before import starts.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -419,8 +428,14 @@ struct SettingsView: View {
             }
             .pickerStyle(.segmented)
 
-            TextField("Folder name", text: $importFolderName)
-                .textFieldStyle(.roundedBorder)
+            if importDestination.supportsFolders {
+                TextField("Folder name", text: $importFolderName)
+                    .textFieldStyle(.roundedBorder)
+            } else {
+                Text("Watchlist destination does not use folders.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Text("Preview: \(importPreviewCount) rows ready to import.")
                 .font(.caption)
@@ -437,10 +452,17 @@ struct SettingsView: View {
                     Task { await executeImportWizard() }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(importFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(importDestination.supportsFolders && importFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(16)
+        .onChange(of: importDestination) {
+            guard let csv = pendingCSVContents else { return }
+            importPreviewCount = imdbSyncService.parseCSV(csv, listType: importDestination).count
+            if importDestination.supportsFolders && importFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                importFolderName = "Imported \(Date().formatted(date: .abbreviated, time: .omitted))"
+            }
+        }
     }
 
     @ViewBuilder
@@ -826,29 +848,39 @@ struct SettingsView: View {
             return
         }
 
-        let folderName = importFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !folderName.isEmpty else {
-            statusMessage = "Error: Folder name is required."
-            return
-        }
-
         do {
-            let systemRootId = try await db.fetchSystemLibraryFolderID(listType: importDestination)
-            let folder = try await db.createLibraryFolder(
-                name: folderName,
-                listType: importDestination,
-                parentId: systemRootId
-            )
+            let targetFolderID: String
+            var targetFolderName = LibraryFolder.systemFolderName(for: importDestination)
+
+            if importDestination.supportsFolders {
+                let folderName = importFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !folderName.isEmpty else {
+                    statusMessage = "Error: Folder name is required."
+                    return
+                }
+
+                let systemRootId = try await db.fetchSystemLibraryFolderID(listType: importDestination)
+                let folder = try await db.createLibraryFolder(
+                    name: folderName,
+                    listType: importDestination,
+                    parentId: systemRootId
+                )
+                targetFolderID = folder.id
+                targetFolderName = folder.name
+            } else {
+                targetFolderID = try await db.fetchSystemLibraryFolderID(listType: importDestination)
+            }
+
             let result = try await imdbSyncService.importCSV(
                 csv,
                 listType: importDestination,
-                folderId: folder.id,
+                folderId: targetFolderID,
                 database: db
             )
             availableExportFolders = try await db.fetchAllLibraryFolders()
             isShowingImportWizard = false
             pendingCSVContents = nil
-            statusMessage = "IMDb import complete. Folder \"\(folder.name)\": added \(result.added), skipped \(result.skippedDuplicates)."
+            statusMessage = "IMDb import complete. Destination \"\(targetFolderName)\": added \(result.added), skipped \(result.skippedDuplicates)."
         } catch {
             statusMessage = "Error: \(error.localizedDescription)"
         }

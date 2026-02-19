@@ -6,8 +6,8 @@ import Foundation
 struct PlayerEngineSelectorTests {
     private let selector = PlayerEngineSelector()
 
-    @Test("Automatic mode prefers AVPlayer for broadly compatible streams")
-    func automaticPrefersAVPlayer() {
+    @Test("Automatic mode is VLC-only")
+    func automaticIsVLCOnly() {
         let stream = StreamInfo(
             streamURL: "https://cdn.example.com/movie.mp4",
             quality: .hd1080p,
@@ -20,11 +20,11 @@ struct PlayerEngineSelectorTests {
         )
 
         let order = selector.engineOrder(for: stream, backendPreference: .automatic)
-        #expect(order == [.avPlayer, .vlc])
+        #expect(order == [.vlc])
     }
 
-    @Test("Automatic mode prefers VLC for AV1 or container edge cases")
-    func automaticPrefersVLCForEdgeCases() {
+    @Test("Explicit VLC backend remains VLC-only")
+    func explicitVLCIsVLCOnly() {
         let stream = StreamInfo(
             streamURL: "https://cdn.example.com/movie.mkv",
             quality: .uhd4k,
@@ -36,58 +36,7 @@ struct PlayerEngineSelectorTests {
             debridService: "Real-Debrid"
         )
 
-        let order = selector.engineOrder(for: stream, backendPreference: .automatic)
-        #expect(order == [.vlc, .avPlayer])
-    }
-
-    @Test("Automatic mode prefers VLC when manifest URL hides MKV container")
-    func automaticPrefersVLCWhenManifestURLHidesContainer() {
-        let stream = StreamInfo(
-            streamURL: "https://cdn.example.com/stream/master.m3u8",
-            quality: .hd1080p,
-            codec: .h264,
-            audio: .aac,
-            source: .webDL,
-            sizeBytes: 1_600_000_000,
-            fileName: "Movie.1080p.BluRay.mkv",
-            debridService: "Real-Debrid"
-        )
-
-        let order = selector.engineOrder(for: stream, backendPreference: .automatic)
-        #expect(order == [.vlc, .avPlayer])
-    }
-
-    @Test("Automatic mode prefers VLC for manifest streams even without file extension metadata")
-    func automaticPrefersVLCForManifestWithoutContainerMetadata() {
-        let stream = StreamInfo(
-            streamURL: "https://cdn.example.com/stream/master.m3u8",
-            quality: .hd1080p,
-            codec: .h264,
-            audio: .aac,
-            source: .webDL,
-            sizeBytes: 1_600_000_000,
-            fileName: "Movie.1080p",
-            debridService: "Real-Debrid"
-        )
-
-        let order = selector.engineOrder(for: stream, backendPreference: .automatic)
-        #expect(order == [.vlc, .avPlayer])
-    }
-
-    @Test("Explicit backend preference overrides heuristic order")
-    func explicitPreferenceOverridesAutomatic() {
-        let stream = StreamInfo(
-            streamURL: "https://cdn.example.com/movie.mp4",
-            quality: .hd1080p,
-            codec: .h264,
-            audio: .aac,
-            source: .webDL,
-            sizeBytes: 1_000_000_000,
-            fileName: "Movie.1080p.mp4",
-            debridService: "Real-Debrid"
-        )
-
-        #expect(selector.engineOrder(for: stream, backendPreference: .vlc) == [.vlc, .avPlayer])
-        #expect(selector.engineOrder(for: stream, backendPreference: .avPlayer) == [.avPlayer, .vlc])
+        let order = selector.engineOrder(for: stream, backendPreference: .vlc)
+        #expect(order == [.vlc])
     }
 }

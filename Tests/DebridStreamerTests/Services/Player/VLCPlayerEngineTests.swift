@@ -58,12 +58,20 @@ struct VLCPlayerEngineTests {
 private final class MockVLCSession: VLCPlaybackSession {
     var isPlaying: Bool = false
     var position: Float = 0
+    var playbackRate: Float = 1.0
     var currentTimeSeconds: Double = 0
     var durationSeconds: Double? = 0
+    var availableAudioTracks: [VLCTrackOption] = []
+    var availableSubtitleTracks: [VLCTrackOption] = []
+    var selectedAudioTrackID: Int32?
+    var selectedSubtitleTrackID: Int32?
     func makeVideoView() -> NSView { NSView(frame: .zero) }
     func seek(to seconds: Double) {
         currentTimeSeconds = max(0, seconds)
     }
+    func refreshTrackOptions() {}
+    func selectAudioTrack(id: Int32) { selectedAudioTrackID = id }
+    func selectSubtitleTrack(id: Int32) { selectedSubtitleTrackID = id }
     func play() {}
     func pause() {}
     func stop() {}

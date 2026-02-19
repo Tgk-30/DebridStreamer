@@ -1,71 +1,17 @@
 import Testing
 import Foundation
-import AVKit
 import AppKit
 @testable import DebridStreamer
 
 @Suite("PlayerViewModel Tests")
 @MainActor
 struct PlayerViewModelTests {
-    @Test("Successful AV playback sets playing state")
-    func successfulAVPlayback() async {
-        let stream = makeStream(url: "https://cdn.example.com/movie.mp4")
-        let player = AVPlayer(url: URL(string: stream.streamURL)!)
-
-        let model = PlayerViewModel(
-            selector: PlayerEngineSelector(),
-            avEngine: MockEngine(
-                kind: .avPlayer,
-                result: .success(
-                    PreparedPlayback(
-                        kind: .avPlayer,
-                        streamURL: URL(string: stream.streamURL)!,
-                        avPlayer: player,
-                        vlcSession: nil
-                    )
-                )
-            ),
-            vlcEngine: MockEngine(kind: .vlc, result: .failure(PlayerEngineError.vlcKitUnavailable)),
-            avReadinessMonitor: ImmediateReadinessMonitor(),
-            externalLauncher: ExternalPlayerLauncher(
-                resolveApplicationInstalled: { _ in true },
-                openWithBundle: { _, _ in false },
-                openWithDefaultApplication: { _ in false }
-            )
-        )
-
-        await model.preparePlayback(
-            stream: stream,
-            backendPreference: .automatic,
-            externalPlayerPreference: .auto
-        )
-
-        #expect(model.avPlayer != nil)
-        #expect(model.selectedEngine == .avPlayer)
-        #expect(model.runtimeState == .playing)
-        #expect(model.launchedExternal == false)
-        #expect(model.errorMessage == nil)
-    }
-
-    @Test("AV timeout/failure falls back to VLC")
-    func avFailureFallsBackToVLC() async {
+    @Test("Successful VLC playback sets active engine and playing state")
+    func successfulVLCPlayback() async throws {
         let stream = makeStream(url: "https://cdn.example.com/movie.mkv")
-        let player = AVPlayer(url: URL(string: stream.streamURL)!)
-        let vlcSession = MockVLCSession()
-
+        let session = MockVLCSession()
         let model = PlayerViewModel(
             selector: PlayerEngineSelector(),
-            avEngine: MockEngine(
-                kind: .avPlayer,
-                result: .success(
-                    PreparedPlayback(
-                        kind: .avPlayer,
-                        streamURL: URL(string: stream.streamURL)!,
-                        avPlayer: player,
-                        vlcSession: nil
-                    )
-                )
-            ),
             vlcEngine: MockEngine(
                 kind: .vlc,
                 result: .success(
@@ -73,15 +19,9 @@ struct PlayerViewModelTests {
                         kind: .vlc,
                         streamURL: URL(string: stream.streamURL)!,
                         avPlayer: nil,
-                        vlcSession: vlcSession
+                        vlcSession: session
                     )
                 )
-            ),
-            avReadinessMonitor: FailingReadinessMonitor(),
-            externalLauncher: ExternalPlayerLauncher(
-                resolveApplicationInstalled: { _ in false },
-                openWithBundle: { _, _ in false },
-                openWithDefaultApplication: { _ in false }
             )
         )
 
@@ -93,27 +33,18 @@ struct PlayerViewModelTests {
 
         #expect(model.selectedEngine == .vlc)
         #expect(model.vlcSession != nil)
-        #expect(vlcSession.playCallCount == 1)
-        #expect(model.runtimeState == .playing || model.runtimeState == .stalled)
+        #expect(model.runtimeState == .playing)
+        #expect(model.errorMessage == nil)
     }
 
-    @Test("Engine failures fall back to external launch")
-    func fallsBackToExternalLaunch() async {
+    @Test("VLC failures remain in-app and expose failed runtime state")
+    func failureStaysInApp() async {
         let stream = makeStream(url: "https://cdn.example.com/movie.mkv")
-        var defaultOpenCalls = 0
-
         let model = PlayerViewModel(
             selector: PlayerEngineSelector(),
-            avEngine: MockEngine(kind: .avPlayer, result: .failure(PlayerEngineError.unsupported("AV failed"))),
-            vlcEngine: MockEngine(kind: .vlc, result: .failure(PlayerEngineError.vlcKitUnavailable)),
-            avReadinessMonitor: ImmediateReadinessMonitor(),
-            externalLauncher: ExternalPlayerLauncher(
-                resolveApplicationInstalled: { _ in false },
-                openWithBundle: { _, _ in false },
-                openWithDefaultApplication: { _ in
-                    defaultOpenCalls += 1
-                    return true
-                }
+            vlcEngine: MockEngine(
+                kind: .vlc,
+                result: .failure(PlayerEngineError.vlcKitUnavailable)
             )
         )
 
@@ -123,180 +54,49 @@ struct PlayerViewModelTests {
             externalPlayerPreference: .auto
         )
 
-        #expect(model.avPlayer == nil)
-        #expect(model.launchedExternal == true)
-        #expect(model.runtimeState == .fallbackLaunched)
-        #expect(defaultOpenCalls == 1)
-    }
-
-    @Test("When external fallback also fails a failed state is exposed")
-    func reportsErrorWhenAllPlaybackPathsFail() async {
-        let stream = makeStream(url: "https://cdn.example.com/movie.mkv")
-
-        let model = PlayerViewModel(
-            selector: PlayerEngineSelector(),
-            avEngine: MockEngine(kind: .avPlayer, result: .failure(PlayerEngineError.unsupported("AV failed"))),
-            vlcEngine: MockEngine(kind: .vlc, result: .failure(PlayerEngineError.vlcKitUnavailable)),
-            avReadinessMonitor: ImmediateReadinessMonitor(),
-            externalLauncher: ExternalPlayerLauncher(
-                resolveApplicationInstalled: { _ in false },
-                openWithBundle: { _, _ in false },
-                openWithDefaultApplication: { _ in false }
-            )
-        )
-
-        await model.preparePlayback(
-            stream: stream,
-            backendPreference: .automatic,
-            externalPlayerPreference: .auto
-        )
-
-        #expect(model.launchedExternal == false)
+        #expect(model.selectedEngine == nil)
         #expect(model.runtimeState == .failed)
         #expect(model.errorMessage?.isEmpty == false)
     }
 
-    @Test("Forced engine retry uses selected backend")
-    func forcedRetryUsesEngine() async {
+    @Test("Retry with VLC re-prepares same stream")
+    func retryVLC() async {
         let stream = makeStream(url: "https://cdn.example.com/movie.mkv")
-        let vlcSession = MockVLCSession()
-
-        let model = PlayerViewModel(
-            selector: PlayerEngineSelector(),
-            avEngine: MockEngine(kind: .avPlayer, result: .failure(PlayerEngineError.unsupported("AV failed"))),
-            vlcEngine: MockEngine(
-                kind: .vlc,
-                result: .success(
-                    PreparedPlayback(
-                        kind: .vlc,
-                        streamURL: URL(string: stream.streamURL)!,
-                        avPlayer: nil,
-                        vlcSession: vlcSession
-                    )
+        let session = MockVLCSession()
+        let engine = MockEngine(
+            kind: .vlc,
+            result: .success(
+                PreparedPlayback(
+                    kind: .vlc,
+                    streamURL: URL(string: stream.streamURL)!,
+                    avPlayer: nil,
+                    vlcSession: session
                 )
-            ),
-            avReadinessMonitor: ImmediateReadinessMonitor(),
-            externalLauncher: ExternalPlayerLauncher(
-                resolveApplicationInstalled: { _ in false },
-                openWithBundle: { _, _ in false },
-                openWithDefaultApplication: { _ in false }
             )
         )
+
+        let model = PlayerViewModel(selector: PlayerEngineSelector(), vlcEngine: engine)
 
         await model.preparePlayback(
             stream: stream,
             backendPreference: .automatic,
             externalPlayerPreference: .auto
         )
-        #expect(model.selectedEngine == .vlc)
-
         await model.retryWithEngine(.vlc)
+
+        #expect(engine.prepareCalls >= 2)
         #expect(model.selectedEngine == .vlc)
-        #expect(vlcSession.playCallCount >= 2)
-    }
-
-    @Test("Cancelling preparation does not trigger external fallback")
-    func cancellationDoesNotLaunchExternal() async throws {
-        let stream = makeStream(url: "https://cdn.example.com/movie.mp4")
-        let player = AVPlayer(url: URL(string: stream.streamURL)!)
-        var defaultOpenCalls = 0
-
-        let model = PlayerViewModel(
-            selector: PlayerEngineSelector(),
-            avEngine: MockEngine(
-                kind: .avPlayer,
-                result: .success(
-                    PreparedPlayback(
-                        kind: .avPlayer,
-                        streamURL: URL(string: stream.streamURL)!,
-                        avPlayer: player,
-                        vlcSession: nil
-                    )
-                )
-            ),
-            vlcEngine: MockEngine(kind: .vlc, result: .failure(PlayerEngineError.vlcKitUnavailable)),
-            avReadinessMonitor: BlockingReadinessMonitor(),
-            externalLauncher: ExternalPlayerLauncher(
-                resolveApplicationInstalled: { _ in false },
-                openWithBundle: { _, _ in false },
-                openWithDefaultApplication: { _ in
-                    defaultOpenCalls += 1
-                    return true
-                }
-            )
-        )
-
-        let task = Task {
-            await model.preparePlayback(
-                stream: stream,
-                backendPreference: .automatic,
-                externalPlayerPreference: .auto
-            )
-        }
-
-        try await Task.sleep(for: .milliseconds(60))
-        task.cancel()
-        _ = await task.value
-
-        #expect(defaultOpenCalls == 0)
-        #expect(model.launchedExternal == false)
-        #expect(model.runtimeState != .fallbackLaunched)
-        #expect(model.avPlayer == nil)
-        #expect(model.vlcSession == nil)
-    }
-
-    @Test("Launching external playback stops active internal engine")
-    func externalLaunchStopsInternalEngine() async {
-        let stream = makeStream(url: "https://cdn.example.com/movie.mp4")
-        let player = AVPlayer(url: URL(string: stream.streamURL)!)
-
-        let model = PlayerViewModel(
-            selector: PlayerEngineSelector(),
-            avEngine: MockEngine(
-                kind: .avPlayer,
-                result: .success(
-                    PreparedPlayback(
-                        kind: .avPlayer,
-                        streamURL: URL(string: stream.streamURL)!,
-                        avPlayer: player,
-                        vlcSession: nil
-                    )
-                )
-            ),
-            vlcEngine: MockEngine(kind: .vlc, result: .failure(PlayerEngineError.vlcKitUnavailable)),
-            avReadinessMonitor: ImmediateReadinessMonitor(),
-            externalLauncher: ExternalPlayerLauncher(
-                resolveApplicationInstalled: { _ in false },
-                openWithBundle: { _, _ in false },
-                openWithDefaultApplication: { _ in true }
-            )
-        )
-
-        await model.preparePlayback(
-            stream: stream,
-            backendPreference: .automatic,
-            externalPlayerPreference: .auto
-        )
-        #expect(model.selectedEngine == .avPlayer)
-        #expect(model.avPlayer != nil)
-
-        await model.launchExternalNow()
-
-        #expect(model.runtimeState == .fallbackLaunched)
-        #expect(model.launchedExternal == true)
-        #expect(model.avPlayer == nil)
-        #expect(model.selectedEngine == nil)
     }
 
     @Test("Playback progress snapshot survives stop")
     func progressSnapshotSurvivesStop() async {
         let model = PlayerViewModel()
-        let vlcSession = MockVLCSession()
-        vlcSession.currentTimeSeconds = 321
-        vlcSession.durationSeconds = 900
-        vlcSession.isPlaying = true
+        let session = MockVLCSession()
+        session.currentTimeSeconds = 321
+        session.durationSeconds = 900
+        session.isPlaying = true
 
-        model.vlcSession = vlcSession
+        model.vlcSession = session
         model.selectedEngine = .vlc
 
         let snapshot = model.playbackProgressSnapshot()
@@ -305,163 +105,148 @@ struct PlayerViewModelTests {
         #expect(snapshot?.progressSeconds == 321)
         #expect(snapshot?.durationSeconds == 900)
         #expect(model.vlcSession == nil)
-        #expect(vlcSession.stopCallCount == 1)
+        #expect(session.stopCallCount == 1)
     }
 
-    @Test("Fullscreen toggle invokes configured window toggler")
+    @Test("Fullscreen toggle invokes configured toggler")
     func fullscreenToggleInvokesToggler() async {
         var toggleCount = 0
-        let targetWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        let model = PlayerViewModel(
-            fullscreenToggler: { _ in
-                toggleCount += 1
-            },
-            fullscreenWindowResolver: { _ in
-                targetWindow
-            }
-        )
-
-        await model.toggleFullscreen(window: nil)
-
-        #expect(toggleCount == 1)
-    }
-
-    @Test("Fullscreen toggle reports diagnostics when window is unavailable")
-    func fullscreenToggleWithoutWindowReportsDiagnostics() async {
-        var toggleCount = 0
-        let model = PlayerViewModel(
-            fullscreenToggler: { _ in
-                toggleCount += 1
-            },
-            fullscreenWindowResolver: { _ in
-                nil
-            }
-        )
-
-        await model.toggleFullscreen(window: nil)
-
-        #expect(toggleCount == 0)
-        #expect(model.diagnostics?.contains("Fullscreen is unavailable") == true)
-    }
-
-    @Test("Default fullscreen resolver prefers provided player window")
-    func defaultFullscreenResolverPrefersProvidedWindow() {
-        let provided = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-
-        let resolved = PlayerViewModel.defaultFullscreenWindowResolver(window: provided)
-        #expect(resolved === provided)
-    }
-
-    @Test("isFullscreen uses resolved window state")
-    func isFullscreenUsesResolvedWindow() async {
-        let targetWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
-            styleMask: [.titled, .closable, .resizable, .fullScreen],
-            backing: .buffered,
-            defer: false
-        )
-        let model = PlayerViewModel(
-            fullscreenWindowResolver: { _ in
-                targetWindow
-            }
-        )
-
-        #expect(model.isFullscreen(window: nil) == true)
-    }
-
-    @Test("exitFullscreen leaves native fullscreen mode")
-    func exitFullscreenLeavesNativeFullscreenMode() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
-            styleMask: [.titled, .closable, .resizable, .fullScreen],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
-        var togglerCount = 0
-
         let model = PlayerViewModel(
-            fullscreenToggler: { _ in
-                togglerCount += 1
-            },
+            fullscreenToggler: { _ in toggleCount += 1 },
             fullscreenWindowResolver: { _ in window }
         )
 
-        model.exitFullscreen(window: window)
-
-        #expect(togglerCount == 1)
-        #expect(model.diagnostics?.contains("Exited fullscreen") == true)
-    }
-
-    @Test("exitFullscreen restores expanded fallback window frame")
-    func exitFullscreenRestoresExpandedFallbackWindowFrame() async {
-        let expandedFrame = NSRect(x: 0, y: 0, width: 1728, height: 1117)
-        let window = NSWindow(
-            contentRect: NSRect(x: 40, y: 40, width: 900, height: 540),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        let initialFrame = window.frame
-        var appliedFrames: [NSRect] = []
-
-        let model = PlayerViewModel(
-            fullscreenToggler: { _ in
-                // Simulate a no-op fullscreen request.
-            },
-            fullscreenWindowResolver: { _ in window },
-            windowVisibleFrameProvider: { _ in expandedFrame },
-            windowFrameApplier: { _, frame in
-                appliedFrames.append(frame)
-            }
-        )
-
         await model.toggleFullscreen(window: window)
-        model.exitFullscreen(window: window)
-
-        #expect(appliedFrames == [expandedFrame, initialFrame])
-        #expect(model.diagnostics?.contains("windowed") == true)
+        #expect(toggleCount == 1)
     }
 
-    @Test("Fullscreen toggle falls back to expanded mode when fullscreen transition fails")
-    func fullscreenToggleFallsBackToExpandedWindowMode() async {
-        let expandedFrame = NSRect(x: 0, y: 0, width: 1728, height: 1117)
-        let window = NSWindow(
-            contentRect: NSRect(x: 40, y: 40, width: 900, height: 540),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
+    @Test("Fullscreen toggle reports diagnostics when unavailable")
+    func fullscreenToggleWithoutWindowReportsDiagnostics() async {
+        let model = PlayerViewModel(
+            fullscreenToggler: { _ in },
+            fullscreenWindowResolver: { _ in nil }
         )
-        let initialFrame = window.frame
-        var appliedFrames: [NSRect] = []
+
+        await model.toggleFullscreen(window: nil)
+        #expect(model.diagnostics?.contains("Fullscreen is unavailable") == true)
+    }
+
+    @Test("Controls auto-hide and reappear on interaction")
+    func controlsAutoHide() async {
+        let stream = makeStream(url: "https://cdn.example.com/movie.mkv")
+        let session = MockVLCSession()
+        session.isPlaying = true
+        let model = PlayerViewModel(
+            selector: PlayerEngineSelector(),
+            vlcEngine: MockEngine(
+                kind: .vlc,
+                result: .success(
+                    PreparedPlayback(
+                        kind: .vlc,
+                        streamURL: URL(string: stream.streamURL)!,
+                        avPlayer: nil,
+                        vlcSession: session
+                    )
+                )
+            ),
+            controlsAutoHideDelay: 0.05
+        )
+
+        await model.preparePlayback(
+            stream: stream,
+            backendPreference: .automatic,
+            externalPlayerPreference: .auto
+        )
+        #expect(model.controlsVisible == true)
+
+        for _ in 0..<40 {
+            if model.controlsVisible == false {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(model.controlsVisible == false)
+
+        model.registerUserInteraction()
+        #expect(model.controlsVisible == true)
+    }
+
+    @Test("Track refresh and selection flows through VLC session")
+    func trackSelectionFlow() async {
+        let stream = makeStream(url: "https://cdn.example.com/movie.mkv")
+        let session = MockVLCSession()
+        session.availableAudioTracks = [
+            VLCTrackOption(id: 1, name: "English"),
+            VLCTrackOption(id: 2, name: "Spanish")
+        ]
+        session.availableSubtitleTracks = [
+            VLCTrackOption(id: -1, name: "Off"),
+            VLCTrackOption(id: 4, name: "English CC")
+        ]
 
         let model = PlayerViewModel(
-            fullscreenToggler: { _ in
-                // Simulate a no-op fullscreen request.
-            },
-            fullscreenWindowResolver: { _ in window },
-            windowVisibleFrameProvider: { _ in expandedFrame },
-            windowFrameApplier: { _, frame in
-                appliedFrames.append(frame)
-            }
+            selector: PlayerEngineSelector(),
+            vlcEngine: MockEngine(
+                kind: .vlc,
+                result: .success(
+                    PreparedPlayback(
+                        kind: .vlc,
+                        streamURL: URL(string: stream.streamURL)!,
+                        avPlayer: nil,
+                        vlcSession: session
+                    )
+                )
+            )
         )
 
-        await model.toggleFullscreen(window: nil)
-        #expect(appliedFrames == [expandedFrame])
-        #expect(model.diagnostics?.contains("Expanded player") == true)
+        await model.preparePlayback(
+            stream: stream,
+            backendPreference: .automatic,
+            externalPlayerPreference: .auto
+        )
+        model.refreshTrackOptions()
+        model.selectAudioTrack(2)
+        model.selectSubtitleTrack(4)
 
-        await model.toggleFullscreen(window: nil)
-        #expect(appliedFrames == [expandedFrame, initialFrame])
-        #expect(model.diagnostics?.contains("windowed") == true)
+        #expect(model.availableAudioTracks.count == 2)
+        #expect(model.availableSubtitleTracks.count == 2)
+        #expect(model.selectedAudioTrackID == 2)
+        #expect(model.selectedSubtitleTrackID == 4)
+    }
+
+    @Test("Switching stream updates selected stream URL")
+    func switchStreamUpdatesSelection() async {
+        let first = makeStream(url: "https://cdn.example.com/movie-1080.mkv")
+        let second = makeStream(url: "https://cdn.example.com/movie-720.mkv")
+        let session = MockVLCSession()
+        let engine = MockEngine(
+            kind: .vlc,
+            result: .success(
+                PreparedPlayback(
+                    kind: .vlc,
+                    streamURL: URL(string: first.streamURL)!,
+                    avPlayer: nil,
+                    vlcSession: session
+                )
+            )
+        )
+
+        let model = PlayerViewModel(selector: PlayerEngineSelector(), vlcEngine: engine)
+        await model.preparePlayback(
+            stream: first,
+            availableStreams: [first, second],
+            backendPreference: .automatic,
+            externalPlayerPreference: .auto
+        )
+
+        await model.switchToStream(second)
+        #expect(model.selectedStreamURL == second.streamURL)
     }
 
     private func makeStream(url: String) -> StreamInfo {
@@ -478,52 +263,26 @@ struct PlayerViewModelTests {
     }
 }
 
-private struct MockEngine: PlayerEngine {
+private final class MockEngine: PlayerEngine {
     let kind: PlayerEngineKind
     let result: Result<PreparedPlayback, Error>
+    private(set) var prepareCalls = 0
 
-    func canHandle(_ stream: StreamInfo) -> Bool { true }
+    init(kind: PlayerEngineKind, result: Result<PreparedPlayback, Error>) {
+        self.kind = kind
+        self.result = result
+    }
+
+    func canHandle(_ stream: StreamInfo) -> Bool {
+        _ = stream
+        return true
+    }
 
     @MainActor
     func prepare(stream: StreamInfo) async throws -> PreparedPlayback {
-        try result.get()
-    }
-}
-
-@MainActor
-private struct ImmediateReadinessMonitor: AVPlayerReadinessMonitoring {
-    func waitUntilReady(
-        player: AVPlayer,
-        timeout: TimeInterval,
-        onStateChange: (_ state: PlayerRuntimeState, _ diagnostics: String?) -> Void
-    ) async throws {
-        onStateChange(.buffering, "Buffering...")
-        onStateChange(.playing, "Ready.")
-    }
-}
-
-@MainActor
-private struct FailingReadinessMonitor: AVPlayerReadinessMonitoring {
-    func waitUntilReady(
-        player: AVPlayer,
-        timeout: TimeInterval,
-        onStateChange: (_ state: PlayerRuntimeState, _ diagnostics: String?) -> Void
-    ) async throws {
-        onStateChange(.stalled, "Timed out.")
-        throw PlayerEngineError.unsupported("AV timed out.")
-    }
-}
-
-@MainActor
-private struct BlockingReadinessMonitor: AVPlayerReadinessMonitoring {
-    func waitUntilReady(
-        player: AVPlayer,
-        timeout: TimeInterval,
-        onStateChange: (_ state: PlayerRuntimeState, _ diagnostics: String?) -> Void
-    ) async throws {
-        onStateChange(.buffering, "Waiting...")
-        try await Task.sleep(for: .seconds(5))
-        onStateChange(.playing, "Ready.")
+        _ = stream
+        prepareCalls += 1
+        return try result.get()
     }
 }
 
@@ -531,19 +290,32 @@ private struct BlockingReadinessMonitor: AVPlayerReadinessMonitoring {
 private final class MockVLCSession: VLCPlaybackSession {
     var isPlaying: Bool = false
     var position: Float = 0
+    var playbackRate: Float = 1.0
     var currentTimeSeconds: Double = 0
     var durationSeconds: Double? = 0
-    var playCallCount = 0
+    var availableAudioTracks: [VLCTrackOption] = []
+    var availableSubtitleTracks: [VLCTrackOption] = []
+    var selectedAudioTrackID: Int32?
+    var selectedSubtitleTrackID: Int32?
     var stopCallCount = 0
 
     func makeVideoView() -> NSView { NSView(frame: .zero) }
+
     func seek(to seconds: Double) {
         currentTimeSeconds = max(0, seconds)
     }
-    func play() {
-        playCallCount += 1
-        isPlaying = true
+
+    func refreshTrackOptions() {}
+
+    func selectAudioTrack(id: Int32) {
+        selectedAudioTrackID = id
     }
+
+    func selectSubtitleTrack(id: Int32) {
+        selectedSubtitleTrackID = id
+    }
+
+    func play() { isPlaying = true }
     func pause() { isPlaying = false }
     func stop() {
         stopCallCount += 1

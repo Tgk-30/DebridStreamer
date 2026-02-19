@@ -66,6 +66,15 @@ struct UserLibraryEntry: Codable, Sendable, Identifiable, Equatable, FetchableRe
         case watchlist
         case favorites
         case custom
+
+        var supportsFolders: Bool {
+            switch self {
+            case .watchlist:
+                return false
+            case .favorites, .custom:
+                return true
+            }
+        }
     }
 
     enum Columns: String, ColumnExpression {

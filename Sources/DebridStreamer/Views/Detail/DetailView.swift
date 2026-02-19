@@ -23,7 +23,7 @@ struct DetailView: View {
     @State private var seasons: [Season] = []
 
     // Player state
-    @State private var activeStream: StreamInfo?
+    @State private var resolvedStreams: [StreamInfo] = []
     @State private var isInWatchlist = false
     @State private var isInFavorites = false
     @State private var libraryActionStatus: String?
@@ -65,24 +65,6 @@ struct DetailView: View {
         .onDisappear {
             streamSearchTask?.cancel()
             streamSearchTask = nil
-            activeStream = nil
-        }
-        .sheet(item: $activeStream) { stream in
-            if let detail = mediaDetail {
-                PlayerView(
-                    stream: stream,
-                    mediaTitle: detail.title,
-                    mediaId: detail.id,
-                    episodeId: detail.type == .series ? "\(detail.id)-s\(selectedSeason)e\(selectedEpisode)" : nil,
-                    onClose: {
-                        activeStream = nil
-                    }
-                )
-                    .frame(minWidth: 800, minHeight: 500)
-            } else {
-                ProgressView("Preparing player...")
-                    .frame(width: 420, height: 240)
-            }
         }
     }
 
@@ -216,17 +198,6 @@ struct DetailView: View {
                         if !libraryFolders.isEmpty {
                             Section("Library") {
                                 ForEach(libraryFolders) { folder in
-                                    Button(folder.name) {
-                                        Task { await addToFolder(folder, detail: detail) }
-                                    }
-                                }
-                            }
-                        }
-
-                        let watchlistFolders = availableFolders.filter { $0.listType == .watchlist }
-                        if !watchlistFolders.isEmpty {
-                            Section("Watchlist") {
-                                ForEach(watchlistFolders) { folder in
                                     Button(folder.name) {
                                         Task { await addToFolder(folder, detail: detail) }
                                     }
@@ -503,42 +474,43 @@ struct DetailView: View {
 
     @MainActor
     private func playStream(_ stream: StreamInfo) async {
-        let preferredPlayer = await resolvedPreferredPlayer()
-
-        // Explicit external player preferences launch externally first.
-        if preferredPlayer != .builtIn && preferredPlayer != .auto {
-            guard let url = stream.url else {
-                streamError = "Invalid stream URL: \(stream.streamURL)"
-                return
-            }
-
-            let launched = await ExternalPlayerLauncher.live.launch(url: url, preference: preferredPlayer)
-            if launched {
-                streamError = nil
-                activeStream = nil
-                return
-            }
-
-            streamError = "Could not launch \(preferredPlayer.displayName). Falling back to built-in player."
+        guard let detail = mediaDetail else {
+            streamError = "Unable to open player: media details unavailable."
+            return
         }
 
-        activeStream = stream
-    }
-
-    private func resolvedPreferredPlayer() async -> PreferredPlayer {
-        guard let settings = appState.settingsManager else {
-            return .auto
+        if !resolvedStreams.contains(where: { $0.streamURL == stream.streamURL }) {
+            resolvedStreams.append(stream)
         }
-        return (try? await settings.getPreferredPlayer()) ?? .auto
+
+        let request = PlayerSessionRequest(
+            stream: stream,
+            availableStreams: sortedResolvedStreams(),
+            mediaTitle: detail.title,
+            mediaId: detail.id,
+            episodeId: detail.type == .series ? "\(detail.id)-s\(selectedSeason)e\(selectedEpisode)" : nil
+        )
+        appState.openPlayer(request)
+        streamError = nil
     }
 
     private func clearStreamResults() {
         streamSearchTask?.cancel()
         torrents = []
         cacheResults = [:]
+        resolvedStreams = []
         streamSearchDone = false
         streamError = nil
         isSearchingStreams = false
+    }
+
+    private func sortedResolvedStreams() -> [StreamInfo] {
+        resolvedStreams.sorted {
+            if $0.quality == $1.quality {
+                return $0.sizeBytes > $1.sizeBytes
+            }
+            return $0.quality > $1.quality
+        }
     }
 
     private func refreshLibraryFlags(for detail: MediaItem) async {

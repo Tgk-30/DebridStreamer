@@ -142,5 +142,8 @@ struct UserLibraryEntryTests {
         #expect(UserLibraryEntry.ListType.watchlist.rawValue == "watchlist")
         #expect(UserLibraryEntry.ListType.favorites.rawValue == "favorites")
         #expect(UserLibraryEntry.ListType.custom.rawValue == "custom")
+        #expect(UserLibraryEntry.ListType.watchlist.supportsFolders == false)
+        #expect(UserLibraryEntry.ListType.favorites.supportsFolders == true)
+        #expect(UserLibraryEntry.ListType.custom.supportsFolders == true)
     }
 }

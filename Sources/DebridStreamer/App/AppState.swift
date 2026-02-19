@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 /// Central application state observable by all views.
 @Observable
@@ -11,6 +12,7 @@ final class AppState {
     var errorMessage: String?
     var assistantDraftPrompt = ""
     var selectedLibraryFolderId: String?
+    var activePlayerSession: PlayerSessionRequest?
     private let secretStore: any SecretStore
     let discoverStore = DiscoverCatalogStore()
     let discoverAICurationStore = DiscoverAICurationStore()
@@ -23,9 +25,31 @@ final class AppState {
     private(set) var indexerManager: IndexerManager?
     private(set) var aiAssistantManager: AIAssistantManager?
     private(set) var discoverAICurationService: DiscoverAICurationService?
+    private var playerWindowController: PlayerWindowController?
 
     init(secretStore: any SecretStore = KeychainSecretStore()) {
         self.secretStore = secretStore
+    }
+
+    func openPlayer(_ request: PlayerSessionRequest) {
+        closePlayer()
+        activePlayerSession = request
+
+        let controller = PlayerWindowController(appState: self, request: request)
+        playerWindowController = controller
+        controller.show()
+    }
+
+    func closePlayer() {
+        playerWindowController?.close()
+        playerWindowController = nil
+        activePlayerSession = nil
+    }
+
+    func playerWindowDidClose(requestID: UUID) {
+        guard activePlayerSession?.id == requestID else { return }
+        activePlayerSession = nil
+        playerWindowController = nil
     }
 
     func initialize() async throws {

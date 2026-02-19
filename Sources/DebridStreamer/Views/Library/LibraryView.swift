@@ -45,9 +45,14 @@ struct HistoryView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text(item.history.lastWatched, style: .relative)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(item.history.lastWatched.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(item.history.lastWatched, style: .relative)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary.opacity(0.9))
+                            }
                         }
                     }
                     .buttonStyle(.plain)
@@ -117,10 +122,16 @@ private struct LibraryCollectionView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            folderSidebar
-            Divider()
-            contentPane
+        Group {
+            if viewModel.supportsFolders {
+                HStack(spacing: 0) {
+                    folderSidebar
+                    Divider()
+                    contentPane
+                }
+            } else {
+                contentPane
+            }
         }
         .navigationTitle(title)
         .task { await loadData() }
@@ -301,8 +312,10 @@ private struct LibraryCollectionView: View {
             } else if viewModel.items.isEmpty {
                 emptyState(
                     icon: "film.stack",
-                    title: "No items in this folder",
-                    subtitle: "Open Settings → Imports & Sync to import IMDb CSV into a named folder."
+                    title: viewModel.supportsFolders ? "No items in this folder" : "No items in watchlist",
+                    subtitle: viewModel.supportsFolders
+                        ? "Open Settings → Imports & Sync to import IMDb CSV into a named folder."
+                        : "Add titles from Detail pages to build your watchlist."
                 )
             } else {
                 ScrollView {
@@ -351,7 +364,9 @@ private struct LibraryCollectionView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     HStack {
-                        Text("Folder-first library: import CSVs into dedicated folders from Settings.")
+                        Text(viewModel.supportsFolders
+                             ? "Folder-first library: import CSVs into dedicated folders from Settings."
+                             : "Watchlist is a single flat list for quick triage.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -365,8 +380,11 @@ private struct LibraryCollectionView: View {
 
     private func loadData() async {
         guard let db = appState.databaseManager else { return }
-        await viewModel.load(database: db, preferredFolderId: appState.selectedLibraryFolderId)
-        appState.selectedLibraryFolderId = viewModel.selectedFolderId
+        let preferred = viewModel.supportsFolders ? appState.selectedLibraryFolderId : nil
+        await viewModel.load(database: db, preferredFolderId: preferred)
+        if viewModel.supportsFolders {
+            appState.selectedLibraryFolderId = viewModel.selectedFolderId
+        }
     }
 
     private func refreshData() async {

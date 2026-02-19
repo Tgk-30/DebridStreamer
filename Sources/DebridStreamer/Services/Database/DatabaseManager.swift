@@ -1,6 +1,17 @@
 import Foundation
 import GRDB
 
+enum DatabaseManagerError: LocalizedError, Equatable {
+    case foldersNotSupported(UserLibraryEntry.ListType)
+
+    var errorDescription: String? {
+        switch self {
+        case .foldersNotSupported(let listType):
+            return "Folders are not supported for \(listType.rawValue)."
+        }
+    }
+}
+
 /// Actor managing all SQLite database operations via GRDB.
 actor DatabaseManager {
     let dbPool: DatabasePool
@@ -322,6 +333,40 @@ actor DatabaseManager {
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_assistant_memory_chunks_scope_importance ON assistant_memory_chunks(scope, importance DESC, createdAt DESC)")
         }
 
+        migrator.registerMigration("v9_watchlist_flatten") { db in
+            guard try db.tableExists("user_library"), try db.tableExists("library_folders") else { return }
+
+            try Self.ensureSystemLibraryFolders(in: db)
+            let watchlistRootID = Self.systemFolderID(for: .watchlist)
+
+            try db.execute(
+                sql: """
+                UPDATE user_library
+                SET folderId = ?
+                WHERE listType = 'watchlist'
+                  AND (folderId IS NULL OR folderId = '' OR folderId != ?)
+                """,
+                arguments: [watchlistRootID, watchlistRootID]
+            )
+
+            try db.execute(
+                sql: """
+                DELETE FROM user_library
+                WHERE listType = 'watchlist'
+                  AND rowid NOT IN (
+                      SELECT MIN(rowid)
+                      FROM user_library
+                      WHERE listType = 'watchlist'
+                      GROUP BY mediaId, folderId
+                  )
+                """
+            )
+
+            try db.execute(
+                sql: "DELETE FROM library_folders WHERE listType = 'watchlist' AND isSystem = 0"
+            )
+        }
+
         return migrator
     }
 
@@ -451,7 +496,9 @@ actor DatabaseManager {
             try Self.ensureSystemLibraryFolders(in: db)
 
             var normalized = entry
-            if normalized.folderId?.isEmpty != false {
+            if !normalized.listType.supportsFolders {
+                normalized.folderId = Self.systemFolderID(for: normalized.listType)
+            } else if normalized.folderId?.isEmpty != false {
                 normalized.folderId = Self.systemFolderID(for: normalized.listType)
             }
             try normalized.save(db)
@@ -703,7 +750,10 @@ actor DatabaseManager {
         listType: UserLibraryEntry.ListType,
         parentId: String?
     ) async throws -> LibraryFolder {
-        try await dbPool.write { db in
+        guard listType.supportsFolders else {
+            throw DatabaseManagerError.foldersNotSupported(listType)
+        }
+        return try await dbPool.write { db in
             try Self.ensureSystemLibraryFolders(in: db)
             let resolvedParentId = parentId ?? Self.systemFolderID(for: listType)
             let uniqueName = try Self.uniqueFolderName(
@@ -730,6 +780,9 @@ actor DatabaseManager {
     func renameLibraryFolder(id: String, name: String) async throws {
         try await dbPool.write { db in
             guard var folder = try LibraryFolder.fetchOne(db, key: id) else { return }
+            if !folder.listType.supportsFolders {
+                throw DatabaseManagerError.foldersNotSupported(folder.listType)
+            }
             guard !folder.isSystem else { return }
             let uniqueName = try Self.uniqueFolderName(
                 in: db,
@@ -747,6 +800,9 @@ actor DatabaseManager {
     func moveLibraryFolder(id: String, newParentId: String?) async throws {
         try await dbPool.write { db in
             guard var folder = try LibraryFolder.fetchOne(db, key: id) else { return }
+            if !folder.listType.supportsFolders {
+                throw DatabaseManagerError.foldersNotSupported(folder.listType)
+            }
             guard !folder.isSystem else { return }
             let parent = if let newParentId {
                 newParentId
@@ -767,7 +823,7 @@ actor DatabaseManager {
     func moveLibraryEntry(id: String, toFolderId folderId: String) async throws {
         try await dbPool.write { db in
             guard var entry = try UserLibraryEntry.fetchOne(db, key: id) else { return }
-            entry.folderId = folderId
+            entry.folderId = entry.listType.supportsFolders ? folderId : Self.systemFolderID(for: entry.listType)
             entry.addedAt = Date()
             try entry.save(db)
         }
@@ -790,6 +846,9 @@ actor DatabaseManager {
                 ])
             }
             guard let folder = try LibraryFolder.fetchOne(db, key: id) else { return }
+            if !folder.listType.supportsFolders {
+                throw DatabaseManagerError.foldersNotSupported(folder.listType)
+            }
             let fallbackFolderID = Self.systemFolderID(for: folder.listType)
             let idsToReassign = try Self.fetchDescendantIDs(db: db, rootFolderId: id)
 
@@ -812,6 +871,9 @@ actor DatabaseManager {
         listType: UserLibraryEntry.ListType,
         folderPath: String?
     ) async throws -> LibraryFolder {
+        guard listType.supportsFolders else {
+            return try await fetchSystemLibraryFolder(listType: listType)
+        }
         let normalizedPath = LibraryFoldering.normalizeStoredFolder(folderPath)
         guard let normalizedPath else {
             return try await fetchSystemLibraryFolder(listType: listType)
@@ -876,17 +938,18 @@ actor DatabaseManager {
     ) async throws -> UserLibraryEntry {
         try await dbPool.write { db in
             try Self.ensureSystemLibraryFolders(in: db)
+            let targetFolderID = listType.supportsFolders ? folderId : Self.systemFolderID(for: listType)
 
             _ = try UserLibraryEntry
                 .filter(UserLibraryEntry.Columns.mediaId == mediaId)
                 .filter(UserLibraryEntry.Columns.listType == listType.rawValue)
-                .filter(UserLibraryEntry.Columns.folderId != folderId)
+                .filter(UserLibraryEntry.Columns.folderId != targetFolderID)
                 .deleteAll(db)
 
             if var existing = try UserLibraryEntry
                 .filter(UserLibraryEntry.Columns.mediaId == mediaId)
                 .filter(UserLibraryEntry.Columns.listType == listType.rawValue)
-                .filter(UserLibraryEntry.Columns.folderId == folderId)
+                .filter(UserLibraryEntry.Columns.folderId == targetFolderID)
                 .fetchOne(db) {
                 existing.addedAt = Date()
                 existing.customListName = LibraryFoldering.normalizeStoredFolder(customListName)
@@ -895,9 +958,9 @@ actor DatabaseManager {
             }
 
             let entry = UserLibraryEntry(
-                id: LibraryFoldering.entryID(mediaId: mediaId, listType: listType) + "-\(folderId)",
+                id: LibraryFoldering.entryID(mediaId: mediaId, listType: listType) + "-\(targetFolderID)",
                 mediaId: mediaId,
-                folderId: folderId,
+                folderId: targetFolderID,
                 listType: listType,
                 addedAt: Date(),
                 customListName: LibraryFoldering.normalizeStoredFolder(customListName)

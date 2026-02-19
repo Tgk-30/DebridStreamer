@@ -45,6 +45,60 @@ func makeLegacyV4DatabasePool() throws -> DatabasePool {
     return dbPool
 }
 
+/// Helper to create a pre-v9 schema and migration state for watchlist flatten tests.
+func makeLegacyV8DatabasePool() throws -> DatabasePool {
+    let tempDir = FileManager.default.temporaryDirectory
+    let dbPath = tempDir.appendingPathComponent("legacy-v8-\(UUID().uuidString).sqlite").path
+    let dbPool = try DatabasePool(path: dbPath)
+
+    try dbPool.write { db in
+        try db.execute(
+            sql: """
+            CREATE TABLE user_library (
+                id TEXT PRIMARY KEY NOT NULL,
+                mediaId TEXT NOT NULL,
+                listType TEXT NOT NULL,
+                addedAt DATETIME NOT NULL,
+                customListName TEXT,
+                folderId TEXT
+            )
+            """
+        )
+        try db.execute(
+            sql: """
+            CREATE TABLE library_folders (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                parentId TEXT,
+                listType TEXT NOT NULL,
+                isSystem BOOLEAN NOT NULL DEFAULT 0,
+                createdAt DATETIME NOT NULL,
+                updatedAt DATETIME NOT NULL
+            )
+            """
+        )
+        try db.execute(sql: "CREATE TABLE grdb_migrations (identifier TEXT NOT NULL PRIMARY KEY)")
+
+        for identifier in [
+            "v1_core",
+            "v2_indexers_ext",
+            "v3_ai_assistant",
+            "v4_sync_state",
+            "v5_library_folders",
+            "v6_taste_profile",
+            "v7_discover_ai_cache",
+            "v8_assistant_memory"
+        ] {
+            try db.execute(
+                sql: "INSERT INTO grdb_migrations (identifier) VALUES (?)",
+                arguments: [identifier]
+            )
+        }
+    }
+
+    return dbPool
+}
+
 @Suite("DatabaseManager - Media Cache Operations")
 struct DatabaseMediaCacheTests {
     @Test("Save and fetch media item")
@@ -534,8 +588,8 @@ struct DatabaseIndexerConfigTests {
     }
 }
 
-@Suite("DatabaseManager - Migration v5-v8")
-struct DatabaseMigrationV5ToV8Tests {
+@Suite("DatabaseManager - Migration v5-v9")
+struct DatabaseMigrationV5ToV9Tests {
     @Test("v5 backfills user_library.folderId and seeds system folders")
     func v5BackfillFolderIDs() async throws {
         let dbPool = try makeLegacyV4DatabasePool()
@@ -609,6 +663,46 @@ struct DatabaseMigrationV5ToV8Tests {
         #expect(retrieved.count == 1)
         #expect(retrieved[0].id == "mem-1")
     }
+
+    @Test("v9 flattens watchlist folders to watchlist root")
+    func v9FlattensWatchlistFolders() async throws {
+        let dbPool = try makeLegacyV8DatabasePool()
+        let now = Date()
+        let watchlistRoot = LibraryFolder.systemFolderID(for: .watchlist)
+
+        try await dbPool.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO library_folders (id, name, parentId, listType, isSystem, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [watchlistRoot, "Watchlist", nil as String?, "watchlist", true, now, now]
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO library_folders (id, name, parentId, listType, isSystem, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: ["watchlist-custom", "Sci-Fi", watchlistRoot, "watchlist", false, now, now]
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO user_library (id, mediaId, listType, addedAt, folderId)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                arguments: ["w1", "tt1001", "watchlist", now, "watchlist-custom"]
+            )
+        }
+
+        let db = try DatabaseManager(dbPool: dbPool)
+        let watchlistEntries = try await db.fetchLibrary(listType: .watchlist)
+        #expect(watchlistEntries.count == 1)
+        #expect(watchlistEntries[0].folderId == watchlistRoot)
+
+        let watchlistFolders = try await db.fetchAllLibraryFolders(listType: .watchlist)
+        #expect(watchlistFolders.count == 1)
+        #expect(watchlistFolders[0].id == watchlistRoot)
+    }
 }
 
 @Suite("DatabaseManager - Folder Tree Operations")
@@ -616,15 +710,12 @@ struct DatabaseFolderTreeTests {
     @Test("Folder tree queries include descendants when requested")
     func folderTreeFetches() async throws {
         let db = try makeTestDatabase()
-        let rootID = try await db.fetchSystemLibraryFolderID(listType: .watchlist)
-
-        let child = LibraryFolder(
-            id: "watchlist-sci-fi",
+        let rootID = try await db.fetchSystemLibraryFolderID(listType: .favorites)
+        let child = try await db.createLibraryFolder(
             name: "Sci-Fi",
-            parentId: rootID,
-            listType: .watchlist
+            listType: .favorites,
+            parentId: rootID
         )
-        try await db.saveLibraryFolder(child)
 
         try await db.saveMedia(MediaItem(id: "tt1001", type: .movie, title: "Root Movie"))
         try await db.saveMedia(MediaItem(id: "tt1002", type: .movie, title: "Child Movie"))
@@ -633,14 +724,14 @@ struct DatabaseFolderTreeTests {
             id: "tt1001-root",
             mediaId: "tt1001",
             folderId: rootID,
-            listType: .watchlist,
+            listType: .favorites,
             addedAt: Date()
         ))
         try await db.addToLibrary(UserLibraryEntry(
             id: "tt1002-child",
             mediaId: "tt1002",
             folderId: child.id,
-            listType: .watchlist,
+            listType: .favorites,
             addedAt: Date()
         ))
 
@@ -656,6 +747,27 @@ struct DatabaseFolderTreeTests {
         let treeMedia = try await db.fetchLibraryMedia(folderId: rootID, includeDescendants: true)
         #expect(treeMedia.map(\.id).contains("tt1001"))
         #expect(treeMedia.map(\.id).contains("tt1002"))
+    }
+}
+
+@Suite("DatabaseManager - Watchlist Folder Policy")
+struct DatabaseWatchlistFolderPolicyTests {
+    @Test("Watchlist folder creation is rejected")
+    func watchlistFolderCreationRejected() async throws {
+        let db = try makeTestDatabase()
+
+        do {
+            _ = try await db.createLibraryFolder(
+                name: "Blocked",
+                listType: .watchlist,
+                parentId: nil
+            )
+            Issue.record("Expected watchlist folder creation to fail")
+        } catch let error as DatabaseManagerError {
+            #expect(error == .foldersNotSupported(.watchlist))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
     }
 }
 

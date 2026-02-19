@@ -8,9 +8,9 @@ struct IMDbCSVSyncServiceTests {
     func importIdempotent() async throws {
         let db = try makeTestDatabase()
         let service = IMDbCSVSyncService()
-        let root = try await db.fetchSystemLibraryFolderID(listType: .watchlist)
-        let folderA = try await db.createLibraryFolder(name: "Import A", listType: .watchlist, parentId: root)
-        let folderB = try await db.createLibraryFolder(name: "Import B", listType: .watchlist, parentId: root)
+        let root = try await db.fetchSystemLibraryFolderID(listType: .favorites)
+        let folderA = try await db.createLibraryFolder(name: "Import A", listType: .favorites, parentId: root)
+        let folderB = try await db.createLibraryFolder(name: "Import B", listType: .favorites, parentId: root)
 
         let csv = """
         Const,Title,Year
@@ -18,19 +18,42 @@ struct IMDbCSVSyncServiceTests {
         tt1234567,Example Movie,2026
         """
 
-        let first = try await service.importCSV(csv, listType: .watchlist, folderId: folderA.id, database: db)
+        let first = try await service.importCSV(csv, listType: .favorites, folderId: folderA.id, database: db)
         #expect(first.added == 1)
         #expect(first.skippedDuplicates == 1)
 
-        let second = try await service.importCSV(csv, listType: .watchlist, folderId: folderA.id, database: db)
+        let second = try await service.importCSV(csv, listType: .favorites, folderId: folderA.id, database: db)
         #expect(second.added == 0)
         #expect(second.skippedDuplicates == 2)
 
-        let third = try await service.importCSV(csv, listType: .watchlist, folderId: folderB.id, database: db)
+        let third = try await service.importCSV(csv, listType: .favorites, folderId: folderB.id, database: db)
         #expect(third.added == 1)
 
-        let all = try await db.fetchLibrary(listType: .watchlist)
+        let all = try await db.fetchLibrary(listType: .favorites)
         #expect(all.count == 2)
+    }
+
+    @Test("Watchlist imports are flattened to watchlist root")
+    func watchlistImportUsesRoot() async throws {
+        let db = try makeTestDatabase()
+        let service = IMDbCSVSyncService()
+        let watchlistRoot = try await db.fetchSystemLibraryFolderID(listType: .watchlist)
+
+        let csv = """
+        Const,Title,Year
+        tt7777777,Watchlist Movie,2026
+        """
+
+        _ = try await service.importCSV(
+            csv,
+            listType: .watchlist,
+            folderId: "non-existent-folder",
+            database: db
+        )
+
+        let entries = try await db.fetchLibrary(listType: .watchlist)
+        #expect(entries.count == 1)
+        #expect(entries[0].folderId == watchlistRoot)
     }
 
     @Test("Export supports folder-scope trees")

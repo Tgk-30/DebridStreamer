@@ -1,12 +1,11 @@
 import SwiftUI
-import AVKit
 import AppKit
 
 struct PlayerView: View {
     @Environment(AppState.self) private var appState
-    @Environment(\.dismiss) private var dismiss
 
     let stream: StreamInfo
+    let availableStreams: [StreamInfo]
     let mediaTitle: String
     let mediaId: String
     let episodeId: String?
@@ -26,20 +25,22 @@ struct PlayerView: View {
             Color.black.ignoresSafeArea()
 
             playbackSurface
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    viewModel.registerUserInteraction()
+                }
 
-            VStack(spacing: 10) {
-                statusPills
-                Spacer()
-                controlsPanel
+            MouseMoveMonitor {
+                viewModel.registerUserInteraction()
             }
-            .padding(12)
+            .allowsHitTesting(false)
+
+            controlsLayer
 
             if viewModel.isLoading {
                 loadingOverlay
             } else if viewModel.runtimeState == .failed, let errorMessage = viewModel.errorMessage {
                 errorOverlay(errorMessage)
-            } else if viewModel.runtimeState == .fallbackLaunched {
-                fallbackOverlay
             }
 
             Button {
@@ -62,20 +63,21 @@ struct PlayerView: View {
             await syncProgressLoop()
         }
         .onExitCommand {
-            viewModel.exitFullscreen(window: playerWindow)
+            if viewModel.isFullscreen(window: playerWindow) {
+                viewModel.exitFullscreen(window: playerWindow)
+            } else {
+                closePlayer()
+            }
         }
         .onDisappear {
-            teardownPlayer(notifyParent: true)
+            teardownPlayer(notifyParent: false)
         }
     }
 
     @ViewBuilder
     private var playbackSurface: some View {
-        if viewModel.selectedEngine == .vlc, let session = viewModel.vlcSession {
+        if let session = viewModel.vlcSession {
             VLCPlayerSurfaceView(session: session)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let player = viewModel.avPlayer {
-            NativeAVPlayerView(player: player)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             Rectangle().fill(Color.black)
@@ -87,10 +89,22 @@ struct PlayerView: View {
         }
     }
 
+    private var controlsLayer: some View {
+        VStack(spacing: 10) {
+            statusPills
+                .opacity(viewModel.controlsVisible ? 1 : 0)
+            Spacer()
+            controlsPanel
+                .opacity(viewModel.controlsVisible ? 1 : 0)
+        }
+        .padding(12)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.controlsVisible)
+    }
+
     private var statusPills: some View {
         HStack(spacing: 8) {
             if let engine = viewModel.selectedEngine {
-                Label(engine.displayName, systemImage: engine == .avPlayer ? "appletv" : "bolt.fill")
+                Label(engine.displayName, systemImage: "bolt.fill")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
@@ -102,6 +116,14 @@ struct PlayerView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(.thinMaterial, in: Capsule())
+
+            if let selected = selectedStream {
+                Text(selected.quality.rawValue.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.thinMaterial, in: Capsule())
+            }
 
             Spacer()
         }
@@ -148,12 +170,11 @@ struct PlayerView: View {
                         .font(.caption)
                 }
 
-                Spacer()
+                qualityMenu
+                audioMenu
+                subtitleMenu
 
-                Button("External") {
-                    Task { await viewModel.launchExternalNow() }
-                }
-                .buttonStyle(.bordered)
+                Spacer()
 
                 Button {
                     Task { await viewModel.toggleFullscreen(window: playerWindow) }
@@ -194,7 +215,9 @@ struct PlayerView: View {
                     in: 0...1,
                     onEditingChanged: { editing in
                         isDraggingProgress = editing
-                        if !editing {
+                        if editing {
+                            viewModel.registerUserInteraction()
+                        } else {
                             viewModel.seek(to: progress)
                         }
                     }
@@ -214,12 +237,62 @@ struct PlayerView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: 760)
+        .frame(maxWidth: 960)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
         )
+    }
+
+    private var qualityMenu: some View {
+        Menu {
+            ForEach(viewModel.availableStreams, id: \.streamURL) { candidate in
+                Button(candidate.qualityLabel) {
+                    Task { await viewModel.switchToStream(candidate) }
+                }
+            }
+        } label: {
+            Label(
+                selectedStream?.quality.rawValue.uppercased() ?? "Quality",
+                systemImage: "rectangle.3.group.fill"
+            )
+            .font(.caption)
+        }
+    }
+
+    private var audioMenu: some View {
+        Menu {
+            if viewModel.availableAudioTracks.isEmpty {
+                Text("No audio tracks")
+            } else {
+                ForEach(viewModel.availableAudioTracks) { track in
+                    Button(track.name) {
+                        viewModel.selectAudioTrack(track.id)
+                    }
+                }
+            }
+        } label: {
+            Label("Audio", systemImage: "waveform")
+                .font(.caption)
+        }
+    }
+
+    private var subtitleMenu: some View {
+        Menu {
+            if viewModel.availableSubtitleTracks.isEmpty {
+                Text("No subtitles")
+            } else {
+                ForEach(viewModel.availableSubtitleTracks) { track in
+                    Button(track.name) {
+                        viewModel.selectSubtitleTrack(track.id)
+                    }
+                }
+            }
+        } label: {
+            Label("Subtitles", systemImage: "captions.bubble")
+                .font(.caption)
+        }
     }
 
     private var loadingOverlay: some View {
@@ -240,27 +313,6 @@ struct PlayerView: View {
             }
         }
         .padding(20)
-    }
-
-    private var fallbackOverlay: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "arrow.up.right.square")
-                .font(.system(size: 40))
-                .foregroundStyle(.white)
-            Text("Opened In External Player")
-                .font(.title3)
-                .fontWeight(.semibold)
-                .foregroundStyle(.white)
-            Text(viewModel.externalLaunchMessage ?? "Internal playback could not start.")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.75))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-            Button("Close") { closePlayer() }
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 6)
-        }
-        .padding(18)
     }
 
     private func errorOverlay(_ errorMessage: String) -> some View {
@@ -284,18 +336,20 @@ struct PlayerView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button("Try AV") {
-                    Task { await viewModel.retryWithEngine(.avPlayer) }
-                }
-                .buttonStyle(.bordered)
-
-                Button("Try VLC") {
-                    Task { await viewModel.retryWithEngine(.vlc) }
+                Button("Close") {
+                    closePlayer()
                 }
                 .buttonStyle(.bordered)
             }
         }
         .padding(18)
+    }
+
+    private var selectedStream: StreamInfo? {
+        guard let selectedStreamURL = viewModel.selectedStreamURL else {
+            return viewModel.availableStreams.first
+        }
+        return viewModel.availableStreams.first(where: { $0.streamURL == selectedStreamURL }) ?? viewModel.availableStreams.first
     }
 
     private func startPlayback() async {
@@ -306,6 +360,7 @@ struct PlayerView: View {
 
         await viewModel.preparePlayback(
             stream: stream,
+            availableStreams: availableStreams.isEmpty ? [stream] : availableStreams,
             backendPreference: backend,
             externalPlayerPreference: externalPreference
         )
@@ -353,7 +408,7 @@ struct PlayerView: View {
             durationSeconds: duration,
             completed: completed,
             lastWatched: Date(),
-            streamQuality: stream.quality.rawValue
+            streamQuality: selectedStream?.quality.rawValue ?? stream.quality.rawValue
         )
 
         try? await database.saveWatchHistory(entry)
@@ -362,7 +417,6 @@ struct PlayerView: View {
     private func closePlayer() {
         viewModel.exitFullscreen(window: playerWindow)
         teardownPlayer(notifyParent: true)
-        dismiss()
     }
 
     private func teardownPlayer(notifyParent: Bool) {
@@ -388,23 +442,6 @@ struct PlayerView: View {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%02d:%02d", minutes, seconds)
-    }
-}
-
-private struct NativeAVPlayerView: NSViewRepresentable {
-    let player: AVPlayer
-
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        view.controlsStyle = .none
-        view.player = player
-        return view
-    }
-
-    func updateNSView(_ nsView: AVPlayerView, context: Context) {
-        if nsView.player !== player {
-            nsView.player = player
-        }
     }
 }
 
@@ -438,6 +475,50 @@ private struct PlayerWindowAccessor: NSViewRepresentable {
             if window !== nsView.window {
                 window = nsView.window
             }
+        }
+    }
+}
+
+private struct MouseMoveMonitor: NSViewRepresentable {
+    let onMove: () -> Void
+
+    func makeNSView(context: Context) -> TrackingView {
+        let view = TrackingView()
+        view.onMove = onMove
+        return view
+    }
+
+    func updateNSView(_ nsView: TrackingView, context: Context) {
+        nsView.onMove = onMove
+    }
+
+    final class TrackingView: NSView {
+        var onMove: (() -> Void)?
+        private var trackingArea: NSTrackingArea?
+
+        override func updateTrackingAreas() {
+            if let trackingArea {
+                removeTrackingArea(trackingArea)
+            }
+            let area = NSTrackingArea(
+                rect: bounds,
+                options: [.activeAlways, .mouseMoved, .inVisibleRect],
+                owner: self,
+                userInfo: nil
+            )
+            addTrackingArea(area)
+            trackingArea = area
+            super.updateTrackingAreas()
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            onMove?()
+            super.mouseMoved(with: event)
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.acceptsMouseMovedEvents = true
         }
     }
 }
