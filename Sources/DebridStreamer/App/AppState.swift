@@ -13,6 +13,7 @@ final class AppState {
     var assistantDraftPrompt = ""
     var selectedLibraryFolderId: String?
     var activePlayerSession: PlayerSessionRequest?
+    var activePlayerIsFullscreen = false
     private let secretStore: any SecretStore
     let discoverStore = DiscoverCatalogStore()
     let discoverAICurationStore = DiscoverAICurationStore()
@@ -34,6 +35,7 @@ final class AppState {
     func openPlayer(_ request: PlayerSessionRequest) {
         closePlayer()
         activePlayerSession = request
+        activePlayerIsFullscreen = false
 
         let controller = PlayerWindowController(appState: self, request: request)
         playerWindowController = controller
@@ -44,12 +46,19 @@ final class AppState {
         playerWindowController?.close()
         playerWindowController = nil
         activePlayerSession = nil
+        activePlayerIsFullscreen = false
     }
 
     func playerWindowDidClose(requestID: UUID) {
         guard activePlayerSession?.id == requestID else { return }
         activePlayerSession = nil
         playerWindowController = nil
+        activePlayerIsFullscreen = false
+    }
+
+    func playerWindowDidChangeFullscreen(requestID: UUID, isFullscreen: Bool) {
+        guard activePlayerSession?.id == requestID else { return }
+        activePlayerIsFullscreen = isFullscreen
     }
 
     func initialize() async throws {
@@ -123,15 +132,25 @@ final class AppState {
         guard let settings = settingsManager else { return }
 
         var providers: [AIProviderKind: any AIAssistantProvider] = [:]
+        let openAIModel = resolveModelID(
+            preset: try? await settings.getValue(forKey: SettingsKeys.openAIModelPreset),
+            custom: try? await settings.getValue(forKey: SettingsKeys.openAIModelCustom),
+            defaultModel: "gpt-4o-mini"
+        )
+        let anthropicModel = resolveModelID(
+            preset: try? await settings.getValue(forKey: SettingsKeys.anthropicModelPreset),
+            custom: try? await settings.getValue(forKey: SettingsKeys.anthropicModelCustom),
+            defaultModel: "claude-3-5-haiku-latest"
+        )
 
         if let openAIKey = try? await settings.getValue(forKey: SettingsKeys.openAIApiKey),
            !openAIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            providers[.openAI] = OpenAIProvider(apiKey: openAIKey)
+            providers[.openAI] = OpenAIProvider(apiKey: openAIKey, model: openAIModel)
         }
 
         if let anthropicKey = try? await settings.getValue(forKey: SettingsKeys.anthropicApiKey),
            !anthropicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            providers[.anthropic] = AnthropicProvider(apiKey: anthropicKey)
+            providers[.anthropic] = AnthropicProvider(apiKey: anthropicKey, model: anthropicModel)
         }
 
         let storedOllama = try? await settings.getValue(forKey: SettingsKeys.ollamaEndpoint)
@@ -222,6 +241,22 @@ final class AppState {
         }
 
         return migratedConfigs
+    }
+
+    private func resolveModelID(preset: String?, custom: String?, defaultModel: String) -> String {
+        let presetValue = preset?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let customValue = custom?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if presetValue == "custom" {
+            return customValue.isEmpty ? defaultModel : customValue
+        }
+        if !presetValue.isEmpty {
+            return presetValue
+        }
+        if !customValue.isEmpty {
+            return customValue
+        }
+        return defaultModel
     }
 }
 

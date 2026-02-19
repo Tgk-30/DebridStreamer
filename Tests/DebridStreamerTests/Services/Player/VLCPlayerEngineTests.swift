@@ -52,6 +52,34 @@ struct VLCPlayerEngineTests {
             Issue.record("Unexpected error: \(error)")
         }
     }
+
+    @Test("Track option menu label includes rich metadata when available")
+    func trackOptionMenuLabelWithMetadata() {
+        let option = VLCTrackOption(
+            id: 2,
+            name: "English",
+            languageCode: "en",
+            codec: "eac3",
+            channelCount: 6,
+            isDisabledTrack: false,
+            spatialAudioHint: true
+        )
+
+        #expect(option.hasRichMetadata == true)
+        #expect(option.menuLabel.contains("EN"))
+        #expect(option.menuLabel.contains("EAC3"))
+        #expect(option.menuLabel.contains("6ch"))
+        #expect(option.menuLabel.contains("Spatial"))
+    }
+
+    @Test("Track option infers disabled state from id and name")
+    func trackOptionDisabledInference() {
+        let byID = VLCTrackOption(id: -1, name: "Track")
+        let byName = VLCTrackOption(id: 1, name: "Disabled")
+
+        #expect(byID.isDisabledTrack == true)
+        #expect(byName.isDisabledTrack == true)
+    }
 }
 
 @MainActor

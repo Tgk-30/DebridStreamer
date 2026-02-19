@@ -1205,15 +1205,34 @@ actor DatabaseManager {
     private static func ensureSystemLibraryFolders(in db: Database) throws {
         let now = Date()
         for listType in UserLibraryEntry.ListType.allCases {
+            let folderID = systemFolderID(for: listType)
+            if var existing = try LibraryFolder.fetchOne(db, key: folderID) {
+                var changed = false
+                let expectedName = LibraryFolder.systemFolderName(for: listType)
+                if existing.name != expectedName {
+                    existing.name = expectedName
+                    changed = true
+                }
+                if !existing.isSystem {
+                    existing.isSystem = true
+                    changed = true
+                }
+                if changed {
+                    existing.updatedAt = now
+                    try existing.save(db)
+                }
+                continue
+            }
+
             let folder = LibraryFolder(
-                id: systemFolderID(for: listType),
+                id: folderID,
                 name: LibraryFolder.systemFolderName(for: listType),
                 listType: listType,
                 isSystem: true,
                 createdAt: now,
                 updatedAt: now
             )
-            try folder.insert(db, onConflict: .ignore)
+            try folder.insert(db)
         }
     }
 

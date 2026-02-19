@@ -77,8 +77,8 @@ struct AIAssistantManagerTests {
         #expect(result.mergedRecommendations.map(\.title).contains("Fallback Title"))
     }
 
-    @Test("Personalization opt-in controls local context enrichment")
-    func personalizationOptInContext() async throws {
+    @Test("Base local context is available even when personalization is disabled")
+    func baseContextAvailableWithoutPersonalization() async throws {
         let db = try makeTestDatabase()
         try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "false")
         try await db.saveMedia(MediaItem(id: "tt200", type: .movie, title: "Context Film", year: 2024))
@@ -109,7 +109,7 @@ struct AIAssistantManagerTests {
             )
         )
         let disabledCandidates = await captureProvider.snapshotCandidates()
-        #expect(disabledCandidates.isEmpty)
+        #expect(disabledCandidates.contains("Context Film"))
 
         try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "true")
         _ = await manager.recommend(
@@ -168,7 +168,7 @@ struct AIAssistantManagerTests {
 
         let calls = await provider.snapshots()
         #expect(calls.count == 2)
-        #expect(calls[0].contains("Context Shift") == false)
+        #expect(calls[0].contains("Context Shift"))
         #expect(calls[1].contains("Context Shift"))
     }
 

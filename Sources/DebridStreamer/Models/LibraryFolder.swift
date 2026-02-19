@@ -64,7 +64,7 @@ struct LibraryFolder: Codable, Sendable, Identifiable, Equatable, FetchableRecor
         case .watchlist:
             return "Watchlist"
         case .favorites:
-            return "Favorites"
+            return "Library"
         case .custom:
             return "Custom"
         }

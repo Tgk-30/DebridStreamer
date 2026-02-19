@@ -21,7 +21,7 @@ struct PlayerView: View {
     @State private var didTeardown = false
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color.black.ignoresSafeArea()
 
             playbackSurface
@@ -42,16 +42,6 @@ struct PlayerView: View {
             } else if viewModel.runtimeState == .failed, let errorMessage = viewModel.errorMessage {
                 errorOverlay(errorMessage)
             }
-
-            Button {
-                closePlayer()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.white.opacity(0.9))
-                    .padding(10)
-            }
-            .buttonStyle(.plain)
         }
         .navigationTitle(mediaTitle)
         .background(
@@ -63,11 +53,18 @@ struct PlayerView: View {
             await syncProgressLoop()
         }
         .onExitCommand {
-            if viewModel.isFullscreen(window: playerWindow) {
+            viewModel.registerUserInteraction()
+            if viewModel.isFullscreenActive || viewModel.isFullscreen(window: playerWindow) {
                 viewModel.exitFullscreen(window: playerWindow)
             } else {
                 closePlayer()
             }
+        }
+        .onChange(of: playerWindow) { _, newWindow in
+            viewModel.syncFullscreenState(window: newWindow)
+        }
+        .onChange(of: appState.activePlayerIsFullscreen) { _, isFullscreen in
+            viewModel.setFullscreenActive(isFullscreen)
         }
         .onDisappear {
             teardownPlayer(notifyParent: false)
@@ -131,7 +128,7 @@ struct PlayerView: View {
     }
 
     private var controlsPanel: some View {
-        let isFullscreen = viewModel.isFullscreen(window: playerWindow)
+        let isFullscreen = viewModel.isFullscreenActive
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -177,6 +174,8 @@ struct PlayerView: View {
                 Spacer()
 
                 Button {
+                    guard !viewModel.isFullscreenTransitioning else { return }
+                    viewModel.registerUserInteraction()
                     Task { await viewModel.toggleFullscreen(window: playerWindow) }
                 } label: {
                     Label(
@@ -189,6 +188,7 @@ struct PlayerView: View {
                 .buttonStyle(.bordered)
                 .help("Toggle fullscreen player window")
                 .keyboardShortcut("f", modifiers: [.control, .command])
+                .disabled(viewModel.isFullscreenTransitioning)
 
                 Button("Close") {
                     closePlayer()
@@ -267,9 +267,13 @@ struct PlayerView: View {
                 Text("No audio tracks")
             } else {
                 ForEach(viewModel.availableAudioTracks) { track in
-                    Button(track.name) {
+                    Button(track.menuLabel) {
                         viewModel.selectAudioTrack(track.id)
                     }
+                }
+                if !viewModel.hasDetailedAudioMetadata {
+                    Divider()
+                    Text("Detailed audio metadata is unavailable for this stream.")
                 }
             }
         } label: {
@@ -284,9 +288,13 @@ struct PlayerView: View {
                 Text("No subtitles")
             } else {
                 ForEach(viewModel.availableSubtitleTracks) { track in
-                    Button(track.name) {
+                    Button(track.menuLabel) {
                         viewModel.selectSubtitleTrack(track.id)
                     }
+                }
+                if !viewModel.hasDetailedSubtitleMetadata {
+                    Divider()
+                    Text("Detailed subtitle metadata is unavailable for this stream.")
                 }
             }
         } label: {
@@ -415,7 +423,6 @@ struct PlayerView: View {
     }
 
     private func closePlayer() {
-        viewModel.exitFullscreen(window: playerWindow)
         teardownPlayer(notifyParent: true)
     }
 

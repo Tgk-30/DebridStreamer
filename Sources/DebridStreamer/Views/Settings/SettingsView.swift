@@ -2,6 +2,21 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    private static let customModelPreset = "custom"
+    private let openAIModelPresets = [
+        "gpt-4o-mini",
+        "gpt-4.1-mini",
+        "gpt-4.1",
+        "gpt-4o",
+        SettingsView.customModelPreset
+    ]
+    private let anthropicModelPresets = [
+        "claude-3-5-haiku-latest",
+        "claude-3-7-sonnet-latest",
+        "claude-sonnet-4-0",
+        SettingsView.customModelPreset
+    ]
+
     @Environment(AppState.self) private var appState
     private let secretStore = KeychainSecretStore()
     private let traktSyncService = TraktSyncService()
@@ -38,6 +53,10 @@ struct SettingsView: View {
 
     @State private var openAIApiKey = ""
     @State private var anthropicApiKey = ""
+    @State private var openAIModelPreset = "gpt-4o-mini"
+    @State private var openAIModelCustom = ""
+    @State private var anthropicModelPreset = "claude-3-5-haiku-latest"
+    @State private var anthropicModelCustom = ""
     @State private var ollamaEndpoint = "http://localhost:11434/api/chat"
     @State private var aiCompareMode = true
     @State private var traktClientId = ""
@@ -298,8 +317,27 @@ struct SettingsView: View {
             Section("AI Providers (BYOK)") {
                 NativeSecureField(placeholder: "OpenAI API Key", text: $openAIApiKey)
                 NativeSecureField(placeholder: "Anthropic API Key", text: $anthropicApiKey)
+                Picker("OpenAI Model", selection: $openAIModelPreset) {
+                    ForEach(openAIModelPresets, id: \.self) { model in
+                        Text(model == SettingsView.customModelPreset ? "Custom..." : model).tag(model)
+                    }
+                }
+                if openAIModelPreset == SettingsView.customModelPreset {
+                    TextField("Custom OpenAI model ID", text: $openAIModelCustom)
+                }
+                Picker("Anthropic Model", selection: $anthropicModelPreset) {
+                    ForEach(anthropicModelPresets, id: \.self) { model in
+                        Text(model == SettingsView.customModelPreset ? "Custom..." : model).tag(model)
+                    }
+                }
+                if anthropicModelPreset == SettingsView.customModelPreset {
+                    TextField("Custom Anthropic model ID", text: $anthropicModelCustom)
+                }
                 TextField("Ollama Endpoint", text: $ollamaEndpoint)
                 Toggle("Enable compare mode by default", isOn: $aiCompareMode)
+                Text("Selected model settings persist until you change them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Trakt") {
@@ -483,6 +521,34 @@ struct SettingsView: View {
             omdbApiKey = try await settings.getValue(forKey: SettingsKeys.omdbApiKey) ?? ""
             openAIApiKey = try await settings.getValue(forKey: SettingsKeys.openAIApiKey) ?? ""
             anthropicApiKey = try await settings.getValue(forKey: SettingsKeys.anthropicApiKey) ?? ""
+            let storedOpenAIPreset = try await settings.getValue(forKey: SettingsKeys.openAIModelPreset)
+            let storedAnthropicPreset = try await settings.getValue(forKey: SettingsKeys.anthropicModelPreset)
+            openAIModelCustom = try await settings.getValue(forKey: SettingsKeys.openAIModelCustom) ?? ""
+            anthropicModelCustom = try await settings.getValue(forKey: SettingsKeys.anthropicModelCustom) ?? ""
+            if let storedOpenAIPreset {
+                let trimmed = storedOpenAIPreset.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty, !openAIModelPresets.contains(trimmed) {
+                    openAIModelCustom = trimmed
+                }
+            }
+            if let storedAnthropicPreset {
+                let trimmed = storedAnthropicPreset.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty, !anthropicModelPresets.contains(trimmed) {
+                    anthropicModelCustom = trimmed
+                }
+            }
+            openAIModelPreset = normalizedModelPreset(
+                storedPreset: storedOpenAIPreset,
+                storedCustom: openAIModelCustom,
+                supportedPresets: openAIModelPresets,
+                defaultPreset: "gpt-4o-mini"
+            )
+            anthropicModelPreset = normalizedModelPreset(
+                storedPreset: storedAnthropicPreset,
+                storedCustom: anthropicModelCustom,
+                supportedPresets: anthropicModelPresets,
+                defaultPreset: "claude-3-5-haiku-latest"
+            )
             ollamaEndpoint = try await settings.getValue(forKey: SettingsKeys.ollamaEndpoint) ?? "http://localhost:11434/api/chat"
             traktClientId = try await settings.getValue(forKey: SettingsKeys.traktClientId) ?? ""
             traktClientSecret = try await settings.getValue(forKey: SettingsKeys.traktClientSecret) ?? ""
@@ -616,6 +682,16 @@ struct SettingsView: View {
         do {
             try await settings.setValue(openAIApiKey.nilIfEmpty, forKey: SettingsKeys.openAIApiKey)
             try await settings.setValue(anthropicApiKey.nilIfEmpty, forKey: SettingsKeys.anthropicApiKey)
+            try await settings.setValue(openAIModelPreset, forKey: SettingsKeys.openAIModelPreset)
+            try await settings.setValue(
+                openAIModelPreset == SettingsView.customModelPreset ? openAIModelCustom.nilIfEmpty : nil,
+                forKey: SettingsKeys.openAIModelCustom
+            )
+            try await settings.setValue(anthropicModelPreset, forKey: SettingsKeys.anthropicModelPreset)
+            try await settings.setValue(
+                anthropicModelPreset == SettingsView.customModelPreset ? anthropicModelCustom.nilIfEmpty : nil,
+                forKey: SettingsKeys.anthropicModelCustom
+            )
             try await settings.setValue(ollamaEndpoint.nilIfEmpty, forKey: SettingsKeys.ollamaEndpoint)
             try await settings.setValue(aiCompareMode ? "true" : "false", forKey: SettingsKeys.aiCompareMode)
             try await settings.setValue(traktClientId.nilIfEmpty, forKey: SettingsKeys.traktClientId)
@@ -920,6 +996,31 @@ struct SettingsView: View {
         let base = url.deletingPathExtension().lastPathComponent
         let timestamp = ISO8601DateFormatter().string(from: Date())
         return "\(base) \(timestamp.prefix(10))"
+    }
+
+    private func normalizedModelPreset(
+        storedPreset: String?,
+        storedCustom: String,
+        supportedPresets: [String],
+        defaultPreset: String
+    ) -> String {
+        let trimmed = storedPreset?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if supportedPresets.contains(trimmed) {
+            if trimmed == SettingsView.customModelPreset, storedCustom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return defaultPreset
+            }
+            return trimmed
+        }
+
+        if !trimmed.isEmpty {
+            return SettingsView.customModelPreset
+        }
+
+        if !storedCustom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return SettingsView.customModelPreset
+        }
+
+        return defaultPreset
     }
 }
 

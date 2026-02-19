@@ -83,6 +83,28 @@ struct SettingsManagerTests {
         #expect(await secretStore.rawValue(for: SecretKey.setting(SettingsKeys.openAIApiKey)) == "openai-secret")
     }
 
+    @Test("AI model settings persist as non-secret values")
+    func aiModelSettingsPersistAsNonSecret() async throws {
+        let db = try makeTestDatabase()
+        let secretStore = InMemorySecretStore()
+        let settings = SettingsManager(database: db, secretStore: secretStore)
+
+        try await settings.setValue("gpt-4.1", forKey: SettingsKeys.openAIModelPreset)
+        try await settings.setValue("custom-openai", forKey: SettingsKeys.openAIModelCustom)
+        try await settings.setValue("claude-3-7-sonnet-latest", forKey: SettingsKeys.anthropicModelPreset)
+        try await settings.setValue("custom-anthropic", forKey: SettingsKeys.anthropicModelCustom)
+
+        let storedOpenAIPreset = try await db.getSetting(key: SettingsKeys.openAIModelPreset)
+        let storedOpenAICustom = try await db.getSetting(key: SettingsKeys.openAIModelCustom)
+        let storedAnthropicPreset = try await db.getSetting(key: SettingsKeys.anthropicModelPreset)
+        let storedAnthropicCustom = try await db.getSetting(key: SettingsKeys.anthropicModelCustom)
+
+        #expect(storedOpenAIPreset == "gpt-4.1")
+        #expect(storedOpenAICustom == "custom-openai")
+        #expect(storedAnthropicPreset == "claude-3-7-sonnet-latest")
+        #expect(storedAnthropicCustom == "custom-anthropic")
+    }
+
     @Test("Clearing secret setting removes keychain and database entries")
     func clearingSecretDeletesBackingData() async throws {
         let db = try makeTestDatabase()
@@ -197,6 +219,10 @@ struct SettingsManagerTests {
             SettingsKeys.internalPlayerBackend,
             SettingsKeys.openAIApiKey,
             SettingsKeys.anthropicApiKey,
+            SettingsKeys.openAIModelPreset,
+            SettingsKeys.openAIModelCustom,
+            SettingsKeys.anthropicModelPreset,
+            SettingsKeys.anthropicModelCustom,
             SettingsKeys.ollamaEndpoint,
             SettingsKeys.aiCompareMode,
             SettingsKeys.traktClientId,

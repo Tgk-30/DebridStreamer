@@ -215,7 +215,7 @@ private struct LibraryCollectionView: View {
                     .font(.headline)
                 Spacer()
                 Button {
-                    createParentId = viewModel.selectedFolderId
+                    createParentId = viewModel.rootFolder?.id
                     createFolderName = ""
                     showCreateFolder = true
                 } label: {
@@ -225,12 +225,14 @@ private struct LibraryCollectionView: View {
                 .help("Create Folder")
             }
 
-            if viewModel.folderTree.isEmpty {
-                Text("No folders yet.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ScrollView {
+            libraryHomeRow
+
+            ScrollView {
+                if viewModel.folderTree.isEmpty {
+                    Text("No folders yet.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
                     OutlineGroup(viewModel.folderTree, children: \.displayChildren) { node in
                         folderRow(node.folder)
                     }
@@ -259,6 +261,29 @@ private struct LibraryCollectionView: View {
         .padding(12)
         .frame(width: 280)
         .background(.ultraThinMaterial.opacity(0.45))
+    }
+
+    private var libraryHomeRow: some View {
+        Button {
+            Task {
+                guard let db = appState.databaseManager, let root = viewModel.rootFolder else { return }
+                await viewModel.selectFolder(root.id, database: db)
+                appState.selectedLibraryFolderId = root.id
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "house")
+                    .foregroundStyle(Color.accentColor)
+                Text("Library Home")
+                    .lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(viewModel.isLibraryRootSelected() ? Color.accentColor.opacity(0.20) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
     }
 
     private func folderRow(_ folder: LibraryFolder) -> some View {
@@ -344,7 +369,7 @@ private struct LibraryCollectionView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(viewModel.breadcrumbs.map(\.name).joined(separator: " / "))
+                    Text(breadcrumbTitle)
                         .font(.headline)
                     Text("\(viewModel.items.count) titles")
                         .font(.caption)
@@ -376,6 +401,18 @@ private struct LibraryCollectionView: View {
                 )
                 .frame(height: 44)
         }
+    }
+
+    private var breadcrumbTitle: String {
+        guard !viewModel.breadcrumbs.isEmpty else { return title }
+        let rootID = viewModel.rootFolder?.id
+        let labels = viewModel.breadcrumbs.map { folder in
+            if folder.id == rootID, listType == .favorites {
+                return "Library"
+            }
+            return folder.name
+        }
+        return labels.joined(separator: " / ")
     }
 
     private func loadData() async {

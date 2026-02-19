@@ -14,7 +14,8 @@ struct LibraryViewModelTests {
 
         #expect(viewModel.rootFolder != nil)
         #expect(viewModel.selectedFolderId == viewModel.rootFolder?.id)
-        #expect(viewModel.folderTree.isEmpty == false)
+        #expect(viewModel.folderTree.isEmpty == true)
+        #expect(viewModel.isLibraryRootSelected() == true)
     }
 
     @Test("Create folder selects new folder")
@@ -29,6 +30,55 @@ struct LibraryViewModelTests {
             .first(where: { $0.name == "Sci-Fi" })
         #expect(created != nil)
         #expect(viewModel.selectedFolderId == created?.id)
+    }
+
+    @Test("Library top-level folders appear as peers in the tree")
+    func topLevelFoldersAsPeers() async throws {
+        let db = try makeTestDatabase()
+        let viewModel = LibraryViewModel(listType: .favorites)
+        await viewModel.load(database: db)
+
+        _ = try await db.createLibraryFolder(
+            name: "Release Wait",
+            listType: .favorites,
+            parentId: viewModel.rootFolder?.id
+        )
+        _ = try await db.createLibraryFolder(
+            name: "To Watch",
+            listType: .favorites,
+            parentId: viewModel.rootFolder?.id
+        )
+
+        await viewModel.refresh(database: db)
+        let names = Set(viewModel.folderTree.map { $0.folder.name })
+        #expect(viewModel.folderTree.count == 2)
+        #expect(names.contains("Release Wait"))
+        #expect(names.contains("To Watch"))
+    }
+
+    @Test("Selecting library root acts as library home")
+    func selectingRootAsLibraryHome() async throws {
+        let db = try makeTestDatabase()
+        let viewModel = LibraryViewModel(listType: .favorites)
+        await viewModel.load(database: db)
+        let root = try #require(viewModel.rootFolder)
+
+        let folder = try await db.createLibraryFolder(
+            name: "Sci-Fi",
+            listType: .favorites,
+            parentId: root.id
+        )
+        try await db.saveMedia(MediaItem(id: "tt-home-1", type: .movie, title: "Home Item", year: 2025))
+        try await db.addToLibrary(UserLibraryEntry(
+            id: "home-item",
+            mediaId: "tt-home-1",
+            folderId: folder.id,
+            listType: .favorites
+        ))
+
+        await viewModel.selectFolder(root.id, database: db)
+        #expect(viewModel.isLibraryRootSelected() == true)
+        #expect(viewModel.items.contains(where: { $0.media.id == "tt-home-1" }))
     }
 
     @Test("Watchlist is flat and folder create is blocked")

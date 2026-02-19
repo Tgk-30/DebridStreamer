@@ -124,6 +124,7 @@ struct PlayerViewModelTests {
 
         await model.toggleFullscreen(window: window)
         #expect(toggleCount == 1)
+        #expect(model.isFullscreenTransitioning == false)
     }
 
     @Test("Fullscreen toggle reports diagnostics when unavailable")
@@ -135,6 +136,41 @@ struct PlayerViewModelTests {
 
         await model.toggleFullscreen(window: nil)
         #expect(model.diagnostics?.contains("Fullscreen is unavailable") == true)
+    }
+
+    @Test("Fullscreen transition guard prevents duplicate toggles")
+    func fullscreenTransitionGuard() async {
+        var toggleCount = 0
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        let model = PlayerViewModel(
+            fullscreenToggler: { _ in
+                toggleCount += 1
+            },
+            fullscreenWindowResolver: { _ in window }
+        )
+
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await model.toggleFullscreen(window: window) }
+            group.addTask { await model.toggleFullscreen(window: window) }
+        }
+
+        #expect(toggleCount == 1)
+        #expect(model.diagnostics?.contains("already in progress") == true || model.diagnostics?.contains("fullscreen") == true)
+    }
+
+    @Test("Fullscreen state follows window callback updates")
+    func fullscreenCallbackStateUpdate() async {
+        let model = PlayerViewModel()
+        #expect(model.isFullscreenActive == false)
+        model.setFullscreenActive(true)
+        #expect(model.isFullscreenActive == true)
+        model.setFullscreenActive(false)
+        #expect(model.isFullscreenActive == false)
     }
 
     @Test("Controls auto-hide and reappear on interaction")
@@ -174,6 +210,39 @@ struct PlayerViewModelTests {
         #expect(model.controlsVisible == false)
 
         model.registerUserInteraction()
+        #expect(model.controlsVisible == true)
+    }
+
+    @Test("Controls stay visible while paused")
+    func controlsStayVisibleWhenPaused() async {
+        let stream = makeStream(url: "https://cdn.example.com/movie.mkv")
+        let session = MockVLCSession()
+        session.isPlaying = true
+        let model = PlayerViewModel(
+            selector: PlayerEngineSelector(),
+            vlcEngine: MockEngine(
+                kind: .vlc,
+                result: .success(
+                    PreparedPlayback(
+                        kind: .vlc,
+                        streamURL: URL(string: stream.streamURL)!,
+                        avPlayer: nil,
+                        vlcSession: session
+                    )
+                )
+            ),
+            controlsAutoHideDelay: 0.05
+        )
+
+        await model.preparePlayback(
+            stream: stream,
+            backendPreference: .automatic,
+            externalPlayerPreference: .auto
+        )
+        model.togglePlayPause() // Pause
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(model.runtimeState == .stalled)
         #expect(model.controlsVisible == true)
     }
 

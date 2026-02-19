@@ -124,6 +124,10 @@ enum SettingsKeys {
 
     static let openAIApiKey = "openai_api_key"
     static let anthropicApiKey = "anthropic_api_key"
+    static let openAIModelPreset = "openai_model_preset"
+    static let openAIModelCustom = "openai_model_custom"
+    static let anthropicModelPreset = "anthropic_model_preset"
+    static let anthropicModelCustom = "anthropic_model_custom"
     static let ollamaEndpoint = "ollama_endpoint"
     static let aiCompareMode = "ai_compare_mode"
 

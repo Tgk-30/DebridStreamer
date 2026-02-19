@@ -47,6 +47,54 @@ struct AssistantContextAssemblerTests {
         #expect(enabled.personalizationEnabled == true)
     }
 
+    @Test("Context includes full library titles regardless of active folder")
+    func contextIncludesFullLibrary() async throws {
+        let db = try makeTestDatabase()
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "false")
+        let assembler = AssistantContextAssembler(database: db, metadataProvider: nil)
+
+        let rootID = try await db.fetchSystemLibraryFolderID(listType: .favorites)
+        let folder = try await db.createLibraryFolder(name: "Focused", listType: .favorites, parentId: rootID)
+
+        try await db.saveMedia(MediaItem(id: "tt-full-1", type: .movie, title: "Folder Title", year: 2026))
+        try await db.saveMedia(MediaItem(id: "tt-full-2", type: .movie, title: "Root Title", year: 2025))
+
+        try await db.addToLibrary(UserLibraryEntry(id: "full-1", mediaId: "tt-full-1", folderId: folder.id, listType: .favorites))
+        try await db.addToLibrary(UserLibraryEntry(id: "full-2", mediaId: "tt-full-2", folderId: rootID, listType: .favorites))
+
+        let context = await assembler.buildContext(prompt: "recommend", folderId: folder.id)
+        #expect(context.candidateTitles.contains("Folder Title"))
+        #expect(context.candidateTitles.contains("Root Title"))
+        #expect(context.contextNotes.contains(where: { $0.contains("Active folder boost applied") }))
+    }
+
+    @Test("Active folder influences recency weighting notes")
+    func activeFolderBoostAffectsRecencyNote() async throws {
+        let db = try makeTestDatabase()
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "true")
+        try await db.setSetting(key: SettingsKeys.recencySensitivity, value: "0.5")
+        let assembler = AssistantContextAssembler(database: db, metadataProvider: nil)
+
+        let rootID = try await db.fetchSystemLibraryFolderID(listType: .favorites)
+        let folder = try await db.createLibraryFolder(name: "Boosted", listType: .favorites, parentId: rootID)
+
+        try await db.saveMedia(MediaItem(id: "tt-boost", type: .movie, title: "Boosted Movie", year: 2024))
+        try await db.addToLibrary(UserLibraryEntry(id: "boost-1", mediaId: "tt-boost", folderId: folder.id, listType: .favorites))
+        try await db.saveWatchHistory(
+            WatchHistory(
+                id: "wh-boost",
+                mediaId: "tt-boost",
+                progressSeconds: 120,
+                durationSeconds: 3600,
+                completed: false,
+                lastWatched: Date().addingTimeInterval(-7 * 86_400)
+            )
+        )
+
+        let context = await assembler.buildContext(prompt: "find similar", folderId: folder.id)
+        #expect(context.contextNotes.contains(where: { $0.contains("Boosted Movie") && $0.contains("recency") }))
+    }
+
     private func recencyWeight(from notes: [String]) -> Double {
         for note in notes {
             guard let markerRange = note.range(of: "recency ") else { continue }

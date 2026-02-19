@@ -33,6 +33,7 @@ final class PlayerWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var hostingController: NSHostingController<AnyView>?
     private var isClosing = false
+    private var didNotifyClose = false
     private var terminationObserver: NSObjectProtocol?
 
     init(appState: AppState, request: PlayerSessionRequest) {
@@ -96,23 +97,42 @@ final class PlayerWindowController: NSObject, NSWindowDelegate {
     func close() {
         guard !isClosing else { return }
         isClosing = true
-        defer { isClosing = false }
-
-        let closingWindow = window
-        window = nil
-        hostingController = nil
-
-        if let closingWindow {
-            closingWindow.delegate = nil
-            if closingWindow.isVisible {
-                closingWindow.close()
-            }
+        guard let window else {
+            finishCloseLifecycle()
+            return
         }
-
-        appState?.playerWindowDidClose(requestID: request.id)
+        if window.isVisible {
+            window.performClose(nil)
+        } else {
+            finishCloseLifecycle()
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
+        finishCloseLifecycle()
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        appState?.playerWindowDidChangeFullscreen(requestID: request.id, isFullscreen: true)
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        appState?.playerWindowDidChangeFullscreen(requestID: request.id, isFullscreen: false)
+    }
+
+    private func finishCloseLifecycle() {
+        let closingWindow = window
+        closingWindow?.delegate = nil
+        window = nil
+        hostingController = nil
+        appState?.playerWindowDidChangeFullscreen(requestID: request.id, isFullscreen: false)
+        notifyCloseIfNeeded()
+        isClosing = false
+    }
+
+    private func notifyCloseIfNeeded() {
+        guard !didNotifyClose else { return }
+        didNotifyClose = true
         appState?.playerWindowDidClose(requestID: request.id)
     }
 }

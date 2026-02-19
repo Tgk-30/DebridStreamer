@@ -49,6 +49,28 @@ struct AppStatePlayerWindowTests {
         #expect(appState.activePlayerSession == nil)
     }
 
+    @Test("Fullscreen callbacks are scoped to active request")
+    func fullscreenCallbacksMatchActiveRequest() {
+        let appState = AppState(secretStore: InMemorySecretStore())
+        let request = PlayerSessionRequest(
+            stream: makeStream("https://cdn.example.com/a.mkv"),
+            mediaTitle: "A",
+            mediaId: "tt-a",
+            episodeId: nil
+        )
+        appState.openPlayer(request)
+        #expect(appState.activePlayerIsFullscreen == false)
+
+        appState.playerWindowDidChangeFullscreen(requestID: UUID(), isFullscreen: true)
+        #expect(appState.activePlayerIsFullscreen == false)
+
+        appState.playerWindowDidChangeFullscreen(requestID: request.id, isFullscreen: true)
+        #expect(appState.activePlayerIsFullscreen == true)
+
+        appState.playerWindowDidClose(requestID: request.id)
+        #expect(appState.activePlayerIsFullscreen == false)
+    }
+
     private func makeStream(_ url: String) -> StreamInfo {
         StreamInfo(
             streamURL: url,

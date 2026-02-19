@@ -17,6 +17,8 @@ final class PlayerViewModel {
     var selectedEngine: PlayerEngineKind?
     var playbackRate: Float = 1.0
     var controlsVisible = true
+    var isFullscreenActive = false
+    var isFullscreenTransitioning = false
 
     var availableStreams: [StreamInfo] = []
     var selectedStreamURL: String?
@@ -24,6 +26,12 @@ final class PlayerViewModel {
     var availableSubtitleTracks: [VLCTrackOption] = []
     var selectedAudioTrackID: Int32?
     var selectedSubtitleTrackID: Int32?
+    var hasDetailedAudioMetadata: Bool {
+        availableAudioTracks.contains(where: \.hasRichMetadata)
+    }
+    var hasDetailedSubtitleMetadata: Bool {
+        availableSubtitleTracks.contains(where: \.hasRichMetadata)
+    }
 
     private let selector: PlayerEngineSelector
     private let vlcEngine: any PlayerEngine
@@ -207,15 +215,23 @@ final class PlayerViewModel {
     }
 
     func toggleFullscreen(window: NSWindow?) async {
+        guard !isFullscreenTransitioning else {
+            diagnostics = "Fullscreen transition already in progress."
+            return
+        }
         guard let resolvedWindow = fullscreenWindowResolver(window) else {
             diagnostics = "Fullscreen is unavailable because no active player window was found."
             return
         }
 
+        isFullscreenTransitioning = true
+        defer { isFullscreenTransitioning = false }
+
         let wasFullscreen = resolvedWindow.styleMask.contains(.fullScreen)
         fullscreenToggler(resolvedWindow)
-        try? await Task.sleep(for: .milliseconds(250))
+        try? await Task.sleep(for: .milliseconds(300))
         let isFullscreenNow = resolvedWindow.styleMask.contains(.fullScreen)
+        isFullscreenActive = isFullscreenNow
 
         if wasFullscreen == isFullscreenNow {
             diagnostics = "Unable to toggle fullscreen on this window."
@@ -227,15 +243,55 @@ final class PlayerViewModel {
     }
 
     func isFullscreen(window: NSWindow?) -> Bool {
-        guard let resolvedWindow = fullscreenWindowResolver(window) else { return false }
-        return resolvedWindow.styleMask.contains(.fullScreen)
+        guard let resolvedWindow = fullscreenWindowResolver(window) else {
+            return isFullscreenActive
+        }
+        let actual = resolvedWindow.styleMask.contains(.fullScreen)
+        if actual != isFullscreenActive {
+            isFullscreenActive = actual
+        }
+        return actual
     }
 
     func exitFullscreen(window: NSWindow?) {
+        guard !isFullscreenTransitioning else { return }
         guard let resolvedWindow = fullscreenWindowResolver(window) else { return }
         guard resolvedWindow.styleMask.contains(.fullScreen) else { return }
+
+        isFullscreenTransitioning = true
         fullscreenToggler(resolvedWindow)
-        diagnostics = "Exited fullscreen player mode."
+        diagnostics = "Exiting fullscreen player mode."
+
+        Task { @MainActor [weak self, weak resolvedWindow] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard let self else { return }
+            if let resolvedWindow {
+                self.isFullscreenActive = resolvedWindow.styleMask.contains(.fullScreen)
+            } else {
+                self.isFullscreenActive = false
+            }
+            self.isFullscreenTransitioning = false
+            if self.isFullscreenActive {
+                self.diagnostics = "Unable to exit fullscreen on this window."
+            } else {
+                self.diagnostics = "Exited fullscreen player mode."
+            }
+        }
+    }
+
+    func syncFullscreenState(window: NSWindow?) {
+        guard let resolvedWindow = fullscreenWindowResolver(window) else {
+            isFullscreenActive = false
+            return
+        }
+        isFullscreenActive = resolvedWindow.styleMask.contains(.fullScreen)
+    }
+
+    func setFullscreenActive(_ isFullscreen: Bool) {
+        isFullscreenActive = isFullscreen
+        if isFullscreenTransitioning {
+            isFullscreenTransitioning = false
+        }
     }
 
     func playbackProgressSnapshot() -> PlaybackProgressSnapshot? {
@@ -341,6 +397,7 @@ final class PlayerViewModel {
         if clearSelection {
             selectedEngine = nil
         }
+        isFullscreenTransitioning = false
         controlsVisible = true
     }
 

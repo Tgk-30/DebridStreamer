@@ -212,13 +212,21 @@ final class LibraryViewModel {
             let children = (childrenByParent[folder.id] ?? []).map(buildNode)
             return FolderNode(folder: folder, children: children)
         }
-        folderTree = [buildNode(root)]
+        if supportsFolders {
+            folderTree = (childrenByParent[root.id] ?? []).map(buildNode)
+        } else {
+            folderTree = [buildNode(root)]
+        }
 
         if let selectedFolderId {
             breadcrumbs = breadcrumbsFor(folderId: selectedFolderId, byID: byID)
         } else {
             breadcrumbs = [root]
         }
+    }
+
+    func isLibraryRootSelected() -> Bool {
+        selectedFolderId == rootFolder?.id
     }
 
     private func breadcrumbsFor(folderId: String, byID: [String: LibraryFolder]) -> [LibraryFolder] {
