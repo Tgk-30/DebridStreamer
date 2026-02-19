@@ -1,0 +1,540 @@
+import SwiftUI
+
+struct DetailView: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+    let mediaPreview: MediaPreview
+
+    @State private var mediaDetail: MediaItem?
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+
+    // Stream search state
+    @State private var torrents: [TorrentResult] = []
+    @State private var cacheResults: [String: (service: DebridServiceType, status: CacheStatus)] = [:]
+    @State private var isSearchingStreams = false
+    @State private var streamSearchDone = false
+    @State private var streamError: String?
+    @State private var streamSearchTask: Task<Void, Never>?
+
+    // Season/episode selection for TV shows
+    @State private var selectedSeason: Int = 1
+    @State private var selectedEpisode: Int = 1
+    @State private var seasons: [Season] = []
+
+    // Player state
+    @State private var activeStream: StreamInfo?
+    @State private var isInWatchlist = false
+    @State private var isInFavorites = false
+    @State private var libraryActionStatus: String?
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                if isLoading {
+                    ProgressView("Loading details...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.top, 100)
+                } else if let detail = mediaDetail {
+                    detailContent(detail)
+                } else if let error = errorMessage {
+                    VStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.orange)
+                        Text(error)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 100)
+                }
+            }
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title2)
+            }
+            .buttonStyle(.plain)
+            .padding(10)
+        }
+        .task {
+            await loadDetail()
+        }
+        .sheet(item: $activeStream) { stream in
+            if let detail = mediaDetail {
+                PlayerView(
+                    stream: stream,
+                    mediaTitle: detail.title,
+                    mediaId: detail.id,
+                    episodeId: detail.type == .series ? "\(detail.id)-s\(selectedSeason)e\(selectedEpisode)" : nil
+                )
+                    .frame(minWidth: 800, minHeight: 500)
+            } else {
+                ProgressView("Preparing player...")
+                    .frame(width: 420, height: 240)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detailContent(_ detail: MediaItem) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Backdrop + overlay
+            ZStack(alignment: .bottomLeading) {
+                if let backdropURL = detail.backdropURL {
+                    AsyncImage(url: backdropURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        default:
+                            Rectangle().fill(.quaternary)
+                        }
+                    }
+                    .frame(height: 300)
+                    .clipped()
+                    .overlay {
+                        LinearGradient(
+                            colors: [.clear, .black.opacity(0.8)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+                }
+
+                // Title overlay
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(detail.title)
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+
+                    HStack(spacing: 12) {
+                        if let year = detail.year {
+                            Text(String(year))
+                                .foregroundStyle(.white.opacity(0.8))
+                        }
+                        if !detail.runtimeString.isEmpty {
+                            Text(detail.runtimeString)
+                                .foregroundStyle(.white.opacity(0.8))
+                        }
+                        if let rating = detail.imdbRating, rating > 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "star.fill")
+                                    .foregroundStyle(.yellow)
+                                Text(String(format: "%.1f", rating))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        Text(detail.type.displayName)
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                    }
+                    .font(.subheadline)
+                }
+                .padding()
+            }
+
+            // Content
+            VStack(alignment: .leading, spacing: 16) {
+                // Genres
+                if !detail.genres.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(detail.genres, id: \.self) { genre in
+                            Text(genre)
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Color.accentColor.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+
+                // Overview
+                if let overview = detail.overview, !overview.isEmpty {
+                    Text(overview)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(nil)
+                }
+
+                actionBar(detail)
+
+                Divider()
+
+                // Season/Episode picker for TV shows
+                if detail.type == .series {
+                    seasonEpisodePicker
+                }
+
+                // Stream search section
+                streamSection(detail)
+            }
+            .padding()
+        }
+    }
+
+    @ViewBuilder
+    private func actionBar(_ detail: MediaItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button(isInWatchlist ? "Remove Watchlist" : "Add Watchlist") {
+                    Task { await toggleLibrary(type: .watchlist, detail: detail) }
+                }
+                .buttonStyle(.bordered)
+
+                Button(isInFavorites ? "Remove Library" : "Add Library") {
+                    Task { await toggleLibrary(type: .favorites, detail: detail) }
+                }
+                .buttonStyle(.bordered)
+
+                Button("Ask AI") {
+                    let genres = detail.genres.joined(separator: ", ")
+                    appState.assistantDraftPrompt = "Recommend \(detail.type == .movie ? "movies" : "series") similar to \(detail.title). Genres: \(genres)."
+                    appState.selectedSidebarItem = .assistant
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            if let libraryActionStatus {
+                Text(libraryActionStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Season / Episode Picker
+
+    @ViewBuilder
+    private var seasonEpisodePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Select Episode")
+                .font(.headline)
+
+            HStack(spacing: 16) {
+                Picker("Season", selection: $selectedSeason) {
+                    ForEach(1...max(1, seasons.count), id: \.self) { num in
+                        Text("Season \(num)").tag(num)
+                    }
+                }
+                .frame(width: 160)
+                .onChange(of: selectedSeason) {
+                    selectedEpisode = 1
+                    clearStreamResults()
+                }
+
+                Picker("Episode", selection: $selectedEpisode) {
+                    let episodeCount = seasons.first(where: { $0.seasonNumber == selectedSeason })?.episodeCount ?? 20
+                    ForEach(1...max(1, episodeCount), id: \.self) { num in
+                        Text("Episode \(num)").tag(num)
+                    }
+                }
+                .frame(width: 160)
+                .onChange(of: selectedEpisode) {
+                    clearStreamResults()
+                }
+            }
+        }
+    }
+
+    // MARK: - Stream Section
+
+    @ViewBuilder
+    private func streamSection(_ detail: MediaItem) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Streams")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+
+                Spacer()
+
+                Button {
+                    if isSearchingStreams {
+                        streamSearchTask?.cancel()
+                    } else {
+                        streamSearchTask = Task {
+                            await searchStreams(detail)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isSearchingStreams {
+                            Image(systemName: "xmark.circle")
+                        } else {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        Text(isSearchingStreams ? "Cancel" : (streamSearchDone ? "Refresh" : "Find Streams"))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            if let error = streamError {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+
+            if isSearchingStreams {
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text("Searching indexers and checking debrid cache...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            } else if streamSearchDone {
+                StreamListView(
+                    mediaItem: detail,
+                    torrents: torrents,
+                    cacheResults: cacheResults,
+                    onPlay: { stream in
+                        Task { @MainActor in
+                            await playStream(stream)
+                        }
+                    }
+                )
+            } else {
+                // Not yet searched
+                VStack(spacing: 8) {
+                    Image(systemName: "play.circle")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.secondary)
+                    Text("Click \"Find Streams\" to search for available streams")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    if appState.debridManager == nil {
+                        Text("Configure a debrid service in Settings first.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func loadDetail() async {
+        guard let service = appState.metadataService else {
+            errorMessage = "TMDB API key not configured"
+            isLoading = false
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            if let tmdbId = mediaPreview.tmdbId {
+                mediaDetail = try await service.getDetail(id: String(tmdbId), type: mediaPreview.type)
+            } else {
+                mediaDetail = try await service.getDetail(id: mediaPreview.id, type: mediaPreview.type)
+            }
+
+            if let detail = mediaDetail, let db = appState.databaseManager {
+                try? await db.saveMedia(detail)
+            }
+
+            // Load seasons for TV shows
+            if let detail = mediaDetail, detail.type == .series {
+                await loadSeasons(detail, service: service)
+            }
+
+            if let detail = mediaDetail {
+                await refreshLibraryFlags(for: detail)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func loadSeasons(_ detail: MediaItem, service: TMDBService) async {
+        // Extract TMDB ID for season queries
+        let tmdbIdInt: Int?
+        if detail.id.hasPrefix("tmdb-"), let parsed = Int(detail.id.dropFirst(5)) {
+            tmdbIdInt = parsed
+        } else if let tId = detail.tmdbId {
+            tmdbIdInt = tId
+        } else {
+            tmdbIdInt = nil
+        }
+
+        guard let tmdbId = tmdbIdInt else { return }
+
+        do {
+            let fetchedSeasons = try await service.getSeasons(tmdbId: tmdbId)
+            if !fetchedSeasons.isEmpty {
+                seasons = fetchedSeasons
+            }
+        } catch {
+            // Non-fatal — just won't have accurate episode counts
+        }
+    }
+
+    private func searchStreams(_ detail: MediaItem) async {
+        guard let indexer = appState.indexerManager else {
+            streamError = "Indexer not initialized"
+            return
+        }
+
+        isSearchingStreams = true
+        defer {
+            isSearchingStreams = false
+            streamSearchTask = nil
+        }
+        streamError = nil
+
+        do {
+            try Task.checkCancellation()
+            // Step 1: Search indexers for torrents
+            let imdbId = detail.id.hasPrefix("tt") ? detail.id : nil
+            let season: Int? = detail.type == .series ? selectedSeason : nil
+            let episode: Int? = detail.type == .series ? selectedEpisode : nil
+            var results: [TorrentResult]
+
+            if let imdbId = imdbId {
+                results = await indexer.searchAll(
+                    imdbId: imdbId,
+                    type: detail.type,
+                    season: season,
+                    episode: episode
+                )
+            } else {
+                results = [] // Will fall through to text search below
+            }
+
+            // If IMDB search found nothing, try text-based search as fallback
+            if results.isEmpty {
+                var query = detail.title
+                if detail.type == .series {
+                    if let s = season, let e = episode {
+                        query += " S\(String(format: "%02d", s))E\(String(format: "%02d", e))"
+                    }
+                } else if let year = detail.year {
+                    query += " \(year)"
+                }
+                try Task.checkCancellation()
+                let textResults = await indexer.searchByQuery(query, type: detail.type)
+                results = textResults
+            }
+
+            try Task.checkCancellation()
+            torrents = results
+
+            // Step 2: Check debrid cache for all hashes
+            if let debrid = appState.debridManager, await debrid.hasServices {
+                let hashes = results.map(\.infoHash)
+                if !hashes.isEmpty {
+                    try Task.checkCancellation()
+                    let cache = try await debrid.checkCacheAll(hashes: hashes)
+                    cacheResults = cache
+                }
+            }
+
+            streamSearchDone = true
+
+            // Show diagnostic info if no results
+            if results.isEmpty {
+                let errors = await indexer.lastSearchErrors
+                if !errors.isEmpty {
+                    let errorDetails = errors.map { "\($0.indexer): \($0.error)" }.joined(separator: "\n")
+                    streamError = "No streams found. Indexer errors:\n\(errorDetails)"
+                }
+            }
+        } catch is CancellationError {
+            streamError = "Stream search canceled."
+        } catch {
+            streamError = "Search failed: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func playStream(_ stream: StreamInfo) async {
+        let preferredPlayer = await resolvedPreferredPlayer()
+
+        // Explicit external player preferences launch externally first.
+        if preferredPlayer != .builtIn && preferredPlayer != .auto {
+            guard let url = stream.url else {
+                streamError = "Invalid stream URL: \(stream.streamURL)"
+                return
+            }
+
+            let launched = await ExternalPlayerLauncher.live.launch(url: url, preference: preferredPlayer)
+            if launched {
+                streamError = nil
+                activeStream = nil
+                return
+            }
+
+            streamError = "Could not launch \(preferredPlayer.displayName). Falling back to built-in player."
+        }
+
+        activeStream = stream
+    }
+
+    private func resolvedPreferredPlayer() async -> PreferredPlayer {
+        guard let settings = appState.settingsManager else {
+            return .auto
+        }
+        return (try? await settings.getPreferredPlayer()) ?? .auto
+    }
+
+    private func clearStreamResults() {
+        streamSearchTask?.cancel()
+        torrents = []
+        cacheResults = [:]
+        streamSearchDone = false
+        streamError = nil
+        isSearchingStreams = false
+    }
+
+    private func refreshLibraryFlags(for detail: MediaItem) async {
+        guard let db = appState.databaseManager else { return }
+        isInWatchlist = (try? await db.isInLibrary(mediaId: detail.id, listType: .watchlist)) ?? false
+        isInFavorites = (try? await db.isInLibrary(mediaId: detail.id, listType: .favorites)) ?? false
+    }
+
+    private func toggleLibrary(type: UserLibraryEntry.ListType, detail: MediaItem) async {
+        guard let db = appState.databaseManager else {
+            libraryActionStatus = "Library database unavailable."
+            return
+        }
+
+        do {
+            let alreadyIn = try await db.isInLibrary(mediaId: detail.id, listType: type)
+            let entryID = "\(detail.id)-\(type.rawValue)"
+            if alreadyIn {
+                try await db.removeFromLibrary(id: entryID)
+            } else {
+                let entry = UserLibraryEntry(
+                    id: entryID,
+                    mediaId: detail.id,
+                    listType: type,
+                    addedAt: Date()
+                )
+                try await db.addToLibrary(entry)
+            }
+
+            await refreshLibraryFlags(for: detail)
+            libraryActionStatus = alreadyIn ? "Removed from \(type.rawValue)." : "Added to \(type.rawValue)."
+        } catch {
+            libraryActionStatus = "Library update failed: \(error.localizedDescription)"
+        }
+    }
+}

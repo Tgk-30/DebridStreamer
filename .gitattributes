@@ -1,0 +1,2 @@
+Vendor/VLCKit.xcframework/* filter=lfs diff=lfs merge=lfs -text
+Vendor/VLCKit.xcframework/** filter=lfs diff=lfs merge=lfs -text
