@@ -23,11 +23,13 @@ struct OllamaProviderTests {
         defer { MockURLProtocol.removeHandler(for: sessionID) }
 
         let provider = OllamaProvider(endpoint: URL(string: "http://localhost:11434/api/chat")!, session: session)
-        let recs = try await provider.recommend(prompt: "Recommend me sci-fi", candidateTitles: [], maxResults: 5)
+        let result = try await provider.recommend(prompt: "Recommend me sci-fi", candidateTitles: [], maxResults: 5)
 
-        #expect(recs.count == 1)
-        #expect(recs[0].title == "Blade Runner 2049")
-        #expect(recs[0].year == 2017)
+        #expect(result.recommendations.count == 1)
+        #expect(result.recommendations[0].title == "Blade Runner 2049")
+        #expect(result.recommendations[0].year == 2017)
+        #expect(result.model == "llama3.1:8b")
+        #expect((result.usage?.safeTotalTokens ?? 0) > 0)
     }
 
     private func makeResponse(for request: URLRequest, statusCode: Int, body: String) throws -> (HTTPURLResponse, Data) {

@@ -1,5 +1,5 @@
 import Foundation
-import AVKit
+import AVFoundation
 
 protocol AVPlayerReadinessMonitoring {
     @MainActor func waitUntilReady(

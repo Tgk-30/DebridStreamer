@@ -4,15 +4,18 @@ actor DiscoverAICurationService {
     private let assistantManager: AIAssistantManager?
     private let database: DatabaseManager?
     private let settings: SettingsManager?
+    private let metadataProvider: (any MetadataProvider)?
 
     init(
         assistantManager: AIAssistantManager?,
         database: DatabaseManager?,
-        settings: SettingsManager?
+        settings: SettingsManager?,
+        metadataProvider: (any MetadataProvider)?
     ) {
         self.assistantManager = assistantManager
         self.database = database
         self.settings = settings
+        self.metadataProvider = metadataProvider
     }
 
     func shouldGenerateOnLaunch() async -> Bool {
@@ -30,7 +33,7 @@ actor DiscoverAICurationService {
         else {
             return []
         }
-        return decoded
+        return await enrichMissingArtwork(decoded)
     }
 
     func generateRecommendations(forceRefresh: Bool = false) async -> [AIMovieRecommendation] {
@@ -53,7 +56,7 @@ actor DiscoverAICurationService {
             )
         )
 
-        let items = Array(response.mergedRecommendations.prefix(12))
+        let items = await enrichMissingArtwork(Array(response.mergedRecommendations.prefix(12)))
         guard let database, !items.isEmpty else { return items }
         if let payload = try? JSONEncoder().encode(items) {
             let cache = AICurationCacheEntry(
@@ -67,6 +70,64 @@ actor DiscoverAICurationService {
         return items
     }
 
+    private func enrichMissingArtwork(_ items: [AIMovieRecommendation]) async -> [AIMovieRecommendation] {
+        guard let metadataProvider else { return items }
+        guard !items.isEmpty else { return items }
+
+        var output: [AIMovieRecommendation] = []
+        output.reserveCapacity(items.count)
+
+        for recommendation in items {
+            if recommendation.posterPath != nil {
+                output.append(recommendation)
+                continue
+            }
+
+            let query = recommendation.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else {
+                output.append(recommendation)
+                continue
+            }
+
+            let searchResult = try? await metadataProvider.search(query: query, type: nil, page: 1)
+            guard let preview = bestPreview(searchResult?.items ?? [], recommendation: recommendation) else {
+                output.append(recommendation)
+                continue
+            }
+
+            var enriched = recommendation
+            enriched.posterPath = preview.posterPath
+            enriched.mediaId = preview.id
+            enriched.mediaType = preview.type
+            if enriched.year == nil {
+                enriched.year = preview.year
+            }
+            output.append(enriched)
+        }
+
+        return output
+    }
+
+    private func bestPreview(
+        _ previews: [MediaPreview],
+        recommendation: AIMovieRecommendation
+    ) -> MediaPreview? {
+        guard !previews.isEmpty else { return nil }
+        if let year = recommendation.year,
+           let exactYear = previews.first(where: { $0.year == year && $0.posterPath != nil }) {
+            return exactYear
+        }
+        let normalizedTitle = recommendation.title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if let exactTitle = previews.first(where: {
+            $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedTitle
+                && $0.posterPath != nil
+        }) {
+            return exactTitle
+        }
+        return previews.first(where: { $0.posterPath != nil }) ?? previews.first
+    }
+
     private static let cacheKey = "discover-launch-curated"
 }
-

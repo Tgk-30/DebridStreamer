@@ -12,6 +12,11 @@ struct AnthropicProviderTests {
         MockURLProtocol.setHandler({ request in
             let body = """
             {
+              "model": "claude-3-7-sonnet-latest",
+              "usage": {
+                "input_tokens": 90,
+                "output_tokens": 45
+              },
               "content": [
                 {
                   "type": "text",
@@ -25,11 +30,13 @@ struct AnthropicProviderTests {
         defer { MockURLProtocol.removeHandler(for: sessionID) }
 
         let provider = AnthropicProvider(apiKey: "test-key", session: session)
-        let recs = try await provider.recommend(prompt: "Sci-fi", candidateTitles: [], maxResults: 5)
+        let result = try await provider.recommend(prompt: "Sci-fi", candidateTitles: [], maxResults: 5)
 
-        #expect(recs.count == 1)
-        #expect(recs[0].title == "Arrival")
-        #expect(recs[0].year == 2016)
+        #expect(result.recommendations.count == 1)
+        #expect(result.recommendations[0].title == "Arrival")
+        #expect(result.recommendations[0].year == 2016)
+        #expect(result.usage?.inputTokens == 90)
+        #expect(result.model == "claude-3-7-sonnet-latest")
     }
 
     private func makeResponse(for request: URLRequest, statusCode: Int, body: String) throws -> (HTTPURLResponse, Data) {

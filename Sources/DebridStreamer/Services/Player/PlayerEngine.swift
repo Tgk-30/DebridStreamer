@@ -1,5 +1,5 @@
 import Foundation
-import AVKit
+import AVFoundation
 
 enum PlayerEngineKind: String, Sendable {
     case avPlayer

@@ -17,11 +17,31 @@ struct DiscoverView: View {
                     noApiKeyView
                 } else {
                     aiCuratedSection
-                    catalogSection(title: "Continue Watching", items: appState.discoverStore.continueWatching)
-                    catalogSection(title: "Trending Movies", items: appState.discoverStore.trendingMovies)
-                    catalogSection(title: "Trending TV Shows", items: appState.discoverStore.trendingShows)
-                    catalogSection(title: "Popular Movies", items: appState.discoverStore.popularMovies)
-                    catalogSection(title: "Top Rated Movies", items: appState.discoverStore.topRatedMovies)
+                    catalogSection(
+                        title: "Continue Watching",
+                        items: appState.discoverStore.continueWatching,
+                        feedbackReason: "Continue Watching rail"
+                    )
+                    catalogSection(
+                        title: "Trending Movies",
+                        items: appState.discoverStore.trendingMovies,
+                        feedbackReason: "Trending Movies rail"
+                    )
+                    catalogSection(
+                        title: "Trending TV Shows",
+                        items: appState.discoverStore.trendingShows,
+                        feedbackReason: "Trending TV Shows rail"
+                    )
+                    catalogSection(
+                        title: "Popular Movies",
+                        items: appState.discoverStore.popularMovies,
+                        feedbackReason: "Popular Movies rail"
+                    )
+                    catalogSection(
+                        title: "Top Rated Movies",
+                        items: appState.discoverStore.topRatedMovies,
+                        feedbackReason: "Top Rated Movies rail"
+                    )
                 }
             }
             .padding()
@@ -31,6 +51,7 @@ struct DiscoverView: View {
             await appState.preloadDiscoverCatalog()
             await appState.preloadDiscoverAICuration()
             await evaluatePersonalizationPrompt()
+            syncFeedbackVisibility()
         }
         .onChange(of: appState.metadataService != nil) {
             guard appState.metadataService != nil else { return }
@@ -59,11 +80,30 @@ struct DiscoverView: View {
             watchedFeedbackSheet(pending: pending)
                 .frame(minWidth: 420, minHeight: 260)
         }
+        .overlay(alignment: .bottom) {
+            if let message = feedbackViewModel.statusMessage {
+                Text(message)
+                    .font(.caption)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(.bottom, 10)
+            }
+        }
+        .onChange(of: appState.discoverAICurationStore.recommendations) { _, recommendations in
+            syncFeedbackVisibility()
+        }
+        .onChange(of: appState.discoverStore.continueWatching) { _, _ in syncFeedbackVisibility() }
+        .onChange(of: appState.discoverStore.trendingMovies) { _, _ in syncFeedbackVisibility() }
+        .onChange(of: appState.discoverStore.trendingShows) { _, _ in syncFeedbackVisibility() }
+        .onChange(of: appState.discoverStore.popularMovies) { _, _ in syncFeedbackVisibility() }
+        .onChange(of: appState.discoverStore.topRatedMovies) { _, _ in syncFeedbackVisibility() }
     }
 
     @ViewBuilder
     private var aiCuratedSection: some View {
         let store = appState.discoverAICurationStore
+        let visibleRecommendations = feedbackViewModel.visibleRecommendations(from: store.recommendations)
         if store.isLoading || !store.recommendations.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -81,7 +121,7 @@ struct DiscoverView: View {
                     .buttonStyle(.bordered)
                 }
 
-                if store.recommendations.isEmpty && store.isLoading {
+                if visibleRecommendations.isEmpty && store.isLoading {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(.ultraThinMaterial)
                         .frame(height: 120)
@@ -89,31 +129,73 @@ struct DiscoverView: View {
                             Text("Generating personalized recommendations...")
                                 .foregroundStyle(.secondary)
                         }
-                } else {
+                } else if !visibleRecommendations.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
-                            ForEach(store.recommendations) { rec in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(rec.title + (rec.year.map { " (\($0))" } ?? ""))
-                                        .font(.headline)
-                                        .lineLimit(1)
-                                    Text(rec.reason)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(3)
-
-                                    Spacer(minLength: 2)
-                                    actionRow(for: rec)
-                                }
-                                .frame(width: 260, height: 110, alignment: .topLeading)
-                                .padding(12)
-                                .glassSurface()
+                            ForEach(visibleRecommendations) { rec in
+                                curatedRecommendationCard(rec)
                             }
                         }
                     }
+                } else {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.ultraThinMaterial)
+                        .frame(height: 104)
+                        .overlay {
+                            Text("You reviewed all curated picks. Refresh for a new set.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                 }
             }
         }
+    }
+
+    private func curatedRecommendationCard(_ recommendation: AIMovieRecommendation) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            AsyncImage(url: recommendation.posterURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(2/3, contentMode: .fill)
+                case .empty:
+                    ZStack {
+                        Rectangle().fill(.quaternary)
+                        ProgressView()
+                    }
+                default:
+                    ZStack {
+                        LinearGradient(
+                            colors: [Color.accentColor.opacity(0.35), Color.blue.opacity(0.25), Color.indigo.opacity(0.25)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        Image(systemName: "film")
+                            .font(.title2)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+            }
+            .frame(height: 210)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(recommendation.title + (recommendation.year.map { " (\($0))" } ?? ""))
+                    .font(.headline)
+                    .lineLimit(2)
+                Text(recommendation.reason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+
+            actionRow(for: recommendation)
+        }
+        .frame(width: 250, alignment: .topLeading)
+        .padding(12)
+        .glassSurface()
     }
 
     @ViewBuilder
@@ -260,8 +342,9 @@ struct DiscoverView: View {
     }
 
     @ViewBuilder
-    private func catalogSection(title: String, items: [MediaPreview]) -> some View {
-        if !items.isEmpty {
+    private func catalogSection(title: String, items: [MediaPreview], feedbackReason: String) -> some View {
+        let visibleItems = feedbackViewModel.visibleMediaPreviews(from: items)
+        if !visibleItems.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 Text(title)
                     .font(.title2)
@@ -269,14 +352,77 @@ struct DiscoverView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 16) {
-                        ForEach(items) { item in
-                            MediaCard(item: item)
-                                .onTapGesture {
-                                    selectedItem = item
-                                }
+                        ForEach(visibleItems) { item in
+                            discoverCard(item: item, feedbackReason: feedbackReason)
                         }
                     }
                     .padding(.horizontal, 2)
+                }
+            }
+        }
+    }
+
+    private func discoverCard(item: MediaPreview, feedbackReason: String) -> some View {
+        let recommendation = feedbackViewModel.recommendation(for: item, reason: feedbackReason)
+        let state = feedbackViewModel.cardState(for: recommendation)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            MediaCard(item: item)
+                .onTapGesture {
+                    selectedItem = item
+                }
+
+            HStack(spacing: 6) {
+                Button {
+                    Task {
+                        let mode = await feedbackViewModel.beginWatchedFlow(
+                            recommendation: recommendation,
+                            settings: appState.settingsManager
+                        )
+                        if mode == .none {
+                            await feedbackViewModel.submitWatched(
+                                recommendation: recommendation,
+                                mode: .none,
+                                value: nil,
+                                service: appState.userFeedbackService
+                            )
+                        }
+                    }
+                } label: {
+                    Text("Watched")
+                        .font(.caption2.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    Task {
+                        await feedbackViewModel.markNotWatched(
+                            recommendation: recommendation,
+                            service: appState.userFeedbackService
+                        )
+                    }
+                } label: {
+                    Text("Not Watched")
+                        .font(.caption2.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+            }
+            .overlay(alignment: .trailing) {
+                switch state {
+                case .saving:
+                    ProgressView()
+                        .controlSize(.small)
+                case .watched:
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                case .notWatched:
+                    Image(systemName: "nosign")
+                        .foregroundStyle(.orange)
+                case .failed:
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                case .idle:
+                    EmptyView()
                 }
             }
         }
@@ -336,5 +482,18 @@ struct DiscoverView: View {
             item.title.compare(recommendation.title, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
                 && (recommendation.year == nil || item.year == recommendation.year)
         }
+    }
+
+    private func syncFeedbackVisibility() {
+        var validIDs = Set(appState.discoverAICurationStore.recommendations.map(\.id))
+        let allDiscoverItems = appState.discoverStore.continueWatching
+            + appState.discoverStore.trendingMovies
+            + appState.discoverStore.trendingShows
+            + appState.discoverStore.popularMovies
+            + appState.discoverStore.topRatedMovies
+        for item in allDiscoverItems {
+            validIDs.insert(feedbackViewModel.recommendationID(for: item))
+        }
+        feedbackViewModel.resetHiddenState(validIDs: validIDs)
     }
 }

@@ -16,13 +16,15 @@ struct UserFeedbackServiceTests {
             score: 0.9
         )
 
-        await service.recordRecommendationFeedback(
+        let outcome = await service.recordRecommendationFeedback(
             recommendation: recommendation,
             watchedState: .watched,
             feedbackScaleMode: .likeDislike,
             feedbackValue: 1,
             source: .manual
         )
+        #expect(outcome.addedToWatchedFolder == true)
+        #expect(outcome.addedToReleaseWait == false)
 
         let latest = try await db.fetchLatestWatchedState(mediaId: "tt-watched-1")
         #expect(latest?.watchedState == .watched)
@@ -45,7 +47,7 @@ struct UserFeedbackServiceTests {
             score: 0.4
         )
 
-        await service.recordRecommendationFeedback(
+        _ = await service.recordRecommendationFeedback(
             recommendation: recommendation,
             watchedState: .notWatched,
             feedbackScaleMode: .none,
@@ -76,7 +78,7 @@ struct UserFeedbackServiceTests {
             score: 0.6
         )
 
-        await service.recordRecommendationFeedback(
+        _ = await service.recordRecommendationFeedback(
             recommendation: recommendation,
             watchedState: .watched,
             feedbackScaleMode: .scale1to10,

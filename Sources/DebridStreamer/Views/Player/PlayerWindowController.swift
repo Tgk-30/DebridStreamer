@@ -34,6 +34,7 @@ final class PlayerWindowController: NSObject, NSWindowDelegate {
     private var hostingController: NSHostingController<AnyView>?
     private var isClosing = false
     private var didNotifyClose = false
+    private var didPostWillCloseNotification = false
     private var terminationObserver: NSObjectProtocol?
 
     init(appState: AppState, request: PlayerSessionRequest) {
@@ -98,7 +99,7 @@ final class PlayerWindowController: NSObject, NSWindowDelegate {
     func close() {
         guard !isClosing else { return }
         isClosing = true
-        NotificationCenter.default.post(name: .debridPlayerWindowWillClose, object: request.id)
+        postWillCloseIfNeeded()
         guard let window else {
             finishCloseLifecycle()
             return
@@ -111,7 +112,7 @@ final class PlayerWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        NotificationCenter.default.post(name: .debridPlayerWindowWillClose, object: request.id)
+        postWillCloseIfNeeded()
         finishCloseLifecycle()
     }
 
@@ -131,6 +132,12 @@ final class PlayerWindowController: NSObject, NSWindowDelegate {
         appState?.playerWindowDidChangeFullscreen(requestID: request.id, isFullscreen: false)
         notifyCloseIfNeeded()
         isClosing = false
+    }
+
+    private func postWillCloseIfNeeded() {
+        guard !didPostWillCloseNotification else { return }
+        didPostWillCloseNotification = true
+        NotificationCenter.default.post(name: .debridPlayerWindowWillClose, object: request.id)
     }
 
     private func notifyCloseIfNeeded() {

@@ -13,7 +13,7 @@ struct OpenAIProvider: AIAssistantProvider {
         self.session = session
     }
 
-    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> [AIMovieRecommendation] {
+    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> AIProviderRecommendationResult {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else {
             throw AIAssistantProviderError.missingAPIKey
@@ -58,7 +58,24 @@ struct OpenAIProvider: AIAssistantProvider {
         guard let content = decoded.choices.first?.message.content else {
             throw AIAssistantProviderError.invalidResponse
         }
-        return AIAssistantJSONParser.parseRecommendations(from: content, maxResults: maxResults)
+        let recommendations = AIAssistantJSONParser.parseRecommendations(from: content, maxResults: maxResults)
+        let usage = AIUsageMetrics(
+            inputTokens: decoded.usage?.promptTokens,
+            outputTokens: decoded.usage?.completionTokens,
+            totalTokens: decoded.usage?.totalTokens,
+            estimatedCostUSD: AIUsageCostEstimator.estimateUSD(
+                model: decoded.model ?? model,
+                inputTokens: decoded.usage?.promptTokens,
+                outputTokens: decoded.usage?.completionTokens,
+                totalTokens: decoded.usage?.totalTokens
+            )
+        )
+        return AIProviderRecommendationResult(
+            model: decoded.model ?? model,
+            recommendations: recommendations,
+            rawText: content,
+            usage: usage
+        )
     }
 }
 
@@ -74,6 +91,18 @@ private struct OpenAIChatRequest: Encodable {
 }
 
 private struct OpenAIChatResponse: Decodable {
+    struct Usage: Decodable {
+        let promptTokens: Int?
+        let completionTokens: Int?
+        let totalTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case promptTokens = "prompt_tokens"
+            case completionTokens = "completion_tokens"
+            case totalTokens = "total_tokens"
+        }
+    }
+
     struct Choice: Decodable {
         struct Message: Decodable {
             let content: String
@@ -81,5 +110,7 @@ private struct OpenAIChatResponse: Decodable {
         let message: Message
     }
 
+    let model: String?
     let choices: [Choice]
+    let usage: Usage?
 }

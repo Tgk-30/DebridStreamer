@@ -85,7 +85,7 @@ struct PlayerView: View {
     @ViewBuilder
     private var playbackSurface: some View {
         if let session = viewModel.vlcSession {
-            VLCPlayerSurfaceView(session: session)
+            VLCPlayerSurfaceView(makeView: { session.makeVideoView() })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             Rectangle().fill(Color.black)
@@ -492,10 +492,10 @@ struct PlayerView: View {
 }
 
 private struct VLCPlayerSurfaceView: NSViewRepresentable {
-    let session: any VLCPlaybackSession
+    let makeView: () -> NSView
 
     func makeNSView(context: Context) -> NSView {
-        session.makeVideoView()
+        makeView()
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {

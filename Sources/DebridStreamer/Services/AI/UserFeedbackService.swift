@@ -1,6 +1,13 @@
 import Foundation
 
 actor UserFeedbackService {
+    struct FeedbackRecordOutcome: Sendable, Equatable {
+        var addedToWatchedFolder = false
+        var addedToReleaseWait = false
+        var releaseDateHint: String?
+        var renewalStatus: String?
+    }
+
     private let database: DatabaseManager?
     private let metadataService: TMDBService?
     private let renewalEvaluator = RenewalEvaluator()
@@ -16,10 +23,10 @@ actor UserFeedbackService {
         feedbackScaleMode: FeedbackScaleMode,
         feedbackValue: Double?,
         source: FeedbackSource = .manual
-    ) async {
-        guard let database else { return }
+    ) async -> FeedbackRecordOutcome {
+        guard let database else { return FeedbackRecordOutcome() }
         let resolvedMedia = await resolveMedia(for: recommendation)
-        await recordFeedback(
+        return await recordFeedback(
             media: resolvedMedia,
             fallbackTitle: recommendation.title,
             watchedState: watchedState,
@@ -54,7 +61,7 @@ actor UserFeedbackService {
         }
 
         let media = try? await database.fetchMedia(id: mediaId)
-        await recordFeedback(
+        _ = await recordFeedback(
             media: media,
             fallbackTitle: media?.title ?? mediaId,
             watchedState: .watched,
@@ -75,7 +82,8 @@ actor UserFeedbackService {
         episodeId: String? = nil,
         source: FeedbackSource,
         database: DatabaseManager
-    ) async {
+    ) async -> FeedbackRecordOutcome {
+        var outcome = FeedbackRecordOutcome()
         let now = Date()
         let mediaId = media?.id
         let signal = normalizedSignal(
@@ -122,21 +130,27 @@ actor UserFeedbackService {
             try? await database.saveTasteEvent(preferenceEvent)
         }
 
-        guard watchedState == .watched, let media else { return }
-        await addToWatchedFolder(media: media, database: database, at: now)
-        await maybeAddToReleaseWait(media: media, liked: liked, database: database, at: now)
+        guard watchedState == .watched, let media else { return outcome }
+        outcome.addedToWatchedFolder = await addToWatchedFolder(media: media, database: database, at: now)
+        if let releaseWaitOutcome = await maybeAddToReleaseWait(media: media, liked: liked, database: database, at: now) {
+            outcome.addedToReleaseWait = true
+            outcome.releaseDateHint = releaseWaitOutcome.releaseDateHint
+            outcome.renewalStatus = releaseWaitOutcome.renewalStatus
+        }
+        return outcome
     }
 
-    private func addToWatchedFolder(media: MediaItem, database: DatabaseManager, at date: Date) async {
+    private func addToWatchedFolder(media: MediaItem, database: DatabaseManager, at date: Date) async -> Bool {
         guard let watchedFolder = try? await database.fetchFolderByKind(listType: .favorites, kind: .watched) else {
-            return
+            return false
         }
-        _ = try? await database.addOrUpsertLibraryEntryPreservingExistingFolders(
+        let result = try? await database.addOrUpsertLibraryEntryPreservingExistingFolders(
             mediaId: media.id,
             listType: .favorites,
             folderId: watchedFolder.id,
             addedAt: date
         )
+        return result != nil
     }
 
     private func maybeAddToReleaseWait(
@@ -144,22 +158,22 @@ actor UserFeedbackService {
         liked: Bool?,
         database: DatabaseManager,
         at date: Date
-    ) async {
-        guard media.type == .series else { return }
-        guard liked == true else { return }
-        guard let metadataService else { return }
+    ) async -> UserLibraryEntry? {
+        guard media.type == .series else { return nil }
+        guard liked == true else { return nil }
+        guard let metadataService else { return nil }
         guard let releaseWaitFolder = try? await database.fetchFolderByKind(listType: .favorites, kind: .releaseWait) else {
-            return
+            return nil
         }
 
         guard let renewalMetadata = try? await metadataService.getSeriesRenewalMetadata(id: media.id) else {
-            return
+            return nil
         }
 
         let evaluation = renewalEvaluator.evaluateSeries(metadata: renewalMetadata, liked: true, now: date)
-        guard evaluation.shouldAddToReleaseWait else { return }
+        guard evaluation.shouldAddToReleaseWait else { return nil }
 
-        _ = try? await database.addOrUpsertLibraryEntryPreservingExistingFolders(
+        return try? await database.addOrUpsertLibraryEntryPreservingExistingFolders(
             mediaId: media.id,
             listType: .favorites,
             folderId: releaseWaitFolder.id,
@@ -171,6 +185,21 @@ actor UserFeedbackService {
 
     private func resolveMedia(for recommendation: AIMovieRecommendation) async -> MediaItem? {
         guard let database else { return nil }
+
+        if let mediaId = recommendation.mediaId,
+           let cachedByID = try? await database.fetchMedia(id: mediaId) {
+            return cachedByID
+        }
+
+        if let mediaId = recommendation.mediaId,
+           let mediaType = recommendation.mediaType,
+           let metadataService {
+            let detail = try? await metadataService.getDetail(id: mediaId, type: mediaType)
+            if let detail {
+                try? await database.saveMedia(detail)
+                return detail
+            }
+        }
 
         if let cached = await resolveCachedMedia(for: recommendation, database: database) {
             return cached

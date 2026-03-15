@@ -1,8 +1,15 @@
 import Foundation
 
+struct AIProviderRecommendationResult: Sendable {
+    var model: String?
+    var recommendations: [AIMovieRecommendation]
+    var rawText: String?
+    var usage: AIUsageMetrics?
+}
+
 protocol AIAssistantProvider: Sendable {
     var kind: AIProviderKind { get }
-    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> [AIMovieRecommendation]
+    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> AIProviderRecommendationResult
 }
 
 enum AIAssistantProviderError: LocalizedError, Equatable {
@@ -63,6 +70,13 @@ enum AIAssistantJSONParser {
                 score: max(0.0, 1.0 - (Double(index) * 0.1))
             )
         }
+    }
+
+    static func estimatedTokenCount(for text: String) -> Int {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return 0 }
+        // Rough heuristic for budgeting/usage display when provider does not return official usage.
+        return max(1, trimmed.count / 4)
     }
 
     static func promptEnvelope(userPrompt: String, candidateTitles: [String], maxResults: Int) -> String {
