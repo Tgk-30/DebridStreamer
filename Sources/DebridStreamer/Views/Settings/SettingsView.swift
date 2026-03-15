@@ -62,6 +62,9 @@ struct SettingsView: View {
     @State private var anthropicModelCustom = ""
     @State private var isRefreshingModelCatalog = false
     @State private var modelCatalogStatus: String?
+    @State private var aiUsageInputTokens = 0
+    @State private var aiUsageOutputTokens = 0
+    @State private var aiUsageEstimatedCostUSD = 0.0
     @State private var ollamaEndpoint = "http://localhost:11434/api/chat"
     @State private var aiCompareMode = true
     @State private var traktClientId = ""
@@ -391,6 +394,36 @@ struct SettingsView: View {
                 }
             }
 
+            Section("AI Usage (Estimated)") {
+                HStack {
+                    Text("Input Tokens")
+                    Spacer()
+                    Text(aiUsageInputTokens.formatted())
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Text("Output Tokens")
+                    Spacer()
+                    Text(aiUsageOutputTokens.formatted())
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Text("Total Tokens")
+                    Spacer()
+                    Text((aiUsageInputTokens + aiUsageOutputTokens).formatted())
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Text("Estimated Cost (Lifetime)")
+                    Spacer()
+                    Text("$" + String(format: "%.4f", aiUsageEstimatedCostUSD))
+                        .foregroundStyle(.secondary)
+                }
+                Text("Cost values are estimates based on model pricing heuristics and reported token usage.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 HStack {
                     Spacer()
@@ -608,6 +641,9 @@ struct SettingsView: View {
             currentVibeNotes = try await settings.getValue(forKey: SettingsKeys.currentVibeNotes) ?? ""
             recencySensitivity = Double(try await settings.getValue(forKey: SettingsKeys.recencySensitivity) ?? "0.7") ?? 0.7
             feedbackScaleMode = try await settings.getFeedbackScaleMode()
+            aiUsageInputTokens = try await settings.getAIUsageTotalInputTokens()
+            aiUsageOutputTokens = try await settings.getAIUsageTotalOutputTokens()
+            aiUsageEstimatedCostUSD = try await settings.getAIUsageTotalEstimatedCostUSD()
 
             if let db = appState.databaseManager {
                 let configs = try await db.fetchAllDebridConfigs()

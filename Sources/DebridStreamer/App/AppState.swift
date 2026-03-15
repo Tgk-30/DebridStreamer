@@ -14,6 +14,7 @@ final class AppState {
     var selectedLibraryFolderId: String?
     var activePlayerSession: PlayerSessionRequest?
     var activePlayerIsFullscreen = false
+    let appLaunchDate = Date()
     private let secretStore: any SecretStore
     let discoverStore = DiscoverCatalogStore()
     let discoverAICurationStore = DiscoverAICurationStore()
@@ -173,12 +174,14 @@ final class AppState {
         aiAssistantManager = AIAssistantManager(
             providers: providers,
             database: databaseManager,
+            settings: settingsManager,
             metadataProvider: metadataService
         )
         discoverAICurationService = DiscoverAICurationService(
             assistantManager: aiAssistantManager,
             database: databaseManager,
-            settings: settingsManager
+            settings: settingsManager,
+            metadataProvider: metadataService
         )
     }
 

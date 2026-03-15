@@ -21,10 +21,51 @@ final class DiscoverFeedbackViewModel {
     }
 
     private(set) var cardStates: [String: CardState] = [:]
+    private(set) var cardMessages: [String: String] = [:]
+    private(set) var hiddenRecommendationIDs: Set<String> = []
+    var statusMessage: String?
     var pendingFeedback: PendingFeedback?
 
     func cardState(for recommendation: AIMovieRecommendation) -> CardState {
         cardStates[recommendation.id] ?? .idle
+    }
+
+    func visibleRecommendations(from recommendations: [AIMovieRecommendation]) -> [AIMovieRecommendation] {
+        recommendations.filter { !hiddenRecommendationIDs.contains($0.id) }
+    }
+
+    func visibleMediaPreviews(from items: [MediaPreview]) -> [MediaPreview] {
+        items.filter { !hiddenRecommendationIDs.contains(recommendationID(for: $0)) }
+    }
+
+    func recommendationID(for preview: MediaPreview) -> String {
+        recommendation(for: preview).id
+    }
+
+    func recommendation(for preview: MediaPreview, reason: String = "From Discover") -> AIMovieRecommendation {
+        AIMovieRecommendation(
+            title: preview.title,
+            year: preview.year,
+            reason: reason,
+            score: preview.imdbRating ?? 0,
+            mediaId: preview.id,
+            mediaType: preview.type,
+            posterPath: preview.posterPath
+        )
+    }
+
+    func resetHiddenState(for recommendations: [AIMovieRecommendation]) {
+        resetHiddenState(validIDs: Set(recommendations.map(\.id)))
+    }
+
+    func resetHiddenState(validIDs: Set<String>) {
+        hiddenRecommendationIDs = hiddenRecommendationIDs.intersection(validIDs)
+        cardStates = cardStates.filter { validIDs.contains($0.key) }
+        cardMessages = cardMessages.filter { validIDs.contains($0.key) }
+    }
+
+    func cardMessage(for recommendation: AIMovieRecommendation) -> String? {
+        cardMessages[recommendation.id]
     }
 
     func beginWatchedFlow(
@@ -53,7 +94,7 @@ final class DiscoverFeedbackViewModel {
             return
         }
         cardStates[recommendation.id] = .saving
-        await service.recordRecommendationFeedback(
+        _ = await service.recordRecommendationFeedback(
             recommendation: recommendation,
             watchedState: .notWatched,
             feedbackScaleMode: .none,
@@ -61,6 +102,11 @@ final class DiscoverFeedbackViewModel {
             source: .manual
         )
         cardStates[recommendation.id] = .notWatched
+        let message = "Marked as not watched."
+        cardMessages[recommendation.id] = message
+        statusMessage = message
+        hiddenRecommendationIDs.insert(recommendation.id)
+        pendingFeedback = nil
     }
 
     func submitWatched(
@@ -75,7 +121,7 @@ final class DiscoverFeedbackViewModel {
         }
 
         cardStates[recommendation.id] = .saving
-        await service.recordRecommendationFeedback(
+        let outcome = await service.recordRecommendationFeedback(
             recommendation: recommendation,
             watchedState: .watched,
             feedbackScaleMode: mode,
@@ -83,6 +129,27 @@ final class DiscoverFeedbackViewModel {
             source: .manual
         )
         cardStates[recommendation.id] = .watched
+        let message: String
+        if outcome.addedToReleaseWait {
+            if let releaseDateHint = outcome.releaseDateHint, !releaseDateHint.isEmpty {
+                if let renewalStatus = outcome.renewalStatus, !renewalStatus.isEmpty {
+                    message = "Marked watched and added to Release Wait (\(renewalStatus), \(releaseDateHint))."
+                } else {
+                    message = "Marked watched and added to Release Wait (\(releaseDateHint))."
+                }
+            } else if let renewalStatus = outcome.renewalStatus, !renewalStatus.isEmpty {
+                message = "Marked watched and added to Release Wait (\(renewalStatus))."
+            } else {
+                message = "Marked watched and added to Release Wait."
+            }
+        } else if outcome.addedToWatchedFolder {
+            message = "Marked watched and added to Watched."
+        } else {
+            message = "Marked watched."
+        }
+        cardMessages[recommendation.id] = message
+        statusMessage = message
+        hiddenRecommendationIDs.insert(recommendation.id)
         pendingFeedback = nil
     }
 

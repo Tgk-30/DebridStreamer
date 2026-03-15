@@ -267,7 +267,7 @@ private struct LibraryCollectionView: View {
         Button {
             Task {
                 guard let db = appState.databaseManager, let root = viewModel.rootFolder else { return }
-                await viewModel.selectFolder(root.id, database: db)
+                await viewModel.selectFolder(root.id, database: db, metadataProvider: appState.metadataService)
                 appState.selectedLibraryFolderId = root.id
             }
         } label: {
@@ -291,7 +291,7 @@ private struct LibraryCollectionView: View {
         return Button {
             Task {
                 guard let db = appState.databaseManager else { return }
-                await viewModel.selectFolder(folder.id, database: db)
+                await viewModel.selectFolder(folder.id, database: db, metadataProvider: appState.metadataService)
                 appState.selectedLibraryFolderId = folder.id
             }
         } label: {
@@ -439,7 +439,11 @@ private struct LibraryCollectionView: View {
     private func loadData() async {
         guard let db = appState.databaseManager else { return }
         let preferred = viewModel.supportsFolders ? appState.selectedLibraryFolderId : nil
-        await viewModel.load(database: db, preferredFolderId: preferred)
+        await viewModel.load(
+            database: db,
+            preferredFolderId: preferred,
+            metadataProvider: appState.metadataService
+        )
         if viewModel.supportsFolders {
             appState.selectedLibraryFolderId = viewModel.selectedFolderId
         }
@@ -447,7 +451,7 @@ private struct LibraryCollectionView: View {
 
     private func refreshData() async {
         guard let db = appState.databaseManager else { return }
-        await viewModel.refresh(database: db)
+        await viewModel.refresh(database: db, metadataProvider: appState.metadataService)
     }
 }
 
@@ -526,10 +530,21 @@ private struct LibraryMediaCard: View {
     private var posterPlaceholder: some View {
         ZStack {
             Rectangle()
-                .fill(.quaternary)
-            Image(systemName: "film")
-                .font(.title2)
-                .foregroundStyle(.secondary)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.accentColor.opacity(0.24), Color.blue.opacity(0.16), Color.black.opacity(0.45)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            VStack(spacing: 6) {
+                Image(systemName: "film")
+                    .font(.title2)
+                    .foregroundStyle(.white.opacity(0.78))
+                Text("No artwork")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.72))
+            }
         }
     }
 }

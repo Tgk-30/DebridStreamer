@@ -59,7 +59,11 @@ final class LibraryViewModel {
         self.listType = listType
     }
 
-    func load(database: DatabaseManager, preferredFolderId: String? = nil) async {
+    func load(
+        database: DatabaseManager,
+        preferredFolderId: String? = nil,
+        metadataProvider: (any MetadataProvider)? = nil
+    ) async {
         isLoading = true
         defer { isLoading = false }
 
@@ -68,18 +72,22 @@ final class LibraryViewModel {
                 selectedFolderId = preferredFolderId
             }
             try await refreshFolderTree(database: database)
-            try await loadItems(database: database)
+            try await loadItems(database: database, metadataProvider: metadataProvider)
             statusMessage = nil
         } catch {
             statusMessage = "Failed to load \(listType.rawValue): \(error.localizedDescription)"
         }
     }
 
-    func refresh(database: DatabaseManager) async {
-        await load(database: database)
+    func refresh(database: DatabaseManager, metadataProvider: (any MetadataProvider)? = nil) async {
+        await load(database: database, metadataProvider: metadataProvider)
     }
 
-    func selectFolder(_ folderId: String, database: DatabaseManager) async {
+    func selectFolder(
+        _ folderId: String,
+        database: DatabaseManager,
+        metadataProvider: (any MetadataProvider)? = nil
+    ) async {
         guard supportsFolders else {
             selectedFolderId = rootFolder?.id
             return
@@ -87,7 +95,7 @@ final class LibraryViewModel {
         selectedFolderId = folderId
         do {
             try await refreshFolderTree(database: database)
-            try await loadItems(database: database)
+            try await loadItems(database: database, metadataProvider: metadataProvider)
             statusMessage = nil
         } catch {
             statusMessage = "Failed to open folder: \(error.localizedDescription)"
@@ -117,7 +125,7 @@ final class LibraryViewModel {
             )
             selectedFolderId = folder.id
             try await refreshFolderTree(database: database)
-            try await loadItems(database: database)
+            try await loadItems(database: database, metadataProvider: nil)
             statusMessage = "Created folder \"\(folder.name)\"."
         } catch {
             statusMessage = "Folder create failed: \(error.localizedDescription)"
@@ -155,7 +163,7 @@ final class LibraryViewModel {
                 selectedFolderId = rootFolder?.id
             }
             try await refreshFolderTree(database: database)
-            try await loadItems(database: database)
+            try await loadItems(database: database, metadataProvider: nil)
             statusMessage = "Folder deleted."
         } catch {
             statusMessage = "Folder delete failed: \(error.localizedDescription)"
@@ -165,7 +173,7 @@ final class LibraryViewModel {
     func remove(_ item: MediaCardItem, database: DatabaseManager) async {
         do {
             try await database.removeFromLibrary(id: item.entry.id)
-            try await loadItems(database: database)
+            try await loadItems(database: database, metadataProvider: nil)
             statusMessage = "Removed \(item.media.title)."
         } catch {
             statusMessage = "Remove failed: \(error.localizedDescription)"
@@ -253,7 +261,10 @@ final class LibraryViewModel {
         return result.reversed()
     }
 
-    private func loadItems(database: DatabaseManager) async throws {
+    private func loadItems(
+        database: DatabaseManager,
+        metadataProvider: (any MetadataProvider)?
+    ) async throws {
         guard let selectedFolderId else {
             items = []
             return
@@ -269,7 +280,91 @@ final class LibraryViewModel {
             let history = try await database.fetchWatchHistory(mediaId: entry.mediaId)
             next.append(MediaCardItem(entry: entry, media: media, history: history))
         }
-        items = sorted(next)
+        let enriched = await enrichMissingArtwork(
+            in: next,
+            database: database,
+            metadataProvider: metadataProvider
+        )
+        items = sorted(enriched)
+    }
+
+    private func enrichMissingArtwork(
+        in values: [MediaCardItem],
+        database: DatabaseManager,
+        metadataProvider: (any MetadataProvider)?
+    ) async -> [MediaCardItem] {
+        guard let metadataProvider else { return values }
+        guard !values.isEmpty else { return values }
+
+        var output = values
+        let missingIndices = output.indices.filter { output[$0].media.posterPath == nil }
+        guard !missingIndices.isEmpty else { return output }
+
+        for index in missingIndices.prefix(24) {
+            let item = output[index]
+            let query = item.media.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { continue }
+            guard let preview = await bestPreview(
+                for: item.media,
+                provider: metadataProvider
+            ) else { continue }
+
+            var media = item.media
+            media.posterPath = preview.posterPath ?? media.posterPath
+            media.backdropPath = media.backdropPath ?? preview.posterPath
+            media.tmdbId = media.tmdbId ?? preview.tmdbId
+            if media.year == nil {
+                media.year = preview.year
+            }
+            media.lastFetched = Date()
+            output[index] = MediaCardItem(entry: item.entry, media: media, history: item.history)
+            try? await database.saveMedia(media)
+        }
+
+        return output
+    }
+
+    private func bestPreview(
+        for media: MediaItem,
+        provider: any MetadataProvider
+    ) async -> MediaPreview? {
+        let query = media.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return nil }
+
+        var items = (try? await provider.search(
+            query: query,
+            type: media.type,
+            page: 1
+        ).items) ?? []
+
+        let shouldUseBroadSearch = items.isEmpty || items.allSatisfy { $0.posterPath == nil }
+        if shouldUseBroadSearch {
+            let broadItems = (try? await provider.search(
+                query: query,
+                type: nil,
+                page: 1
+            ).items) ?? []
+            for candidate in broadItems where items.contains(where: { $0.id == candidate.id }) == false {
+                items.append(candidate)
+            }
+        }
+
+        guard !items.isEmpty else { return nil }
+        if let year = media.year,
+           let exact = items.first(where: { $0.year == year && $0.posterPath != nil }) {
+            return exact
+        }
+        if let titled = items.first(where: { normalizedTitle($0.title) == normalizedTitle(media.title) && $0.posterPath != nil }) {
+            return titled
+        }
+        return items.first(where: { $0.posterPath != nil }) ?? items.first
+    }
+
+    private func normalizedTitle(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 
     private func sorted(_ values: [MediaCardItem]) -> [MediaCardItem] {

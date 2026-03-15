@@ -12,6 +12,13 @@ final class AIAssistantViewModel {
     var isGenerating = false
     var compareResult: AICompareResult?
     var statusMessage: String?
+    var usageSummary = AIUsageSummary(
+        sessionEstimatedCostUSD: 0,
+        lifetimeEstimatedCostUSD: 0,
+        sessionTokens: 0,
+        lifetimeTokens: 0
+    )
+    private var usageSessionBaseline: (input: Int, output: Int, cost: Double)?
 
     let quickPromptChips: [String] = [
         "What should I watch tonight based on my recent history?",
@@ -24,7 +31,8 @@ final class AIAssistantViewModel {
     func initialize(
         manager: AIAssistantManager?,
         settings: SettingsManager?,
-        draftedPrompt: String
+        draftedPrompt: String,
+        sessionStart: Date
     ) async {
         if !draftedPrompt.isEmpty && prompt.isEmpty {
             prompt = draftedPrompt
@@ -37,6 +45,9 @@ final class AIAssistantViewModel {
             let available = await manager?.availableProviders ?? []
             selectedProviders = Set(available)
         }
+
+        _ = sessionStart
+        await refreshUsageSummary(settings: settings)
 
         if !personalizationEnabled {
             statusMessage = "Personalization is disabled. Recommendations use prompt-only context until enabled in Settings."
@@ -61,7 +72,10 @@ final class AIAssistantViewModel {
         prompt = ""
     }
 
-    func generateRecommendations(manager: AIAssistantManager?) async {
+    func generateRecommendations(
+        manager: AIAssistantManager?,
+        settings: SettingsManager?
+    ) async {
         guard let manager else {
             statusMessage = "AI assistant is not initialized."
             return
@@ -91,5 +105,38 @@ final class AIAssistantViewModel {
         } else {
             statusMessage = "Recommendations generated. Enable personalization for adaptive context."
         }
+
+        await refreshUsageSummary(settings: settings)
+    }
+
+    func refreshUsageSummary(settings: SettingsManager?) async {
+        guard let settings else {
+            usageSummary = AIUsageSummary(
+                sessionEstimatedCostUSD: 0,
+                lifetimeEstimatedCostUSD: 0,
+                sessionTokens: 0,
+                lifetimeTokens: 0
+            )
+            return
+        }
+
+        let totalInput = (try? await settings.getAIUsageTotalInputTokens()) ?? 0
+        let totalOutput = (try? await settings.getAIUsageTotalOutputTokens()) ?? 0
+        let totalCost = (try? await settings.getAIUsageTotalEstimatedCostUSD()) ?? 0
+        let totalTokens = max(0, totalInput + totalOutput)
+
+        if usageSessionBaseline == nil {
+            usageSessionBaseline = (totalInput, totalOutput, totalCost)
+        }
+        let baseline = usageSessionBaseline ?? (0, 0, 0)
+        let sessionTokens = max(0, (totalInput - baseline.input) + (totalOutput - baseline.output))
+        let sessionCost = max(0, totalCost - baseline.cost)
+
+        usageSummary = AIUsageSummary(
+            sessionEstimatedCostUSD: sessionCost,
+            lifetimeEstimatedCostUSD: max(0, totalCost),
+            sessionTokens: sessionTokens,
+            lifetimeTokens: totalTokens
+        )
     }
 }

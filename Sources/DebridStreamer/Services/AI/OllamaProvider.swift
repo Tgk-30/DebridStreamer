@@ -13,7 +13,7 @@ struct OllamaProvider: AIAssistantProvider {
         self.session = session
     }
 
-    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> [AIMovieRecommendation] {
+    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> AIProviderRecommendationResult {
         let envelope = AIAssistantJSONParser.promptEnvelope(
             userPrompt: prompt,
             candidateTitles: candidateTitles,
@@ -45,7 +45,20 @@ struct OllamaProvider: AIAssistantProvider {
         guard let content = decoded.message?.content else {
             throw AIAssistantProviderError.invalidResponse
         }
-        return AIAssistantJSONParser.parseRecommendations(from: content, maxResults: maxResults)
+        let recommendations = AIAssistantJSONParser.parseRecommendations(from: content, maxResults: maxResults)
+        let inputTokens = AIAssistantJSONParser.estimatedTokenCount(for: envelope)
+        let outputTokens = AIAssistantJSONParser.estimatedTokenCount(for: content)
+        return AIProviderRecommendationResult(
+            model: model,
+            recommendations: recommendations,
+            rawText: content,
+            usage: AIUsageMetrics(
+                inputTokens: inputTokens,
+                outputTokens: outputTokens,
+                totalTokens: inputTokens + outputTokens,
+                estimatedCostUSD: 0
+            )
+        )
     }
 }
 

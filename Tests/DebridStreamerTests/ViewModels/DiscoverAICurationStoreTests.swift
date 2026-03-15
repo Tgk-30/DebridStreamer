@@ -15,7 +15,8 @@ struct DiscoverAICurationStoreTests {
         let service = DiscoverAICurationService(
             assistantManager: nil,
             database: db,
-            settings: settings
+            settings: settings,
+            metadataProvider: nil
         )
         let store = DiscoverAICurationStore()
         await store.preloadIfNeeded(service: service)
@@ -47,12 +48,87 @@ struct DiscoverAICurationStoreTests {
         let service = DiscoverAICurationService(
             assistantManager: nil,
             database: db,
-            settings: settings
+            settings: settings,
+            metadataProvider: nil
         )
         let store = DiscoverAICurationStore()
         await store.load(service: service, forceRefresh: false)
 
         #expect(store.recommendations.count == 1)
         #expect(store.recommendations.first?.title == "Cached Film")
+    }
+
+    @Test("Cached recommendations are enriched with poster artwork when metadata is available")
+    func cachedRecommendationsEnrichArtwork() async throws {
+        let db = try makeTestDatabase()
+        let settings = SettingsManager(database: db, secretStore: InMemorySecretStore())
+        let cached = [
+            AIMovieRecommendation(title: "No Poster", year: 2025, reason: "Cached", score: 0.6)
+        ]
+        let payload = try JSONEncoder().encode(cached)
+        try await db.saveDiscoverAICacheEntry(
+            AICurationCacheEntry(
+                cacheKey: "discover-launch-curated",
+                payload: payload,
+                model: "cache",
+                expiresAt: Date().addingTimeInterval(300)
+            )
+        )
+
+        let service = DiscoverAICurationService(
+            assistantManager: nil,
+            database: db,
+            settings: settings,
+            metadataProvider: DiscoverPosterStub()
+        )
+
+        let recommendations = await service.cachedRecommendations()
+        let first = try #require(recommendations.first)
+        #expect(first.posterPath == "/discover-poster.jpg")
+        #expect(first.mediaId == "tmdb-900")
+    }
+}
+
+private struct DiscoverPosterStub: MetadataProvider {
+    func search(query: String, type: MediaType?, page: Int) async throws -> MetadataSearchResult {
+        MetadataSearchResult(
+            items: [
+                MediaPreview(
+                    id: "tmdb-900",
+                    type: .movie,
+                    title: "No Poster",
+                    year: 2025,
+                    posterPath: "/discover-poster.jpg",
+                    imdbRating: 7.1,
+                    tmdbId: 900
+                )
+            ],
+            page: 1,
+            totalPages: 1,
+            totalResults: 1
+        )
+    }
+
+    func getDetail(id: String, type: MediaType) async throws -> MediaItem {
+        MediaItem(id: id, type: type, title: "Detail")
+    }
+
+    func getTrending(type: MediaType, timeWindow: TrendingWindow, page: Int) async throws -> MetadataSearchResult {
+        MetadataSearchResult(items: [], page: 1, totalPages: 1, totalResults: 0)
+    }
+
+    func getCategory(_ category: MediaCategory, type: MediaType, page: Int) async throws -> MetadataSearchResult {
+        MetadataSearchResult(items: [], page: 1, totalPages: 1, totalResults: 0)
+    }
+
+    func discover(type: MediaType, filters: DiscoverFilters) async throws -> MetadataSearchResult {
+        MetadataSearchResult(items: [], page: 1, totalPages: 1, totalResults: 0)
+    }
+
+    func getGenres(type: MediaType) async throws -> [Genre] { [] }
+    func getSeasons(tmdbId: Int) async throws -> [Season] { [] }
+    func getEpisodes(tmdbId: Int, season: Int) async throws -> [Episode] { [] }
+    func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds {
+        ExternalIds(imdbId: nil, tvdbId: nil)
     }
 }

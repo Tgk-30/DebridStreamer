@@ -3,6 +3,7 @@ import Foundation
 actor AIAssistantManager {
     private let providers: [AIProviderKind: any AIAssistantProvider]
     private let database: DatabaseManager?
+    private let settings: SettingsManager?
     private let metadataProvider: (any MetadataProvider)?
     private let contextAssembler: AssistantContextAssembler
 
@@ -12,10 +13,12 @@ actor AIAssistantManager {
     init(
         providers: [AIProviderKind: any AIAssistantProvider],
         database: DatabaseManager?,
+        settings: SettingsManager?,
         metadataProvider: (any MetadataProvider)?
     ) {
         self.providers = providers
         self.database = database
+        self.settings = settings
         self.metadataProvider = metadataProvider
         self.contextAssembler = AssistantContextAssembler(
             database: database,
@@ -51,15 +54,18 @@ actor AIAssistantManager {
                 guard let provider = providers[kind] else { continue }
                 group.addTask {
                     do {
-                        let recommendations = try await provider.recommend(
+                        let providerResult = try await provider.recommend(
                             prompt: contextualPrompt,
                             candidateTitles: candidates,
                             maxResults: request.maxResults
                         )
+                        await self.recordUsage(providerResult.usage)
                         return AIProviderResponse(
                             provider: kind,
-                            recommendations: recommendations,
-                            rawText: nil
+                            model: providerResult.model,
+                            recommendations: providerResult.recommendations,
+                            rawText: providerResult.rawText,
+                            usage: providerResult.usage
                         )
                     } catch {
                         return nil
@@ -87,9 +93,11 @@ actor AIAssistantManager {
             usedFallback = false
         }
 
+        let enrichedMerged = await enrichRecommendations(merged)
+
         let result = AICompareResult(
             providerResponses: providerResponses,
-            mergedRecommendations: merged,
+            mergedRecommendations: enrichedMerged,
             usedFallback: usedFallback,
             generatedAt: Date(),
             usedContext: Array(context.contextNotes.prefix(12))
@@ -118,7 +126,10 @@ actor AIAssistantManager {
                     title: "Try refreshing Discover",
                     year: nil,
                     reason: "No local context found. Add watch history or library entries to personalize results.",
-                    score: 0.4
+                    score: 0.4,
+                    mediaId: nil,
+                    mediaType: nil,
+                    posterPath: nil
                 )
             ]
         }
@@ -128,7 +139,10 @@ actor AIAssistantManager {
                 title: title,
                 year: nil,
                 reason: "Fallback recommendation based on your watch history, watchlist, and trending titles.",
-                score: max(0.1, 1.0 - (Double(index) * 0.08))
+                score: max(0.1, 1.0 - (Double(index) * 0.08)),
+                mediaId: nil,
+                mediaType: nil,
+                posterPath: nil
             )
         }
     }
@@ -158,7 +172,10 @@ actor AIAssistantManager {
                 title: rec.title,
                 year: rec.year,
                 reason: rec.reason,
-                score: max(0.1, 1.0 - (Double(index) * 0.05))
+                score: max(0.1, 1.0 - (Double(index) * 0.05)),
+                mediaId: rec.mediaId,
+                mediaType: rec.mediaType,
+                posterPath: rec.posterPath
             )
         }
     }
@@ -219,5 +236,131 @@ actor AIAssistantManager {
             lastAccessedAt: Date()
         )
         try? await database.saveAssistantMemoryChunk(chunk)
+    }
+
+    private func recordUsage(_ usage: AIUsageMetrics?) async {
+        guard let usage else { return }
+        guard let settings else { return }
+        try? await settings.addAIUsage(
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            estimatedCostUSD: usage.estimatedCostUSD
+        )
+    }
+
+    private func enrichRecommendations(_ recommendations: [AIMovieRecommendation]) async -> [AIMovieRecommendation] {
+        guard !recommendations.isEmpty else { return recommendations }
+        guard metadataProvider != nil || database != nil else { return recommendations }
+
+        var output: [AIMovieRecommendation] = []
+        output.reserveCapacity(recommendations.count)
+
+        for recommendation in recommendations {
+            if recommendation.posterPath != nil, recommendation.mediaId != nil {
+                output.append(recommendation)
+                continue
+            }
+
+            if let cached = await resolveCachedMedia(for: recommendation) {
+                var enriched = recommendation
+                enriched.mediaId = cached.id
+                enriched.mediaType = cached.type
+                enriched.posterPath = cached.posterPath
+                if enriched.year == nil {
+                    enriched.year = cached.year
+                }
+                output.append(enriched)
+                continue
+            }
+
+            guard let metadataProvider else {
+                output.append(recommendation)
+                continue
+            }
+
+            let search = try? await metadataProvider.search(
+                query: recommendation.title,
+                type: nil,
+                page: 1
+            )
+            guard let preview = chooseBestPreview(search?.items ?? [], recommendation: recommendation) else {
+                output.append(recommendation)
+                continue
+            }
+
+            var enriched = recommendation
+            enriched.mediaId = preview.id
+            enriched.mediaType = preview.type
+            enriched.posterPath = preview.posterPath
+            if enriched.year == nil {
+                enriched.year = preview.year
+            }
+            output.append(enriched)
+            await savePreviewIfNeeded(preview)
+        }
+
+        return output
+    }
+
+    private func resolveCachedMedia(for recommendation: AIMovieRecommendation) async -> MediaItem? {
+        guard let database else { return nil }
+        if let mediaId = recommendation.mediaId,
+           let byID = try? await database.fetchMedia(id: mediaId) {
+            return byID
+        }
+
+        let query = recommendation.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return nil }
+        let candidates = (try? await database.searchMedia(query: query, limit: 20)) ?? []
+        guard !candidates.isEmpty else { return nil }
+
+        if let withYear = candidates.first(where: {
+            normalizeTitle($0.title) == normalizeTitle(recommendation.title)
+                && (recommendation.year == nil || $0.year == recommendation.year)
+        }) {
+            return withYear
+        }
+
+        return candidates.first(where: { normalizeTitle($0.title) == normalizeTitle(recommendation.title) }) ?? candidates.first
+    }
+
+    private func chooseBestPreview(
+        _ items: [MediaPreview],
+        recommendation: AIMovieRecommendation
+    ) -> MediaPreview? {
+        guard !items.isEmpty else { return nil }
+        if let year = recommendation.year,
+           let exact = items.first(where: { $0.year == year }) {
+            return exact
+        }
+        let normalized = normalizeTitle(recommendation.title)
+        if let exactTitle = items.first(where: { normalizeTitle($0.title) == normalized }) {
+            return exactTitle
+        }
+        return items.first
+    }
+
+    private func savePreviewIfNeeded(_ preview: MediaPreview) async {
+        guard let database else { return }
+        guard (try? await database.fetchMedia(id: preview.id)) == nil else { return }
+
+        let media = MediaItem(
+            id: preview.id,
+            type: preview.type,
+            title: preview.title,
+            year: preview.year,
+            posterPath: preview.posterPath,
+            imdbRating: preview.imdbRating,
+            tmdbId: preview.tmdbId,
+            lastFetched: Date()
+        )
+        try? await database.saveMedia(media)
+    }
+
+    private func normalizeTitle(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 }

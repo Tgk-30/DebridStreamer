@@ -109,6 +109,36 @@ actor SettingsManager {
     func setInternalPlayerBackend(_ backend: InternalPlayerBackend) async throws {
         try await setValue(backend.rawValue, forKey: SettingsKeys.internalPlayerBackend)
     }
+
+    func getAIUsageTotalInputTokens() async throws -> Int {
+        Int(try await getValue(forKey: SettingsKeys.aiUsageTotalInputTokens) ?? "") ?? 0
+    }
+
+    func getAIUsageTotalOutputTokens() async throws -> Int {
+        Int(try await getValue(forKey: SettingsKeys.aiUsageTotalOutputTokens) ?? "") ?? 0
+    }
+
+    func getAIUsageTotalEstimatedCostUSD() async throws -> Double {
+        Double(try await getValue(forKey: SettingsKeys.aiUsageTotalEstimatedCostUSD) ?? "") ?? 0
+    }
+
+    func addAIUsage(
+        inputTokens: Int?,
+        outputTokens: Int?,
+        estimatedCostUSD: Double?
+    ) async throws {
+        let currentInput = try await getAIUsageTotalInputTokens()
+        let currentOutput = try await getAIUsageTotalOutputTokens()
+        let currentCost = try await getAIUsageTotalEstimatedCostUSD()
+
+        let nextInput = currentInput + max(0, inputTokens ?? 0)
+        let nextOutput = currentOutput + max(0, outputTokens ?? 0)
+        let nextCost = currentCost + max(0, estimatedCostUSD ?? 0)
+
+        try await setValue(String(nextInput), forKey: SettingsKeys.aiUsageTotalInputTokens)
+        try await setValue(String(nextOutput), forKey: SettingsKeys.aiUsageTotalOutputTokens)
+        try await setValue(String(nextCost), forKey: SettingsKeys.aiUsageTotalEstimatedCostUSD)
+    }
 }
 
 /// Constants for settings keys.
@@ -130,6 +160,9 @@ enum SettingsKeys {
     static let anthropicModelCustom = "anthropic_model_custom"
     static let ollamaEndpoint = "ollama_endpoint"
     static let aiCompareMode = "ai_compare_mode"
+    static let aiUsageTotalInputTokens = "ai_usage_total_input_tokens"
+    static let aiUsageTotalOutputTokens = "ai_usage_total_output_tokens"
+    static let aiUsageTotalEstimatedCostUSD = "ai_usage_total_estimated_cost_usd"
 
     static let traktClientId = "trakt_client_id"
     static let traktClientSecret = "trakt_client_secret"

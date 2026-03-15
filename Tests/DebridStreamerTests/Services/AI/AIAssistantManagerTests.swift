@@ -21,6 +21,7 @@ struct AIAssistantManagerTests {
                 .anthropic: MockAIProvider(kind: .anthropic, recommendations: anthropicRec),
             ],
             database: nil,
+            settings: nil,
             metadataProvider: nil
         )
 
@@ -60,6 +61,7 @@ struct AIAssistantManagerTests {
         let manager = AIAssistantManager(
             providers: [.openAI: MockAIProvider(kind: .openAI, recommendations: [], shouldThrow: true)],
             database: db,
+            settings: nil,
             metadataProvider: nil
         )
 
@@ -97,6 +99,7 @@ struct AIAssistantManagerTests {
         let manager = AIAssistantManager(
             providers: [.openAI: captureProvider],
             database: db,
+            settings: nil,
             metadataProvider: nil
         )
 
@@ -144,6 +147,7 @@ struct AIAssistantManagerTests {
         let manager = AIAssistantManager(
             providers: [.openAI: provider],
             database: db,
+            settings: nil,
             metadataProvider: nil
         )
 
@@ -175,6 +179,7 @@ struct AIAssistantManagerTests {
     @Test("Assistant memory persistence is gated by personalization opt-in")
     func memoryPersistenceRespectsOptIn() async throws {
         let db = try makeTestDatabase()
+        let settings = SettingsManager(database: db, secretStore: InMemorySecretStore())
         try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "false")
 
         let provider = MockAIProvider(
@@ -184,6 +189,7 @@ struct AIAssistantManagerTests {
         let manager = AIAssistantManager(
             providers: [.openAI: provider],
             database: db,
+            settings: settings,
             metadataProvider: nil
         )
 
@@ -210,6 +216,34 @@ struct AIAssistantManagerTests {
         let enabledChunks = try await db.fetchAssistantMemoryChunks(scope: "default", limit: 20)
         #expect(enabledChunks.isEmpty == false)
     }
+
+    @Test("Provider usage is persisted into settings usage totals")
+    func providerUsagePersistsToSettingsTotals() async throws {
+        let db = try makeTestDatabase()
+        let settings = SettingsManager(database: db, secretStore: InMemorySecretStore())
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "false")
+
+        let provider = UsageProvider()
+        let manager = AIAssistantManager(
+            providers: [.openAI: provider],
+            database: db,
+            settings: settings,
+            metadataProvider: nil
+        )
+
+        _ = await manager.recommend(
+            request: AIAssistantRequest(
+                prompt: "recommend",
+                maxResults: 3,
+                compareMode: false,
+                providers: [.openAI]
+            )
+        )
+
+        #expect(try await settings.getAIUsageTotalInputTokens() == 100)
+        #expect(try await settings.getAIUsageTotalOutputTokens() == 50)
+        #expect(abs((try await settings.getAIUsageTotalEstimatedCostUSD()) - 0.003) < 0.000001)
+    }
 }
 
 private struct MockAIProvider: AIAssistantProvider {
@@ -217,11 +251,16 @@ private struct MockAIProvider: AIAssistantProvider {
     let recommendations: [AIMovieRecommendation]
     var shouldThrow = false
 
-    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> [AIMovieRecommendation] {
+    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> AIProviderRecommendationResult {
         if shouldThrow {
             throw AIAssistantProviderError.apiError("failed")
         }
-        return Array(recommendations.prefix(maxResults))
+        return AIProviderRecommendationResult(
+            model: "mock-model",
+            recommendations: Array(recommendations.prefix(maxResults)),
+            rawText: nil,
+            usage: nil
+        )
     }
 }
 
@@ -229,16 +268,21 @@ private actor CapturingProvider: AIAssistantProvider {
     nonisolated let kind: AIProviderKind = .openAI
     private var candidates: [String] = []
 
-    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> [AIMovieRecommendation] {
+    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> AIProviderRecommendationResult {
         candidates = candidateTitles
-        return [
-            AIMovieRecommendation(
-                title: "Captured",
-                year: 2024,
-                reason: "capture",
-                score: 0.9
-            )
-        ]
+        return AIProviderRecommendationResult(
+            model: "capturing-model",
+            recommendations: [
+                AIMovieRecommendation(
+                    title: "Captured",
+                    year: 2024,
+                    reason: "capture",
+                    score: 0.9
+                )
+            ],
+            rawText: nil,
+            usage: nil
+        )
     }
 
     func snapshotCandidates() -> [String] {
@@ -250,19 +294,44 @@ private actor RecordingProvider: AIAssistantProvider {
     nonisolated let kind: AIProviderKind = .openAI
     private var calls: [[String]] = []
 
-    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> [AIMovieRecommendation] {
+    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> AIProviderRecommendationResult {
         calls.append(candidateTitles)
-        return [
-            AIMovieRecommendation(
-                title: "Recorded",
-                year: 2025,
-                reason: "Recorded call",
-                score: 0.8
-            )
-        ]
+        return AIProviderRecommendationResult(
+            model: "recording-model",
+            recommendations: [
+                AIMovieRecommendation(
+                    title: "Recorded",
+                    year: 2025,
+                    reason: "Recorded call",
+                    score: 0.8
+                )
+            ],
+            rawText: nil,
+            usage: nil
+        )
     }
 
     func snapshots() -> [[String]] {
         calls
+    }
+}
+
+private struct UsageProvider: AIAssistantProvider {
+    let kind: AIProviderKind = .openAI
+
+    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> AIProviderRecommendationResult {
+        AIProviderRecommendationResult(
+            model: "gpt-4.1-mini",
+            recommendations: [
+                AIMovieRecommendation(title: "Usage", year: 2026, reason: "Usage", score: 0.9)
+            ],
+            rawText: nil,
+            usage: AIUsageMetrics(
+                inputTokens: 100,
+                outputTokens: 50,
+                totalTokens: 150,
+                estimatedCostUSD: 0.003
+            )
+        )
     }
 }

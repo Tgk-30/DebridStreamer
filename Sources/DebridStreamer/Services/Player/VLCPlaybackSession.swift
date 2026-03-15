@@ -128,6 +128,11 @@ final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
         mediaPlayer.media = VLCMedia(url: url)
     }
 
+    deinit {
+        mediaPlayer.stop()
+        mediaPlayer.drawable = nil
+    }
+
     var isPlaying: Bool {
         mediaPlayer.isPlaying
     }
@@ -223,6 +228,7 @@ final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
 
     func stop() {
         mediaPlayer.stop()
+        mediaPlayer.drawable = nil
     }
 
     private func mapTrackOptions(

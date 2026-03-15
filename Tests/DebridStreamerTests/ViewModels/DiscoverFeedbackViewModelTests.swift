@@ -63,6 +63,8 @@ struct DiscoverFeedbackViewModelTests {
             service: service
         )
         #expect(model.cardState(for: recommendation) == .watched)
+        #expect(model.visibleRecommendations(from: [recommendation]).isEmpty)
+        #expect(model.statusMessage != nil)
     }
 
     @Test("Mark not watched updates card state")
@@ -79,5 +81,64 @@ struct DiscoverFeedbackViewModelTests {
 
         await model.markNotWatched(recommendation: recommendation, service: service)
         #expect(model.cardState(for: recommendation) == .notWatched)
+        #expect(model.visibleRecommendations(from: [recommendation]).isEmpty)
+        #expect(model.statusMessage == "Marked as not watched.")
+    }
+
+    @Test("Reset hidden state keeps only currently visible recommendation IDs")
+    func resetHiddenStateDropsOldIDs() async throws {
+        let db = try makeTestDatabase()
+        let service = UserFeedbackService(database: db, metadataService: nil)
+        let model = DiscoverFeedbackViewModel()
+        let old = AIMovieRecommendation(title: "Old", year: 2020, reason: "Old", score: 0.5)
+        let current = AIMovieRecommendation(title: "Current", year: 2021, reason: "Current", score: 0.6)
+
+        await model.markNotWatched(recommendation: old, service: service)
+        await model.markNotWatched(recommendation: current, service: service)
+        model.resetHiddenState(for: [current])
+
+        #expect(model.hiddenRecommendationIDs.contains(current.id))
+        #expect(model.hiddenRecommendationIDs.contains(old.id) == false)
+    }
+
+    @Test("Media previews are hidden after feedback using stable recommendation IDs")
+    func mediaPreviewVisibilityUsesRecommendationID() async throws {
+        let db = try makeTestDatabase()
+        let service = UserFeedbackService(database: db, metadataService: nil)
+        let model = DiscoverFeedbackViewModel()
+        let preview = MediaPreview(
+            id: "tmdb-55",
+            type: .movie,
+            title: "Hidden Preview",
+            year: 2024,
+            posterPath: "/poster.jpg",
+            imdbRating: 8.0,
+            tmdbId: 55
+        )
+        let recommendation = model.recommendation(for: preview)
+
+        await model.markNotWatched(recommendation: recommendation, service: service)
+
+        let visible = model.visibleMediaPreviews(from: [preview])
+        #expect(visible.isEmpty)
+        #expect(model.hiddenRecommendationIDs.contains(recommendation.id))
+    }
+
+    @Test("Reset hidden state with valid IDs prunes stale card states")
+    func resetHiddenStateWithValidIDs() async throws {
+        let db = try makeTestDatabase()
+        let service = UserFeedbackService(database: db, metadataService: nil)
+        let model = DiscoverFeedbackViewModel()
+        let first = AIMovieRecommendation(title: "First", year: 2024, reason: "r", score: 0.2)
+        let second = AIMovieRecommendation(title: "Second", year: 2025, reason: "r", score: 0.8)
+
+        await model.markNotWatched(recommendation: first, service: service)
+        await model.markNotWatched(recommendation: second, service: service)
+
+        model.resetHiddenState(validIDs: [second.id])
+
+        #expect(model.hiddenRecommendationIDs == Set([second.id]))
+        #expect(model.cardState(for: second) == .notWatched)
+        #expect(model.cardState(for: first) == .idle)
     }
 }

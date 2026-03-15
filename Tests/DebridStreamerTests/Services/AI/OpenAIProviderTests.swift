@@ -12,6 +12,12 @@ struct OpenAIProviderTests {
         MockURLProtocol.setHandler({ request in
             let body = """
             {
+              "model": "gpt-4.1-mini",
+              "usage": {
+                "prompt_tokens": 120,
+                "completion_tokens": 80,
+                "total_tokens": 200
+              },
               "choices": [
                 {
                   "message": {
@@ -26,11 +32,13 @@ struct OpenAIProviderTests {
         defer { MockURLProtocol.removeHandler(for: sessionID) }
 
         let provider = OpenAIProvider(apiKey: "test-key", session: session)
-        let recs = try await provider.recommend(prompt: "Sci-fi recommendations", candidateTitles: [], maxResults: 5)
+        let result = try await provider.recommend(prompt: "Sci-fi recommendations", candidateTitles: [], maxResults: 5)
 
-        #expect(recs.count == 1)
-        #expect(recs[0].title == "Dune")
-        #expect(recs[0].year == 2021)
+        #expect(result.recommendations.count == 1)
+        #expect(result.recommendations[0].title == "Dune")
+        #expect(result.recommendations[0].year == 2021)
+        #expect(result.usage?.totalTokens == 200)
+        #expect(result.model == "gpt-4.1-mini")
     }
 
     @Test("Missing API key fails fast")

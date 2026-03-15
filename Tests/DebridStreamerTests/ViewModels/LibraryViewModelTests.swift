@@ -143,4 +143,165 @@ struct LibraryViewModelTests {
 
         #expect(viewModel.selectedFolderId == folder.id)
     }
+
+    @Test("Missing poster artwork is enriched from metadata provider")
+    func enrichesMissingArtworkFromMetadataProvider() async throws {
+        let db = try makeTestDatabase()
+        let viewModel = LibraryViewModel(listType: .favorites)
+        await viewModel.load(database: db)
+        let root = try #require(viewModel.rootFolder)
+
+        try await db.saveMedia(
+            MediaItem(
+                id: "tt-art-1",
+                type: .movie,
+                title: "Posterless",
+                year: 2024,
+                posterPath: nil
+            )
+        )
+        try await db.addToLibrary(
+            UserLibraryEntry(
+                id: "tt-art-1-\(root.id)",
+                mediaId: "tt-art-1",
+                folderId: root.id,
+                listType: .favorites
+            )
+        )
+
+        let provider = LibraryMetadataStub()
+        await viewModel.load(database: db, metadataProvider: provider)
+
+        let item = try #require(viewModel.items.first(where: { $0.media.id == "tt-art-1" }))
+        #expect(item.media.posterPath == "/poster.jpg")
+    }
+
+    @Test("Artwork enrichment falls back to broad search when typed search has no poster")
+    func enrichesArtworkWithBroadSearchFallback() async throws {
+        let db = try makeTestDatabase()
+        let viewModel = LibraryViewModel(listType: .favorites)
+        await viewModel.load(database: db)
+        let root = try #require(viewModel.rootFolder)
+
+        try await db.saveMedia(
+            MediaItem(
+                id: "tt-art-2",
+                type: .movie,
+                title: "Needs Broad Search",
+                year: 2023,
+                posterPath: nil
+            )
+        )
+        try await db.addToLibrary(
+            UserLibraryEntry(
+                id: "tt-art-2-\(root.id)",
+                mediaId: "tt-art-2",
+                folderId: root.id,
+                listType: .favorites
+            )
+        )
+
+        let provider = LibraryFallbackMetadataStub()
+        await viewModel.load(database: db, metadataProvider: provider)
+
+        let item = try #require(viewModel.items.first(where: { $0.media.id == "tt-art-2" }))
+        #expect(item.media.posterPath == "/fallback.jpg")
+        let calls = await provider.requestedTypes
+        #expect(calls.contains(.movie))
+        #expect(calls.contains(nil))
+    }
+}
+
+private actor LibraryMetadataStub: MetadataProvider {
+    func search(query: String, type: MediaType?, page: Int) async throws -> MetadataSearchResult {
+        MetadataSearchResult(
+            items: [
+                MediaPreview(
+                    id: "tmdb-123",
+                    type: .movie,
+                    title: "Posterless",
+                    year: 2024,
+                    posterPath: "/poster.jpg",
+                    imdbRating: 7.4,
+                    tmdbId: 123
+                )
+            ],
+            page: 1,
+            totalPages: 1,
+            totalResults: 1
+        )
+    }
+
+    func getDetail(id: String, type: MediaType) async throws -> MediaItem { throw TMDBError.notFound(id) }
+    func getTrending(type: MediaType, timeWindow: TrendingWindow, page: Int) async throws -> MetadataSearchResult {
+        MetadataSearchResult(items: [], page: 1, totalPages: 1, totalResults: 0)
+    }
+    func getCategory(_ category: MediaCategory, type: MediaType, page: Int) async throws -> MetadataSearchResult {
+        MetadataSearchResult(items: [], page: 1, totalPages: 1, totalResults: 0)
+    }
+    func discover(type: MediaType, filters: DiscoverFilters) async throws -> MetadataSearchResult {
+        MetadataSearchResult(items: [], page: 1, totalPages: 1, totalResults: 0)
+    }
+    func getGenres(type: MediaType) async throws -> [Genre] { [] }
+    func getSeasons(tmdbId: Int) async throws -> [Season] { [] }
+    func getEpisodes(tmdbId: Int, season: Int) async throws -> [Episode] { [] }
+    func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds { ExternalIds(imdbId: nil, tvdbId: nil) }
+}
+
+private actor LibraryFallbackMetadataStub: MetadataProvider {
+    private(set) var requestedTypes: [MediaType?] = []
+
+    func search(query: String, type: MediaType?, page: Int) async throws -> MetadataSearchResult {
+        requestedTypes.append(type)
+        if type == .movie {
+            return MetadataSearchResult(
+                items: [
+                    MediaPreview(
+                        id: "tmdb-typed",
+                        type: .movie,
+                        title: "Needs Broad Search",
+                        year: 2023,
+                        posterPath: nil,
+                        imdbRating: 6.8,
+                        tmdbId: 882
+                    )
+                ],
+                page: 1,
+                totalPages: 1,
+                totalResults: 1
+            )
+        }
+
+        return MetadataSearchResult(
+            items: [
+                MediaPreview(
+                    id: "tmdb-broad",
+                    type: .movie,
+                    title: "Needs Broad Search",
+                    year: 2023,
+                    posterPath: "/fallback.jpg",
+                    imdbRating: 7.0,
+                    tmdbId: 883
+                )
+            ],
+            page: 1,
+            totalPages: 1,
+            totalResults: 1
+        )
+    }
+
+    func getDetail(id: String, type: MediaType) async throws -> MediaItem { throw TMDBError.notFound(id) }
+    func getTrending(type: MediaType, timeWindow: TrendingWindow, page: Int) async throws -> MetadataSearchResult {
+        MetadataSearchResult(items: [], page: 1, totalPages: 1, totalResults: 0)
+    }
+    func getCategory(_ category: MediaCategory, type: MediaType, page: Int) async throws -> MetadataSearchResult {
+        MetadataSearchResult(items: [], page: 1, totalPages: 1, totalResults: 0)
+    }
+    func discover(type: MediaType, filters: DiscoverFilters) async throws -> MetadataSearchResult {
+        MetadataSearchResult(items: [], page: 1, totalPages: 1, totalResults: 0)
+    }
+    func getGenres(type: MediaType) async throws -> [Genre] { [] }
+    func getSeasons(tmdbId: Int) async throws -> [Season] { [] }
+    func getEpisodes(tmdbId: Int, season: Int) async throws -> [Episode] { [] }
+    func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds { ExternalIds(imdbId: nil, tvdbId: nil) }
 }

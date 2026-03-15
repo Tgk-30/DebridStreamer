@@ -13,7 +13,7 @@ struct AnthropicProvider: AIAssistantProvider {
         self.session = session
     }
 
-    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> [AIMovieRecommendation] {
+    func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> AIProviderRecommendationResult {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else {
             throw AIAssistantProviderError.missingAPIKey
@@ -60,7 +60,24 @@ struct AnthropicProvider: AIAssistantProvider {
         guard let text else {
             throw AIAssistantProviderError.invalidResponse
         }
-        return AIAssistantJSONParser.parseRecommendations(from: text, maxResults: maxResults)
+        let recommendations = AIAssistantJSONParser.parseRecommendations(from: text, maxResults: maxResults)
+        let usage = AIUsageMetrics(
+            inputTokens: decoded.usage?.inputTokens,
+            outputTokens: decoded.usage?.outputTokens,
+            totalTokens: [decoded.usage?.inputTokens, decoded.usage?.outputTokens].compactMap { $0 }.reduce(0, +),
+            estimatedCostUSD: AIUsageCostEstimator.estimateUSD(
+                model: decoded.model ?? model,
+                inputTokens: decoded.usage?.inputTokens,
+                outputTokens: decoded.usage?.outputTokens,
+                totalTokens: [decoded.usage?.inputTokens, decoded.usage?.outputTokens].compactMap { $0 }.reduce(0, +)
+            )
+        )
+        return AIProviderRecommendationResult(
+            model: decoded.model ?? model,
+            recommendations: recommendations,
+            rawText: text,
+            usage: usage
+        )
     }
 }
 
@@ -84,10 +101,22 @@ private struct AnthropicRequest: Encodable {
 }
 
 private struct AnthropicResponse: Decodable {
+    struct Usage: Decodable {
+        let inputTokens: Int?
+        let outputTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case inputTokens = "input_tokens"
+            case outputTokens = "output_tokens"
+        }
+    }
+
     struct ContentPart: Decodable {
         let type: String
         let text: String?
     }
 
+    let model: String?
     let content: [ContentPart]
+    let usage: Usage?
 }

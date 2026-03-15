@@ -121,6 +121,23 @@ struct SettingsManagerTests {
         #expect(raw == FeedbackScaleMode.scale1to100.rawValue)
     }
 
+    @Test("AI usage counters accumulate token and estimated cost totals")
+    func aiUsageCountersAccumulate() async throws {
+        let db = try makeTestDatabase()
+        let settings = SettingsManager(database: db, secretStore: InMemorySecretStore())
+
+        try await settings.addAIUsage(inputTokens: 120, outputTokens: 80, estimatedCostUSD: 0.0042)
+        try await settings.addAIUsage(inputTokens: 30, outputTokens: 20, estimatedCostUSD: 0.0011)
+
+        let input = try await settings.getAIUsageTotalInputTokens()
+        let output = try await settings.getAIUsageTotalOutputTokens()
+        let cost = try await settings.getAIUsageTotalEstimatedCostUSD()
+
+        #expect(input == 150)
+        #expect(output == 100)
+        #expect(abs(cost - 0.0053) < 0.000001)
+    }
+
     @Test("Clearing secret setting removes keychain and database entries")
     func clearingSecretDeletesBackingData() async throws {
         let db = try makeTestDatabase()
@@ -254,7 +271,10 @@ struct SettingsManagerTests {
             SettingsKeys.currentVibeNotes,
             SettingsKeys.recencySensitivity,
             SettingsKeys.onboardingTastePromptShown,
-            SettingsKeys.feedbackScaleMode
+            SettingsKeys.feedbackScaleMode,
+            SettingsKeys.aiUsageTotalInputTokens,
+            SettingsKeys.aiUsageTotalOutputTokens,
+            SettingsKeys.aiUsageTotalEstimatedCostUSD
         ]
         let uniqueKeys = Set(keys)
         #expect(uniqueKeys.count == keys.count)
