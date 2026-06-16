@@ -5,45 +5,22 @@ struct DiscoverView: View {
     @State private var selectedItem: MediaPreview?
     @State private var showPersonalizationPrompt = false
     @State private var feedbackViewModel = DiscoverFeedbackViewModel()
+    /// Drives the tasteful staggered appear of the rails. Toggled once per load.
+    @State private var appeared = false
+
+    private var store: DiscoverCatalogStore { appState.discoverStore }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                PageHeader(title: "Discover", subtitle: "Trending picks, AI-curated for you", systemImage: SidebarItem.discover.icon)
-
-                if appState.discoverStore.isLoading {
-                    ProgressView("Loading...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.top, 100)
-                } else if appState.metadataService == nil {
+                if appState.metadataService == nil {
+                    PageHeader(title: "Discover", subtitle: "Trending picks, AI-curated for you", systemImage: SidebarItem.discover.icon)
                     noApiKeyView
+                } else if isColdStart {
+                    PageHeader(title: "Discover", subtitle: "Trending picks, AI-curated for you", systemImage: SidebarItem.discover.icon)
+                    skeletonView
                 } else {
-                    aiCuratedSection
-                    catalogSection(
-                        title: "Continue Watching",
-                        items: appState.discoverStore.continueWatching,
-                        feedbackReason: "Continue Watching rail"
-                    )
-                    catalogSection(
-                        title: "Trending Movies",
-                        items: appState.discoverStore.trendingMovies,
-                        feedbackReason: "Trending Movies rail"
-                    )
-                    catalogSection(
-                        title: "Trending TV Shows",
-                        items: appState.discoverStore.trendingShows,
-                        feedbackReason: "Trending TV Shows rail"
-                    )
-                    catalogSection(
-                        title: "Popular Movies",
-                        items: appState.discoverStore.popularMovies,
-                        feedbackReason: "Popular Movies rail"
-                    )
-                    catalogSection(
-                        title: "Top Rated Movies",
-                        items: appState.discoverStore.topRatedMovies,
-                        feedbackReason: "Top Rated Movies rail"
-                    )
+                    content
                 }
             }
             .padding()
@@ -54,6 +31,7 @@ struct DiscoverView: View {
             await appState.preloadDiscoverAICuration()
             await evaluatePersonalizationPrompt()
             syncFeedbackVisibility()
+            triggerAppear()
         }
         .onChange(of: appState.metadataService != nil) {
             guard appState.metadataService != nil else { return }
@@ -62,6 +40,16 @@ struct DiscoverView: View {
                 await appState.preloadDiscoverAICuration(forceRefresh: true)
                 await evaluatePersonalizationPrompt()
             }
+        }
+        // A single re-sync keyed off the catalog revision + AI recommendations
+        // replaces the six per-rail handlers; `syncFeedbackVisibility()` still
+        // runs after every load so hidden-state stays correct.
+        .onChange(of: store.catalogRevision) { _, _ in
+            syncFeedbackVisibility()
+            triggerAppear()
+        }
+        .onChange(of: appState.discoverAICurationStore.recommendations) { _, _ in
+            syncFeedbackVisibility()
         }
         .alert("Personalize Discover?", isPresented: $showPersonalizationPrompt) {
             Button("Not Now", role: .cancel) {
@@ -92,15 +80,113 @@ struct DiscoverView: View {
                     .padding(.bottom, AppTheme.Spacing.sm)
             }
         }
-        .onChange(of: appState.discoverAICurationStore.recommendations) { _, recommendations in
-            syncFeedbackVisibility()
-        }
-        .onChange(of: appState.discoverStore.continueWatching) { _, _ in syncFeedbackVisibility() }
-        .onChange(of: appState.discoverStore.trendingMovies) { _, _ in syncFeedbackVisibility() }
-        .onChange(of: appState.discoverStore.trendingShows) { _, _ in syncFeedbackVisibility() }
-        .onChange(of: appState.discoverStore.popularMovies) { _, _ in syncFeedbackVisibility() }
-        .onChange(of: appState.discoverStore.topRatedMovies) { _, _ in syncFeedbackVisibility() }
     }
+
+    // MARK: - Cold-start detection
+
+    /// True only when nothing has loaded yet — used to gate the skeleton so a
+    /// refresh never flashes the screen empty (content stays put while reloading).
+    private var isColdStart: Bool {
+        !store.isLoaded
+            && store.continueWatching.isEmpty
+            && store.trendingMovies.isEmpty
+            && store.trendingShows.isEmpty
+            && store.popularMovies.isEmpty
+            && store.topRatedMovies.isEmpty
+    }
+
+    // MARK: - Main content
+
+    @ViewBuilder
+    private var content: some View {
+        if let hero = heroItem {
+            HeroSpotlight(
+                item: hero,
+                onPlay: { selectedItem = hero },
+                onDetails: { selectedItem = hero }
+            )
+            .railAppear(appeared: appeared, index: 0)
+        } else {
+            PageHeader(title: "Discover", subtitle: "Trending picks, AI-curated for you", systemImage: SidebarItem.discover.icon)
+        }
+
+        if store.isLoading {
+            refreshingChip
+        }
+
+        aiCuratedSection
+            .railAppear(appeared: appeared, index: 1)
+
+        continueWatchingRail
+            .railAppear(appeared: appeared, index: 2)
+
+        catalogSection(title: "Trending Movies", items: store.trendingMovies, feedbackReason: "Trending Movies rail")
+            .railAppear(appeared: appeared, index: 3)
+        catalogSection(title: "Trending TV Shows", items: store.trendingShows, feedbackReason: "Trending TV Shows rail")
+            .railAppear(appeared: appeared, index: 4)
+        catalogSection(title: "Popular Movies", items: store.popularMovies, feedbackReason: "Popular Movies rail")
+            .railAppear(appeared: appeared, index: 5)
+        catalogSection(title: "Top Rated Movies", items: store.topRatedMovies, feedbackReason: "Top Rated Movies rail")
+            .railAppear(appeared: appeared, index: 6)
+        catalogSection(title: "Now Playing", items: store.nowPlayingMovies, feedbackReason: "Now Playing rail")
+            .railAppear(appeared: appeared, index: 7)
+        catalogSection(title: "Upcoming", items: store.upcomingMovies, feedbackReason: "Upcoming rail")
+            .railAppear(appeared: appeared, index: 8)
+
+        ForEach(Array(store.genreRails.enumerated()), id: \.element.id) { offset, rail in
+            catalogSection(title: rail.name, items: rail.items, feedbackReason: "\(rail.name) genre rail")
+                .railAppear(appeared: appeared, index: 9 + offset)
+        }
+    }
+
+    private var refreshingChip: some View {
+        HStack(spacing: AppTheme.Spacing.xs) {
+            ProgressView().controlSize(.small)
+            Text("Refreshing…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .padding(.vertical, AppTheme.Spacing.xs)
+        .glassChip()
+    }
+
+    // MARK: - Hero
+
+    /// Featured item: first trending movie with a backdrop, else first trending
+    /// show with one. Returns nil when no backdrop exists so the hero is hidden
+    /// rather than rendering a broken box.
+    private var heroItem: MediaPreview? {
+        store.trendingMovies.first(where: { $0.backdropURL != nil })
+            ?? store.trendingShows.first(where: { $0.backdropURL != nil })
+    }
+
+    // MARK: - Continue Watching (distinct landscape rail)
+
+    @ViewBuilder
+    private var continueWatchingRail: some View {
+        let items = store.continueWatching.filter { $0.isInProgress }
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                railHeader("Continue Watching")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: AppTheme.Spacing.lg) {
+                        ForEach(items) { item in
+                            ContinueWatchingCard(item: item) {
+                                selectedItem = item.preview
+                            }
+                        }
+                    }
+                    .padding(.horizontal, AppTheme.Spacing.xxs)
+                    .padding(.trailing, AppTheme.Spacing.xl)
+                    .padding(.vertical, AppTheme.Spacing.xs)
+                }
+                .mask(railFadeMask)
+            }
+        }
+    }
+
+    // MARK: - AI Curated
 
     @ViewBuilder
     private var aiCuratedSection: some View {
@@ -108,7 +194,10 @@ struct DiscoverView: View {
         let visibleRecommendations = feedbackViewModel.visibleRecommendations(from: store.recommendations)
         if store.isLoading || !store.recommendations.isEmpty {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                HStack {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    Image(systemName: "sparkles")
+                        .font(.title3)
+                        .foregroundStyle(AppTheme.accent)
                     Text("AI Curated For You")
                         .font(.title2)
                         .fontWeight(.bold)
@@ -117,8 +206,10 @@ struct DiscoverView: View {
                             .controlSize(.small)
                     }
                     Spacer()
-                    Button("Refresh") {
+                    Button {
                         Task { await appState.preloadDiscoverAICuration(forceRefresh: true) }
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(.glass)
                 }
@@ -139,7 +230,11 @@ struct DiscoverView: View {
                                 curatedRecommendationCard(rec)
                             }
                         }
+                        .padding(.trailing, AppTheme.Spacing.xl)
                     }
+                    // Match the catalog rails' L1 trailing-fade so the AI rail
+                    // reads as scrollable (was previously missing here).
+                    .mask(railFadeMask)
                 } else {
                     Color.clear
                         .frame(height: 104)
@@ -184,6 +279,10 @@ struct DiscoverView: View {
             .frame(height: 210)
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
+            .overlay(alignment: .topTrailing) {
+                feedbackControl(for: recommendation)
+                    .padding(AppTheme.Spacing.sm)
+            }
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 Text(recommendation.title + (recommendation.year.map { " (\($0))" } ?? ""))
@@ -195,76 +294,100 @@ struct DiscoverView: View {
                     .lineLimit(3)
             }
 
-            actionRow(for: recommendation)
+            Button {
+                Task { await openRecommendationDetail(recommendation) }
+            } label: {
+                Label("Details", systemImage: "info.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.glassProminent)
         }
         .frame(width: 250, alignment: .topLeading)
         .padding(AppTheme.Spacing.md)
         .glassCard()
     }
 
+    // MARK: - L12: single lighter feedback control
+
+    /// One compact ellipsis Menu that reaches BOTH recommender signals:
+    /// "Mark watched" runs the exact `beginWatchedFlow` → `submitWatched` path
+    /// (so the rating sheet still appears for non-`.none` scale modes), and
+    /// "Not interested" runs `markNotWatched`. The inline glyph reuses the
+    /// existing `cardState(for:)` confirmation states. Replaces the old dual
+    /// Watched / Not Watched button pair on every card.
     @ViewBuilder
-    private func actionRow(for recommendation: AIMovieRecommendation) -> some View {
+    private func feedbackControl(for recommendation: AIMovieRecommendation) -> some View {
         let state = feedbackViewModel.cardState(for: recommendation)
-        HStack(spacing: AppTheme.Spacing.xs) {
-            Button {
-                Task {
-                    let mode = await feedbackViewModel.beginWatchedFlow(
-                        recommendation: recommendation,
-                        settings: appState.settingsManager
-                    )
-                    if mode == .none {
-                        await feedbackViewModel.submitWatched(
-                            recommendation: recommendation,
-                            mode: .none,
-                            value: nil,
-                            service: appState.userFeedbackService
-                        )
-                    }
-                }
-            } label: {
-                Text("Watched")
-            }
-            .buttonStyle(.glass)
-
-            Button {
-                Task {
-                    await feedbackViewModel.markNotWatched(
-                        recommendation: recommendation,
-                        service: appState.userFeedbackService
-                    )
-                }
-            } label: {
-                Text("Not Watched")
-            }
-            .buttonStyle(.glass)
-
-            Button("Details") {
-                Task { await openRecommendationDetail(recommendation) }
-            }
-            .buttonStyle(.glassProminent)
-        }
-        .overlay(alignment: .topTrailing) {
+        ZStack {
             switch state {
             case .saving:
                 ProgressView()
                     .controlSize(.small)
-                    .padding(.top, -18)
+                    .padding(6)
+                    .background(.ultraThinMaterial, in: Circle())
             case .watched:
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(AppTheme.success)
-                    .padding(.top, -18)
+                glyphBadge("checkmark.circle.fill", tint: AppTheme.success)
             case .notWatched:
-                Image(systemName: "nosign")
-                    .foregroundStyle(AppTheme.warning)
-                    .padding(.top, -18)
+                glyphBadge("nosign", tint: AppTheme.warning)
             case .failed(let message):
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(AppTheme.danger)
-                    .padding(.top, -18)
+                glyphBadge("exclamationmark.triangle.fill", tint: AppTheme.danger)
                     .help(message)
             case .idle:
-                EmptyView()
+                Menu {
+                    Button {
+                        Task { await markWatched(recommendation) }
+                    } label: {
+                        Label("Mark watched", systemImage: "checkmark.circle")
+                    }
+                    Button(role: .destructive) {
+                        Task {
+                            await feedbackViewModel.markNotWatched(
+                                recommendation: recommendation,
+                                service: appState.userFeedbackService
+                            )
+                        }
+                    } label: {
+                        Label("Not interested", systemImage: "hand.thumbsdown")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 26, height: 26)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.75))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
+        }
+        .animation(.easeInOut(duration: 0.18), value: state)
+    }
+
+    private func glyphBadge(_ systemName: String, tint: Color) -> some View {
+        Image(systemName: systemName)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(tint)
+            .frame(width: 26, height: 26)
+            .background(.ultraThinMaterial, in: Circle())
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.75))
+    }
+
+    /// Shared "watched" path: open the rating sheet when the scale mode needs it,
+    /// otherwise submit immediately — identical semantics to the prior button.
+    private func markWatched(_ recommendation: AIMovieRecommendation) async {
+        let mode = await feedbackViewModel.beginWatchedFlow(
+            recommendation: recommendation,
+            settings: appState.settingsManager
+        )
+        if mode == .none {
+            await feedbackViewModel.submitWatched(
+                recommendation: recommendation,
+                mode: .none,
+                value: nil,
+                service: appState.userFeedbackService
+            )
         }
     }
 
@@ -343,14 +466,14 @@ struct DiscoverView: View {
         .padding(AppTheme.Spacing.lg)
     }
 
+    // MARK: - Poster catalog rails
+
     @ViewBuilder
     private func catalogSection(title: String, items: [MediaPreview], feedbackReason: String) -> some View {
         let visibleItems = feedbackViewModel.visibleMediaPreviews(from: items)
         if !visibleItems.isEmpty {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                Text(title)
-                    .font(.title2)
-                    .fontWeight(.bold)
+                railHeader(title)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: AppTheme.Spacing.lg) {
@@ -363,85 +486,71 @@ struct DiscoverView: View {
                 }
                 // Fade the trailing edge so the rail reads as scrollable instead of
                 // clipping a card dead at the window edge (L1).
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black, location: 0.95),
-                            .init(color: .clear, location: 1.0)
-                        ],
-                        startPoint: .leading, endPoint: .trailing
-                    )
-                )
+                .mask(railFadeMask)
             }
         }
     }
 
+    private func railHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.title2)
+            .fontWeight(.bold)
+    }
+
+    private var railFadeMask: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: .black, location: 0),
+                .init(color: .black, location: 0.95),
+                .init(color: .clear, location: 1.0)
+            ],
+            startPoint: .leading, endPoint: .trailing
+        )
+    }
+
     private func discoverCard(item: MediaPreview, feedbackReason: String) -> some View {
         let recommendation = feedbackViewModel.recommendation(for: item, reason: feedbackReason)
-        let state = feedbackViewModel.cardState(for: recommendation)
 
-        return VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            MediaCard(item: item)
-                .onTapGesture {
-                    selectedItem = item
+        return MediaCard(item: item)
+            .overlay(alignment: .topTrailing) {
+                // L12: a single compact control on the poster's top-trailing corner
+                // replaces the old dual button pair below the card.
+                feedbackControl(for: recommendation)
+                    .padding(AppTheme.Spacing.sm)
+            }
+            .onTapGesture {
+                selectedItem = item
+            }
+    }
+
+    // MARK: - Cold-start skeleton
+
+    private var skeletonView: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .frame(height: 380)
+                .overlay {
+                    ProgressView("Loading Discover…")
+                        .controlSize(.large)
                 }
-
-            HStack(spacing: AppTheme.Spacing.xs) {
-                Button {
-                    Task {
-                        let mode = await feedbackViewModel.beginWatchedFlow(
-                            recommendation: recommendation,
-                            settings: appState.settingsManager
-                        )
-                        if mode == .none {
-                            await feedbackViewModel.submitWatched(
-                                recommendation: recommendation,
-                                mode: .none,
-                                value: nil,
-                                service: appState.userFeedbackService
-                            )
+            ForEach(0..<3, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                        .fill(.quaternary)
+                        .frame(width: 160, height: 22)
+                    HStack(spacing: AppTheme.Spacing.lg) {
+                        ForEach(0..<6, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                                .frame(width: 158, height: 237)
                         }
                     }
-                } label: {
-                    Text("Watched")
-                        .font(.caption2.weight(.semibold))
-                }
-                .buttonStyle(.glass)
-
-                Button {
-                    Task {
-                        await feedbackViewModel.markNotWatched(
-                            recommendation: recommendation,
-                            service: appState.userFeedbackService
-                        )
-                    }
-                } label: {
-                    Text("Not Watched")
-                        .font(.caption2.weight(.semibold))
-                }
-                .buttonStyle(.glass)
-            }
-            .overlay(alignment: .trailing) {
-                switch state {
-                case .saving:
-                    ProgressView()
-                        .controlSize(.small)
-                case .watched:
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(AppTheme.success)
-                case .notWatched:
-                    Image(systemName: "nosign")
-                        .foregroundStyle(AppTheme.warning)
-                case .failed(let message):
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(AppTheme.danger)
-                        .help(message)
-                case .idle:
-                    EmptyView()
                 }
             }
         }
+        .redacted(reason: .placeholder)
+        .padding(.top, AppTheme.Spacing.lg)
     }
 
     private var noApiKeyView: some View {
@@ -461,6 +570,15 @@ struct DiscoverView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.top, 100)
+    }
+
+    // MARK: - Appear / personalization / detail plumbing
+
+    private func triggerAppear() {
+        guard !appeared else { return }
+        withAnimation(.easeOut(duration: 0.4)) {
+            appeared = true
+        }
     }
 
     private func evaluatePersonalizationPrompt() async {
@@ -488,28 +606,52 @@ struct DiscoverView: View {
     }
 
     private func localPreview(for recommendation: AIMovieRecommendation) -> MediaPreview? {
-        let allItems = appState.discoverStore.continueWatching
-            + appState.discoverStore.trendingMovies
-            + appState.discoverStore.trendingShows
-            + appState.discoverStore.popularMovies
-            + appState.discoverStore.topRatedMovies
-
-        return allItems.first { item in
-            item.title.compare(recommendation.title, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
-                && (recommendation.year == nil || item.year == recommendation.year)
+        for item in allDiscoverPreviews {
+            if item.title.compare(recommendation.title, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+                && (recommendation.year == nil || item.year == recommendation.year) {
+                return item
+            }
         }
+        return nil
+    }
+
+    /// All previews currently surfaced across the page — used for hidden-state
+    /// reconciliation and local Detail resolution.
+    private var allDiscoverPreviews: [MediaPreview] {
+        var items: [MediaPreview] = store.continueWatching.map(\.preview)
+        items += store.trendingMovies
+        items += store.trendingShows
+        items += store.popularMovies
+        items += store.topRatedMovies
+        items += store.nowPlayingMovies
+        items += store.upcomingMovies
+        items += store.airingTodayShows
+        items += store.onTheAirShows
+        for rail in store.genreRails {
+            items += rail.items
+        }
+        return items
     }
 
     private func syncFeedbackVisibility() {
         var validIDs = Set(appState.discoverAICurationStore.recommendations.map(\.id))
-        let allDiscoverItems = appState.discoverStore.continueWatching
-            + appState.discoverStore.trendingMovies
-            + appState.discoverStore.trendingShows
-            + appState.discoverStore.popularMovies
-            + appState.discoverStore.topRatedMovies
-        for item in allDiscoverItems {
+        for item in allDiscoverPreviews {
             validIDs.insert(feedbackViewModel.recommendationID(for: item))
         }
         feedbackViewModel.resetHiddenState(validIDs: validIDs)
+    }
+}
+
+// MARK: - Staggered rail-appear modifier
+
+private extension View {
+    /// Tasteful staggered appear: fade + slight slide-up, delay growing with rail
+    /// index (capped). Cheap and purely cosmetic — does not affect layout/scroll.
+    func railAppear(appeared: Bool, index: Int) -> some View {
+        let delay = min(0.04 + Double(index) * 0.06, 0.6)
+        return self
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 12)
+            .animation(.easeOut(duration: 0.4).delay(delay), value: appeared)
     }
 }
