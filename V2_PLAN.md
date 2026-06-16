@@ -60,9 +60,11 @@ accent-as-glow-only, one specular stroke, restrained background, retain-content-
   `ensureSystemLibraryFolders` write-amplification gating. Risk of destabilizing the verified app
   outweighs the marginal benefit in this PR.
 
-### P6 — Shared components / remaining layout
-- One `ActionBar` component (L16) adopted by Discover/Detail/Assistant/Search; even-width
-  quick-prompt chips (L9).
+### P6 — Remaining layout
+- ✅ L9: even-width quick-prompt chips (fixed 2-column grid).
+- **DEFERRED L16** (shared `ActionBar`): "no visible change" refactor that would churn the
+  Discover/Detail files just rewritten in P3/P4 — real regression risk for zero user-facing
+  gain. The action rows already read consistently post-redesign. Documented for a later pass.
 
 ### P7 — Tests for everything
 - New: RealDebrid/AllDebrid/Premiumize parse+error tests, DiscoverAICuration, IndexerManager

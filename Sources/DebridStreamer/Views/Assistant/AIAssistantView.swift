@@ -73,11 +73,24 @@ struct AIAssistantView: View {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                     Text("Quick Prompts")
                         .font(.headline)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: AppTheme.Spacing.sm)], spacing: AppTheme.Spacing.sm) {
+                    // Even-width chips in a fixed 2-column grid — fills each cell so
+                    // widths are uniform instead of ragged text-sized capsules (L9).
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: AppTheme.Spacing.sm),
+                            GridItem(.flexible(), spacing: AppTheme.Spacing.sm)
+                        ],
+                        spacing: AppTheme.Spacing.sm
+                    ) {
                         ForEach(viewModel.quickPromptChips, id: \.self) { chip in
-                            Button(chip) { viewModel.applyQuickPrompt(chip) }
-                                .buttonStyle(.glass)
-                                .font(.caption)
+                            Button { viewModel.applyQuickPrompt(chip) } label: {
+                                Text(chip)
+                                    .font(.caption)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(.glass)
                         }
                     }
                 }
