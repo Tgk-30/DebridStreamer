@@ -24,11 +24,23 @@ struct SearchView: View {
         .onChange(of: appState.selectedLibraryFolderId) {
             Task { await refreshFolderContextLabel() }
         }
-        .task { await refreshFolderContextLabel() }
+        .onChange(of: appState.pendingSearchQuery) { consumePendingSearch() }
+        .task {
+            consumePendingSearch()
+            await refreshFolderContextLabel()
+        }
         .sheet(item: $selectedItem) { item in
             DetailView(mediaPreview: item)
                 .frame(minWidth: 880, idealWidth: 900, minHeight: 580)
         }
+    }
+
+    /// Pick up a query handed off from the global top-right search field.
+    /// Setting `query` triggers `scheduleSearch()` via its onChange.
+    private func consumePendingSearch() {
+        guard let pending = appState.pendingSearchQuery else { return }
+        query = pending
+        appState.pendingSearchQuery = nil
     }
 
     private var mainPane: some View {

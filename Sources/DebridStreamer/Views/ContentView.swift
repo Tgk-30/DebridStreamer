@@ -22,12 +22,18 @@ struct ContentView: View {
                             }
                         }
                 } else {
-                    NavigationSplitView {
-                        SidebarView()
-                    } detail: {
+                    HStack(spacing: 0) {
+                        NavRail()
                         detailView
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .overlay(alignment: .topTrailing) {
+                                if showsGlobalSearch {
+                                    GlobalSearchField()
+                                        .padding(.top, AppTheme.Spacing.md)
+                                        .padding(.trailing, AppTheme.Spacing.lg)
+                                }
+                            }
                     }
-                    .navigationSplitViewStyle(.balanced)
                     .frame(minWidth: 900, minHeight: 600)
                 }
             }
@@ -58,6 +64,15 @@ struct ContentView: View {
             Button("OK") { appState.errorMessage = nil }
         } message: {
             Text(appState.errorMessage ?? "")
+        }
+    }
+
+    /// The global quick-search field is shown on browse/library screens but not on
+    /// Search itself (it has its own search bar) or Settings (no search context).
+    private var showsGlobalSearch: Bool {
+        switch appState.selectedSidebarItem {
+        case .search, .settings: return false
+        default: return true
         }
     }
 

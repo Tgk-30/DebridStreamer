@@ -10,6 +10,9 @@ final class AppState {
     var selectedSettingsTab: SettingsTab = .general
     var isLoading = false
     var errorMessage: String?
+    /// A query handed off from the global top-right search field; the Search
+    /// screen consumes and clears it. nil when there's nothing pending.
+    var pendingSearchQuery: String?
     var assistantDraftPrompt = ""
     var selectedLibraryFolderId: String?
     var activePlayerSession: PlayerSessionRequest?
@@ -304,4 +307,16 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .settings: return "gear"
         }
     }
+
+    /// Short label for the slim nav rail (where "AI Assistant" won't fit).
+    var shortLabel: String {
+        switch self {
+        case .assistant: return "Assistant"
+        default: return rawValue
+        }
+    }
+
+    /// The primary destinations shown in the nav rail. Search lives in the
+    /// top-right global field; Settings is pinned separately at the rail bottom.
+    static let railPrimary: [SidebarItem] = [.discover, .library, .watchlist, .history, .assistant]
 }
