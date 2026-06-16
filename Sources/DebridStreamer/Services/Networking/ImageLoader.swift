@@ -90,6 +90,11 @@ struct CachedAsyncImage<Content: View>: View {
     @ViewBuilder var content: (AsyncImagePhase) -> Content
 
     @State private var phase: AsyncImagePhase = .empty
+    /// The URL that produced the current `phase`. Used so the "already resolved"
+    /// short-circuit only fires for the SAME url — otherwise a recycled view
+    /// (hero after a catalog reload, or a card whose posterPath changed) would
+    /// keep showing the previous image because its prior `.success` matched.
+    @State private var loadedURL: URL?
 
     init(url: URL?, @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
         self.url = url
@@ -104,15 +109,21 @@ struct CachedAsyncImage<Content: View>: View {
     private func load() async {
         guard let url else {
             phase = .empty
+            loadedURL = nil
             return
         }
-        // Don't flash the placeholder if we already resolved this exact URL.
-        if case .success = phase { return }
+        // Don't flash the placeholder if we already resolved THIS exact url.
+        if loadedURL == url, case .success = phase { return }
         phase = .empty
-        if let image = await ImageLoader.shared.image(for: url) {
+        let image = await ImageLoader.shared.image(for: url)
+        // The view may have been recycled to a new url while we awaited
+        // (.task(id:) cancels the stale run); don't clobber the newer phase.
+        guard !Task.isCancelled else { return }
+        if let image {
             phase = .success(Image(nsImage: image))
         } else {
             phase = .failure(URLError(.cannotDecodeContentData))
         }
+        loadedURL = url
     }
 }

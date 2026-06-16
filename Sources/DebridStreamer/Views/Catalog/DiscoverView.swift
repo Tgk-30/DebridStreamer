@@ -132,10 +132,14 @@ struct DiscoverView: View {
             .railAppear(appeared: appeared, index: 7)
         catalogSection(title: "Upcoming", items: store.upcomingMovies, feedbackReason: "Upcoming rail")
             .railAppear(appeared: appeared, index: 8)
+        catalogSection(title: "Airing Today", items: store.airingTodayShows, feedbackReason: "Airing Today rail")
+            .railAppear(appeared: appeared, index: 9)
+        catalogSection(title: "On The Air", items: store.onTheAirShows, feedbackReason: "On The Air rail")
+            .railAppear(appeared: appeared, index: 10)
 
         ForEach(Array(store.genreRails.enumerated()), id: \.element.id) { offset, rail in
             catalogSection(title: rail.name, items: rail.items, feedbackReason: "\(rail.name) genre rail")
-                .railAppear(appeared: appeared, index: 9 + offset)
+                .railAppear(appeared: appeared, index: 11 + offset)
         }
     }
 
