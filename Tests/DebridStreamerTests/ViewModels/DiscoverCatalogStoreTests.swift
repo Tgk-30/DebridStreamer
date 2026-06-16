@@ -69,7 +69,7 @@ struct DiscoverCatalogStoreTests {
 
         #expect(store.continueWatching.count == 1)
         #expect(store.continueWatching.first?.id == "tt001")
-        #expect(store.continueWatching.first?.title == "Watched Movie")
+        #expect(store.continueWatching.first?.preview.title == "Watched Movie")
     }
 
     @Test("Late metadata availability still loads when forced refresh is used")

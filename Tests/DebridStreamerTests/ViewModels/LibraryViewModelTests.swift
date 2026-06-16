@@ -246,6 +246,8 @@ private actor LibraryMetadataStub: MetadataProvider {
     func getSeasons(tmdbId: Int) async throws -> [Season] { [] }
     func getEpisodes(tmdbId: Int, season: Int) async throws -> [Episode] { [] }
     func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds { ExternalIds(imdbId: nil, tvdbId: nil) }
+    func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember] { [] }
+    func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview] { [] }
 }
 
 private actor LibraryFallbackMetadataStub: MetadataProvider {
@@ -304,4 +306,6 @@ private actor LibraryFallbackMetadataStub: MetadataProvider {
     func getSeasons(tmdbId: Int) async throws -> [Season] { [] }
     func getEpisodes(tmdbId: Int, season: Int) async throws -> [Episode] { [] }
     func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds { ExternalIds(imdbId: nil, tvdbId: nil) }
+    func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember] { [] }
+    func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview] { [] }
 }

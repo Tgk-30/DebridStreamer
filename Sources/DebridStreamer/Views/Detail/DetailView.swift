@@ -29,6 +29,12 @@ struct DetailView: View {
     @State private var libraryActionStatus: String?
     @State private var availableFolders: [LibraryFolder] = []
 
+    // L23 — cast / related / technical details
+    @State private var cast: [CastMember] = []
+    @State private var related: [MediaPreview] = []
+    // Tapping a "More Like This" poster opens that title in a nested detail sheet.
+    @State private var relatedSelection: MediaPreview?
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
             AppTheme.background.ignoresSafeArea()
@@ -71,6 +77,10 @@ struct DetailView: View {
         .onDisappear {
             streamSearchTask?.cancel()
             streamSearchTask = nil
+        }
+        .sheet(item: $relatedSelection) { item in
+            DetailView(mediaPreview: item)
+                .frame(minWidth: 880, idealWidth: 900, minHeight: 580)
         }
     }
 
@@ -120,6 +130,15 @@ struct DetailView: View {
                                 Image(systemName: "star.fill")
                                     .foregroundStyle(AppTheme.warning)
                                 Text(String(format: "%.1f", rating))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        if let rt = detail.rtRating, rt > 0 {
+                            metaDot
+                            HStack(spacing: AppTheme.Spacing.xs) {
+                                Image(systemName: rt >= 60 ? "fork.knife.circle.fill" : "fork.knife.circle")
+                                    .foregroundStyle(rt >= 60 ? AppTheme.success : AppTheme.warning)
+                                Text("\(rt)%")
                                     .foregroundStyle(.white)
                             }
                         }
@@ -175,6 +194,22 @@ struct DetailView: View {
 
                 // Stream search section
                 streamSection(detail)
+
+                // L23 — fill the lower half: cast, related titles, technical details.
+                if !cast.isEmpty {
+                    Divider()
+                    castSection
+                }
+
+                if !related.isEmpty {
+                    Divider()
+                    relatedSection
+                }
+
+                if let tech = technicalRows(detail), !tech.isEmpty {
+                    Divider()
+                    technicalSection(tech)
+                }
             }
             .padding()
         }
@@ -373,6 +408,152 @@ struct DetailView: View {
         }
     }
 
+    // MARK: - Cast / Related / Technical (L23)
+
+    @ViewBuilder
+    private var castSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Cast")
+                .font(.title3)
+                .fontWeight(.semibold)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                    ForEach(cast) { member in
+                        castCard(member)
+                    }
+                }
+                .padding(.trailing, AppTheme.Spacing.xxl)
+            }
+            .mask(railTrailingFade)
+        }
+    }
+
+    @ViewBuilder
+    private func castCard(_ member: CastMember) -> some View {
+        VStack(spacing: AppTheme.Spacing.sm) {
+            CachedAsyncImage(url: member.profileURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().aspectRatio(contentMode: .fill)
+                default:
+                    ZStack {
+                        Rectangle().fill(.quaternary)
+                        Image(systemName: "person.fill")
+                            .font(.title)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .frame(width: 72, height: 72)
+            .clipShape(Circle())
+            .overlay(Circle().strokeBorder(AppTheme.glassBorder, lineWidth: 1))
+
+            VStack(spacing: 2) {
+                Text(member.name)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.center)
+                if !member.character.isEmpty {
+                    Text(member.character)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2, reservesSpace: true)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .frame(width: 84)
+        }
+    }
+
+    @ViewBuilder
+    private var relatedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("More like this")
+                .font(.title3)
+                .fontWeight(.semibold)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                    ForEach(related) { item in
+                        Button {
+                            relatedSelection = item
+                        } label: {
+                            MediaCard(item: item)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.trailing, AppTheme.Spacing.xxl)
+            }
+            .mask(railTrailingFade)
+        }
+    }
+
+    @ViewBuilder
+    private func technicalSection(_ rows: [(String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Details")
+                .font(.title3)
+                .fontWeight(.semibold)
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 180, maximum: 280), spacing: AppTheme.Spacing.md, alignment: .leading)],
+                alignment: .leading,
+                spacing: AppTheme.Spacing.md
+            ) {
+                ForEach(rows, id: \.0) { label, value in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(value)
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(AppTheme.Spacing.md)
+                    .glassElevation(.rest, radius: AppTheme.Radius.sm)
+                }
+            }
+        }
+    }
+
+    /// Build the key/value rows for the technical-details grid, omitting empties.
+    private func technicalRows(_ detail: MediaItem) -> [(String, String)]? {
+        var rows: [(String, String)] = []
+        if let status = detail.status, !status.isEmpty {
+            rows.append(("Status", status))
+        }
+        if !detail.runtimeString.isEmpty {
+            rows.append(("Runtime", detail.runtimeString))
+        }
+        if !detail.genres.isEmpty {
+            rows.append(("Genres", detail.genres.joined(separator: ", ")))
+        }
+        if let rating = detail.imdbRating, rating > 0 {
+            rows.append(("IMDb rating", String(format: "%.1f / 10", rating)))
+        }
+        if let rt = detail.rtRating, rt > 0 {
+            rows.append(("Rotten Tomatoes", "\(rt)%"))
+        }
+        return rows
+    }
+
+    /// L1 trailing fade so horizontal rails dissolve at the edge rather than hard-clip.
+    private var railTrailingFade: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .black, location: 0),
+                .init(color: .black, location: 0.92),
+                .init(color: .clear, location: 1)
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
     // MARK: - Actions
 
     private func loadDetail() async {
@@ -404,10 +585,50 @@ struct DetailView: View {
             if let detail = mediaDetail {
                 await refreshLibraryFlags(for: detail)
                 await loadAvailableFolders()
+                // L23 — cast + related, fetched in parallel and fault-tolerant.
+                await loadCastAndRelated(detail, service: service)
+                // B1 — IMDb/RT ratings via OMDB (only for real tt-ids).
+                await loadOMDBRatings(detail)
             }
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Fetch the cast row and "more like this" row in parallel. Either failing
+    /// just leaves its row empty — it never blocks the modal or surfaces an error.
+    private func loadCastAndRelated(_ detail: MediaItem, service: TMDBService) async {
+        guard let tmdbId = resolvedTMDBId(detail) else { return }
+        async let castResult = try? service.getCast(tmdbId: tmdbId, type: detail.type)
+        async let relatedResult = try? service.getRecommendations(tmdbId: tmdbId, type: detail.type)
+        let (fetchedCast, fetchedRelated) = await (castResult, relatedResult)
+        if let fetchedCast { cast = Array(fetchedCast.prefix(20)) }
+        if let fetchedRelated { related = Array(fetchedRelated.prefix(20)) }
+    }
+
+    /// Enrich with IMDb/Rotten-Tomatoes ratings from OMDB. Guarded so we only
+    /// call OMDB when the detail's id is a real IMDb id (`tt…`) — for tmdb-only
+    /// titles there is no OMDB join key, so we skip silently. Also skips when no
+    /// OMDB key is configured (`omdbService == nil`) or on any failure.
+    private func loadOMDBRatings(_ detail: MediaItem) async {
+        guard detail.id.hasPrefix("tt"), let omdb = appState.omdbService else { return }
+        guard let ratings = try? await omdb.fetchRatings(imdbId: detail.id) else { return }
+        guard let rtPercent = ratings.rtPercent else { return }
+        guard var updated = mediaDetail else { return }
+        updated.rtRating = rtPercent
+        mediaDetail = updated
+        // Persist into the existing rtRating column (no migration needed).
+        if let db = appState.databaseManager {
+            try? await db.saveMedia(updated)
+        }
+    }
+
+    /// Resolve a numeric TMDB id from a MediaItem (`tmdbId`, `tmdb-{id}`, or numeric id).
+    private func resolvedTMDBId(_ detail: MediaItem) -> Int? {
+        if let tId = detail.tmdbId { return tId }
+        if detail.id.hasPrefix("tmdb-"), let parsed = Int(detail.id.dropFirst(5)) { return parsed }
+        if detail.id.allSatisfy(\.isNumber), let parsed = Int(detail.id) { return parsed }
+        return nil
     }
 
     private func loadSeasons(_ detail: MediaItem, service: TMDBService) async {

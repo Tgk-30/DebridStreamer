@@ -73,6 +73,12 @@ protocol MetadataProvider: Sendable {
 
     /// Get external IDs (IMDB ID) for a TMDB item.
     func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds
+
+    /// Get the top-billed cast for a TMDB item (L23 — Detail cast row).
+    func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember]
+
+    /// Get "more like this" recommendations for a TMDB item (L23 — related row).
+    func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview]
 }
 
 /// Search result with pagination info.

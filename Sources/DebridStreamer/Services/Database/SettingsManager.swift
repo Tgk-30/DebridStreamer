@@ -93,6 +93,14 @@ actor SettingsManager {
         try await setValue(key, forKey: SettingsKeys.tmdbApiKey)
     }
 
+    func getOMDBApiKey() async throws -> String? {
+        try await getValue(forKey: SettingsKeys.omdbApiKey)
+    }
+
+    func setOMDBApiKey(_ key: String) async throws {
+        try await setValue(key, forKey: SettingsKeys.omdbApiKey)
+    }
+
     func getPreferredQuality() async throws -> VideoQuality {
         guard let raw = try await getValue(forKey: SettingsKeys.preferredQuality),
               let quality = VideoQuality(rawValue: raw) else {

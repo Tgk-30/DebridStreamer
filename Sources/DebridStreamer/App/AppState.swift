@@ -25,6 +25,7 @@ final class AppState {
     // Services (lazy-initialized)
     private(set) var databaseManager: DatabaseManager?
     private(set) var metadataService: TMDBService?
+    private(set) var omdbService: OMDBService?
     private(set) var settingsManager: SettingsManager?
     private(set) var debridManager: DebridManager?
     private(set) var indexerManager: IndexerManager?
@@ -87,6 +88,12 @@ final class AppState {
         if !tmdbKey.isEmpty {
             self.metadataService = TMDBService(apiKey: tmdbKey)
         }
+
+        let omdbKey = (try await settings.getOMDBApiKey() ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !omdbKey.isEmpty {
+            self.omdbService = OMDBService(apiKey: omdbKey)
+        }
         self.userFeedbackService = UserFeedbackService(
             database: dbManager,
             metadataService: metadataService
@@ -124,6 +131,12 @@ final class AppState {
             await self.reloadAIAssistantManager()
             await self.preloadDiscoverAICuration(forceRefresh: true)
         }
+    }
+
+    /// Rebuild (or tear down) the OMDB ratings client when the saved key changes.
+    func updateOMDBService(apiKey: String) {
+        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.omdbService = trimmed.isEmpty ? nil : OMDBService(apiKey: trimmed)
     }
 
     func openSettings(tab: SettingsTab) {

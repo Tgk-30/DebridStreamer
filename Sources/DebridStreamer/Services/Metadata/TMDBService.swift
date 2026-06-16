@@ -199,6 +199,22 @@ actor TMDBService: MetadataProvider {
         return try await request(path: path, params: [:])
     }
 
+    func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember] {
+        let path = "/\(type.tmdbPath)/\(tmdbId)/credits"
+        let params = ["language": "en-US"]
+        let response: TMDBCredits = try await request(path: path, params: params)
+        return response.cast.map {
+            CastMember(id: $0.id, name: $0.name, character: $0.character ?? "", profilePath: $0.profilePath)
+        }
+    }
+
+    func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview] {
+        let path = "/\(type.tmdbPath)/\(tmdbId)/recommendations"
+        let params = ["language": "en-US", "page": "1"]
+        let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
+        return response.results.compactMap { $0.toMediaPreview() }
+    }
+
     // MARK: - Find by IMDB ID
 
     func findByImdbId(_ imdbId: String, type: MediaType) async throws -> Int? {
@@ -326,6 +342,7 @@ struct TMDBDetailResponse: Decodable {
     var numberOfSeasons: Int? = nil
     let genres: [TMDBGenre]?
     let externalIds: ExternalIds?
+    var credits: TMDBCredits? = nil
 
     func toMediaItem(type: MediaType) -> MediaItem {
         let displayTitle = title ?? name ?? "Unknown"
@@ -392,6 +409,19 @@ struct TMDBEpisodeToAir: Decodable {
 struct TMDBGenre: Decodable {
     let id: Int
     let name: String
+}
+
+/// `credits` payload that TMDB already returns alongside detail when we request
+/// `append_to_response=credits` (and from the dedicated `/credits` endpoint).
+struct TMDBCredits: Decodable {
+    let cast: [TMDBCastMember]
+}
+
+struct TMDBCastMember: Decodable {
+    let id: Int
+    let name: String
+    let character: String?
+    let profilePath: String?
 }
 
 struct TMDBGenresResponse: Decodable {

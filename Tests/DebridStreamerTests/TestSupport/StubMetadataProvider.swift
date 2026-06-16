@@ -65,4 +65,15 @@ struct StubMetadataProvider: MetadataProvider {
     func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds {
         ExternalIds(imdbId: nil, tvdbId: nil)
     }
+
+    var castResponse: [CastMember] = []
+    var recommendationsResponse: [MediaPreview] = []
+
+    func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember] {
+        castResponse
+    }
+
+    func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview] {
+        recommendationsResponse
+    }
 }

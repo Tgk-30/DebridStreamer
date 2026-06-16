@@ -738,6 +738,7 @@ struct SettingsView: View {
             try await settings.setValue(tmdbApiKey.nilIfEmpty, forKey: SettingsKeys.tmdbApiKey)
             try await settings.setValue(omdbApiKey.nilIfEmpty, forKey: SettingsKeys.omdbApiKey)
             appState.updateTMDBService(apiKey: tmdbApiKey.trimmingCharacters(in: .whitespacesAndNewlines))
+            appState.updateOMDBService(apiKey: omdbApiKey.trimmingCharacters(in: .whitespacesAndNewlines))
             statusMessage = "General settings saved."
         } catch {
             statusMessage = "Error: \(error.localizedDescription)"

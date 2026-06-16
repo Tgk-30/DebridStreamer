@@ -131,4 +131,6 @@ private struct DiscoverPosterStub: MetadataProvider {
     func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds {
         ExternalIds(imdbId: nil, tvdbId: nil)
     }
+    func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember] { [] }
+    func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview] { [] }
 }
