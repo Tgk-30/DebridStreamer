@@ -19,7 +19,10 @@ actor TorBoxService: DebridServiceProtocol {
         let files: [TorrentFileEntry]
     }
 
-    init(apiToken: String, session: URLSession = .shared) {
+    // Reused across calls instead of allocating per `getAccountInfo`.
+    private static let premiumExpiryFormatter = ISO8601DateFormatter()
+
+    init(apiToken: String, session: URLSession = AppHTTP.api) {
         self.apiToken = apiToken
         self.session = session
     }
@@ -165,8 +168,7 @@ actor TorBoxService: DebridServiceProtocol {
 
         var premiumExpiry: Date?
         if let expiryStr = dataObj["premium_expires_at"] as? String {
-            let formatter = ISO8601DateFormatter()
-            premiumExpiry = formatter.date(from: expiryStr)
+            premiumExpiry = Self.premiumExpiryFormatter.date(from: expiryStr)
         }
 
         return DebridAccountInfo(

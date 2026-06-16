@@ -93,9 +93,12 @@ struct HistoryView: View {
 
         do {
             let history = try await db.fetchAllWatchHistory(limit: 200)
+            // One bulk media fetch instead of one per history row; join in memory
+            // preserving the original (lastWatched-ordered) history order.
+            let mediaById = try await db.fetchMedia(ids: history.map(\.mediaId))
             var rows: [HistoryRow] = []
             for item in history {
-                guard let media = try await db.fetchMedia(id: item.mediaId) else { continue }
+                guard let media = mediaById[item.mediaId] else { continue }
                 rows.append(HistoryRow(id: item.id, history: item, media: media))
             }
             items = rows

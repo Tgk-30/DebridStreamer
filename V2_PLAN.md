@@ -47,15 +47,18 @@ accent-as-glow-only, one specular stroke, restrained background, retain-content-
   This"); technical-details grid; fill the empty lower modal. B1: new `OMDBService` wired from the
   saved key → real IMDb/RT ratings merged into `MediaItem.rtRating` (DB column already exists).
 
-### P5 — Performance + cleanup
-- Kill 3 N+1 DB loops (Library/Continue-Watching/History → bulk `fetchMedia(ids:)`).
-- Remove duplicate TMDB detail fetch (`getSeasons` re-fetches `/tv/{id}`) + drop the wasted
-  `credits` append once decoded path is in; TMDB response memoization (TTL; genres long).
-- Bound RD `findExistingTorrent` list; backoff on status polling; reuse `JSONDecoder`/formatters;
-  concurrent `validateAll`; AI model-catalog TTL cache.
-- DB: gate `ensureSystemLibraryFolders` write-amplification behind a startup flag; convert
-  read-shaped methods off `dbPool.write`; harden FTS join; add `watch_history(mediaId,episodeId)` index.
-- Split monolithic `AppState` (services / nav+UI / player coordinator) carefully, build-verified.
+### P5 — Performance + cleanup (DONE: safe high-value subset)
+- ✅ Kill the N+1 DB loops (Continue-Watching done in P3; Library + History → bulk
+  `fetchMedia(ids:)` + new bulk `fetchWatchHistory(mediaIds:)`).
+- ✅ TMDB response memoization (TTL; genres long) — also dedups the `getDetail`+`getSeasons`
+  `/tv/{id}` double fetch; drop the now-redundant `credits` append (getCast fetches separately).
+- ✅ Bound RD `findExistingTorrent` list; backoff on status polling; reuse `JSONDecoder`/formatters;
+  concurrent `validateAll`; AI model-catalog TTL cache; wire services to the shared `AppHTTP.api` session.
+- **DEFERRED (correctness-sensitive / not user-visible — documented for a focused follow-up):**
+  full `AppState` god-object split; `watch_history(mediaId,episodeId)` UNIQUE-index migration
+  (needs dedup-before-constraint); FTS join hardening; read-vs-write `dbPool` split;
+  `ensureSystemLibraryFolders` write-amplification gating. Risk of destabilizing the verified app
+  outweighs the marginal benefit in this PR.
 
 ### P6 — Shared components / remaining layout
 - One `ActionBar` component (L16) adopted by Discover/Detail/Assistant/Search; even-width

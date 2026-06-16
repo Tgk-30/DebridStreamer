@@ -8,7 +8,7 @@ actor PremiumizeService: DebridServiceProtocol {
     private let baseURL = "https://www.premiumize.me/api"
     private let session: URLSession
 
-    init(apiToken: String, session: URLSession = .shared) {
+    init(apiToken: String, session: URLSession = AppHTTP.api) {
         self.apiToken = apiToken
         self.session = session
     }

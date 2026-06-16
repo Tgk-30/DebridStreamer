@@ -6,9 +6,80 @@ actor TMDBService: MetadataProvider {
     private let baseURL = "https://api.themoviedb.org/3"
     private let session: URLSession
 
-    init(apiKey: String, session: URLSession = .shared) {
+    // A single configured decoder reused across all requests (snake_case + iso8601),
+    // instead of allocating + configuring one per call.
+    private let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+
+    // MARK: - Response memoization
+    //
+    // Bounded TTL cache of already-DECODED read responses, keyed by
+    // `path + sorted query params`. Because `TMDBService` is an actor the cache
+    // is race-free, and because it stores the typed model directly (not raw Data
+    // across the generic `request<T>`) it stays type-safe. Only successful reads
+    // are cached — errors are never stored, so a failure is always retried. A
+    // cache hit can only return a value that was itself a valid network response
+    // within the TTL window, so behavior is identical, just faster. This also
+    // dedups the getDetail+getSeasons `/tv/{id}` double-fetch within the TTL.
+    private struct CacheEntry {
+        let expiresAt: Date
+        let value: Any
+    }
+    private var responseCache: [String: CacheEntry] = [:]
+    private let cacheCapacity = 256
+
+    /// Short TTL for volatile catalog reads (search/trending/category/discover/
+    /// detail/seasons/episodes/cast/recommendations).
+    static let shortTTL: TimeInterval = 60 * 5
+    /// Long TTL for the effectively-static genre list.
+    static let longTTL: TimeInterval = 60 * 60 * 24
+
+    init(apiKey: String, session: URLSession = AppHTTP.api) {
         self.apiKey = apiKey
         self.session = session
+    }
+
+    /// Returns a cached value for `key` if present and unexpired and castable to
+    /// `T`; otherwise runs `produce`, stores its result under the TTL, and returns
+    /// it. Only the success path stores into the cache (`produce` throwing never
+    /// caches), so error responses are never memoized.
+    private func cached<T>(key: String, ttl: TimeInterval, produce: () async throws -> T) async rethrows -> T {
+        if let entry = responseCache[key], entry.expiresAt > Date(), let value = entry.value as? T {
+            return value
+        }
+        let value = try await produce()
+        store(key: key, value: value, ttl: ttl)
+        return value
+    }
+
+    /// Inserts into the bounded cache: expired entries are swept first, then the
+    /// soonest-to-expire entries are evicted if the cap is reached. Eviction can
+    /// only cause a miss (an extra network call), never an incorrect result.
+    private func store(key: String, value: Any, ttl: TimeInterval) {
+        let now = Date()
+        responseCache = responseCache.filter { $0.value.expiresAt > now }
+        if responseCache.count >= cacheCapacity {
+            let overflow = responseCache.count - (cacheCapacity - 1)
+            let victims = responseCache
+                .sorted { $0.value.expiresAt < $1.value.expiresAt }
+                .prefix(overflow)
+                .map(\.key)
+            for victim in victims {
+                responseCache.removeValue(forKey: victim)
+            }
+        }
+        responseCache[key] = CacheEntry(expiresAt: now.addingTimeInterval(ttl), value: value)
+    }
+
+    /// Stable cache key from a path plus its query params, sorted so param order
+    /// never produces distinct keys for the same logical request.
+    private func cacheKey(_ path: String, _ params: [String: String]) -> String {
+        let sorted = params.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
+        return "\(path)?\(sorted)"
     }
 
     // MARK: - MetadataProvider
@@ -30,14 +101,16 @@ actor TMDBService: MetadataProvider {
             params["language"] = "en-US"
         }
 
-        let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
-        let items = response.results.compactMap { $0.toMediaPreview() }
-        return MetadataSearchResult(
-            items: items,
-            page: response.page,
-            totalPages: response.totalPages,
-            totalResults: response.totalResults
-        )
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
+            let items = response.results.compactMap { $0.toMediaPreview() }
+            return MetadataSearchResult(
+                items: items,
+                page: response.page,
+                totalPages: response.totalPages,
+                totalResults: response.totalResults
+            )
+        }
     }
 
     func getDetail(id: String, type: MediaType) async throws -> MediaItem {
@@ -57,13 +130,17 @@ actor TMDBService: MetadataProvider {
         }
 
         let path = "/\(type.tmdbPath)/\(tmdbId)"
+        // `credits` are fetched separately by getCast, so only request external_ids
+        // here — the credits payload would otherwise be downloaded and discarded.
         let params = [
-            "append_to_response": "external_ids,credits",
+            "append_to_response": "external_ids",
             "language": "en-US"
         ]
 
-        let response: TMDBDetailResponse = try await request(path: path, params: params)
-        return response.toMediaItem(type: type)
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBDetailResponse = try await request(path: path, params: params)
+            return response.toMediaItem(type: type)
+        }
     }
 
     func getSeriesRenewalMetadata(id: String) async throws -> TMDBSeriesRenewalMetadata {
@@ -95,28 +172,32 @@ actor TMDBService: MetadataProvider {
         let path = "/trending/\(type.tmdbPath)/\(timeWindow.rawValue)"
         let params = ["page": String(page), "language": "en-US"]
 
-        let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
-        let items = response.results.compactMap { $0.toMediaPreview() }
-        return MetadataSearchResult(
-            items: items,
-            page: response.page,
-            totalPages: response.totalPages,
-            totalResults: response.totalResults
-        )
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
+            let items = response.results.compactMap { $0.toMediaPreview() }
+            return MetadataSearchResult(
+                items: items,
+                page: response.page,
+                totalPages: response.totalPages,
+                totalResults: response.totalResults
+            )
+        }
     }
 
     func getCategory(_ category: MediaCategory, type: MediaType, page: Int = 1) async throws -> MetadataSearchResult {
         let path = "/\(type.tmdbPath)/\(category.rawValue)"
         let params = ["page": String(page), "language": "en-US"]
 
-        let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
-        let items = response.results.compactMap { $0.toMediaPreview() }
-        return MetadataSearchResult(
-            items: items,
-            page: response.page,
-            totalPages: response.totalPages,
-            totalResults: response.totalResults
-        )
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
+            let items = response.results.compactMap { $0.toMediaPreview() }
+            return MetadataSearchResult(
+                items: items,
+                page: response.page,
+                totalPages: response.totalPages,
+                totalResults: response.totalResults
+            )
+        }
     }
 
     func discover(type: MediaType, filters: DiscoverFilters) async throws -> MetadataSearchResult {
@@ -142,55 +223,64 @@ actor TMDBService: MetadataProvider {
             params["vote_count.gte"] = "100"
         }
 
-        let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
-        let items = response.results.compactMap { $0.toMediaPreview() }
-        return MetadataSearchResult(
-            items: items,
-            page: response.page,
-            totalPages: response.totalPages,
-            totalResults: response.totalResults
-        )
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
+            let items = response.results.compactMap { $0.toMediaPreview() }
+            return MetadataSearchResult(
+                items: items,
+                page: response.page,
+                totalPages: response.totalPages,
+                totalResults: response.totalResults
+            )
+        }
     }
 
     func getGenres(type: MediaType) async throws -> [Genre] {
         let path = "/genre/\(type.tmdbPath)/list"
-        let response: TMDBGenresResponse = try await request(path: path, params: ["language": "en-US"])
-        return response.genres.map { Genre(id: $0.id, name: $0.name) }
+        let params = ["language": "en-US"]
+        return try await cached(key: cacheKey(path, params), ttl: Self.longTTL) {
+            let response: TMDBGenresResponse = try await request(path: path, params: params)
+            return response.genres.map { Genre(id: $0.id, name: $0.name) }
+        }
     }
 
     func getSeasons(tmdbId: Int) async throws -> [Season] {
         let path = "/tv/\(tmdbId)"
         let params = ["language": "en-US"]
-        let response: TMDBTVDetailResponse = try await request(path: path, params: params)
-        return response.seasons?.map { season in
-            Season(
-                id: season.id,
-                seasonNumber: season.seasonNumber,
-                name: season.name,
-                overview: season.overview,
-                posterPath: season.posterPath,
-                episodeCount: season.episodeCount,
-                airDate: season.airDate
-            )
-        } ?? []
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBTVDetailResponse = try await request(path: path, params: params)
+            return response.seasons?.map { season in
+                Season(
+                    id: season.id,
+                    seasonNumber: season.seasonNumber,
+                    name: season.name,
+                    overview: season.overview,
+                    posterPath: season.posterPath,
+                    episodeCount: season.episodeCount,
+                    airDate: season.airDate
+                )
+            } ?? []
+        }
     }
 
     func getEpisodes(tmdbId: Int, season: Int) async throws -> [Episode] {
         let path = "/tv/\(tmdbId)/season/\(season)"
         let params = ["language": "en-US"]
-        let response: TMDBSeasonResponse = try await request(path: path, params: params)
-        return response.episodes.map { ep in
-            Episode(
-                id: "\(tmdbId)-s\(season)e\(ep.episodeNumber)",
-                mediaId: "tmdb-\(tmdbId)",
-                seasonNumber: season,
-                episodeNumber: ep.episodeNumber,
-                title: ep.name,
-                overview: ep.overview,
-                airDate: ep.airDate,
-                stillPath: ep.stillPath,
-                runtime: ep.runtime
-            )
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBSeasonResponse = try await request(path: path, params: params)
+            return response.episodes.map { ep in
+                Episode(
+                    id: "\(tmdbId)-s\(season)e\(ep.episodeNumber)",
+                    mediaId: "tmdb-\(tmdbId)",
+                    seasonNumber: season,
+                    episodeNumber: ep.episodeNumber,
+                    title: ep.name,
+                    overview: ep.overview,
+                    airDate: ep.airDate,
+                    stillPath: ep.stillPath,
+                    runtime: ep.runtime
+                )
+            }
         }
     }
 
@@ -202,17 +292,21 @@ actor TMDBService: MetadataProvider {
     func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember] {
         let path = "/\(type.tmdbPath)/\(tmdbId)/credits"
         let params = ["language": "en-US"]
-        let response: TMDBCredits = try await request(path: path, params: params)
-        return response.cast.map {
-            CastMember(id: $0.id, name: $0.name, character: $0.character ?? "", profilePath: $0.profilePath)
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBCredits = try await request(path: path, params: params)
+            return response.cast.map {
+                CastMember(id: $0.id, name: $0.name, character: $0.character ?? "", profilePath: $0.profilePath)
+            }
         }
     }
 
     func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview] {
         let path = "/\(type.tmdbPath)/\(tmdbId)/recommendations"
         let params = ["language": "en-US", "page": "1"]
-        let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
-        return response.results.compactMap { $0.toMediaPreview() }
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
+            return response.results.compactMap { $0.toMediaPreview() }
+        }
     }
 
     // MARK: - Find by IMDB ID
@@ -260,9 +354,6 @@ actor TMDBService: MetadataProvider {
             throw TMDBError.httpError(httpResponse.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
 
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(T.self, from: data)
     }
 }

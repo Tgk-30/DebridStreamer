@@ -9,7 +9,7 @@ actor AllDebridService: DebridServiceProtocol {
     private let session: URLSession
     private let agent = "DebridStreamer"
 
-    init(apiToken: String, session: URLSession = .shared) {
+    init(apiToken: String, session: URLSession = AppHTTP.api) {
         self.apiToken = apiToken
         self.session = session
     }

@@ -23,14 +23,38 @@ enum AIModelCatalogServiceError: Error, LocalizedError, Equatable {
 actor AIModelCatalogService {
     private let session: URLSession
 
-    init(session: URLSession = .shared) {
+    // TTL cache of fetched model-ID lists keyed by (provider, apiKey). Reopening
+    // Settings re-requests the catalog; within the TTL we serve the prior result
+    // instead of re-hitting OpenAI/Anthropic `/models`. Only successful fetches
+    // are cached (errors are never stored), so a failed/expired key is always
+    // retried. Keyed on the apiKey so swapping keys never serves a stale list.
+    private var cache: [String: (expiresAt: Date, ids: [String])] = [:]
+    private let cacheTTL: TimeInterval = 60 * 10
+
+    init(session: URLSession = AppHTTP.api) {
         self.session = session
+    }
+
+    private func cachedIDs(forKey key: String) -> [String]? {
+        guard let entry = cache[key], entry.expiresAt > Date() else { return nil }
+        return entry.ids
+    }
+
+    private func storeIDs(_ ids: [String], forKey key: String) {
+        let now = Date()
+        cache = cache.filter { $0.value.expiresAt > now }
+        cache[key] = (expiresAt: now.addingTimeInterval(cacheTTL), ids: ids)
     }
 
     func fetchOpenAIModelIDs(apiKey: String) async throws -> [String] {
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw AIModelCatalogServiceError.missingAPIKey(provider: "OpenAI")
+        }
+
+        let cacheKey = "openai|\(trimmed)"
+        if let cached = cachedIDs(forKey: cacheKey) {
+            return cached
         }
 
         guard let url = URL(string: "https://api.openai.com/v1/models") else {
@@ -57,13 +81,20 @@ actor AIModelCatalogService {
             }
             return false
         }
-        return deduplicated(sortedDescending(filtered))
+        let result = deduplicated(sortedDescending(filtered))
+        storeIDs(result, forKey: cacheKey)
+        return result
     }
 
     func fetchAnthropicModelIDs(apiKey: String) async throws -> [String] {
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw AIModelCatalogServiceError.missingAPIKey(provider: "Anthropic")
+        }
+
+        let cacheKey = "anthropic|\(trimmed)"
+        if let cached = cachedIDs(forKey: cacheKey) {
+            return cached
         }
 
         guard let url = URL(string: "https://api.anthropic.com/v1/models") else {
@@ -85,7 +116,9 @@ actor AIModelCatalogService {
 
         let ids = try parseModelIDs(data: data, preferredRootKeys: ["data", "models"])
         let filtered = ids.filter { $0.lowercased().contains("claude") }
-        return deduplicated(sortedDescending(filtered))
+        let result = deduplicated(sortedDescending(filtered))
+        storeIDs(result, forKey: cacheKey)
+        return result
     }
 
     private func parseModelIDs(data: Data, preferredRootKeys: [String]) throws -> [String] {

@@ -7,8 +7,13 @@ actor YTSIndexer: TorrentIndexer {
     let name = "YTS"
     private let baseURL = "https://yts.torrentbay.st/api/v2"
     private let session: URLSession
+    private let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }()
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = AppHTTP.api) {
         self.session = session
     }
 
@@ -26,8 +31,6 @@ actor YTSIndexer: TorrentIndexer {
             throw URLError(.badServerResponse)
         }
 
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let ytsResponse = try decoder.decode(YTSResponse.self, from: data)
 
         guard let movies = ytsResponse.data.movies, !movies.isEmpty else {
@@ -72,8 +75,6 @@ actor YTSIndexer: TorrentIndexer {
             throw URLError(.badServerResponse)
         }
 
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let ytsResponse = try decoder.decode(YTSResponse.self, from: data)
 
         guard let movies = ytsResponse.data.movies else { return [] }

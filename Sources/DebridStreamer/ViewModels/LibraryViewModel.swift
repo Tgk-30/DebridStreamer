@@ -274,11 +274,15 @@ final class LibraryViewModel {
             folderId: selectedFolderId,
             includeDescendants: supportsFolders
         )
+        // Fetch all media + watch-history in two bulk queries instead of two per
+        // entry, then zip them back in memory preserving the original entry order.
+        let mediaIds = entries.map(\.mediaId)
+        let mediaById = try await database.fetchMedia(ids: mediaIds)
+        let historyById = try await database.fetchWatchHistory(mediaIds: mediaIds)
         var next: [MediaCardItem] = []
         for entry in entries {
-            guard let media = try await database.fetchMedia(id: entry.mediaId) else { continue }
-            let history = try await database.fetchWatchHistory(mediaId: entry.mediaId)
-            next.append(MediaCardItem(entry: entry, media: media, history: history))
+            guard let media = mediaById[entry.mediaId] else { continue }
+            next.append(MediaCardItem(entry: entry, media: media, history: historyById[entry.mediaId]))
         }
         let enriched = await enrichMissingArtwork(
             in: next,

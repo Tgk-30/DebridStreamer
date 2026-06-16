@@ -8,7 +8,14 @@ actor RealDebridService: DebridServiceProtocol {
     private let baseURL = "https://api.real-debrid.com/rest/1.0"
     private let session: URLSession
 
-    init(apiToken: String, session: URLSession = .shared) {
+    // Reused across calls instead of allocating per `getAccountInfo`.
+    private static let expirationFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    init(apiToken: String, session: URLSession = AppHTTP.api) {
         self.apiToken = apiToken
         self.session = session
     }
@@ -81,6 +88,12 @@ actor RealDebridService: DebridServiceProtocol {
         // Poll for torrent status — cached torrents become "downloaded" almost instantly
         var status = ""
         var json: [String: Any] = [:]
+        // Capped backoff between polls (seconds): start tight so cached torrents
+        // resolve fast, then back off and cap at ~5s. Total wait (~21.7s for an
+        // uncached torrent) stays comparable to the previous fixed 1s × ~19 schedule,
+        // but with far fewer requests while waiting on slow downloads.
+        let backoffSchedule: [Double] = [0.4, 0.8, 1.5, 3.0]
+        let backoffCap = 5.0
         let maxAttempts = 20
 
         for attempt in 0..<maxAttempts {
@@ -109,14 +122,15 @@ actor RealDebridService: DebridServiceProtocol {
                 try await selectFiles(torrentId: torrentId, fileIds: [])
             }
 
-            // Wait before next poll
+            // Wait before next poll, using the capped backoff schedule.
             if attempt < maxAttempts - 1 {
-                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                let delaySeconds = attempt < backoffSchedule.count ? backoffSchedule[attempt] : backoffCap
+                try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
             }
         }
 
         guard status == "downloaded" else {
-            throw DebridError.downloadFailed("Torrent not ready after \(maxAttempts)s. Status: \(status)")
+            throw DebridError.downloadFailed("Torrent not ready. Status: \(status)")
         }
 
         guard let links = json["links"] as? [String], !links.isEmpty else {
@@ -218,7 +232,13 @@ actor RealDebridService: DebridServiceProtocol {
     /// Check if a hash already exists in the user's torrent list.
     /// Returns the torrent ID if found and status is "downloaded", nil otherwise.
     func findExistingTorrent(hash: String) async throws -> String? {
-        let data = try await requestRaw(path: "/torrents", method: "GET")
+        // Bound the list instead of pulling the user's entire torrent history every
+        // resolve. RD returns torrents newest-first, and a just-resolved torrent is
+        // among the most recent, so the first page comfortably covers the realistic
+        // "is this already here" case. A miss only costs a redundant addMagnet (which
+        // RD dedups server-side), so correctness holds — this is purely an
+        // optimization on the GET payload size.
+        let data = try await requestRaw(path: "/torrents?limit=100&page=1", method: "GET")
         guard let torrents = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             return nil
         }
@@ -275,9 +295,7 @@ actor RealDebridService: DebridServiceProtocol {
 
         var premiumExpiry: Date?
         if let expirationStr = json["expiration"] as? String {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            premiumExpiry = formatter.date(from: expirationStr)
+            premiumExpiry = Self.expirationFormatter.date(from: expirationStr)
         }
 
         return DebridAccountInfo(

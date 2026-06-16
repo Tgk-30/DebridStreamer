@@ -7,8 +7,13 @@ actor EZTVIndexer: TorrentIndexer {
     let name = "EZTV"
     private let baseURL = "https://eztvx.to/api"
     private let session: URLSession
+    private let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }()
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = AppHTTP.api) {
         self.session = session
     }
 
@@ -35,8 +40,6 @@ actor EZTVIndexer: TorrentIndexer {
                 throw URLError(.badServerResponse)
             }
 
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
             let eztvResponse = try decoder.decode(EZTVResponse.self, from: data)
 
             guard let torrents = eztvResponse.torrents, !torrents.isEmpty else { break }
@@ -92,8 +95,6 @@ actor EZTVIndexer: TorrentIndexer {
             throw URLError(.badServerResponse)
         }
 
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let eztvResponse = try decoder.decode(EZTVResponse.self, from: data)
 
         guard let torrents = eztvResponse.torrents, !torrents.isEmpty else { return [] }

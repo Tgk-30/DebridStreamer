@@ -16,7 +16,7 @@ actor TorznabIndexer: TorrentIndexer {
         apiKey: String?,
         categoryFilter: String? = nil,
         sendAPIKeyAsHeader: Bool = false,
-        session: URLSession = .shared
+        session: URLSession = AppHTTP.api
     ) {
         self.name = name
         self.baseURL = baseURL

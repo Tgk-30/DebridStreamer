@@ -599,6 +599,30 @@ actor DatabaseManager {
         }
     }
 
+    /// Bulk variant of `fetchWatchHistory(mediaId:)` for the no-episode (movie /
+    /// media-level) case: one query for many mediaIds instead of N round-trips.
+    /// Mirrors the single-row semantics — only rows with `episodeId IS NULL` are
+    /// considered, and exactly one row is returned per mediaId. When a mediaId
+    /// somehow has multiple media-level rows the most recently watched wins, which
+    /// is the most-relevant resume point. mediaIds absent from the result simply
+    /// have no media-level history (same as the single method returning nil).
+    func fetchWatchHistory(mediaIds: [String]) async throws -> [String: WatchHistory] {
+        guard !mediaIds.isEmpty else { return [:] }
+        return try await dbPool.read { db in
+            let rows = try WatchHistory
+                .filter(mediaIds.contains(WatchHistory.Columns.mediaId))
+                .filter(WatchHistory.Columns.episodeId == nil)
+                .order(WatchHistory.Columns.lastWatched.desc)
+                .fetchAll(db)
+            // Rows are newest-first; keep the first (most recent) per mediaId.
+            var result: [String: WatchHistory] = [:]
+            for row in rows where result[row.mediaId] == nil {
+                result[row.mediaId] = row
+            }
+            return result
+        }
+    }
+
     func fetchRecentWatchHistory(limit: Int = 20) async throws -> [WatchHistory] {
         try await dbPool.read { db in
             try WatchHistory

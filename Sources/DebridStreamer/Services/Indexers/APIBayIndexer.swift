@@ -7,8 +7,9 @@ actor APIBayIndexer: TorrentIndexer {
     let name = "APIBay"
     private let baseURL = "https://apibay.org"
     private let session: URLSession
+    private let decoder = JSONDecoder()
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = AppHTTP.api) {
         self.session = session
     }
 
@@ -35,7 +36,7 @@ actor APIBayIndexer: TorrentIndexer {
             throw URLError(.badServerResponse)
         }
 
-        let items = try JSONDecoder().decode([APIBayItem].self, from: data)
+        let items = try decoder.decode([APIBayItem].self, from: data)
 
         // Filter out the "no results" placeholder
         guard !items.isEmpty, items.first?.name != "No results returned" else {
@@ -93,7 +94,7 @@ actor APIBayIndexer: TorrentIndexer {
             throw URLError(.badServerResponse)
         }
 
-        let items = try JSONDecoder().decode([APIBayItem].self, from: data)
+        let items = try decoder.decode([APIBayItem].self, from: data)
 
         guard !items.isEmpty, items.first?.name != "No results returned" else {
             return []
