@@ -6,13 +6,16 @@ Sources for this plan:
 - **MiMo V2.5 (vision, `xiaomi/mimo-v2.5-20260422`, via OpenCode Zen)** — 3rd adversarial pass,
   2026-06-17. Independently corroborated most M3/self P0–P1 items and added new specifics
   (gutter consistency, settings tab placement, modal width, usage-card waste).
-- **GLM-5.1 / Kimi-K2.6 / DeepSeek-V4-Pro (vision) pass — PENDING credits:** these paid Zen
-  models return `Insufficient balance` (workspace has no paid balance). The ids the user named
-  (`kimi-k2.7-code`, `mimo-v2.5-pro`) aren't published on Zen — current ids are `kimi-k2.6`,
-  `deepseek-v4-pro`, `mimo-v2.5-free`. Add paid credits and these can run with the staged scripts.
+- **Kimi K2.7 Code (vision, `kimi-k2.7-code`, Moonshot, via OpenCode *Go* `/zen/go/v1/`)** —
+  4th adversarial pass, 2026-06-17. Strongly corroborated the core findings and added L21–L24.
+  (The `Insufficient balance` errors earlier were because the key is an **OpenCode Go subscription**,
+  whose endpoint is `/zen/go/v1/`, separate from the pay-as-you-go Zen balance at `/zen/v1/`.)
+- **DeepSeek-V4-Pro / MiMo-V2.5-Pro** — available on Go but return *no image-input support* (text-only
+  there); the vision MiMo pass used the free `mimo-v2.5`. **GLM-5.1** is on Go and could add a 5th pass.
 - **Backend audit** (12-mapper + 16-verifier workflow, 2026-06-16/17).
 
-Status legend: ✅ done · ⬜ open · 🟡 debatable. Source: M3 / self / mimo / both. (MiMo corroborated L1, L2, L4, L5, L7, L8, L12, L16.)
+Status legend: ✅ done · ⬜ open · 🟡 debatable. Source: M3 / self / mimo / kimi / both.
+4-model convergence on the core issues (L1, L2, L4, L5, L7, L8, L12, L16, L17–L20) — high confidence.
 
 ---
 
@@ -58,6 +61,15 @@ Status legend: ✅ done · ⬜ open · 🟡 debatable. Source: M3 / self / mimo 
 | L19 | Detail | **Modal is too narrow** — the hero image crops awkwardly and the action row is squeezed | Widen the modal (~820–900) so the backdrop breathes and the action pills space out | S | mimo |
 | L20 | AI Assistant | **Session/Lifetime usage cards** consume a full row for trivial values ($0.0000 / 0 tokens) | Condense to a single inline strip (or move into a footer) so the prompt area gets the space | XS | mimo |
 
+### Added by the Kimi K2.7 Code pass
+
+| ID | Screen | Problem | Fix | Effort | Source |
+|----|--------|---------|-----|--------|--------|
+| L21 | Sidebar | The **selected-item blue pill is too loud** and fights the content for attention | Soften the selection fill (lower opacity / accent-tinted glass) so content leads | XS | kimi |
+| L22 | Detail | **Synopsis line length is too long** (~80–90 chars) — uncomfortable to read | Constrain the overview measure to ~60–65 chars (max width) | XS | kimi |
+| L23 | Detail | **Bottom half of the modal is empty** after the synopsis/actions (before streams load) | Fill with cast / related titles / technical details, or tighten the modal height | M | kimi |
+| L24 | Settings + panes | **No page header/title** — only the sidebar selection tells you where you are | Add a lightweight page header (title) to each detail pane | S | kimi |
+
 ---
 
 ## B. Backend / robustness — open items (from the audit)
@@ -79,9 +91,10 @@ Deliberately **not** doing (with reason): TMDB Bearer auth (would 401 v3 keys); 
 
 - ✅ **MiniMax-M3** (vision) — done. Primary layout review.
 - ✅ **MiMo V2.5** (`mimo-v2.5-free`, vision) — done. Corroborated + extended (L17–L20).
-- ⬜ **GLM-5.1 / Kimi-K2.6 / DeepSeek-V4-Pro** (vision) — pending paid Zen credits (workspace
-  balance exhausted). Staged to run on top-up; findings will merge into Section A with their
-  own source tag. (Requested ids `kimi-k2.7-code` / `mimo-v2.5-pro` are not published on Zen.)
+- ✅ **Kimi K2.7 Code** (`kimi-k2.7-code`, via OpenCode **Go** `/zen/go/v1/`) — done. Corroborated
+  + extended (L21–L24).
+- ❌ **DeepSeek-V4-Pro / MiMo-V2.5-Pro** — no image-input support on the Go endpoint (text-only there).
+- ⬜ **GLM-5.1** (on Go) — optional 5th pass available if you want one more cross-check.
 
 ---
 
