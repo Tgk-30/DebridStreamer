@@ -131,9 +131,11 @@ struct SettingsView: View {
                 .tabItem { Label("Personalization", systemImage: "brain.head.profile") }
                 .tag(SettingsTab.personalization)
         }
-        // Fill the in-app detail pane (top-aligned) with a capped width instead of a
-        // fixed centered "island in a void" (L2); still reasonable in the Settings scene.
-        .frame(minWidth: 620, idealWidth: 760, maxWidth: 880, minHeight: 520, maxHeight: .infinity, alignment: .top)
+        // Size to content (capped width) and anchor to the TOP of the detail pane,
+        // so the form isn't centered in a tall void (L2 + L18). minHeight keeps the
+        // panel from collapsing on short tabs without forcing the content to float.
+        .frame(minWidth: 620, idealWidth: 760, maxWidth: 880, minHeight: 460, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task {
             await loadSettings()
             await refreshModelCatalog(silentIfNoKeys: true)
@@ -173,7 +175,6 @@ struct SettingsView: View {
                     Button("Save") { Task { await saveGeneralSettings() } }
                         .buttonStyle(.glassProminent)
                         .disabled(isSaving)
-                    Spacer()
                 }
             }
 
@@ -202,7 +203,6 @@ struct SettingsView: View {
                     Spacer()
                     Button("Save Debrid Settings") { Task { await saveDebridSettings() } }
                         .buttonStyle(.glassProminent)
-                    Spacer()
                 }
             }
             statusSection(for: [.debrid])
@@ -278,7 +278,6 @@ struct SettingsView: View {
                     Spacer()
                     Button("Save Indexer Settings") { Task { await saveIndexerSettings() } }
                         .buttonStyle(.glassProminent)
-                    Spacer()
                 }
             }
             statusSection(for: [.indexers])
@@ -324,7 +323,6 @@ struct SettingsView: View {
                     Spacer()
                     Button("Save Player Settings") { Task { await savePlayerSettings() } }
                         .buttonStyle(.glassProminent)
-                    Spacer()
                 }
             }
             statusSection(for: [.player])
@@ -438,7 +436,6 @@ struct SettingsView: View {
                     Spacer()
                     Button("Save AI & Sync Settings") { Task { await saveAIAndSyncSettings() } }
                         .buttonStyle(.glassProminent)
-                    Spacer()
                 }
             }
             statusSection(for: [.aiSync])

@@ -153,19 +153,25 @@ struct AIAssistantView: View {
         .frame(minWidth: 430)
     }
 
+    // One compact inline strip instead of two chunky cards for trivial values (L20).
     private var usageSummaryPanel: some View {
         let summary = viewModel.usageSummary
-        return HStack(spacing: AppTheme.Spacing.sm) {
-            usageMetricTile(
-                label: "Session Usage",
-                value: String(format: "$%.4f", summary.sessionEstimatedCostUSD),
-                detail: "\(summary.sessionTokens.formatted()) tokens"
-            )
-            usageMetricTile(
-                label: "Lifetime Usage",
-                value: String(format: "$%.4f", summary.lifetimeEstimatedCostUSD),
-                detail: "\(summary.lifetimeTokens.formatted()) tokens"
-            )
+        return HStack(spacing: AppTheme.Spacing.md) {
+            usageInline("Session", cost: summary.sessionEstimatedCostUSD, tokens: summary.sessionTokens)
+            Divider().frame(height: 20)
+            usageInline("Lifetime", cost: summary.lifetimeEstimatedCostUSD, tokens: summary.lifetimeTokens)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .padding(.vertical, AppTheme.Spacing.sm)
+        .glassPanel(radius: AppTheme.Radius.md, level: .ultraThin)
+    }
+
+    private func usageInline(_ label: String, cost: Double, tokens: Int) -> some View {
+        HStack(spacing: AppTheme.Spacing.sm) {
+            Text(label).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text(String(format: "$%.4f", cost)).font(.callout.weight(.semibold)).monospacedDigit()
+            Text("\(tokens.formatted()) tok").font(.caption2).foregroundStyle(.secondary)
         }
     }
 
