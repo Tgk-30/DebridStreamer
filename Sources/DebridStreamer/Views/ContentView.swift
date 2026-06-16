@@ -6,25 +6,29 @@ struct ContentView: View {
     @State private var needsSetup = false
 
     var body: some View {
-        Group {
-            if needsSetup {
-                SetupView()
-                    .environment(appState)
-                    .frame(minWidth: 600, minHeight: 500)
-                    .onChange(of: appState.metadataService != nil) {
-                        if appState.metadataService != nil {
-                            needsSetup = false
+        ZStack {
+            AppTheme.background.ignoresSafeArea()
+            AppTheme.auroraGlow
+
+            Group {
+                if needsSetup {
+                    SetupView()
+                        .environment(appState)
+                        .frame(minWidth: 600, minHeight: 500)
+                        .onChange(of: appState.metadataService != nil) {
+                            if appState.metadataService != nil {
+                                needsSetup = false
+                            }
                         }
+                } else {
+                    NavigationSplitView {
+                        SidebarView()
+                    } detail: {
+                        detailView
                     }
-            } else {
-                NavigationSplitView {
-                    SidebarView()
-                } detail: {
-                    detailView
+                    .navigationSplitViewStyle(.balanced)
+                    .frame(minWidth: 900, minHeight: 600)
                 }
-                .navigationSplitViewStyle(.balanced)
-                .frame(minWidth: 900, minHeight: 600)
-                .background(AppTheme.background.ignoresSafeArea())
             }
         }
         .task {

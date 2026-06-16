@@ -121,6 +121,7 @@ final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
     private var videoView: VLCVideoView?
     private var cachedAudioTracks: [VLCTrackOption] = []
     private var cachedSubtitleTracks: [VLCTrackOption] = []
+    private var didRequestMetadataParse = false
 
     init(url: URL) {
         super.init()
@@ -129,8 +130,20 @@ final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
     }
 
     deinit {
-        mediaPlayer.stop()
-        mediaPlayer.drawable = nil
+        // VLCMediaPlayer is not thread-safe and must be torn down on the main
+        // thread. `deinit` is non-isolated and can run on whatever thread releases
+        // the last reference, so hop to main (capturing the player so it stays
+        // alive until cleanup runs) instead of touching it inline.
+        let player = mediaPlayer
+        if Thread.isMainThread {
+            player.stop()
+            player.drawable = nil
+        } else {
+            DispatchQueue.main.async {
+                player.stop()
+                player.drawable = nil
+            }
+        }
     }
 
     var isPlaying: Bool {
@@ -258,9 +271,14 @@ final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
             return ([:], [:])
         }
 
-        // Ask VLCKit to parse metadata opportunistically; if parse does not complete yet,
-        // we fall back to track name/index mapping.
-        media.parse()
+        // Ask VLCKit to parse metadata opportunistically, but only ONCE — the
+        // legacy `parse()` is synchronous-ish and runs on the main actor, so
+        // calling it on every track refresh repeatedly blocks the UI. If parse
+        // hasn't completed yet we fall back to track name/index mapping below.
+        if !didRequestMetadataParse {
+            didRequestMetadataParse = true
+            media.parse()
+        }
 
         guard let tracks = media.tracksInformation as? [[AnyHashable: Any]], !tracks.isEmpty else {
             return ([:], [:])

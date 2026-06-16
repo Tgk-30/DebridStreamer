@@ -117,7 +117,7 @@ struct SearchView: View {
 
                         if viewModel.isSearching {
                             Button("Cancel") { viewModel.cancelSearch() }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.glass)
                         }
                     }
                     .padding(.horizontal, 12)
@@ -169,7 +169,7 @@ struct SearchView: View {
             } label: {
                 Label("Refine Query", systemImage: "wand.and.stars")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
             HStack(spacing: 8) {
@@ -177,23 +177,23 @@ struct SearchView: View {
                 Button("Find by Mood") {
                     sendToAssistant(viewModel.buildMoodPrompt(mood: moodText, scope: selectedScope))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
             }
 
             Button("Suggest Similar To Selected") {
                 sendToAssistant(viewModel.buildSimilarPrompt(selected: selectedItem, scope: selectedScope))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
 
             Button("From This Folder") {
                 sendToAssistant(viewModel.buildFolderPrompt(folderName: folderContextLabel))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
 
             Button("Why This Matches Profile") {
                 sendToAssistant(viewModel.buildProfileMatchPrompt(query: query))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
             .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
             Divider()

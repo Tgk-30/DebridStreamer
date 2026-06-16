@@ -66,16 +66,30 @@ actor AllDebridService: DebridServiceProtocol {
     }
 
     func getStreamURL(torrentId: String) async throws -> StreamInfo {
-        let data = try await requestRaw(path: "/magnet/status", method: "GET", queryParams: "id=\(torrentId)")
-
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let dataObj = json["data"] as? [String: Any],
-              let magnets = dataObj["magnets"] as? [String: Any] else {
-            throw DebridError.torrentNotFound(torrentId)
-        }
-
-        guard let status = magnets["status"] as? String, status == "Ready" else {
-            throw DebridError.downloadFailed("Torrent not ready")
+        // Poll the magnet status until it becomes "Ready" (mirrors the bounded
+        // retry loops used by Real-Debrid and TorBox). A freshly-added magnet is
+        // rarely "Ready" on the first request, so a single read would fail for any
+        // non-cached torrent.
+        let maxAttempts = 20
+        var magnets: [String: Any] = [:]
+        for attempt in 0..<maxAttempts {
+            let data = try await requestRaw(path: "/magnet/status", method: "GET", queryParams: "id=\(torrentId)")
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let dataObj = json["data"] as? [String: Any],
+                  let magnet = dataObj["magnets"] as? [String: Any] else {
+                throw DebridError.torrentNotFound(torrentId)
+            }
+            magnets = magnet
+            let status = (magnet["status"] as? String) ?? ""
+            if status == "Ready" { break }
+            // Terminal failure states — stop polling early.
+            if status == "Error" || status.lowercased().contains("error") {
+                throw DebridError.downloadFailed("AllDebrid reported status: \(status)")
+            }
+            if attempt == maxAttempts - 1 {
+                throw DebridError.downloadFailed("Torrent not ready after \(maxAttempts)s (status: \(status))")
+            }
+            try await Task.sleep(nanoseconds: 1_000_000_000)
         }
 
         guard let links = magnets["links"] as? [[String: Any]] else {

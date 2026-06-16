@@ -31,6 +31,8 @@ struct DetailView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
+            AppTheme.background.ignoresSafeArea()
+            AppTheme.auroraGlow
             ScrollView {
                 if isLoading {
                     ProgressView("Loading details...")
@@ -53,11 +55,15 @@ struct DetailView: View {
             Button {
                 dismiss()
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title2)
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 28, height: 28)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().strokeBorder(AppTheme.glassBorder, lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .padding(10)
+            .padding(AppTheme.Spacing.md)
         }
         .task {
             await loadDetail()
@@ -136,11 +142,12 @@ struct DetailView: View {
                     HStack(spacing: 8) {
                         ForEach(detail.genres, id: \.self) { genre in
                             Text(genre)
-                                .font(.caption)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(Color.accentColor.opacity(0.15))
-                                .clipShape(Capsule())
+                                .font(.caption.weight(.medium))
+                                .padding(.horizontal, AppTheme.Spacing.md)
+                                .padding(.vertical, AppTheme.Spacing.xs + 1)
+                                .background(AppTheme.accent.opacity(0.18), in: Capsule())
+                                .overlay(Capsule().strokeBorder(AppTheme.accent.opacity(0.35), lineWidth: 0.75))
+                                .foregroundStyle(AppTheme.accent)
                         }
                     }
                 }
@@ -176,12 +183,12 @@ struct DetailView: View {
                 Button(isInWatchlist ? "Remove Watchlist" : "Add Watchlist") {
                     Task { await toggleLibrary(type: .watchlist, detail: detail) }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
 
                 Button(isInFavorites ? "Remove Library" : "Add Library") {
                     Task { await toggleLibrary(type: .favorites, detail: detail) }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
 
                 Button("Ask AI") {
                     let genres = detail.genres.joined(separator: ", ")
@@ -190,7 +197,7 @@ struct DetailView: View {
                     appState.selectedSidebarItem = .assistant
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
 
                 if !availableFolders.isEmpty {
                     Menu("Add To Folder") {
@@ -226,8 +233,16 @@ struct DetailView: View {
 
             HStack(spacing: 16) {
                 Picker("Season", selection: $selectedSeason) {
-                    ForEach(1...max(1, seasons.count), id: \.self) { num in
-                        Text("Season \(num)").tag(num)
+                    // Drive the picker from real TMDB season numbers (excluding
+                    // season 0 "Specials"), not array indices — otherwise the tag
+                    // doesn't match the seasonNumber used for episode/stream lookup.
+                    let realSeasons = seasons.filter { $0.seasonNumber > 0 }
+                    if realSeasons.isEmpty {
+                        Text("Season \(selectedSeason)").tag(selectedSeason)
+                    } else {
+                        ForEach(realSeasons) { season in
+                            Text(season.name).tag(season.seasonNumber)
+                        }
                     }
                 }
                 .frame(width: 160)
@@ -280,7 +295,7 @@ struct DetailView: View {
                         Text(isSearchingStreams ? "Cancel" : (streamSearchDone ? "Refresh" : "Find Streams"))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
             }
 
             if let error = streamError {
@@ -389,6 +404,13 @@ struct DetailView: View {
             let fetchedSeasons = try await service.getSeasons(tmdbId: tmdbId)
             if !fetchedSeasons.isEmpty {
                 seasons = fetchedSeasons
+                // Ensure the selection is a real season number (skip "Specials" 0),
+                // since the default of 1 may not exist for every show.
+                let realSeasons = fetchedSeasons.filter { $0.seasonNumber > 0 }
+                if !realSeasons.contains(where: { $0.seasonNumber == selectedSeason }),
+                   let first = realSeasons.first {
+                    selectedSeason = first.seasonNumber
+                }
             }
         } catch {
             // Non-fatal — just won't have accurate episode counts

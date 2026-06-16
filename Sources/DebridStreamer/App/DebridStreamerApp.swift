@@ -66,8 +66,8 @@ struct DebridStreamerApp: App {
             ContentView()
                 .environment(appState)
         }
-        .windowStyle(.titleBar)
-        .defaultSize(width: 1200, height: 800)
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1280, height: 860)
 
         Settings {
             SettingsView()

@@ -118,7 +118,7 @@ struct DiscoverView: View {
                     Button("Refresh") {
                         Task { await appState.preloadDiscoverAICuration(forceRefresh: true) }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                 }
 
                 if visibleRecommendations.isEmpty && store.isLoading {
@@ -219,9 +219,8 @@ struct DiscoverView: View {
                 }
             } label: {
                 Text("Watched")
-                    .font(.caption2.weight(.semibold))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
 
             Button {
                 Task {
@@ -232,15 +231,13 @@ struct DiscoverView: View {
                 }
             } label: {
                 Text("Not Watched")
-                    .font(.caption2.weight(.semibold))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
 
             Button("Details") {
                 Task { await openRecommendationDetail(recommendation) }
             }
-            .font(.caption2.weight(.semibold))
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
         }
         .overlay(alignment: .topTrailing) {
             switch state {
@@ -250,15 +247,15 @@ struct DiscoverView: View {
                     .padding(.top, -18)
             case .watched:
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(AppTheme.success)
                     .padding(.top, -18)
             case .notWatched:
                 Image(systemName: "nosign")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(AppTheme.warning)
                     .padding(.top, -18)
             case .failed:
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(AppTheme.danger)
                     .padding(.top, -18)
             case .idle:
                 EmptyView()
@@ -335,7 +332,7 @@ struct DiscoverView: View {
                         )
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
             }
         }
         .padding(16)
@@ -392,7 +389,7 @@ struct DiscoverView: View {
                     Text("Watched")
                         .font(.caption2.weight(.semibold))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
 
                 Button {
                     Task {
@@ -405,7 +402,7 @@ struct DiscoverView: View {
                     Text("Not Watched")
                         .font(.caption2.weight(.semibold))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
             }
             .overlay(alignment: .trailing) {
                 switch state {
@@ -441,7 +438,7 @@ struct DiscoverView: View {
             Button("Open Settings") {
                 appState.selectedSidebarItem = .settings
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.top, 100)

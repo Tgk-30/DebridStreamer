@@ -7,7 +7,7 @@ struct AnthropicProvider: AIAssistantProvider {
     private let model: String
     private let session: URLSession
 
-    init(apiKey: String, model: String = "claude-3-5-haiku-latest", session: URLSession = .shared) {
+    init(apiKey: String, model: String = "claude-haiku-4-5", session: URLSession = .shared) {
         self.apiKey = apiKey
         self.model = model
         self.session = session
@@ -29,10 +29,13 @@ struct AnthropicProvider: AIAssistantProvider {
             maxResults: maxResults
         )
 
+        // NOTE: `temperature` is intentionally omitted. It is rejected (HTTP 400)
+        // by current Claude models (Opus 4.8/4.7, Fable 5) and only optional on
+        // others, so leaving it out keeps the request valid across every model the
+        // user might select.
         let payload = AnthropicRequest(
             model: model,
             maxTokens: 900,
-            temperature: 0.4,
             messages: [.init(role: "user", content: envelope)]
         )
 
@@ -89,13 +92,11 @@ private struct AnthropicRequest: Encodable {
 
     let model: String
     let maxTokens: Int
-    let temperature: Double
     let messages: [Message]
 
     enum CodingKeys: String, CodingKey {
         case model
         case maxTokens = "max_tokens"
-        case temperature
         case messages
     }
 }

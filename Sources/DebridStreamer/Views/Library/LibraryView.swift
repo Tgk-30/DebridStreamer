@@ -248,7 +248,7 @@ private struct LibraryCollectionView: View {
                 Label("Imports & Sync", systemImage: "square.and.arrow.down.on.square")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
 
             Button {
                 appState.openSettings(tab: .personalization)
@@ -256,7 +256,7 @@ private struct LibraryCollectionView: View {
                 Label("Personalization", systemImage: "brain.head.profile")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
         }
         .padding(12)
         .frame(width: 280)

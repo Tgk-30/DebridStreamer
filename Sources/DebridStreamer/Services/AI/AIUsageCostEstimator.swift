@@ -16,11 +16,13 @@ struct AIUsageCostEstimator {
         "o3": .init(inputPerMillionUSD: 10.00, outputPerMillionUSD: 40.00),
         "o4-mini": .init(inputPerMillionUSD: 1.10, outputPerMillionUSD: 4.40),
 
-        // Anthropic
-        "claude-3-7-sonnet-latest": .init(inputPerMillionUSD: 3.00, outputPerMillionUSD: 15.00),
-        "claude-3-5-sonnet-latest": .init(inputPerMillionUSD: 3.00, outputPerMillionUSD: 15.00),
-        "claude-3-5-haiku-latest": .init(inputPerMillionUSD: 0.80, outputPerMillionUSD: 4.00),
-        "claude-3-opus-latest": .init(inputPerMillionUSD: 15.00, outputPerMillionUSD: 75.00),
+        // Anthropic (current generation, $/1M tokens)
+        "claude-fable-5": .init(inputPerMillionUSD: 10.00, outputPerMillionUSD: 50.00),
+        "claude-opus-4-8": .init(inputPerMillionUSD: 5.00, outputPerMillionUSD: 25.00),
+        "claude-opus-4-7": .init(inputPerMillionUSD: 5.00, outputPerMillionUSD: 25.00),
+        "claude-opus-4-6": .init(inputPerMillionUSD: 5.00, outputPerMillionUSD: 25.00),
+        "claude-sonnet-4-6": .init(inputPerMillionUSD: 3.00, outputPerMillionUSD: 15.00),
+        "claude-haiku-4-5": .init(inputPerMillionUSD: 1.00, outputPerMillionUSD: 5.00),
     ]
 
     static func estimateUSD(
@@ -48,7 +50,7 @@ struct AIUsageCostEstimator {
         }
         if normalizedModel.contains("haiku") {
             return estimate(
-                rate: .init(inputPerMillionUSD: 0.80, outputPerMillionUSD: 4.00),
+                rate: .init(inputPerMillionUSD: 1.00, outputPerMillionUSD: 5.00),
                 inputTokens: inputTokens,
                 outputTokens: outputTokens,
                 totalTokens: totalTokens
@@ -64,7 +66,7 @@ struct AIUsageCostEstimator {
         }
         if normalizedModel.contains("opus") {
             return estimate(
-                rate: .init(inputPerMillionUSD: 15.00, outputPerMillionUSD: 75.00),
+                rate: .init(inputPerMillionUSD: 5.00, outputPerMillionUSD: 25.00),
                 inputTokens: inputTokens,
                 outputTokens: outputTokens,
                 totalTokens: totalTokens

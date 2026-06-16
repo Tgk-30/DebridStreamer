@@ -11,9 +11,10 @@ struct SettingsView: View {
         SettingsView.customModelPreset
     ]
     private static let defaultAnthropicModelPresets = [
-        "claude-3-5-haiku-latest",
-        "claude-3-7-sonnet-latest",
-        "claude-sonnet-4-0",
+        "claude-opus-4-8",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+        "claude-fable-5",
         SettingsView.customModelPreset
     ]
 
@@ -58,7 +59,7 @@ struct SettingsView: View {
     @State private var anthropicModelPresets = SettingsView.defaultAnthropicModelPresets
     @State private var openAIModelPreset = "gpt-4.1-mini"
     @State private var openAIModelCustom = ""
-    @State private var anthropicModelPreset = "claude-3-7-sonnet-latest"
+    @State private var anthropicModelPreset = "claude-sonnet-4-6"
     @State private var anthropicModelCustom = ""
     @State private var isRefreshingModelCatalog = false
     @State private var modelCatalogStatus: String?
@@ -619,7 +620,7 @@ struct SettingsView: View {
                 storedPreset: storedAnthropicPreset,
                 storedCustom: anthropicModelCustom,
                 supportedPresets: anthropicModelPresets,
-                defaultPreset: "claude-3-7-sonnet-latest"
+                defaultPreset: "claude-sonnet-4-6"
             )
             ollamaEndpoint = try await settings.getValue(forKey: SettingsKeys.ollamaEndpoint) ?? "http://localhost:11434/api/chat"
             traktClientId = try await settings.getValue(forKey: SettingsKeys.traktClientId) ?? ""

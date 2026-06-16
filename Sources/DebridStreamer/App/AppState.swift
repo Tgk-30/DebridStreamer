@@ -151,7 +151,7 @@ final class AppState {
         let anthropicModel = resolveModelID(
             preset: try? await settings.getValue(forKey: SettingsKeys.anthropicModelPreset),
             custom: try? await settings.getValue(forKey: SettingsKeys.anthropicModelCustom),
-            defaultModel: "claude-3-7-sonnet-latest"
+            defaultModel: "claude-sonnet-4-6"
         )
 
         if let openAIKey = try? await settings.getValue(forKey: SettingsKeys.openAIApiKey),

@@ -77,7 +77,7 @@ struct AIAssistantView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 8)], spacing: 8) {
                         ForEach(viewModel.quickPromptChips, id: \.self) { chip in
                             Button(chip) { viewModel.applyQuickPrompt(chip) }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.glass)
                                 .font(.caption)
                         }
                     }
@@ -130,16 +130,16 @@ struct AIAssistantView: View {
                             Text("Generate")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .disabled(viewModel.isGenerating || viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                     Button("Use Current Folder") {
                         viewModel.contextFolderId = appState.selectedLibraryFolderId
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
 
                     Button("Clear") { viewModel.clear() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                 }
 
                 if let status = viewModel.statusMessage {
@@ -298,7 +298,7 @@ struct AIAssistantView: View {
                                 .padding(.vertical, 8)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                     }
                 }
                 .frame(maxWidth: 500)

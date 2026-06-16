@@ -2,9 +2,13 @@ import SwiftUI
 
 struct MediaCard: View {
     let item: MediaPreview
+    @State private var hovering = false
+
+    private let posterWidth: CGFloat = 158
+    private let posterHeight: CGFloat = 237
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             // Poster
             AsyncImage(url: item.posterURL) { phase in
                 switch phase {
@@ -16,62 +20,69 @@ struct MediaCard: View {
                     posterPlaceholder
                 case .empty:
                     posterPlaceholder
-                        .overlay { ProgressView() }
+                        .overlay { ProgressView().controlSize(.small) }
                 @unknown default:
                     posterPlaceholder
                 }
             }
-            .frame(width: 150, height: 225)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .shadow(radius: 4)
+            .frame(width: posterWidth, height: posterHeight)
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+            )
 
             // Title
             Text(item.title)
-                .font(.caption)
-                .fontWeight(.medium)
+                .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
-                .frame(width: 150, alignment: .leading)
+                .frame(width: posterWidth, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
 
             // Year + Rating
-            HStack(spacing: 4) {
+            HStack(spacing: AppTheme.Spacing.xs) {
                 if let year = item.year {
                     Text(String(year))
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 if !item.ratingString.isEmpty {
                     HStack(spacing: 2) {
                         Image(systemName: "star.fill")
                             .font(.caption2)
-                            .foregroundStyle(.yellow)
+                            .foregroundStyle(AppTheme.warning)
                         Text(item.ratingString)
-                            .font(.caption2)
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            .frame(width: 150)
+            .frame(width: posterWidth)
         }
-        .padding(8)
-        .glassSurface()
+        .padding(AppTheme.Spacing.sm)
+        .glassCard(elevated: hovering)
         .contentShape(Rectangle())
+        .scaleEffect(hovering ? 1.03 : 1)
+        .shadow(color: AppTheme.accent.opacity(hovering ? 0.28 : 0), radius: 18, y: 10)
+        .animation(.spring(response: 0.32, dampingFraction: 0.72), value: hovering)
+        .onHover { hovering = $0 }
     }
 
     private var posterPlaceholder: some View {
         Rectangle()
             .fill(
                 LinearGradient(
-                    colors: [Color.accentColor.opacity(0.24), Color.indigo.opacity(0.18), Color.black.opacity(0.45)],
+                    colors: [AppTheme.accent.opacity(0.45), AppTheme.accentSecondary.opacity(0.3), Color.black.opacity(0.5)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
-            .frame(width: 150, height: 225)
+            .frame(width: posterWidth, height: posterHeight)
             .overlay(alignment: .center) {
-                Image(systemName: "film")
-                    .font(.title2)
-                    .foregroundStyle(.white.opacity(0.8))
+                Image(systemName: "film.stack")
+                    .font(.title)
+                    .foregroundStyle(.white.opacity(0.85))
             }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -82,9 +93,10 @@ struct MediaCard: View {
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.7))
                 }
-                .padding(8)
+                .padding(AppTheme.Spacing.sm)
                 .foregroundStyle(.white)
-                .background(Color.black.opacity(0.3))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.ultraThinMaterial)
             }
     }
 }
