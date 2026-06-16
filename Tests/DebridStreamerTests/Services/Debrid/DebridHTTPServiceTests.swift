@@ -144,6 +144,40 @@ struct DebridHTTPServiceTests {
         #expect(requestDownloadURL?.query?.contains("file_id=0") == true)
     }
 
+    @Test("TorBox throws instead of streaming file_id=0 when torrent is not ready")
+    func torBoxThrowsWhenNotReady() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var didRequestDownload = false
+
+        MockURLProtocol.setHandler({ request in
+            let path = request.url?.path ?? ""
+
+            switch path {
+            case "/v1/api/torrents/mylist":
+                // Non-terminal state with no files: must NOT fall back to file_id=0.
+                let body = #"{"data":{"id":77,"download_state":"stalled (no seeds)","files":[]}}"#
+                return try makeResponse(for: request, statusCode: 200, body: body)
+
+            case "/v1/api/torrents/requestdl":
+                didRequestDownload = true
+                let body = #"{"data":"https://torbox.example/should-not-happen.mp4"}"#
+                return try makeResponse(for: request, statusCode: 200, body: body)
+
+            default:
+                return try makeResponse(for: request, statusCode: 404, body: "{}")
+            }
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let torBox = TorBoxService(apiToken: "tb-token", session: session)
+
+        await #expect(throws: DebridError.self) {
+            _ = try await torBox.getStreamURL(torrentId: "77")
+        }
+        #expect(didRequestDownload == false)
+    }
+
     private func makeResponse(for request: URLRequest, statusCode: Int, body: String) throws -> (HTTPURLResponse, Data) {
         guard let url = request.url else {
             throw NSError(domain: "DebridHTTPServiceTests", code: 1)

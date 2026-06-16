@@ -38,7 +38,7 @@ struct SearchView: View {
 
             Group {
                 if viewModel.isSearching {
-                    VStack(spacing: 16) {
+                    VStack(spacing: AppTheme.Spacing.lg) {
                         ProgressView()
                             .controlSize(.large)
                         Text("Searching \(selectedScope.displayName.lowercased())...")
@@ -60,14 +60,14 @@ struct SearchView: View {
                     )
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 18) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: AppTheme.Spacing.lg)], spacing: AppTheme.Spacing.lg) {
                             ForEach(viewModel.results) { item in
                                 SearchResultCard(item: item) {
                                     selectedItem = item
                                 }
                             }
                         }
-                        .padding()
+                        .padding(AppTheme.Spacing.lg)
                     }
                 }
             }
@@ -75,89 +75,77 @@ struct SearchView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 12) {
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.18, green: 0.22, blue: 0.36),
-                                Color(red: 0.10, green: 0.14, blue: 0.23),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Cinematic Search")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("Scope-aware results with AI refinement and one-tap context prompts.")
-                        .font(.caption)
+        VStack(spacing: AppTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                Text("Cinematic Search")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text("Scope-aware results with AI refinement and one-tap context prompts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
+                    TextField("Search movies and TV shows...", text: $query)
+                        .textFieldStyle(.plain)
+                        .font(.title3)
+                        .onSubmit { runSearch() }
 
-                    HStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary)
-                        TextField("Search movies and TV shows...", text: $query)
-                            .textFieldStyle(.plain)
-                            .font(.title3)
-                            .onSubmit { runSearch() }
-
-                        if !query.isEmpty {
-                            Button {
-                                query = ""
-                                viewModel.clearResults()
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
+                    if !query.isEmpty {
+                        Button {
+                            query = ""
+                            viewModel.clearResults()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
                         }
-
-                        if viewModel.isSearching {
-                            Button("Cancel") { viewModel.cancelSearch() }
-                                .buttonStyle(.glass)
-                        }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
 
-                    HStack(spacing: 10) {
-                        Picker("Scope", selection: $selectedScope) {
-                            ForEach(SearchViewModel.Scope.allCases) { scope in
-                                Text(scope.displayName).tag(scope)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-
-                        Picker("Type", selection: $selectedType) {
-                            Text("All").tag(nil as MediaType?)
-                            Text("Movies").tag(MediaType.movie as MediaType?)
-                            Text("TV Shows").tag(MediaType.series as MediaType?)
-                        }
-                        .pickerStyle(.segmented)
+                    if viewModel.isSearching {
+                        Button("Cancel") { viewModel.cancelSearch() }
+                            .buttonStyle(.glass)
                     }
                 }
-                .padding(14)
+                .padding(.horizontal, AppTheme.Spacing.md)
+                .padding(.vertical, AppTheme.Spacing.sm)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
+
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    Picker("Scope", selection: $selectedScope) {
+                        ForEach(SearchViewModel.Scope.allCases) { scope in
+                            Text(scope.displayName).tag(scope)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Picker("Type", selection: $selectedType) {
+                        Text("All").tag(nil as MediaType?)
+                        Text("Movies").tag(MediaType.movie as MediaType?)
+                        Text("TV Shows").tag(MediaType.series as MediaType?)
+                    }
+                    .pickerStyle(.segmented)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(AppTheme.Spacing.lg)
             .frame(height: 220)
-            .glassSurface()
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
+            .glassPanel(tint: AppTheme.accent)
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.top, AppTheme.Spacing.sm)
 
             if selectedScope == .folder && appState.selectedLibraryFolderId == nil {
                 Text("Select a folder in Library or Watchlist first for folder-scoped search.")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(AppTheme.warning)
             }
         }
-        .padding(.bottom, 12)
+        .padding(.bottom, AppTheme.Spacing.md)
     }
 
     private var aiAssistPane: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             Text("AI Assist")
                 .font(.headline)
             Text("Use search context to generate recommendation prompts.")
@@ -172,7 +160,7 @@ struct SearchView: View {
             .buttonStyle(.glassProminent)
             .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-            HStack(spacing: 8) {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 TextField("Mood (e.g. tense noir)", text: $moodText)
                 Button("Find by Mood") {
                     sendToAssistant(viewModel.buildMoodPrompt(mood: moodText, scope: selectedScope))
@@ -199,7 +187,7 @@ struct SearchView: View {
             Divider()
 
             if let selectedItem {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                     Text("Selected")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -211,15 +199,16 @@ struct SearchView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(10)
+                .padding(AppTheme.Spacing.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .glassCard(radius: AppTheme.Radius.sm)
             }
 
             Spacer()
         }
-        .padding(12)
-        .background(.ultraThinMaterial.opacity(0.4))
+        .padding(AppTheme.Spacing.md)
+        .frame(maxHeight: .infinity)
+        .glassPanel(level: .regular)
     }
 
     private func runSearch() {
@@ -271,7 +260,7 @@ private struct SearchResultCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 AsyncImage(url: item.posterURL) { phase in
                     switch phase {
                     case .success(let image):
@@ -284,24 +273,25 @@ private struct SearchResultCard: View {
                 }
                 .frame(height: 250)
                 .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
 
                 Text(item.title)
                     .font(.headline)
                     .lineLimit(2)
 
-                HStack(spacing: 8) {
+                HStack(spacing: AppTheme.Spacing.sm) {
                     if let year = item.year {
                         Text(String(year))
                     }
                     if !item.ratingString.isEmpty {
                         Label(item.ratingString, systemImage: "star.fill")
+                            .foregroundStyle(AppTheme.warning)
                     }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            .padding(10)
+            .padding(AppTheme.Spacing.sm)
             .glassSurface()
         }
         .buttonStyle(.plain)
@@ -309,7 +299,7 @@ private struct SearchResultCard: View {
 }
 
 private func emptyState(icon: String, title: String, subtitle: String) -> some View {
-    VStack(spacing: 10) {
+    VStack(spacing: AppTheme.Spacing.sm) {
         Image(systemName: icon)
             .font(.system(size: 38))
             .foregroundStyle(.secondary)

@@ -21,6 +21,15 @@ enum MediaType: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// Matches `token` only when delimited by non-alphanumeric boundaries (or string ends),
+/// so ambiguous short tokens like "ts"/"sd"/"cam" don't match when embedded inside words.
+func mediaTokenMatch(_ haystack: String, _ token: String) -> Bool {
+    haystack.range(
+        of: "(?<![a-z0-9])\(token)(?![a-z0-9])",
+        options: .regularExpression
+    ) != nil
+}
+
 /// Video quality tier parsed from torrent filenames.
 enum VideoQuality: String, Codable, Sendable, Comparable, CaseIterable {
     case uhd4k = "4K"
@@ -56,7 +65,7 @@ enum VideoQuality: String, Codable, Sendable, Comparable, CaseIterable {
             return .hd720p
         } else if lower.contains("480p") {
             return .sd480p
-        } else if lower.contains("sd") || lower.contains("dvdrip") || lower.contains("hdtv") {
+        } else if mediaTokenMatch(lower, "sd") || lower.contains("dvdrip") || lower.contains("hdtv") {
             return .sdOther
         }
         return .unknown
@@ -101,7 +110,7 @@ enum AudioFormat: String, Codable, Sendable {
         let lower = filename.lowercased()
         if lower.contains("atmos") {
             return .atmos
-        } else if lower.contains("dts-hd") || lower.contains("dts.hd") || lower.contains("dts-hd ma") {
+        } else if lower.contains("dts-hd") || lower.contains("dts.hd") {
             return .dtsHDMA
         } else if lower.contains("dts-x") || lower.contains("dts:x") {
             return .dtsX
@@ -143,7 +152,7 @@ enum SourceType: String, Codable, Sendable {
             return .dvdRip
         } else if lower.contains("hdtv") {
             return .hdtv
-        } else if lower.contains("cam") || lower.contains("hdcam") || lower.contains("ts") || lower.contains("telesync") {
+        } else if mediaTokenMatch(lower, "cam") || lower.contains("hdcam") || mediaTokenMatch(lower, "ts") || lower.contains("telesync") {
             return .cam
         }
         return .unknown

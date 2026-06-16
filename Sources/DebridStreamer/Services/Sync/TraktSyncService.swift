@@ -10,6 +10,7 @@ enum SyncState: String, Sendable, Codable {
 enum TraktSyncError: LocalizedError, Equatable {
     case invalidURL
     case invalidResponse
+    case decodingFailed(String)
     case httpStatus(Int, String)
 
     var errorDescription: String? {
@@ -18,6 +19,8 @@ enum TraktSyncError: LocalizedError, Equatable {
             return "Invalid Trakt URL."
         case .invalidResponse:
             return "Invalid Trakt response."
+        case .decodingFailed(let detail):
+            return "Failed to decode Trakt response: \(detail)"
         case .httpStatus(let status, let body):
             return "Trakt HTTP \(status): \(body)"
         }
@@ -64,12 +67,61 @@ struct TraktWatchlistItem: Sendable, Equatable {
     var year: Int?
 }
 
+/// Typed summary of a `POST /sync/watchlist` response. Trakt returns counts of
+/// items that were `added`, were already `existing`, and could `not_found` be
+/// matched. Decoding this (instead of discarding it) lets callers surface
+/// rejected IDs to the user.
+struct TraktWatchlistPushResult: Decodable, Sendable, Equatable {
+    struct Counts: Decodable, Sendable, Equatable {
+        var movies: Int?
+    }
+
+    struct NotFoundIDs: Decodable, Sendable, Equatable {
+        var imdb: String?
+    }
+
+    struct NotFoundMovie: Decodable, Sendable, Equatable {
+        var ids: NotFoundIDs?
+    }
+
+    struct NotFound: Decodable, Sendable, Equatable {
+        var movies: [NotFoundMovie]?
+    }
+
+    var added: Counts?
+    var existing: Counts?
+    var notFound: NotFound?
+
+    enum CodingKeys: String, CodingKey {
+        case added
+        case existing
+        case notFound = "not_found"
+    }
+}
+
 actor TraktSyncService {
     private let session: URLSession
     private let baseURL = "https://api.trakt.tv"
 
+    /// Default safety buffer (seconds) before the real expiry at which a token is
+    /// considered expired, so callers refresh proactively rather than racing a 401.
+    static let defaultExpiryBuffer: TimeInterval = 24 * 60 * 60
+
     init(session: URLSession = .shared) {
         self.session = session
+    }
+
+    /// Returns true when a token issued at `createdAt` (Unix seconds) with lifetime
+    /// `expiresIn` (seconds) is at or past its expiry, accounting for `buffer`.
+    /// Both `createdAt` and `expiresIn` come directly from `TraktTokenResponse`.
+    nonisolated static func isExpired(
+        createdAt: Int,
+        expiresIn: Int,
+        now: Date = Date(),
+        buffer: TimeInterval = TraktSyncService.defaultExpiryBuffer
+    ) -> Bool {
+        let expiry = Date(timeIntervalSince1970: TimeInterval(createdAt + expiresIn))
+        return expiry.timeIntervalSince(now) <= buffer
     }
 
     func startDeviceAuth(clientID: String) async throws -> TraktDeviceCodeResponse {
@@ -149,7 +201,8 @@ actor TraktSyncService {
         }
     }
 
-    func pushWatchlist(clientID: String, accessToken: String, imdbIDs: [String]) async throws {
+    @discardableResult
+    func pushWatchlist(clientID: String, accessToken: String, imdbIDs: [String]) async throws -> TraktWatchlistPushResult {
         struct Payload: Encodable {
             struct Movie: Encodable {
                 struct IDs: Encodable {
@@ -161,7 +214,7 @@ actor TraktSyncService {
         }
 
         let payload = Payload(movies: imdbIDs.map { .init(ids: .init(imdb: $0)) })
-        let _: TraktNoContent = try await request(
+        return try await request(
             path: "/sync/watchlist",
             method: "POST",
             traktClientID: clientID,
@@ -212,7 +265,7 @@ actor TraktSyncService {
         do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
-            throw TraktSyncError.invalidResponse
+            throw TraktSyncError.decodingFailed(String(describing: error))
         }
     }
 }

@@ -69,6 +69,7 @@ struct AIProviderResponse: Codable, Sendable {
     var recommendations: [AIMovieRecommendation]
     var rawText: String?
     var usage: AIUsageMetrics?
+    var error: String? = nil
 }
 
 struct AIUsageSummary: Sendable, Equatable {

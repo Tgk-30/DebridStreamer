@@ -13,6 +13,17 @@ struct IMDbImportResult: Sendable, Equatable {
 }
 
 actor IMDbCSVSyncService {
+    /// Builds a stable, diacritic/case-insensitive slug from a title for use as a
+    /// synthesized media id when no IMDb const is present. Collapses runs of
+    /// non-alphanumeric characters to single hyphens and strips diacritics, so the
+    /// raw title text never leaks into the id and casing/accents don't fork ids.
+    nonisolated func normalizedSlug(_ s: String) -> String {
+        s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+    }
+
     nonisolated func parseCSV(_ contents: String, listType: UserLibraryEntry.ListType) -> [IMDbCSVEntry] {
         let rows = CSVParser.parse(contents: contents)
         guard let header = rows.first else { return [] }
@@ -52,17 +63,34 @@ actor IMDbCSVSyncService {
         var added = 0
         var skipped = 0
 
-        for entry in entries {
-            let mediaID = entry.imdbID ?? "imdb-\(entry.title.lowercased())-\(entry.year ?? 0)"
-            let libraryID = "\(mediaID)-\(folderId)"
-            let exists = try await database.isInLibrary(mediaId: mediaID, folderId: folderId)
+        // Pre-compute the synthesized media id for every row once, so the bulk reads
+        // below and the per-row inserts agree on a single id per entry.
+        let mediaIDs = entries.map { entry in
+            entry.imdbID ?? "imdb-\(normalizedSlug(entry.title))-\(entry.year ?? 0)"
+        }
 
+        // Bulk read: which of these media already exist in the cache. Replaces the
+        // per-row fetchMedia(id:) round-trips with one batched query.
+        let uniqueIDs = Array(Set(mediaIDs))
+        let existingMedia = try await database.fetchMedia(ids: uniqueIDs)
+
+        // Track media inserted earlier in this same import so we don't re-save them,
+        // mirroring the original per-row "fetchMedia == nil" guard within the batch.
+        var savedMediaIDs = Set(existingMedia.keys)
+
+        for (index, entry) in entries.enumerated() {
+            let mediaID = mediaIDs[index]
+            let libraryID = "\(mediaID)-\(folderId)"
+
+            // Preserve the original dedup semantics exactly: check against the raw
+            // folderId per row (same as the previous isInLibrary(mediaId:folderId:)).
+            let exists = try await database.isInLibrary(mediaId: mediaID, folderId: folderId)
             if exists {
                 skipped += 1
                 continue
             }
 
-            if try await database.fetchMedia(id: mediaID) == nil {
+            if !savedMediaIDs.contains(mediaID) {
                 let media = MediaItem(
                     id: mediaID,
                     type: .movie,
@@ -71,6 +99,7 @@ actor IMDbCSVSyncService {
                     lastFetched: Date()
                 )
                 try await database.saveMedia(media)
+                savedMediaIDs.insert(mediaID)
             }
 
             let libraryEntry = UserLibraryEntry(

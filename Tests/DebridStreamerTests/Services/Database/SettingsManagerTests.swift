@@ -71,6 +71,78 @@ struct SettingsManagerTests {
         #expect(secret == "legacy-plaintext-omdb")
     }
 
+    @Test("Eager legacy secret sweep migrates plaintext without reading the keys")
+    func legacySecretSweepMigratesEagerly() async throws {
+        let db = try makeTestDatabase()
+        let secretStore = InMemorySecretStore()
+        let settings = SettingsManager(database: db, secretStore: secretStore)
+
+        // Seed two legacy plaintext secrets directly in the DB (bypassing SettingsManager).
+        try await db.setSetting(key: SettingsKeys.omdbApiKey, value: "legacy-omdb")
+        try await db.setSetting(key: SettingsKeys.traktClientSecret, value: "legacy-trakt")
+
+        // Run the eager sweep WITHOUT reading either key first.
+        try await settings.migrateLegacySecretsIfNeeded()
+
+        // DB rows are now SecretReferences, not the raw plaintext.
+        let storedOmdb = try await db.getSetting(key: SettingsKeys.omdbApiKey)
+        let storedTrakt = try await db.getSetting(key: SettingsKeys.traktClientSecret)
+        #expect(storedOmdb?.hasPrefix(SecretReference.keychainPrefix) == true)
+        #expect(storedTrakt?.hasPrefix(SecretReference.keychainPrefix) == true)
+        #expect(storedOmdb != "legacy-omdb")
+        #expect(storedTrakt != "legacy-trakt")
+
+        // Raw values live in the secret store.
+        #expect(await secretStore.rawValue(for: SecretKey.setting(SettingsKeys.omdbApiKey)) == "legacy-omdb")
+        #expect(await secretStore.rawValue(for: SecretKey.setting(SettingsKeys.traktClientSecret)) == "legacy-trakt")
+    }
+
+    @Test("Legacy secret sweep is idempotent and guarded by a one-time flag")
+    func legacySecretSweepIsIdempotent() async throws {
+        let db = try makeTestDatabase()
+        let secretStore = InMemorySecretStore()
+        let settings = SettingsManager(database: db, secretStore: secretStore)
+
+        try await db.setSetting(key: SettingsKeys.omdbApiKey, value: "legacy-omdb")
+        try await settings.migrateLegacySecretsIfNeeded()
+
+        // Flag should be set so a second run is a no-op.
+        #expect(try await db.getSetting(key: SettingsKeys.legacySecretSweepCompleted) == "true")
+
+        // Simulate a new plaintext secret written AFTER the sweep already ran: because
+        // the sweep is gated by the completion flag, it must not re-migrate on a second
+        // call (the lazy getValue path still handles late writes).
+        try await db.setSetting(key: SettingsKeys.tmdbApiKey, value: "late-plaintext")
+        try await settings.migrateLegacySecretsIfNeeded()
+        let tmdbAfter = try await db.getSetting(key: SettingsKeys.tmdbApiKey)
+        #expect(tmdbAfter == "late-plaintext")
+
+        // The already-migrated key stays a reference and keeps its value.
+        #expect(await secretStore.rawValue(for: SecretKey.setting(SettingsKeys.omdbApiKey)) == "legacy-omdb")
+    }
+
+    @Test("Concurrent addAIUsage calls do not lose updates")
+    func concurrentAIUsageIsAtomic() async throws {
+        let db = try makeTestDatabase()
+        let settings = SettingsManager(database: db, secretStore: InMemorySecretStore())
+
+        await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<50 {
+                group.addTask {
+                    try await settings.addAIUsage(inputTokens: 1, outputTokens: 2, estimatedCostUSD: 0.001)
+                }
+            }
+        }
+
+        let input = try await settings.getAIUsageTotalInputTokens()
+        let output = try await settings.getAIUsageTotalOutputTokens()
+        let cost = try await settings.getAIUsageTotalEstimatedCostUSD()
+
+        #expect(input == 50)
+        #expect(output == 100)
+        #expect(abs(cost - 0.05) < 0.0001)
+    }
+
     @Test("AI secret keys are keychain-backed")
     func aiSecretKeysStoredSecurely() async throws {
         let db = try makeTestDatabase()
@@ -274,7 +346,8 @@ struct SettingsManagerTests {
             SettingsKeys.feedbackScaleMode,
             SettingsKeys.aiUsageTotalInputTokens,
             SettingsKeys.aiUsageTotalOutputTokens,
-            SettingsKeys.aiUsageTotalEstimatedCostUSD
+            SettingsKeys.aiUsageTotalEstimatedCostUSD,
+            SettingsKeys.legacySecretSweepCompleted
         ]
         let uniqueKeys = Set(keys)
         #expect(uniqueKeys.count == keys.count)

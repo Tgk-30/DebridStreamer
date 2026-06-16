@@ -98,39 +98,39 @@ struct PlayerView: View {
     }
 
     private var controlsLayer: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: AppTheme.Spacing.sm) {
             statusPills
                 .opacity(viewModel.controlsVisible ? 1 : 0)
             Spacer()
             controlsPanel
                 .opacity(viewModel.controlsVisible ? 1 : 0)
         }
-        .padding(12)
+        .padding(AppTheme.Spacing.md)
         .animation(.easeInOut(duration: 0.2), value: viewModel.controlsVisible)
     }
 
     private var statusPills: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: AppTheme.Spacing.sm) {
             if let engine = viewModel.selectedEngine {
                 Label(engine.displayName, systemImage: "bolt.fill")
                     .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.thinMaterial, in: Capsule())
+                    .padding(.horizontal, AppTheme.Spacing.sm)
+                    .padding(.vertical, AppTheme.Spacing.xs)
+                    .glassChip()
             }
 
             Text(viewModel.runtimeState.displayName)
                 .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(.thinMaterial, in: Capsule())
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .padding(.vertical, AppTheme.Spacing.xs)
+                .glassChip()
 
             if let selected = selectedStream {
                 Text(selected.quality.rawValue.uppercased())
                     .font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.thinMaterial, in: Capsule())
+                    .padding(.horizontal, AppTheme.Spacing.sm)
+                    .padding(.vertical, AppTheme.Spacing.xs)
+                    .glassChip()
             }
 
             Spacer()
@@ -141,8 +141,8 @@ struct PlayerView: View {
     private var controlsPanel: some View {
         let isFullscreen = viewModel.isFullscreenActive
 
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 Button {
                     viewModel.seek(by: -10)
                 } label: {
@@ -189,21 +189,18 @@ struct PlayerView: View {
                     viewModel.registerUserInteraction()
                     Task { await viewModel.toggleFullscreen(window: playerWindow) }
                 } label: {
-                    Label(
-                        isFullscreen ? "Windowed" : "Fullscreen",
-                        systemImage: isFullscreen
-                            ? "arrow.down.right.and.arrow.up.left"
-                            : "arrow.up.left.and.arrow.down.right"
-                    )
+                    Image(systemName: isFullscreen
+                        ? "arrow.down.right.and.arrow.up.left"
+                        : "arrow.up.left.and.arrow.down.right")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
                 .help("Toggle fullscreen player window")
                 .keyboardShortcut("f", modifiers: [.control, .command])
                 .disabled(viewModel.isFullscreenTransitioning)
             }
             .foregroundStyle(.white)
 
-            HStack(spacing: 8) {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 Text(timeString(currentTime))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.85))
@@ -242,13 +239,9 @@ struct PlayerView: View {
                     .lineLimit(2)
             }
         }
-        .padding(12)
+        .padding(AppTheme.Spacing.md)
         .frame(maxWidth: 960)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-        )
+        .glassPanel(radius: AppTheme.Radius.md, level: .ultraThin)
     }
 
     private var qualityMenu: some View {
@@ -310,7 +303,7 @@ struct PlayerView: View {
     }
 
     private var loadingOverlay: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: AppTheme.Spacing.md) {
             ProgressView()
                 .controlSize(.large)
             Text("Preparing player...")
@@ -326,14 +319,15 @@ struct PlayerView: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
         }
-        .padding(20)
+        .padding(AppTheme.Spacing.xl)
+        .glassCard()
     }
 
     private func errorOverlay(_ errorMessage: String) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: AppTheme.Spacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 42))
-                .foregroundStyle(.orange)
+                .foregroundStyle(AppTheme.warning)
             Text("Playback Failed")
                 .font(.title3)
                 .fontWeight(.semibold)
@@ -342,16 +336,17 @@ struct PlayerView: View {
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.75))
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, AppTheme.Spacing.xl)
 
-            HStack(spacing: 8) {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 Button("Retry") {
                     Task { await viewModel.retryLastPlayback() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
             }
         }
-        .padding(18)
+        .padding(AppTheme.Spacing.lg)
+        .glassCard()
     }
 
     private var selectedStream: StreamInfo? {

@@ -46,6 +46,13 @@ actor KeychainSecretStore: SecretStore {
 
         var addQuery = query
         addQuery[kSecValueData as String] = encoded
+        // Explicitly scope freshly-added bearer tokens: only readable while the
+        // device is unlocked, and never synced to iCloud Keychain. These attributes
+        // are applied on the ADD path only because SecItemUpdate cannot mutate them
+        // and baseQuery() is reused for update/read/delete (which must stay broad
+        // enough to match pre-existing items).
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        addQuery[kSecAttrSynchronizable as String] = false
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
             throw SecretStoreError.unexpectedStatus(addStatus, operation: "add")

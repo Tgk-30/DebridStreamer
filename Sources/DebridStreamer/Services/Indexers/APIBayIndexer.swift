@@ -26,11 +26,13 @@ actor APIBayIndexer: TorrentIndexer {
         let cat = type == .movie ? Category.hdMovies.rawValue : Category.hdTV.rawValue
         let url = URL(string: "\(baseURL)/q.php?q=\(imdbId)&cat=\(cat)")!
 
-        let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            return []
+            throw URLError(.badServerResponse)
         }
 
         let items = try JSONDecoder().decode([APIBayItem].self, from: data)
@@ -45,18 +47,15 @@ actor APIBayIndexer: TorrentIndexer {
             let hash = item.infoHash
             guard !hash.isEmpty, hash != "0000000000000000000000000000000000000000" else { continue }
 
-            // Filter by season/episode for TV shows
+            // Filter by season/episode for TV shows using an anchored SxxEyy regex.
+            // Requires a contiguous S<season><sep>E<episode> token (allowing common
+            // separators like dot/space/dash) to avoid false positives from stray
+            // non-contiguous matches such as "S01E05.x264-E01TUREL".
             if type == .series, let season = season, let episode = episode {
-                let seasonEpPattern = formatSeasonEpisode(season: season, episode: episode)
                 let titleUpper = item.name.uppercased()
-                // Check for S01E01 pattern
-                if !titleUpper.contains(seasonEpPattern.uppercased()) {
-                    // Also check for "Season 1 Episode 1" pattern
-                    let altPattern1 = "S\(String(format: "%02d", season))"
-                    let altPattern2 = "E\(String(format: "%02d", episode))"
-                    if !(titleUpper.contains(altPattern1) && titleUpper.contains(altPattern2)) {
-                        continue
-                    }
+                let pattern = "S\(String(format: "%02d", season))[ ._-]?E\(String(format: "%02d", episode))"
+                if titleUpper.range(of: pattern, options: .regularExpression) == nil {
+                    continue
                 }
             }
 
@@ -85,11 +84,13 @@ actor APIBayIndexer: TorrentIndexer {
         let cat = type == .movie ? Category.movies.rawValue : Category.tvShows.rawValue
         let url = URL(string: "\(baseURL)/q.php?q=\(encodedQuery)&cat=\(cat)")!
 
-        let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            return []
+            throw URLError(.badServerResponse)
         }
 
         let items = try JSONDecoder().decode([APIBayItem].self, from: data)
@@ -120,10 +121,6 @@ actor APIBayIndexer: TorrentIndexer {
         }
 
         return results
-    }
-
-    private func formatSeasonEpisode(season: Int, episode: Int) -> String {
-        "S\(String(format: "%02d", season))E\(String(format: "%02d", episode))"
     }
 }
 

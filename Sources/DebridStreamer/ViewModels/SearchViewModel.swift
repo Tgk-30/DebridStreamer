@@ -128,7 +128,13 @@ final class SearchViewModel {
         }
 
         isSearching = true
-        defer { isSearching = false }
+        // Only clear the spinner if this task wasn't superseded/cancelled; a stale task
+        // unwinding after a newer search started must not flip the live spinner off.
+        defer {
+            if !Task.isCancelled {
+                isSearching = false
+            }
+        }
 
         do {
             let scopedResults: [MediaPreview]

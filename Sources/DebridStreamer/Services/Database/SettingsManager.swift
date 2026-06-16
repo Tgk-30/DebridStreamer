@@ -56,6 +56,33 @@ actor SettingsManager {
         }
     }
 
+    /// Eagerly move any lingering plaintext secret values into the secret store.
+    ///
+    /// `getValue` migrates a legacy plaintext secret to the keychain only when the
+    /// value is next read, so an API key written by an older build can sit in
+    /// `app_settings` as plaintext indefinitely. This sweep iterates every known
+    /// secret key once at startup and migrates any value that is not already a
+    /// `SecretReference`, so plaintext secrets do not linger. It is idempotent
+    /// (already-encoded references are skipped) and guarded by a one-time flag so it
+    /// does not re-run on every launch.
+    func migrateLegacySecretsIfNeeded() async throws {
+        if (try await database.getSetting(key: SettingsKeys.legacySecretSweepCompleted)) == "true" {
+            return
+        }
+
+        for key in secretKeys {
+            guard let stored = try await database.getSetting(key: key) else { continue }
+            // Already a keychain reference — nothing to migrate.
+            if SecretReference.decode(stored) != nil { continue }
+
+            let migratedKey = SecretKey.setting(key)
+            try await secretStore.setSecret(stored, for: migratedKey)
+            try await database.setSetting(key: key, value: SecretReference.encode(key: migratedKey))
+        }
+
+        try await database.setSetting(key: SettingsKeys.legacySecretSweepCompleted, value: "true")
+    }
+
     // MARK: - Typed Accessors
 
     func getTMDBApiKey() async throws -> String? {
@@ -127,17 +154,18 @@ actor SettingsManager {
         outputTokens: Int?,
         estimatedCostUSD: Double?
     ) async throws {
-        let currentInput = try await getAIUsageTotalInputTokens()
-        let currentOutput = try await getAIUsageTotalOutputTokens()
-        let currentCost = try await getAIUsageTotalEstimatedCostUSD()
-
-        let nextInput = currentInput + max(0, inputTokens ?? 0)
-        let nextOutput = currentOutput + max(0, outputTokens ?? 0)
-        let nextCost = currentCost + max(0, estimatedCostUSD ?? 0)
-
-        try await setValue(String(nextInput), forKey: SettingsKeys.aiUsageTotalInputTokens)
-        try await setValue(String(nextOutput), forKey: SettingsKeys.aiUsageTotalOutputTokens)
-        try await setValue(String(nextCost), forKey: SettingsKeys.aiUsageTotalEstimatedCostUSD)
+        // The three usage keys are plain (non-secret) settings, so route the
+        // read-modify-write through a single DatabaseManager write transaction.
+        // This makes the increment atomic and avoids the lost-update race that a
+        // multi-await read-then-write sequence on this actor would otherwise allow.
+        _ = try await database.incrementAIUsage(
+            inputKey: SettingsKeys.aiUsageTotalInputTokens,
+            outputKey: SettingsKeys.aiUsageTotalOutputTokens,
+            costKey: SettingsKeys.aiUsageTotalEstimatedCostUSD,
+            inputDelta: inputTokens ?? 0,
+            outputDelta: outputTokens ?? 0,
+            costDelta: estimatedCostUSD ?? 0
+        )
     }
 }
 
@@ -179,6 +207,8 @@ enum SettingsKeys {
     static let recencySensitivity = "recency_sensitivity"
     static let onboardingTastePromptShown = "onboarding_taste_prompt_shown"
     static let feedbackScaleMode = "feedback_scale_mode"
+
+    static let legacySecretSweepCompleted = "legacy_secret_sweep_completed"
 }
 
 extension SettingsManager {

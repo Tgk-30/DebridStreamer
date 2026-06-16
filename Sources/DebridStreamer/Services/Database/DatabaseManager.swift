@@ -348,9 +348,30 @@ actor DatabaseManager {
             try Self.ensureSystemLibraryFolders(in: db)
             let watchlistRootID = Self.systemFolderID(for: .watchlist)
 
+            // The v5 migration created a global UNIQUE(mediaId, folderId) index.
+            // SQLite enforces UNIQUE constraints per-row during the bulk UPDATE, so
+            // collapsing every watchlist row onto a single root folder can collide
+            // when the same mediaId already exists multiple times. Dedup BEFORE the
+            // UPDATE (mirroring v5's order) so no two surviving rows would map to the
+            // same (mediaId, watchlistRootID) pair, and use UPDATE OR IGNORE as a
+            // belt-and-suspenders guard so a leftover collision degrades to a skip
+            // instead of aborting the whole migration on launch.
             try db.execute(
                 sql: """
-                UPDATE user_library
+                DELETE FROM user_library
+                WHERE listType = 'watchlist'
+                  AND rowid NOT IN (
+                      SELECT MIN(rowid)
+                      FROM user_library
+                      WHERE listType = 'watchlist'
+                      GROUP BY mediaId
+                  )
+                """
+            )
+
+            try db.execute(
+                sql: """
+                UPDATE OR IGNORE user_library
                 SET folderId = ?
                 WHERE listType = 'watchlist'
                   AND (folderId IS NULL OR folderId = '' OR folderId != ?)
@@ -358,6 +379,8 @@ actor DatabaseManager {
                 arguments: [watchlistRootID, watchlistRootID]
             )
 
+            // Drop any rows the OR IGNORE update could not move because their target
+            // (mediaId, watchlistRootID) already existed, keeping the lowest rowid.
             try db.execute(
                 sql: """
                 DELETE FROM user_library
@@ -511,6 +534,25 @@ actor DatabaseManager {
         }
     }
 
+    /// Delete a media item and every row in dependent tables that references it.
+    ///
+    /// Only `episodes` carries an `ON DELETE CASCADE` foreign key to `media_cache`;
+    /// `watch_history`, `user_library`, `torrent_cache`, `taste_events` and
+    /// `library_sync_map` reference `mediaId` without a foreign key, so they would
+    /// otherwise be orphaned when their media is evicted. This method removes them
+    /// all in a single transaction so a media deletion can never leave dangling rows.
+    func deleteMedia(id: String) async throws {
+        try await dbPool.write { db in
+            try db.execute(sql: "DELETE FROM watch_history WHERE mediaId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM user_library WHERE mediaId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM torrent_cache WHERE mediaId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM taste_events WHERE mediaId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM library_sync_map WHERE mediaId = ?", arguments: [id])
+            // episodes cascades via its media_cache foreign key.
+            _ = try MediaItem.deleteOne(db, key: id)
+        }
+    }
+
     // MARK: - Episode Operations
 
     func saveEpisodes(_ episodes: [Episode]) async throws {
@@ -588,6 +630,17 @@ actor DatabaseManager {
             } else if normalized.folderId?.isEmpty != false {
                 normalized.folderId = Self.systemFolderID(for: normalized.listType)
             }
+
+            // Reconcile on the (mediaId, folderId) unique index before saving so a
+            // caller-supplied id that diverges from an existing row's id updates the
+            // existing row by primary key rather than tripping the secondary unique
+            // index (idx_user_library_media_folder) with an INSERT.
+            if let existing = try UserLibraryEntry
+                .filter(UserLibraryEntry.Columns.mediaId == normalized.mediaId)
+                .filter(UserLibraryEntry.Columns.folderId == normalized.folderId)
+                .fetchOne(db) {
+                normalized.id = existing.id
+            }
             try normalized.save(db)
         }
     }
@@ -620,12 +673,13 @@ actor DatabaseManager {
         try await dbPool.read { db in
             if includeDescendants {
                 let sql = """
-                    WITH RECURSIVE folder_tree(id) AS (
-                        SELECT id FROM library_folders WHERE id = ?
+                    WITH RECURSIVE folder_tree(id, path) AS (
+                        SELECT id, '/' || id || '/' FROM library_folders WHERE id = ?
                         UNION ALL
-                        SELECT f.id
+                        SELECT f.id, ft.path || f.id || '/'
                         FROM library_folders f
                         JOIN folder_tree ft ON f.parentId = ft.id
+                        WHERE instr(ft.path, '/' || f.id || '/') = 0
                     )
                     SELECT user_library.*
                     FROM user_library
@@ -674,12 +728,13 @@ actor DatabaseManager {
         try await dbPool.read { db in
             if includeDescendants {
                 let sql = """
-                    WITH RECURSIVE folder_tree(id) AS (
-                        SELECT id FROM library_folders WHERE id = ?
+                    WITH RECURSIVE folder_tree(id, path) AS (
+                        SELECT id, '/' || id || '/' FROM library_folders WHERE id = ?
                         UNION ALL
-                        SELECT f.id
+                        SELECT f.id, ft.path || f.id || '/'
                         FROM library_folders f
                         JOIN folder_tree ft ON f.parentId = ft.id
+                        WHERE instr(ft.path, '/' || f.id || '/') = 0
                     )
                     SELECT media_cache.*
                     FROM media_cache
@@ -707,12 +762,13 @@ actor DatabaseManager {
         try await dbPool.read { db in
             if let rootFolderId {
                 let sql = """
-                    WITH RECURSIVE folder_tree(id) AS (
-                        SELECT id FROM library_folders WHERE id = ?
+                    WITH RECURSIVE folder_tree(id, path) AS (
+                        SELECT id, '/' || id || '/' FROM library_folders WHERE id = ?
                         UNION ALL
-                        SELECT f.id
+                        SELECT f.id, ft.path || f.id || '/'
                         FROM library_folders f
                         JOIN folder_tree ft ON f.parentId = ft.id
+                        WHERE instr(ft.path, '/' || f.id || '/') = 0
                     )
                     SELECT media_cache.*
                     FROM media_cache
@@ -816,12 +872,13 @@ actor DatabaseManager {
     func fetchLibraryFolderDescendantIDs(rootFolderId: String) async throws -> [String] {
         try await dbPool.read { db in
             let sql = """
-                WITH RECURSIVE folder_tree(id) AS (
-                    SELECT id FROM library_folders WHERE id = ?
+                WITH RECURSIVE folder_tree(id, path) AS (
+                    SELECT id, '/' || id || '/' FROM library_folders WHERE id = ?
                     UNION ALL
-                    SELECT f.id
+                    SELECT f.id, ft.path || f.id || '/'
                     FROM library_folders f
                     JOIN folder_tree ft ON f.parentId = ft.id
+                    WHERE instr(ft.path, '/' || f.id || '/') = 0
                 )
                 SELECT id FROM folder_tree
                 """
@@ -992,11 +1049,20 @@ actor DatabaseManager {
             let idsToReassign = try Self.fetchDescendantIDs(db: db, rootFolderId: id)
 
             // Move all entries from this subtree to the system root folder before deletion.
+            // The global UNIQUE(mediaId, folderId) index means a straight UPDATE throws
+            // SQLITE_CONSTRAINT_UNIQUE (aborting the whole delete) whenever the same media
+            // already lives in the fallback root or in two sibling folders being merged.
+            // Use UPDATE OR IGNORE so collisions are skipped, then DELETE the now-duplicate
+            // leftovers that could not be reassigned.
             if !idsToReassign.isEmpty {
-                for oldFolderId in idsToReassign {
+                for oldFolderId in idsToReassign where oldFolderId != fallbackFolderID {
                     try db.execute(
-                        sql: "UPDATE user_library SET folderId = ? WHERE folderId = ?",
+                        sql: "UPDATE OR IGNORE user_library SET folderId = ? WHERE folderId = ?",
                         arguments: [fallbackFolderID, oldFolderId]
+                    )
+                    try db.execute(
+                        sql: "DELETE FROM user_library WHERE folderId = ?",
+                        arguments: [oldFolderId]
                     )
                 }
             }
@@ -1239,6 +1305,52 @@ actor DatabaseManager {
         }
     }
 
+    /// Atomically accumulate the three AI-usage counters in a single write transaction.
+    ///
+    /// Reads the current values and writes `current + delta` for all three keys inside
+    /// one `dbPool.write` closure so concurrent callers cannot interleave a read of one
+    /// call between the read and write of another (the lost-update race). The string
+    /// format written here matches what `SettingsManager.getAIUsageTotal*` parses back.
+    /// Returns the resulting totals.
+    func incrementAIUsage(
+        inputKey: String,
+        outputKey: String,
+        costKey: String,
+        inputDelta: Int,
+        outputDelta: Int,
+        costDelta: Double
+    ) async throws -> (input: Int, output: Int, cost: Double) {
+        try await dbPool.write { db in
+            func currentInt(_ key: String) throws -> Int {
+                let raw = try String.fetchOne(db, sql: "SELECT value FROM app_settings WHERE key = ?", arguments: [key])
+                return Int(raw ?? "") ?? 0
+            }
+            func currentDouble(_ key: String) throws -> Double {
+                let raw = try String.fetchOne(db, sql: "SELECT value FROM app_settings WHERE key = ?", arguments: [key])
+                return Double(raw ?? "") ?? 0
+            }
+
+            let nextInput = try currentInt(inputKey) + max(0, inputDelta)
+            let nextOutput = try currentInt(outputKey) + max(0, outputDelta)
+            let nextCost = try currentDouble(costKey) + max(0, costDelta)
+
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+                arguments: [inputKey, String(nextInput)]
+            )
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+                arguments: [outputKey, String(nextOutput)]
+            )
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+                arguments: [costKey, String(nextCost)]
+            )
+
+            return (nextInput, nextOutput, nextCost)
+        }
+    }
+
     func tableColumnNames(_ table: String) async throws -> [String] {
         try await dbPool.read { db in
             try db.columns(in: table).map(\.name)
@@ -1396,12 +1508,13 @@ actor DatabaseManager {
 
     private static func fetchDescendantIDs(db: Database, rootFolderId: String) throws -> [String] {
         let sql = """
-            WITH RECURSIVE folder_tree(id) AS (
-                SELECT id FROM library_folders WHERE id = ?
+            WITH RECURSIVE folder_tree(id, path) AS (
+                SELECT id, '/' || id || '/' FROM library_folders WHERE id = ?
                 UNION ALL
-                SELECT f.id
+                SELECT f.id, ft.path || f.id || '/'
                 FROM library_folders f
                 JOIN folder_tree ft ON f.parentId = ft.id
+                WHERE instr(ft.path, '/' || f.id || '/') = 0
             )
             SELECT id FROM folder_tree
             """

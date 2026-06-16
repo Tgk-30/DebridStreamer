@@ -37,7 +37,7 @@ struct HistoryView: View {
                         selectedPreview = item.media.toPreview()
                     } label: {
                         HStack {
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                                 Text(item.media.title)
                                     .fontWeight(.semibold)
                                 Text(item.history.progressString)
@@ -45,7 +45,7 @@ struct HistoryView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            VStack(alignment: .trailing, spacing: 2) {
+                            VStack(alignment: .trailing, spacing: AppTheme.Spacing.xxs) {
                                 Text(item.history.lastWatched.formatted(date: .abbreviated, time: .shortened))
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
@@ -58,6 +58,7 @@ struct HistoryView: View {
                     .buttonStyle(.plain)
                 }
                 .listStyle(.inset)
+                .scrollContentBackground(.hidden)
             }
         }
         .navigationTitle("History")
@@ -71,10 +72,10 @@ struct HistoryView: View {
             if let statusMessage {
                 Text(statusMessage)
                     .font(.caption)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.thinMaterial, in: Capsule())
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, AppTheme.Spacing.md)
+                    .padding(.vertical, AppTheme.Spacing.xs)
+                    .glassChip()
+                    .padding(.bottom, AppTheme.Spacing.sm)
             }
         }
     }
@@ -200,16 +201,16 @@ private struct LibraryCollectionView: View {
             if let status = viewModel.statusMessage {
                 Text(status)
                     .font(.caption)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.thinMaterial, in: Capsule())
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, AppTheme.Spacing.md)
+                    .padding(.vertical, AppTheme.Spacing.xs)
+                    .glassChip()
+                    .padding(.bottom, AppTheme.Spacing.sm)
             }
         }
     }
 
     private var folderSidebar: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             HStack {
                 Text("Folders")
                     .font(.headline)
@@ -258,9 +259,9 @@ private struct LibraryCollectionView: View {
             }
             .buttonStyle(.glass)
         }
-        .padding(12)
+        .padding(AppTheme.Spacing.md)
         .frame(width: 280)
-        .background(.ultraThinMaterial.opacity(0.45))
+        .glassPanel(level: .regular)
     }
 
     private var libraryHomeRow: some View {
@@ -271,17 +272,16 @@ private struct LibraryCollectionView: View {
                 appState.selectedLibraryFolderId = root.id
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 Image(systemName: "house")
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppTheme.accent)
                 Text("Library Home")
                     .lineLimit(1)
                 Spacer()
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(viewModel.isLibraryRootSelected() ? Color.accentColor.opacity(0.20) : .clear)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, AppTheme.Spacing.sm)
+            .padding(.vertical, AppTheme.Spacing.xs)
+            .background(AppTheme.accent.opacity(viewModel.isLibraryRootSelected() ? 0.20 : 0), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -295,9 +295,9 @@ private struct LibraryCollectionView: View {
                 appState.selectedLibraryFolderId = folder.id
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 Image(systemName: folderIcon(for: folder))
-                    .foregroundStyle(folder.isSystem ? .secondary : Color.accentColor)
+                    .foregroundStyle(folder.isSystem ? AnyShapeStyle(.secondary) : AnyShapeStyle(AppTheme.accent))
                 Text(folder.name)
                     .lineLimit(1)
                 Spacer()
@@ -305,15 +305,14 @@ private struct LibraryCollectionView: View {
                 if badgeCount > 0 {
                     Text("\(badgeCount)")
                         .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.16), in: Capsule())
+                        .padding(.horizontal, AppTheme.Spacing.sm)
+                        .padding(.vertical, AppTheme.Spacing.xxs)
+                        .glassChip()
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(isSelected ? Color.accentColor.opacity(0.20) : .clear)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, AppTheme.Spacing.sm)
+            .padding(.vertical, AppTheme.Spacing.xs)
+            .background(AppTheme.accent.opacity(isSelected ? 0.20 : 0), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -349,7 +348,7 @@ private struct LibraryCollectionView: View {
     }
 
     private var contentPane: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             header
 
             if viewModel.isLoading {
@@ -365,7 +364,7 @@ private struct LibraryCollectionView: View {
                 )
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 16)], spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: AppTheme.Spacing.lg)], spacing: AppTheme.Spacing.lg) {
                         ForEach(viewModel.items) { item in
                             LibraryMediaCard(
                                 item: item,
@@ -379,17 +378,17 @@ private struct LibraryCollectionView: View {
                             )
                         }
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, AppTheme.Spacing.sm)
                 }
             }
         }
-        .padding(16)
+        .padding(AppTheme.Spacing.lg)
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                     Text(breadcrumbTitle)
                         .font(.headline)
                     Text("\(viewModel.items.count) titles")
@@ -406,21 +405,18 @@ private struct LibraryCollectionView: View {
                 .frame(width: 190)
             }
 
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    HStack {
-                        Text(viewModel.supportsFolders
-                             ? "Folder-first library: import CSVs into dedicated folders from Settings."
-                             : "Watchlist is a single flat list for quick triage.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                )
-                .frame(height: 44)
+            HStack {
+                Text(viewModel.supportsFolders
+                     ? "Folder-first library: import CSVs into dedicated folders from Settings."
+                     : "Watchlist is a single flat list for quick triage.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.md)
+            .frame(maxWidth: .infinity)
+            .glassPanel(radius: AppTheme.Radius.md, level: .thin)
         }
     }
 
@@ -461,7 +457,7 @@ private struct LibraryMediaCard: View {
     let onRemove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             Button(action: onOpen) {
                 AsyncImage(url: item.media.posterURL) { phase in
                     switch phase {
@@ -475,32 +471,37 @@ private struct LibraryMediaCard: View {
                 }
                 .frame(height: 260)
                 .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
                 .overlay(alignment: .topTrailing) {
                     Button(action: onRemove) {
                         Image(systemName: "trash")
                             .font(.caption.bold())
                             .foregroundStyle(.white)
-                            .padding(8)
+                            .padding(AppTheme.Spacing.sm)
                             .background(.black.opacity(0.55), in: Circle())
                     }
                     .buttonStyle(.plain)
-                    .padding(8)
+                    .padding(AppTheme.Spacing.sm)
                 }
             }
             .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 Text(item.media.title)
                     .font(.headline)
                     .lineLimit(2)
-                HStack(spacing: 8) {
+                HStack(spacing: AppTheme.Spacing.sm) {
                     if let year = item.media.year {
                         Text(String(year))
                     }
                     if let rating = item.media.imdbRating {
-                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                            .labelStyle(.titleAndIcon)
+                        Label {
+                            Text(String(format: "%.1f", rating))
+                        } icon: {
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(AppTheme.warning)
+                        }
+                        .labelStyle(.titleAndIcon)
                     }
                 }
                 .font(.caption)
@@ -523,21 +524,15 @@ private struct LibraryMediaCard: View {
                 }
             }
         }
-        .padding(10)
+        .padding(AppTheme.Spacing.md)
         .glassSurface()
     }
 
     private var posterPlaceholder: some View {
         ZStack {
             Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [Color.accentColor.opacity(0.24), Color.blue.opacity(0.16), Color.black.opacity(0.45)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            VStack(spacing: 6) {
+                .fill(AppTheme.heroGradient)
+            VStack(spacing: AppTheme.Spacing.sm) {
                 Image(systemName: "film")
                     .font(.title2)
                     .foregroundStyle(.white.opacity(0.78))
@@ -550,7 +545,7 @@ private struct LibraryMediaCard: View {
 }
 
 private func emptyState(icon: String, title: String, subtitle: String) -> some View {
-    VStack(spacing: 12) {
+    VStack(spacing: AppTheme.Spacing.md) {
         Image(systemName: icon)
             .font(.system(size: 42))
             .foregroundStyle(.secondary)

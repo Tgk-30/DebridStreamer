@@ -74,6 +74,122 @@ struct TorznabIndexerTests {
         #expect(seenHeader == "header-token")
     }
 
+    @Test("searchByQuery throws on non-2xx HTTP status")
+    func searchByQueryThrowsOnHTTPError() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            try makeResponse(for: request, statusCode: 500, body: "server error")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = TorznabIndexer(
+            name: "Jackett",
+            baseURL: "http://localhost:9117",
+            endpointPath: "/api/v2.0/indexers/all/results/torznab/api",
+            apiKey: "abc123",
+            categoryFilter: nil,
+            sendAPIKeyAsHeader: false,
+            session: session
+        )
+
+        await #expect(throws: (any Error).self) {
+            _ = try await indexer.searchByQuery(query: "test", type: .movie)
+        }
+    }
+
+    @Test("testConnection returns false on non-2xx HTTP status")
+    func testConnectionFalseOnHTTPError() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            try TorznabIndexerTests.makeResponseStatic(for: request, statusCode: 401, body: "unauthorized")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let config = IndexerConfig(
+            id: "t1",
+            type: .jackett,
+            baseURL: "http://localhost:9117",
+            apiKey: "badkey"
+        )
+
+        let ok = await IndexerFactory.testConnection(config: config, session: session)
+        #expect(ok == false)
+    }
+
+    @Test("testConnection returns false on a Torznab error envelope with HTTP 200")
+    func testConnectionFalseOnErrorEnvelope() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            let xml = "<?xml version=\"1.0\"?><error code=\"100\" description=\"Incorrect user credentials\"/>"
+            return try TorznabIndexerTests.makeResponseStatic(for: request, statusCode: 200, body: xml)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let config = IndexerConfig(
+            id: "t2",
+            type: .jackett,
+            baseURL: "http://localhost:9117",
+            apiKey: "abc123"
+        )
+
+        let ok = await IndexerFactory.testConnection(config: config, session: session)
+        #expect(ok == false)
+    }
+
+    @Test("testConnection returns true on a valid empty Torznab feed")
+    func testConnectionTrueOnEmptyFeed() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            let xml = "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel></channel></rss>"
+            return try TorznabIndexerTests.makeResponseStatic(for: request, statusCode: 200, body: xml)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let config = IndexerConfig(
+            id: "t3",
+            type: .jackett,
+            baseURL: "http://localhost:9117",
+            apiKey: "abc123"
+        )
+
+        let ok = await IndexerFactory.testConnection(config: config, session: session)
+        #expect(ok == true)
+    }
+
+    @Test("testConnection returns true for built-in indexers without probing")
+    func testConnectionTrueForBuiltIn() async {
+        let config = IndexerConfig(
+            id: "builtin",
+            type: .builtIn,
+            baseURL: ""
+        )
+        let ok = await IndexerFactory.testConnection(config: config)
+        #expect(ok == true)
+    }
+
+    static func makeResponseStatic(for request: URLRequest, statusCode: Int, body: String) throws -> (HTTPURLResponse, Data) {
+        guard let url = request.url else {
+            throw NSError(domain: "TorznabIndexerTests", code: 1)
+        }
+        guard let response = HTTPURLResponse(
+            url: url,
+            statusCode: statusCode,
+            httpVersion: nil,
+            headerFields: nil
+        ) else {
+            throw NSError(domain: "TorznabIndexerTests", code: 2)
+        }
+        return (response, Data(body.utf8))
+    }
+
     private func makeResponse(for request: URLRequest, statusCode: Int, body: String) throws -> (HTTPURLResponse, Data) {
         guard let url = request.url else {
             throw NSError(domain: "TorznabIndexerTests", code: 1)

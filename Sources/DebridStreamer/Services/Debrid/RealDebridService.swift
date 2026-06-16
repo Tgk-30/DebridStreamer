@@ -71,16 +71,10 @@ actor RealDebridService: DebridServiceProtocol {
         let files = fileIds.isEmpty ? "all" : fileIds.map(String.init).joined(separator: ",")
         let body = "files=\(files)"
 
-        // selectFiles returns 204 No Content on success — ignore empty response
-        do {
-            _ = try await requestRaw(path: "/torrents/selectFiles/\(torrentId)", method: "POST", body: body)
-        } catch let error as DebridError {
-            // 202 or empty response is fine for selectFiles
-            if case .httpError(let code, _) = error, code == 204 || code == 202 {
-                return
-            }
-            throw error
-        }
+        // selectFiles returns 204 No Content on success; requestRaw already maps 204
+        // to empty Data and returns it, so a successful call never throws. Any non-2xx
+        // status is a real failure and must surface — don't swallow it.
+        _ = try await requestRaw(path: "/torrents/selectFiles/\(torrentId)", method: "POST", body: body)
     }
 
     func getStreamURL(torrentId: String) async throws -> StreamInfo {

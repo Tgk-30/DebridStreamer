@@ -73,29 +73,39 @@ actor TorBoxService: DebridServiceProtocol {
 
     func getStreamURL(torrentId: String) async throws -> StreamInfo {
         let maxAttempts = 20
+        let terminalReadyStates: Set<String> = ["cached", "completed", "uploading"]
         var selectedFile: TorrentFileEntry?
+        var lastState = ""
 
         for attempt in 0..<maxAttempts {
             let snapshot = try await getTorrentSnapshot(torrentId: torrentId)
+            lastState = snapshot.state.lowercased()
             if let best = bestFile(from: snapshot.files) {
                 selectedFile = best
                 break
             }
 
-            let normalizedState = snapshot.state.lowercased()
-            if normalizedState.contains("stalled") {
+            if lastState.contains("stalled") {
                 throw DebridError.downloadFailed("Torrent stalled: \(snapshot.state)")
             }
 
             // If the torrent is already complete/cached but file metadata is missing,
             // skip waiting and fall back to TorBox default file selection.
-            if normalizedState == "cached" || normalizedState == "completed" || normalizedState == "uploading" {
+            if terminalReadyStates.contains(lastState) {
                 break
             }
 
             if attempt < maxAttempts - 1 {
                 try await Task.sleep(nanoseconds: 1_000_000_000)
             }
+        }
+
+        // Only fall back to file_id=0 when we have no concrete file AND the torrent
+        // reached a terminal/ready state. If it's still processing (or in an unknown
+        // non-terminal state) after exhausting attempts, surface a failure instead of
+        // blindly streaming file 0.
+        if selectedFile == nil && !terminalReadyStates.contains(lastState) {
+            throw DebridError.downloadFailed("Torrent not ready: \(lastState.isEmpty ? "unknown" : lastState)")
         }
 
         let fallbackId = 0

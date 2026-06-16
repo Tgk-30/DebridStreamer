@@ -17,11 +17,13 @@ actor YTSIndexer: TorrentIndexer {
         guard type == .movie else { return [] }
 
         let url = URL(string: "\(baseURL)/list_movies.json?query_term=\(imdbId)")!
-        let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            return []
+            throw URLError(.badServerResponse)
         }
 
         let decoder = JSONDecoder()
@@ -61,11 +63,13 @@ actor YTSIndexer: TorrentIndexer {
 
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         let url = URL(string: "\(baseURL)/list_movies.json?query_term=\(encodedQuery)&limit=20")!
-        let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            return []
+            throw URLError(.badServerResponse)
         }
 
         let decoder = JSONDecoder()

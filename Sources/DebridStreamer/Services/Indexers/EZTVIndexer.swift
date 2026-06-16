@@ -26,11 +26,13 @@ actor EZTVIndexer: TorrentIndexer {
 
         while page <= maxPages {
             let url = URL(string: "\(baseURL)/get-torrents?imdb_id=\(numericId)&page=\(page)&limit=100")!
-            let (data, response) = try await session.data(from: url)
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 20
+            let (data, response) = try await session.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse,
                   (200...299).contains(httpResponse.statusCode) else {
-                break
+                throw URLError(.badServerResponse)
             }
 
             let decoder = JSONDecoder()
@@ -81,11 +83,13 @@ actor EZTVIndexer: TorrentIndexer {
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         let url = URL(string: "\(baseURL)/get-torrents?search=\(encodedQuery)&limit=100")!
 
-        let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            return []
+            throw URLError(.badServerResponse)
         }
 
         let decoder = JSONDecoder()

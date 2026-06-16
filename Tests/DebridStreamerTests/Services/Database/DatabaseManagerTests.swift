@@ -166,6 +166,58 @@ struct DatabaseMediaCacheTests {
         #expect(shows.count == 1)
     }
 
+    @Test("deleteMedia removes dependent rows in watch history, library, torrents and taste events")
+    func deleteMediaCleansUpDependents() async throws {
+        let db = try makeTestDatabase()
+
+        try await db.saveMedia(MediaItem(id: "tt-del", type: .movie, title: "Doomed"))
+        try await db.saveMedia(MediaItem(id: "tt-keep", type: .movie, title: "Survivor"))
+
+        try await db.saveEpisodes([
+            Episode(id: "ep-del", mediaId: "tt-del", seasonNumber: 1, episodeNumber: 1, title: "Ep")
+        ])
+        try await db.saveWatchHistory(WatchHistory(
+            id: "wh-del", mediaId: "tt-del", progressSeconds: 10, completed: false, lastWatched: Date()
+        ))
+        try await db.addToLibrary(UserLibraryEntry(
+            id: "lib-del", mediaId: "tt-del", listType: .watchlist, addedAt: Date()
+        ))
+        try await db.saveTorrentCache(CachedTorrent(
+            infoHash: "hash-del",
+            mediaId: "tt-del",
+            title: "Torrent",
+            sizeBytes: nil,
+            quality: nil,
+            source: nil,
+            seeders: nil,
+            codec: nil,
+            audio: nil,
+            cachedOnDebrid: false,
+            lastChecked: Date()
+        ))
+        try await db.saveTasteEvent(TasteEvent(
+            id: "te-del", mediaId: "tt-del", eventType: .liked, createdAt: Date()
+        ))
+
+        // A keep-side library row should be untouched.
+        try await db.addToLibrary(UserLibraryEntry(
+            id: "lib-keep", mediaId: "tt-keep", listType: .watchlist, addedAt: Date()
+        ))
+
+        try await db.deleteMedia(id: "tt-del")
+
+        #expect(try await db.fetchMedia(id: "tt-del") == nil)
+        #expect(try await db.fetchEpisodes(mediaId: "tt-del").isEmpty)
+        #expect(try await db.fetchWatchHistory(mediaId: "tt-del") == nil)
+        #expect(try await db.fetchCachedTorrents(mediaId: "tt-del").isEmpty)
+        #expect(try await db.fetchLibraryEntries(mediaId: "tt-del", listType: .watchlist).isEmpty)
+        #expect(try await db.fetchTasteEvents(userId: "default", limit: 50).allSatisfy { $0.mediaId != "tt-del" })
+
+        // The unrelated media and its library row survive.
+        #expect(try await db.fetchMedia(id: "tt-keep") != nil)
+        #expect(try await db.isInLibrary(mediaId: "tt-keep", listType: .watchlist))
+    }
+
     @Test("Update existing media item")
     func updateMedia() async throws {
         let db = try makeTestDatabase()
@@ -359,6 +411,36 @@ struct DatabaseLibraryTests {
 
         let isNotIn = try await db.isInLibrary(mediaId: "tt1234567", listType: .favorites)
         #expect(isNotIn == false)
+    }
+
+    @Test("addToLibrary reconciles divergent id on same media and folder without throwing")
+    func addToLibraryReconcilesDivergentId() async throws {
+        let db = try makeTestDatabase()
+
+        let folderID = LibraryFolder.systemFolderID(for: .watchlist)
+
+        try await db.addToLibrary(UserLibraryEntry(
+            id: "lib-first",
+            mediaId: "tt-dup",
+            folderId: folderID,
+            listType: .watchlist,
+            addedAt: Date()
+        ))
+
+        // Same (mediaId, folderId) but a DIFFERENT primary key id. Without the
+        // reconciliation this would hit the UNIQUE(mediaId, folderId) index and throw.
+        try await db.addToLibrary(UserLibraryEntry(
+            id: "lib-second",
+            mediaId: "tt-dup",
+            folderId: folderID,
+            listType: .watchlist,
+            addedAt: Date().addingTimeInterval(60)
+        ))
+
+        let entries = try await db.fetchLibraryEntries(mediaId: "tt-dup", listType: .watchlist)
+        #expect(entries.count == 1)
+        // The existing row's id is preserved (update by primary key, not a new insert).
+        #expect(entries[0].id == "lib-first")
     }
 
     @Test("Library entries sorted by date descending")
@@ -703,6 +785,54 @@ struct DatabaseMigrationV5ToV9Tests {
         #expect(watchlistFolders.count == 1)
         #expect(watchlistFolders[0].id == watchlistRoot)
     }
+
+    @Test("v9 flatten is collision-safe against the v5 UNIQUE(mediaId, folderId) index")
+    func v9FlattenCollisionSafe() async throws {
+        let dbPool = try makeLegacyV8DatabasePool()
+        let now = Date()
+        let watchlistRoot = LibraryFolder.systemFolderID(for: .watchlist)
+
+        try await dbPool.write { db in
+            // Reproduce the v5 unique index that the legacy-v8 fixture omits.
+            try db.execute(
+                sql: "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_library_media_folder ON user_library(mediaId, folderId)"
+            )
+
+            try db.execute(
+                sql: """
+                INSERT INTO library_folders (id, name, parentId, listType, isSystem, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [watchlistRoot, "Watchlist", nil as String?, "watchlist", true, now, now]
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO library_folders (id, name, parentId, listType, isSystem, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: ["watchlist-custom", "Sci-Fi", watchlistRoot, "watchlist", false, now, now]
+            )
+
+            // Same media in two different watchlist folders. Collapsing both onto the
+            // root would collide on (mediaId, folderId) mid-UPDATE without the fix.
+            try db.execute(
+                sql: "INSERT INTO user_library (id, mediaId, listType, addedAt, folderId) VALUES (?, ?, ?, ?, ?)",
+                arguments: ["w-root", "tt-collide", "watchlist", now, watchlistRoot]
+            )
+            try db.execute(
+                sql: "INSERT INTO user_library (id, mediaId, listType, addedAt, folderId) VALUES (?, ?, ?, ?, ?)",
+                arguments: ["w-sub", "tt-collide", "watchlist", now, "watchlist-custom"]
+            )
+        }
+
+        // Migration must complete (no SQLITE_CONSTRAINT abort blocking DB open).
+        let db = try DatabaseManager(dbPool: dbPool)
+
+        let entries = try await db.fetchLibrary(listType: .watchlist)
+        #expect(entries.count == 1)
+        #expect(entries[0].mediaId == "tt-collide")
+        #expect(entries[0].folderId == watchlistRoot)
+    }
 }
 
 @Suite("DatabaseManager - Folder Tree Operations")
@@ -747,6 +877,54 @@ struct DatabaseFolderTreeTests {
         let treeMedia = try await db.fetchLibraryMedia(folderId: rootID, includeDescendants: true)
         #expect(treeMedia.map(\.id).contains("tt1001"))
         #expect(treeMedia.map(\.id).contains("tt1002"))
+    }
+
+    @Test("deleteLibraryFolder merges duplicate media into root without aborting on the unique index")
+    func deleteFolderMergesDuplicatesSafely() async throws {
+        let db = try makeTestDatabase()
+        let rootID = try await db.fetchSystemLibraryFolderID(listType: .favorites)
+        let sub = try await db.createLibraryFolder(name: "Sci-Fi", listType: .favorites, parentId: rootID)
+
+        try await db.saveMedia(MediaItem(id: "tt-shared", type: .movie, title: "Shared"))
+
+        // Same media lives in BOTH the root and the sub-folder. Reassigning the
+        // sub-folder row onto the root would collide with UNIQUE(mediaId, folderId).
+        try await db.addToLibrary(UserLibraryEntry(
+            id: "lib-root", mediaId: "tt-shared", folderId: rootID, listType: .favorites, addedAt: Date()
+        ))
+        try await db.addToLibrary(UserLibraryEntry(
+            id: "lib-sub", mediaId: "tt-shared", folderId: sub.id, listType: .favorites, addedAt: Date()
+        ))
+
+        // Must not throw, and the folder must actually be deleted.
+        try await db.deleteLibraryFolder(id: sub.id)
+
+        #expect(try await db.fetchLibraryFolder(id: sub.id) == nil)
+        // Exactly one surviving row for the shared media, now in the root folder.
+        let entries = try await db.fetchLibraryEntries(mediaId: "tt-shared", listType: .favorites)
+        #expect(entries.count == 1)
+        #expect(entries[0].folderId == rootID)
+    }
+
+    @Test("Recursive folder queries terminate even when a parentId cycle exists")
+    func recursiveCTEHandlesCycle() async throws {
+        let db = try makeTestDatabase()
+        let rootID = try await db.fetchSystemLibraryFolderID(listType: .favorites)
+        let folderA = try await db.createLibraryFolder(name: "A", listType: .favorites, parentId: rootID)
+        let folderB = try await db.createLibraryFolder(name: "B", listType: .favorites, parentId: folderA.id)
+
+        // Force a cycle A -> B -> A via saveLibraryFolder, which persists parentId
+        // verbatim without a cycle check, so the recursive CTE has to defend itself.
+        var cyclic = folderA
+        cyclic.parentId = folderB.id
+        try await db.saveLibraryFolder(cyclic)
+
+        // Without the path-based cycle guard these would recurse until SQLite aborts.
+        let descendants = try await db.fetchLibraryFolderDescendantIDs(rootFolderId: folderA.id)
+        #expect(descendants.contains(folderA.id))
+        #expect(descendants.contains(folderB.id))
+        // Each id appears once; the guard stops re-visiting.
+        #expect(Set(descendants).count == descendants.count)
     }
 }
 

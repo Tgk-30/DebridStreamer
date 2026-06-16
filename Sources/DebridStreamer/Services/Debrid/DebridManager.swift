@@ -66,32 +66,51 @@ actor DebridManager {
     }
 
     /// Check cache across all active debrid services.
-    /// Returns hash -> (service, status) for the first service that has it cached.
+    ///
+    /// For each hash the result binds the highest-priority service that actually
+    /// reports the hash as CACHED (so `resolveStream` is never routed to a service
+    /// that does not have it cached). Hashes that no service has cached still get a
+    /// reported status (so callers can sort/display them), bound to the
+    /// highest-priority service that returned a status for them. The merge is fully
+    /// deterministic regardless of task completion order, driven by each service's
+    /// configured priority index.
     func checkCacheAll(hashes: [String]) async throws -> [String: (service: DebridServiceType, status: CacheStatus)] {
         guard !hashes.isEmpty else { return [:] }
 
-        var results: [String: (service: DebridServiceType, status: CacheStatus)] = [:]
-
-        // Query all services concurrently
-        await withTaskGroup(of: (DebridServiceType, [String: CacheStatus]).self) { group in
-            for service in services {
+        // Query all services concurrently, carrying each service's priority index so
+        // the merge can be made order-independent (services is sorted by priority).
+        var collected: [(index: Int, serviceType: DebridServiceType, cache: [String: CacheStatus])] = []
+        await withTaskGroup(of: (Int, DebridServiceType, [String: CacheStatus]).self) { group in
+            for (index, service) in services.enumerated() {
                 group.addTask {
                     let cache = (try? await service.checkCache(hashes: hashes)) ?? [:]
-                    return (service.serviceType, cache)
+                    return (index, service.serviceType, cache)
                 }
             }
 
-            for await (serviceType, cache) in group {
-                for (hash, status) in cache {
-                    // Prefer first service that has it cached (respects priority order)
-                    if results[hash] == nil || (!results[hash]!.status.isCached && status.isCached) {
-                        results[hash] = (serviceType, status)
+            for await result in group {
+                collected.append((result.0, result.1, result.2))
+            }
+        }
+
+        // Deterministic merge by priority index. A cached entry always beats a
+        // non-cached one; among entries of equal cached-ness the lower index wins.
+        var results: [String: (index: Int, service: DebridServiceType, status: CacheStatus)] = [:]
+        for entry in collected.sorted(by: { $0.index < $1.index }) {
+            for (hash, status) in entry.cache {
+                if let existing = results[hash] {
+                    let beatsCacheState = status.isCached && !existing.status.isCached
+                    let sameCacheStateLowerIndex = status.isCached == existing.status.isCached && entry.index < existing.index
+                    if beatsCacheState || sameCacheStateLowerIndex {
+                        results[hash] = (entry.index, entry.serviceType, status)
                     }
+                } else {
+                    results[hash] = (entry.index, entry.serviceType, status)
                 }
             }
         }
 
-        return results
+        return results.mapValues { (service: $0.service, status: $0.status) }
     }
 
     /// Resolve a torrent hash to a stream URL using the specified (or first available) service.

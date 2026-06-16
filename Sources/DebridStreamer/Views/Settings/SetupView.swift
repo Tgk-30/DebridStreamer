@@ -23,46 +23,51 @@ struct SetupView: View {
     @State private var feedbackScaleMode: FeedbackScaleMode = .likeDislike
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            VStack(spacing: 12) {
-                Image(systemName: "play.tv.fill")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.tint)
-                Text("Welcome to DebridStreamer")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                Text("Set up your API keys to get started")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.top, 40)
-            .padding(.bottom, 32)
+        ZStack {
+            AppTheme.background.ignoresSafeArea()
+            AppTheme.auroraGlow
 
-            // Steps — using Group+switch instead of TabView to avoid focus issues
-            Group {
-                switch step {
-                case 1: tmdbStep
-                case 2: debridStep
-                case 3: tasteStep
-                case 4: completeStep
-                default: tmdbStep
+            VStack(spacing: 0) {
+                // Header
+                VStack(spacing: AppTheme.Spacing.md) {
+                    Image(systemName: "play.tv.fill")
+                        .font(.system(size: 56))
+                        .foregroundStyle(AppTheme.heroGradient)
+                    Text("Welcome to DebridStreamer")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    Text("Set up your API keys to get started")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
                 }
-            }
-            .frame(maxWidth: 500)
-            .animation(.easeInOut(duration: 0.2), value: step)
+                .padding(.top, AppTheme.Spacing.xxxl)
+                .padding(.bottom, AppTheme.Spacing.xxl)
 
-            Spacer()
+                // Steps — using Group+switch instead of TabView to avoid focus issues
+                Group {
+                    switch step {
+                    case 1: tmdbStep
+                    case 2: debridStep
+                    case 3: tasteStep
+                    case 4: completeStep
+                    default: tmdbStep
+                    }
+                }
+                .frame(maxWidth: 500)
+                .animation(.easeInOut(duration: 0.2), value: step)
+
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
 
     // MARK: - Step 1: TMDB Key
 
     private var tmdbStep: some View {
-        VStack(spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: AppTheme.Spacing.xl) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 Text("Step 1: TMDB API Key")
                     .font(.title2)
                     .fontWeight(.semibold)
@@ -70,7 +75,7 @@ struct SetupView: View {
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 NativeSecureField(
                     placeholder: "Enter your TMDB API key",
                     text: $tmdbKey,
@@ -86,12 +91,12 @@ struct SetupView: View {
                 }
 
                 if let valid = tmdbValid {
-                    HStack(spacing: 4) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
                         Image(systemName: valid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundStyle(valid ? .green : .red)
+                            .foregroundStyle(valid ? AppTheme.success : AppTheme.danger)
                         Text(valid ? "Valid API key!" : (errorMessage ?? "Invalid API key. Please check and try again."))
                             .font(.caption)
-                            .foregroundStyle(valid ? .green : .red)
+                            .foregroundStyle(valid ? AppTheme.success : AppTheme.danger)
                     }
                 }
             }
@@ -101,7 +106,7 @@ struct SetupView: View {
                 Button("Validate & Continue") {
                     Task { await validateTMDB() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(tmdbKey.trimmingCharacters(in: .whitespaces).isEmpty || isValidating)
 
                 if isValidating {
@@ -110,14 +115,15 @@ struct SetupView: View {
                 }
             }
         }
-        .padding()
+        .padding(AppTheme.Spacing.xl)
+        .glassCard(radius: AppTheme.Radius.lg)
     }
 
     // MARK: - Step 2: Debrid Key
 
     private var debridStep: some View {
-        VStack(spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: AppTheme.Spacing.xl) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 Text("Step 2: Real-Debrid Token (Optional)")
                     .font(.title2)
                     .fontWeight(.semibold)
@@ -125,7 +131,7 @@ struct SetupView: View {
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 NativeSecureField(
                     placeholder: "Real-Debrid API token (optional)",
                     text: $rdToken,
@@ -141,36 +147,38 @@ struct SetupView: View {
                 }
 
                 if let status = rdSaveStatus {
-                    HStack(spacing: 4) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
                         Image(systemName: status.contains("Error") ? "xmark.circle.fill" : "checkmark.circle.fill")
-                            .foregroundStyle(status.contains("Error") ? .red : .green)
+                            .foregroundStyle(status.contains("Error") ? AppTheme.danger : AppTheme.success)
                         Text(status)
                             .font(.caption)
-                            .foregroundStyle(status.contains("Error") ? .red : .green)
+                            .foregroundStyle(status.contains("Error") ? AppTheme.danger : AppTheme.success)
                     }
                 }
             }
 
             HStack {
                 Button("Back") { step = 1 }
+                    .buttonStyle(.glass)
                 Spacer()
                 Button("Skip") { step = 3 }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                 Button("Save & Continue") {
                     Task { await saveDebridAndContinue() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(rdToken.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding()
+        .padding(AppTheme.Spacing.xl)
+        .glassCard(radius: AppTheme.Radius.lg)
     }
 
     // MARK: - Step 3: Personalization
 
     private var tasteStep: some View {
-        VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: AppTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 Text("Step 3: Personalize Recommendations")
                     .font(.title2)
                     .fontWeight(.semibold)
@@ -197,7 +205,7 @@ struct SetupView: View {
             .textFieldStyle(.roundedBorder)
             .disabled(!personalizationEnabled)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 HStack {
                     Text("Recency sensitivity")
                     Spacer()
@@ -211,12 +219,13 @@ struct SetupView: View {
             if let tasteSaveStatus {
                 Text(tasteSaveStatus)
                     .font(.caption)
-                    .foregroundStyle(tasteSaveStatus.contains("Error") ? .red : .green)
+                    .foregroundStyle(tasteSaveStatus.contains("Error") ? AppTheme.danger : AppTheme.success)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             HStack {
                 Button("Back") { step = 2 }
+                    .buttonStyle(.glass)
                 Spacer()
                 Button("Skip") {
                     Task {
@@ -224,23 +233,24 @@ struct SetupView: View {
                         await saveTasteAndContinue()
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 Button("Save & Continue") {
                     Task { await saveTasteAndContinue() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
             }
         }
-        .padding()
+        .padding(AppTheme.Spacing.xl)
+        .glassCard(radius: AppTheme.Radius.lg)
     }
 
     // MARK: - Step 3: Complete
 
     private var completeStep: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: AppTheme.Spacing.xl) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.green)
+                .foregroundStyle(AppTheme.success)
 
             Text("You're all set!")
                 .font(.title2)
@@ -253,10 +263,11 @@ struct SetupView: View {
             Button("Start Browsing") {
                 appState.selectedSidebarItem = .discover
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .controlSize(.large)
         }
-        .padding()
+        .padding(AppTheme.Spacing.xl)
+        .glassCard(radius: AppTheme.Radius.lg)
     }
 
     // MARK: - Actions

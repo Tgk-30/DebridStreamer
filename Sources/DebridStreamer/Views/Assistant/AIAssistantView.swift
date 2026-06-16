@@ -25,56 +25,45 @@ struct AIAssistantView: View {
 
     private var composePane: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                     Text("Adaptive Movie Assistant")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                     Text("Context-aware recommendations using your library folders, watch recency, and explicit feedback.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary.opacity(0.9))
                 }
-                .padding(14)
+                .padding(AppTheme.Spacing.lg)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    LinearGradient(
-                        colors: [Color.accentColor.opacity(0.22), Color.indigo.opacity(0.10), Color.clear],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: 14)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                )
+                .glassPanel(tint: AppTheme.accent)
 
                 usageSummaryPanel
                 contextSnapshotPanel
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                     Text("Prompt")
                         .font(.headline)
                     ZStack(alignment: .topLeading) {
                         if viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Text("Ask for recommendations, tone matching, mood-based picks, or sequel-ready series.")
                                 .foregroundStyle(.secondary)
-                                .padding(.top, 8)
-                                .padding(.leading, 6)
+                                .padding(.top, AppTheme.Spacing.sm)
+                                .padding(.leading, AppTheme.Spacing.xs + 2)
                         }
                         TextEditor(text: $viewModel.prompt)
                             .font(.body)
                             .frame(minHeight: 130)
                             .scrollContentBackground(.hidden)
-                            .padding(4)
+                            .padding(AppTheme.Spacing.xs)
                     }
-                    .padding(8)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(AppTheme.Spacing.sm)
+                    .glassPanel(radius: AppTheme.Radius.md, level: .thin)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                     Text("Quick Prompts")
                         .font(.headline)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 8)], spacing: 8) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: AppTheme.Spacing.sm)], spacing: AppTheme.Spacing.sm) {
                         ForEach(viewModel.quickPromptChips, id: \.self) { chip in
                             Button(chip) { viewModel.applyQuickPrompt(chip) }
                                 .buttonStyle(.glass)
@@ -83,14 +72,14 @@ struct AIAssistantView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                     Toggle("Compare mode (multi-model + consensus merge)", isOn: $viewModel.compareMode)
 
-                    HStack(alignment: .top, spacing: 8) {
+                    HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
                         Text("Providers")
                             .font(.subheadline.weight(.semibold))
                             .frame(width: 68, alignment: .leading)
-                        HStack(spacing: 6) {
+                        HStack(spacing: AppTheme.Spacing.xs + 2) {
                             ForEach(AIProviderKind.allCases) { provider in
                                 let selected = viewModel.selectedProviders.contains(provider)
                                 Button {
@@ -98,20 +87,21 @@ struct AIAssistantView: View {
                                 } label: {
                                     Text(provider.displayName)
                                         .font(.caption.weight(.semibold))
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(selected ? Color.accentColor.opacity(0.22) : Color.secondary.opacity(0.12))
+                                        .padding(.horizontal, AppTheme.Spacing.sm + 2)
+                                        .padding(.vertical, AppTheme.Spacing.xs + 2)
+                                        .background(selected ? AppTheme.accent.opacity(0.22) : Color.clear)
                                         .clipShape(Capsule())
+                                        .glassChip()
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
                     }
                 }
-                .padding(12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(AppTheme.Spacing.md)
+                .glassPanel(radius: AppTheme.Radius.md, level: .ultraThin)
 
-                HStack(spacing: 10) {
+                HStack(spacing: AppTheme.Spacing.sm) {
                     Button {
                         Task {
                             await viewModel.generateRecommendations(
@@ -145,17 +135,17 @@ struct AIAssistantView: View {
                 if let status = viewModel.statusMessage {
                     Text(status)
                         .font(.caption)
-                        .foregroundStyle(status.contains("disabled") ? .orange : .secondary)
+                        .foregroundStyle(status.contains("disabled") ? AppTheme.warning : Color.secondary)
                 }
             }
-            .padding(14)
+            .padding(AppTheme.Spacing.lg)
         }
         .frame(minWidth: 430, idealWidth: 470)
     }
 
     private var usageSummaryPanel: some View {
         let summary = viewModel.usageSummary
-        return HStack(spacing: 10) {
+        return HStack(spacing: AppTheme.Spacing.sm) {
             usageMetricTile(
                 label: "Session Usage",
                 value: String(format: "$%.4f", summary.sessionEstimatedCostUSD),
@@ -170,36 +160,37 @@ struct AIAssistantView: View {
     }
 
     private var contextSnapshotPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             Text("Context Snapshot")
                 .font(.headline)
-            HStack(spacing: 8) {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 Label(
                     viewModel.contextFolderId == nil ? "All folders" : "Folder scoped",
                     systemImage: "folder"
                 )
                 .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.secondary.opacity(0.12), in: Capsule())
+                .padding(.horizontal, AppTheme.Spacing.sm + 2)
+                .padding(.vertical, AppTheme.Spacing.xs + 2)
+                .glassChip()
 
                 Label(
                     appState.selectedSidebarItem == .assistant ? "Assistant active" : "Background",
                     systemImage: "sparkles"
                 )
                 .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.accentColor.opacity(0.16), in: Capsule())
+                .padding(.horizontal, AppTheme.Spacing.sm + 2)
+                .padding(.vertical, AppTheme.Spacing.xs + 2)
+                .background(AppTheme.accent.opacity(0.16), in: Capsule())
+                .glassChip()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(AppTheme.Spacing.md)
+        .glassPanel(radius: AppTheme.Radius.md, level: .ultraThin)
     }
 
     private func usageMetricTile(label: String, value: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -209,23 +200,23 @@ struct AIAssistantView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
-        .padding(10)
+        .padding(AppTheme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .glassCard(radius: AppTheme.Radius.sm)
     }
 
     @ViewBuilder
     private var resultsPane: some View {
         if let result = viewModel.compareResult {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                     summaryBar(result: result)
 
                     if !result.usedContext.isEmpty {
                         contextPanel(result.usedContext)
                     }
 
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                         Text("Ranked Recommendations")
                             .font(.headline)
                         ForEach(result.mergedRecommendations) { recommendation in
@@ -234,20 +225,20 @@ struct AIAssistantView: View {
                     }
 
                     if viewModel.compareMode {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                             Text("Per-Provider Breakdown")
                                 .font(.headline)
                             ForEach(result.providerResponses, id: \.provider) { response in
-                                VStack(alignment: .leading, spacing: 6) {
+                                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs + 2) {
                                     HStack {
                                         Text(response.provider.displayName)
                                             .fontWeight(.semibold)
                                         if let model = response.model, !model.isEmpty {
                                             Text(model)
                                                 .font(.caption2.monospaced())
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 3)
-                                                .background(Color.secondary.opacity(0.14), in: Capsule())
+                                                .padding(.horizontal, AppTheme.Spacing.sm)
+                                                .padding(.vertical, AppTheme.Spacing.xxs + 1)
+                                                .glassChip()
                                         }
                                         Spacer()
                                         if let usage = response.usage {
@@ -268,17 +259,17 @@ struct AIAssistantView: View {
                                         }
                                     }
                                 }
-                                .padding(10)
+                                .padding(AppTheme.Spacing.sm)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                                .glassCard(radius: AppTheme.Radius.sm)
                             }
                         }
                     }
                 }
-                .padding(14)
+                .padding(AppTheme.Spacing.lg)
             }
         } else {
-            VStack(spacing: 14) {
+            VStack(spacing: AppTheme.Spacing.md) {
                 Image(systemName: "brain.head.profile")
                     .font(.system(size: 38))
                     .foregroundStyle(.secondary)
@@ -287,15 +278,15 @@ struct AIAssistantView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 340)
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: AppTheme.Spacing.sm)], spacing: AppTheme.Spacing.sm) {
                     ForEach(viewModel.quickPromptChips.prefix(4), id: \.self) { chip in
                         Button {
                             viewModel.applyQuickPrompt(chip)
                         } label: {
                             Text(chip)
                                 .font(.caption)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, AppTheme.Spacing.sm + 2)
+                                .padding(.vertical, AppTheme.Spacing.sm)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.glass)
@@ -308,24 +299,25 @@ struct AIAssistantView: View {
     }
 
     private func summaryBar(result: AICompareResult) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: AppTheme.Spacing.sm) {
             Label("\(result.mergedRecommendations.count) picks", systemImage: "list.number")
                 .font(.caption.weight(.semibold))
             Label(result.usedFallback ? "Fallback" : "AI Live", systemImage: result.usedFallback ? "exclamationmark.triangle" : "bolt.fill")
                 .font(.caption.weight(.semibold))
+                .foregroundStyle(result.usedFallback ? AppTheme.warning : AppTheme.success)
             if viewModel.compareMode {
                 Label("\(result.providerResponses.count) providers", systemImage: "square.stack.3d.up")
                     .font(.caption.weight(.semibold))
             }
             Spacer()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, AppTheme.Spacing.sm)
+        .padding(.vertical, AppTheme.Spacing.sm)
+        .glassPanel(radius: AppTheme.Radius.sm, level: .ultraThin)
     }
 
     private func contextPanel(_ items: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs + 2) {
             Text("Used Context")
                 .font(.headline)
             ForEach(items.prefix(12), id: \.self) { value in
@@ -335,13 +327,13 @@ struct AIAssistantView: View {
                     .lineLimit(2)
             }
         }
-        .padding(10)
+        .padding(AppTheme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .glassPanel(radius: AppTheme.Radius.sm, level: .thin)
     }
 
     private func recommendationCard(_ recommendation: AIMovieRecommendation) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
             AsyncImage(url: recommendation.posterURL) { phase in
                 switch phase {
                 case .success(let image):
@@ -357,9 +349,9 @@ struct AIAssistantView: View {
                 }
             }
             .frame(width: 88, height: 124)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 HStack {
                     Text(recommendation.title + (recommendation.year.map { " (\($0))" } ?? ""))
                         .fontWeight(.semibold)
@@ -375,7 +367,7 @@ struct AIAssistantView: View {
                         Capsule()
                             .fill(Color.secondary.opacity(0.16))
                         Capsule()
-                            .fill(Color.accentColor.opacity(0.7))
+                            .fill(AppTheme.accent)
                             .frame(width: width)
                     }
                 }
@@ -387,9 +379,9 @@ struct AIAssistantView: View {
                     .lineLimit(3)
             }
         }
-        .padding(10)
+        .padding(AppTheme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .glassCard(radius: AppTheme.Radius.sm)
     }
 
     private func providerUsageCaption(_ usage: AIUsageMetrics) -> String {

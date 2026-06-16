@@ -46,6 +46,7 @@ final class PlayerViewModel {
     private let controlsAutoHideDelay: TimeInterval
 
     private var controlsAutoHideTask: Task<Void, Never>?
+    private var fullscreenTransitionTask: Task<Void, Never>?
     private var lastStream: StreamInfo?
     private var lastBackendPreference: InternalPlayerBackend = .automatic
     private var lastExternalPreference: PreferredPlayer = .auto
@@ -248,6 +249,10 @@ final class PlayerViewModel {
             return
         }
 
+        // Cancel any in-flight exitFullscreen delayed write so it can't clobber the
+        // transition state this toggle is about to own.
+        cancelFullscreenTransitionTask()
+
         isFullscreenTransitioning = true
         defer { isFullscreenTransitioning = false }
 
@@ -282,12 +287,16 @@ final class PlayerViewModel {
         guard let resolvedWindow = fullscreenWindowResolver(window) else { return }
         guard resolvedWindow.styleMask.contains(.fullScreen) else { return }
 
+        // Supersede any prior in-flight transition write before starting this one.
+        cancelFullscreenTransitionTask()
+
         isFullscreenTransitioning = true
         fullscreenToggler(resolvedWindow)
         diagnostics = "Exiting fullscreen player mode."
 
-        Task { @MainActor [weak self, weak resolvedWindow] in
+        fullscreenTransitionTask = Task { @MainActor [weak self, weak resolvedWindow] in
             try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
             guard let self else { return }
             if let resolvedWindow {
                 self.isFullscreenActive = resolvedWindow.styleMask.contains(.fullScreen)
@@ -295,6 +304,7 @@ final class PlayerViewModel {
                 self.isFullscreenActive = false
             }
             self.isFullscreenTransitioning = false
+            self.fullscreenTransitionTask = nil
             if self.isFullscreenActive {
                 self.diagnostics = "Unable to exit fullscreen on this window."
             } else {
@@ -463,6 +473,7 @@ final class PlayerViewModel {
 
     private func stopInternalPlayback(clearSelection: Bool = true) {
         cancelControlsAutoHide()
+        cancelFullscreenTransitionTask()
         vlcSession?.stop()
         vlcSession = nil
         availableAudioTracks = []
@@ -510,6 +521,11 @@ final class PlayerViewModel {
     private func cancelControlsAutoHide() {
         controlsAutoHideTask?.cancel()
         controlsAutoHideTask = nil
+    }
+
+    private func cancelFullscreenTransitionTask() {
+        fullscreenTransitionTask?.cancel()
+        fullscreenTransitionTask = nil
     }
 
     private func formatTime(_ value: Double) -> String {

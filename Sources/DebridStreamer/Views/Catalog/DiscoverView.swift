@@ -8,7 +8,7 @@ struct DiscoverView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                 if appState.discoverStore.isLoading {
                     ProgressView("Loading...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -84,10 +84,10 @@ struct DiscoverView: View {
             if let message = feedbackViewModel.statusMessage {
                 Text(message)
                     .font(.caption)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.thinMaterial, in: Capsule())
-                    .padding(.bottom, 10)
+                    .padding(.horizontal, AppTheme.Spacing.md)
+                    .padding(.vertical, AppTheme.Spacing.sm)
+                    .glassChip()
+                    .padding(.bottom, AppTheme.Spacing.sm)
             }
         }
         .onChange(of: appState.discoverAICurationStore.recommendations) { _, recommendations in
@@ -105,7 +105,7 @@ struct DiscoverView: View {
         let store = appState.discoverAICurationStore
         let visibleRecommendations = feedbackViewModel.visibleRecommendations(from: store.recommendations)
         if store.isLoading || !store.recommendations.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                 HStack {
                     Text("AI Curated For You")
                         .font(.title2)
@@ -122,37 +122,39 @@ struct DiscoverView: View {
                 }
 
                 if visibleRecommendations.isEmpty && store.isLoading {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.ultraThinMaterial)
+                    Color.clear
                         .frame(height: 120)
+                        .frame(maxWidth: .infinity)
                         .overlay {
                             Text("Generating personalized recommendations...")
                                 .foregroundStyle(.secondary)
                         }
+                        .glassPanel(radius: AppTheme.Radius.md, level: .ultraThin)
                 } else if !visibleRecommendations.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
+                        HStack(spacing: AppTheme.Spacing.md) {
                             ForEach(visibleRecommendations) { rec in
                                 curatedRecommendationCard(rec)
                             }
                         }
                     }
                 } else {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.ultraThinMaterial)
+                    Color.clear
                         .frame(height: 104)
+                        .frame(maxWidth: .infinity)
                         .overlay {
                             Text("You reviewed all curated picks. Refresh for a new set.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        .glassPanel(radius: AppTheme.Radius.md, level: .ultraThin)
                 }
             }
         }
     }
 
     private func curatedRecommendationCard(_ recommendation: AIMovieRecommendation) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             AsyncImage(url: recommendation.posterURL) { phase in
                 switch phase {
                 case .success(let image):
@@ -167,7 +169,7 @@ struct DiscoverView: View {
                 default:
                     ZStack {
                         LinearGradient(
-                            colors: [Color.accentColor.opacity(0.35), Color.blue.opacity(0.25), Color.indigo.opacity(0.25)],
+                            colors: [AppTheme.accent.opacity(0.35), AppTheme.accentSecondary.opacity(0.25), AppTheme.accentTertiary.opacity(0.25)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -179,9 +181,9 @@ struct DiscoverView: View {
             }
             .frame(height: 210)
             .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 Text(recommendation.title + (recommendation.year.map { " (\($0))" } ?? ""))
                     .font(.headline)
                     .lineLimit(2)
@@ -194,14 +196,14 @@ struct DiscoverView: View {
             actionRow(for: recommendation)
         }
         .frame(width: 250, alignment: .topLeading)
-        .padding(12)
-        .glassSurface()
+        .padding(AppTheme.Spacing.md)
+        .glassCard()
     }
 
     @ViewBuilder
     private func actionRow(for recommendation: AIMovieRecommendation) -> some View {
         let state = feedbackViewModel.cardState(for: recommendation)
-        HStack(spacing: 6) {
+        HStack(spacing: AppTheme.Spacing.xs) {
             Button {
                 Task {
                     let mode = await feedbackViewModel.beginWatchedFlow(
@@ -253,10 +255,11 @@ struct DiscoverView: View {
                 Image(systemName: "nosign")
                     .foregroundStyle(AppTheme.warning)
                     .padding(.top, -18)
-            case .failed:
+            case .failed(let message):
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(AppTheme.danger)
                     .padding(.top, -18)
+                    .help(message)
             case .idle:
                 EmptyView()
             }
@@ -264,7 +267,7 @@ struct DiscoverView: View {
     }
 
     private func watchedFeedbackSheet(pending: DiscoverFeedbackViewModel.PendingFeedback) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             Text("Rate Watched Title")
                 .font(.title3.weight(.semibold))
             Text(pending.recommendation.title + (pending.recommendation.year.map { " (\($0))" } ?? ""))
@@ -287,7 +290,7 @@ struct DiscoverView: View {
                     }
                     .pickerStyle(.segmented)
                 case .scale1to10:
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                         Text("Rating: \(Int((feedbackViewModel.pendingFeedback?.value ?? 8).rounded())) / 10")
                             .font(.caption)
                         Slider(
@@ -300,7 +303,7 @@ struct DiscoverView: View {
                         )
                     }
                 case .scale1to100:
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                         Text("Rating: \(Int((feedbackViewModel.pendingFeedback?.value ?? 80).rounded())) / 100")
                             .font(.caption)
                         Slider(
@@ -335,25 +338,25 @@ struct DiscoverView: View {
                 .buttonStyle(.glassProminent)
             }
         }
-        .padding(16)
+        .padding(AppTheme.Spacing.lg)
     }
 
     @ViewBuilder
     private func catalogSection(title: String, items: [MediaPreview], feedbackReason: String) -> some View {
         let visibleItems = feedbackViewModel.visibleMediaPreviews(from: items)
         if !visibleItems.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                 Text(title)
                     .font(.title2)
                     .fontWeight(.bold)
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 16) {
+                    LazyHStack(spacing: AppTheme.Spacing.lg) {
                         ForEach(visibleItems) { item in
                             discoverCard(item: item, feedbackReason: feedbackReason)
                         }
                     }
-                    .padding(.horizontal, 2)
+                    .padding(.horizontal, AppTheme.Spacing.xxs)
                 }
             }
         }
@@ -363,13 +366,13 @@ struct DiscoverView: View {
         let recommendation = feedbackViewModel.recommendation(for: item, reason: feedbackReason)
         let state = feedbackViewModel.cardState(for: recommendation)
 
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             MediaCard(item: item)
                 .onTapGesture {
                     selectedItem = item
                 }
 
-            HStack(spacing: 6) {
+            HStack(spacing: AppTheme.Spacing.xs) {
                 Button {
                     Task {
                         let mode = await feedbackViewModel.beginWatchedFlow(
@@ -411,13 +414,14 @@ struct DiscoverView: View {
                         .controlSize(.small)
                 case .watched:
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(AppTheme.success)
                 case .notWatched:
                     Image(systemName: "nosign")
-                        .foregroundStyle(.orange)
-                case .failed:
+                        .foregroundStyle(AppTheme.warning)
+                case .failed(let message):
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(AppTheme.danger)
+                        .help(message)
                 case .idle:
                     EmptyView()
                 }
@@ -426,7 +430,7 @@ struct DiscoverView: View {
     }
 
     private var noApiKeyView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: AppTheme.Spacing.lg) {
             Image(systemName: "key.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)

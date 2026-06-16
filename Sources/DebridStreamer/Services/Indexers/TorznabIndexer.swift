@@ -52,9 +52,13 @@ actor TorznabIndexer: TorrentIndexer {
     private func execute(params: [String: String]) async throws -> [TorrentResult] {
         let request = try makeRequest(params: params)
         let (data, response) = try await session.data(for: request)
+        // Throw on non-2xx (consistent with the built-in indexers) so that a
+        // misconfigured endpoint / bad key surfaces as a recorded indexer failure
+        // instead of an indistinguishable empty result. IndexerManager.searchAll
+        // catches per-indexer, so this never aborts sibling indexers.
         guard let http = response as? HTTPURLResponse,
               (200...299).contains(http.statusCode) else {
-            return []
+            throw URLError(.badServerResponse)
         }
 
         let items = try TorznabFeedParser.parse(data: data)

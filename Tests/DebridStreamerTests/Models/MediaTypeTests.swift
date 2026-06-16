@@ -63,6 +63,15 @@ struct VideoQualityTests {
         #expect(VideoQuality.parse(from: "Movie.2024") == .unknown)
     }
 
+    @Test("Embedded 'sd' inside a word does not match SD quality")
+    func sdTokenBoundary() {
+        // "x264" lowercased is "x264" — no bounded "sd"; titles like "Wisdom" must not match.
+        #expect(VideoQuality.parse(from: "Bosdal.Movie.x264") == .unknown)
+        #expect(VideoQuality.parse(from: "Wisdom.2024.x265") == .unknown)
+        // Delimited "sd" still resolves to SD.
+        #expect(VideoQuality.parse(from: "Movie.SD.x264") == .sdOther)
+    }
+
     @Test("Quality comparison ordering")
     func comparison() {
         #expect(VideoQuality.uhd4k > VideoQuality.hd1080p)
@@ -195,5 +204,15 @@ struct SourceTypeTests {
     @Test("Parse unknown source")
     func parseUnknown() {
         #expect(SourceType.parse(from: "Movie.2024.x265") == .unknown)
+    }
+
+    @Test("Embedded 'ts'/'cam' inside a word does not match CAM source")
+    func camTokenBoundary() {
+        // "Ghosts" must not match the bare "ts" cam token.
+        #expect(SourceType.parse(from: "Ghosts.2024.1080p.x264") == .unknown)
+        #expect(SourceType.parse(from: "Camelot.2024.1080p.x264") == .unknown)
+        // Delimited cam tokens still resolve to CAM.
+        #expect(SourceType.parse(from: "Movie.2024.TS") == .cam)
+        #expect(SourceType.parse(from: "Movie.2024.CAM") == .cam)
     }
 }

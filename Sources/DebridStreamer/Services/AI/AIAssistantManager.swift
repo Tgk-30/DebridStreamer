@@ -9,6 +9,7 @@ actor AIAssistantManager {
 
     private var cache: [String: (expiresAt: Date, result: AICompareResult)] = [:]
     private let cacheTTL: TimeInterval = 60 * 30
+    private let cacheCapacity = 200
 
     init(
         providers: [AIProviderKind: any AIAssistantProvider],
@@ -68,7 +69,17 @@ actor AIAssistantManager {
                             usage: providerResult.usage
                         )
                     } catch {
-                        return nil
+                        // Surface the failure instead of swallowing it to nil, so the
+                        // UI can distinguish "provider X failed" from "no results".
+                        let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                        return AIProviderResponse(
+                            provider: kind,
+                            model: nil,
+                            recommendations: [],
+                            rawText: nil,
+                            usage: nil,
+                            error: message
+                        )
                     }
                 }
             }
@@ -82,14 +93,20 @@ actor AIAssistantManager {
 
         let merged: [AIMovieRecommendation]
         let usedFallback: Bool
-        if providerResponses.isEmpty {
+        // Error-bearing responses (empty recommendations + error) are kept in
+        // providerResponses so the UI can surface them, but they must not stop
+        // fallback from triggering. Treat the result set as empty when no
+        // provider produced any recommendations.
+        let hasAnyRecommendations = providerResponses.contains { !$0.recommendations.isEmpty }
+        if !hasAnyRecommendations {
             merged = fallbackRecommendations(from: candidates, maxResults: request.maxResults)
             usedFallback = true
         } else if request.compareMode {
             merged = mergeWithRRF(providerResponses: providerResponses, maxResults: request.maxResults)
             usedFallback = false
         } else {
-            merged = Array((providerResponses.first?.recommendations ?? []).prefix(request.maxResults))
+            let firstWithResults = providerResponses.first { !$0.recommendations.isEmpty }
+            merged = Array((firstWithResults?.recommendations ?? []).prefix(request.maxResults))
             usedFallback = false
         }
 
@@ -103,9 +120,29 @@ actor AIAssistantManager {
             usedContext: Array(context.contextNotes.prefix(12))
         )
 
-        cache[cacheKey] = (expiresAt: Date().addingTimeInterval(cacheTTL), result: result)
+        storeInCache(cacheKey, (expiresAt: Date().addingTimeInterval(cacheTTL), result: result))
         await persistAssistantMemory(from: prompt, result: result, personalizationEnabled: context.personalizationEnabled)
         return result
+    }
+
+    /// Inserts into the in-memory cache while keeping it bounded: expired entries
+    /// are swept first, then the soonest-to-expire entries are evicted if the cap
+    /// is reached. Evicting expired/soonest-to-expire entries can only cause a
+    /// cache miss (extra provider call), never an incorrect result.
+    private func storeInCache(_ key: String, _ entry: (expiresAt: Date, result: AICompareResult)) {
+        let now = Date()
+        cache = cache.filter { $0.value.expiresAt > now }
+        if cache.count >= cacheCapacity {
+            let overflow = cache.count - (cacheCapacity - 1)
+            let victims = cache
+                .sorted { $0.value.expiresAt < $1.value.expiresAt }
+                .prefix(overflow)
+                .map(\.key)
+            for victim in victims {
+                cache.removeValue(forKey: victim)
+            }
+        }
+        cache[key] = entry
     }
 
     private func buildCacheKey(

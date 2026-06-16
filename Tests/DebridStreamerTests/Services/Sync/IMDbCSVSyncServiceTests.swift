@@ -77,6 +77,39 @@ struct IMDbCSVSyncServiceTests {
         #expect(csv.contains("tt200,Folder Movie,2025"))
     }
 
+    @Test("Fallback media id is a normalized slug, not the raw title")
+    func fallbackMediaIDIsNormalized() async throws {
+        let db = try makeTestDatabase()
+        let service = IMDbCSVSyncService()
+        let root = try await db.fetchSystemLibraryFolderID(listType: .favorites)
+
+        // No Const column, and a title with diacritics, mixed case, and punctuation.
+        let csv = """
+        Title,Year
+        Amélie: Le Café!,2001
+        """
+
+        let result = try await service.importCSV(csv, listType: .favorites, folderId: root, database: db)
+        #expect(result.added == 1)
+
+        let media = try await db.fetchLibraryMedia(folderId: root, includeDescendants: true)
+        #expect(media.count == 1)
+        let id = try #require(media.first).id
+        #expect(id == "imdb-amelie-le-cafe-2001")
+        // The raw title text (with accents / punctuation / casing) must not leak into the id.
+        #expect(!id.contains("Amélie"))
+        #expect(!id.contains(":"))
+        #expect(!id.contains(" "))
+    }
+
+    @Test("normalizedSlug collapses punctuation and strips diacritics")
+    func normalizedSlugHelper() {
+        let service = IMDbCSVSyncService()
+        #expect(service.normalizedSlug("Amélie: Le Café!") == "amelie-le-cafe")
+        #expect(service.normalizedSlug("  Spaced   Out  ") == "spaced-out")
+        #expect(service.normalizedSlug("WALL·E") == "wall-e")
+    }
+
     @Test("Export emits CSV with header and rows")
     func exportCSV() {
         let service = IMDbCSVSyncService()

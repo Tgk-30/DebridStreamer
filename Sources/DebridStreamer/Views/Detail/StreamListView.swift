@@ -16,7 +16,7 @@ struct StreamListView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             // Header
             HStack {
                 Text("Available Streams")
@@ -54,23 +54,23 @@ struct StreamListView: View {
             }
 
             if let error = resolveError {
-                HStack(spacing: 6) {
+                HStack(spacing: AppTheme.Spacing.xs) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(AppTheme.warning)
                     Text(error)
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(AppTheme.danger)
                 }
             }
         }
     }
 
     private var debridWarningBanner: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: AppTheme.Spacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.title3)
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
+                .foregroundStyle(AppTheme.warning)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                 Text("Debrid Service Required")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -80,19 +80,12 @@ struct StreamListView: View {
             }
             Spacer()
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.orange.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                )
-        )
+        .padding(AppTheme.Spacing.md)
+        .glassPanel(radius: AppTheme.Radius.sm, tint: AppTheme.warning)
     }
 
     private var noResultsView: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: AppTheme.Spacing.sm) {
             Image(systemName: "magnifyingglass")
                 .font(.title2)
                 .foregroundStyle(.secondary)
@@ -103,7 +96,7 @@ struct StreamListView: View {
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .padding(.vertical, AppTheme.Spacing.xl)
     }
 
     private var sortedTorrents: [TorrentResult] {
@@ -177,18 +170,18 @@ struct StreamRow: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 12) {
+            HStack(spacing: AppTheme.Spacing.md) {
                 // Quality badge
                 qualityBadge
 
                 // Details
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                     Text(torrent.title)
                         .font(.caption)
                         .lineLimit(1)
                         .truncationMode(.middle)
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: AppTheme.Spacing.sm) {
                         Text(torrent.qualityLabel)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -198,13 +191,13 @@ struct StreamRow: View {
                             .foregroundStyle(.secondary)
 
                         if torrent.seeders > 0 {
-                            HStack(spacing: 2) {
+                            HStack(spacing: AppTheme.Spacing.xxs) {
                                 Image(systemName: "arrow.up")
                                     .font(.system(size: 8))
                                 Text("\(torrent.seeders)")
                                     .font(.caption2)
                             }
-                            .foregroundStyle(torrent.seeders > 50 ? .green : torrent.seeders > 10 ? .orange : .red)
+                            .foregroundStyle(AppTheme.seederColor(torrent.seeders))
                         }
 
                         Text(torrent.indexerName)
@@ -217,17 +210,16 @@ struct StreamRow: View {
 
                 // Cache / service indicator
                 if isCached, let info = cacheInfo {
-                    HStack(spacing: 4) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
                         Image(systemName: "bolt.fill")
                             .font(.caption2)
                         Text(info.service.displayName)
                             .font(.caption2)
                     }
-                    .foregroundStyle(.green)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(.green.opacity(0.1))
-                    .clipShape(Capsule())
+                    .foregroundStyle(AppTheme.success)
+                    .padding(.horizontal, AppTheme.Spacing.sm)
+                    .padding(.vertical, AppTheme.Spacing.xxs)
+                    .glassChip()
                 }
 
                 // Play / resolving / no debrid indicator
@@ -241,19 +233,12 @@ struct StreamRow: View {
                 } else {
                     Image(systemName: isCached ? "play.circle.fill" : "play.circle")
                         .font(.title3)
-                        .foregroundStyle(isCached ? .green : .secondary)
+                        .foregroundStyle(isCached ? AppTheme.success : .secondary)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isCached ? Color.green.opacity(0.05) : Color.clear)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(isCached ? Color.green.opacity(0.2) : Color.secondary.opacity(0.15), lineWidth: 1)
-                    )
-            )
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.sm)
+            .glassCard(radius: AppTheme.Radius.sm, tint: isCached ? AppTheme.success : nil)
         }
         .buttonStyle(.plain)
         .disabled(isResolving || !hasDebrid)
@@ -267,17 +252,10 @@ struct StreamRow: View {
             .foregroundStyle(.white)
             .frame(width: 44, height: 24)
             .background(qualityColor)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xs, style: .continuous))
     }
 
     private var qualityColor: Color {
-        switch torrent.quality {
-        case .uhd4k: return .purple
-        case .hd1080p: return .blue
-        case .hd720p: return .cyan
-        case .sd480p: return .orange
-        case .sdOther: return .gray
-        case .unknown: return .gray
-        }
+        AppTheme.qualityColor(torrent.quality.rawValue)
     }
 }

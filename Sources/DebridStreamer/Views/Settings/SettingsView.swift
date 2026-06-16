@@ -169,7 +169,7 @@ struct SettingsView: View {
                 HStack {
                     Spacer()
                     Button("Save") { Task { await saveGeneralSettings() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                         .disabled(isSaving)
                     Spacer()
                 }
@@ -177,6 +177,7 @@ struct SettingsView: View {
 
             statusSection(for: [.general])
         }
+        .scrollContentBackground(.hidden)
         .padding()
     }
 
@@ -198,12 +199,13 @@ struct SettingsView: View {
                 HStack {
                     Spacer()
                     Button("Save Debrid Settings") { Task { await saveDebridSettings() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                     Spacer()
                 }
             }
             statusSection(for: [.debrid])
         }
+        .scrollContentBackground(.hidden)
         .padding()
     }
 
@@ -216,9 +218,9 @@ struct SettingsView: View {
                         .font(.caption)
                 } else {
                     ForEach($indexerConfigs) { $config in
-                        HStack(spacing: 10) {
+                        HStack(spacing: AppTheme.Spacing.sm) {
                             Toggle("", isOn: $config.isActive).labelsHidden()
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                                 Text(config.displayName ?? config.type.displayName)
                                     .fontWeight(.semibold)
                                 if !config.baseURL.isEmpty {
@@ -233,6 +235,8 @@ struct SettingsView: View {
                                 Button("Remove") { removeIndexer(config.id) }
                             }
                         }
+                        .padding(AppTheme.Spacing.sm)
+                        .glassCard(radius: AppTheme.Radius.sm)
                     }
                 }
             }
@@ -263,7 +267,7 @@ struct SettingsView: View {
                 if let indexerTestStatus {
                     Text(indexerTestStatus)
                         .font(.caption)
-                        .foregroundStyle(indexerTestStatus.contains("failed") ? .red : .green)
+                        .foregroundStyle(indexerTestStatus.contains("failed") ? AppTheme.danger : AppTheme.success)
                 }
             }
 
@@ -271,12 +275,13 @@ struct SettingsView: View {
                 HStack {
                     Spacer()
                     Button("Save Indexer Settings") { Task { await saveIndexerSettings() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                     Spacer()
                 }
             }
             statusSection(for: [.indexers])
         }
+        .scrollContentBackground(.hidden)
         .padding()
     }
 
@@ -316,12 +321,13 @@ struct SettingsView: View {
                 HStack {
                     Spacer()
                     Button("Save Player Settings") { Task { await savePlayerSettings() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                     Spacer()
                 }
             }
             statusSection(for: [.player])
         }
+        .scrollContentBackground(.hidden)
         .padding()
     }
 
@@ -351,7 +357,7 @@ struct SettingsView: View {
                 Text("Selected model settings persist until you change them.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                HStack(spacing: 10) {
+                HStack(spacing: AppTheme.Spacing.sm) {
                     Button {
                         Task { await refreshModelCatalog() }
                     } label: {
@@ -362,7 +368,7 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(isRefreshingModelCatalog)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
 
                     if let modelCatalogStatus {
                         Text(modelCatalogStatus)
@@ -370,8 +376,8 @@ struct SettingsView: View {
                             .foregroundStyle(
                                 modelCatalogStatus.lowercased().contains("fail")
                                     || modelCatalogStatus.lowercased().contains("error")
-                                    ? .orange
-                                    : .secondary
+                                    ? AnyShapeStyle(AppTheme.warning)
+                                    : AnyShapeStyle(.secondary)
                             )
                             .lineLimit(2)
                     }
@@ -381,7 +387,7 @@ struct SettingsView: View {
             Section("Trakt") {
                 NativeSecureField(placeholder: "Trakt Client ID", text: $traktClientId)
                 NativeSecureField(placeholder: "Trakt Client Secret", text: $traktClientSecret)
-                HStack(spacing: 10) {
+                HStack(spacing: AppTheme.Spacing.sm) {
                     Button("Start Device Auth") { Task { await startTraktDeviceAuth() } }
                     Button("Complete Auth") { Task { await completeTraktDeviceAuth() } }
                         .disabled(pendingTraktDeviceCode == nil)
@@ -429,12 +435,13 @@ struct SettingsView: View {
                 HStack {
                     Spacer()
                     Button("Save AI & Sync Settings") { Task { await saveAIAndSyncSettings() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                     Spacer()
                 }
             }
             statusSection(for: [.aiSync])
         }
+        .scrollContentBackground(.hidden)
         .padding()
     }
 
@@ -447,7 +454,7 @@ struct SettingsView: View {
                 Button("Choose CSV File") {
                     isImportingIMDb = true
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
             }
 
             Section("CSV Export") {
@@ -470,11 +477,12 @@ struct SettingsView: View {
                 Button("Export CSV") {
                     Task { await prepareExport() }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
             }
 
             statusSection(for: [.importsSync])
         }
+        .scrollContentBackground(.hidden)
         .padding()
         .onChange(of: exportListType) {
             selectedExportFolderID = nil
@@ -515,17 +523,18 @@ struct SettingsView: View {
                     Button("Save Personalization") {
                         Task { await savePersonalizationSettings() }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     Spacer()
                 }
             }
             statusSection(for: [.personalization])
         }
+        .scrollContentBackground(.hidden)
         .padding()
     }
 
     private var importWizardSheet: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             Text("IMDb Import Wizard")
                 .font(.title3)
                 .fontWeight(.bold)
@@ -562,11 +571,11 @@ struct SettingsView: View {
                 Button("Import") {
                     Task { await executeImportWizard() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(importDestination.supportsFolders && importFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(16)
+        .padding(AppTheme.Spacing.lg)
         .onChange(of: importDestination) {
             guard let csv = pendingCSVContents else { return }
             importPreviewCount = imdbSyncService.parseCSV(csv, listType: importDestination).count
@@ -581,7 +590,7 @@ struct SettingsView: View {
         if let statusMessage, tabs.contains(appState.selectedSettingsTab) {
             Section {
                 Text(statusMessage)
-                    .foregroundStyle(statusMessage.contains("Error") ? .red : .green)
+                    .foregroundStyle(statusMessage.contains("Error") ? AppTheme.danger : AppTheme.success)
                     .font(.caption)
             }
         }

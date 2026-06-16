@@ -103,6 +103,79 @@ struct TraktSyncServiceTests {
         }
     }
 
+    @Test("Malformed JSON surfaces decodingFailed, not invalidResponse")
+    func decodeErrorSurfacesDecodingFailed() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            // 200 OK but body is not a valid TraktDeviceCodeResponse.
+            return try makeResponse(for: request, statusCode: 200, body: "{\"unexpected\":true}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let service = TraktSyncService(session: session)
+        do {
+            _ = try await service.startDeviceAuth(clientID: "client-id")
+            Issue.record("Expected TraktSyncError")
+        } catch let error as TraktSyncError {
+            switch error {
+            case .decodingFailed(let detail):
+                #expect(!detail.isEmpty)
+            default:
+                Issue.record("Expected decodingFailed error, got \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("pushWatchlist decodes added/existing/not_found summary")
+    func pushWatchlistDecodesSummary() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            let body = """
+            {
+              "added": {"movies": 1},
+              "existing": {"movies": 0},
+              "not_found": {"movies": [{"ids": {"imdb": "tt9999999"}}]}
+            }
+            """
+            return try makeResponse(for: request, statusCode: 201, body: body)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let service = TraktSyncService(session: session)
+        let result = try await service.pushWatchlist(
+            clientID: "client-id",
+            accessToken: "access-token",
+            imdbIDs: ["tt1111111", "tt9999999"]
+        )
+        #expect(result.added?.movies == 1)
+        #expect(result.existing?.movies == 0)
+        #expect(result.notFound?.movies?.first?.ids?.imdb == "tt9999999")
+    }
+
+    @Test("isExpired accounts for created_at + expires_in and buffer")
+    func isExpiredMath() {
+        let createdAt = 1_700_000_000
+        let expiresIn = 7_776_000 // 90 days
+
+        // Well before expiry, with no buffer, the token is still valid.
+        let early = Date(timeIntervalSince1970: TimeInterval(createdAt + 1000))
+        #expect(TraktSyncService.isExpired(createdAt: createdAt, expiresIn: expiresIn, now: early, buffer: 0) == false)
+
+        // Past the real expiry, the token is expired.
+        let late = Date(timeIntervalSince1970: TimeInterval(createdAt + expiresIn + 10))
+        #expect(TraktSyncService.isExpired(createdAt: createdAt, expiresIn: expiresIn, now: late, buffer: 0) == true)
+
+        // Within the buffer window before real expiry, treat as expired so callers refresh proactively.
+        let justInsideBuffer = Date(timeIntervalSince1970: TimeInterval(createdAt + expiresIn - 3600))
+        #expect(TraktSyncService.isExpired(createdAt: createdAt, expiresIn: expiresIn, now: justInsideBuffer, buffer: 24 * 60 * 60) == true)
+    }
+
     private func makeResponse(for request: URLRequest, statusCode: Int, body: String) throws -> (HTTPURLResponse, Data) {
         guard let url = request.url else {
             throw NSError(domain: "TraktSyncServiceTests", code: 1)

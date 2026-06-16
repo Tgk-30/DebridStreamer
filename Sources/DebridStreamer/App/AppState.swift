@@ -71,6 +71,15 @@ final class AppState {
         let settings = SettingsManager(database: dbManager, secretStore: secretStore)
         self.settingsManager = settings
 
+        // One-time eager sweep of any lingering plaintext secrets into the keychain.
+        // Best-effort: a failure must not abort the rest of bootstrap (the lazy
+        // per-read migration in SettingsManager.getValue still covers these keys).
+        do {
+            try await settings.migrateLegacySecretsIfNeeded()
+        } catch {
+            errorMessage = "Failed to migrate legacy secrets: \(error.localizedDescription)"
+        }
+
         let tmdbKey = try await settings.getValue(forKey: SettingsKeys.tmdbApiKey) ?? ""
         if !tmdbKey.isEmpty {
             self.metadataService = TMDBService(apiKey: tmdbKey)

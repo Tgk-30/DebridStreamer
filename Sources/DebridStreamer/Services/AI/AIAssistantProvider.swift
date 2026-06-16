@@ -41,8 +41,13 @@ enum AIAssistantJSONParser {
     }
 
     static func parseRecommendations(from text: String, maxResults: Int) -> [AIMovieRecommendation] {
-        if let jsonRange = text.range(of: "\\{[\\s\\S]*\\}", options: .regularExpression),
-           let data = String(text[jsonRange]).data(using: .utf8),
+        // Strip markdown code fences (```json ... ```) then extract the first
+        // BALANCED {...} object via brace counting. This avoids the previous
+        // greedy first-`{`-to-last-`}` regex, which mis-parsed responses that
+        // contained multiple or nested JSON objects (or trailing prose).
+        let fenceStripped = strippingCodeFences(from: text)
+        if let json = firstBalancedJSONObject(in: fenceStripped),
+           let data = json.data(using: .utf8),
            let payload = try? JSONDecoder().decode(Payload.self, from: data) {
             return payload.recommendations.prefix(maxResults).map { item in
                 AIMovieRecommendation(
@@ -70,6 +75,71 @@ enum AIAssistantJSONParser {
                 score: max(0.0, 1.0 - (Double(index) * 0.1))
             )
         }
+    }
+
+    /// Removes surrounding markdown code fences (``` or ```json) so the JSON
+    /// inside a fenced block can be extracted. Leaves non-fenced text untouched.
+    private static func strippingCodeFences(from text: String) -> String {
+        guard text.contains("```") else { return text }
+        var result = text
+        // Drop the opening fence and an optional language tag on its line.
+        if let openRange = result.range(of: #"```[a-zA-Z0-9]*\n?"#, options: .regularExpression) {
+            result.removeSubrange(openRange)
+        }
+        // Drop the closing fence.
+        if let closeRange = result.range(of: "```", options: .backwards) {
+            result.removeSubrange(closeRange)
+        }
+        return result
+    }
+
+    /// Returns the first complete, balanced `{...}` JSON object found in `text`,
+    /// tracking brace depth while respecting string literals and escapes so that
+    /// braces inside string values do not throw off the count.
+    private static func firstBalancedJSONObject(in text: String) -> String? {
+        var startIndex: String.Index?
+        var depth = 0
+        var inString = false
+        var escaped = false
+
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
+
+            if inString {
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == "\"" {
+                    inString = false
+                }
+            } else {
+                switch character {
+                case "\"":
+                    inString = true
+                case "{":
+                    if depth == 0 {
+                        startIndex = index
+                    }
+                    depth += 1
+                case "}":
+                    if depth > 0 {
+                        depth -= 1
+                        if depth == 0, let start = startIndex {
+                            let end = text.index(after: index)
+                            return String(text[start..<end])
+                        }
+                    }
+                default:
+                    break
+                }
+            }
+
+            index = text.index(after: index)
+        }
+
+        return nil
     }
 
     static func estimatedTokenCount(for text: String) -> Int {

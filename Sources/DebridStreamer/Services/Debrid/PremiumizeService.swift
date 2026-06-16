@@ -61,14 +61,32 @@ actor PremiumizeService: DebridServiceProtocol {
 
     func getStreamURL(torrentId: String) async throws -> StreamInfo {
         let encodedId = torrentId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? torrentId
-        let data = try await requestRaw(
-            path: "/transfer/directdl",
-            method: "POST",
-            body: "src_id=\(encodedId)"
-        )
 
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let content = json["content"] as? [[String: Any]] else {
+        // directdl may return an empty (or missing) content[] while the transfer is
+        // still in progress. Poll with a bounded retry loop, mirroring the other
+        // providers, instead of failing on the first empty response.
+        let maxAttempts = 20
+        var content: [[String: Any]] = []
+
+        for attempt in 0..<maxAttempts {
+            let data = try await requestRaw(
+                path: "/transfer/directdl",
+                method: "POST",
+                body: "src_id=\(encodedId)"
+            )
+
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let items = json["content"] as? [[String: Any]], !items.isEmpty {
+                content = items
+                break
+            }
+
+            if attempt < maxAttempts - 1 {
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            }
+        }
+
+        guard !content.isEmpty else {
             throw DebridError.noFilesAvailable
         }
 
