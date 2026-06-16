@@ -27,7 +27,7 @@ struct SearchView: View {
         .task { await refreshFolderContextLabel() }
         .sheet(item: $selectedItem) { item in
             DetailView(mediaPreview: item)
-                .frame(minWidth: 780, minHeight: 540)
+                .frame(minWidth: 880, idealWidth: 900, minHeight: 580)
         }
     }
 
@@ -112,25 +112,33 @@ struct SearchView: View {
                 .padding(.vertical, AppTheme.Spacing.sm)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
 
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    Picker("Scope", selection: $selectedScope) {
-                        ForEach(SearchViewModel.Scope.allCases) { scope in
-                            Text(scope.displayName).tag(scope)
+                HStack(alignment: .bottom, spacing: AppTheme.Spacing.lg) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                        Text("Scope").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Picker("Scope", selection: $selectedScope) {
+                            ForEach(SearchViewModel.Scope.allCases) { scope in
+                                Text(scope.displayName).tag(scope)
+                            }
                         }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
                     }
-                    .pickerStyle(.segmented)
 
-                    Picker("Type", selection: $selectedType) {
-                        Text("All").tag(nil as MediaType?)
-                        Text("Movies").tag(MediaType.movie as MediaType?)
-                        Text("TV Shows").tag(MediaType.series as MediaType?)
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                        Text("Type").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Picker("Type", selection: $selectedType) {
+                            Text("All").tag(nil as MediaType?)
+                            Text("Movies").tag(MediaType.movie as MediaType?)
+                            Text("TV Shows").tag(MediaType.series as MediaType?)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(AppTheme.Spacing.lg)
-            .frame(height: 220)
             .glassPanel(tint: AppTheme.accent)
             .padding(.horizontal, AppTheme.Spacing.md)
             .padding(.top, AppTheme.Spacing.sm)

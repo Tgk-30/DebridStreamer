@@ -131,7 +131,9 @@ struct SettingsView: View {
                 .tabItem { Label("Personalization", systemImage: "brain.head.profile") }
                 .tag(SettingsTab.personalization)
         }
-        .frame(width: 700, height: 560)
+        // Fill the in-app detail pane (top-aligned) with a capped width instead of a
+        // fixed centered "island in a void" (L2); still reasonable in the Settings scene.
+        .frame(minWidth: 620, idealWidth: 760, maxWidth: 880, minHeight: 520, maxHeight: .infinity, alignment: .top)
         .task {
             await loadSettings()
             await refreshModelCatalog(silentIfNoKeys: true)

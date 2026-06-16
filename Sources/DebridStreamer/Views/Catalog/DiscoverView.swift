@@ -74,7 +74,7 @@ struct DiscoverView: View {
         }
         .sheet(item: $selectedItem) { item in
             DetailView(mediaPreview: item)
-                .frame(minWidth: 700, minHeight: 500)
+                .frame(minWidth: 880, idealWidth: 900, minHeight: 580)
         }
         .sheet(item: $feedbackViewModel.pendingFeedback) { pending in
             watchedFeedbackSheet(pending: pending)
@@ -357,7 +357,20 @@ struct DiscoverView: View {
                         }
                     }
                     .padding(.horizontal, AppTheme.Spacing.xxs)
+                    .padding(.trailing, AppTheme.Spacing.xl)
                 }
+                // Fade the trailing edge so the rail reads as scrollable instead of
+                // clipping a card dead at the window edge (L1).
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.95),
+                            .init(color: .clear, location: 1.0)
+                        ],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                )
             }
         }
     }

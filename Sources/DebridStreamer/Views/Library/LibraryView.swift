@@ -66,7 +66,7 @@ struct HistoryView: View {
         .refreshable { await loadHistory() }
         .sheet(item: $selectedPreview) { preview in
             DetailView(mediaPreview: preview)
-                .frame(minWidth: 780, minHeight: 540)
+                .frame(minWidth: 880, idealWidth: 900, minHeight: 580)
         }
         .overlay(alignment: .bottom) {
             if let statusMessage {
@@ -142,7 +142,7 @@ private struct LibraryCollectionView: View {
         }
         .sheet(item: $selectedPreview) { preview in
             DetailView(mediaPreview: preview)
-                .frame(minWidth: 780, minHeight: 540)
+                .frame(minWidth: 880, idealWidth: 900, minHeight: 580)
         }
         .alert("New Folder", isPresented: $showCreateFolder) {
             TextField("Folder name", text: $createFolderName)

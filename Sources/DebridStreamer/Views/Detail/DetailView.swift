@@ -106,29 +106,30 @@ struct DetailView: View {
                         .fontWeight(.bold)
                         .foregroundStyle(.white)
 
-                    HStack(spacing: 12) {
+                    HStack(spacing: AppTheme.Spacing.sm) {
                         if let year = detail.year {
-                            Text(String(year))
-                                .foregroundStyle(.white.opacity(0.8))
+                            Text(String(year)).foregroundStyle(.white.opacity(0.85))
                         }
                         if !detail.runtimeString.isEmpty {
-                            Text(detail.runtimeString)
-                                .foregroundStyle(.white.opacity(0.8))
+                            metaDot
+                            Text(detail.runtimeString).foregroundStyle(.white.opacity(0.85))
                         }
                         if let rating = detail.imdbRating, rating > 0 {
-                            HStack(spacing: 4) {
+                            metaDot
+                            HStack(spacing: AppTheme.Spacing.xs) {
                                 Image(systemName: "star.fill")
-                                    .foregroundStyle(.yellow)
+                                    .foregroundStyle(AppTheme.warning)
                                 Text(String(format: "%.1f", rating))
                                     .foregroundStyle(.white)
                             }
                         }
                         Text(detail.type.displayName)
-                            .font(.caption)
-                            .padding(.horizontal, 8)
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, AppTheme.Spacing.sm)
                             .padding(.vertical, 2)
                             .background(.ultraThinMaterial)
                             .clipShape(Capsule())
+                            .padding(.leading, AppTheme.Spacing.xs)
                     }
                     .font(.subheadline)
                 }
@@ -152,12 +153,15 @@ struct DetailView: View {
                     }
                 }
 
-                // Overview
+                // Overview — constrain the measure for comfortable reading (L22).
                 if let overview = detail.overview, !overview.isEmpty {
                     Text(overview)
                         .font(.body)
                         .foregroundStyle(.secondary)
+                        .lineSpacing(2)
                         .lineLimit(nil)
+                        .frame(maxWidth: 580, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 actionBar(detail)
@@ -174,6 +178,10 @@ struct DetailView: View {
             }
             .padding()
         }
+    }
+
+    private var metaDot: some View {
+        Text("•").foregroundStyle(.white.opacity(0.45))
     }
 
     @ViewBuilder
@@ -200,7 +208,8 @@ struct DetailView: View {
                 .buttonStyle(.glassProminent)
 
                 if !availableFolders.isEmpty {
-                    Menu("Add To Folder") {
+                    // Glass-styled to match the action pills (L4) instead of a stock Menu.
+                    Menu {
                         let libraryFolders = availableFolders.filter { $0.listType == .favorites }
                         if !libraryFolders.isEmpty {
                             Section("Library") {
@@ -211,7 +220,21 @@ struct DetailView: View {
                                 }
                             }
                         }
+                    } label: {
+                        HStack(spacing: AppTheme.Spacing.xs) {
+                            Image(systemName: "folder.badge.plus")
+                            Text("Add To Folder")
+                            Image(systemName: "chevron.down").font(.caption2)
+                        }
+                        .font(.callout.weight(.semibold))
+                        .padding(.horizontal, AppTheme.Spacing.lg)
+                        .padding(.vertical, AppTheme.Spacing.sm)
                     }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(AppTheme.glassBorder, lineWidth: 1))
                 }
             }
 
