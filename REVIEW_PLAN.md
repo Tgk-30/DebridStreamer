@@ -21,9 +21,12 @@ Status legend: ✅ done · ⬜ open · 🟡 debatable. Source: M3 / self / mimo 
 L18 partial (Settings panel fills pane + Save right-aligned; inner form top-anchor blocked by
 macOS `Form`-in-`TabView` centering — needs a `Form`→custom layout rewrite). The signed
 `/Applications/DebridStreamer.app` is rebuilt with all of these.
+**✅ L18-full DONE (2026-06-17):** Settings `Form`/`TabView` replaced with a custom top-anchored
+layout — page header + pill tab bar + glass-card sections, content top-anchored, Save right-aligned.
+Verified on General + Player. All logic/bindings preserved; 23 SettingsManager tests pass.
 **Still open (diminishing returns / bigger lifts):**
-- L18-full — replace Settings `Form` with a custom top-aligned layout (moderate rewrite).
-- L24 — explicit page headers per pane (most screens already have de-facto headers).
+- L24 — Settings now has a page header ✅; the other panes mostly have de-facto headers
+  (Search/Assistant heroes, Library header). Only Discover + History lack one (optional).
 - L23 — fill Detail's lower area with cast/related (needs extra metadata).
 - L17 gutter (subtle), L9 orphan chip (cosmetic), L21 sidebar selection (system List), L16
   shared action-bar refactor (no visible change), L3 top inset (not really needed — lights are
