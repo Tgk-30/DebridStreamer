@@ -24,9 +24,11 @@ macOS `Form`-in-`TabView` centering — needs a `Form`→custom layout rewrite).
 **✅ L18-full DONE (2026-06-17):** Settings `Form`/`TabView` replaced with a custom top-anchored
 layout — page header + pill tab bar + glass-card sections, content top-anchored, Save right-aligned.
 Verified on General + Player. All logic/bindings preserved; 23 SettingsManager tests pass.
+**✅ L24-full DONE (2026-06-17):** Added a reusable `PageHeader` component (title + subtitle +
+icon) and placed headers on every primary pane. Settings, Search/Assistant heroes, and Library
+already read as headed; Discover ("Discover · Trending picks, AI-curated for you") and History
+("History · Recently watched titles") now have explicit `PageHeader`s too. Verified both on-screen.
 **Still open (diminishing returns / bigger lifts):**
-- L24 — Settings now has a page header ✅; the other panes mostly have de-facto headers
-  (Search/Assistant heroes, Library header). Only Discover + History lack one (optional).
 - L23 — fill Detail's lower area with cast/related (needs extra metadata).
 - L17 gutter (subtle), L9 orphan chip (cosmetic), L21 sidebar selection (system List), L16
   shared action-bar refactor (no visible change), L3 top inset (not really needed — lights are
@@ -83,7 +85,7 @@ Verified on General + Player. All logic/bindings preserved; 23 SettingsManager t
 | L21 | Sidebar | The **selected-item blue pill is too loud** and fights the content for attention | Soften the selection fill (lower opacity / accent-tinted glass) so content leads | XS | kimi |
 | L22 | Detail | **Synopsis line length is too long** (~80–90 chars) — uncomfortable to read | Constrain the overview measure to ~60–65 chars (max width) | XS | kimi |
 | L23 | Detail | **Bottom half of the modal is empty** after the synopsis/actions (before streams load) | Fill with cast / related titles / technical details, or tighten the modal height | M | kimi |
-| L24 | Settings + panes | **No page header/title** — only the sidebar selection tells you where you are | Add a lightweight page header (title) to each detail pane | S | kimi |
+| L24 | Settings + panes | **No page header/title** — only the sidebar selection tells you where you are ✅ | Reusable `PageHeader` on every pane (Settings/Discover/History explicit; Search/Assistant/Library de-facto) | S | kimi |
 
 ---
 

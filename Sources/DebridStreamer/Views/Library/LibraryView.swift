@@ -21,7 +21,12 @@ struct HistoryView: View {
     @State private var selectedPreview: MediaPreview?
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
+            PageHeader(title: "History", subtitle: "Recently watched titles", systemImage: SidebarItem.history.icon)
+                .padding(.horizontal, AppTheme.Spacing.lg)
+                .padding(.top, AppTheme.Spacing.lg)
+                .padding(.bottom, AppTheme.Spacing.sm)
+            Group {
             if isLoading {
                 ProgressView("Loading history...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -59,6 +64,7 @@ struct HistoryView: View {
                 }
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
+            }
             }
         }
         .navigationTitle("History")

@@ -265,3 +265,33 @@ extension ButtonStyle where Self == GlassButtonStyle {
     static var glass: GlassButtonStyle { GlassButtonStyle(prominent: false) }
     static var glassProminent: GlassButtonStyle { GlassButtonStyle(prominent: true) }
 }
+
+// MARK: - Page header
+
+/// Consistent page header for detail panes — with the hidden title bar, screens
+/// otherwise have no visible name (L24).
+struct PageHeader: View {
+    let title: String
+    var subtitle: String? = nil
+    var systemImage: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.title2)
+                        .foregroundStyle(AppTheme.accent)
+                }
+                Text(title)
+                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
+            }
+            if let subtitle {
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}

@@ -9,6 +9,8 @@ struct DiscoverView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                PageHeader(title: "Discover", subtitle: "Trending picks, AI-curated for you", systemImage: SidebarItem.discover.icon)
+
                 if appState.discoverStore.isLoading {
                     ProgressView("Loading...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
