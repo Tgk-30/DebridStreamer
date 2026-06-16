@@ -301,7 +301,8 @@ struct TMDBSearchResult: Decodable {
             year: year,
             posterPath: posterPath,
             imdbRating: voteAverage,
-            tmdbId: id
+            tmdbId: id,
+            backdropPath: backdropPath
         )
     }
 }

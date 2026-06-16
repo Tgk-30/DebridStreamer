@@ -143,10 +143,20 @@ struct MediaPreview: Codable, Sendable, Identifiable, Equatable {
     var posterPath: String?
     var imdbRating: Double?
     var tmdbId: Int?
+    /// Optional 16:9 backdrop path — populated for hero/spotlight surfaces.
+    /// Declared last with a default so the memberwise init and Codable stay
+    /// backward-compatible with existing call sites and cached JSON.
+    var backdropPath: String? = nil
 
     var posterURL: URL? {
         guard let path = posterPath else { return nil }
         return URL(string: "https://image.tmdb.org/t/p/w342\(path)")
+    }
+
+    /// Full-bleed backdrop for the Discover hero/spotlight (w1280).
+    var backdropURL: URL? {
+        guard let path = backdropPath else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w1280\(path)")
     }
 
     var ratingString: String {

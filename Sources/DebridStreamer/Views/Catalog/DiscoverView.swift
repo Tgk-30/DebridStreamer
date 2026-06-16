@@ -157,7 +157,7 @@ struct DiscoverView: View {
 
     private func curatedRecommendationCard(_ recommendation: AIMovieRecommendation) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            AsyncImage(url: recommendation.posterURL) { phase in
+            CachedAsyncImage(url: recommendation.posterURL) { phase in
                 switch phase {
                 case .success(let image):
                     image

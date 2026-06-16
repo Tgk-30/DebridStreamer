@@ -350,7 +350,7 @@ struct AIAssistantView: View {
 
     private func recommendationCard(_ recommendation: AIMovieRecommendation) -> some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-            AsyncImage(url: recommendation.posterURL) { phase in
+            CachedAsyncImage(url: recommendation.posterURL) { phase in
                 switch phase {
                 case .success(let image):
                     image

@@ -80,7 +80,7 @@ struct DetailView: View {
             // Backdrop + overlay
             ZStack(alignment: .bottomLeading) {
                 if let backdropURL = detail.backdropURL {
-                    AsyncImage(url: backdropURL) { phase in
+                    CachedAsyncImage(url: backdropURL) { phase in
                         switch phase {
                         case .success(let image):
                             image.resizable().aspectRatio(contentMode: .fill)

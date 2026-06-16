@@ -465,7 +465,7 @@ private struct LibraryMediaCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             Button(action: onOpen) {
-                AsyncImage(url: item.media.posterURL) { phase in
+                CachedAsyncImage(url: item.media.posterURL) { phase in
                     switch phase {
                     case .success(let image):
                         image

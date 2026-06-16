@@ -105,26 +105,22 @@ enum AppTheme {
         )
     }
 
-    /// Soft colored glow overlaid on the background for aurora depth (place in a ZStack
-    /// behind content with `.blendMode(.plusLighter)` or low opacity).
+    /// Soft colored glow overlaid on the background for aurora depth. Deliberately
+    /// restrained — two faint orbs (V2) rather than three loud ones, so foreground
+    /// glass stays legible (the VPStudio "background restraint" rule).
     static var auroraGlow: some View {
         GeometryReader { proxy in
             ZStack {
                 Circle()
-                    .fill(accent.opacity(0.35))
+                    .fill(accent.opacity(0.11))
                     .frame(width: proxy.size.width * 0.7)
-                    .blur(radius: 140)
-                    .offset(x: -proxy.size.width * 0.28, y: -proxy.size.height * 0.32)
-                Circle()
-                    .fill(accentSecondary.opacity(0.28))
-                    .frame(width: proxy.size.width * 0.6)
                     .blur(radius: 150)
-                    .offset(x: proxy.size.width * 0.34, y: proxy.size.height * 0.30)
+                    .offset(x: -proxy.size.width * 0.30, y: -proxy.size.height * 0.34)
                 Circle()
-                    .fill(accentTertiary.opacity(0.18))
-                    .frame(width: proxy.size.width * 0.5)
+                    .fill(accentSecondary.opacity(0.08))
+                    .frame(width: proxy.size.width * 0.6)
                     .blur(radius: 160)
-                    .offset(x: proxy.size.width * 0.30, y: -proxy.size.height * 0.36)
+                    .offset(x: proxy.size.width * 0.34, y: proxy.size.height * 0.32)
             }
         }
         .allowsHitTesting(false)
@@ -230,6 +226,106 @@ extension View {
     /// Back-compat alias — existing call sites keep working, now with the unified look.
     func glassSurface() -> some View {
         glassCard()
+    }
+
+    /// Coordinated-elevation glass surface (V2). Prefer this for new components —
+    /// material + tint + stroke + shadow all move together per tier, so depth comes
+    /// from the contrast *between* tiers rather than ad-hoc per-call opacity.
+    func glassElevation(_ elevation: GlassElevation = .raised,
+                        radius: CGFloat = AppTheme.Radius.md,
+                        tint: Color? = nil) -> some View {
+        modifier(GlassSurface(elevation: elevation, radius: radius, tint: tint))
+    }
+}
+
+// MARK: - Glass elevation (coordinated depth tiers)
+
+/// Three coordinated elevation tiers. Premium feel comes from the contrast
+/// *between* tiers — material, tint, stroke width, and shadow are chosen together —
+/// not from stacking opacity per call site. Mirrors VPStudio's `VPElevation`.
+enum GlassElevation {
+    /// Inline surfaces: chips, list rows, controls that sit *in* the page.
+    case rest
+    /// Cards and panels that lift off the background.
+    case raised
+    /// Spotlights and the focused modal — the top of the stack.
+    case hero
+
+    var material: Material {
+        switch self {
+        case .rest: return .ultraThinMaterial
+        case .raised: return .regularMaterial
+        case .hero: return .thickMaterial
+        }
+    }
+    var tintOpacity: Double {
+        switch self {
+        case .rest: return 0.08
+        case .raised: return 0.11
+        case .hero: return 0.14
+        }
+    }
+    var strokeWidth: CGFloat {
+        switch self {
+        case .rest: return 0.75
+        case .raised: return 1
+        case .hero: return 1.25
+        }
+    }
+    var shadowRadius: CGFloat {
+        switch self {
+        case .rest: return 7
+        case .raised: return 16
+        case .hero: return 28
+        }
+    }
+    var shadowY: CGFloat {
+        switch self {
+        case .rest: return 3
+        case .raised: return 10
+        case .hero: return 18
+        }
+    }
+    var shadowOpacity: Double {
+        switch self {
+        case .rest: return 0.10
+        case .raised: return 0.20
+        case .hero: return 0.28
+        }
+    }
+}
+
+/// The V2 glass surface, driven by a single `GlassElevation` tier.
+struct GlassSurface: ViewModifier {
+    var elevation: GlassElevation = .raised
+    var radius: CGFloat = AppTheme.Radius.md
+    var tint: Color? = nil
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                ZStack {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(elevation.material)
+                    if let tint {
+                        RoundedRectangle(cornerRadius: radius, style: .continuous)
+                            .fill(tint.opacity(elevation.tintOpacity))
+                    }
+                }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [AppTheme.glassHighlight, AppTheme.glassBorder],
+                            startPoint: .top, endPoint: .bottom
+                        ),
+                        lineWidth: elevation.strokeWidth
+                    )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .shadow(color: Color.black.opacity(elevation.shadowOpacity),
+                    radius: elevation.shadowRadius, x: 0, y: elevation.shadowY)
     }
 }
 

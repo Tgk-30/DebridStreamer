@@ -299,7 +299,7 @@ private struct SearchResultCard: View {
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                AsyncImage(url: item.posterURL) { phase in
+                CachedAsyncImage(url: item.posterURL) { phase in
                     switch phase {
                     case .success(let image):
                         image

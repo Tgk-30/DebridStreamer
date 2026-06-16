@@ -10,7 +10,7 @@ struct MediaCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             // Poster
-            AsyncImage(url: item.posterURL) { phase in
+            CachedAsyncImage(url: item.posterURL) { phase in
                 switch phase {
                 case .success(let image):
                     image
@@ -32,12 +32,13 @@ struct MediaCard: View {
                     .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
             )
 
-            // Title
+            // Title — reserve 2 lines always so the year/rating row keeps a
+            // constant baseline across a rail (L13), regardless of title length.
             Text(item.title)
                 .font(.subheadline.weight(.semibold))
-                .lineLimit(2)
+                .lineLimit(2, reservesSpace: true)
+                .multilineTextAlignment(.leading)
                 .frame(width: posterWidth, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
 
             // Year + Rating
             HStack(spacing: AppTheme.Spacing.xs) {
