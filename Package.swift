@@ -24,6 +24,9 @@ let package = Package(
                 "VLCKit",
             ],
             path: "Sources/DebridStreamer",
+            resources: [
+                .process("Resources")
+            ],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-rpath",

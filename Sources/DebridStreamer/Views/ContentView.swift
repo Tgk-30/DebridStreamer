@@ -4,6 +4,7 @@ struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var hasInitialized = false
     @State private var needsSetup = false
+    @State private var bootFinished = false
 
     var body: some View {
         ZStack {
@@ -29,6 +30,12 @@ struct ContentView: View {
                     .navigationSplitViewStyle(.balanced)
                     .frame(minWidth: 900, minHeight: 600)
                 }
+            }
+
+            if !bootFinished {
+                BootView { withAnimation(.easeOut(duration: 0.55)) { bootFinished = true } }
+                    .transition(.opacity)
+                    .zIndex(100)
             }
         }
         .task {
