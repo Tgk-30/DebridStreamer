@@ -53,11 +53,7 @@ struct SearchView: View {
                         subtitle: "Try a broader query, a different scope, or use AI refine."
                     )
                 } else if viewModel.results.isEmpty {
-                    emptyState(
-                        icon: "magnifyingglass.circle",
-                        title: "Search for movies and series",
-                        subtitle: "Use folder scope and AI actions for faster discovery."
-                    )
+                    searchStartersView
                 } else {
                     ScrollView {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: AppTheme.Spacing.lg)], spacing: AppTheme.Spacing.lg) {
@@ -69,6 +65,40 @@ struct SearchView: View {
                         }
                         .padding(AppTheme.Spacing.lg)
                     }
+                }
+            }
+        }
+    }
+
+    // Fill the idle Search state with trending starters instead of a lonely
+    // icon in a void (L7). Reuses the already-loaded discover catalog.
+    @ViewBuilder
+    private var searchStartersView: some View {
+        let starters = Array(
+            (appState.discoverStore.trendingMovies
+             + appState.discoverStore.trendingShows
+             + appState.discoverStore.popularMovies).prefix(18)
+        )
+        if starters.isEmpty {
+            emptyState(
+                icon: "magnifyingglass.circle",
+                title: "Search for movies and series",
+                subtitle: "Use folder scope and AI actions for faster discovery."
+            )
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                    Text("Trending now")
+                        .font(.headline)
+                        .padding(.horizontal, AppTheme.Spacing.lg)
+                        .padding(.top, AppTheme.Spacing.lg)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: AppTheme.Spacing.lg)], spacing: AppTheme.Spacing.lg) {
+                        ForEach(starters) { item in
+                            SearchResultCard(item: item) { selectedItem = item }
+                        }
+                    }
+                    .padding(.horizontal, AppTheme.Spacing.lg)
+                    .padding(.bottom, AppTheme.Spacing.lg)
                 }
             }
         }

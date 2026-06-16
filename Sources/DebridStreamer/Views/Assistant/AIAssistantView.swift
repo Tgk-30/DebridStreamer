@@ -4,12 +4,22 @@ struct AIAssistantView: View {
     @Environment(AppState.self) private var appState
     @State private var viewModel = AIAssistantViewModel()
 
+    private var hasResults: Bool {
+        viewModel.compareResult != nil || viewModel.isGenerating
+    }
+
     var body: some View {
         HStack(spacing: 0) {
+            // Until there's a result, the composer takes the full width instead of
+            // sitting next to a tall empty column (L8).
             composePane
-            Divider()
-            resultsPane
+                .frame(maxWidth: hasResults ? 560 : .infinity)
+            if hasResults {
+                Divider()
+                resultsPane
+            }
         }
+        .animation(.easeInOut(duration: 0.25), value: hasResults)
         .navigationTitle("AI Assistant")
         .task {
             await viewModel.initialize(
@@ -140,7 +150,7 @@ struct AIAssistantView: View {
             }
             .padding(AppTheme.Spacing.lg)
         }
-        .frame(minWidth: 430, idealWidth: 470)
+        .frame(minWidth: 430)
     }
 
     private var usageSummaryPanel: some View {
