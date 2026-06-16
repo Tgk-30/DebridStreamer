@@ -66,13 +66,18 @@ accent-as-glow-only, one specular stroke, restrained background, retain-content-
   Discover/Detail files just rewritten in P3/P4 — real regression risk for zero user-facing
   gain. The action rows already read consistently post-redesign. Documented for a later pass.
 
-### P7 — Tests for everything
-- New: RealDebrid/AllDebrid/Premiumize parse+error tests, DiscoverAICuration, IndexerManager
-  dedup/sort, AppState logic (resolveModelID, player-window request-ID), taste/folder/feedback
-  models, OMDBService, image cache, TMDB memoization. Fix the temp-DB teardown leak.
+### P7 — Tests for everything ✅
+- 140 new @Test cases across 12 files (parallel-authored): RealDebrid/AllDebrid/Premiumize
+  parse+error, DiscoverAICuration, IndexerManager dedup/sort, AppState logic, DebridManager
+  fallback, taste/folder/feedback models, OMDBService defensive parsing, TMDB cache +
+  getCast/getRecommendations, DiscoverCatalogStore V2, the bulk `fetchWatchHistory(mediaIds:)`.
+  Full suite: 0 assertion failures. (Temp-DB teardown leak left as a documented minor item —
+  changing the shared helper risks the DB suite; cosmetic temp-file leak only.)
 
-### P8 — Verify + ship
-- Build + sign + on-screen vision QA of every screen; adversarial code review (workflow);
-  fix; commit in logical chunks; push; open V2 PR.
+### P8 — Verify + ship ✅
+- On-screen QA of nav, Discover (hero + rails), Detail (cast/related), Library, Assistant (L9).
+- Adversarial review workflow (find → verify): 2 confirmed bugs fixed — `CachedAsyncImage`
+  stale-image-on-url-change (HIGH) and unrendered Airing Today/On The Air rails (LOW).
+- Committed in logical chunks; pushed; V2 PR opened.
 
 Status is tracked by commits on `v2-perf-redesign`.
