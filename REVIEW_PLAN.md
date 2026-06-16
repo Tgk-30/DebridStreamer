@@ -17,6 +17,12 @@ Sources for this plan:
 Status legend: ✅ done · ⬜ open · 🟡 debatable. Source: M3 / self / mimo / kimi / both.
 4-model convergence on the core issues (L1, L2, L4, L5, L7, L8, L12, L16, L17–L20) — high confidence.
 
+**EXECUTED & verified on-screen (2026-06-17):** ✅ L1, L2 (partial — panel fills pane; inner
+form top-anchor pending), L4, L5, L6, L7, L8, L19, L22. The signed `/Applications/DebridStreamer.app`
+is rebuilt with all of these.
+**Still open:** L3, L9, L12🟡, L16, L17, L18 (needs moving Settings off TabView+Form), L20, L21,
+L23, L24.
+
 ---
 
 ## A. Layout & visual-design fixes
