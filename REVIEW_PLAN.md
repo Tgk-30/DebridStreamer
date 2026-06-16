@@ -3,13 +3,16 @@
 Sources for this plan:
 - **MiniMax-M3 (vision)** adversarial layout review — 5 screens, 2026-06-17.
 - **Self cross-check** (Claude, vision) — same 5 screens, second perspective.
-- **GLM-5.1 / Kimi-K2.6 (vision) pass — PENDING:** the OpenCode Zen key is valid but the
-  workspace has **no balance** (both paid and "free-promotion-ended" models return a
-  CreditsError). Add credits at the OpenCode billing page and this pass can run with the
-  scripts already staged. (Note: Zen publishes `glm-5.1`/`kimi-k2.6`, not 5.2/2.7.)
+- **MiMo V2.5 (vision, `xiaomi/mimo-v2.5-20260422`, via OpenCode Zen)** — 3rd adversarial pass,
+  2026-06-17. Independently corroborated most M3/self P0–P1 items and added new specifics
+  (gutter consistency, settings tab placement, modal width, usage-card waste).
+- **GLM-5.1 / Kimi-K2.6 / DeepSeek-V4-Pro (vision) pass — PENDING credits:** these paid Zen
+  models return `Insufficient balance` (workspace has no paid balance). The ids the user named
+  (`kimi-k2.7-code`, `mimo-v2.5-pro`) aren't published on Zen — current ids are `kimi-k2.6`,
+  `deepseek-v4-pro`, `mimo-v2.5-free`. Add paid credits and these can run with the staged scripts.
 - **Backend audit** (12-mapper + 16-verifier workflow, 2026-06-16/17).
 
-Status legend: ✅ done · ⬜ open · 🟡 debatable. Source: M3 / self / both.
+Status legend: ✅ done · ⬜ open · 🟡 debatable. Source: M3 / self / mimo / both. (MiMo corroborated L1, L2, L4, L5, L7, L8, L12, L16.)
 
 ---
 
@@ -44,7 +47,16 @@ Status legend: ✅ done · ⬜ open · 🟡 debatable. Source: M3 / self / both.
 | L13 | Discover | Title wrap (1 vs 2 lines) breaks the metadata row's vertical rhythm across a rail | Reserve 2 lines (fixed height) for titles so year/rating rows align | XS | both |
 | L14 | Settings | API-key fields aren't labeled (TMDB vs OMDB) — only helper text distinguishes | Add explicit field labels ("TMDB API Key (required)", "OMDB API Key (optional)") | XS | M3 |
 | L15 | Sidebar | Section headers use the same weight as items 🟡 (this is standard macOS sidebar styling — low priority) | Optional: lighten/space section headers | XS | M3 |
-| L16 | Cross-screen | Action-row patterns differ per screen (card buttons / modal mixed controls / assistant trio / settings centered) | Define one shared action-bar component + button hierarchy and reuse it | M | both |
+| L16 | Cross-screen | Action-row patterns differ per screen (card buttons / modal mixed controls / assistant trio / settings centered) | Define one shared action-bar component + button hierarchy and reuse it | M | both+mimo |
+
+### Added by the MiMo V2.5 pass
+
+| ID | Screen | Problem | Fix | Effort | Source |
+|----|--------|---------|-----|--------|--------|
+| L17 | Cross-screen | **Inconsistent left gutter** between sidebar and content — large on Discover, smaller on Search (the AI pane eats it) | Tokenize a single left content gutter and apply it on every primary screen | S | mimo |
+| L18 | Settings | The **tab bar sits *inside* the content card**, pushing the actual settings (API Keys) too far down and burying them | Move the tabs to a pill rail *above* the card (or a left sub-nav per L2); content starts at the top of the panel | S | mimo |
+| L19 | Detail | **Modal is too narrow** — the hero image crops awkwardly and the action row is squeezed | Widen the modal (~820–900) so the backdrop breathes and the action pills space out | S | mimo |
+| L20 | AI Assistant | **Session/Lifetime usage cards** consume a full row for trivial values ($0.0000 / 0 tokens) | Condense to a single inline strip (or move into a footer) so the prompt area gets the space | XS | mimo |
 
 ---
 
@@ -63,9 +75,13 @@ Deliberately **not** doing (with reason): TMDB Bearer auth (would 401 v3 keys); 
 
 ---
 
-## C. Pending external pass
+## C. External-model passes
 
-- **GLM-5.1 / Kimi-K2.6 vision review** — blocked on OpenCode Zen credits. Scripts staged; will run on credit top-up and its findings get merged into Section A (with a `glm`/`kimi` source tag), confirming or challenging the M3/self items above.
+- ✅ **MiniMax-M3** (vision) — done. Primary layout review.
+- ✅ **MiMo V2.5** (`mimo-v2.5-free`, vision) — done. Corroborated + extended (L17–L20).
+- ⬜ **GLM-5.1 / Kimi-K2.6 / DeepSeek-V4-Pro** (vision) — pending paid Zen credits (workspace
+  balance exhausted). Staged to run on top-up; findings will merge into Section A with their
+  own source tag. (Requested ids `kimi-k2.7-code` / `mimo-v2.5-pro` are not published on Zen.)
 
 ---
 
