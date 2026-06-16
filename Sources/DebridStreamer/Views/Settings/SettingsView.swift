@@ -102,39 +102,19 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var state = appState
 
-        TabView(selection: $state.selectedSettingsTab) {
-            generalTab
-                .tabItem { Label("General", systemImage: "gear") }
-                .tag(SettingsTab.general)
-
-            debridTab
-                .tabItem { Label("Debrid", systemImage: "bolt.fill") }
-                .tag(SettingsTab.debrid)
-
-            indexerTab
-                .tabItem { Label("Indexers", systemImage: "magnifyingglass") }
-                .tag(SettingsTab.indexers)
-
-            playerTab
-                .tabItem { Label("Player", systemImage: "play.circle") }
-                .tag(SettingsTab.player)
-
-            aiSyncTab
-                .tabItem { Label("AI & Sync", systemImage: "wand.and.stars") }
-                .tag(SettingsTab.aiSync)
-
-            importsSyncTab
-                .tabItem { Label("Imports & Sync", systemImage: "square.and.arrow.down.on.square") }
-                .tag(SettingsTab.importsSync)
-
-            personalizationTab
-                .tabItem { Label("Personalization", systemImage: "brain.head.profile") }
-                .tag(SettingsTab.personalization)
+        VStack(spacing: 0) {
+            settingsHeader(for: state.selectedSettingsTab)
+            settingsTabBar(selection: $state.selectedSettingsTab)
+            Divider().opacity(0.4)
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                    tabContent(for: state.selectedSettingsTab)
+                }
+                .frame(maxWidth: 720, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .top)   // center the 720 column horizontally
+                .padding(AppTheme.Spacing.xl)
+            }
         }
-        // Size to content (capped width) and anchor to the TOP of the detail pane,
-        // so the form isn't centered in a tall void (L2 + L18). minHeight keeps the
-        // panel from collapsing on short tabs without forcing the content to float.
-        .frame(minWidth: 620, idealWidth: 760, maxWidth: 880, minHeight: 460, alignment: .top)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task {
             await loadSettings()
@@ -159,9 +139,118 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Layout scaffolding
+
+    @ViewBuilder
+    private func tabContent(for tab: SettingsTab) -> some View {
+        switch tab {
+        case .general: generalTab
+        case .debrid: debridTab
+        case .indexers: indexerTab
+        case .player: playerTab
+        case .aiSync: aiSyncTab
+        case .importsSync: importsSyncTab
+        case .personalization: personalizationTab
+        }
+    }
+
+    private func settingsTabMeta(_ tab: SettingsTab) -> (title: String, icon: String) {
+        switch tab {
+        case .general: return ("General", "gear")
+        case .debrid: return ("Debrid", "bolt.fill")
+        case .indexers: return ("Indexers", "magnifyingglass")
+        case .player: return ("Player", "play.circle")
+        case .aiSync: return ("AI & Sync", "wand.and.stars")
+        case .importsSync: return ("Imports & Sync", "square.and.arrow.down.on.square")
+        case .personalization: return ("Personalization", "brain.head.profile")
+        }
+    }
+
+    private func settingsHeader(for tab: SettingsTab) -> some View {
+        let meta = settingsTabMeta(tab)
+        return HStack(spacing: AppTheme.Spacing.sm) {
+            Image(systemName: meta.icon)
+                .font(.title2)
+                .foregroundStyle(AppTheme.accent)
+            Text(meta.title)
+                .font(.title2.bold())
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, AppTheme.Spacing.xl)
+        .padding(.top, AppTheme.Spacing.lg)
+        .padding(.bottom, AppTheme.Spacing.md)
+    }
+
+    private func settingsTabBar(selection: Binding<SettingsTab>) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                ForEach(SettingsTab.allCases, id: \.self) { tab in
+                    let meta = settingsTabMeta(tab)
+                    let isSelected = selection.wrappedValue == tab
+                    Button {
+                        selection.wrappedValue = tab
+                    } label: {
+                        HStack(spacing: AppTheme.Spacing.xs) {
+                            Image(systemName: meta.icon)
+                            Text(meta.title)
+                        }
+                        .font(.callout.weight(.medium))
+                        .padding(.horizontal, AppTheme.Spacing.md)
+                        .padding(.vertical, AppTheme.Spacing.sm)
+                        .foregroundStyle(isSelected ? AnyShapeStyle(AppTheme.accent) : AnyShapeStyle(.secondary))
+                        .background {
+                            if isSelected {
+                                Capsule().fill(AppTheme.accent.opacity(0.22))
+                            } else {
+                                Capsule().fill(.ultraThinMaterial)
+                            }
+                        }
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, AppTheme.Spacing.xl)
+        }
+    }
+
+    @ViewBuilder
+    private func settingsCard<Content: View>(_ title: String?, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            if let title {
+                Text(title).font(.headline)
+            }
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AppTheme.Spacing.lg)
+        .glassPanel(radius: AppTheme.Radius.lg, level: .ultraThin)
+    }
+
+    private func saveBar(_ title: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+        HStack {
+            Spacer()
+            Button(title, action: action)
+                .buttonStyle(.glassProminent)
+                .disabled(disabled)
+        }
+    }
+
+    @ViewBuilder
+    private func statusView(for tabs: [SettingsTab]) -> some View {
+        if let statusMessage, tabs.contains(appState.selectedSettingsTab) {
+            settingsCard(nil) {
+                Text(statusMessage)
+                    .foregroundStyle(statusMessage.contains("Error") ? AppTheme.danger : AppTheme.success)
+                    .font(.caption)
+            }
+        }
+    }
+
     private var generalTab: some View {
-        Form {
-            Section("API Keys") {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            settingsCard("API Keys") {
                 NativeSecureField(placeholder: "TMDB API Key", text: $tmdbApiKey)
                 NativeSecureField(placeholder: "OMDB API Key (optional)", text: $omdbApiKey)
                 Text("TMDB is required for Discover. OMDB enriches ratings.")
@@ -169,51 +258,34 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section {
-                HStack {
-                    Spacer()
-                    Button("Save") { Task { await saveGeneralSettings() } }
-                        .buttonStyle(.glassProminent)
-                        .disabled(isSaving)
-                }
-            }
+            saveBar("Save", disabled: isSaving) { Task { await saveGeneralSettings() } }
 
-            statusSection(for: [.general])
+            statusView(for: [.general])
         }
-        .scrollContentBackground(.hidden)
-        .padding()
     }
 
     private var debridTab: some View {
-        Form {
-            Section("Real-Debrid") {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            settingsCard("Real-Debrid") {
                 NativeSecureField(placeholder: "API Token", text: $rdToken)
             }
-            Section("AllDebrid") {
+            settingsCard("AllDebrid") {
                 NativeSecureField(placeholder: "API Key", text: $adToken)
             }
-            Section("Premiumize") {
+            settingsCard("Premiumize") {
                 NativeSecureField(placeholder: "API Key", text: $pmToken)
             }
-            Section("TorBox") {
+            settingsCard("TorBox") {
                 NativeSecureField(placeholder: "API Key", text: $tbToken)
             }
-            Section {
-                HStack {
-                    Spacer()
-                    Button("Save Debrid Settings") { Task { await saveDebridSettings() } }
-                        .buttonStyle(.glassProminent)
-                }
-            }
-            statusSection(for: [.debrid])
+            saveBar("Save Debrid Settings") { Task { await saveDebridSettings() } }
+            statusView(for: [.debrid])
         }
-        .scrollContentBackground(.hidden)
-        .padding()
     }
 
     private var indexerTab: some View {
-        Form {
-            Section("Configured Indexers") {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            settingsCard("Configured Indexers") {
                 if indexerConfigs.isEmpty {
                     Text("No indexers configured yet.")
                         .foregroundStyle(.secondary)
@@ -243,7 +315,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Add External Indexer") {
+            settingsCard("Add External Indexer") {
                 Picker("Type", selection: $newIndexerType) {
                     Text(IndexerConfig.IndexerType.jackett.displayName).tag(IndexerConfig.IndexerType.jackett)
                     Text(IndexerConfig.IndexerType.prowlarr.displayName).tag(IndexerConfig.IndexerType.prowlarr)
@@ -254,10 +326,14 @@ struct SettingsView: View {
                 }
 
                 TextField("Display Name (optional)", text: $newIndexerName)
+                    .textFieldStyle(.roundedBorder)
                 TextField("Base URL", text: $newIndexerBaseURL)
+                    .textFieldStyle(.roundedBorder)
                 NativeSecureField(placeholder: "API Key (optional)", text: $newIndexerApiKey)
                 TextField("Endpoint Path", text: $newIndexerEndpointPath)
+                    .textFieldStyle(.roundedBorder)
                 TextField("Category Filter (optional)", text: $newIndexerCategoryFilter)
+                    .textFieldStyle(.roundedBorder)
                 Stepper("Priority: \(newIndexerPriority)", value: $newIndexerPriority, in: 0...1000)
 
                 HStack {
@@ -273,22 +349,14 @@ struct SettingsView: View {
                 }
             }
 
-            Section {
-                HStack {
-                    Spacer()
-                    Button("Save Indexer Settings") { Task { await saveIndexerSettings() } }
-                        .buttonStyle(.glassProminent)
-                }
-            }
-            statusSection(for: [.indexers])
+            saveBar("Save Indexer Settings") { Task { await saveIndexerSettings() } }
+            statusView(for: [.indexers])
         }
-        .scrollContentBackground(.hidden)
-        .padding()
     }
 
     private var playerTab: some View {
-        Form {
-            Section("Playback") {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            settingsCard("Playback") {
                 Picker("Playback App", selection: $preferredPlayer) {
                     ForEach(PreferredPlayer.allCases, id: \.self) { option in
                         Text(option.displayName).tag(option)
@@ -309,7 +377,7 @@ struct SettingsView: View {
                 }
                 Toggle("Auto-play next episode", isOn: $autoPlayNext)
             }
-            Section("Subtitles") {
+            settingsCard("Subtitles") {
                 Picker("Preferred Language", selection: $subtitleLanguage) {
                     Text("English").tag("en")
                     Text("Spanish").tag("es")
@@ -318,22 +386,14 @@ struct SettingsView: View {
                     Text("Portuguese").tag("pt")
                 }
             }
-            Section {
-                HStack {
-                    Spacer()
-                    Button("Save Player Settings") { Task { await savePlayerSettings() } }
-                        .buttonStyle(.glassProminent)
-                }
-            }
-            statusSection(for: [.player])
+            saveBar("Save Player Settings") { Task { await savePlayerSettings() } }
+            statusView(for: [.player])
         }
-        .scrollContentBackground(.hidden)
-        .padding()
     }
 
     private var aiSyncTab: some View {
-        Form {
-            Section("AI Providers (BYOK)") {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            settingsCard("AI Providers (BYOK)") {
                 NativeSecureField(placeholder: "OpenAI API Key", text: $openAIApiKey)
                 NativeSecureField(placeholder: "Anthropic API Key", text: $anthropicApiKey)
                 Picker("OpenAI Model", selection: $openAIModelPreset) {
@@ -343,6 +403,7 @@ struct SettingsView: View {
                 }
                 if openAIModelPreset == SettingsView.customModelPreset {
                     TextField("Custom OpenAI model ID", text: $openAIModelCustom)
+                        .textFieldStyle(.roundedBorder)
                 }
                 Picker("Anthropic Model", selection: $anthropicModelPreset) {
                     ForEach(anthropicModelPresets, id: \.self) { model in
@@ -351,8 +412,10 @@ struct SettingsView: View {
                 }
                 if anthropicModelPreset == SettingsView.customModelPreset {
                     TextField("Custom Anthropic model ID", text: $anthropicModelCustom)
+                        .textFieldStyle(.roundedBorder)
                 }
                 TextField("Ollama Endpoint", text: $ollamaEndpoint)
+                    .textFieldStyle(.roundedBorder)
                 Toggle("Enable compare mode by default", isOn: $aiCompareMode)
                 Text("Selected model settings persist until you change them.")
                     .font(.caption)
@@ -384,7 +447,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Trakt") {
+            settingsCard("Trakt") {
                 NativeSecureField(placeholder: "Trakt Client ID", text: $traktClientId)
                 NativeSecureField(placeholder: "Trakt Client Secret", text: $traktClientSecret)
                 HStack(spacing: AppTheme.Spacing.sm) {
@@ -401,7 +464,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("AI Usage (Estimated)") {
+            settingsCard("AI Usage (Estimated)") {
                 HStack {
                     Text("Input Tokens")
                     Spacer()
@@ -431,22 +494,14 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section {
-                HStack {
-                    Spacer()
-                    Button("Save AI & Sync Settings") { Task { await saveAIAndSyncSettings() } }
-                        .buttonStyle(.glassProminent)
-                }
-            }
-            statusSection(for: [.aiSync])
+            saveBar("Save AI & Sync Settings") { Task { await saveAIAndSyncSettings() } }
+            statusView(for: [.aiSync])
         }
-        .scrollContentBackground(.hidden)
-        .padding()
     }
 
     private var importsSyncTab: some View {
-        Form {
-            Section("IMDb CSV Import") {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            settingsCard("IMDb CSV Import") {
                 Text("Library imports create a named folder. Watchlist imports go to the watchlist root.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -456,7 +511,7 @@ struct SettingsView: View {
                 .buttonStyle(.glassProminent)
             }
 
-            Section("CSV Export") {
+            settingsCard("CSV Export") {
                 Picker("List", selection: $exportListType) {
                     Text("Library").tag(UserLibraryEntry.ListType.favorites)
                     Text("Watchlist").tag(UserLibraryEntry.ListType.watchlist)
@@ -479,18 +534,16 @@ struct SettingsView: View {
                 .buttonStyle(.glass)
             }
 
-            statusSection(for: [.importsSync])
+            statusView(for: [.importsSync])
         }
-        .scrollContentBackground(.hidden)
-        .padding()
         .onChange(of: exportListType) {
             selectedExportFolderID = nil
         }
     }
 
     private var personalizationTab: some View {
-        Form {
-            Section("Adaptive AI") {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            settingsCard("Adaptive AI") {
                 Toggle("Enable Personalized AI", isOn: $personalizationEnabled)
                 Toggle("Generate AI-curated Discover on launch", isOn: $aiCurationOnLaunch)
                 Picker("Feedback Mode", selection: $feedbackScaleMode) {
@@ -499,12 +552,17 @@ struct SettingsView: View {
                     }
                 }
             }
-            Section("Taste Profile") {
+            settingsCard("Taste Profile") {
                 TextField("Favorite genres (comma separated)", text: $favoriteGenres)
+                    .textFieldStyle(.roundedBorder)
                 TextField("Avoid genres (comma separated)", text: $avoidGenres)
+                    .textFieldStyle(.roundedBorder)
                 TextField("Preferred eras (e.g. 90s, 2000s)", text: $preferredEras)
+                    .textFieldStyle(.roundedBorder)
                 TextField("Tone / mood tags", text: $toneMoodTags)
+                    .textFieldStyle(.roundedBorder)
                 TextField("Current vibe notes", text: $currentVibeNotes, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
                     .lineLimit(2...5)
                 VStack(alignment: .leading) {
                     HStack {
@@ -516,20 +574,9 @@ struct SettingsView: View {
                     Slider(value: $recencySensitivity, in: 0...1)
                 }
             }
-            Section {
-                HStack {
-                    Spacer()
-                    Button("Save Personalization") {
-                        Task { await savePersonalizationSettings() }
-                    }
-                    .buttonStyle(.glassProminent)
-                    Spacer()
-                }
-            }
-            statusSection(for: [.personalization])
+            saveBar("Save Personalization") { Task { await savePersonalizationSettings() } }
+            statusView(for: [.personalization])
         }
-        .scrollContentBackground(.hidden)
-        .padding()
     }
 
     private var importWizardSheet: some View {
@@ -580,17 +627,6 @@ struct SettingsView: View {
             importPreviewCount = imdbSyncService.parseCSV(csv, listType: importDestination).count
             if importDestination.supportsFolders && importFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 importFolderName = "Imported \(Date().formatted(date: .abbreviated, time: .omitted))"
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func statusSection(for tabs: Set<SettingsTab>) -> some View {
-        if let statusMessage, tabs.contains(appState.selectedSettingsTab) {
-            Section {
-                Text(statusMessage)
-                    .foregroundStyle(statusMessage.contains("Error") ? AppTheme.danger : AppTheme.success)
-                    .font(.caption)
             }
         }
     }
