@@ -17,11 +17,17 @@ Sources for this plan:
 Status legend: ✅ done · ⬜ open · 🟡 debatable. Source: M3 / self / mimo / kimi / both.
 4-model convergence on the core issues (L1, L2, L4, L5, L7, L8, L12, L16, L17–L20) — high confidence.
 
-**EXECUTED & verified on-screen (2026-06-17):** ✅ L1, L2 (partial — panel fills pane; inner
-form top-anchor pending), L4, L5, L6, L7, L8, L19, L22. The signed `/Applications/DebridStreamer.app`
-is rebuilt with all of these.
-**Still open:** L3, L9, L12🟡, L16, L17, L18 (needs moving Settings off TabView+Form), L20, L21,
-L23, L24.
+**EXECUTED & verified on-screen (2026-06-17):** ✅ L1, L4, L5, L6, L7, L8, L19, L20, L22; L2 +
+L18 partial (Settings panel fills pane + Save right-aligned; inner form top-anchor blocked by
+macOS `Form`-in-`TabView` centering — needs a `Form`→custom layout rewrite). The signed
+`/Applications/DebridStreamer.app` is rebuilt with all of these.
+**Still open (diminishing returns / bigger lifts):**
+- L18-full — replace Settings `Form` with a custom top-aligned layout (moderate rewrite).
+- L24 — explicit page headers per pane (most screens already have de-facto headers).
+- L23 — fill Detail's lower area with cast/related (needs extra metadata).
+- L17 gutter (subtle), L9 orphan chip (cosmetic), L21 sidebar selection (system List), L16
+  shared action-bar refactor (no visible change), L3 top inset (not really needed — lights are
+  over the sidebar), L12🟡 (keep the feedback signal).
 
 ---
 
