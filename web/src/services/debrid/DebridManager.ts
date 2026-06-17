@@ -157,6 +157,31 @@ export class DebridManager {
     return service.getStreamURL(torrentId);
   }
 
+  /** Get a Real-Debrid transcoded HLS (`.m3u8`) URL for an already-resolved
+   * stream, so a non-browser-playable container (MKV/HEVC/AV1) can be played
+   * in-webview via hls.js instead of being handed off to a native player.
+   *
+   * Returns null (the caller falls back to the native-player path) when:
+   *   - the stream wasn't resolved by Real-Debrid (no `restrictedId`, or RD
+   *     isn't a configured service), or
+   *   - Real-Debrid has no HLS transcode available for it.
+   *
+   * Never throws for the "not available" case; a network/HTTP failure from the
+   * transcode call is swallowed to null so playback degrades gracefully. */
+  async getTranscodeHLS(stream: StreamInfo): Promise<string | null> {
+    const id = stream.restrictedId;
+    if (id == null || id.length === 0) return null;
+    const rd = this.services.find(
+      (s): s is RealDebridService => s instanceof RealDebridService,
+    );
+    if (rd == null) return null;
+    try {
+      return await rd.getTranscodeHLS(id);
+    } catch {
+      return null;
+    }
+  }
+
   /** Validate all configured services concurrently, preserving service order in
    * the result. Mirrors Swift `validateAll`. */
   async validateAll(): Promise<[DebridServiceType, boolean][]> {

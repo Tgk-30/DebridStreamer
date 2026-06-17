@@ -14,7 +14,12 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import { Icon } from "./Icon";
-import { isTauri, openInExternalPlayer } from "../lib/tauri";
+import {
+  isTauri,
+  openInExternalPlayer,
+  playWithMpv,
+  mpvStop,
+} from "../lib/tauri";
 import "./VideoPlayer.css";
 
 type Playability = "webview" | "external";
@@ -111,22 +116,48 @@ export function VideoPlayer({
     setExternalError("This browser can't play HLS. Try the desktop app.");
   }, [mode, url]);
 
-  // Auto-hand-off to a native player when running under Tauri.
+  // Native hand-off when running under Tauri. Primary path is the BUNDLED mpv
+  // sidecar (shipped + app-controlled over IPC); if mpv isn't available we fall
+  // back to the raw VLC/IINA hand-off. On macOS mpv's `--wid` in-window
+  // embedding is unreliable, so mpv typically opens its own (app-controlled)
+  // window — see src-tauri/src/player.rs. mpv is stopped when this panel closes.
   const underTauri = isTauri();
+  const startedMpvRef = useRef(false);
   useEffect(() => {
     if (mode !== "external" || !underTauri) return;
     let cancelled = false;
-    openInExternalPlayer(url)
-      .then((status) => {
-        if (!cancelled) setExternalStatus(status);
+    startedMpvRef.current = false;
+
+    playWithMpv(url)
+      .then((res) => {
+        if (cancelled) return;
+        startedMpvRef.current = true;
+        setExternalStatus(
+          res.embedded
+            ? "Playing in the bundled mpv (in-window embedding attempted)."
+            : "Playing in the bundled mpv player.",
+        );
       })
-      .catch((err) => {
-        if (!cancelled) {
-          setExternalError(err instanceof Error ? err.message : String(err));
-        }
+      .catch(() => {
+        // mpv missing / failed to spawn — fall back to the VLC/IINA hand-off.
+        if (cancelled) return;
+        openInExternalPlayer(url)
+          .then((status) => {
+            if (!cancelled) setExternalStatus(status);
+          })
+          .catch((err) => {
+            if (!cancelled) {
+              setExternalError(err instanceof Error ? err.message : String(err));
+            }
+          });
       });
+
     return () => {
       cancelled = true;
+      // Tear down the bundled mpv if we started it (no-op for the VLC fallback).
+      if (startedMpvRef.current) {
+        mpvStop().catch(() => {});
+      }
     };
   }, [mode, underTauri, url]);
 
@@ -185,10 +216,10 @@ function ExternalPanel({
       <Icon name="play" size={36} className="t-accent" />
       {underTauri ? (
         <>
-          <h3 className="player-external-title">Opening in your native player</h3>
+          <h3 className="player-external-title">Opening in the bundled player</h3>
           <p className="player-external-sub t-secondary">
             {status ??
-              "This file (MKV/HEVC) plays best in VLC or mpv. Handing it off…"}
+              "This file (MKV/HEVC) plays in the bundled mpv player. Starting…"}
           </p>
           {error && <p className="player-external-err">{error}</p>}
         </>

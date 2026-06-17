@@ -24,6 +24,14 @@ tauri-plugin-opener = "2"
 # `@tauri-apps/plugin-http`'s `fetch` to bypass the browser CORS policy for
 # arbitrary indexer / debrid / Stremio-addon hosts the user configures.
 tauri-plugin-http = "2"
+# Spawn the bundled mpv sidecar (Phase 3 P1). Used from Rust via
+# `app.shell().sidecar("mpv")`; the binary is declared in tauri.conf.json's
+# `bundle.externalBin` and lives in `binaries/mpv-<target-triple>`.
+tauri-plugin-shell = "2"
+# Native window-handle access. Tauri's `Window` implements
+# `raw_window_handle::HasWindowHandle`; on macOS we read the `AppKitWindowHandle`
+# `ns_view` pointer to attempt mpv `--wid` in-window embedding (see player.rs).
+raw-window-handle = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

@@ -221,6 +221,12 @@ export interface StreamInfo {
   sizeBytes: number;
   fileName: string;
   debridService: string; // Which debrid resolved it (short code RD/AD/PM/TB or name)
+  /** Real-Debrid unrestrict id, when known. Real-Debrid returns this alongside
+   * the direct `download` URL; it's the key for the `/streaming/transcode/{id}`
+   * and `/streaming/mediaInfos/{id}` endpoints, which let the app transcode an
+   * MKV/HEVC source to in-webview-playable HLS. Optional and only set by
+   * RealDebridService — other services leave it undefined. */
+  restrictedId?: string;
 }
 
 export const StreamInfo = {

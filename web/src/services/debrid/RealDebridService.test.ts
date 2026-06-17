@@ -377,6 +377,163 @@ describe("RealDebridService unrestrict", () => {
   });
 });
 
+// MARK: - unrestrictDetailed (download + id for the transcode path)
+
+describe("RealDebridService unrestrictDetailed", () => {
+  it("returns the download URL and the unrestrict id", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/unrestrict/link") {
+        return ok(
+          JSON.stringify({
+            id: "ABCUNREST",
+            download: "https://rd.example/direct/file.mkv",
+            filename: "file.mkv",
+          }),
+        );
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const res = await rd.unrestrictDetailed("https://host.example/restricted/abc");
+    expect(res.download).toBe("https://rd.example/direct/file.mkv");
+    expect(res.id).toBe("ABCUNREST");
+  });
+
+  it("tolerates a missing id (id null) while still returning download", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/unrestrict/link") {
+        return ok(JSON.stringify({ download: "https://rd.example/d/x.mkv" }));
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const res = await rd.unrestrictDetailed("https://host.example/r/x");
+    expect(res.download).toBe("https://rd.example/d/x.mkv");
+    expect(res.id).toBeNull();
+  });
+});
+
+// MARK: - getStreamURL surfaces restrictedId
+
+describe("RealDebridService getStreamURL restrictedId", () => {
+  it("carries the unrestrict id onto the StreamInfo for the transcode path", async () => {
+    const mock = makeMockFetch((req) => {
+      const path = req.url.pathname;
+      if (path.startsWith("/rest/1.0/torrents/info/")) {
+        return ok(
+          JSON.stringify({
+            id: "T9",
+            status: "downloaded",
+            filename: "Show.2026.2160p.x265.mkv",
+            bytes: 8000000000,
+            links: ["https://rd.example/show-link"],
+          }),
+        );
+      }
+      if (path === "/rest/1.0/unrestrict/link") {
+        return ok(
+          JSON.stringify({
+            id: "UNREST9",
+            download: "https://rd.example/direct/show.mkv",
+          }),
+        );
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const stream = await rd.getStreamURL("T9");
+    expect(stream.streamURL).toBe("https://rd.example/direct/show.mkv");
+    expect(stream.restrictedId).toBe("UNREST9");
+    expect(stream.codec).toBe("H.265");
+  });
+});
+
+// MARK: - getTranscodeHLS (MKV/HEVC -> in-webview HLS)
+
+describe("RealDebridService getTranscodeHLS", () => {
+  function transcodeMock(applyBody: unknown) {
+    return makeMockFetch((req) => {
+      if (req.url.pathname.startsWith("/rest/1.0/streaming/transcode/")) {
+        return ok(JSON.stringify(applyBody));
+      }
+      return { status: 404, body: "{}" };
+    });
+  }
+
+  it("prefers the 'full' apple (HLS) variant", async () => {
+    const mock = transcodeMock({
+      apple: {
+        "480p": "https://rd.example/t/480.m3u8",
+        "1080p": "https://rd.example/t/1080.m3u8",
+        full: "https://rd.example/t/full.m3u8",
+      },
+      dash: { full: "https://rd.example/t/full.mpd" },
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const url = await rd.getTranscodeHLS("UNREST9");
+    expect(url).toBe("https://rd.example/t/full.m3u8");
+    // Hit the documented path.
+    expect(mock.byPath("/rest/1.0/streaming/transcode/UNREST9")).toBeTruthy();
+  });
+
+  it("picks the highest resolution when there is no 'full'", async () => {
+    const mock = transcodeMock({
+      apple: {
+        "480p": "https://rd.example/t/480.m3u8",
+        "720p": "https://rd.example/t/720.m3u8",
+        "1080p": "https://rd.example/t/1080.m3u8",
+      },
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    expect(await rd.getTranscodeHLS("X")).toBe("https://rd.example/t/1080.m3u8");
+  });
+
+  it("ignores non-HLS formats (dash/liveMP4/h264WebM)", async () => {
+    const mock = transcodeMock({
+      dash: { full: "https://rd.example/t/full.mpd" },
+      liveMP4: { full: "https://rd.example/t/full.mp4" },
+      h264WebM: { full: "https://rd.example/t/full.webm" },
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    expect(await rd.getTranscodeHLS("X")).toBeNull();
+  });
+
+  it("falls back to any nested .m3u8 URL if 'apple' is absent", async () => {
+    const mock = transcodeMock({
+      hls: { full: "https://rd.example/t/alt.m3u8" },
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    expect(await rd.getTranscodeHLS("X")).toBe("https://rd.example/t/alt.m3u8");
+  });
+
+  it("tolerates m3u8 URLs that carry a query string", async () => {
+    const mock = transcodeMock({
+      apple: { full: "https://rd.example/t/full.m3u8?token=abc&exp=123" },
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    expect(await rd.getTranscodeHLS("X")).toBe(
+      "https://rd.example/t/full.m3u8?token=abc&exp=123",
+    );
+  });
+
+  it("returns null when the response has no usable URL", async () => {
+    const mock = transcodeMock({ apple: {}, dash: {} });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    expect(await rd.getTranscodeHLS("X")).toBeNull();
+  });
+
+  it("returns null on an empty/garbage body rather than throwing", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname.startsWith("/rest/1.0/streaming/transcode/")) {
+        return { status: 200, body: "" };
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    expect(await rd.getTranscodeHLS("X")).toBeNull();
+  });
+});
+
 // MARK: - checkCache (RD disabled instantAvailability -> all unknown)
 
 describe("RealDebridService checkCache", () => {

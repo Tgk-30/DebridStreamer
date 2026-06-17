@@ -29,3 +29,57 @@ export async function openInExternalPlayer(url: string): Promise<string> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<string>("open_in_external_player", { url });
 }
+
+/** Result of {@link playWithMpv}: whether mpv attempted in-window embedding and
+ * a human-readable status. On macOS `embedded` being true does NOT guarantee the
+ * video rendered inside the app window — mpv often falls back to its own window
+ * (the `--wid` embedding caveat, documented in src-tauri/src/player.rs). */
+export interface MpvPlayResult {
+  embedded: boolean;
+  status: string;
+}
+
+/** Play a direct stream URL with the bundled mpv sidecar (Phase 3 P1).
+ *
+ * This is the primary lossless / non-Real-Debrid MKV path: mpv is shipped with
+ * the app and fully controlled over IPC (pause/seek/position/stop), unlike the
+ * raw VLC hand-off (which relies on a user-installed VLC). Throws if not under
+ * Tauri or if the sidecar isn't bundled / fails to spawn — callers should fall
+ * back to {@link openInExternalPlayer} (VLC) in that case. */
+export async function playWithMpv(url: string): Promise<MpvPlayResult> {
+  if (!isTauri()) {
+    throw new Error("Not running under Tauri — no bundled mpv available.");
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<MpvPlayResult>("mpv_play", { url });
+}
+
+/** Pause the bundled-mpv playback. */
+export async function mpvPause(): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("mpv_pause");
+}
+
+/** Resume the bundled-mpv playback. */
+export async function mpvResume(): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("mpv_resume");
+}
+
+/** Seek the bundled-mpv playback to an absolute position (seconds). */
+export async function mpvSeek(seconds: number): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("mpv_seek", { seconds });
+}
+
+/** Current bundled-mpv playback position in seconds (0 if not yet known). */
+export async function mpvGetPosition(): Promise<number> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<number>("mpv_get_position");
+}
+
+/** Stop bundled-mpv playback and kill the process. */
+export async function mpvStop(): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("mpv_stop");
+}

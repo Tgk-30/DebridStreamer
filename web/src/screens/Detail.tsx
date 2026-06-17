@@ -32,6 +32,28 @@ interface ActivePlayer {
   external: boolean;
 }
 
+/** True when the resolved file is a container/codec the webview can't decode
+ * directly (MKV/AVI/HEVC/AV1), so it needs either Real-Debrid transcode-to-HLS
+ * (in-window) or a native-player hand-off. */
+function needsTranscodeOrExternal(
+  stream: StreamInfo,
+  source: TorrentResult,
+): boolean {
+  const name = stream.fileName.toLowerCase();
+  const badContainer =
+    name.endsWith(".mkv") ||
+    name.endsWith(".avi") ||
+    name.endsWith(".ts") ||
+    name.endsWith(".wmv") ||
+    name.endsWith(".flv");
+  const badCodec =
+    stream.codec === VideoCodec.h265 ||
+    stream.codec === VideoCodec.av1 ||
+    source.codec === VideoCodec.h265 ||
+    source.codec === VideoCodec.av1;
+  return badContainer || badCodec;
+}
+
 export function Detail() {
   const {
     detailItem,
@@ -59,16 +81,28 @@ export function Detail() {
   const item = detail.data.item;
   const inWatchlist = isInWatchlist(watchlist, detailItem.id);
 
-  function handlePlay(stream: StreamInfo, source: TorrentResult) {
-    // MKV / HEVC can't decode in the webview — force the external path.
-    const isMkv = stream.fileName.toLowerCase().endsWith(".mkv");
-    const isHevc =
-      stream.codec === VideoCodec.h265 || source.codec === VideoCodec.h265;
-    setPlayer({
-      url: stream.streamURL,
-      title: stream.fileName || source.title,
-      external: isMkv || isHevc,
-    });
+  async function handlePlay(stream: StreamInfo, source: TorrentResult) {
+    const title = stream.fileName || source.title;
+
+    // Browser-playable (MP4/WebM/H.264) — play the direct link in-webview.
+    if (!needsTranscodeOrExternal(stream, source)) {
+      setPlayer({ url: stream.streamURL, title, external: false });
+      return;
+    }
+
+    // MKV / HEVC / AV1: prefer Real-Debrid transcode-to-HLS so it plays IN the
+    // window (hls.js). Only RD resolves this (gated inside DebridManager via the
+    // stream's `restrictedId`); any failure / non-RD source returns null and we
+    // fall back to the native-player hand-off below.
+    const hlsUrl = await services.debrid?.getTranscodeHLS(stream).catch(() => null);
+    if (hlsUrl != null) {
+      // In-window: the .m3u8 routes through the webview hls.js path.
+      setPlayer({ url: hlsUrl, title, external: false });
+      return;
+    }
+
+    // Fallback: native player (mpv/VLC) via the desktop hand-off.
+    setPlayer({ url: stream.streamURL, title, external: true });
   }
 
   return (

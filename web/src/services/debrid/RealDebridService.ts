@@ -160,13 +160,13 @@ export class RealDebridService implements DebridService {
     const selected = DebridFileSelector.selectBest(candidates);
     if (selected == null) throw DebridError.noFilesAvailable();
 
-    const streamURL = await this.unrestrict(selected.link);
+    const unrestricted = await this.unrestrictDetailed(selected.link);
 
     const filename = lastPathComponent(selected.fileName);
     const bytes = selected.sizeBytes;
 
     return {
-      streamURL,
+      streamURL: unrestricted.download,
       quality: VideoQuality.parse(filename),
       codec: VideoCodec.parse(filename),
       audio: AudioFormat.parse(filename),
@@ -174,6 +174,8 @@ export class RealDebridService implements DebridService {
       sizeBytes: bytes,
       fileName: filename,
       debridService: "RD",
+      // Carried for the in-window transcode path (`/streaming/transcode/{id}`).
+      restrictedId: unrestricted.id ?? undefined,
     };
   }
 
@@ -221,6 +223,16 @@ export class RealDebridService implements DebridService {
   // MARK: - Unrestrict
 
   async unrestrict(link: string): Promise<string> {
+    return (await this.unrestrictDetailed(link)).download;
+  }
+
+  /** Like {@link unrestrict} but also surfaces Real-Debrid's unrestrict `id`
+   * (the key for the `/streaming/transcode/{id}` and `/streaming/mediaInfos/{id}`
+   * endpoints). The `download` URL is required; `id` is best-effort (null when
+   * RD omits it). Same retry-on-5xx behavior as `unrestrict`. */
+  async unrestrictDetailed(
+    link: string,
+  ): Promise<{ download: string; id: string | null }> {
     const body = `link=${urlQueryEncode(link)}`;
 
     const maxRetries = 5;
@@ -231,7 +243,8 @@ export class RealDebridService implements DebridService {
         const json = parseJSON(data);
         const downloadStr = json?.download;
         if (typeof downloadStr === "string" && isValidURL(downloadStr)) {
-          return downloadStr;
+          const id = typeof json?.id === "string" ? json.id : null;
+          return { download: downloadStr, id };
         }
         throw DebridError.downloadFailed("Failed to parse unrestrict response");
       } catch (error) {
@@ -252,6 +265,45 @@ export class RealDebridService implements DebridService {
     throw lastError instanceof Error
       ? lastError
       : DebridError.downloadFailed(`Failed to unrestrict link after ${maxRetries} retries`);
+  }
+
+  // MARK: - Streaming / Transcode
+
+  /** Fetch Real-Debrid's transcoded HLS (`.m3u8`) URL for an unrestrict `id`.
+   *
+   * `GET /streaming/transcode/{id}` returns a map of streaming formats:
+   *   { apple: {...}, dash: {...}, liveMP4: {...}, h264WebM: {...} }
+   * where `apple` is the HLS (M3U8) format — a quality-keyed map (e.g. `full`,
+   * `1080p`, `720p`, `480p`) whose values are `.m3u8` URLs. We prefer the
+   * highest-quality variant (`full` if present, else the highest resolution,
+   * else any HLS URL), so an MKV/HEVC source can be played in-webview by hls.js.
+   *
+   * Returns null when no HLS variant is available (the caller falls back to the
+   * native-player hand-off). Defensive against shape drift: tolerates missing
+   * keys, non-string values, and `apple` being absent. */
+  async getTranscodeHLS(unrestrictId: string): Promise<string | null> {
+    const data = await this.requestRaw(
+      `/streaming/transcode/${unrestrictId}`,
+      "GET",
+    );
+    const json = parseJSON(data);
+    if (json == null) return null;
+    return pickBestHLS(json);
+  }
+
+  /** Fetch Real-Debrid media info (`GET /streaming/mediaInfos/{id}`) for an
+   * unrestrict `id` — codec/format/duration details. Returned as the raw parsed
+   * object (the shape is large and only loosely documented); null on parse
+   * failure. Currently informational; the transcode path keys off the filename
+   * codec, but this lets callers double-check container/codec at resolve time. */
+  async getMediaInfos(
+    unrestrictId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const data = await this.requestRaw(
+      `/streaming/mediaInfos/${unrestrictId}`,
+      "GET",
+    );
+    return parseJSON(data);
   }
 
   // MARK: - User Torrents
@@ -394,4 +446,50 @@ function isValidURL(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Rank a transcode quality key so we can prefer the highest variant. RD's
+ * `apple` map is keyed by labels like `full`, `1080p`, `720p`, `480p`. `full`
+ * is the original-resolution stream and wins; otherwise higher pixel height
+ * wins; unknown labels sort last. */
+function hlsQualityRank(key: string): number {
+  const k = key.toLowerCase();
+  if (k === "full" || k === "original" || k === "max") return 100000;
+  const res = k.match(/(\d{3,4})\s*p?/);
+  if (res) return Number.parseInt(res[1], 10);
+  return -1;
+}
+
+/** Extract the best HLS (`.m3u8`) URL from a `/streaming/transcode/{id}`
+ * response. Prefers the `apple` (HLS) format's highest-quality variant. Falls
+ * back to scanning any nested string that looks like an `.m3u8` URL so a minor
+ * shape change (e.g. the HLS map under a different key) still resolves. Returns
+ * null when nothing usable is found. */
+function pickBestHLS(json: Record<string, unknown>): string | null {
+  const isM3U8 = (v: unknown): v is string =>
+    typeof v === "string" && isValidURL(v) && v.split("?")[0].toLowerCase().includes(".m3u8");
+
+  // Primary: the documented `apple` (M3U8) quality map.
+  const apple = json.apple;
+  if (apple != null && typeof apple === "object" && !Array.isArray(apple)) {
+    let best: { url: string; rank: number } | null = null;
+    for (const [key, value] of Object.entries(apple as Record<string, unknown>)) {
+      if (!isM3U8(value)) continue;
+      const rank = hlsQualityRank(key);
+      if (best == null || rank > best.rank) best = { url: value, rank };
+    }
+    if (best != null) return best.url;
+  }
+
+  // Defensive fallback: any `.m3u8` URL anywhere in the response object. Walks
+  // one or two levels (top-level strings + nested quality maps).
+  for (const value of Object.values(json)) {
+    if (isM3U8(value)) return value;
+    if (value != null && typeof value === "object" && !Array.isArray(value)) {
+      for (const nested of Object.values(value as Record<string, unknown>)) {
+        if (isM3U8(nested)) return nested;
+      }
+    }
+  }
+  return null;
 }

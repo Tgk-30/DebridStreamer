@@ -8,6 +8,10 @@
 
 use std::process::Command;
 
+// Bundled-mpv player (Phase 3 P1): spawns the mpv sidecar and drives it over
+// JSON IPC. See player.rs for the `--wid` in-window-embedding caveat (macOS).
+mod player;
+
 #[tauri::command]
 fn open_in_external_player(url: String) -> Result<String, String> {
     // Preference order: VLC (installed here, matches the current VLCKit player), then mpv, then IINA.
@@ -50,7 +54,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // Native HTTP client used by the webview (`@tauri-apps/plugin-http`) to
         // reach indexer/debrid/addon hosts without the browser CORS policy.
-        .plugin(tauri_plugin_http::init());
+        .plugin(tauri_plugin_http::init())
+        // Shell plugin: used from Rust to spawn the bundled mpv sidecar (P1).
+        .plugin(tauri_plugin_shell::init())
+        // At-most-one mpv instance, shared across the mpv_* commands.
+        .manage(player::MpvState::default());
 
     // Auto-updater is desktop-only. The JS side (web/src/lib/updater.ts) calls
     // the plugin's `check()` once on launch; releases are signed with the
@@ -61,7 +69,15 @@ pub fn run() {
     }
 
     builder
-        .invoke_handler(tauri::generate_handler![open_in_external_player])
+        .invoke_handler(tauri::generate_handler![
+            open_in_external_player,
+            player::mpv_play,
+            player::mpv_pause,
+            player::mpv_resume,
+            player::mpv_seek,
+            player::mpv_get_position,
+            player::mpv_stop,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
