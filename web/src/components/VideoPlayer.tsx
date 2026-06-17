@@ -25,6 +25,9 @@ interface VideoPlayerProps {
   /** Force a path; when omitted it's sniffed from the URL extension. */
   kind?: Playability;
   onClose: () => void;
+  /** Reports playback progress (seconds watched + total duration) so the store
+   * can persist a resume position. Called periodically and on close. */
+  onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
 }
 
 /** Decide whether the webview can plausibly play this URL or whether it needs a
@@ -42,11 +45,44 @@ function classify(url: string): Playability {
   return "webview";
 }
 
-export function VideoPlayer({ url, title, kind, onClose }: VideoPlayerProps) {
+export function VideoPlayer({
+  url,
+  title,
+  kind,
+  onClose,
+  onProgress,
+}: VideoPlayerProps) {
   const mode = kind ?? classify(url);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [externalStatus, setExternalStatus] = useState<string | null>(null);
   const [externalError, setExternalError] = useState<string | null>(null);
+
+  // Report playback progress (throttled to ~once / 5s) so the store can persist
+  // a resume position, and flush a final report when the player unmounts.
+  const lastReportRef = useRef(0);
+  useEffect(() => {
+    if (mode !== "webview" || onProgress == null) return;
+    const video = videoRef.current;
+    if (video == null) return;
+
+    const report = () => {
+      const duration = Number.isFinite(video.duration) ? video.duration : null;
+      onProgress(video.currentTime, duration);
+    };
+    const onTimeUpdate = () => {
+      const now = Date.now();
+      if (now - lastReportRef.current >= 5000) {
+        lastReportRef.current = now;
+        report();
+      }
+    };
+    video.addEventListener("timeupdate", onTimeUpdate);
+    return () => {
+      video.removeEventListener("timeupdate", onTimeUpdate);
+      // Final flush on close so the resume point is current.
+      if (video.currentTime > 0) report();
+    };
+  }, [mode, onProgress, url]);
 
   // Wire hls.js for HLS streams when the browser can't play them natively.
   useEffect(() => {

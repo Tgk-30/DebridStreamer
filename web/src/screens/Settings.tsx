@@ -17,9 +17,36 @@ import { useAppStore } from "../store/AppStore";
 import type { AppSettings, SourceEntry } from "../data/settings";
 import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
-import { IndexerType } from "../services/indexers/types";
+import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import "./Settings.css";
+
+/** The selectable external-source types. `stremio_addon` is persisted to the
+ * Store faithfully even though the ported web IndexerManager cannot build it
+ * yet — it is the documented Stremio-source follow-up. */
+const SOURCE_TYPES: StoredIndexerType[] = [
+  "torznab",
+  "jackett",
+  "prowlarr",
+  "stremio_addon",
+];
+
+function sourceTypeLabel(type: StoredIndexerType): string {
+  switch (type) {
+    case "torznab":
+      return "Torznab";
+    case "jackett":
+      return "Jackett";
+    case "prowlarr":
+      return "Prowlarr";
+    case "zilean":
+      return "Zilean";
+    case "stremio_addon":
+      return "Stremio Addon";
+    case "built_in":
+      return "Built-in Scrapers";
+  }
+}
 
 type Tab = "keys" | "debrid" | "sources";
 
@@ -71,7 +98,7 @@ export function Settings() {
 
       <div className="settings-footer">
         <span className="settings-note t-secondary">
-          Stored locally this phase · keychain + sync arrive with the storage port
+          Saved to local device storage · OS-keychain for secrets is the next step
         </span>
         <button type="button" className="btn btn-prominent" onClick={save}>
           {saved ? "Saved" : "Save changes"}
@@ -199,7 +226,7 @@ function SourcesTab({ draft, patch }: TabProps) {
   function addSource() {
     const entry: SourceEntry = {
       id: `src-${Date.now()}`,
-      type: IndexerType.torznab,
+      type: "torznab",
       baseURL: "",
       apiKey: "",
       isActive: true,
@@ -214,6 +241,16 @@ function SourcesTab({ draft, patch }: TabProps) {
   }
   function removeSource(id: string) {
     patch({ sources: draft.sources.filter((s) => s.id !== id) });
+  }
+  /** Reorder a source (priority = list order, lower index = higher priority). */
+  function moveSource(id: string, delta: number) {
+    const idx = draft.sources.findIndex((s) => s.id === id);
+    const next = idx + delta;
+    if (idx < 0 || next < 0 || next >= draft.sources.length) return;
+    const reordered = [...draft.sources];
+    const [moved] = reordered.splice(idx, 1);
+    reordered.splice(next, 0, moved);
+    patch({ sources: reordered.map((s, i) => ({ ...s, priority: i })) });
   }
 
   return (
@@ -244,7 +281,7 @@ function SourcesTab({ draft, patch }: TabProps) {
           No external indexers. The built-in scrapers cover most titles.
         </p>
       ) : (
-        draft.sources.map((s) => (
+        draft.sources.map((s, i) => (
           <div key={s.id} className="settings-source glass-rest">
             <div className="settings-source-row">
               <select
@@ -255,13 +292,11 @@ function SourcesTab({ draft, patch }: TabProps) {
                   })
                 }
               >
-                {(["torznab", "jackett", "prowlarr"] as IndexerType[]).map(
-                  (t) => (
-                    <option key={t} value={t}>
-                      {IndexerType.displayName(t)}
-                    </option>
-                  ),
-                )}
+                {SOURCE_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {sourceTypeLabel(t)}
+                  </option>
+                ))}
               </select>
               <input
                 type="text"
@@ -282,6 +317,26 @@ function SourcesTab({ draft, patch }: TabProps) {
                 />
                 Active
               </label>
+              <button
+                type="button"
+                className="settings-source-remove"
+                onClick={() => moveSource(s.id, -1)}
+                aria-label="Move source up"
+                title="Move up"
+                disabled={i === 0}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="settings-source-remove"
+                onClick={() => moveSource(s.id, 1)}
+                aria-label="Move source down"
+                title="Move down"
+                disabled={i === draft.sources.length - 1}
+              >
+                ↓
+              </button>
               <button
                 type="button"
                 className="settings-source-remove"

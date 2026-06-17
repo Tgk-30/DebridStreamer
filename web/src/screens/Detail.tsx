@@ -40,6 +40,7 @@ export function Detail() {
     services,
     watchlist,
     toggleWatchlist,
+    recordResume,
   } = useAppStore();
 
   const detail = useDetail(detailItem, services.tmdb);
@@ -118,6 +119,11 @@ export function Detail() {
           title={player.title}
           kind={player.external ? "external" : undefined}
           onClose={() => setPlayer(null)}
+          onProgress={(current, duration) => {
+            // Persist a resume position against the title being viewed so the
+            // History "Continue Watching" rail can pick it back up.
+            recordResume(detailItem, current, duration);
+          }}
         />
       )}
     </div>

@@ -1,7 +1,13 @@
 // App store — the single source of truth for routing, the Detail overlay, the
-// shared service instances, and the (localStorage-backed) settings / watchlist /
-// history. Implemented as a small React context + provider (no extra deps), with
-// a `useAppStore()` hook plus a couple of focused selector hooks.
+// shared service instances, and the persisted settings / watchlist / history.
+// Implemented as a small React context + provider (no extra deps), with a
+// `useAppStore()` hook plus a couple of focused selector hooks.
+//
+// Persistence is the storage port: a typed, cross-platform `Store` (IndexedDB
+// via Dexie) that works in a plain browser AND the Tauri webview. The provider
+// renders immediately from a synchronous bootstrap (env defaults + the legacy
+// localStorage snapshot), then hydrates from the durable Store on mount; every
+// mutation writes through the Store and refreshes the in-memory state.
 //
 // Services are rebuilt whenever settings change (buildServices reads the keys/
 // tokens/sources), so saving a TMDB key in Settings immediately lights up live
@@ -11,6 +17,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -22,15 +29,18 @@ import {
   type AppSettings,
   buildServices,
   loadSettings,
-  saveSettings,
+  loadSettingsFromStore,
+  saveSettingsToStore,
 } from "../data/settings";
 import {
+  loadContinueWatching,
   loadHistory,
   loadWatchlist,
   recordHistory,
   removeFromWatchlist as removeFromWatchlistStore,
   toggleWatchlist as toggleWatchlistStore,
 } from "../data/library";
+import type { WatchHistoryRecord } from "../storage/models";
 
 export interface AppStore {
   // Routing
@@ -50,15 +60,23 @@ export interface AppStore {
   // Shared, read-only service instances (rebuilt when settings change).
   services: AppServices;
 
-  // Settings (localStorage-backed this phase)
+  // Settings (storage-port backed)
   settings: AppSettings;
   updateSettings: (next: AppSettings) => void;
 
-  // Watchlist + History (localStorage-backed this phase)
+  // Watchlist + History (storage-port backed)
   watchlist: MediaPreview[];
   history: MediaPreview[];
+  /** Incomplete items with resume positions (the Continue Watching rail). */
+  continueWatching: WatchHistoryRecord[];
   toggleWatchlist: (item: MediaPreview) => void;
   removeFromWatchlist: (id: string) => void;
+  /** Record a real resume position (called from the player). */
+  recordResume: (
+    item: MediaPreview,
+    progressSeconds: number,
+    durationSeconds: number | null,
+  ) => void;
 }
 
 const AppStoreContext = createContext<AppStore | null>(null);
@@ -68,22 +86,59 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [detailItem, setDetailItem] = useState<MediaPreview | null>(null);
   const [pendingSearch, setPendingSearch] = useState<string | null>(null);
 
+  // Synchronous bootstrap so the first paint has something sane; the durable
+  // Store hydrates over it on mount.
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
-  const [watchlist, setWatchlist] = useState<MediaPreview[]>(() =>
-    loadWatchlist(),
+  const [watchlist, setWatchlist] = useState<MediaPreview[]>([]);
+  const [history, setHistory] = useState<MediaPreview[]>([]);
+  const [continueWatching, setContinueWatching] = useState<WatchHistoryRecord[]>(
+    [],
   );
-  const [history, setHistory] = useState<MediaPreview[]>(() => loadHistory());
+
+  // Hydrate everything from the Store once on mount.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [loadedSettings, wl, hist, cw] = await Promise.all([
+        loadSettingsFromStore(),
+        loadWatchlist(),
+        loadHistory(),
+        loadContinueWatching(),
+      ]);
+      if (cancelled) return;
+      setSettings(loadedSettings);
+      setWatchlist(wl);
+      setHistory(hist);
+      setContinueWatching(cw);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Rebuild services only when settings actually change.
   const services = useMemo(() => buildServices(settings), [settings]);
 
   const navigate = useCallback((next: ScreenId) => setRoute(next), []);
 
-  const openDetail = useCallback((item: MediaPreview) => {
-    setDetailItem(item);
-    // Recording a view also feeds the History screen.
-    setHistory(recordHistory(item));
+  const refreshHistory = useCallback(async () => {
+    const [hist, cw] = await Promise.all([
+      loadHistory(),
+      loadContinueWatching(),
+    ]);
+    setHistory(hist);
+    setContinueWatching(cw);
   }, []);
+
+  const openDetail = useCallback(
+    (item: MediaPreview) => {
+      setDetailItem(item);
+      // Recording a view also feeds the History screen (zero-progress entry;
+      // a real resume position is written later from the player).
+      void recordHistory(item).then(() => void refreshHistory());
+    },
+    [refreshHistory],
+  );
 
   const closeDetail = useCallback(() => setDetailItem(null), []);
 
@@ -97,17 +152,38 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const consumePendingSearch = useCallback(() => setPendingSearch(null), []);
 
   const updateSettings = useCallback((next: AppSettings) => {
-    saveSettings(next);
+    // Optimistically update in-memory (rebuilds services immediately), then
+    // persist to the durable Store.
     setSettings(next);
+    void saveSettingsToStore(next);
   }, []);
 
   const toggleWatchlist = useCallback((item: MediaPreview) => {
-    setWatchlist(toggleWatchlistStore(item));
+    void toggleWatchlistStore(item).then(setWatchlist);
   }, []);
 
   const removeFromWatchlist = useCallback((id: string) => {
-    setWatchlist(removeFromWatchlistStore(id));
+    void removeFromWatchlistStore(id).then(setWatchlist);
   }, []);
+
+  const recordResume = useCallback(
+    (
+      item: MediaPreview,
+      progressSeconds: number,
+      durationSeconds: number | null,
+    ) => {
+      const completed =
+        durationSeconds != null &&
+        durationSeconds > 0 &&
+        progressSeconds / durationSeconds >= 0.95;
+      void recordHistory(item, {
+        progressSeconds,
+        durationSeconds,
+        completed,
+      }).then(() => void refreshHistory());
+    },
+    [refreshHistory],
+  );
 
   const value: AppStore = {
     route,
@@ -123,8 +199,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     updateSettings,
     watchlist,
     history,
+    continueWatching,
     toggleWatchlist,
     removeFromWatchlist,
+    recordResume,
   };
 
   return (

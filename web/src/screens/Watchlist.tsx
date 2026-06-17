@@ -1,8 +1,8 @@
-// Watchlist screen — localStorage-backed (storage port pending).
+// Watchlist screen — backed by the storage port (Dexie/IndexedDB).
 //
 // Shows the saved titles as a MediaCard grid that opens Detail; each card can be
-// removed from the watchlist. Persistence is localStorage this phase; real
-// persistence + Trakt/IMDb sync arrive with the storage port.
+// removed from the watchlist. Persistence is the durable Store (works in browser
+// + Tauri webview); Trakt/IMDb sync is the documented follow-up.
 
 import { useAppStore } from "../store/AppStore";
 import { MediaGrid } from "../components/MediaGrid";
@@ -25,7 +25,7 @@ export function Watchlist() {
           icon="watchlist"
           title="Your watchlist is empty"
           subtitle="Open a title and tap Watchlist to save it here."
-          note="Stored locally · sync pending the storage port"
+          note="Saved on device · Trakt/IMDb sync is the next step"
         />
       ) : (
         <div className="lib-grid-wrap">

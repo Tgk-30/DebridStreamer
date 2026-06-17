@@ -1,11 +1,16 @@
 // Local settings + service-construction layer.
 //
 // The native app keeps API keys / debrid tokens / indexer configs in GRDB +
-// the keychain. That storage layer isn't ported yet, so this phase persists the
-// same values to `localStorage` (clearly a stopgap — real persistence + keychain
-// arrives with the storage port). Env vars (`import.meta.env.VITE_*`) provide a
-// zero-config default so the app works for a screenshot without touching
-// Settings; any value saved in Settings overrides the env default.
+// the keychain. The storage port (Phase 1.5) replaces the old localStorage
+// stopgap with a real, typed, cross-platform persistence layer (IndexedDB via
+// Dexie, behind the `Store` / `SecretStore` interfaces) that works in both a
+// plain browser and the Tauri webview. API keys + tokens are routed through
+// `SecretStore` (currently IndexedDB; an OS-keychain backend is the documented
+// follow-up). Indexer + debrid configs live in their own Dexie tables.
+//
+// Env vars (`import.meta.env.VITE_*`) still provide a zero-config default so the
+// app works for a screenshot without touching Settings; any value saved in
+// Settings overrides the env default and is persisted to the Store.
 //
 // This module also builds the shared, READ-ONLY service instances the screens
 // call: TMDBService / OMDBService / DebridManager / IndexerManager and the AI
@@ -31,17 +36,53 @@ import type { AIProviderKind } from "../services/ai/models";
 import { OpenAIProvider } from "../services/ai/OpenAIProvider";
 import { AnthropicProvider } from "../services/ai/AnthropicProvider";
 import { OllamaProvider } from "../services/ai/OllamaProvider";
+import { getSecretStore, getStore } from "../storage";
+import {
+  type IndexerConfigRecord,
+  makeIndexerConfigRecord,
+  type StoredIndexerType,
+  type StoredProviderSubtype,
+} from "../storage/models";
 
 const STORAGE_KEY = "debridstreamer.settings.v1";
 
-/** A user-configured external indexer (Torznab/Jackett/Prowlarr). */
+/** Settings keys persisted in the Store's key-value table (mirror the Swift
+ * SettingsKeys). Secret-valued keys are persisted via `SecretStore`, with a
+ * `secret:<key>` marker left in the KV table so a later sweep can find them. */
+const SettingsKeys = {
+  tmdbApiKey: "tmdb_api_key",
+  omdbApiKey: "omdb_api_key",
+  builtInIndexersEnabled: "built_in_indexers_enabled",
+  aiProvider: "ai_provider",
+  aiApiKey: "ai_api_key",
+  aiModel: "ai_model",
+  ollamaEndpoint: "ollama_endpoint",
+} as const;
+
+/** Marker written into the KV table for secret-valued keys; the real value
+ * lives in the SecretStore under the same key. Mirrors the Swift
+ * `SecretReference` "keychain:" convention. */
+const SECRET_MARKER = "secret:";
+
+/** Keys whose values are credentials and must go through `SecretStore`. */
+const SECRET_KEYS = new Set<string>([
+  SettingsKeys.tmdbApiKey,
+  SettingsKeys.omdbApiKey,
+  SettingsKeys.aiApiKey,
+]);
+
+/** A user-configured external indexer (Torznab/Jackett/Prowlarr/Stremio addon).
+ * `type` is the storage-layer indexer type, which includes `stremio_addon`
+ * (persisted faithfully even though the ported web IndexerManager cannot build
+ * one yet — see buildIndexerConfigs, which skips types the web factory lacks). */
 export interface SourceEntry {
   id: string;
-  type: IndexerType;
+  type: StoredIndexerType;
   baseURL: string;
   apiKey?: string | null;
   isActive: boolean;
   displayName?: string | null;
+  priority?: number;
 }
 
 /** A debrid token entry. */
@@ -113,6 +154,215 @@ export function saveSettings(settings: AppSettings): void {
   }
 }
 
+// ---- Store-backed settings (the storage port) -------------------------------
+
+/** Read a setting value, transparently resolving the secret indirection: a
+ * `secret:<key>` marker in the KV table means the real value is in SecretStore. */
+async function getStoredValue(key: string): Promise<string | null> {
+  const store = getStore();
+  const raw = await store.getSetting(key);
+  if (raw == null) return null;
+  if (raw.startsWith(SECRET_MARKER)) {
+    return getSecretStore().getSecret(raw.slice(SECRET_MARKER.length));
+  }
+  return raw;
+}
+
+/** Write a setting, routing credential-valued keys through SecretStore and
+ * leaving a `secret:<key>` marker in the KV table. Mirrors SettingsManager. */
+async function setStoredValue(key: string, value: string): Promise<void> {
+  const store = getStore();
+  if (SECRET_KEYS.has(key)) {
+    const secrets = getSecretStore();
+    if (value.trim().length > 0) {
+      await secrets.setSecret(key, value);
+      await store.setSetting(key, `${SECRET_MARKER}${key}`);
+    } else {
+      await secrets.deleteSecret(key);
+      await store.setSetting(key, null);
+    }
+    return;
+  }
+  await store.setSetting(key, value);
+}
+
+/** Load settings from the Store (KV + SecretStore + the debrid/indexer config
+ * tables), merged over the env-derived defaults. Falls back to the legacy
+ * localStorage blob on first run (one-time migration) so an existing user's
+ * config is not lost. */
+export async function loadSettingsFromStore(): Promise<AppSettings> {
+  const base = defaultSettings();
+
+  // One-time migration: if the Store has nothing yet but localStorage has a
+  // legacy blob, seed the Store from it so the upgrade is seamless.
+  const store = getStore();
+  const existingFlag = await store.getSetting("storage_port_initialized");
+  if (existingFlag == null) {
+    const legacy = loadSettings();
+    await saveSettingsToStore(legacy);
+    await store.setSetting("storage_port_initialized", "true");
+    return legacy;
+  }
+
+  const [tmdbKey, omdbKey, aiApiKey] = await Promise.all([
+    getStoredValue(SettingsKeys.tmdbApiKey),
+    getStoredValue(SettingsKeys.omdbApiKey),
+    getStoredValue(SettingsKeys.aiApiKey),
+  ]);
+  const [aiProvider, aiModel, ollamaEndpoint, builtIn] = await Promise.all([
+    store.getSetting(SettingsKeys.aiProvider),
+    store.getSetting(SettingsKeys.aiModel),
+    store.getSetting(SettingsKeys.ollamaEndpoint),
+    store.getSetting(SettingsKeys.builtInIndexersEnabled),
+  ]);
+
+  const debridConfigs = await store.listDebridConfigs();
+  const indexerConfigs = await store.listIndexerConfigs();
+
+  const debridTokens: DebridTokenEntry[] = [];
+  for (const c of debridConfigs) {
+    // The token lives in SecretStore under the config id.
+    const token = (await getSecretStore().getSecret(debridSecretKey(c.id))) ?? "";
+    if (token.length > 0) {
+      debridTokens.push({ service: c.service, apiToken: token });
+    }
+  }
+
+  const sources: SourceEntry[] = indexerConfigs
+    .filter((c) => c.type !== "built_in")
+    .map((c) => ({
+      id: c.id,
+      type: c.type,
+      baseURL: c.baseURL,
+      apiKey: c.apiKey,
+      isActive: c.isActive,
+      displayName: c.displayName,
+      priority: c.priority,
+    }));
+
+  return {
+    tmdbKey: tmdbKey ?? base.tmdbKey,
+    omdbKey: omdbKey ?? base.omdbKey,
+    debridTokens,
+    sources,
+    builtInIndexersEnabled: builtIn == null ? base.builtInIndexersEnabled : builtIn === "true",
+    aiProvider: (aiProvider as AIProviderKind) ?? base.aiProvider,
+    aiApiKey: aiApiKey ?? base.aiApiKey,
+    aiModel: aiModel ?? base.aiModel,
+    ollamaEndpoint: ollamaEndpoint ?? base.ollamaEndpoint,
+  };
+}
+
+/** Persist settings to the Store: scalar/secret keys to KV + SecretStore, and
+ * the debrid/indexer configs to their tables (replacing the previous set so the
+ * tables mirror exactly what the user configured). */
+export async function saveSettingsToStore(settings: AppSettings): Promise<void> {
+  const store = getStore();
+  const secrets = getSecretStore();
+
+  await Promise.all([
+    setStoredValue(SettingsKeys.tmdbApiKey, settings.tmdbKey),
+    setStoredValue(SettingsKeys.omdbApiKey, settings.omdbKey),
+    setStoredValue(SettingsKeys.aiApiKey, settings.aiApiKey),
+    store.setSetting(SettingsKeys.aiProvider, settings.aiProvider),
+    store.setSetting(SettingsKeys.aiModel, settings.aiModel),
+    store.setSetting(SettingsKeys.ollamaEndpoint, settings.ollamaEndpoint),
+    store.setSetting(
+      SettingsKeys.builtInIndexersEnabled,
+      settings.builtInIndexersEnabled ? "true" : "false",
+    ),
+  ]);
+
+  // Debrid configs: reconcile the table to the current token set. Tokens go in
+  // SecretStore under `debrid.<id>`; the config row carries a secret marker.
+  const existingDebrid = await store.listDebridConfigs();
+  const keptDebridIds = new Set<string>();
+  let priority = 0;
+  for (const entry of settings.debridTokens) {
+    if (entry.apiToken.trim().length === 0) continue;
+    // Stable id per service so re-saving updates rather than duplicates.
+    const id = `debrid-${entry.service}`;
+    keptDebridIds.add(id);
+    await secrets.setSecret(debridSecretKey(id), entry.apiToken);
+    await store.saveDebridConfig({
+      id,
+      service: entry.service,
+      apiToken: `${SECRET_MARKER}${debridSecretKey(id)}`,
+      isActive: true,
+      priority: priority++,
+    });
+  }
+  for (const c of existingDebrid) {
+    if (!keptDebridIds.has(c.id)) {
+      await secrets.deleteSecret(debridSecretKey(c.id));
+      await store.deleteDebridConfig(c.id);
+    }
+  }
+
+  // Indexer configs: reconcile to the current sources list (preserve order as
+  // priority). A `built_in` row is written only to DISABLE the scrapers.
+  const existingIndexers = await store.listIndexerConfigs();
+  const keptIndexerIds = new Set<string>();
+  settings.sources.forEach((s, i) => {
+    keptIndexerIds.add(s.id);
+    const record: IndexerConfigRecord = makeIndexerConfigRecord({
+      id: s.id,
+      type: s.type,
+      baseURL: s.baseURL,
+      apiKey: s.apiKey ?? null,
+      isActive: s.isActive,
+      displayName: s.displayName ?? null,
+      providerSubtype: providerSubtypeFor(s.type),
+      priority: s.priority ?? i,
+    });
+    void store.saveIndexerConfig(record);
+  });
+  if (!settings.builtInIndexersEnabled) {
+    keptIndexerIds.add("built-in");
+    await store.saveIndexerConfig(
+      makeIndexerConfigRecord({
+        id: "built-in",
+        type: "built_in",
+        baseURL: "",
+        isActive: false,
+      }),
+    );
+  }
+  for (const c of existingIndexers) {
+    if (!keptIndexerIds.has(c.id)) {
+      await store.deleteIndexerConfig(c.id);
+    }
+  }
+
+  // Keep the legacy localStorage blob in sync as a belt-and-suspenders cache so
+  // the synchronous bootstrap render has a recent snapshot before hydration.
+  saveSettings(settings);
+}
+
+/** The SecretStore key a debrid config's token is stored under (mirrors the
+ * Swift `SecretKey.debridToken`). */
+function debridSecretKey(configId: string): string {
+  return `debrid.${configId}`;
+}
+
+/** Best-effort providerSubtype for a stored type (the stremio subtype has no
+ * web factory yet but is persisted faithfully). */
+function providerSubtypeFor(type: StoredIndexerType): StoredProviderSubtype {
+  switch (type) {
+    case "jackett":
+      return "jackett";
+    case "prowlarr":
+      return "prowlarr";
+    case "stremio_addon":
+      return "stremio_addon";
+    case "built_in":
+      return "built_in";
+    case "torznab":
+    case "zilean":
+      return "custom_torznab";
+  }
+}
+
 // ---- Service construction ---------------------------------------------------
 
 /** The shared service instances the screens consume. Any of them may be null
@@ -162,20 +412,34 @@ function buildIndexerConfigs(settings: AppSettings): IndexerConfig[] {
   settings.sources
     .filter((s) => s.isActive && s.baseURL.trim().length > 0)
     .forEach((s, i) => {
+      // The ported web IndexerManager/factory only build the Torznab family
+      // (jackett/prowlarr/torznab/zilean). `stremio_addon` is persisted in the
+      // Store but has no web indexer yet, so skip it here (it gates gracefully —
+      // a Stremio-capable factory is the documented follow-up). `built_in` is
+      // handled above via the scrapers toggle.
+      if (!WEB_BUILDABLE_INDEXER_TYPES.has(s.type)) return;
       configs.push(
         makeIndexerConfig({
           id: s.id,
-          type: s.type,
+          type: s.type as IndexerType,
           baseURL: s.baseURL.trim(),
           apiKey: s.apiKey ?? null,
           isActive: true,
           displayName: s.displayName ?? null,
-          priority: i,
+          priority: s.priority ?? i,
         }),
       );
     });
   return configs;
 }
+
+/** The indexer types the ported web factory can actually construct. */
+const WEB_BUILDABLE_INDEXER_TYPES = new Set<StoredIndexerType>([
+  "jackett",
+  "prowlarr",
+  "torznab",
+  "zilean",
+]);
 
 function buildAIProvider(settings: AppSettings): AIAssistantProvider | null {
   const key = settings.aiApiKey.trim();

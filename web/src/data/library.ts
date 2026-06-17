@@ -1,74 +1,83 @@
-// Watchlist + History persistence (localStorage stopgap).
+// Watchlist + History persistence — backed by the storage port (Dexie/IndexedDB).
 //
-// The native app stores these in GRDB; that storage layer isn't ported yet, so
-// this phase keeps the watchlist and "recently viewed" history in localStorage.
-// Both are arrays of MediaPreview (the display type the catalog already uses),
-// most-recent-first. Real persistence / sync arrives with the storage port.
+// The native app stores these in GRDB. The storage port replaces the old
+// localStorage stopgap with the typed cross-platform `Store` (IndexedDB via
+// Dexie), which works in a plain browser AND the Tauri webview. The screens
+// render from an in-memory `MediaPreview[]` held by the AppStore; these helpers
+// read/write the durable Store and return the refreshed list so the AppStore can
+// update its state. `isInWatchlist` stays a pure check over the in-memory array.
 
 import type { MediaPreview } from "../models/media";
+import { getStore } from "../storage";
+import type { WatchHistoryRecord } from "../storage/models";
 
-const WATCHLIST_KEY = "debridstreamer.watchlist.v1";
-const HISTORY_KEY = "debridstreamer.history.v1";
-const HISTORY_LIMIT = 60;
-
-function read(key: string): MediaPreview[] {
-  try {
-    const raw = globalThis.localStorage?.getItem(key);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as MediaPreview[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function write(key: string, items: MediaPreview[]): void {
-  try {
-    globalThis.localStorage?.setItem(key, JSON.stringify(items));
-  } catch {
-    // Ignore.
-  }
-}
-
-export function loadWatchlist(): MediaPreview[] {
-  return read(WATCHLIST_KEY);
-}
-
-export function loadHistory(): MediaPreview[] {
-  return read(HISTORY_KEY);
-}
-
+/** Whether an item is in the (in-memory) watchlist array. Pure — no I/O. */
 export function isInWatchlist(items: MediaPreview[], id: string): boolean {
   return items.some((i) => i.id === id);
 }
 
-/** Toggle an item in the watchlist; returns the new list (most-recent-first). */
-export function toggleWatchlist(item: MediaPreview): MediaPreview[] {
-  const current = loadWatchlist();
-  const exists = current.some((i) => i.id === item.id);
-  const next = exists
-    ? current.filter((i) => i.id !== item.id)
-    : [item, ...current];
-  write(WATCHLIST_KEY, next);
-  return next;
+/** Load the watchlist from the Store, most-recently-added first. */
+export async function loadWatchlist(): Promise<MediaPreview[]> {
+  const rows = await getStore().listWatchlist();
+  return rows.map((r) => r.preview);
 }
 
-export function removeFromWatchlist(id: string): MediaPreview[] {
-  const next = loadWatchlist().filter((i) => i.id !== id);
-  write(WATCHLIST_KEY, next);
-  return next;
+/** Load the watch history from the Store, most-recently-watched first. */
+export async function loadHistory(): Promise<MediaPreview[]> {
+  const rows = await getStore().listHistory();
+  return rows.map((r) => r.preview);
 }
 
-/** Record a viewed item at the front of history (dedup, capped). Returns the
- * new list. */
-export function recordHistory(item: MediaPreview): MediaPreview[] {
-  const current = loadHistory().filter((i) => i.id !== item.id);
-  const next = [item, ...current].slice(0, HISTORY_LIMIT);
-  write(HISTORY_KEY, next);
-  return next;
+/** Load the "continue watching" rows (incomplete, with resume positions). */
+export async function loadContinueWatching(): Promise<WatchHistoryRecord[]> {
+  return getStore().continueWatching();
 }
 
-export function clearHistory(): MediaPreview[] {
-  write(HISTORY_KEY, []);
-  return [];
+/** Toggle an item in the watchlist; returns the refreshed list. */
+export async function toggleWatchlist(
+  item: MediaPreview,
+): Promise<MediaPreview[]> {
+  const store = getStore();
+  if (await store.isInWatchlist(item.id)) {
+    await store.removeFromWatchlist(item.id);
+  } else {
+    await store.addToWatchlist(item);
+  }
+  return loadWatchlist();
+}
+
+/** Remove an item from the watchlist; returns the refreshed list. */
+export async function removeFromWatchlist(
+  id: string,
+): Promise<MediaPreview[]> {
+  const store = getStore();
+  await store.removeFromWatchlist(id);
+  return loadWatchlist();
+}
+
+/** Record a viewed/played item into watch history (one row per (media,episode),
+ * newest wins). Returns the refreshed history list. Optional resume fields let
+ * playback record a real resume position; opening a Detail records a view with
+ * default zero progress. */
+export async function recordHistory(
+  item: MediaPreview,
+  opts?: {
+    progressSeconds?: number;
+    durationSeconds?: number | null;
+    completed?: boolean;
+    streamQuality?: string | null;
+    episodeId?: string | null;
+  },
+): Promise<MediaPreview[]> {
+  const store = getStore();
+  await store.recordHistory({
+    mediaId: item.id,
+    episodeId: opts?.episodeId ?? null,
+    progressSeconds: opts?.progressSeconds ?? 0,
+    durationSeconds: opts?.durationSeconds ?? null,
+    completed: opts?.completed ?? false,
+    streamQuality: opts?.streamQuality ?? null,
+    preview: item,
+  });
+  return loadHistory();
 }
