@@ -40,7 +40,13 @@ export function Discover({ onSelect }: DiscoverProps) {
 
       {data.hero && (
         <HeroSpotlight
-          item={data.hero}
+          items={[data.hero, ...data.trendingMovies, ...data.trendingTV]
+            .filter(
+              (it, i, arr) =>
+                it.backdropPath != null &&
+                arr.findIndex((x) => x.id === it.id) === i
+            )
+            .slice(0, 5)}
           onPlay={onSelect}
           onDetails={onSelect}
         />

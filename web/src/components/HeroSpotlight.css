@@ -1,35 +1,51 @@
-/* HeroSpotlight — 380px cinematic featured panel. */
+/* HeroSpotlight — cinematic auto-rotating billboard. */
 
 .hero {
   position: relative;
-  height: 380px;
+  height: clamp(420px, 52vh, 560px);
   border-radius: var(--r-lg);
   overflow: hidden;
-  /* accent tint over the hero glass (GlassElevation.hero tint) */
-  box-shadow:
-    0 18px 28px rgba(0, 0, 0, 0.28),
-    inset 0 0 0 100vmax rgba(var(--accent-rgb), 0.05);
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  isolation: isolate;
 }
 
+.hero-backdrop-layer {
+  position: absolute;
+  inset: 0;
+  will-change: transform, opacity;
+}
 .hero-backdrop {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center 18%;
+}
+.hero-gradient {
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.85),
+    rgba(var(--accent-secondary-rgb), 0.6),
+    rgba(var(--accent-tertiary-rgb), 0.5)
+  );
 }
 
-/* Bottom-to-top dark scrim (HeroSpotlight.scrim stops). */
+/* Left-weighted + bottom scrim so large title stays legible over any frame. */
 .hero-scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(0, 0, 0, 0.25) 40%,
-    rgba(0, 0, 0, 0.72) 78%,
-    rgba(0, 0, 0, 0.92) 100%
-  );
+  background:
+    linear-gradient(to top, rgba(8, 9, 18, 0.96) 0%, rgba(8, 9, 18, 0.5) 34%, rgba(8, 9, 18, 0) 66%),
+    linear-gradient(to right, rgba(8, 9, 18, 0.78) 0%, rgba(8, 9, 18, 0.2) 42%, rgba(8, 9, 18, 0) 70%);
+}
+/* Subtle edge vignette for a cinematic frame. */
+.hero-vignette {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 160px 40px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
 }
 
 .hero-content {
@@ -38,47 +54,45 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-md);
-  padding: var(--sp-xl);
-  max-width: 640px;
+  padding: clamp(var(--sp-xl), 4vw, 56px);
+  max-width: 720px;
+  will-change: transform, opacity;
 }
 
 .hero-badges {
   display: flex;
   align-items: center;
-  gap: var(--sp-sm);
+  gap: var(--sp-md);
   color: #fff;
 }
 .hero-featured {
   cursor: default;
   font-weight: 600;
   color: #fff;
-}
-.hero-featured:hover {
-  border-color: var(--glass-border);
-  background: rgba(255, 255, 255, 0.06);
+  letter-spacing: 0.02em;
 }
 .hero-year {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.86);
 }
 .hero-rating {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 13px;
+  gap: 4px;
+  font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .hero-title {
   margin: 0;
-  font-size: 38px;
-  font-weight: 700;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
+  font-size: clamp(34px, 4.4vw, 58px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
   color: #fff;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -87,10 +101,10 @@
 
 .hero-overview {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.85);
-  max-width: 560px;
+  font-size: 15.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 580px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -100,5 +114,47 @@
 .hero-actions {
   display: flex;
   gap: var(--sp-md);
-  margin-top: var(--sp-xs);
+  margin-top: var(--sp-sm);
+}
+.hero-play {
+  padding: 12px 26px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.hero-info {
+  padding: 12px 22px;
+  font-size: 15px;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(10px);
+}
+.hero-info:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Bar indicators (bottom-right). */
+.hero-dots {
+  position: absolute;
+  right: clamp(var(--sp-xl), 4vw, 56px);
+  bottom: clamp(var(--sp-xl), 4vw, 56px);
+  display: flex;
+  gap: 7px;
+  z-index: 2;
+}
+.hero-dot {
+  width: 22px;
+  height: 4px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.32);
+  cursor: pointer;
+  transition: background 0.3s, width 0.3s;
+}
+.hero-dot:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+.hero-dot.is-active {
+  width: 34px;
+  background: rgba(var(--accent-rgb), 1);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.6);
 }
