@@ -238,9 +238,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const updateSettings = useCallback((next: AppSettings) => {
     // Optimistically update in-memory (rebuilds services immediately), then
-    // persist to the durable Store.
+    // persist to the durable Store. Persisting can reject if a keychain write
+    // fails closed (desktop) — surface it to the console rather than leaving an
+    // unhandled rejection; the in-memory value is still usable for the session.
     setSettings(next);
-    void saveSettingsToStore(next);
+    void saveSettingsToStore(next).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error("Failed to persist settings:", err);
+    });
   }, []);
 
   const toggleWatchlist = useCallback(

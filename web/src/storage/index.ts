@@ -31,9 +31,10 @@ export function getStore(): Store {
 /**
  * The process-wide SecretStore. Under Tauri, secrets live in the OS keychain
  * (KeychainSecretStore -> Rust keychain_* commands); in a plain browser they
- * stay in IndexedDB via the same DexieStore. The keychain store wraps the Dexie
- * instance as its fallback (used if the native bridge is unavailable, and as the
- * source for the one-time read-through migration of pre-keychain secrets).
+ * stay in IndexedDB via the same DexieStore. The keychain store holds the Dexie
+ * instance ONLY as the source for the one-time read-through migration of
+ * pre-keychain secrets (and to purge that legacy copy) — it does NOT fall back to
+ * plaintext IndexedDB on a keychain failure; keychain writes fail closed.
  *
  * Note: only secret VALUES move to the keychain. The `secret:<key>` marker and
  * all other settings/library data stay in Dexie, so getStore() is unconditional.

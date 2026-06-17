@@ -1,27 +1,51 @@
-// KeychainSecretStore unit tests. The class is testable without a Tauri runtime
-// by mocking @tauri-apps/api/core's `invoke`. Covers: the command/arg shapes,
-// the Ok(None) -> null mapping, the Dexie fallback on a thrown invoke, and the
-// one-time read-through migration of a pre-keychain (IndexedDB) secret.
+// KeychainSecretStore unit tests. Mocks @tauri-apps/api/core's `invoke` (no Tauri
+// runtime needed). Uses a STATEFUL keychain map + a STATEFUL Dexie-like fallback
+// so the lifecycle interactions (migrate -> delete -> re-read) are exercised, not
+// just per-call shapes. Covers the security-critical behaviors:
+//   - writes fail CLOSED (a keychain failure rejects and never writes plaintext),
+//   - reads degrade to null on a keychain error (no plaintext read, no reject),
+//   - migration MOVES the legacy copy (purges IndexedDB) so a deleted secret
+//     cannot resurrect.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock the lazy-imported Tauri core module.
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import { KEYCHAIN_SERVICE, KeychainSecretStore } from "./KeychainSecretStore";
 import type { SecretStore } from "./types";
 
-function makeFallback(): SecretStore & {
-  getSecret: ReturnType<typeof vi.fn>;
-  setSecret: ReturnType<typeof vi.fn>;
-  deleteSecret: ReturnType<typeof vi.fn>;
-} {
+/** A stateful in-memory SecretStore standing in for the Dexie fallback. */
+function mapStore(init?: Record<string, string>): SecretStore & { _map: Map<string, string> } {
+  const m = new Map<string, string>(Object.entries(init ?? {}));
   return {
-    getSecret: vi.fn(async () => null),
-    setSecret: vi.fn(async () => {}),
-    deleteSecret: vi.fn(async () => {}),
+    _map: m,
+    getSecret: async (k) => (m.has(k) ? (m.get(k) as string) : null),
+    setSecret: async (k, v) => void m.set(k, v),
+    deleteSecret: async (k) => void m.delete(k),
   };
+}
+
+/** Wire `invoke` to a stateful keychain Map so get/set/delete actually persist.
+ *  `failOn` makes the named commands reject (locked/denied keychain). The impl is
+ *  tolerant of any incidental zero-arg bookkeeping call Vitest makes on the mock
+ *  (returns undefined) so only the command under test drives behavior. */
+function statefulKeychain(failOn: string[] = []): Map<string, string> {
+  const kc = new Map<string, string>();
+  invoke.mockImplementation(async (cmd?: string, args?: { key: string; value?: string }) => {
+    if (cmd != null && failOn.includes(cmd)) throw new Error("keychain locked");
+    if (cmd === "keychain_get") return args && kc.has(args.key) ? kc.get(args.key) : null;
+    if (cmd === "keychain_set" && args) {
+      kc.set(args.key, args.value as string);
+      return undefined;
+    }
+    if (cmd === "keychain_delete" && args) {
+      kc.delete(args.key);
+      return undefined;
+    }
+    return undefined;
+  });
+  return kc;
 }
 
 describe("KeychainSecretStore", () => {
@@ -29,8 +53,8 @@ describe("KeychainSecretStore", () => {
   afterEach(() => vi.clearAllMocks());
 
   it("getSecret invokes keychain_get with the service namespace", async () => {
-    invoke.mockResolvedValueOnce("tok-123");
-    const store = new KeychainSecretStore(makeFallback());
+    statefulKeychain().set("tmdb_api_key", "tok-123");
+    const store = new KeychainSecretStore(mapStore());
     await expect(store.getSecret("tmdb_api_key")).resolves.toBe("tok-123");
     expect(invoke).toHaveBeenCalledWith("keychain_get", {
       service: KEYCHAIN_SERVICE,
@@ -38,70 +62,83 @@ describe("KeychainSecretStore", () => {
     });
   });
 
-  it("getSecret returns null when the keychain has no entry and no legacy value", async () => {
-    invoke.mockResolvedValueOnce(null); // mirrors Rust Ok(None)
-    const store = new KeychainSecretStore(makeFallback());
+  it("getSecret returns null on a genuine miss with no legacy copy", async () => {
+    statefulKeychain();
+    const store = new KeychainSecretStore(mapStore());
     await expect(store.getSecret("omdb_api_key")).resolves.toBeNull();
   });
 
-  it("setSecret invokes keychain_set with service/key/value", async () => {
-    invoke.mockResolvedValueOnce(undefined);
-    const store = new KeychainSecretStore(makeFallback());
+  it("setSecret writes to the keychain and purges any legacy plaintext copy", async () => {
+    const kc = statefulKeychain();
+    const fb = mapStore({ "debrid.debrid-real_debrid": "old-plaintext" });
+    const store = new KeychainSecretStore(fb);
     await store.setSecret("debrid.debrid-real_debrid", "rd-tok");
+    expect(kc.get("debrid.debrid-real_debrid")).toBe("rd-tok");
     expect(invoke).toHaveBeenCalledWith("keychain_set", {
       service: KEYCHAIN_SERVICE,
       key: "debrid.debrid-real_debrid",
       value: "rd-tok",
     });
+    // Legacy plaintext copy must be purged so it can't resurrect / linger.
+    expect(await fb.getSecret("debrid.debrid-real_debrid")).toBeNull();
   });
 
-  it("deleteSecret invokes keychain_delete", async () => {
-    invoke.mockResolvedValueOnce(undefined);
-    const store = new KeychainSecretStore(makeFallback());
+  it("deleteSecret removes from the keychain", async () => {
+    const kc = statefulKeychain();
+    kc.set("ai_api_key", "x");
+    const store = new KeychainSecretStore(mapStore());
     await store.deleteSecret("ai_api_key");
+    expect(kc.has("ai_api_key")).toBe(false);
     expect(invoke).toHaveBeenCalledWith("keychain_delete", {
       service: KEYCHAIN_SERVICE,
       key: "ai_api_key",
     });
   });
 
-  it("falls back to Dexie when invoke throws (misbuilt bundle)", async () => {
-    // Use mockImplementationOnce (one throw) to match the single invoke call the
-    // fallback path makes. A PERSISTENT throwing mock makes Vitest's mock
-    // result-tracking surface a spurious unhandled rejection here even though the
-    // source already catches the throw and returns the fallback value.
-    invoke.mockImplementationOnce(() => {
-      throw new Error("no tauri");
-    });
-    const fallback = makeFallback();
-    fallback.getSecret.mockResolvedValueOnce("from-dexie");
-    const store = new KeychainSecretStore(fallback);
-    await expect(store.getSecret("tmdb_api_key")).resolves.toBe("from-dexie");
-    expect(fallback.getSecret).toHaveBeenCalledWith("tmdb_api_key");
+  // --- security-critical behaviors ----------------------------------------
+
+  it("setSecret FAILS CLOSED: rejects and writes no plaintext when the keychain fails", async () => {
+    statefulKeychain(["keychain_set"]);
+    const fb = mapStore();
+    const store = new KeychainSecretStore(fb);
+    await expect(store.setSecret("tmdb_api_key", "secret")).rejects.toThrow("keychain locked");
+    // The credential must NOT have been written to the (plaintext) fallback.
+    expect(await fb.getSecret("tmdb_api_key")).toBeNull();
   });
 
-  it("setSecret falls back to Dexie when invoke throws", async () => {
-    invoke.mockImplementationOnce(() => {
-      throw new Error("no tauri");
-    });
-    const fallback = makeFallback();
-    const store = new KeychainSecretStore(fallback);
-    await store.setSecret("tmdb_api_key", "k");
-    expect(fallback.setSecret).toHaveBeenCalledWith("tmdb_api_key", "k");
+  it("getSecret degrades to null (no plaintext read, no reject) on a keychain read error", async () => {
+    statefulKeychain(["keychain_get"]);
+    const fb = mapStore({ tmdb_api_key: "legacy-plaintext" });
+    const store = new KeychainSecretStore(fb);
+    // Must not reject, must not serve the plaintext legacy on a keychain ERROR.
+    await expect(store.getSecret("tmdb_api_key")).resolves.toBeNull();
+    // And it must not have touched the legacy copy.
+    expect(await fb.getSecret("tmdb_api_key")).toBe("legacy-plaintext");
   });
 
-  it("migrates a legacy IndexedDB secret into the keychain on first read", async () => {
-    invoke
-      .mockResolvedValueOnce(null) // keychain_get: empty
-      .mockResolvedValueOnce(undefined); // keychain_set: write-up
-    const fallback = makeFallback();
-    fallback.getSecret.mockResolvedValueOnce("legacy-key");
-    const store = new KeychainSecretStore(fallback);
+  it("migrates a legacy IndexedDB secret into the keychain AND purges the plaintext copy", async () => {
+    const kc = statefulKeychain();
+    const fb = mapStore({ tmdb_api_key: "legacy-key" });
+    const store = new KeychainSecretStore(fb);
     await expect(store.getSecret("tmdb_api_key")).resolves.toBe("legacy-key");
-    expect(invoke).toHaveBeenNthCalledWith(2, "keychain_set", {
-      service: KEYCHAIN_SERVICE,
-      key: "tmdb_api_key",
-      value: "legacy-key",
-    });
+    expect(kc.get("tmdb_api_key")).toBe("legacy-key"); // moved up
+    expect(await fb.getSecret("tmdb_api_key")).toBeNull(); // purged (move, not copy)
+  });
+
+  it("does NOT resurrect a deleted secret (migrate -> delete -> re-read stays gone)", async () => {
+    const kc = statefulKeychain();
+    const fb = mapStore({ "debrid.debrid-real_debrid": "legacy-token" });
+    const store = new KeychainSecretStore(fb);
+
+    // 1) first read migrates the legacy token into the keychain and purges Dexie
+    expect(await store.getSecret("debrid.debrid-real_debrid")).toBe("legacy-token");
+    expect(await fb.getSecret("debrid.debrid-real_debrid")).toBeNull();
+
+    // 2) user clears the key
+    await store.deleteSecret("debrid.debrid-real_debrid");
+    expect(kc.has("debrid.debrid-real_debrid")).toBe(false);
+
+    // 3) the deleted secret must stay gone — no read-through resurrection
+    expect(await store.getSecret("debrid.debrid-real_debrid")).toBeNull();
   });
 });
