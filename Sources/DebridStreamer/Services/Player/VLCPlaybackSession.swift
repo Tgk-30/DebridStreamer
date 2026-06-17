@@ -227,6 +227,14 @@ final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
     }
 
     func selectSubtitleTrack(id: Int32) {
+        // A negative id means "turn subtitles off". Prefer the disable index VLCKit
+        // actually reports (usually -1) so we match the engine's own sentinel; fall
+        // back to -1 when no explicit disable entry is exposed.
+        if id < 0 {
+            let disableIndex = cachedSubtitleTracks.first(where: { $0.isDisabledTrack })?.id ?? -1
+            mediaPlayer.currentVideoSubTitleIndex = disableIndex
+            return
+        }
         mediaPlayer.currentVideoSubTitleIndex = id
     }
 

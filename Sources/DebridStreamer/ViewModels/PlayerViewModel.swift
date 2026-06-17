@@ -5,6 +5,10 @@ import Observation
 @MainActor
 @Observable
 final class PlayerViewModel {
+    /// Sentinel index that turns subtitles off. VLCKit disables the subtitle track
+    /// when `currentVideoSubTitleIndex` is set to a negative value.
+    static let subtitlesOffTrackID: Int32 = -1
+
     struct PlaybackProgressSnapshot: Sendable {
         let progressSeconds: Double
         let durationSeconds: Double?

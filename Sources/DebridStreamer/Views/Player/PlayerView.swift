@@ -165,19 +165,7 @@ struct PlayerView: View {
                 }
                 .buttonStyle(.plain)
 
-                Menu {
-                    ForEach([0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { option in
-                        Button(String(format: "%.2fx", option)) {
-                            let rate = Float(option)
-                            speed = rate
-                            viewModel.setPlaybackRate(rate)
-                        }
-                    }
-                } label: {
-                    Label(String(format: "%.2fx", speed), systemImage: "speedometer")
-                        .font(.caption)
-                }
-
+                speedMenu
                 qualityMenu
                 audioMenu
                 subtitleMenu
@@ -260,14 +248,48 @@ struct PlayerView: View {
         }
     }
 
-    private var audioMenu: some View {
+    /// Playback-speed presets per the Tier-3 baseline (0.5×–2×).
+    private static let speedOptions: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+
+    private var speedMenu: some View {
         Menu {
-            if viewModel.availableAudioTracks.isEmpty {
+            ForEach(Self.speedOptions, id: \.self) { option in
+                let rate = Float(option)
+                Button {
+                    speed = rate
+                    viewModel.setPlaybackRate(rate)
+                } label: {
+                    if isCurrentSpeed(rate) {
+                        Label(speedLabel(rate), systemImage: "checkmark")
+                    } else {
+                        Text(speedLabel(rate))
+                    }
+                }
+            }
+        } label: {
+            Label(speedLabel(speed), systemImage: "speedometer")
+                .font(.caption)
+        }
+        .help("Playback speed")
+    }
+
+    // The audio switcher is only meaningful when the media exposes more than one
+    // selectable track, so it's disabled for 0/1-track media (Tier-3 baseline).
+    private var audioMenu: some View {
+        let tracks = viewModel.availableAudioTracks
+        return Menu {
+            if tracks.isEmpty {
                 Text("No audio tracks")
             } else {
-                ForEach(viewModel.availableAudioTracks) { track in
-                    Button(track.menuLabel) {
+                ForEach(tracks) { track in
+                    Button {
                         viewModel.selectAudioTrack(track.id)
+                    } label: {
+                        if viewModel.selectedAudioTrackID == track.id {
+                            Label(track.menuLabel, systemImage: "checkmark")
+                        } else {
+                            Text(track.menuLabel)
+                        }
                     }
                 }
                 if !viewModel.hasDetailedAudioMetadata {
@@ -279,16 +301,40 @@ struct PlayerView: View {
             Label("Audio", systemImage: "waveform")
                 .font(.caption)
         }
+        .help("Audio track")
+        .disabled(tracks.count <= 1)
     }
 
+    // VLCKit exposes a "Disable" entry (index -1) among the subtitle tracks, but we
+    // surface an explicit "Off" row regardless so it's always reachable. The menu is
+    // disabled only when the media has no subtitle tracks at all.
     private var subtitleMenu: some View {
-        Menu {
-            if viewModel.availableSubtitleTracks.isEmpty {
+        let tracks = viewModel.availableSubtitleTracks
+        let selectableTracks = tracks.filter { !$0.isDisabledTrack }
+        let isOff = viewModel.selectedSubtitleTrackID.map { $0 < 0 } ?? true
+        return Menu {
+            if tracks.isEmpty {
                 Text("No subtitles")
             } else {
-                ForEach(viewModel.availableSubtitleTracks) { track in
-                    Button(track.menuLabel) {
+                Button {
+                    viewModel.selectSubtitleTrack(PlayerViewModel.subtitlesOffTrackID)
+                } label: {
+                    if isOff {
+                        Label("Off", systemImage: "checkmark")
+                    } else {
+                        Text("Off")
+                    }
+                }
+                Divider()
+                ForEach(selectableTracks) { track in
+                    Button {
                         viewModel.selectSubtitleTrack(track.id)
+                    } label: {
+                        if viewModel.selectedSubtitleTrackID == track.id {
+                            Label(track.menuLabel, systemImage: "checkmark")
+                        } else {
+                            Text(track.menuLabel)
+                        }
                     }
                 }
                 if !viewModel.hasDetailedSubtitleMetadata {
@@ -300,6 +346,19 @@ struct PlayerView: View {
             Label("Subtitles", systemImage: "captions.bubble")
                 .font(.caption)
         }
+        .help("Subtitle track")
+        .disabled(selectableTracks.isEmpty)
+    }
+
+    private func isCurrentSpeed(_ rate: Float) -> Bool {
+        abs(speed - rate) < 0.001
+    }
+
+    private func speedLabel(_ rate: Float) -> String {
+        if rate == rate.rounded() {
+            return String(format: "%.0f×", rate)
+        }
+        return String(format: "%.2g×", rate)
     }
 
     private var loadingOverlay: some View {
