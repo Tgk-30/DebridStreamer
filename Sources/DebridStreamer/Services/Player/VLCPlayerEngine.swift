@@ -5,7 +5,7 @@ struct VLCPlayerEngine: PlayerEngine {
     private let sessionFactory: @MainActor (URL) throws -> any VLCPlaybackSession
 
     init(
-        sessionFactory: @escaping @MainActor (URL) throws -> any VLCPlaybackSession = Self.defaultSessionFactory
+        sessionFactory: @escaping @MainActor (URL) throws -> any VLCPlaybackSession = { try Self.defaultSessionFactory(url: $0) }
     ) {
         self.sessionFactory = sessionFactory
     }

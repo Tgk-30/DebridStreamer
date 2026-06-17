@@ -75,7 +75,7 @@ final class PlayerViewModel {
         fullscreenToggler: @escaping @MainActor (NSWindow) -> Void = { window in
             window.toggleFullScreen(nil)
         },
-        fullscreenWindowResolver: @escaping @MainActor (NSWindow?) -> NSWindow? = PlayerViewModel.defaultFullscreenWindowResolver(window:),
+        fullscreenWindowResolver: @escaping @MainActor (NSWindow?) -> NSWindow? = { PlayerViewModel.defaultFullscreenWindowResolver(window: $0) },
         controlsAutoHideDelay: TimeInterval = 10
     ) {
         self.selector = selector
