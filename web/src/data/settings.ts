@@ -404,6 +404,46 @@ export interface AppServices {
   hasSubtitles: boolean;
 }
 
+/** Module-level cache for the built DebridManager, keyed by a signature of the
+ * debrid config (service types + tokens). The manager's identity must stay
+ * stable across UNRELATED settings edits (e.g. the instant theme save) so that
+ * useDebridLibrary's effect — which depends on `services.debrid` identity —
+ * doesn't re-fetch the whole account on every save. Only when the debrid config
+ * actually changes do we rebuild. */
+let debridManagerCache: { signature: string; manager: DebridManager } | null =
+  null;
+
+/** A stable signature for the debrid config: the (service, token) pairs in
+ * order. Identical config → identical signature → cached manager reused. */
+function debridConfigSignature(tokens: DebridTokenEntry[]): string {
+  return JSON.stringify(
+    tokens
+      .map((t) => [t.service, t.apiToken.trim()] as const)
+      .filter(([, token]) => token.length > 0),
+  );
+}
+
+/** Build (or reuse the cached) DebridManager for the current settings. Returns
+ * null when no valid debrid service is configured. The returned manager keeps a
+ * stable identity while the debrid config is unchanged. */
+function getOrBuildDebridManager(settings: AppSettings): DebridManager | null {
+  const signature = debridConfigSignature(settings.debridTokens);
+  const services = settings.debridTokens
+    .map(buildDebridService)
+    .filter((s): s is DebridService => s !== null);
+  if (services.length === 0) {
+    debridManagerCache = null;
+    return null;
+  }
+  if (debridManagerCache != null && debridManagerCache.signature === signature) {
+    return debridManagerCache.manager;
+  }
+  const manager = new DebridManager();
+  for (const s of services) manager.addService(s);
+  debridManagerCache = { signature, manager };
+  return manager;
+}
+
 function buildDebridService(entry: DebridTokenEntry): DebridService | null {
   const token = entry.apiToken.trim();
   if (token.length === 0) return null;
@@ -497,15 +537,11 @@ export function buildServices(settings: AppSettings): AppServices {
   const tmdb = tmdbKey.length > 0 ? new TMDBService(tmdbKey) : null;
   const omdb = omdbKey.length > 0 ? new OMDBService(omdbKey) : null;
 
-  // Debrid: priority order = insertion order (entry order in settings).
-  let debrid: DebridManager | null = null;
-  const debridServices = settings.debridTokens
-    .map(buildDebridService)
-    .filter((s): s is DebridService => s !== null);
-  if (debridServices.length > 0) {
-    debrid = new DebridManager();
-    for (const s of debridServices) debrid.addService(s);
-  }
+  // Debrid: priority order = insertion order (entry order in settings). The
+  // manager is cached by config signature so its identity is stable across
+  // unrelated settings edits (avoids re-fetching the whole account on, e.g., a
+  // theme save) — only rebuilt when the debrid config actually changes.
+  const debrid = getOrBuildDebridManager(settings);
 
   const indexerConfigs = buildIndexerConfigs(settings);
   // `appFetch` is CORS-free under Tauri (routes indexer/addon hosts through Rust)

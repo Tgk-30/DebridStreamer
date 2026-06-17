@@ -4,6 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DebridStreamer — Discover</title>
+    <script>
+      // Apply the persisted theme synchronously BEFORE the bundle paints, to
+      // avoid a flash of the default Aurora theme on load (FOUC). Mirrors
+      // applyTheme: the default "aurora" removes the attribute; any other valid
+      // theme id sets data-theme. Keep this in sync with theme/themes.ts.
+      (function () {
+        try {
+          var VALID = ["aurora", "light", "midnight", "sunset"];
+          var raw = localStorage.getItem("debridstreamer.settings.v1");
+          if (!raw) return;
+          var theme = JSON.parse(raw).theme;
+          if (VALID.indexOf(theme) === -1) return; // unknown/empty → default
+          if (theme === "aurora") {
+            document.documentElement.removeAttribute("data-theme");
+          } else {
+            document.documentElement.setAttribute("data-theme", theme);
+          }
+        } catch (e) {
+          // Ignore (private mode / malformed blob) → default theme.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

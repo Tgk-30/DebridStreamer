@@ -7,7 +7,7 @@
 // Pure helpers (groupKey/markDuplicates) are unit-tested; the hook wires them to
 // the manager with loading/error/empty state.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DebridManager } from "../services/debrid/DebridManager";
 import type { DebridTorrent } from "../services/debrid/models";
 
@@ -79,10 +79,17 @@ export function useDebridLibrary(debrid: DebridManager | null): {
     duplicateCount: 0,
   });
 
+  // Monotonic load id so the freshest load wins. Manual callers (Refresh /
+  // delete / onImported) and the mount effect all share this; any setState is
+  // gated on still being the latest load, so a slow in-flight load can't clobber
+  // newer data. Bumping it (on unmount / re-reload) supersedes in-flight loads.
+  const loadIdRef = useRef(0);
+
   const reload = useCallback(() => {
-    let cancelled = false;
+    const myId = ++loadIdRef.current;
     void (async () => {
       if (debrid == null || !debrid.hasServices) {
+        if (loadIdRef.current !== myId) return;
         setState({
           rows: [],
           loading: false,
@@ -95,7 +102,7 @@ export function useDebridLibrary(debrid: DebridManager | null): {
       setState((s) => ({ ...s, loading: true, error: null }));
       try {
         const torrents = await debrid.listTorrents();
-        if (cancelled) return;
+        if (loadIdRef.current !== myId) return;
         const rows = markDuplicates(torrents);
         setState({
           rows,
@@ -105,7 +112,7 @@ export function useDebridLibrary(debrid: DebridManager | null): {
           duplicateCount: rows.filter((r) => r.isDuplicate).length,
         });
       } catch (err) {
-        if (cancelled) return;
+        if (loadIdRef.current !== myId) return;
         setState({
           rows: [],
           loading: false,
@@ -115,14 +122,14 @@ export function useDebridLibrary(debrid: DebridManager | null): {
         });
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [debrid]);
 
   useEffect(() => {
-    const cleanup = reload();
-    return cleanup;
+    reload();
+    return () => {
+      // Supersede any in-flight load on unmount / re-reload.
+      loadIdRef.current++;
+    };
   }, [reload]);
 
   return { state, reload };

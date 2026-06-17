@@ -211,18 +211,22 @@ function WebviewPlayer({
   // Report playback progress (throttled to ~once / 5s) + keep currentTime/
   // duration in sync for the custom scrub bar.
   const lastReportRef = useRef(0);
+  // Keep the latest onProgress in a ref so the effect doesn't re-subscribe each
+  // render (onProgress identity changes every render → re-subscribe loop).
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
   useEffect(() => {
     const video = videoRef.current;
     if (video == null) return;
 
     const report = () => {
       const d = Number.isFinite(video.duration) ? video.duration : null;
-      onProgress?.(video.currentTime, d);
+      onProgressRef.current?.(video.currentTime, d);
     };
     const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
       const now = Date.now();
-      if (onProgress != null && now - lastReportRef.current >= 5000) {
+      if (onProgressRef.current != null && now - lastReportRef.current >= 5000) {
         lastReportRef.current = now;
         report();
       }
@@ -240,9 +244,9 @@ function WebviewPlayer({
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMeta);
       video.removeEventListener("durationchange", onDurationChange);
-      if (onProgress != null && video.currentTime > 0) report();
+      if (onProgressRef.current != null && video.currentTime > 0) report();
     };
-  }, [onProgress, url]);
+  }, [url]);
 
   // Wire hls.js for HLS streams when the browser can't play them natively.
   useEffect(() => {
@@ -267,16 +271,20 @@ function WebviewPlayer({
   }, [url, isHls, onHlsUnsupported]);
 
   // Reflect the active subtitle track onto the <video>'s text tracks: show only
-  // the active one, hide the rest. Runs whenever tracks / the active id change.
+  // the active one, hide the rest. Match by label (our <track> elements carry
+  // label={t.label}) rather than by index, because hls.js can inject its own
+  // in-band subtitle tracks that desync a positional pairing. Tracks that don't
+  // correspond to one of ours (e.g. hls.js-injected) are left untouched.
   useEffect(() => {
     const video = videoRef.current;
     if (video == null) return;
     const list = video.textTracks;
     for (let i = 0; i < list.length; i += 1) {
       const tt = list[i];
-      const match = subs.tracks[i];
-      tt.mode =
-        match != null && match.id === subs.activeTrackId ? "showing" : "hidden";
+      if (tt.kind !== "subtitles") continue;
+      const match = subs.tracks.find((t) => t.label === tt.label);
+      if (match == null) continue; // not one of ours (hls.js-injected) — leave it
+      tt.mode = match.id === subs.activeTrackId ? "showing" : "hidden";
     }
   }, [subs.tracks, subs.activeTrackId]);
 
@@ -294,7 +302,6 @@ function WebviewPlayer({
           controls
           autoPlay
           playsInline
-          crossOrigin="anonymous"
         >
           {subs.tracks.map((t) => (
             <track

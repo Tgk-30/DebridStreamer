@@ -101,9 +101,15 @@ export function FilterSlideover({
   }
 
   function changeType(next: MediaType) {
-    // A type switch invalidates genre ids (movie vs tv lists differ).
+    // A type switch invalidates genre ids (movie vs tv lists differ). The
+    // runtime filter is movie-only (TMDB with_runtime applies to movies), so
+    // drop it when switching away from movie to avoid leaking it into TV.
     setDraftType(next);
-    setDraft((d) => ({ ...d, genreIds: [] }));
+    setDraft((d) => ({
+      ...d,
+      genreIds: [],
+      runtimeLTE: next === "movie" ? d.runtimeLTE : null,
+    }));
   }
 
   const dirty = draftType !== type || hasActiveFilters(draft);
@@ -316,7 +322,7 @@ export function FilterSlideover({
           <button
             type="button"
             className="btn btn-prominent fs-apply"
-            onClick={() => onApply(draftType, draft)}
+            onClick={() => (dirty ? onApply(draftType, draft) : onClose())}
           >
             {dirty ? "Apply filters" : "Done"}
           </button>

@@ -178,7 +178,9 @@ export function buildDiscoverParams(
   if (filters.minVotes != null) {
     params["vote_count.gte"] = String(filters.minVotes);
   }
-  if (filters.runtimeLTE != null) {
+  // Runtime is a movie-only TMDB facet (with_runtime applies to movies); never
+  // emit it for TV even if a stale value leaked into the draft.
+  if (filters.runtimeLTE != null && type === "movie") {
     params["with_runtime.lte"] = String(filters.runtimeLTE);
   }
   if (filters.originalLanguage != null && filters.originalLanguage.length > 0) {

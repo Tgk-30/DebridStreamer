@@ -131,10 +131,16 @@ export function useScrubThumbnails(
         pendingTimeRef.current = t; // coalesce while a seek is in flight
         return;
       }
+      // If we're already at this frame, no 'seeked' event would fire — capture
+      // directly so the preview doesn't stall on a no-op seek.
+      if (Math.abs(t - video.currentTime) < 0.05) {
+        captureCurrentFrame();
+        return;
+      }
       seekingRef.current = true;
       video.currentTime = t;
     },
-    [],
+    [captureCurrentFrame],
   );
 
   const onHover = useCallback(
