@@ -1,0 +1,79 @@
+// Discover screen — mirrors Sources/.../Views/Catalog/DiscoverView.swift.
+//
+// Layout (top → bottom): cinematic HeroSpotlight (first trending item with a
+// backdrop) → "Describe a vibe" MoodStrip → horizontal poster Rails (Trending
+// Movies, Trending TV, Popular, Top Rated, Now Playing, Upcoming). Data comes
+// from the useDiscover() hook (live with a key, fixtures otherwise).
+
+import type { MediaPreview } from "../models/media";
+import { useDiscover } from "../data/discover";
+import { HeroSpotlight } from "../components/HeroSpotlight";
+import { MoodStrip } from "../components/MoodStrip";
+import { Rail } from "../components/Rail";
+import "./Discover.css";
+
+interface DiscoverProps {
+  onSelect?: (item: MediaPreview) => void;
+}
+
+export function Discover({ onSelect }: DiscoverProps) {
+  const { data, loading, source } = useDiscover();
+
+  if (loading || !data) {
+    return <DiscoverSkeleton />;
+  }
+
+  return (
+    <div className="discover">
+      {source === "fixtures" && (
+        <div className="discover-devbadge" role="note">
+          Dev preview · sample catalog (set <code>VITE_TMDB_KEY</code> for live
+          data)
+        </div>
+      )}
+
+      {data.hero && (
+        <HeroSpotlight
+          item={data.hero}
+          onPlay={onSelect}
+          onDetails={onSelect}
+        />
+      )}
+
+      <MoodStrip
+        onCurate={() => {
+          /* Visual-only this phase — AIAssistantManager wiring lands later. */
+        }}
+      />
+
+      <Rail title="Trending Movies" items={data.trendingMovies} onSelect={onSelect} />
+      <Rail title="Trending TV Shows" items={data.trendingTV} onSelect={onSelect} />
+      <Rail title="Popular Movies" items={data.popularMovies} onSelect={onSelect} />
+      <Rail title="Top Rated Movies" items={data.topRatedMovies} onSelect={onSelect} />
+      <Rail title="Now Playing" items={data.nowPlayingMovies} onSelect={onSelect} />
+      <Rail title="Upcoming" items={data.upcomingMovies} onSelect={onSelect} />
+    </div>
+  );
+}
+
+/** Cold-start skeleton (mirrors DiscoverView.skeletonView): a hero block then a
+ * few redacted rails. Purely cosmetic while the first load resolves. */
+function DiscoverSkeleton() {
+  return (
+    <div className="discover">
+      <div className="skel-hero glass-rest">
+        <span className="t-secondary">Loading Discover…</span>
+      </div>
+      {[0, 1, 2].map((r) => (
+        <div className="skel-rail" key={r}>
+          <div className="skel-title" />
+          <div className="skel-cards">
+            {[0, 1, 2, 3, 4, 5].map((c) => (
+              <div className="skel-card glass-rest" key={c} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

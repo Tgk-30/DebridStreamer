@@ -1,0 +1,104 @@
+/* HeroSpotlight — 380px cinematic featured panel. */
+
+.hero {
+  position: relative;
+  height: 380px;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  /* accent tint over the hero glass (GlassElevation.hero tint) */
+  box-shadow:
+    0 18px 28px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 100vmax rgba(var(--accent-rgb), 0.05);
+}
+
+.hero-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Bottom-to-top dark scrim (HeroSpotlight.scrim stops). */
+.hero-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.25) 40%,
+    rgba(0, 0, 0, 0.72) 78%,
+    rgba(0, 0, 0, 0.92) 100%
+  );
+}
+
+.hero-content {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding: var(--sp-xl);
+  max-width: 640px;
+}
+
+.hero-badges {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  color: #fff;
+}
+.hero-featured {
+  cursor: default;
+  font-weight: 600;
+  color: #fff;
+}
+.hero-featured:hover {
+  border-color: var(--glass-border);
+  background: rgba(255, 255, 255, 0.06);
+}
+.hero-year {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+}
+.hero-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.hero-title {
+  margin: 0;
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hero-overview {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.85);
+  max-width: 560px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hero-actions {
+  display: flex;
+  gap: var(--sp-md);
+  margin-top: var(--sp-xs);
+}

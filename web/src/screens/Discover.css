@@ -1,0 +1,73 @@
+/* Discover screen layout + cold-start skeleton. */
+
+.discover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xl);
+  padding: var(--sp-xl);
+  /* clear the floating top-right global search field */
+  padding-top: 64px;
+  max-width: 1280px;
+}
+
+.discover-devbadge {
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  background: rgba(var(--warning-rgb), 0.1);
+  border: 0.75px solid rgba(var(--warning-rgb), 0.3);
+}
+.discover-devbadge code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1px 5px;
+  border-radius: 5px;
+  color: var(--text-primary);
+}
+
+/* ---- Skeleton ---- */
+.skel-hero {
+  height: 380px;
+  border-radius: var(--r-lg);
+  display: grid;
+  place-items: center;
+}
+.skel-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+.skel-title {
+  width: 160px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.08);
+}
+.skel-cards {
+  display: flex;
+  gap: var(--sp-lg);
+}
+.skel-card {
+  width: 158px;
+  height: 237px;
+  border-radius: var(--r-sm);
+  flex: 0 0 auto;
+}
+
+@keyframes skel-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+.skel-hero,
+.skel-title,
+.skel-card {
+  animation: skel-pulse 1.6s ease-in-out infinite;
+}

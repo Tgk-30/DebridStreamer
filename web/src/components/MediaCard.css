@@ -1,0 +1,85 @@
+/* MediaCard — 158px poster column with hover lift. */
+
+.media-card {
+  --poster-w: 158px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-sm);
+  width: calc(var(--poster-w) + var(--sp-sm) * 2);
+  padding: var(--sp-sm);
+  border-radius: var(--r-card);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s;
+}
+
+.media-card:hover {
+  transform: scale(1.03);
+  box-shadow: 0 12px 24px rgba(var(--accent-rgb), 0.28);
+  border-color: rgba(var(--accent-rgb), 0.45);
+}
+
+.media-card-poster {
+  width: var(--poster-w);
+  aspect-ratio: 2 / 3;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
+}
+.media-card-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-card-placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.7);
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.45),
+    rgba(var(--accent-secondary-rgb), 0.3),
+    rgba(0, 0, 0, 0.5)
+  );
+}
+
+/* 2-line title that always reserves both lines (constant baseline, L13). */
+.media-card-title {
+  width: var(--poster-w);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  height: calc(1.25em * 2);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.media-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: var(--poster-w);
+  font-size: 12px;
+}
+.media-card-year {
+  color: var(--text-secondary);
+}
+.media-card-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}

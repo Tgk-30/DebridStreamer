@@ -1,0 +1,55 @@
+/* MoodStrip — the "Describe a vibe" AI discovery panel. */
+
+.mood {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding: var(--sp-lg);
+  border-radius: var(--r-lg);
+}
+
+.mood-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.mood-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mood-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+.mood-subtitle {
+  font-size: 12px;
+}
+
+.mood-prompt {
+  border-radius: var(--r-md);
+  padding: var(--sp-sm) var(--sp-sm) var(--sp-sm) var(--sp-md);
+  gap: var(--sp-sm);
+}
+.mood-prompt input {
+  font-size: 14px;
+}
+
+.mood-curate {
+  padding: 7px 16px;
+  font-size: 13px;
+}
+.mood-curate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.mood-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.mood-chips .chip {
+  font-weight: 500;
+}

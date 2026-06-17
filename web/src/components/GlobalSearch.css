@@ -1,0 +1,30 @@
+/* Floating top-right glass search pill (GlobalSearchField). */
+
+.global-search {
+  position: absolute;
+  top: var(--sp-md);
+  right: var(--sp-lg);
+  z-index: 5;
+  border-radius: var(--r-pill);
+  width: 260px;
+}
+
+.global-search input {
+  font-size: 14px;
+}
+
+.global-search-clear {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 50%;
+}
+.global-search-clear:hover {
+  color: var(--text-primary);
+}

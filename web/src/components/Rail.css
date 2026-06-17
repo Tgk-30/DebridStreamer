@@ -1,0 +1,40 @@
+/* Rail — bold title + horizontally scrolling track with a trailing-edge fade. */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.rail-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.rail-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* leave room so the hover-lift glow isn't clipped */
+  padding: var(--sp-xs) 0 var(--sp-sm);
+}
+
+/* Trailing-fade mask (railFadeMask: opaque to 95%, fade to clear at the edge). */
+.rail-fade {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 0,
+    #000 95%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(to right, #000 0, #000 95%, transparent 100%);
+}
+
+.rail-track {
+  display: flex;
+  gap: var(--sp-lg);
+  width: max-content;
+  /* trailing breathing room so the last card isn't flush to the edge */
+  padding-right: var(--sp-xl);
+}
