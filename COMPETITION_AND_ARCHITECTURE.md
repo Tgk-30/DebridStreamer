@@ -103,8 +103,10 @@ Vidstack + hls.js, packaged with Tauri v2; installable PWA via `vite-plugin-pwa`
   (3) scope/UI-fidelity drift (port services **test-first**, reusing the 54 test files as the spec).
 
 ### Recommended phased path (IF pivoting)
-- **Phase 0 — POC (1–2 days):** Tauri shell + Vidstack playing a real RD direct/HLS link + external-mpv
-  hand-off for MKV. Proves the single biggest risk before committing.
+- **Phase 0 — POC ✅ DONE (2026-06-17):** Tauri v2 shell builds + runs on macOS (dev + a distributable
+  `.app`); **hls.js plays an HLS stream in the WebView at 1080p** (verified live: `paused:false`,
+  `readyState:4`, `videoWidth:1920`); a Rust `open_in_external_player` command hands MKV/HEVC off to
+  VLC. The biggest risk (the player) is cleared. Code at `poc-tauri/` (see its README).
 - **Phase 1:** stand up the SQLite schema/migrations on Tauri; port the **services** layer to TS behind the
   identical protocol shapes, validated against the existing 54 test files.
 - **Phase 2:** rebuild the UI in React from the AppTheme tokens, wiring to ported services; player =
