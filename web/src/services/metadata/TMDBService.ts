@@ -1,0 +1,546 @@
+// Port of Sources/DebridStreamer/Services/Metadata/TMDBService.swift.
+//
+// A fetch-based TMDB metadata provider. Mirrors the Swift actor's behavior:
+// the same API paths/params, the toMediaPreview/toMediaItem mapping (incl.
+// backdropPath and the imdb-id-vs-tmdb-id logic), and a bounded TTL response
+// cache keyed by `path + sorted query params` (short TTL for catalog reads,
+// 24h for the static genre list). The `fetch` implementation is injectable so
+// tests can stub the network (the Swift code injects a URLSession instead).
+
+import {
+  type CastMember,
+  type Episode,
+  makeCastMember,
+  type MediaItem,
+  type MediaPreview,
+  type MediaType,
+  MediaType as MediaTypeNS,
+  type Season,
+} from "../../models/media";
+import {
+  type DiscoverFilters,
+  type ExternalIds,
+  type Genre,
+  type MediaCategory,
+  type MetadataProvider,
+  type MetadataSearchResult,
+  TMDBError,
+  type TrendingWindow,
+} from "./types";
+
+// MARK: - Raw TMDB response shapes (snake_case as the API returns them).
+//
+// The Swift code relies on JSONDecoder's convertFromSnakeCase. In TS we decode
+// from the raw snake_case JSON explicitly, keeping the mapping in one place.
+
+interface RawPagedResponse<T> {
+  page: number;
+  results: T[];
+  total_pages: number;
+  total_results: number;
+}
+
+interface RawSearchResult {
+  id: number;
+  title?: string | null;
+  name?: string | null;
+  media_type?: string | null;
+  overview?: string | null;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  release_date?: string | null;
+  first_air_date?: string | null;
+  vote_average?: number | null;
+  genre_ids?: number[] | null;
+}
+
+interface RawGenre {
+  id: number;
+  name: string;
+}
+
+interface RawExternalIds {
+  imdb_id?: string | null;
+  tvdb_id?: number | null;
+}
+
+interface RawDetailResponse {
+  id: number;
+  title?: string | null;
+  name?: string | null;
+  overview?: string | null;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  release_date?: string | null;
+  first_air_date?: string | null;
+  vote_average?: number | null;
+  runtime?: number | null;
+  episode_run_time?: number[] | null;
+  status?: string | null;
+  genres?: RawGenre[] | null;
+  external_ids?: RawExternalIds | null;
+}
+
+interface RawCredits {
+  cast: RawCastMember[];
+}
+
+interface RawCastMember {
+  id: number;
+  name: string;
+  character?: string | null;
+  profile_path?: string | null;
+}
+
+interface RawGenresResponse {
+  genres: RawGenre[];
+}
+
+interface RawTVDetailResponse {
+  id: number;
+  seasons?: RawSeason[] | null;
+}
+
+interface RawSeason {
+  id: number;
+  season_number: number;
+  name: string;
+  overview?: string | null;
+  poster_path?: string | null;
+  episode_count: number;
+  air_date?: string | null;
+}
+
+interface RawSeasonResponse {
+  episodes: RawEpisode[];
+}
+
+interface RawEpisode {
+  id: number;
+  episode_number: number;
+  name?: string | null;
+  overview?: string | null;
+  air_date?: string | null;
+  still_path?: string | null;
+  runtime?: number | null;
+}
+
+interface RawFindResponse {
+  movie_results: RawSearchResult[];
+  tv_results: RawSearchResult[];
+}
+
+// MARK: - Mappers (mirror toMediaPreview / toMediaItem)
+
+/** Parse a leading 4-digit year from a TMDB date string. Mirrors the Swift
+ * `dateStr.flatMap { ... prefix(4) }` (requires length >= 4). */
+function parseYear(dateStr: string | null | undefined): number | null {
+  if (!dateStr || dateStr.length < 4) return null;
+  const parsed = Number.parseInt(dateStr.slice(0, 4), 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/** Mirrors `TMDBSearchResult.toMediaPreview()`. Returns null for person results
+ * and entries with no title (compactMap drops them). */
+function toMediaPreview(r: RawSearchResult): MediaPreview | null {
+  const displayTitle = r.title ?? r.name ?? "";
+  if (displayTitle.length === 0) return null;
+
+  let type: MediaType;
+  if (r.media_type != null) {
+    switch (r.media_type) {
+      case "movie":
+        type = MediaTypeNS.movie;
+        break;
+      case "tv":
+        type = MediaTypeNS.series;
+        break;
+      default:
+        return null; // Skip "person" etc.
+    }
+  } else {
+    type = r.title != null ? MediaTypeNS.movie : MediaTypeNS.series;
+  }
+
+  const year = parseYear(r.release_date ?? r.first_air_date);
+
+  return {
+    id: `tmdb-${r.id}`,
+    type,
+    title: displayTitle,
+    year,
+    posterPath: r.poster_path ?? null,
+    imdbRating: r.vote_average ?? null,
+    tmdbId: r.id,
+    backdropPath: r.backdrop_path ?? null,
+  };
+}
+
+/** Mirrors `TMDBDetailResponse.toMediaItem(type:)`. */
+function toMediaItem(r: RawDetailResponse, type: MediaType): MediaItem {
+  const displayTitle = r.title ?? r.name ?? "Unknown";
+  const year = parseYear(r.release_date ?? r.first_air_date);
+
+  const imdbId = r.external_ids?.imdb_id;
+  const itemId = imdbId && imdbId.length > 0 ? imdbId : `tmdb-${r.id}`;
+
+  let displayRuntime: number | null;
+  if (r.runtime != null && r.runtime > 0) {
+    displayRuntime = r.runtime;
+  } else if (
+    r.episode_run_time &&
+    r.episode_run_time.length > 0 &&
+    r.episode_run_time[0] > 0
+  ) {
+    displayRuntime = r.episode_run_time[0];
+  } else {
+    displayRuntime = null;
+  }
+
+  return {
+    id: itemId,
+    type,
+    title: displayTitle,
+    year,
+    posterPath: r.poster_path ?? null,
+    backdropPath: r.backdrop_path ?? null,
+    overview: r.overview ?? null,
+    genres: r.genres?.map((g) => g.name) ?? [],
+    imdbRating: r.vote_average ?? null,
+    runtime: displayRuntime,
+    status: r.status ?? null,
+    tmdbId: r.id,
+    lastFetched: new Date().toISOString(),
+  };
+}
+
+// MARK: - TTL response cache
+
+interface CacheEntry {
+  expiresAt: number; // epoch ms
+  value: unknown;
+}
+
+/** Injectable fetch signature (a subset of the DOM `fetch`). */
+export type FetchImpl = (
+  url: string,
+  init?: { headers?: Record<string, string> },
+) => Promise<{
+  status: number;
+  text(): Promise<string>;
+}>;
+
+export class TMDBService implements MetadataProvider {
+  private readonly apiKey: string;
+  private readonly baseURL = "https://api.themoviedb.org/3";
+  private readonly fetchImpl: FetchImpl;
+
+  // Bounded TTL cache of already-DECODED read responses, keyed by
+  // `path + sorted query params`. Only successful reads are cached — errors
+  // are never stored, so a failure is always retried.
+  private responseCache = new Map<string, CacheEntry>();
+  private readonly cacheCapacity = 256;
+
+  /** Short TTL for volatile catalog reads (search/trending/category/discover/
+   * detail/seasons/episodes/cast/recommendations). 5 minutes, in ms. */
+  static readonly shortTTL = 60 * 5 * 1000;
+  /** Long TTL for the effectively-static genre list. 24 hours, in ms. */
+  static readonly longTTL = 60 * 60 * 24 * 1000;
+
+  constructor(apiKey: string, fetchImpl?: FetchImpl) {
+    this.apiKey = apiKey;
+    // Default to the global fetch; tests inject a stub. Bind so `this` inside
+    // the platform fetch stays correct.
+    this.fetchImpl =
+      fetchImpl ?? ((url, init) => fetch(url, init as RequestInit));
+  }
+
+  /** Returns a cached value if present and unexpired; otherwise runs `produce`,
+   * stores it under the TTL, and returns it. Only the success path caches, so
+   * a throwing `produce` is never memoized. Mirrors Swift `cached`. */
+  private async cached<T>(
+    key: string,
+    ttl: number,
+    produce: () => Promise<T>,
+  ): Promise<T> {
+    const entry = this.responseCache.get(key);
+    if (entry && entry.expiresAt > Date.now()) {
+      return entry.value as T;
+    }
+    const value = await produce();
+    this.store(key, value, ttl);
+    return value;
+  }
+
+  /** Inserts into the bounded cache: expired entries are swept first, then the
+   * soonest-to-expire entries are evicted if the cap is reached. Mirrors
+   * Swift `store`. */
+  private store(key: string, value: unknown, ttl: number): void {
+    const now = Date.now();
+    for (const [k, v] of this.responseCache) {
+      if (v.expiresAt <= now) this.responseCache.delete(k);
+    }
+    if (this.responseCache.size >= this.cacheCapacity) {
+      const overflow = this.responseCache.size - (this.cacheCapacity - 1);
+      const victims = [...this.responseCache.entries()]
+        .sort((a, b) => a[1].expiresAt - b[1].expiresAt)
+        .slice(0, overflow)
+        .map(([k]) => k);
+      for (const victim of victims) this.responseCache.delete(victim);
+    }
+    this.responseCache.set(key, { expiresAt: now + ttl, value });
+  }
+
+  /** Stable cache key from a path plus its sorted query params. Mirrors Swift
+   * `cacheKey`. */
+  private cacheKey(path: string, params: Record<string, string>): string {
+    const sorted = Object.keys(params)
+      .sort()
+      .map((k) => `${k}=${params[k]}`)
+      .join("&");
+    return `${path}?${sorted}`;
+  }
+
+  // MARK: - MetadataProvider
+
+  async search(
+    query: string,
+    type: MediaType | null,
+    page = 1,
+  ): Promise<MetadataSearchResult> {
+    const path = type != null ? `/search/${MediaTypeNS.tmdbPath(type)}` : "/search/multi";
+
+    const params: Record<string, string> = {
+      query,
+      page: String(page),
+      include_adult: "false",
+    };
+    if (type == null) {
+      params.language = "en-US";
+    }
+
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawPagedResponse<RawSearchResult>>(path, params);
+      return this.pagedToResult(response);
+    });
+  }
+
+  async getDetail(id: string, type: MediaType): Promise<MediaItem> {
+    // If the ID is a TMDB numeric ID, use it directly. Otherwise extract from
+    // "tmdb-{id}", or resolve an IMDB ID via /find first.
+    let tmdbId: string;
+    if (id.startsWith("tmdb-")) {
+      tmdbId = id.slice(5);
+    } else if (id.length > 0 && /^[0-9]+$/.test(id)) {
+      tmdbId = id;
+    } else {
+      const found = await this.findByImdbId(id, type);
+      if (found == null) throw TMDBError.notFound(id);
+      tmdbId = String(found);
+    }
+
+    const path = `/${MediaTypeNS.tmdbPath(type)}/${tmdbId}`;
+    // credits are fetched separately by getCast, so only request external_ids.
+    const params = {
+      append_to_response: "external_ids",
+      language: "en-US",
+    };
+
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawDetailResponse>(path, params);
+      return toMediaItem(response, type);
+    });
+  }
+
+  async getTrending(
+    type: MediaType,
+    timeWindow: TrendingWindow = "week",
+    page = 1,
+  ): Promise<MetadataSearchResult> {
+    const path = `/trending/${MediaTypeNS.tmdbPath(type)}/${timeWindow}`;
+    const params = { page: String(page), language: "en-US" };
+
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawPagedResponse<RawSearchResult>>(path, params);
+      return this.pagedToResult(response);
+    });
+  }
+
+  async getCategory(
+    category: MediaCategory,
+    type: MediaType,
+    page = 1,
+  ): Promise<MetadataSearchResult> {
+    const path = `/${MediaTypeNS.tmdbPath(type)}/${category}`;
+    const params = { page: String(page), language: "en-US" };
+
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawPagedResponse<RawSearchResult>>(path, params);
+      return this.pagedToResult(response);
+    });
+  }
+
+  async discover(
+    type: MediaType,
+    filters: DiscoverFilters,
+  ): Promise<MetadataSearchResult> {
+    const path = `/discover/${MediaTypeNS.tmdbPath(type)}`;
+    const params: Record<string, string> = {
+      page: String(filters.page),
+      sort_by: filters.sortBy,
+      language: "en-US",
+      include_adult: "false",
+    };
+    if (filters.genreId != null) {
+      params.with_genres = String(filters.genreId);
+    }
+    if (filters.year != null) {
+      if (type === "movie") {
+        params.primary_release_year = String(filters.year);
+      } else {
+        params.first_air_date_year = String(filters.year);
+      }
+    }
+    if (filters.minRating != null) {
+      params["vote_average.gte"] = String(filters.minRating);
+      params["vote_count.gte"] = "100";
+    }
+
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawPagedResponse<RawSearchResult>>(path, params);
+      return this.pagedToResult(response);
+    });
+  }
+
+  async getGenres(type: MediaType): Promise<Genre[]> {
+    const path = `/genre/${MediaTypeNS.tmdbPath(type)}/list`;
+    const params = { language: "en-US" };
+    return this.cached(this.cacheKey(path, params), TMDBService.longTTL, async () => {
+      const response = await this.request<RawGenresResponse>(path, params);
+      return response.genres.map((g) => ({ id: g.id, name: g.name }));
+    });
+  }
+
+  async getSeasons(tmdbId: number): Promise<Season[]> {
+    const path = `/tv/${tmdbId}`;
+    const params = { language: "en-US" };
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawTVDetailResponse>(path, params);
+      return (response.seasons ?? []).map((s) => ({
+        id: s.id,
+        seasonNumber: s.season_number,
+        name: s.name,
+        overview: s.overview ?? null,
+        posterPath: s.poster_path ?? null,
+        episodeCount: s.episode_count,
+        airDate: s.air_date ?? null,
+      }));
+    });
+  }
+
+  async getEpisodes(tmdbId: number, season: number): Promise<Episode[]> {
+    const path = `/tv/${tmdbId}/season/${season}`;
+    const params = { language: "en-US" };
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawSeasonResponse>(path, params);
+      return response.episodes.map((ep) => ({
+        id: `${tmdbId}-s${season}e${ep.episode_number}`,
+        mediaId: `tmdb-${tmdbId}`,
+        seasonNumber: season,
+        episodeNumber: ep.episode_number,
+        title: ep.name ?? null,
+        overview: ep.overview ?? null,
+        airDate: ep.air_date ?? null,
+        stillPath: ep.still_path ?? null,
+        runtime: ep.runtime ?? null,
+      }));
+    });
+  }
+
+  async getExternalIds(tmdbId: number, type: MediaType): Promise<ExternalIds> {
+    const path = `/${MediaTypeNS.tmdbPath(type)}/${tmdbId}/external_ids`;
+    const raw = await this.request<RawExternalIds>(path, {});
+    return { imdbId: raw.imdb_id ?? null, tvdbId: raw.tvdb_id ?? null };
+  }
+
+  async getCast(tmdbId: number, type: MediaType): Promise<CastMember[]> {
+    const path = `/${MediaTypeNS.tmdbPath(type)}/${tmdbId}/credits`;
+    const params = { language: "en-US" };
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawCredits>(path, params);
+      return response.cast.map((c) =>
+        makeCastMember(c.id, c.name, c.character ?? "", c.profile_path),
+      );
+    });
+  }
+
+  async getRecommendations(
+    tmdbId: number,
+    type: MediaType,
+  ): Promise<MediaPreview[]> {
+    const path = `/${MediaTypeNS.tmdbPath(type)}/${tmdbId}/recommendations`;
+    const params = { language: "en-US", page: "1" };
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawPagedResponse<RawSearchResult>>(path, params);
+      return response.results
+        .map(toMediaPreview)
+        .filter((p): p is MediaPreview => p !== null);
+    });
+  }
+
+  // MARK: - Find by IMDB ID
+
+  async findByImdbId(imdbId: string, type: MediaType): Promise<number | null> {
+    const path = `/find/${imdbId}`;
+    const params = { external_source: "imdb_id" };
+    const response = await this.request<RawFindResponse>(path, params);
+    if (type === "movie") {
+      return response.movie_results[0]?.id ?? null;
+    }
+    return response.tv_results[0]?.id ?? null;
+  }
+
+  // MARK: - Helpers
+
+  /** Mirrors the repeated `MetadataSearchResult(items: results.compactMap...)`. */
+  private pagedToResult(
+    response: RawPagedResponse<RawSearchResult>,
+  ): MetadataSearchResult {
+    const items = response.results
+      .map(toMediaPreview)
+      .filter((p): p is MediaPreview => p !== null);
+    return {
+      items,
+      page: response.page,
+      totalPages: response.total_pages,
+      totalResults: response.total_results,
+    };
+  }
+
+  // MARK: - HTTP
+
+  private async request<T>(
+    path: string,
+    params: Record<string, string>,
+  ): Promise<T> {
+    const url = new URL(this.baseURL + path);
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.append(k, v);
+    }
+    url.searchParams.append("api_key", this.apiKey);
+
+    const response = await this.fetchImpl(url.toString());
+    const status = response.status;
+
+    if (!(status >= 200 && status <= 299)) {
+      if (status === 401) throw TMDBError.unauthorized();
+      if (status === 404) throw TMDBError.notFound(path);
+      if (status === 429) throw TMDBError.rateLimited();
+      const body = await response.text().catch(() => "");
+      throw TMDBError.httpError(status, body);
+    }
+
+    const text = await response.text();
+    return JSON.parse(text) as T;
+  }
+}
