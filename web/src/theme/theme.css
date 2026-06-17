@@ -238,20 +238,34 @@ body {
   border-radius: 50%;
 }
 .aurora-glow::before {
-  width: 70vw;
-  height: 70vw;
-  background: rgba(var(--accent-rgb), 0.11);
+  width: 72vw;
+  height: 72vw;
+  background: rgba(var(--accent-rgb), 0.13);
   filter: blur(150px);
   left: -30vw;
   top: -34vh;
+  animation: auroraDriftA 26s ease-in-out infinite alternate;
 }
 .aurora-glow::after {
-  width: 60vw;
-  height: 60vw;
-  background: rgba(var(--accent-secondary-rgb), 0.08);
+  width: 62vw;
+  height: 62vw;
+  background: rgba(var(--accent-secondary-rgb), 0.1);
   filter: blur(160px);
   right: -26vw;
   bottom: -22vh;
+  animation: auroraDriftB 32s ease-in-out infinite alternate;
+}
+@keyframes auroraDriftA {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(6vw, 5vh, 0) scale(1.12); }
+}
+@keyframes auroraDriftB {
+  from { transform: translate3d(0, 0, 0) scale(1.05); }
+  to { transform: translate3d(-7vw, -4vh, 0) scale(0.95); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora-glow::before,
+  .aurora-glow::after { animation: none; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -337,20 +351,27 @@ body {
 }
 .btn:hover {
   border-color: rgba(var(--accent-rgb), 0.6);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
 }
 .btn:active {
   transform: scale(0.97);
 }
 .btn-prominent {
+  position: relative;
   color: #fff;
   border: none;
   background: linear-gradient(
     135deg,
-    rgba(var(--accent-rgb), 0.95),
-    rgba(var(--accent-secondary-rgb), 0.85),
-    rgba(var(--accent-tertiary-rgb), 0.7)
+    rgba(var(--accent-rgb), 0.98),
+    rgba(var(--accent-secondary-rgb), 0.88),
+    rgba(var(--accent-tertiary-rgb), 0.72)
   );
-  box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.35);
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.btn-prominent:hover {
+  transform: translateY(-1px);
 }
 .btn-prominent:hover {
   box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.45);
