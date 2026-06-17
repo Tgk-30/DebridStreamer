@@ -1,55 +1,65 @@
-/* DetailHero — backdrop + poster + meta + actions. */
+/* DetailHero — cinematic backdrop + poster + meta + actions. */
 
 .detail-hero {
   position: relative;
-  min-height: 420px;
+  min-height: clamp(460px, 56vh, 600px);
   border-radius: var(--r-lg);
   overflow: hidden;
-  box-shadow:
-    0 18px 28px rgba(0, 0, 0, 0.28),
-    inset 0 0 0 100vmax rgba(var(--accent-rgb), 0.05);
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  isolation: isolate;
 }
 
+.detail-hero-backdrop-layer {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
 .detail-hero-backdrop {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center 16%;
 }
+
 .detail-hero-scrim {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(
-      to bottom,
-      rgba(0, 0, 0, 0.2) 0%,
-      rgba(0, 0, 0, 0.45) 45%,
-      rgba(0, 0, 0, 0.85) 100%
-    ),
-    linear-gradient(to right, rgba(0, 0, 0, 0.55) 0%, transparent 60%);
+    linear-gradient(to top, rgba(8, 9, 18, 0.97) 2%, rgba(8, 9, 18, 0.55) 32%, rgba(8, 9, 18, 0) 64%),
+    linear-gradient(to right, rgba(8, 9, 18, 0.7) 0%, rgba(8, 9, 18, 0.12) 48%, rgba(8, 9, 18, 0) 72%);
+}
+.detail-hero-vignette {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 180px 50px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
 }
 
 .detail-hero-close {
   position: absolute;
-  top: var(--sp-md);
-  left: var(--sp-md);
-  z-index: 3;
+  top: var(--sp-lg);
+  left: var(--sp-lg);
+  z-index: 4;
   display: inline-grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 0.75px solid var(--glass-border);
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(10, 12, 22, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   color: #fff;
   cursor: pointer;
+  transition: transform 0.18s, background 0.2s, border-color 0.2s;
 }
 .detail-hero-close:hover {
-  background: rgba(0, 0, 0, 0.6);
-  border-color: rgba(var(--accent-rgb), 0.5);
+  transform: scale(1.06);
+  background: rgba(10, 12, 22, 0.72);
+  border-color: rgba(var(--accent-rgb), 0.6);
 }
 
 .detail-hero-content {
@@ -57,18 +67,19 @@
   inset: auto 0 0 0;
   display: flex;
   align-items: flex-end;
-  gap: var(--sp-xl);
-  padding: var(--sp-xl);
+  gap: clamp(var(--sp-lg), 2.5vw, 36px);
+  padding: clamp(var(--sp-xl), 3.5vw, 52px);
+  will-change: transform, opacity;
 }
 
 .detail-hero-poster {
   flex: 0 0 auto;
-  width: 150px;
+  width: clamp(140px, 13vw, 188px);
   aspect-ratio: 2 / 3;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   object-fit: cover;
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 40px -8px rgba(0, 0, 0, 0.7);
 }
 
 .detail-hero-info {
@@ -76,56 +87,67 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-sm);
-  max-width: 720px;
+  gap: var(--sp-md);
+  max-width: 760px;
 }
 
 .detail-hero-title {
   margin: 0;
-  font-size: 36px;
-  font-weight: 700;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
+  font-size: clamp(32px, 4vw, 52px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
   color: #fff;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
 }
 
 .detail-hero-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-md);
-  font-size: 13px;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.84);
 }
 .detail-hero-rating {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-weight: 600;
+  font-weight: 700;
+}
+.detail-hero-metabit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.detail-hero-dot {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .detail-hero-genres {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 7px;
 }
 .detail-genre-chip {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 5px 12px;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.08);
-  border: 0.75px solid var(--glass-border);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.09);
+  border: 0.75px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
 }
 
 .detail-hero-overview {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 640px;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -137,7 +159,23 @@
   gap: var(--sp-md);
   margin-top: var(--sp-xs);
 }
-.detail-hero-actions .btn.is-on {
-  border-color: rgba(var(--accent-rgb), 0.55);
+.detail-play {
+  padding: 12px 28px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.detail-watch {
+  padding: 12px 22px;
+  font-size: 15px;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+}
+.detail-watch:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.detail-watch.is-on {
+  border-color: rgba(var(--accent-rgb), 0.6);
   color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.14);
 }
