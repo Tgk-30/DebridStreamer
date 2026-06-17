@@ -1,0 +1,91 @@
+/* In-app player overlay — a centered glass panel over a dimmed backdrop. */
+
+.player-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-xl);
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.player {
+  width: min(1100px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+}
+
+.player-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  padding: var(--sp-md) var(--sp-lg);
+  border-bottom: 0.75px solid var(--glass-border);
+}
+.player-title {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.player-close {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.player-close:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.player-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 78vh;
+  background: #000;
+  display: block;
+}
+
+.player-external {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-md);
+  text-align: center;
+  padding: var(--sp-xxxl) var(--sp-xl);
+}
+.player-external-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+.player-external-sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 420px;
+}
+.player-external-err {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+.player-external a.btn {
+  margin-top: var(--sp-sm);
+  text-decoration: none;
+}

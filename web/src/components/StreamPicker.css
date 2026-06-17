@@ -1,0 +1,164 @@
+/* StreamPicker — rows of cached/will-cache torrents. */
+
+.streams {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.streams-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  flex-wrap: wrap;
+}
+.streams-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.streams-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-lg);
+}
+.streams-count {
+  font-size: 12px;
+}
+.streams-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.streams-toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.streams-error {
+  font-size: 13px;
+  color: var(--danger);
+  padding: var(--sp-sm) var(--sp-md);
+  border-radius: var(--r-sm);
+  background: rgba(250, 115, 115, 0.1);
+  border: 0.75px solid rgba(250, 115, 115, 0.3);
+}
+
+.streams-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+
+.stream-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-md);
+  border-radius: var(--r-md);
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s,
+    transform 0.1s;
+}
+.stream-row:hover:not(:disabled) {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.18);
+}
+.stream-row:active:not(:disabled) {
+  transform: scale(0.995);
+}
+.stream-row:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.stream-quality {
+  flex: 0 0 auto;
+  min-width: 52px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.07);
+  border: 0.75px solid var(--glass-border);
+  color: var(--text-primary);
+}
+
+.stream-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.stream-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stream-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.stream-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+/* Green "Instant · RD" — cached on debrid. */
+.stream-badge.is-cached {
+  color: var(--success);
+  background: rgba(92, 217, 140, 0.14);
+  border: 0.75px solid rgba(92, 217, 140, 0.4);
+}
+/* Grey "Will cache" — not yet cached. */
+.stream-badge.is-cache {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  border: 0.75px solid var(--glass-border);
+}
+
+.streams-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-sm);
+  text-align: center;
+  padding: var(--sp-xxl) var(--sp-xl);
+  border-radius: var(--r-md);
+}
+.streams-empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.streams-empty-sub {
+  margin: 0;
+  font-size: 13px;
+  max-width: 380px;
+  line-height: 1.5;
+}

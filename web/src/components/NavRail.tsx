@@ -11,6 +11,7 @@ import "./NavRail.css";
 
 export type ScreenId =
   | "discover"
+  | "search"
   | "library"
   | "watchlist"
   | "history"

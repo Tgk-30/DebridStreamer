@@ -1,96 +1,66 @@
 // App shell — mirrors Sources/.../Views/ContentView.swift (the Hybrid nav).
 //
 // Aurora background + restrained glow, a slim glass NavRail on the left, a
-// content area that routes between screens with a simple state-based router,
-// and a floating top-right GlobalSearch field (hidden on Settings, like
-// ContentView.showsGlobalSearch). Discover is the only fully-built screen this
-// phase; the others are on-brand placeholders.
+// content area that routes between screens via the app store, a floating
+// top-right GlobalSearch field (hidden on Settings + Detail), and a Detail
+// overlay that mounts over the content area whenever a media item is selected.
 
-import { useState } from "react";
 import "./theme/theme.css";
 import { NavRail, type ScreenId } from "./components/NavRail";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { Discover } from "./screens/Discover";
-import { Placeholder } from "./screens/Placeholder";
-import type { MediaPreview } from "./models/media";
+import { Search } from "./screens/Search";
+import { Library } from "./screens/Library";
+import { Watchlist } from "./screens/Watchlist";
+import { History } from "./screens/History";
+import { Assistant } from "./screens/Assistant";
+import { Settings } from "./screens/Settings";
+import { Detail } from "./screens/Detail";
+import { useAppStore } from "./store/AppStore";
 import "./App.css";
 
 export function App() {
-  const [screen, setScreen] = useState<ScreenId>("discover");
+  const { route, navigate, detailItem, openDetail, search } = useAppStore();
 
   // The global quick-search field is shown on browse screens but not Settings
-  // (ContentView.showsGlobalSearch). Search has no dedicated screen this phase.
-  const showsGlobalSearch = screen !== "settings";
-
-  function handleSelect(item: MediaPreview) {
-    // Detail view lands in a later phase; log for now so the click is wired.
-    console.info("[DebridStreamer] selected:", item.title);
-  }
+  // (ContentView.showsGlobalSearch); the dedicated Search screen has its own
+  // field, so hide the floating one there too.
+  const showsGlobalSearch =
+    route !== "settings" && route !== "search" && detailItem == null;
 
   return (
     <div className="app">
       <div className="aurora-glow" />
 
-      <NavRail selected={screen} onSelect={setScreen} />
+      <NavRail selected={route} onSelect={navigate} />
 
       <main className="app-content">
-        {showsGlobalSearch && (
-          <GlobalSearch
-            onSubmit={(q) => console.info("[DebridStreamer] search:", q)}
-          />
-        )}
-        {renderScreen(screen, handleSelect)}
+        {showsGlobalSearch && <GlobalSearch onSubmit={search} />}
+
+        {renderScreen(route)}
+
+        {/* Detail overlay — mounts over the current screen. */}
+        {detailItem != null && <Detail />}
       </main>
     </div>
   );
-}
 
-function renderScreen(
-  screen: ScreenId,
-  onSelect: (item: MediaPreview) => void,
-) {
-  switch (screen) {
-    case "discover":
-      return <Discover onSelect={onSelect} />;
-    case "library":
-      return (
-        <Placeholder
-          icon="library"
-          title="Library"
-          subtitle="Your saved movies and shows will live here — synced from Trakt and your IMDb exports."
-        />
-      );
-    case "watchlist":
-      return (
-        <Placeholder
-          icon="watchlist"
-          title="Watchlist"
-          subtitle="Bookmark titles to watch later. Your watchlist syncs across devices."
-        />
-      );
-    case "history":
-      return (
-        <Placeholder
-          icon="history"
-          title="History"
-          subtitle="Everything you've watched, with resume points for anything still in progress."
-        />
-      );
-    case "assistant":
-      return (
-        <Placeholder
-          icon="assistant"
-          title="AI Assistant"
-          subtitle="Chat with an AI that knows your taste — ask for recommendations, summaries, and curated lineups."
-        />
-      );
-    case "settings":
-      return (
-        <Placeholder
-          icon="settings"
-          title="Settings"
-          subtitle="Connect your TMDB key, debrid services, indexers, and AI providers."
-        />
-      );
+  function renderScreen(screen: ScreenId) {
+    switch (screen) {
+      case "discover":
+        return <Discover onSelect={openDetail} />;
+      case "search":
+        return <Search />;
+      case "library":
+        return <Library />;
+      case "watchlist":
+        return <Watchlist />;
+      case "history":
+        return <History />;
+      case "assistant":
+        return <Assistant />;
+      case "settings":
+        return <Settings />;
+    }
   }
 }

@@ -7,3 +7,7 @@ coverage
 
 # tsc -b incremental artifact
 *.tsbuildinfo
+
+# Tauri Rust build artifacts
+src-tauri/target/
+src-tauri/gen/

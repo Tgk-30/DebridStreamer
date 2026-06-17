@@ -1,0 +1,71 @@
+/* Shared layout for Library / Watchlist / History. */
+
+.lib-screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding: var(--sp-xl);
+  padding-top: 64px;
+  max-width: 1280px;
+}
+
+.lib-h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.lib-sub {
+  margin: 0 0 var(--sp-sm);
+  font-size: 14px;
+}
+
+.lib-folders {
+  display: flex;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-sm);
+}
+.lib-folder-chip {
+  cursor: default;
+}
+.lib-folder-chip.lib-folder-disabled {
+  opacity: 0.55;
+}
+
+/* Removable watchlist cards. */
+.lib-grid-wrap {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(174px, 1fr));
+  gap: var(--sp-md);
+  align-items: start;
+}
+.lib-removable {
+  position: relative;
+  justify-self: center;
+}
+.lib-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0.75px solid var(--glass-border);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+.lib-removable:hover .lib-remove {
+  opacity: 1;
+}
+.lib-remove:hover {
+  border-color: rgba(250, 115, 115, 0.6);
+  color: var(--danger);
+}
