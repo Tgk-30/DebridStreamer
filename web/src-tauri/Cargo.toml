@@ -44,3 +44,19 @@ serde_json = "1"
 # web/src/lib/updater.ts); releases are signed with the updater keypair and
 # published as `latest.json` on GitHub Releases.
 tauri-plugin-updater = "2"
+
+# OS-keychain backend for the SecretStore commands (src/keychain.rs).
+# keyring v3 ships NO default credential store — each platform MUST enable its
+# own backend feature or it silently falls back to an in-memory mock (secrets
+# would not persist). Target-gated so each OS pulls only its own backend and a
+# bad feature combo can't break another platform's release build.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+# Linux: Secret Service over D-Bus (sync), pure-Rust crypto (no OpenSSL system
+# dep), vendored libdbus (no system build dep) — headless-CI-friendly.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"] }

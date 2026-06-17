@@ -12,6 +12,9 @@ use std::process::Command;
 // JSON IPC. See player.rs for the `--wid` in-window-embedding caveat (macOS).
 mod player;
 
+// OS-keychain SecretStore backend (keychain_get / keychain_set / keychain_delete).
+mod keychain;
+
 #[tauri::command]
 fn open_in_external_player(url: String) -> Result<String, String> {
     // Preference order: VLC (installed here, matches the current VLCKit player), then mpv, then IINA.
@@ -80,6 +83,9 @@ pub fn run() {
             player::mpv_seek,
             player::mpv_get_position,
             player::mpv_stop,
+            keychain::keychain_get,
+            keychain::keychain_set,
+            keychain::keychain_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
