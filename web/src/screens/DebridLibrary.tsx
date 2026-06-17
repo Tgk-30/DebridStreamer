@@ -7,7 +7,7 @@
 // Tauri or a configured debrid we show a clear "configure debrid" / "desktop
 // only" state. Imports services READ-ONLY via the app store.
 
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import {
   useDebridLibrary,
@@ -16,10 +16,18 @@ import {
 } from "../data/debridLibrary";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
-import { HashListDialog } from "../components/HashListDialog";
+import { Spinner } from "../components/Spinner";
 import { isTauri } from "../lib/tauri";
 import "./LibraryScreens.css";
 import "./DebridLibrary.css";
+
+// The hash-list import/export/AI dialog (pako compression + a lot of UI) only
+// mounts when opened, so it's code-split out of the DebridLibrary chunk.
+const HashListDialog = lazy(() =>
+  import("../components/HashListDialog").then((m) => ({
+    default: m.HashListDialog,
+  })),
+);
 
 type Filter = "all" | "duplicates" | "ready";
 
@@ -305,11 +313,13 @@ export function DebridLibrary() {
       )}
 
       {dialogOpen && (
-        <HashListDialog
-          torrents={state.rows.map((r) => r.torrent)}
-          onClose={() => setDialogOpen(false)}
-          onImported={reload}
-        />
+        <Suspense fallback={<Spinner variant="overlay" />}>
+          <HashListDialog
+            torrents={state.rows.map((r) => r.torrent)}
+            onClose={() => setDialogOpen(false)}
+            onImported={reload}
+          />
+        </Suspense>
       )}
     </div>
   );

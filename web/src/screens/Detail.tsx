@@ -11,7 +11,7 @@
 // no-key fallback that still shows the hero. Streams need configured indexers +
 // debrid; without them the picker shows a clear empty state.
 
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { useDetail } from "../data/detail";
 import { useStreams } from "../data/streams";
@@ -19,11 +19,18 @@ import { DetailHero } from "../components/DetailHero";
 import { StreamPicker } from "../components/StreamPicker";
 import { CastRail } from "../components/CastRail";
 import { Rail } from "../components/Rail";
-import { VideoPlayer } from "../components/VideoPlayer";
+import { Spinner } from "../components/Spinner";
 import { isInWatchlist } from "../data/library";
 import { VideoCodec, type StreamInfo } from "../services/debrid/models";
 import type { TorrentResult } from "../services/indexers/models";
 import "./Detail.css";
+
+// The VideoPlayer pulls in hls.js (large) and only mounts once the user starts
+// playback, so it's code-split into its own chunk and kept out of the Detail
+// chunk + the initial bundle.
+const VideoPlayer = lazy(() =>
+  import("../components/VideoPlayer").then((m) => ({ default: m.VideoPlayer })),
+);
 
 interface ActivePlayer {
   url: string;
@@ -184,32 +191,34 @@ export function Detail() {
       </div>
 
       {player && (
-        <VideoPlayer
-          url={player.url}
-          title={player.title}
-          kind={player.external ? "external" : undefined}
-          onClose={() => setPlayer(null)}
-          onProgress={(current, duration) => {
-            // Persist a resume position against the title being viewed so the
-            // History "Continue Watching" rail can pick it back up.
-            recordResume(detailItem, current, duration);
-          }}
-          // Subtitle search/translate context. The client/config are null when
-          // the OpenSubtitles key / AI provider aren't configured, so the player
-          // gates those affordances gracefully.
-          subtitleClient={services.subtitles}
-          translatorConfig={
-            services.hasAI
-              ? {
-                  provider: settings.aiProvider,
-                  apiKey: settings.aiApiKey,
-                  model: settings.aiModel,
-                  ollamaEndpoint: settings.ollamaEndpoint,
-                }
-              : null
-          }
-          imdbId={detail.data.imdbId}
-        />
+        <Suspense fallback={<Spinner variant="overlay" label="Loading player…" />}>
+          <VideoPlayer
+            url={player.url}
+            title={player.title}
+            kind={player.external ? "external" : undefined}
+            onClose={() => setPlayer(null)}
+            onProgress={(current, duration) => {
+              // Persist a resume position against the title being viewed so the
+              // History "Continue Watching" rail can pick it back up.
+              recordResume(detailItem, current, duration);
+            }}
+            // Subtitle search/translate context. The client/config are null when
+            // the OpenSubtitles key / AI provider aren't configured, so the
+            // player gates those affordances gracefully.
+            subtitleClient={services.subtitles}
+            translatorConfig={
+              services.hasAI
+                ? {
+                    provider: settings.aiProvider,
+                    apiKey: settings.aiApiKey,
+                    model: settings.aiModel,
+                    ollamaEndpoint: settings.ollamaEndpoint,
+                  }
+                : null
+            }
+            imdbId={detail.data.imdbId}
+          />
+        </Suspense>
       )}
     </div>
   );

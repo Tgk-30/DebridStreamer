@@ -28,6 +28,10 @@ tauri-plugin-http = "2"
 # `app.shell().sidecar("mpv")`; the binary is declared in tauri.conf.json's
 # `bundle.externalBin` and lives in `binaries/mpv-<target-triple>`.
 tauri-plugin-shell = "2"
+# Process control exposed to the webview (`@tauri-apps/plugin-process`). Used by
+# the in-app auto-updater to `relaunch()` the app after an update is downloaded
+# and installed (see web/src/lib/updater.ts + UpdateBanner).
+tauri-plugin-process = "2"
 # Native window-handle access. Tauri's `Window` implements
 # `raw_window_handle::HasWindowHandle`; on macOS we read the `AppKitWindowHandle`
 # `ns_view` pointer to attempt mpv `--wid` in-window embedding (see player.rs).

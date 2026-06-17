@@ -57,6 +57,9 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         // Shell plugin: used from Rust to spawn the bundled mpv sidecar (P1).
         .plugin(tauri_plugin_shell::init())
+        // Process plugin: lets the webview `relaunch()` the app after the
+        // auto-updater downloads + installs a new version (see updater.ts).
+        .plugin(tauri_plugin_process::init())
         // At-most-one mpv instance, shared across the mpv_* commands.
         .manage(player::MpvState::default());
 

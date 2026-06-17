@@ -23,19 +23,29 @@ export function Library() {
   const [folders, setFolders] = useState<LibraryFolderRecord[]>([]);
   const [entries, setEntries] = useState<LibraryEntryRecord[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string>(ALL);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const store = getStore();
-      await store.ensureSystemFolders();
-      const [folderList, favEntries] = await Promise.all([
-        store.listFolders("favorites"),
-        store.listLibrary("favorites"),
-      ]);
-      if (cancelled) return;
-      setFolders(folderList);
-      setEntries(favEntries);
+      try {
+        const store = getStore();
+        await store.ensureSystemFolders();
+        const [folderList, favEntries] = await Promise.all([
+          store.listFolders("favorites"),
+          store.listLibrary("favorites"),
+        ]);
+        if (cancelled) return;
+        setFolders(folderList);
+        setEntries(favEntries);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
@@ -83,7 +93,16 @@ export function Library() {
           ))}
       </div>
 
-      {items.length === 0 ? (
+      {loading ? (
+        <p className="t-secondary">Loading your library…</p>
+      ) : error ? (
+        <EmptyState
+          icon="library"
+          title="Couldn't load your library"
+          subtitle="Something went wrong reading your saved titles from this device. Try reopening the app."
+          note={error}
+        />
+      ) : items.length === 0 ? (
         <EmptyState
           icon="library"
           title="Your library is empty"

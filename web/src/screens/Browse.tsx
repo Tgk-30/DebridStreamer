@@ -11,7 +11,7 @@
 // page 1. Active filters show as removable chips above the grid. Data comes from
 // the read-only useBrowse() hook; it gates gracefully without a TMDB key.
 
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import {
   type BrowseContext,
@@ -25,10 +25,18 @@ import { genreName, useGenres } from "../data/genres";
 import { SortOption } from "../services/metadata/types";
 import type { MediaType } from "../models/media";
 import { MediaCard } from "../components/MediaCard";
-import { FilterSlideover } from "../components/FilterSlideover";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import "./Browse.css";
+
+// The advanced filter panel is code-split out of the Browse chunk; it only
+// mounts the first time the user opens it (kept mounted afterwards so it can
+// animate closed).
+const FilterSlideover = lazy(() =>
+  import("../components/FilterSlideover").then((m) => ({
+    default: m.FilterSlideover,
+  })),
+);
 
 export function Browse() {
   const { browseContext, closeBrowse, openDetail, services } = useAppStore();
@@ -79,6 +87,13 @@ function BrowseInner({
   const { services } = useAppStore();
   const state = useBrowse(services.tmdb, ctx);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // Only pull in the (code-split) FilterSlideover chunk once the user has opened
+  // the panel at least once; keep it mounted thereafter so it animates closed.
+  const [filtersMounted, setFiltersMounted] = useState(false);
+  useEffect(() => {
+    if (filtersOpen) setFiltersMounted(true);
+  }, [filtersOpen]);
 
   // The type + filters the slideover edits. Seed from the active context: a
   // discover context carries them; other kinds start blank (applying converts
@@ -232,13 +247,17 @@ function BrowseInner({
         )}
       </div>
 
-      <FilterSlideover
-        open={filtersOpen}
-        type={draftType}
-        filters={draftFilters}
-        onClose={() => setFiltersOpen(false)}
-        onApply={applyFilters}
-      />
+      {filtersMounted && (
+        <Suspense fallback={null}>
+          <FilterSlideover
+            open={filtersOpen}
+            type={draftType}
+            filters={draftFilters}
+            onClose={() => setFiltersOpen(false)}
+            onApply={applyFilters}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

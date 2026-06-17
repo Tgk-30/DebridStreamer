@@ -6,24 +6,44 @@
 // overlay that mounts over the content area whenever a media item is selected.
 
 import "./theme/theme.css";
-import { useEffect } from "react";
+import { lazy, Suspense } from "react";
 import { NavRail, type ScreenId } from "./components/NavRail";
 import { GlobalSearch } from "./components/GlobalSearch";
+import { Spinner } from "./components/Spinner";
+import { UpdateBanner } from "./components/UpdateBanner";
+import { useAppStore } from "./store/AppStore";
+import { useTheme } from "./theme/useTheme";
+import "./App.css";
+
+// First-paint + light screens stay eager (Discover is the landing screen; the
+// rest are small structural lists that read already-loaded store state).
 import { Discover } from "./screens/Discover";
 import { Search } from "./screens/Search";
 import { Library } from "./screens/Library";
 import { Watchlist } from "./screens/Watchlist";
-import { Calendar } from "./screens/Calendar";
 import { History } from "./screens/History";
 import { Assistant } from "./screens/Assistant";
-import { DebridLibrary } from "./screens/DebridLibrary";
-import { Settings } from "./screens/Settings";
-import { Detail } from "./screens/Detail";
-import { Browse } from "./screens/Browse";
-import { useAppStore } from "./store/AppStore";
-import { useTheme } from "./theme/useTheme";
-import { checkForUpdates } from "./lib/updater";
-import "./App.css";
+
+// Heavy / not-on-first-paint screens + overlays are code-split into their own
+// chunks (React.lazy), so the initial bundle doesn't carry them. The Detail
+// overlay in particular pulls in the VideoPlayer + hls.js (large). The screens
+// use named exports, so map them to a `default` for lazy(). Each is rendered
+// inside a <Suspense> with a glass Spinner fallback while its chunk downloads.
+const Calendar = lazy(() =>
+  import("./screens/Calendar").then((m) => ({ default: m.Calendar })),
+);
+const DebridLibrary = lazy(() =>
+  import("./screens/DebridLibrary").then((m) => ({ default: m.DebridLibrary })),
+);
+const Settings = lazy(() =>
+  import("./screens/Settings").then((m) => ({ default: m.Settings })),
+);
+const Browse = lazy(() =>
+  import("./screens/Browse").then((m) => ({ default: m.Browse })),
+);
+const Detail = lazy(() =>
+  import("./screens/Detail").then((m) => ({ default: m.Detail })),
+);
 
 export function App() {
   const { route, navigate, detailItem, browseContext, openDetail, search, settings } =
@@ -32,11 +52,6 @@ export function App() {
   // Apply the persisted theme to the document root (instantly on change, and on
   // startup once the Store hydrates the saved choice).
   useTheme(settings.theme);
-
-  // Check for a desktop auto-update once on launch. No-op in the browser.
-  useEffect(() => {
-    void checkForUpdates();
-  }, []);
 
   // The global quick-search field is shown on browse screens but not Settings
   // (ContentView.showsGlobalSearch); the dedicated Search screen has its own
@@ -58,15 +73,29 @@ export function App() {
       <main className="app-content">
         {showsGlobalSearch && <GlobalSearch onSubmit={search} />}
 
-        {renderScreen(route)}
+        <Suspense fallback={<Spinner variant="inline" />}>
+          {renderScreen(route)}
+        </Suspense>
 
         {/* Browse overlay — mounts over the current screen ("See all" +
             advanced filters), below the Detail overlay. */}
-        {browseContext != null && <Browse />}
+        {browseContext != null && (
+          <Suspense fallback={<Spinner variant="overlay" />}>
+            <Browse />
+          </Suspense>
+        )}
 
         {/* Detail overlay — mounts over the current screen (and over Browse). */}
-        {detailItem != null && <Detail />}
+        {detailItem != null && (
+          <Suspense fallback={<Spinner variant="overlay" />}>
+            <Detail />
+          </Suspense>
+        )}
       </main>
+
+      {/* Desktop auto-update toast. Runs the launch-time check itself and is a
+          no-op in a plain browser (isTauri-gated in updater.ts). */}
+      <UpdateBanner />
     </div>
   );
 

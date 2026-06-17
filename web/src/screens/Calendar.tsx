@@ -46,6 +46,13 @@ export function Calendar() {
 
       {state.loading ? (
         <p className="t-secondary cal-status">Loading upcoming episodes…</p>
+      ) : state.error ? (
+        <EmptyState
+          icon="calendar"
+          title="Couldn't load the calendar"
+          subtitle="We couldn't reach TMDB for your shows' air dates. Check your connection and try again."
+          note={state.error}
+        />
       ) : !state.hasTMDB ? (
         <EmptyState
           icon="calendar"

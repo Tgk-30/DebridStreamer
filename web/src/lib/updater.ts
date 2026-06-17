@@ -1,11 +1,13 @@
-// In-app auto-update check.
+// In-app auto-update check + install.
 //
-// Runs once on launch (from App.tsx). It is a deliberate no-op in a plain
-// browser — the updater plugin only exists in the desktop Tauri shell — so it's
-// guarded by `isTauri()` and never throws into the UI. When running under Tauri
-// it asks the updater plugin whether a newer signed release is available
-// (resolved from the `plugins.updater.endpoints` `latest.json` in
-// tauri.conf.json) and, for now, just logs the result.
+// Runs once on launch (via the UpdateBanner component, mounted from App.tsx). It
+// is a deliberate no-op in a plain browser — the updater plugin only exists in
+// the desktop Tauri shell — so it's guarded by `isTauri()` and never throws into
+// the UI. When running under Tauri it asks the updater plugin whether a newer
+// signed release is available (resolved from the `plugins.updater.endpoints`
+// `latest.json` in tauri.conf.json) and, when one is, surfaces a small
+// non-blocking glass banner ("Update vX.Y available — Install"). Installing
+// downloads + applies the update (with progress) then relaunches the app.
 //
 // Releases are signed with the updater keypair (public key in tauri.conf.json,
 // private key + password supplied to CI as TAURI_SIGNING_PRIVATE_KEY /
@@ -14,11 +16,26 @@
 
 import { isTauri } from "./tauri";
 
-/** Check for an available desktop update. No-op (and never throws) in the
- * browser. Non-blocking: failures are swallowed with a console warning so a
- * flaky network or a missing release never degrades launch. */
-export async function checkForUpdates(): Promise<void> {
-  if (!isTauri()) return;
+/** A pending desktop update, with the version + an install action. The install
+ * action downloads + applies the update (reporting byte progress) and then
+ * relaunches the app; it never resolves on success (the process restarts). */
+export interface PendingUpdate {
+  version: string;
+  currentVersion: string;
+  /** Release notes, when the `latest.json` carried a `notes` field. */
+  notes: string | null;
+  /** Download + install the update, then relaunch. `onProgress` (0..1, or null
+   * when the total size is unknown) is called as bytes arrive. Rejects on
+   * failure; on success the app relaunches and this never resolves. */
+  install: (onProgress?: (fraction: number | null) => void) => Promise<void>;
+}
+
+/** Check for an available desktop update. Resolves to a {@link PendingUpdate}
+ * when a newer signed release is available, else `null`. Never throws — a flaky
+ * network, a missing release, or running in a plain browser all resolve to
+ * `null` (with a console warning) so launch is never degraded. */
+export async function checkForUpdates(): Promise<PendingUpdate | null> {
+  if (!isTauri()) return null;
 
   try {
     // Imported dynamically so the browser bundle never resolves the Tauri
@@ -26,22 +43,52 @@ export async function checkForUpdates(): Promise<void> {
     const { check } = await import("@tauri-apps/plugin-updater");
     const update = await check();
 
-    if (update) {
-      // eslint-disable-next-line no-console
-      console.info(
-        `[updater] Update available: ${update.version} (current ${update.currentVersion}).`,
-        update.body ?? "",
-      );
-      // TODO: surface a non-blocking in-app prompt here ("Update available —
-      // restart to install?"). On confirm, call `await update.downloadAndInstall()`
-      // then `await relaunch()` from `@tauri-apps/plugin-process`. Left as a
-      // console log this phase so launch stays non-interactive.
-    } else {
+    if (update == null) {
       // eslint-disable-next-line no-console
       console.info("[updater] App is up to date.");
+      return null;
     }
+
+    // eslint-disable-next-line no-console
+    console.info(
+      `[updater] Update available: ${update.version} (current ${update.currentVersion}).`,
+      update.body ?? "",
+    );
+
+    return {
+      version: update.version,
+      currentVersion: update.currentVersion,
+      notes: update.body ?? null,
+      install: async (onProgress) => {
+        let downloaded = 0;
+        let contentLength = 0;
+        // downloadAndInstall streams progress events; translate them to a 0..1
+        // fraction (or null when the server didn't send a content length).
+        await update.downloadAndInstall((event) => {
+          switch (event.event) {
+            case "Started":
+              contentLength = event.data.contentLength ?? 0;
+              onProgress?.(contentLength > 0 ? 0 : null);
+              break;
+            case "Progress":
+              downloaded += event.data.chunkLength;
+              onProgress?.(
+                contentLength > 0 ? downloaded / contentLength : null,
+              );
+              break;
+            case "Finished":
+              onProgress?.(1);
+              break;
+          }
+        });
+        // Apply by relaunching the freshly-installed binary.
+        const { relaunch } = await import("@tauri-apps/plugin-process");
+        await relaunch();
+      },
+    };
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn("[updater] Update check failed (ignored):", err);
+    return null;
   }
 }
