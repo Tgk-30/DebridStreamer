@@ -5,6 +5,7 @@ import type {
   CacheStatus,
   DebridAccountInfo,
   DebridServiceType,
+  DebridTorrent,
   StreamInfo,
 } from "./models";
 
@@ -140,6 +141,15 @@ export interface DebridService {
 
   /** Get user account info (for display in settings). */
   getAccountInfo(): Promise<DebridAccountInfo>;
+
+  /** List the account's torrents/transfers (the Debrid Library manager source).
+   * Optional — not every service implements it yet; the manager treats a missing
+   * method as "this service contributes no rows". */
+  listTorrents?(): Promise<DebridTorrent[]>;
+
+  /** Delete a torrent/transfer from the account by its service-native id.
+   * Optional, paired with {@link listTorrents}. */
+  deleteTorrent?(id: string): Promise<void>;
 }
 
 // MARK: - HTTP plumbing (replaces URLSession + requestRaw)

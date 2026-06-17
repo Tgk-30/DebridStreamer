@@ -14,6 +14,7 @@
 import Dexie, { type Table } from "dexie";
 import type { MediaItem, MediaPreview } from "../models/media";
 import {
+  type CachedResolutionRecord,
   type DebridConfigRecord,
   type FolderKind,
   type IndexerConfigRecord,
@@ -70,6 +71,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   private debridConfigs!: Table<DebridConfigRecord, string>;
   private tasteEvents!: Table<TasteEventRecord, string>;
   private mediaCache!: Table<MediaCacheRecord, string>;
+  private cachedResolutions!: Table<CachedResolutionRecord, string>;
 
   constructor(name = "debridstreamer") {
     super(name);
@@ -89,6 +91,13 @@ export class DexieStore extends Dexie implements Store, SecretStore {
       debridConfigs: "id, priority, isActive",
       tasteEvents: "id, userId, createdAt",
       mediaCache: "id, lastFetched",
+    });
+
+    // v2: adds the watchlist auto-resolve cache (one ready-to-play resolution
+    // per media id, indexed by resolvedAt for staleness sweeps). Dexie carries
+    // every v1 store forward automatically; only the new store is declared.
+    this.version(2).stores({
+      cachedResolutions: "mediaId, resolvedAt",
     });
   }
 
@@ -436,5 +445,27 @@ export class DexieStore extends Dexie implements Store, SecretStore {
 
   async getMedia(id: string): Promise<MediaCacheRecord | null> {
     return (await this.mediaCache.get(id)) ?? null;
+  }
+
+  // ---- Cached resolutions (watchlist auto-resolve) --------------------------
+
+  async putCachedResolution(record: CachedResolutionRecord): Promise<void> {
+    // Keyed by mediaId → put() is an upsert, so exactly one resolution is kept
+    // per title; re-resolving replaces the previous (newest wins).
+    await this.cachedResolutions.put(record);
+  }
+
+  async getCachedResolution(
+    mediaId: string,
+  ): Promise<CachedResolutionRecord | null> {
+    return (await this.cachedResolutions.get(mediaId)) ?? null;
+  }
+
+  async listCachedResolutions(): Promise<CachedResolutionRecord[]> {
+    return this.cachedResolutions.toArray();
+  }
+
+  async deleteCachedResolution(mediaId: string): Promise<void> {
+    await this.cachedResolutions.delete(mediaId);
   }
 }

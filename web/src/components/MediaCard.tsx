@@ -13,9 +13,12 @@ import "./MediaCard.css";
 interface MediaCardProps {
   item: MediaPreview;
   onSelect?: (item: MediaPreview) => void;
+  /** When true, overlay a green "Ready to play" badge (a cached resolution
+   * exists for this title — see the watchlist auto-resolve feature). */
+  ready?: boolean;
 }
 
-export function MediaCard({ item, onSelect }: MediaCardProps) {
+export function MediaCard({ item, onSelect, ready = false }: MediaCardProps) {
   const poster = MediaPreviewNS.posterURL(item);
   const rating = MediaPreviewNS.ratingString(item);
 
@@ -33,6 +36,12 @@ export function MediaCard({ item, onSelect }: MediaCardProps) {
           <div className="media-card-placeholder">
             <Icon name="discover" size={28} />
           </div>
+        )}
+        {ready && (
+          <span className="media-card-ready" title="Ready to play">
+            <Icon name="play" size={10} />
+            Ready
+          </span>
         )}
       </div>
 

@@ -27,6 +27,8 @@
   --accent-secondary-rgb: 92, 189, 250;
   --accent-tertiary-rgb: 250, 117, 189;
   --warning-rgb: 250, 184, 92;
+  --success-rgb: 92, 217, 140;
+  --danger-rgb: 250, 115, 115;
 
   /* ---- Glass edges (AppTheme.glassBorder / glassHighlight, dark) ---- */
   --glass-border: rgba(255, 255, 255, 0.14);

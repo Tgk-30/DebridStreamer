@@ -14,8 +14,10 @@ export type ScreenId =
   | "search"
   | "library"
   | "watchlist"
+  | "calendar"
   | "history"
   | "assistant"
+  | "debrid"
   | "settings";
 
 interface RailItem {
@@ -29,8 +31,10 @@ const PRIMARY: RailItem[] = [
   { id: "discover", icon: "discover", label: "Discover" },
   { id: "library", icon: "library", label: "Library" },
   { id: "watchlist", icon: "watchlist", label: "Watchlist" },
+  { id: "calendar", icon: "calendar", label: "Calendar" },
   { id: "history", icon: "history", label: "History" },
   { id: "assistant", icon: "assistant", label: "Assistant" },
+  { id: "debrid", icon: "debrid", label: "Debrid" },
 ];
 
 interface NavRailProps {

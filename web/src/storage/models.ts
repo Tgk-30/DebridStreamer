@@ -293,6 +293,28 @@ export interface MediaCacheRecord {
   lastFetched: string;
 }
 
+// MARK: - Cached resolution (watchlist auto-resolve / pre-resolve)
+
+/** A pre-resolved, ready-to-play stream for a watchlisted title, produced by the
+ * background auto-resolve job (lib/autoResolve.ts). Keyed by mediaId so a single
+ * "best" cached resolution is kept per title; re-resolving replaces it. The
+ * stored `stream` is the ported `StreamInfo` value (a direct/HLS URL plus the
+ * parsed quality/codec metadata). This is a web-only convenience table — the
+ * native app re-resolves on demand — so the UI can show a "Ready to play" badge
+ * and play instantly without re-walking indexers + debrid. */
+export interface CachedResolutionRecord {
+  /** Primary key — the media id. One cached resolution per title. */
+  mediaId: string;
+  /** The resolved, ready-to-play stream (ported `StreamInfo`). */
+  stream: import("../services/debrid/models").StreamInfo;
+  /** ISO-8601 timestamp the resolution was produced (for staleness checks). */
+  resolvedAt: string;
+  /** Short code of the debrid service that resolved it (RD/AD/PM/TB). */
+  debridService: string;
+  /** The infoHash the resolution came from (for dedup / provenance). */
+  infoHash: string;
+}
+
 // MARK: - Settings / secrets key-value
 
 /** A plain key-value app setting. Mirrors the `app_settings` table. */

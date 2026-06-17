@@ -19,11 +19,13 @@
     "@tauri-apps/plugin-updater": "^2.10.1",
     "dexie": "^4.4.4",
     "hls.js": "^1.5.17",
+    "pako": "^2.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@types/pako": "^2.0.4",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

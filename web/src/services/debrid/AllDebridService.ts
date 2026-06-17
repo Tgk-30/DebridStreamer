@@ -13,6 +13,7 @@ import {
   DebridFileSelector,
   type DebridServiceType,
   DebridServiceType as DebridServiceTypeNS,
+  type DebridTorrent,
   type StreamInfo,
   AudioFormat,
   SourceType,
@@ -173,6 +174,24 @@ export class AllDebridService implements DebridService {
     return downloadStr;
   }
 
+  /** List the account's magnets (the Debrid Library manager source). Calls
+   * `GET /magnet/status` with no id, which returns every magnet under
+   * `data.magnets`, normalizing each into a `DebridTorrent`. Fault-tolerant:
+   * an unparseable body yields an empty list. */
+  async listTorrents(): Promise<DebridTorrent[]> {
+    const data = await this.requestRaw("/magnet/status", "GET");
+    const json = parseJSONObject(data);
+    const dataObj = json && asObject(json.data);
+    const magnets = dataObj && asObjectArray(dataObj.magnets);
+    if (magnets == null) return [];
+    return magnets.map((m) => normalizeADTorrent(m));
+  }
+
+  /** Delete a magnet from the account by id (`GET /magnet/delete?id=`). */
+  async deleteTorrent(id: string): Promise<void> {
+    await this.requestRaw("/magnet/delete", "GET", `id=${id}`);
+  }
+
   async validateToken(): Promise<boolean> {
     try {
       await this.getAccountInfo();
@@ -250,4 +269,30 @@ function isAbsoluteURL(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Normalize a raw AllDebrid `/magnet/status` magnet into the shared
+ * `DebridTorrent` display shape. Defensive against missing/typed-wrong fields. */
+function normalizeADTorrent(m: Record<string, unknown>): DebridTorrent {
+  const idNum = int64Value(m.id);
+  const id = idNum != null ? String(idNum) : String(m.id ?? "");
+  const name = typeof m.filename === "string" ? m.filename : "Unknown";
+  const hash = typeof m.hash === "string" ? m.hash.toLowerCase() : null;
+  const status = typeof m.status === "string" ? m.status : "unknown";
+  const bytes = int64Value(m.size) ?? 0;
+  // AllDebrid reports `uploadDate` as a unix epoch (seconds).
+  let addedAt: string | null = null;
+  const upload = int64Value(m.uploadDate);
+  if (upload != null && upload > 0) addedAt = new Date(upload * 1000).toISOString();
+  return {
+    id,
+    name,
+    sizeBytes: bytes,
+    status,
+    infoHash: hash,
+    addedAt,
+    host: null,
+    progress: null,
+    debridService: "AD",
+  };
 }

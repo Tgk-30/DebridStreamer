@@ -5,19 +5,26 @@
 // + Tauri webview); Trakt/IMDb sync is the documented follow-up.
 
 import { useAppStore } from "../store/AppStore";
-import { MediaGrid } from "../components/MediaGrid";
+import { MediaCard } from "../components/MediaCard";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import "./LibraryScreens.css";
 
 export function Watchlist() {
-  const { watchlist, openDetail, removeFromWatchlist } = useAppStore();
+  const { watchlist, openDetail, removeFromWatchlist, cachedResolutions } =
+    useAppStore();
+
+  const readyCount = watchlist.filter(
+    (i) => cachedResolutions[i.id] != null,
+  ).length;
 
   return (
     <div className="lib-screen">
       <h1 className="lib-h1">Watchlist</h1>
       <p className="lib-sub t-secondary">
         Titles you've saved to watch later.
+        {readyCount > 0 &&
+          ` ${readyCount} ready to play instantly.`}
       </p>
 
       {watchlist.length === 0 ? (
@@ -31,7 +38,11 @@ export function Watchlist() {
         <div className="lib-grid-wrap">
           {watchlist.map((item) => (
             <div className="lib-removable" key={item.id}>
-              <MediaGrid items={[item]} onSelect={openDetail} />
+              <MediaCard
+                item={item}
+                onSelect={openDetail}
+                ready={cachedResolutions[item.id] != null}
+              />
               <button
                 type="button"
                 className="lib-remove"

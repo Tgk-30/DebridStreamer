@@ -19,6 +19,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -40,7 +41,9 @@ import {
   removeFromWatchlist as removeFromWatchlistStore,
   toggleWatchlist as toggleWatchlistStore,
 } from "../data/library";
-import type { WatchHistoryRecord } from "../storage/models";
+import type { CachedResolutionRecord, WatchHistoryRecord } from "../storage/models";
+import { getStore } from "../storage";
+import { AutoResolveScheduler } from "../lib/autoResolve";
 
 export interface AppStore {
   // Routing
@@ -69,6 +72,12 @@ export interface AppStore {
   history: MediaPreview[];
   /** Incomplete items with resume positions (the Continue Watching rail). */
   continueWatching: WatchHistoryRecord[];
+  /** Cached, ready-to-play resolutions keyed by mediaId (the watchlist
+   * "Ready to play" badge + instant playback). Populated by the background
+   * auto-resolve job; empty in a plain browser. */
+  cachedResolutions: Record<string, CachedResolutionRecord>;
+  /** Re-read the cached-resolution table from the Store (after a pass). */
+  refreshCachedResolutions: () => void;
   toggleWatchlist: (item: MediaPreview) => void;
   removeFromWatchlist: (id: string) => void;
   /** Record a real resume position (called from the player). */
@@ -94,22 +103,29 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [continueWatching, setContinueWatching] = useState<WatchHistoryRecord[]>(
     [],
   );
+  const [cachedResolutions, setCachedResolutions] = useState<
+    Record<string, CachedResolutionRecord>
+  >({});
 
   // Hydrate everything from the Store once on mount.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [loadedSettings, wl, hist, cw] = await Promise.all([
+      const [loadedSettings, wl, hist, cw, cached] = await Promise.all([
         loadSettingsFromStore(),
         loadWatchlist(),
         loadHistory(),
         loadContinueWatching(),
+        getStore().listCachedResolutions().catch(() => []),
       ]);
       if (cancelled) return;
       setSettings(loadedSettings);
       setWatchlist(wl);
       setHistory(hist);
       setContinueWatching(cw);
+      const map: Record<string, CachedResolutionRecord> = {};
+      for (const r of cached) map[r.mediaId] = r;
+      setCachedResolutions(map);
     })();
     return () => {
       cancelled = true;
@@ -121,6 +137,33 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const navigate = useCallback((next: ScreenId) => setRoute(next), []);
 
+  const refreshCachedResolutions = useCallback(async () => {
+    try {
+      const rows = await getStore().listCachedResolutions();
+      const map: Record<string, CachedResolutionRecord> = {};
+      for (const r of rows) map[r.mediaId] = r;
+      setCachedResolutions(map);
+    } catch {
+      // best-effort
+    }
+  }, []);
+
+  // The background auto-resolve scheduler. It always reads the LATEST services
+  // via the getter (so a settings change is picked up without rebuilding it),
+  // and is Tauri-gated internally (a no-op in a plain browser). A ref keeps a
+  // single instance across renders.
+  const servicesRef = useRef(services);
+  servicesRef.current = services;
+  const schedulerRef = useRef<AutoResolveScheduler | null>(null);
+  if (schedulerRef.current == null) {
+    schedulerRef.current = new AutoResolveScheduler(() => ({
+      tmdb: servicesRef.current.tmdb,
+      indexers: servicesRef.current.indexers,
+      debrid: servicesRef.current.debrid,
+      store: getStore(),
+    }));
+  }
+
   const refreshHistory = useCallback(async () => {
     const [hist, cw] = await Promise.all([
       loadHistory(),
@@ -129,6 +172,28 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setHistory(hist);
     setContinueWatching(cw);
   }, []);
+
+  // Drive the background auto-resolve scheduler. It only does work under Tauri
+  // with debrid configured (gated internally); here we (re)start it whenever
+  // debrid availability changes and refresh the cached-resolution badge state on
+  // an interval so a completed pass shows up without a reload. No-op in browser.
+  useEffect(() => {
+    const scheduler = schedulerRef.current;
+    if (scheduler == null) return;
+    if (!services.hasDebrid) {
+      scheduler.stop();
+      return;
+    }
+    scheduler.start();
+    // Poll the cached-resolution table so the watchlist badges reflect new
+    // resolutions produced by background passes.
+    const refresh = setInterval(() => void refreshCachedResolutions(), 30_000);
+    void refreshCachedResolutions();
+    return () => {
+      clearInterval(refresh);
+      scheduler.stop();
+    };
+  }, [services.hasDebrid, refreshCachedResolutions]);
 
   const openDetail = useCallback(
     (item: MediaPreview) => {
@@ -158,13 +223,36 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     void saveSettingsToStore(next);
   }, []);
 
-  const toggleWatchlist = useCallback((item: MediaPreview) => {
-    void toggleWatchlistStore(item).then(setWatchlist);
-  }, []);
+  const toggleWatchlist = useCallback(
+    (item: MediaPreview) => {
+      void toggleWatchlistStore(item).then((next) => {
+        setWatchlist(next);
+        // If the item is now ON the watchlist, kick a pre-resolve pass so a
+        // ready resolution is cached soon (Tauri-only; no-op in browser).
+        if (next.some((i) => i.id === item.id)) {
+          void schedulerRef.current?.kick().then(() => void refreshCachedResolutions());
+        } else {
+          // Removed → drop any cached resolution for it.
+          void getStore()
+            .deleteCachedResolution(item.id)
+            .then(() => void refreshCachedResolutions());
+        }
+      });
+    },
+    [refreshCachedResolutions],
+  );
 
-  const removeFromWatchlist = useCallback((id: string) => {
-    void removeFromWatchlistStore(id).then(setWatchlist);
-  }, []);
+  const removeFromWatchlist = useCallback(
+    (id: string) => {
+      void removeFromWatchlistStore(id).then((next) => {
+        setWatchlist(next);
+        void getStore()
+          .deleteCachedResolution(id)
+          .then(() => void refreshCachedResolutions());
+      });
+    },
+    [refreshCachedResolutions],
+  );
 
   const recordResume = useCallback(
     (
@@ -200,6 +288,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     watchlist,
     history,
     continueWatching,
+    cachedResolutions,
+    refreshCachedResolutions,
     toggleWatchlist,
     removeFromWatchlist,
     recordResume,

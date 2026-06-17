@@ -8,7 +8,7 @@
 // path is intentionally not ported here (no DB/keychain in the web layer);
 // services are registered directly via addService, as the Swift tests do.
 
-import { CacheStatus, type DebridServiceType, DebridServiceType as DebridServiceTypeNS, type StreamInfo } from "./models";
+import { CacheStatus, type DebridServiceType, DebridServiceType as DebridServiceTypeNS, type DebridTorrent, type StreamInfo } from "./models";
 import { type DebridService, DebridError } from "./types";
 import { RealDebridService } from "./RealDebridService";
 
@@ -104,23 +104,7 @@ export class DebridManager {
     hash: string,
     preferredService: DebridServiceType | null = null,
   ): Promise<StreamInfo> {
-    let service: DebridService;
-
-    if (preferredService != null) {
-      const found = this.services.find((s) => s.serviceType === preferredService);
-      if (found == null) {
-        throw DebridError.networkError(
-          `Service ${DebridServiceTypeNS.displayName(preferredService)} not configured`,
-        );
-      }
-      service = found;
-    } else {
-      const first = this.services[0];
-      if (first == null) {
-        throw DebridError.networkError("No debrid services configured");
-      }
-      service = first;
-    }
+    const service = this.pickService(preferredService);
 
     // For Real-Debrid, use the smart resolve flow.
     if (service instanceof RealDebridService) {
@@ -180,6 +164,75 @@ export class DebridManager {
     } catch {
       return null;
     }
+  }
+
+  /** Add a magnet (by infoHash) to a debrid account so it gets cached there.
+   * Uses the preferred service when given, else the highest-priority one.
+   * Returns the service-native torrent/transfer id. Surfaced for the hash-list
+   * import flow (bulk-hydrate a list of hashes onto the user's debrid). */
+  async addMagnet(
+    hash: string,
+    preferredService: DebridServiceType | null = null,
+  ): Promise<string> {
+    const service = this.pickService(preferredService);
+    return service.addMagnet(hash);
+  }
+
+  /** List the account's torrents across every service that supports listing,
+   * concurrently and fault-tolerantly (a service that throws contributes no
+   * rows rather than failing the whole call). Service order is preserved, with
+   * each service's rows kept together. The Debrid Library manager's data source. */
+  async listTorrents(): Promise<DebridTorrent[]> {
+    const collected = await Promise.all(
+      this.services.map(async (service, index) => {
+        if (typeof service.listTorrents !== "function") {
+          return { index, rows: [] as DebridTorrent[] };
+        }
+        try {
+          return { index, rows: await service.listTorrents() };
+        } catch {
+          return { index, rows: [] as DebridTorrent[] };
+        }
+      }),
+    );
+    return collected
+      .sort((a, b) => a.index - b.index)
+      .flatMap((c) => c.rows);
+  }
+
+  /** Delete a torrent/transfer by id from a specific service (matched by its
+   * short code, e.g. "RD"/"AD"). Throws if no matching service supports delete. */
+  async deleteTorrent(id: string, debridServiceCode: string): Promise<void> {
+    for (const service of this.services) {
+      if (
+        DebridServiceTypeNS.shortCode(service.serviceType) === debridServiceCode &&
+        typeof service.deleteTorrent === "function"
+      ) {
+        await service.deleteTorrent(id);
+        return;
+      }
+    }
+    throw DebridError.networkError(
+      `No configured service can delete torrents for ${debridServiceCode}`,
+    );
+  }
+
+  /** Resolve a single service by preference, else the highest priority one. */
+  private pickService(preferredService: DebridServiceType | null): DebridService {
+    if (preferredService != null) {
+      const found = this.services.find((s) => s.serviceType === preferredService);
+      if (found == null) {
+        throw DebridError.networkError(
+          `Service ${DebridServiceTypeNS.displayName(preferredService)} not configured`,
+        );
+      }
+      return found;
+    }
+    const first = this.services[0];
+    if (first == null) {
+      throw DebridError.networkError("No debrid services configured");
+    }
+    return first;
   }
 
   /** Validate all configured services concurrently, preserving service order in

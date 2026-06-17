@@ -12,6 +12,7 @@
 // contract from the Swift SecretStore protocol.
 
 import type {
+  CachedResolutionRecord,
   DebridConfigRecord,
   IndexerConfigRecord,
   LibraryEntryRecord,
@@ -132,6 +133,17 @@ export interface Store {
   putMedia(item: MediaItem): Promise<void>;
   /** Fetch a cached MediaItem by id, or null. Mirrors `fetchMedia`. */
   getMedia(id: string): Promise<MediaCacheRecord | null>;
+
+  // MARK: Cached resolutions — watchlist auto-resolve / pre-resolve.
+
+  /** Upsert the best ready-to-play resolution for a media id (newest wins). */
+  putCachedResolution(record: CachedResolutionRecord): Promise<void>;
+  /** The cached resolution for a media id, or null. */
+  getCachedResolution(mediaId: string): Promise<CachedResolutionRecord | null>;
+  /** All cached resolutions (for the watchlist "Ready to play" badge pass). */
+  listCachedResolutions(): Promise<CachedResolutionRecord[]>;
+  /** Drop a cached resolution by media id (e.g. when removed from watchlist). */
+  deleteCachedResolution(mediaId: string): Promise<void>;
 }
 
 /** The fields a caller provides to upsert a watch-history row. `id` is derived

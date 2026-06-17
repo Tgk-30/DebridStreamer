@@ -17,7 +17,13 @@ export type IconName =
   | "sparkles"
   | "info"
   | "xmark"
-  | "wand-search";
+  | "wand-search"
+  | "calendar"
+  | "debrid"
+  | "trash"
+  | "refresh"
+  | "share"
+  | "check";
 
 interface IconProps {
   name: IconName;
@@ -121,6 +127,47 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
       <path d="M10.5 7.5l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z" />
     </>
   ),
+  // calendar
+  calendar: () => (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M8 3v4M16 3v4" />
+    </>
+  ),
+  // externaldrive / debrid (a drive with a download arrow)
+  debrid: () => (
+    <>
+      <rect x="3" y="13" width="18" height="6" rx="2" />
+      <path d="M7 16h.01" />
+      <path d="M12 3v7M9 7l3 3 3-3" />
+    </>
+  ),
+  // trash
+  trash: () => (
+    <>
+      <path d="M4 7h16" />
+      <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+      <path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" />
+    </>
+  ),
+  // arrow.clockwise
+  refresh: () => (
+    <>
+      <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+      <path d="M20 5v6h-6" />
+    </>
+  ),
+  // square.and.arrow.up
+  share: () => (
+    <>
+      <path d="M12 3v12" />
+      <path d="M8 7l4-4 4 4" />
+      <path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7" />
+    </>
+  ),
+  // checkmark
+  check: () => <path d="M5 12l5 5L20 7" />,
 };
 
 export function Icon({ name, size = 20, className, filled = false }: IconProps) {

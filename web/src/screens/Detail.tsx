@@ -63,6 +63,7 @@ export function Detail() {
     watchlist,
     toggleWatchlist,
     recordResume,
+    cachedResolutions,
   } = useAppStore();
 
   const detail = useDetail(detailItem, services.tmdb);
@@ -80,6 +81,33 @@ export function Detail() {
 
   const item = detail.data.item;
   const inWatchlist = isInWatchlist(watchlist, detailItem.id);
+  // A pre-resolved, ready-to-play stream from the watchlist auto-resolve job.
+  const cached = cachedResolutions[detailItem.id] ?? null;
+
+  /** Play an already-resolved StreamInfo directly (the instant-play path for a
+   * cached resolution). Mirrors handlePlay's container/codec routing but without
+   * a TorrentResult to cross-check, so it keys off the stream alone. */
+  async function playStream(stream: StreamInfo, title: string) {
+    const name = stream.fileName.toLowerCase();
+    const badContainer =
+      name.endsWith(".mkv") ||
+      name.endsWith(".avi") ||
+      name.endsWith(".ts") ||
+      name.endsWith(".wmv") ||
+      name.endsWith(".flv");
+    const badCodec =
+      stream.codec === VideoCodec.h265 || stream.codec === VideoCodec.av1;
+    if (!badContainer && !badCodec) {
+      setPlayer({ url: stream.streamURL, title, external: false });
+      return;
+    }
+    const hlsUrl = await services.debrid?.getTranscodeHLS(stream).catch(() => null);
+    if (hlsUrl != null) {
+      setPlayer({ url: hlsUrl, title, external: false });
+      return;
+    }
+    setPlayer({ url: stream.streamURL, title, external: true });
+  }
 
   async function handlePlay(stream: StreamInfo, source: TorrentResult) {
     const title = stream.fileName || source.title;
@@ -115,6 +143,13 @@ export function Detail() {
           onClose={closeDetail}
           onToggleWatchlist={() => toggleWatchlist(detailItem)}
           onPlay={() => {
+            // Instant play: if the auto-resolve job pre-cached a ready stream
+            // for this title, play it immediately instead of re-walking the
+            // indexers + debrid.
+            if (cached != null) {
+              void playStream(cached.stream, cached.stream.fileName || detailItem.title);
+              return;
+            }
             setScrollToStreams(true);
             // Scroll the picker into view; the user picks a stream there.
             queueMicrotask(() => {

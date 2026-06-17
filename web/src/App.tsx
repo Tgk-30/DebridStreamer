@@ -13,8 +13,10 @@ import { Discover } from "./screens/Discover";
 import { Search } from "./screens/Search";
 import { Library } from "./screens/Library";
 import { Watchlist } from "./screens/Watchlist";
+import { Calendar } from "./screens/Calendar";
 import { History } from "./screens/History";
 import { Assistant } from "./screens/Assistant";
+import { DebridLibrary } from "./screens/DebridLibrary";
 import { Settings } from "./screens/Settings";
 import { Detail } from "./screens/Detail";
 import { useAppStore } from "./store/AppStore";
@@ -33,7 +35,11 @@ export function App() {
   // (ContentView.showsGlobalSearch); the dedicated Search screen has its own
   // field, so hide the floating one there too.
   const showsGlobalSearch =
-    route !== "settings" && route !== "search" && detailItem == null;
+    route !== "settings" &&
+    route !== "search" &&
+    route !== "calendar" &&
+    route !== "debrid" &&
+    detailItem == null;
 
   return (
     <div className="app">
@@ -62,10 +68,14 @@ export function App() {
         return <Library />;
       case "watchlist":
         return <Watchlist />;
+      case "calendar":
+        return <Calendar />;
       case "history":
         return <History />;
       case "assistant":
         return <Assistant />;
+      case "debrid":
+        return <DebridLibrary />;
       case "settings":
         return <Settings />;
     }

@@ -14,6 +14,7 @@ import {
   DebridFileSelector,
   type DebridServiceType,
   DebridServiceType as DebridServiceTypeNS,
+  type DebridTorrent,
   type StreamInfo,
   AudioFormat,
   lastPathComponent,
@@ -345,6 +346,28 @@ export class RealDebridService implements DebridService {
     await this.requestRaw(`/torrents/delete/${id}`, "DELETE");
   }
 
+  /** List the account's torrents (the Debrid Library manager source). Walks the
+   * paginated `GET /torrents?limit=&page=` endpoint until a short/empty page is
+   * returned (or `maxPages` is hit), normalizing each into a `DebridTorrent`.
+   * Fault-tolerant: a page that fails to parse stops pagination rather than
+   * throwing, so a partial list still surfaces. */
+  async listTorrents(maxPages = 20, pageSize = 100): Promise<DebridTorrent[]> {
+    const out: DebridTorrent[] = [];
+    for (let page = 1; page <= maxPages; page++) {
+      const data = await this.requestRaw(
+        `/torrents?limit=${pageSize}&page=${page}`,
+        "GET",
+      );
+      const torrents = parseJSONArray(data);
+      if (torrents == null || torrents.length === 0) break;
+      for (const t of torrents) {
+        out.push(normalizeRDTorrent(t));
+      }
+      if (torrents.length < pageSize) break;
+    }
+    return out;
+  }
+
   // MARK: - Account
 
   async validateToken(): Promise<boolean> {
@@ -446,6 +469,30 @@ function isValidURL(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Normalize a raw Real-Debrid `/torrents` row into the shared `DebridTorrent`
+ * display shape. Defensive against missing/typed-wrong fields. */
+function normalizeRDTorrent(t: Record<string, unknown>): DebridTorrent {
+  const id = typeof t.id === "string" ? t.id : String(t.id ?? "");
+  const name = typeof t.filename === "string" ? t.filename : "Unknown";
+  const hash = typeof t.hash === "string" ? t.hash.toLowerCase() : null;
+  const status = typeof t.status === "string" ? t.status : "unknown";
+  const host = typeof t.host === "string" ? t.host : null;
+  const added = typeof t.added === "string" ? t.added : null;
+  const bytes = int64Value(t.bytes) ?? 0;
+  const progress = typeof t.progress === "number" ? t.progress : null;
+  return {
+    id,
+    name,
+    sizeBytes: bytes,
+    status,
+    infoHash: hash,
+    addedAt: added,
+    host,
+    progress,
+    debridService: "RD",
+  };
 }
 
 /** Rank a transcode quality key so we can prefer the highest variant. RD's

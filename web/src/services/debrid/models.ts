@@ -381,6 +381,33 @@ export interface DebridAccountInfo {
   points?: number | null;
 }
 
+// MARK: - DebridTorrent (debrid library manager)
+
+/** One torrent/transfer in a user's debrid account, as surfaced by the Debrid
+ * Library manager. Normalized across services (Real-Debrid `/torrents`,
+ * AllDebrid `/magnet/status`, etc.) into a single display shape. Not present in
+ * the Swift app (which has no library-manager screen) — a web-only addition. */
+export interface DebridTorrent {
+  /** Service-native id used for delete (`/torrents/delete/{id}`, etc.). */
+  id: string;
+  /** Torrent display name / filename. */
+  name: string;
+  /** Total size in bytes (0 when the service doesn't report it). */
+  sizeBytes: number;
+  /** Raw service status string (e.g. "downloaded", "downloading", "Ready"). */
+  status: string;
+  /** Lowercased infoHash when known (for dedup detection). Null otherwise. */
+  infoHash: string | null;
+  /** ISO-8601 added timestamp when known, else null. */
+  addedAt: string | null;
+  /** Hoster/host label when known (e.g. "real-debrid"), else null. */
+  host: string | null;
+  /** Download progress 0..100 when known, else null. */
+  progress: number | null;
+  /** Which debrid service this came from (short code RD/AD/PM/TB). */
+  debridService: string;
+}
+
 // MARK: - DebridFileCandidate / DebridFileSelector (mirror DebridFileSelector.swift)
 
 /** File candidate returned by debrid services. Mirrors Swift `DebridFileCandidate`. */
