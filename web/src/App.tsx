@@ -6,6 +6,7 @@
 // overlay that mounts over the content area whenever a media item is selected.
 
 import "./theme/theme.css";
+import { useEffect } from "react";
 import { NavRail, type ScreenId } from "./components/NavRail";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { Discover } from "./screens/Discover";
@@ -17,10 +18,16 @@ import { Assistant } from "./screens/Assistant";
 import { Settings } from "./screens/Settings";
 import { Detail } from "./screens/Detail";
 import { useAppStore } from "./store/AppStore";
+import { checkForUpdates } from "./lib/updater";
 import "./App.css";
 
 export function App() {
   const { route, navigate, detailItem, openDetail, search } = useAppStore();
+
+  // Check for a desktop auto-update once on launch. No-op in the browser.
+  useEffect(() => {
+    void checkForUpdates();
+  }, []);
 
   // The global quick-search field is shown on browse screens but not Settings
   // (ContentView.showsGlobalSearch); the dedicated Search screen has its own

@@ -46,11 +46,21 @@ fn open_in_external_player(url: String) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         // Native HTTP client used by the webview (`@tauri-apps/plugin-http`) to
         // reach indexer/debrid/addon hosts without the browser CORS policy.
-        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_http::init());
+
+    // Auto-updater is desktop-only. The JS side (web/src/lib/updater.ts) calls
+    // the plugin's `check()` once on launch; releases are signed with the
+    // updater keypair and published as `latest.json` on GitHub Releases.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![open_in_external_player])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

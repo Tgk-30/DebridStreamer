@@ -3,9 +3,11 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
+  "platforms": ["macOS", "windows", "linux"],
   "permissions": [
     "core:default",
     "opener:default",
+    "updater:default",
     {
       "identifier": "http:default",
       "allow": [
