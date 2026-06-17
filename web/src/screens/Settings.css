@@ -161,3 +161,77 @@
 .settings-note {
   font-size: 12px;
 }
+
+/* ---------------------------------------------------------------------------
+ * Appearance tab — theme picker (a grid of preview swatch cards). The active
+ * card uses the accent (accent-for-active-only), matching the glass design.
+ * ------------------------------------------------------------------------- */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--sp-md);
+}
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--sp-sm);
+  border-radius: var(--r-md);
+  background: var(--glass-tint-control);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+  font-family: inherit;
+  transition:
+    border-color 0.16s,
+    background 0.16s,
+    transform 0.12s ease-out;
+}
+.theme-card:hover {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+.theme-card:active {
+  transform: scale(0.985);
+}
+.theme-card.is-active {
+  border-color: rgba(var(--accent-rgb), 0.7);
+  background: rgba(var(--accent-rgb), 0.14);
+}
+.theme-swatch {
+  position: relative;
+  display: block;
+  height: 70px;
+  border-radius: var(--r-sm);
+  border: 0.75px solid var(--glass-border);
+  overflow: hidden;
+}
+.theme-swatch-dot {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.theme-swatch-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+}
+.theme-card-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+.theme-card-desc {
+  font-size: 12px;
+  line-height: 1.35;
+}

@@ -21,7 +21,8 @@
     "hls.js": "^1.5.17",
     "pako": "^2.1.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "subsrt-ts": "^2.1.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

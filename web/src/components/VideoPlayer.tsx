@@ -20,6 +20,12 @@ import {
   playWithMpv,
   mpvStop,
 } from "../lib/tauri";
+import type { OpenSubtitlesClient } from "../services/subtitles/OpenSubtitlesClient";
+import type { TranslatorConfig } from "../services/subtitles/SubtitleTranslator";
+import { useSubtitleTracks } from "./player/useSubtitleTracks";
+import { useScrubThumbnails } from "./player/useScrubThumbnails";
+import { ScrubBar } from "./player/ScrubBar";
+import { CaptionsMenu } from "./player/CaptionsMenu";
 import "./VideoPlayer.css";
 
 type Playability = "webview" | "external";
@@ -33,6 +39,16 @@ interface VideoPlayerProps {
   /** Reports playback progress (seconds watched + total duration) so the store
    * can persist a resume position. Called periodically and on close. */
   onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
+  /** OpenSubtitles client (when a key is configured) — powers subtitle search.
+   * Null disables the search UI (a "configure key" state is shown). */
+  subtitleClient?: OpenSubtitlesClient | null;
+  /** AI provider config (when configured) — powers subtitle translation. Null
+   * hides the translate action. */
+  translatorConfig?: TranslatorConfig | null;
+  /** Auto-seed context for the captions search. */
+  imdbId?: string | null;
+  season?: number | null;
+  episode?: number | null;
 }
 
 /** Decide whether the webview can plausibly play this URL or whether it needs a
@@ -56,65 +72,15 @@ export function VideoPlayer({
   kind,
   onClose,
   onProgress,
+  subtitleClient,
+  translatorConfig,
+  imdbId,
+  season,
+  episode,
 }: VideoPlayerProps) {
   const mode = kind ?? classify(url);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [externalStatus, setExternalStatus] = useState<string | null>(null);
   const [externalError, setExternalError] = useState<string | null>(null);
-
-  // Report playback progress (throttled to ~once / 5s) so the store can persist
-  // a resume position, and flush a final report when the player unmounts.
-  const lastReportRef = useRef(0);
-  useEffect(() => {
-    if (mode !== "webview" || onProgress == null) return;
-    const video = videoRef.current;
-    if (video == null) return;
-
-    const report = () => {
-      const duration = Number.isFinite(video.duration) ? video.duration : null;
-      onProgress(video.currentTime, duration);
-    };
-    const onTimeUpdate = () => {
-      const now = Date.now();
-      if (now - lastReportRef.current >= 5000) {
-        lastReportRef.current = now;
-        report();
-      }
-    };
-    video.addEventListener("timeupdate", onTimeUpdate);
-    return () => {
-      video.removeEventListener("timeupdate", onTimeUpdate);
-      // Final flush on close so the resume point is current.
-      if (video.currentTime > 0) report();
-    };
-  }, [mode, onProgress, url]);
-
-  // Wire hls.js for HLS streams when the browser can't play them natively.
-  useEffect(() => {
-    if (mode !== "webview") return;
-    const video = videoRef.current;
-    if (video == null) return;
-
-    const isHls = url.split("?")[0].toLowerCase().endsWith(".m3u8");
-    if (!isHls) {
-      video.src = url;
-      return;
-    }
-
-    // Safari plays HLS natively; elsewhere use hls.js.
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = url;
-      return;
-    }
-    if (Hls.isSupported()) {
-      const hls = new Hls();
-      hls.loadSource(url);
-      hls.attachMedia(video);
-      return () => hls.destroy();
-    }
-    // No HLS support anywhere — let the user know.
-    setExternalError("This browser can't play HLS. Try the desktop app.");
-  }, [mode, url]);
 
   // Native hand-off when running under Tauri. Primary path is the BUNDLED mpv
   // sidecar (shipped + app-controlled over IPC); if mpv isn't available we fall
@@ -180,12 +146,18 @@ export function VideoPlayer({
         </div>
 
         {mode === "webview" && externalError == null ? (
-          <video
-            ref={videoRef}
-            className="player-video"
-            controls
-            autoPlay
-            playsInline
+          <WebviewPlayer
+            url={url}
+            title={title}
+            onProgress={onProgress}
+            onHlsUnsupported={() =>
+              setExternalError("This browser can't play HLS. Try the desktop app.")
+            }
+            subtitleClient={subtitleClient ?? null}
+            translatorConfig={translatorConfig ?? null}
+            imdbId={imdbId ?? null}
+            season={season ?? null}
+            episode={episode ?? null}
           />
         ) : (
           <ExternalPanel
@@ -196,6 +168,183 @@ export function VideoPlayer({
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/** The in-webview `<video>` path with the custom scrub-thumbnail bar + captions
+ * OSD. Split out so the subtitle/thumbnail hooks mount only on this path (never
+ * for the external mpv/VLC hand-off, where there's no frame source). */
+function WebviewPlayer({
+  url,
+  title,
+  onProgress,
+  onHlsUnsupported,
+  subtitleClient,
+  translatorConfig,
+  imdbId,
+  season,
+  episode,
+}: {
+  url: string;
+  title: string;
+  onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
+  onHlsUnsupported: () => void;
+  subtitleClient: OpenSubtitlesClient | null;
+  translatorConfig: TranslatorConfig | null;
+  imdbId: string | null;
+  season: number | null;
+  episode: number | null;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [captionsOpen, setCaptionsOpen] = useState(false);
+
+  const subs = useSubtitleTracks(subtitleClient, translatorConfig);
+  // Thumbnails only work on a progressive source the browser can re-open and
+  // seek (MP4/WebM). For HLS the manifest URL can't drive a second <video>
+  // reliably, so gate them to non-HLS in-webview sources.
+  const isHls = url.split("?")[0].toLowerCase().endsWith(".m3u8");
+  const thumbs = useScrubThumbnails(url, !isHls);
+
+  // Report playback progress (throttled to ~once / 5s) + keep currentTime/
+  // duration in sync for the custom scrub bar.
+  const lastReportRef = useRef(0);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video == null) return;
+
+    const report = () => {
+      const d = Number.isFinite(video.duration) ? video.duration : null;
+      onProgress?.(video.currentTime, d);
+    };
+    const onTimeUpdate = () => {
+      setCurrentTime(video.currentTime);
+      const now = Date.now();
+      if (onProgress != null && now - lastReportRef.current >= 5000) {
+        lastReportRef.current = now;
+        report();
+      }
+    };
+    const onLoadedMeta = () => {
+      if (Number.isFinite(video.duration)) setDuration(video.duration);
+    };
+    const onDurationChange = () => {
+      if (Number.isFinite(video.duration)) setDuration(video.duration);
+    };
+    video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("loadedmetadata", onLoadedMeta);
+    video.addEventListener("durationchange", onDurationChange);
+    return () => {
+      video.removeEventListener("timeupdate", onTimeUpdate);
+      video.removeEventListener("loadedmetadata", onLoadedMeta);
+      video.removeEventListener("durationchange", onDurationChange);
+      if (onProgress != null && video.currentTime > 0) report();
+    };
+  }, [onProgress, url]);
+
+  // Wire hls.js for HLS streams when the browser can't play them natively.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video == null) return;
+
+    if (!isHls) {
+      video.src = url;
+      return;
+    }
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = url;
+      return;
+    }
+    if (Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(url);
+      hls.attachMedia(video);
+      return () => hls.destroy();
+    }
+    onHlsUnsupported();
+  }, [url, isHls, onHlsUnsupported]);
+
+  // Reflect the active subtitle track onto the <video>'s text tracks: show only
+  // the active one, hide the rest. Runs whenever tracks / the active id change.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video == null) return;
+    const list = video.textTracks;
+    for (let i = 0; i < list.length; i += 1) {
+      const tt = list[i];
+      const match = subs.tracks[i];
+      tt.mode =
+        match != null && match.id === subs.activeTrackId ? "showing" : "hidden";
+    }
+  }, [subs.tracks, subs.activeTrackId]);
+
+  const seek = (t: number) => {
+    const video = videoRef.current;
+    if (video != null && Number.isFinite(t)) video.currentTime = t;
+  };
+
+  return (
+    <div className="webview-player">
+      <div className="player-stage">
+        <video
+          ref={videoRef}
+          className="player-video"
+          controls
+          autoPlay
+          playsInline
+          crossOrigin="anonymous"
+        >
+          {subs.tracks.map((t) => (
+            <track
+              key={t.id}
+              kind="subtitles"
+              src={t.vttUrl}
+              srcLang={t.language}
+              label={t.label}
+              default={t.id === subs.activeTrackId}
+            />
+          ))}
+        </video>
+      </div>
+
+      <div className="player-osd">
+        <ScrubBar
+          currentTime={currentTime}
+          duration={duration}
+          preview={thumbs.available ? thumbs.preview : null}
+          onHover={thumbs.onHover}
+          onLeave={thumbs.onLeave}
+          onSeek={seek}
+        />
+        <div className="player-osd-row">
+          <button
+            type="button"
+            className={`chip${captionsOpen || subs.activeTrackId != null ? " is-active" : ""}`}
+            onClick={() => setCaptionsOpen((o) => !o)}
+            aria-label="Subtitles"
+            title="Subtitles"
+          >
+            <Icon name="captions" size={14} />
+            CC
+            {subs.activeTrackId != null && (
+              <span className="captions-active-dot" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {captionsOpen && (
+        <CaptionsMenu
+          subs={subs}
+          seedTitle={title}
+          seedImdbId={imdbId}
+          seedSeason={season}
+          seedEpisode={episode}
+          onClose={() => setCaptionsOpen(false)}
+        />
+      )}
     </div>
   );
 }

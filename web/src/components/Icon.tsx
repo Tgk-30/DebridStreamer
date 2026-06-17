@@ -23,6 +23,7 @@ export type IconName =
   | "trash"
   | "refresh"
   | "share"
+  | "captions"
   | "check";
 
 interface IconProps {
@@ -167,6 +168,14 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
     </>
   ),
   // checkmark
+  // captions — a rounded screen with two caption underlines
+  captions: () => (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="M7 11h3.5M7 14.5h3.5" />
+      <path d="M13.5 11H17M13.5 14.5H17" />
+    </>
+  ),
   check: () => <path d="M5 12l5 5L20 7" />,
 };
 

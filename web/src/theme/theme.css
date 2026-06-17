@@ -70,6 +70,133 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ---------------------------------------------------------------------------
+ * Selectable themes / skins.
+ *
+ * The `:root` block above is the default Aurora-glass (dark) look. Each theme
+ * below is a complete CSS-variable retune applied via a `data-theme` attribute
+ * on the root (set by applyTheme in theme/themes.ts). The default theme sets NO
+ * attribute, so it renders identically to the historical values. Each skin
+ * retunes accent + background + glass tints + text so the glass stays legible.
+ * Glass-surface tints (the white-on-glass alphas) are exposed as variables so a
+ * LIGHT theme can flip them to dark-on-glass without touching markup.
+ * ------------------------------------------------------------------------- */
+
+/* Glass tint variables — defaulted here so the dark tiers below can reference
+ * them; the Light theme overrides them to dark-on-glass. */
+:root {
+  --glass-tint-rest: rgba(255, 255, 255, 0.05);
+  --glass-tint-raised: rgba(255, 255, 255, 0.07);
+  --glass-tint-hero: rgba(255, 255, 255, 0.09);
+  --glass-tint-control: rgba(255, 255, 255, 0.06);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.1);
+}
+
+/* Daybreak — bright frosted glass. Dark text, dark-on-glass tints, a deeper
+ * accent so it stays legible on a light field. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --accent: rgb(99, 91, 232);
+  --accent-secondary: rgb(36, 150, 214);
+  --accent-tertiary: rgb(214, 74, 150);
+  --success: rgb(34, 160, 94);
+  --warning: rgb(196, 124, 24);
+  --danger: rgb(206, 64, 64);
+
+  --accent-rgb: 99, 91, 232;
+  --accent-secondary-rgb: 36, 150, 214;
+  --accent-tertiary-rgb: 214, 74, 150;
+  --warning-rgb: 196, 124, 24;
+  --success-rgb: 34, 160, 94;
+  --danger-rgb: 206, 64, 64;
+
+  --glass-border: rgba(20, 24, 48, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.85);
+
+  --text-primary: rgba(22, 25, 42, 0.94);
+  --text-secondary: rgba(22, 25, 42, 0.6);
+  --text-tertiary: rgba(22, 25, 42, 0.42);
+
+  --bg-1: rgb(238, 241, 248);
+  --bg-2: rgb(223, 228, 242);
+  --bg-3: rgb(231, 234, 245);
+
+  --glass-tint-rest: rgba(255, 255, 255, 0.55);
+  --glass-tint-raised: rgba(255, 255, 255, 0.68);
+  --glass-tint-hero: rgba(255, 255, 255, 0.78);
+  --glass-tint-control: rgba(255, 255, 255, 0.6);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.85);
+}
+
+/* Midnight — near-black, low-saturation, minimal glow. */
+:root[data-theme="midnight"] {
+  --accent: rgb(120, 176, 224);
+  --accent-secondary: rgb(140, 150, 170);
+  --accent-tertiary: rgb(150, 130, 190);
+  --success: rgb(96, 190, 130);
+  --warning: rgb(214, 170, 100);
+  --danger: rgb(220, 110, 110);
+
+  --accent-rgb: 120, 176, 224;
+  --accent-secondary-rgb: 140, 150, 170;
+  --accent-tertiary-rgb: 150, 130, 190;
+  --warning-rgb: 214, 170, 100;
+  --success-rgb: 96, 190, 130;
+  --danger-rgb: 220, 110, 110;
+
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.16);
+
+  --text-primary: rgba(235, 238, 245, 0.95);
+  --text-secondary: rgba(235, 238, 245, 0.55);
+  --text-tertiary: rgba(235, 238, 245, 0.38);
+
+  --bg-1: rgb(6, 7, 10);
+  --bg-2: rgb(12, 13, 18);
+  --bg-3: rgb(8, 9, 13);
+
+  --glass-tint-rest: rgba(255, 255, 255, 0.04);
+  --glass-tint-raised: rgba(255, 255, 255, 0.06);
+  --glass-tint-hero: rgba(255, 255, 255, 0.08);
+  --glass-tint-control: rgba(255, 255, 255, 0.05);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.09);
+}
+
+/* Sunset — warm amber/rose aurora over a dark plum field. */
+:root[data-theme="sunset"] {
+  --accent: rgb(250, 138, 92);
+  --accent-secondary: rgb(250, 100, 138);
+  --accent-tertiary: rgb(250, 196, 110);
+  --success: rgb(120, 200, 130);
+  --warning: rgb(250, 196, 110);
+  --danger: rgb(245, 96, 96);
+
+  --accent-rgb: 250, 138, 92;
+  --accent-secondary-rgb: 250, 100, 138;
+  --accent-tertiary-rgb: 250, 196, 110;
+  --warning-rgb: 250, 196, 110;
+  --success-rgb: 120, 200, 130;
+  --danger-rgb: 245, 96, 96;
+
+  --glass-border: rgba(255, 235, 225, 0.16);
+  --glass-highlight: rgba(255, 240, 230, 0.28);
+
+  --text-primary: rgba(255, 246, 242, 0.95);
+  --text-secondary: rgba(255, 246, 242, 0.62);
+  --text-tertiary: rgba(255, 246, 242, 0.42);
+
+  --bg-1: rgb(28, 16, 20);
+  --bg-2: rgb(36, 20, 25);
+  --bg-3: rgb(24, 14, 18);
+
+  --glass-tint-rest: rgba(255, 235, 225, 0.06);
+  --glass-tint-raised: rgba(255, 235, 225, 0.08);
+  --glass-tint-hero: rgba(255, 235, 225, 0.1);
+  --glass-tint-control: rgba(255, 235, 225, 0.07);
+  --glass-tint-control-hover: rgba(255, 235, 225, 0.12);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -133,7 +260,7 @@ body {
  * the contrast BETWEEN tiers, not ad-hoc per-element opacity.
  * ------------------------------------------------------------------------- */
 .glass-rest {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--glass-tint-rest);
   backdrop-filter: blur(16px) saturate(1.4);
   -webkit-backdrop-filter: blur(16px) saturate(1.4);
   border: 0.75px solid var(--glass-border);
@@ -141,7 +268,7 @@ body {
   box-shadow: 0 3px 7px rgba(0, 0, 0, 0.1);
 }
 .glass-raised {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--glass-tint-raised);
   backdrop-filter: blur(28px) saturate(1.6);
   -webkit-backdrop-filter: blur(28px) saturate(1.6);
   border: 1px solid var(--glass-border);
@@ -149,7 +276,7 @@ body {
   box-shadow: 0 10px 16px rgba(0, 0, 0, 0.2);
 }
 .glass-hero {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--glass-tint-hero);
   backdrop-filter: blur(40px) saturate(1.8);
   -webkit-backdrop-filter: blur(40px) saturate(1.8);
   border: 1.25px solid var(--glass-border);
@@ -198,7 +325,7 @@ body {
   border-radius: var(--r-pill);
   cursor: pointer;
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--glass-tint-control);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
@@ -238,7 +365,7 @@ body {
   font-weight: 500;
   padding: 6px 12px;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--glass-tint-control);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 0.75px solid var(--glass-border);

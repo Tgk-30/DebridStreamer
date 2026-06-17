@@ -60,6 +60,7 @@ export function Detail() {
     closeDetail,
     openDetail,
     services,
+    settings,
     watchlist,
     toggleWatchlist,
     recordResume,
@@ -193,6 +194,21 @@ export function Detail() {
             // History "Continue Watching" rail can pick it back up.
             recordResume(detailItem, current, duration);
           }}
+          // Subtitle search/translate context. The client/config are null when
+          // the OpenSubtitles key / AI provider aren't configured, so the player
+          // gates those affordances gracefully.
+          subtitleClient={services.subtitles}
+          translatorConfig={
+            services.hasAI
+              ? {
+                  provider: settings.aiProvider,
+                  apiKey: settings.aiApiKey,
+                  model: settings.aiModel,
+                  ollamaEndpoint: settings.ollamaEndpoint,
+                }
+              : null
+          }
+          imdbId={detail.data.imdbId}
         />
       )}
     </div>

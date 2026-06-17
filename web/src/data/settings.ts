@@ -38,6 +38,8 @@ import { AnthropicProvider } from "../services/ai/AnthropicProvider";
 import { OllamaProvider } from "../services/ai/OllamaProvider";
 import { getSecretStore, getStore } from "../storage";
 import { appFetch } from "../lib/http";
+import { DEFAULT_THEME_ID, resolveThemeId } from "../theme/themes";
+import { OpenSubtitlesClient } from "../services/subtitles/OpenSubtitlesClient";
 import {
   type IndexerConfigRecord,
   makeIndexerConfigRecord,
@@ -58,6 +60,8 @@ const SettingsKeys = {
   aiApiKey: "ai_api_key",
   aiModel: "ai_model",
   ollamaEndpoint: "ollama_endpoint",
+  theme: "ui_theme",
+  openSubtitlesApiKey: "opensubtitles_api_key",
 } as const;
 
 /** Marker written into the KV table for secret-valued keys; the real value
@@ -70,6 +74,7 @@ const SECRET_KEYS = new Set<string>([
   SettingsKeys.tmdbApiKey,
   SettingsKeys.omdbApiKey,
   SettingsKeys.aiApiKey,
+  SettingsKeys.openSubtitlesApiKey,
 ]);
 
 /** A user-configured external indexer (Torznab/Jackett/Prowlarr/Stremio addon).
@@ -103,6 +108,10 @@ export interface AppSettings {
   aiApiKey: string;
   aiModel: string;
   ollamaEndpoint: string;
+  /** Selected UI theme id (see theme/themes.ts). */
+  theme: string;
+  /** OpenSubtitles REST API key (powers in-player subtitle search). */
+  openSubtitlesApiKey: string;
 }
 
 /** Read a `VITE_*` env var without assuming `import.meta.env` exists. */
@@ -124,6 +133,8 @@ export function defaultSettings(): AppSettings {
     aiApiKey: env("VITE_AI_KEY"),
     aiModel: "",
     ollamaEndpoint: "http://localhost:11434",
+    theme: env("VITE_THEME") || DEFAULT_THEME_ID,
+    openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
   };
 }
 
@@ -205,16 +216,18 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     return legacy;
   }
 
-  const [tmdbKey, omdbKey, aiApiKey] = await Promise.all([
+  const [tmdbKey, omdbKey, aiApiKey, openSubtitlesApiKey] = await Promise.all([
     getStoredValue(SettingsKeys.tmdbApiKey),
     getStoredValue(SettingsKeys.omdbApiKey),
     getStoredValue(SettingsKeys.aiApiKey),
+    getStoredValue(SettingsKeys.openSubtitlesApiKey),
   ]);
-  const [aiProvider, aiModel, ollamaEndpoint, builtIn] = await Promise.all([
+  const [aiProvider, aiModel, ollamaEndpoint, builtIn, theme] = await Promise.all([
     store.getSetting(SettingsKeys.aiProvider),
     store.getSetting(SettingsKeys.aiModel),
     store.getSetting(SettingsKeys.ollamaEndpoint),
     store.getSetting(SettingsKeys.builtInIndexersEnabled),
+    store.getSetting(SettingsKeys.theme),
   ]);
 
   const debridConfigs = await store.listDebridConfigs();
@@ -251,6 +264,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     aiApiKey: aiApiKey ?? base.aiApiKey,
     aiModel: aiModel ?? base.aiModel,
     ollamaEndpoint: ollamaEndpoint ?? base.ollamaEndpoint,
+    theme: resolveThemeId(theme ?? base.theme),
+    openSubtitlesApiKey: openSubtitlesApiKey ?? base.openSubtitlesApiKey,
   };
 }
 
@@ -265,9 +280,14 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     setStoredValue(SettingsKeys.tmdbApiKey, settings.tmdbKey),
     setStoredValue(SettingsKeys.omdbApiKey, settings.omdbKey),
     setStoredValue(SettingsKeys.aiApiKey, settings.aiApiKey),
+    setStoredValue(
+      SettingsKeys.openSubtitlesApiKey,
+      settings.openSubtitlesApiKey,
+    ),
     store.setSetting(SettingsKeys.aiProvider, settings.aiProvider),
     store.setSetting(SettingsKeys.aiModel, settings.aiModel),
     store.setSetting(SettingsKeys.ollamaEndpoint, settings.ollamaEndpoint),
+    store.setSetting(SettingsKeys.theme, resolveThemeId(settings.theme)),
     store.setSetting(
       SettingsKeys.builtInIndexersEnabled,
       settings.builtInIndexersEnabled ? "true" : "false",
@@ -374,11 +394,14 @@ export interface AppServices {
   debrid: DebridManager | null;
   indexers: IndexerManager;
   ai: AIAssistantProvider | null;
+  /** OpenSubtitles client when a key is configured, else null. */
+  subtitles: OpenSubtitlesClient | null;
   /** Whether anything was configured (vs. the fixtures/empty fallback path). */
   hasTMDB: boolean;
   hasDebrid: boolean;
   hasIndexers: boolean;
   hasAI: boolean;
+  hasSubtitles: boolean;
 }
 
 function buildDebridService(entry: DebridTokenEntry): DebridService | null {
@@ -492,15 +515,22 @@ export function buildServices(settings: AppSettings): AppServices {
 
   const ai = buildAIProvider(settings);
 
+  // OpenSubtitles client when a key is configured. Routes through `appFetch` so
+  // it works CORS-free under Tauri (rest.opensubtitles.com blocks browser CORS).
+  const osKey = settings.openSubtitlesApiKey.trim();
+  const subtitles = osKey.length > 0 ? new OpenSubtitlesClient(osKey, appFetch) : null;
+
   return {
     tmdb,
     omdb,
     debrid,
     indexers,
     ai,
+    subtitles,
     hasTMDB: tmdb !== null,
     hasDebrid: debrid !== null,
     hasIndexers: indexers.activeIndexers.length > 0,
     hasAI: ai !== null,
+    hasSubtitles: subtitles !== null,
   };
 }

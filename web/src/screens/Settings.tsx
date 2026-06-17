@@ -19,6 +19,7 @@ import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
+import { THEMES } from "../theme/themes";
 import "./Settings.css";
 
 /** The selectable external-source types. `stremio_addon` is persisted to the
@@ -48,9 +49,10 @@ function sourceTypeLabel(type: StoredIndexerType): string {
   }
 }
 
-type Tab = "keys" | "debrid" | "sources";
+type Tab = "keys" | "debrid" | "sources" | "appearance";
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "appearance", label: "Appearance" },
   { id: "keys", label: "API keys" },
   { id: "debrid", label: "Debrid" },
   { id: "sources", label: "Sources" },
@@ -91,6 +93,20 @@ export function Settings() {
       </div>
 
       <div className="settings-panel glass-raised glass-lit">
+        {tab === "appearance" && (
+          <AppearanceTab
+            currentTheme={settings.theme}
+            onSelectTheme={(theme) => {
+              // Themes apply + persist instantly (not via the Save button) so
+              // the swatch click is reflected immediately. We commit the live
+              // settings.theme rather than the draft so it survives discarding
+              // other unsaved edits.
+              updateSettings({ ...settings, theme });
+              // Keep the draft in sync so a later Save doesn't revert the theme.
+              setDraft((d) => ({ ...d, theme }));
+            }}
+          />
+        )}
         {tab === "keys" && <KeysTab draft={draft} patch={patch} />}
         {tab === "debrid" && <DebridTab draft={draft} patch={patch} />}
         {tab === "sources" && <SourcesTab draft={draft} patch={patch} />}
@@ -113,6 +129,55 @@ interface TabProps {
   patch: (next: Partial<AppSettings>) => void;
 }
 
+function AppearanceTab({
+  currentTheme,
+  onSelectTheme,
+}: {
+  currentTheme: string;
+  onSelectTheme: (id: string) => void;
+}) {
+  return (
+    <div className="settings-fields">
+      <p className="settings-hint t-secondary">
+        Pick a skin — it applies instantly and is saved to this device.
+      </p>
+      <div className="theme-grid">
+        {THEMES.map((t) => {
+          const active = t.id === currentTheme;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              className={`theme-card${active ? " is-active" : ""}`}
+              onClick={() => onSelectTheme(t.id)}
+              aria-pressed={active}
+            >
+              <span
+                className="theme-swatch"
+                style={{
+                  background: `linear-gradient(135deg, ${t.swatchBg[0]}, ${t.swatchBg[1]})`,
+                }}
+              >
+                <span
+                  className="theme-swatch-dot"
+                  style={{ background: t.swatchAccent }}
+                />
+                {active && (
+                  <span className="theme-swatch-check">
+                    <Icon name="check" size={13} />
+                  </span>
+                )}
+              </span>
+              <span className="theme-card-label">{t.label}</span>
+              <span className="theme-card-desc t-secondary">{t.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function KeysTab({ draft, patch }: TabProps) {
   return (
     <div className="settings-fields">
@@ -131,6 +196,18 @@ function KeysTab({ draft, patch }: TabProps) {
           value={draft.omdbKey}
           onChange={(e) => patch({ omdbKey: e.target.value })}
           placeholder="OMDB key"
+        />
+      </Field>
+
+      <Field
+        label="OpenSubtitles API key"
+        hint="Enables in-player subtitle search + download. Get one at opensubtitles.com."
+      >
+        <input
+          type="password"
+          value={draft.openSubtitlesApiKey}
+          onChange={(e) => patch({ openSubtitlesApiKey: e.target.value })}
+          placeholder="OpenSubtitles REST API key"
         />
       </Field>
 

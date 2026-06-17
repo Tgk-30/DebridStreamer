@@ -21,12 +21,17 @@ import { Settings } from "./screens/Settings";
 import { Detail } from "./screens/Detail";
 import { Browse } from "./screens/Browse";
 import { useAppStore } from "./store/AppStore";
+import { useTheme } from "./theme/useTheme";
 import { checkForUpdates } from "./lib/updater";
 import "./App.css";
 
 export function App() {
-  const { route, navigate, detailItem, browseContext, openDetail, search } =
+  const { route, navigate, detailItem, browseContext, openDetail, search, settings } =
     useAppStore();
+
+  // Apply the persisted theme to the document root (instantly on change, and on
+  // startup once the Store hydrates the saved choice).
+  useTheme(settings.theme);
 
   // Check for a desktop auto-update once on launch. No-op in the browser.
   useEffect(() => {
