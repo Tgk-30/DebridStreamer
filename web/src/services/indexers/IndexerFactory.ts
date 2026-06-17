@@ -7,6 +7,7 @@
 
 import { APIBayIndexer } from "./APIBayIndexer";
 import { EZTVIndexer } from "./EZTVIndexer";
+import { StremioAddonIndexer } from "./StremioAddonIndexer";
 import {
   defaultFetchImpl,
   type FetchImpl,
@@ -169,6 +170,23 @@ function makeExternalIndexer(
         fetchImpl,
       });
     }
+    case "stremio_addon": {
+      const baseURL = config.baseURL.trim();
+      // Mirror the Swift factory: skip an empty / unparseable base URL.
+      if (baseURL.length === 0) return null;
+      try {
+        // eslint-disable-next-line no-new
+        new URL(baseURL);
+      } catch {
+        return null;
+      }
+      const displayName = config.displayName?.trim();
+      const name =
+        displayName != null && displayName.length > 0
+          ? displayName
+          : indexerTypeDisplayName(config.type);
+      return new StremioAddonIndexer(name, baseURL, fetchImpl);
+    }
     case "built_in":
       return null;
   }
@@ -184,6 +202,8 @@ function indexerTypeDisplayName(type: IndexerConfig["type"]): string {
       return "Torznab";
     case "zilean":
       return "Zilean";
+    case "stremio_addon":
+      return "Stremio Addon";
     case "built_in":
       return "Built-in Scrapers";
   }

@@ -85,6 +85,7 @@ export type IndexerType =
   | "prowlarr"
   | "torznab"
   | "zilean"
+  | "stremio_addon"
   | "built_in";
 
 export const IndexerType = {
@@ -92,6 +93,7 @@ export const IndexerType = {
   prowlarr: "prowlarr" as IndexerType,
   torznab: "torznab" as IndexerType,
   zilean: "zilean" as IndexerType,
+  stremioAddon: "stremio_addon" as IndexerType,
   builtIn: "built_in" as IndexerType,
 
   displayName(type: IndexerType): string {
@@ -104,6 +106,8 @@ export const IndexerType = {
         return "Torznab";
       case "zilean":
         return "Zilean";
+      case "stremio_addon":
+        return "Stremio Addon";
       case "built_in":
         return "Built-in Scrapers";
     }
@@ -119,6 +123,8 @@ export const IndexerType = {
       case "torznab":
       case "zilean":
         return ProviderSubtype.customTorznab;
+      case "stremio_addon":
+        return ProviderSubtype.stremioAddon;
       case "built_in":
         return ProviderSubtype.builtIn;
     }
@@ -134,6 +140,7 @@ export const IndexerType = {
       case "torznab":
       case "zilean":
         return "/api";
+      case "stremio_addon":
       case "built_in":
         return "";
     }
@@ -145,12 +152,14 @@ export type ProviderSubtype =
   | "jackett"
   | "prowlarr"
   | "custom_torznab"
+  | "stremio_addon"
   | "built_in";
 
 export const ProviderSubtype = {
   jackett: "jackett" as ProviderSubtype,
   prowlarr: "prowlarr" as ProviderSubtype,
   customTorznab: "custom_torznab" as ProviderSubtype,
+  stremioAddon: "stremio_addon" as ProviderSubtype,
   builtIn: "built_in" as ProviderSubtype,
 } as const;
 

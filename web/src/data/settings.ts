@@ -37,6 +37,7 @@ import { OpenAIProvider } from "../services/ai/OpenAIProvider";
 import { AnthropicProvider } from "../services/ai/AnthropicProvider";
 import { OllamaProvider } from "../services/ai/OllamaProvider";
 import { getSecretStore, getStore } from "../storage";
+import { appFetch } from "../lib/http";
 import {
   type IndexerConfigRecord,
   makeIndexerConfigRecord,
@@ -383,15 +384,17 @@ export interface AppServices {
 function buildDebridService(entry: DebridTokenEntry): DebridService | null {
   const token = entry.apiToken.trim();
   if (token.length === 0) return null;
+  // Route through `appFetch` so debrid hosts (CORS-blocked in a plain browser)
+  // work in the Tauri desktop app; it degrades to the global fetch in a browser.
   switch (entry.service) {
     case "real_debrid":
-      return new RealDebridService(token);
+      return new RealDebridService(token, appFetch);
     case "all_debrid":
-      return new AllDebridService(token);
+      return new AllDebridService(token, appFetch);
     case "premiumize":
-      return new PremiumizeService(token);
+      return new PremiumizeService(token, appFetch);
     case "torbox":
-      return new TorBoxService(token);
+      return new TorBoxService(token, appFetch);
   }
 }
 
@@ -412,11 +415,10 @@ function buildIndexerConfigs(settings: AppSettings): IndexerConfig[] {
   settings.sources
     .filter((s) => s.isActive && s.baseURL.trim().length > 0)
     .forEach((s, i) => {
-      // The ported web IndexerManager/factory only build the Torznab family
-      // (jackett/prowlarr/torznab/zilean). `stremio_addon` is persisted in the
-      // Store but has no web indexer yet, so skip it here (it gates gracefully —
-      // a Stremio-capable factory is the documented follow-up). `built_in` is
-      // handled above via the scrapers toggle.
+      // The ported web IndexerManager/factory build the Torznab family
+      // (jackett/prowlarr/torznab/zilean) plus `stremio_addon` (now that the
+      // StremioAddonIndexer is ported). `built_in` is handled above via the
+      // scrapers toggle; any other type gates gracefully (skipped here).
       if (!WEB_BUILDABLE_INDEXER_TYPES.has(s.type)) return;
       configs.push(
         makeIndexerConfig({
@@ -439,28 +441,27 @@ const WEB_BUILDABLE_INDEXER_TYPES = new Set<StoredIndexerType>([
   "prowlarr",
   "torznab",
   "zilean",
+  "stremio_addon",
 ]);
 
 function buildAIProvider(settings: AppSettings): AIAssistantProvider | null {
   const key = settings.aiApiKey.trim();
   const model = settings.aiModel.trim();
+  // Pass `undefined` for the model when none is configured so the provider's own
+  // default model parameter applies; `appFetch` is threaded either way so AI
+  // hosts work in the desktop app (degrades to global fetch in a browser).
+  const modelArg = model.length > 0 ? model : undefined;
   switch (settings.aiProvider) {
     case "openai":
       if (key.length === 0) return null;
-      return model.length > 0
-        ? new OpenAIProvider(key, model)
-        : new OpenAIProvider(key);
+      return new OpenAIProvider(key, modelArg, appFetch);
     case "anthropic":
       if (key.length === 0) return null;
-      return model.length > 0
-        ? new AnthropicProvider(key, model)
-        : new AnthropicProvider(key);
+      return new AnthropicProvider(key, modelArg, appFetch);
     case "ollama": {
       const endpoint = settings.ollamaEndpoint.trim();
       if (endpoint.length === 0) return null;
-      return model.length > 0
-        ? new OllamaProvider(endpoint, model)
-        : new OllamaProvider(endpoint);
+      return new OllamaProvider(endpoint, modelArg, appFetch);
     }
   }
 }
@@ -484,7 +485,10 @@ export function buildServices(settings: AppSettings): AppServices {
   }
 
   const indexerConfigs = buildIndexerConfigs(settings);
-  const indexers = new IndexerManager(indexerConfigs);
+  // `appFetch` is CORS-free under Tauri (routes indexer/addon hosts through Rust)
+  // and degrades to the global fetch in a plain browser. The new Stremio addon
+  // indexer is built by the factory like the rest, so it inherits this too.
+  const indexers = new IndexerManager(indexerConfigs, appFetch);
 
   const ai = buildAIProvider(settings);
 
