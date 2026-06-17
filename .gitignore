@@ -1,2 +1,5 @@
 .build/
 .swiftpm/
+
+# local preview/launch config
+.claude/

@@ -8,7 +8,22 @@ VLCSRC="$REPO/Vendor/VLCKit.xcframework/macos-arm64_x86_64/VLCKit.framework"
 STAGE=/tmp/ds-app-stage3; APP="$STAGE/DebridStreamer.app"
 cd "$REPO"
 echo "[1/5] release build..."
-swift build -c release --scratch-path /tmp/ds-scratch 2>&1 | grep -E "error:|Build complete" | tail -1
+# Pipe to grep loses swift's exit code under `set -e` (grep's success masks a failed
+# build), which silently ships a STALE binary. Capture PIPESTATUS[0] = swift's real
+# status; on failure, clean a corrupt Release intermediates dir and retry once.
+release_build() {
+  swift build -c release --scratch-path /tmp/ds-scratch 2>&1 | grep -E "error:|Build complete" | tail -1
+  return "${PIPESTATUS[0]}"
+}
+if ! release_build; then
+  echo "    release build failed — cleaning Release intermediates and retrying once..."
+  rm -rf /tmp/ds-scratch/out/Intermediates.noindex/DebridStreamer.build/Release \
+         /tmp/ds-scratch/out/Products/Release
+  if ! release_build; then
+    echo "    release build still failing after clean — aborting (not shipping stale binary)." >&2
+    exit 1
+  fi
+fi
 pkill -f "/Applications/DebridStreamer.app" 2>/dev/null || true; sleep 1
 echo "[2/5] assemble..."
 rm -rf "$STAGE"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
