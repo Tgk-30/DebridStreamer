@@ -17,6 +17,16 @@ enum DebridServiceType: String, Codable, Sendable, CaseIterable {
         }
     }
 
+    /// Short two-letter code used in compact badges (e.g. the cached "Instant" pill).
+    var shortCode: String {
+        switch self {
+        case .realDebrid: return "RD"
+        case .allDebrid: return "AD"
+        case .premiumize: return "PM"
+        case .torBox: return "TB"
+        }
+    }
+
     var baseURL: String {
         switch self {
         case .realDebrid: return "https://api.real-debrid.com/rest/1.0"

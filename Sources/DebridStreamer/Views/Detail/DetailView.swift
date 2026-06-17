@@ -13,6 +13,7 @@ struct DetailView: View {
     @State private var torrents: [TorrentResult] = []
     @State private var cacheResults: [String: (service: DebridServiceType, status: CacheStatus)] = [:]
     @State private var isSearchingStreams = false
+    @State private var isCheckingCache = false
     @State private var streamSearchDone = false
     @State private var streamError: String?
     @State private var streamSearchTask: Task<Void, Never>?
@@ -380,6 +381,7 @@ struct DetailView: View {
                     mediaItem: detail,
                     torrents: torrents,
                     cacheResults: cacheResults,
+                    isCheckingCache: isCheckingCache,
                     onPlay: { stream in
                         Task { @MainActor in
                             await playStream(stream)
@@ -710,18 +712,26 @@ struct DetailView: View {
 
             try Task.checkCancellation()
             torrents = results
+            cacheResults = [:]
 
-            // Step 2: Check debrid cache for all hashes
+            // Render the stream list immediately; the batch cache check below runs
+            // asynchronously and fills the per-row "Instant / Will cache" badges in
+            // as it returns. The list is never blocked behind the availability check.
+            streamSearchDone = true
+            isSearchingStreams = false
+
+            // Step 2: Batch debrid availability check for all hashes (one call).
             if let debrid = appState.debridManager, await debrid.hasServices {
                 let hashes = results.map(\.infoHash)
                 if !hashes.isEmpty {
                     try Task.checkCancellation()
+                    isCheckingCache = true
+                    defer { isCheckingCache = false }
                     let cache = try await debrid.checkCacheAll(hashes: hashes)
+                    try Task.checkCancellation()
                     cacheResults = cache
                 }
             }
-
-            streamSearchDone = true
 
             // Show diagnostic info if no results
             if results.isEmpty {
@@ -732,9 +742,15 @@ struct DetailView: View {
                 }
             }
         } catch is CancellationError {
-            streamError = "Stream search canceled."
+            // If the list is already on screen, a cancellation mid-availability-check
+            // should not overwrite a valid result list with an error banner.
+            if !streamSearchDone {
+                streamError = "Stream search canceled."
+            }
         } catch {
-            streamError = "Search failed: \(error.localizedDescription)"
+            if !streamSearchDone {
+                streamError = "Search failed: \(error.localizedDescription)"
+            }
         }
     }
 
