@@ -73,9 +73,19 @@ export function App() {
       <main className="app-content">
         {showsGlobalSearch && <GlobalSearch onSubmit={search} />}
 
-        <Suspense fallback={<Spinner variant="inline" />}>
-          {renderScreen(route)}
-        </Suspense>
+        {/* Route transition: a keyed frame that plays a CSS enter animation on
+            each navigation. The `key={route}` remounts this div on every route
+            change, which restarts the `routeIn` keyframes (see App.css). We use a
+            pure-CSS animation rather than a JS/motion one on purpose: it runs on
+            the compositor and completes reliably even if rAF is throttled, and it
+            sidesteps the AnimatePresence exit-wait that stalls on these heavy,
+            nested-motion screens. Suspense stays inside so a lazy screen shows the
+            spinner within the frame. */}
+        <div key={route} className="route-frame">
+          <Suspense fallback={<Spinner variant="inline" />}>
+            {renderScreen(route)}
+          </Suspense>
+        </div>
 
         {/* Browse overlay — mounts over the current screen ("See all" +
             advanced filters), below the Detail overlay. */}
