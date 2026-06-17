@@ -5,7 +5,11 @@ struct VLCPlayerEngine: PlayerEngine {
     private let sessionFactory: @MainActor (URL) throws -> any VLCPlaybackSession
 
     init(
-        sessionFactory: @escaping @MainActor (URL) throws -> any VLCPlaybackSession = Self.defaultSessionFactory
+        // Wrap the @MainActor factory in a closure literal: Swift 6.0 evaluates
+        // default arguments in a nonisolated context, where a bare reference to a
+        // @MainActor static method errors. The closure is @MainActor-typed, so its
+        // body runs on the main actor when invoked. (Builds on Swift 6.0 + 6.4.)
+        sessionFactory: @escaping @MainActor (URL) throws -> any VLCPlaybackSession = { try Self.defaultSessionFactory(url: $0) }
     ) {
         self.sessionFactory = sessionFactory
     }
