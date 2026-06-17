@@ -60,6 +60,35 @@ struct OllamaProvider: AIAssistantProvider {
             )
         )
     }
+
+    /// Single-shot completion for the NL→filter mood discovery: sends `prompt`
+    /// verbatim and returns the raw text (no recommendation envelope).
+    func complete(prompt: String) async throws -> String {
+        let payload = OllamaRequest(
+            model: model,
+            messages: [.init(role: "user", content: prompt)],
+            stream: false
+        )
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AIAssistantProviderError.invalidResponse
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw AIAssistantProviderError.apiError(String(data: data, encoding: .utf8) ?? "Ollama error")
+        }
+        let decoded = try JSONDecoder().decode(OllamaResponse.self, from: data)
+        guard let content = decoded.message?.content else {
+            throw AIAssistantProviderError.invalidResponse
+        }
+        return content
+    }
 }
 
 private struct OllamaRequest: Encodable {

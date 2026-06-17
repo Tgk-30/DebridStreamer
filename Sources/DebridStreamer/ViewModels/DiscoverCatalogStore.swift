@@ -21,6 +21,28 @@ struct GenreRail: Identifiable, Equatable {
     let items: [MediaPreview]
 }
 
+/// One curated rail (mood/keyword, studio, or network) populated via `discover`
+/// with `with_keywords` / `with_companies` / `with_networks`. A stable string id
+/// keeps SwiftUI's ForEach diffing well-behaved across reloads.
+struct CuratedRail: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let items: [MediaPreview]
+}
+
+/// A declarative curated-rail spec resolved into a `discover` call. Mood rails use
+/// known TMDB keyword ids; studio/network rails use company/network ids.
+private struct CuratedRailSpec {
+    enum Kind {
+        case keywords([Int])     // with_keywords (movies)
+        case company(Int)        // with_companies (movies)
+        case network(Int)        // with_networks (series)
+    }
+    let id: String
+    let name: String
+    let kind: Kind
+}
+
 @MainActor
 @Observable
 final class DiscoverCatalogStore {
@@ -33,6 +55,7 @@ final class DiscoverCatalogStore {
     var airingTodayShows: [MediaPreview] = []
     var onTheAirShows: [MediaPreview] = []
     var genreRails: [GenreRail] = []
+    var curatedRails: [CuratedRail] = []
     var continueWatching: [ContinueWatchingItem] = []
     var isLoading = false
     private(set) var isLoaded = false
@@ -52,6 +75,27 @@ final class DiscoverCatalogStore {
         16     // Animation
     ]
 
+    /// Curated mood/keyword + studio/network rails. Mood rows use well-known TMDB
+    /// keyword ids; studio/network rows use company/network ids. Kept small and
+    /// fault-tolerant so they enrich the page without bloating first paint.
+    private static let curatedRailSpecs: [CuratedRailSpec] = [
+        // Mood / keyword rows (movies) — known TMDB keyword ids.
+        CuratedRailSpec(id: "mood-feelgood", name: "Feel-good",
+                        kind: .keywords([9713, 5615])),       // feel good / friendship
+        CuratedRailSpec(id: "mood-mindbending", name: "Mind-bending",
+                        kind: .keywords([4565, 156205])),     // dystopia / mind bending
+        CuratedRailSpec(id: "mood-cozy", name: "Cozy",
+                        kind: .keywords([10683, 12565])),     // coming of age / small town
+        // Studio rows (movies) — company ids.
+        CuratedRailSpec(id: "studio-pixar", name: "From Pixar",
+                        kind: .company(3)),                   // Pixar
+        CuratedRailSpec(id: "studio-a24", name: "From A24",
+                        kind: .company(41077)),               // A24
+        // Network row (series) — network id.
+        CuratedRailSpec(id: "network-hbo", name: "On HBO",
+                        kind: .network(49))                   // HBO
+    ]
+
     func reset() {
         trendingMovies = []
         trendingShows = []
@@ -62,6 +106,7 @@ final class DiscoverCatalogStore {
         airingTodayShows = []
         onTheAirShows = []
         genreRails = []
+        curatedRails = []
         continueWatching = []
         isLoading = false
         isLoaded = false
@@ -138,9 +183,13 @@ final class DiscoverCatalogStore {
         do { onTheAirShows = try await onTheAirResponse.items }
         catch { onTheAirShows = []; errors.append("On the air failed: \(error.localizedDescription)") }
 
-        // Genre rails enrich the page; a failure here must never surface as an
-        // error or block the core rails, so they load best-effort and silently.
-        genreRails = await loadGenreRails(provider: provider)
+        // Genre + curated rails enrich the page; a failure here must never surface
+        // as an error or block the core rails, so they load best-effort and
+        // silently, concurrently with each other.
+        async let genreRailsResult = loadGenreRails(provider: provider)
+        async let curatedRailsResult = loadCuratedRails(provider: provider)
+        genreRails = await genreRailsResult
+        curatedRails = await curatedRailsResult
 
         if !errors.isEmpty {
             let message = errors.joined(separator: " ")
@@ -186,6 +235,44 @@ final class DiscoverCatalogStore {
         // Preserve the curated featured order (task group completes out of order).
         let order = Dictionary(uniqueKeysWithValues: Self.featuredGenreIDs.enumerated().map { ($1, $0) })
         return rails.sorted { (order[$0.id] ?? Int.max) < (order[$1.id] ?? Int.max) }
+    }
+
+    /// Resolve the curated mood/keyword + studio/network rails concurrently.
+    /// Independently fault-tolerant: any spec that fails or returns nothing is
+    /// simply dropped, so one bad keyword/company id never blanks the section.
+    private func loadCuratedRails(provider: any MetadataProvider) async -> [CuratedRail] {
+        let specs = Self.curatedRailSpecs
+        let rails = await withTaskGroup(of: (Int, CuratedRail)?.self) { group in
+            for (index, spec) in specs.enumerated() {
+                group.addTask {
+                    let type: MediaType
+                    let filters: DiscoverFilters
+                    switch spec.kind {
+                    case .keywords(let ids):
+                        type = .movie
+                        filters = DiscoverFilters(sortBy: .popularityDesc, keywordIds: ids)
+                    case .company(let id):
+                        type = .movie
+                        filters = DiscoverFilters(sortBy: .popularityDesc, companyIds: [id])
+                    case .network(let id):
+                        type = .series
+                        filters = DiscoverFilters(sortBy: .popularityDesc, networkIds: [id])
+                    }
+                    guard let result = try? await provider.discover(type: type, filters: filters),
+                          !result.items.isEmpty else {
+                        return nil
+                    }
+                    return (index, CuratedRail(id: spec.id, name: spec.name, items: result.items))
+                }
+            }
+            var collected: [(Int, CuratedRail)] = []
+            for await entry in group {
+                if let entry { collected.append(entry) }
+            }
+            // Preserve declared order (task group completes out of order).
+            return collected.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+        return rails
     }
 
     /// Continue-Watching rail: ONE bulk media fetch (no N+1), carrying resume

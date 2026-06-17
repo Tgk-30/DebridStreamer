@@ -114,32 +114,42 @@ struct DiscoverView: View {
             refreshingChip
         }
 
-        aiCuratedSection
+        // AI mood/keyword discovery — describe a vibe, get a curated lineup.
+        MoodDiscoveryView()
             .railAppear(appeared: appeared, index: 1)
 
-        continueWatchingRail
+        aiCuratedSection
             .railAppear(appeared: appeared, index: 2)
 
-        catalogSection(title: "Trending Movies", items: store.trendingMovies, feedbackReason: "Trending Movies rail")
+        continueWatchingRail
             .railAppear(appeared: appeared, index: 3)
-        catalogSection(title: "Trending TV Shows", items: store.trendingShows, feedbackReason: "Trending TV Shows rail")
+
+        catalogSection(title: "Trending Movies", items: store.trendingMovies, feedbackReason: "Trending Movies rail")
             .railAppear(appeared: appeared, index: 4)
-        catalogSection(title: "Popular Movies", items: store.popularMovies, feedbackReason: "Popular Movies rail")
+        catalogSection(title: "Trending TV Shows", items: store.trendingShows, feedbackReason: "Trending TV Shows rail")
             .railAppear(appeared: appeared, index: 5)
-        catalogSection(title: "Top Rated Movies", items: store.topRatedMovies, feedbackReason: "Top Rated Movies rail")
+        catalogSection(title: "Popular Movies", items: store.popularMovies, feedbackReason: "Popular Movies rail")
             .railAppear(appeared: appeared, index: 6)
-        catalogSection(title: "Now Playing", items: store.nowPlayingMovies, feedbackReason: "Now Playing rail")
+        catalogSection(title: "Top Rated Movies", items: store.topRatedMovies, feedbackReason: "Top Rated Movies rail")
             .railAppear(appeared: appeared, index: 7)
-        catalogSection(title: "Upcoming", items: store.upcomingMovies, feedbackReason: "Upcoming rail")
+        catalogSection(title: "Now Playing", items: store.nowPlayingMovies, feedbackReason: "Now Playing rail")
             .railAppear(appeared: appeared, index: 8)
-        catalogSection(title: "Airing Today", items: store.airingTodayShows, feedbackReason: "Airing Today rail")
+        catalogSection(title: "Upcoming", items: store.upcomingMovies, feedbackReason: "Upcoming rail")
             .railAppear(appeared: appeared, index: 9)
-        catalogSection(title: "On The Air", items: store.onTheAirShows, feedbackReason: "On The Air rail")
+        catalogSection(title: "Airing Today", items: store.airingTodayShows, feedbackReason: "Airing Today rail")
             .railAppear(appeared: appeared, index: 10)
+        catalogSection(title: "On The Air", items: store.onTheAirShows, feedbackReason: "On The Air rail")
+            .railAppear(appeared: appeared, index: 11)
+
+        // Curated mood/keyword + studio/network rows (lazy, fault-tolerant).
+        ForEach(Array(store.curatedRails.enumerated()), id: \.element.id) { offset, rail in
+            catalogSection(title: rail.name, items: rail.items, feedbackReason: "\(rail.name) curated rail")
+                .railAppear(appeared: appeared, index: 12 + offset)
+        }
 
         ForEach(Array(store.genreRails.enumerated()), id: \.element.id) { offset, rail in
             catalogSection(title: rail.name, items: rail.items, feedbackReason: "\(rail.name) genre rail")
-                .railAppear(appeared: appeared, index: 11 + offset)
+                .railAppear(appeared: appeared, index: 12 + store.curatedRails.count + offset)
         }
     }
 
@@ -631,6 +641,9 @@ struct DiscoverView: View {
         items += store.upcomingMovies
         items += store.airingTodayShows
         items += store.onTheAirShows
+        for rail in store.curatedRails {
+            items += rail.items
+        }
         for rail in store.genreRails {
             items += rail.items
         }

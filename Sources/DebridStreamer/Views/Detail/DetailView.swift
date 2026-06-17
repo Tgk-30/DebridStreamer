@@ -35,6 +35,8 @@ struct DetailView: View {
     @State private var related: [MediaPreview] = []
     // Tapping a "More Like This" poster opens that title in a nested detail sheet.
     @State private var relatedSelection: MediaPreview?
+    // Tapping a cast headshot opens that person's Person/Cast page.
+    @State private var selectedPerson: CastMember?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -82,6 +84,10 @@ struct DetailView: View {
         .sheet(item: $relatedSelection) { item in
             DetailView(mediaPreview: item)
                 .frame(minWidth: 880, idealWidth: 900, minHeight: 580)
+        }
+        .sheet(item: $selectedPerson) { member in
+            PersonView(personId: member.id, initialName: member.name)
+                .frame(minWidth: 820, idealWidth: 900, minHeight: 560)
         }
     }
 
@@ -422,49 +428,17 @@ struct DetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
                     ForEach(cast) { member in
-                        castCard(member)
+                        Button {
+                            selectedPerson = member
+                        } label: {
+                            CastChip(member: member)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.trailing, AppTheme.Spacing.xxl)
             }
             .mask(railTrailingFade)
-        }
-    }
-
-    @ViewBuilder
-    private func castCard(_ member: CastMember) -> some View {
-        VStack(spacing: AppTheme.Spacing.sm) {
-            CachedAsyncImage(url: member.profileURL) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().aspectRatio(contentMode: .fill)
-                default:
-                    ZStack {
-                        Rectangle().fill(.quaternary)
-                        Image(systemName: "person.fill")
-                            .font(.title)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .frame(width: 72, height: 72)
-            .clipShape(Circle())
-            .overlay(Circle().strokeBorder(AppTheme.glassBorder, lineWidth: 1))
-
-            VStack(spacing: 2) {
-                Text(member.name)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(2, reservesSpace: true)
-                    .multilineTextAlignment(.center)
-                if !member.character.isEmpty {
-                    Text(member.character)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2, reservesSpace: true)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .frame(width: 84)
         }
     }
 
@@ -862,5 +836,54 @@ struct DetailView: View {
         } catch {
             libraryActionStatus = "Add to folder failed: \(error.localizedDescription)"
         }
+    }
+}
+
+// MARK: - Tappable cast headshot
+
+/// One cast headshot + name/character, with a subtle hover lift so it reads as
+/// tappable (opens the Person/Cast page). Mirrors the MediaCard hover affordance.
+private struct CastChip: View {
+    let member: CastMember
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(spacing: AppTheme.Spacing.sm) {
+            CachedAsyncImage(url: member.profileURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().aspectRatio(contentMode: .fill)
+                default:
+                    ZStack {
+                        Rectangle().fill(.quaternary)
+                        Image(systemName: "person.fill")
+                            .font(.title)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .frame(width: 72, height: 72)
+            .clipShape(Circle())
+            .overlay(Circle().strokeBorder(hovering ? AppTheme.accent.opacity(0.7) : AppTheme.glassBorder, lineWidth: 1))
+
+            VStack(spacing: 2) {
+                Text(member.name)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.center)
+                if !member.character.isEmpty {
+                    Text(member.character)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2, reservesSpace: true)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .frame(width: 84)
+        }
+        .contentShape(Rectangle())
+        .scaleEffect(hovering ? 1.05 : 1)
+        .animation(.spring(response: 0.3, dampingFraction: 0.72), value: hovering)
+        .onHover { hovering = $0 }
     }
 }

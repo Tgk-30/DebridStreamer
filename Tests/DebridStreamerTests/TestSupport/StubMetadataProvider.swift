@@ -76,4 +76,20 @@ struct StubMetadataProvider: MetadataProvider {
     func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview] {
         recommendationsResponse
     }
+
+    var personResponse: Person = Person(id: 0, name: "Stub Person")
+    var personCreditsResponse: [MediaPreview] = []
+    var keywordsResponse: [TMDBKeyword] = []
+
+    func getPerson(personId: Int) async throws -> Person {
+        personResponse
+    }
+
+    func getPersonCredits(personId: Int) async throws -> [MediaPreview] {
+        personCreditsResponse
+    }
+
+    func searchKeywords(query: String) async throws -> [TMDBKeyword] {
+        keywordsResponse
+    }
 }

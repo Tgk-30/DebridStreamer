@@ -31,6 +31,10 @@ final class AppState {
     private(set) var indexerManager: IndexerManager?
     private(set) var aiAssistantManager: AIAssistantManager?
     private(set) var discoverAICurationService: DiscoverAICurationService?
+    /// Synchronous gate for the AI mood discovery UI: true when the last
+    /// `reloadAIAssistantManager` assembled at least one provider. Mirrors the
+    /// actor-isolated `aiAssistantManager.hasAnyProvider` without an await.
+    private(set) var aiAssistantHasProvider = false
     private(set) var userFeedbackService: UserFeedbackService?
     private var playerWindowController: PlayerWindowController?
 
@@ -196,6 +200,7 @@ final class AppState {
             providers[.ollama] = OllamaProvider(endpoint: ollamaURL)
         }
 
+        aiAssistantHasProvider = !providers.isEmpty
         aiAssistantManager = AIAssistantManager(
             providers: providers,
             database: databaseManager,

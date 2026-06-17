@@ -10,6 +10,20 @@ struct AIProviderRecommendationResult: Sendable {
 protocol AIAssistantProvider: Sendable {
     var kind: AIProviderKind { get }
     func recommend(prompt: String, candidateTitles: [String], maxResults: Int) async throws -> AIProviderRecommendationResult
+
+    /// Generic single-shot completion: send `prompt` verbatim, return the model's
+    /// raw text. Used by the NL→TMDB-filter mood discovery (which needs a custom
+    /// instruction + JSON schema, not the movie-recommendation envelope). A default
+    /// implementation routes through `recommend(...).rawText` so any provider that
+    /// doesn't override still works.
+    func complete(prompt: String) async throws -> String
+}
+
+extension AIAssistantProvider {
+    func complete(prompt: String) async throws -> String {
+        let result = try await recommend(prompt: prompt, candidateTitles: [], maxResults: 1)
+        return result.rawText ?? ""
+    }
 }
 
 enum AIAssistantProviderError: LocalizedError, Equatable {

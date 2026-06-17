@@ -82,6 +82,43 @@ struct AnthropicProvider: AIAssistantProvider {
             usage: usage
         )
     }
+
+    /// Single-shot completion for the NL→filter mood discovery: sends `prompt`
+    /// verbatim and returns the raw text (no recommendation envelope).
+    func complete(prompt: String) async throws -> String {
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { throw AIAssistantProviderError.missingAPIKey }
+        guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
+            throw URLError(.badURL)
+        }
+
+        let payload = AnthropicRequest(
+            model: model,
+            maxTokens: 500,
+            messages: [.init(role: "user", content: prompt)]
+        )
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(trimmedKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AIAssistantProviderError.invalidResponse
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw AIAssistantProviderError.apiError(String(data: data, encoding: .utf8) ?? "Anthropic error")
+        }
+        let decoded = try JSONDecoder().decode(AnthropicResponse.self, from: data)
+        guard let text = decoded.content.first(where: { $0.type == "text" })?.text else {
+            throw AIAssistantProviderError.invalidResponse
+        }
+        return text
+    }
 }
 
 private struct AnthropicRequest: Encodable {

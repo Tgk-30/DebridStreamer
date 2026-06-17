@@ -133,4 +133,7 @@ private struct DiscoverPosterStub: MetadataProvider {
     }
     func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember] { [] }
     func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview] { [] }
+    func getPerson(personId: Int) async throws -> Person { Person(id: personId, name: "Stub") }
+    func getPersonCredits(personId: Int) async throws -> [MediaPreview] { [] }
+    func searchKeywords(query: String) async throws -> [TMDBKeyword] { [] }
 }

@@ -248,6 +248,9 @@ private actor LibraryMetadataStub: MetadataProvider {
     func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds { ExternalIds(imdbId: nil, tvdbId: nil) }
     func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember] { [] }
     func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview] { [] }
+    func getPerson(personId: Int) async throws -> Person { Person(id: personId, name: "Stub") }
+    func getPersonCredits(personId: Int) async throws -> [MediaPreview] { [] }
+    func searchKeywords(query: String) async throws -> [TMDBKeyword] { [] }
 }
 
 private actor LibraryFallbackMetadataStub: MetadataProvider {
@@ -308,4 +311,7 @@ private actor LibraryFallbackMetadataStub: MetadataProvider {
     func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds { ExternalIds(imdbId: nil, tvdbId: nil) }
     func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember] { [] }
     func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview] { [] }
+    func getPerson(personId: Int) async throws -> Person { Person(id: personId, name: "Stub") }
+    func getPersonCredits(personId: Int) async throws -> [MediaPreview] { [] }
+    func searchKeywords(query: String) async throws -> [TMDBKeyword] { [] }
 }

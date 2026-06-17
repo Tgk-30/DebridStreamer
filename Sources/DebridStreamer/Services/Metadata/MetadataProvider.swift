@@ -1,6 +1,11 @@
 import Foundation
 
 /// Filters for content discovery.
+///
+/// The newer fields (`genreIds`, `keywordIds`, `companyIds`, `networkIds`,
+/// `yearGTE`/`yearLTE`) are declared last with defaults so the memberwise init
+/// and every existing `DiscoverFilters(...)` call site stay source-compatible.
+/// They power the AI mood/keyword discovery and the curated studio/network rails.
 struct DiscoverFilters: Sendable {
     var genreId: Int?
     var year: Int?
@@ -8,12 +13,42 @@ struct DiscoverFilters: Sendable {
     var sortBy: SortOption
     var page: Int
 
-    init(genreId: Int? = nil, year: Int? = nil, minRating: Double? = nil, sortBy: SortOption = .popularityDesc, page: Int = 1) {
+    /// Multiple genres AND-combined (`with_genres=28,12`). Used by NL→filter.
+    var genreIds: [Int]
+    /// TMDB keyword ids (`with_keywords`). Powers mood/keyword discovery rows.
+    var keywordIds: [Int]
+    /// Production company ids (`with_companies`) — Studio rails (movies).
+    var companyIds: [Int]
+    /// TV network ids (`with_networks`) — Network rails (series).
+    var networkIds: [Int]
+    /// Inclusive release-year range for "from the 2010s" style queries.
+    var yearGTE: Int?
+    var yearLTE: Int?
+
+    init(
+        genreId: Int? = nil,
+        year: Int? = nil,
+        minRating: Double? = nil,
+        sortBy: SortOption = .popularityDesc,
+        page: Int = 1,
+        genreIds: [Int] = [],
+        keywordIds: [Int] = [],
+        companyIds: [Int] = [],
+        networkIds: [Int] = [],
+        yearGTE: Int? = nil,
+        yearLTE: Int? = nil
+    ) {
         self.genreId = genreId
         self.year = year
         self.minRating = minRating
         self.sortBy = sortBy
         self.page = page
+        self.genreIds = genreIds
+        self.keywordIds = keywordIds
+        self.companyIds = companyIds
+        self.networkIds = networkIds
+        self.yearGTE = yearGTE
+        self.yearLTE = yearLTE
     }
 
     enum SortOption: String, Sendable, CaseIterable {
@@ -79,6 +114,18 @@ protocol MetadataProvider: Sendable {
 
     /// Get "more like this" recommendations for a TMDB item (L23 — related row).
     func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview]
+
+    /// Get a person's profile (name, biography, profile path, known-for dept).
+    /// Powers the Person/Cast page (Overseerr/Jellyseerr pattern).
+    func getPerson(personId: Int) async throws -> Person
+
+    /// Get a person's combined movie + TV filmography (via
+    /// `/person/{id}/combined_credits`), deduped and sorted by popularity/recency.
+    func getPersonCredits(personId: Int) async throws -> [MediaPreview]
+
+    /// Resolve TMDB keyword ids for a free-text keyword/mood query (`/search/keyword`).
+    /// Used by the AI mood discovery to translate vibes into `with_keywords`.
+    func searchKeywords(query: String) async throws -> [TMDBKeyword]
 }
 
 /// Search result with pagination info.
@@ -121,6 +168,13 @@ enum MediaCategory: String, Sendable, CaseIterable {
         case .series: return [.popular, .topRated, .airingToday, .onTheAir]
         }
     }
+}
+
+/// A TMDB keyword (e.g. "time travel", "post-apocalyptic"). Drives the
+/// `with_keywords` mood discovery rows.
+struct TMDBKeyword: Codable, Sendable, Identifiable, Equatable {
+    var id: Int
+    var name: String
 }
 
 /// External IDs for a media item.

@@ -31,6 +31,116 @@ actor AIAssistantManager {
         AIProviderKind.allCases.filter { providers[$0] != nil }
     }
 
+    /// Whether any AI provider is configured. Used by the UI to gate the mood
+    /// discovery entry (it requires both an AI provider AND a TMDB key).
+    var hasAnyProvider: Bool {
+        !availableProviders.isEmpty
+    }
+
+    // MARK: - NL → TMDB discover filters (mood/keyword discovery)
+
+    enum DiscoverPlanError: LocalizedError {
+        case noProvider
+        case noMetadataProvider
+        case modelUnparseable
+
+        var errorDescription: String? {
+            switch self {
+            case .noProvider: return "No AI provider is configured. Add one in Settings."
+            case .noMetadataProvider: return "TMDB is not configured. Add your API key in Settings."
+            case .modelUnparseable: return "The assistant couldn't turn that into a search. Try rephrasing."
+            }
+        }
+    }
+
+    /// Translate a free-text "vibe" into a concrete TMDB `/discover` plan.
+    ///
+    /// Flow: pick the first available provider → ask it (via `complete`) for a
+    /// small filter JSON keyed off the real TMDB genre vocabulary → parse with the
+    /// balanced-JSON parser → resolve genre *names* to ids and keyword *names* to
+    /// TMDB keyword ids (`searchKeywords`). Fully fault-tolerant: an unparseable
+    /// model reply throws `.modelUnparseable`, and keyword resolution failures are
+    /// simply dropped (the plan still works with whatever resolved).
+    func discoverFilters(from vibe: String) async throws -> AIDiscoverPlan {
+        let trimmed = vibe.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let kind = availableProviders.first, let provider = providers[kind] else {
+            throw DiscoverPlanError.noProvider
+        }
+        guard let metadataProvider else {
+            throw DiscoverPlanError.noMetadataProvider
+        }
+
+        // Default to movie genres for the prompt vocabulary; if the model picks TV
+        // we re-resolve against TV genres below.
+        let movieGenres = (try? await metadataProvider.getGenres(type: .movie)) ?? []
+        let prompt = AIDiscoverPlanParser.prompt(for: trimmed, genreNames: movieGenres.map(\.name))
+
+        let raw = try await provider.complete(prompt: prompt)
+        await recordUsage(AIUsageMetrics(
+            inputTokens: AIAssistantJSONParser.estimatedTokenCount(for: prompt),
+            outputTokens: AIAssistantJSONParser.estimatedTokenCount(for: raw),
+            totalTokens: nil,
+            estimatedCostUSD: nil
+        ))
+
+        guard let plan = AIDiscoverPlanParser.parse(raw) else {
+            throw DiscoverPlanError.modelUnparseable
+        }
+
+        let mediaType: MediaType = (plan.mediaType?.lowercased() == "tv") ? .series : .movie
+        let genreCatalog: [Genre]
+        if mediaType == .series {
+            genreCatalog = (try? await metadataProvider.getGenres(type: .series)) ?? movieGenres
+        } else {
+            genreCatalog = movieGenres
+        }
+
+        // Resolve genre names → ids (case/diacritic-insensitive match).
+        let genreIds: [Int] = (plan.genres ?? []).compactMap { name in
+            let normalized = normalizeTitle(name)
+            return genreCatalog.first(where: { normalizeTitle($0.name) == normalized })?.id
+        }
+
+        // Resolve keyword names → ids concurrently, fault-tolerant.
+        let keywordNames = (plan.keywords ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let resolvedKeywords = await withTaskGroup(of: TMDBKeyword?.self) { group in
+            for name in keywordNames.prefix(4) {
+                group.addTask {
+                    let matches = (try? await metadataProvider.searchKeywords(query: name)) ?? []
+                    // Prefer an exact name match, else the first (most relevant) hit.
+                    return matches.first(where: { $0.name.compare(name, options: .caseInsensitive) == .orderedSame })
+                        ?? matches.first
+                }
+            }
+            var collected: [TMDBKeyword] = []
+            for await keyword in group {
+                if let keyword { collected.append(keyword) }
+            }
+            return collected
+        }
+
+        let sort = DiscoverFilters.SortOption(rawValue: plan.sortBy ?? "") ?? .popularityDesc
+        // Sanity-clamp the year range so an inverted yearFrom/yearTo can't blank results.
+        var yearGTE = plan.yearFrom
+        var yearLTE = plan.yearTo
+        if let lo = yearGTE, let hi = yearLTE, lo > hi { swap(&yearGTE, &yearLTE) }
+
+        let summary = (plan.summary?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+            ?? "Picks for \"\(trimmed)\""
+
+        return AIDiscoverPlan(
+            mediaType: mediaType,
+            genreIds: genreIds,
+            keywordIds: resolvedKeywords.map(\.id),
+            keywordNames: resolvedKeywords.map(\.name),
+            yearGTE: yearGTE,
+            yearLTE: yearLTE,
+            minRating: plan.minRating,
+            sortBy: sort,
+            summary: summary
+        )
+    }
+
     func recommend(request: AIAssistantRequest) async -> AICompareResult {
         let prompt = request.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let context = await contextAssembler.buildContext(

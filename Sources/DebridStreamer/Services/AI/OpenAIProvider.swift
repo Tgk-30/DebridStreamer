@@ -77,6 +77,45 @@ struct OpenAIProvider: AIAssistantProvider {
             usage: usage
         )
     }
+
+    /// Single-shot completion for the NL→filter mood discovery: sends `prompt`
+    /// verbatim and returns the raw text (no recommendation envelope).
+    func complete(prompt: String) async throws -> String {
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { throw AIAssistantProviderError.missingAPIKey }
+        guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
+            throw URLError(.badURL)
+        }
+
+        let payload = OpenAIChatRequest(
+            model: model,
+            messages: [
+                .init(role: "system", content: "You translate requests into JSON. Reply with JSON only."),
+                .init(role: "user", content: prompt)
+            ],
+            temperature: 0.2
+        )
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AIAssistantProviderError.invalidResponse
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw AIAssistantProviderError.apiError(String(data: data, encoding: .utf8) ?? "OpenAI error")
+        }
+        let decoded = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
+        guard let content = decoded.choices.first?.message.content else {
+            throw AIAssistantProviderError.invalidResponse
+        }
+        return content
+    }
 }
 
 private struct OpenAIChatRequest: Encodable {

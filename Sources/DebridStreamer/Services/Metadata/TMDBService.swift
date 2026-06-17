@@ -208,8 +208,21 @@ actor TMDBService: MetadataProvider {
             "language": "en-US",
             "include_adult": "false"
         ]
-        if let genreId = filters.genreId {
-            params["with_genres"] = String(genreId)
+        // `with_genres` accepts a single id (legacy `genreId`) or a comma list
+        // (`genreIds`, from NL→filter). When both are present they're merged.
+        var genres = filters.genreIds
+        if let genreId = filters.genreId { genres.insert(genreId, at: 0) }
+        if !genres.isEmpty {
+            params["with_genres"] = genres.map(String.init).joined(separator: ",")
+        }
+        if !filters.keywordIds.isEmpty {
+            params["with_keywords"] = filters.keywordIds.map(String.init).joined(separator: ",")
+        }
+        if !filters.companyIds.isEmpty {
+            params["with_companies"] = filters.companyIds.map(String.init).joined(separator: ",")
+        }
+        if !filters.networkIds.isEmpty, type == .series {
+            params["with_networks"] = filters.networkIds.map(String.init).joined(separator: ",")
         }
         if let year = filters.year {
             if type == .movie {
@@ -217,6 +230,15 @@ actor TMDBService: MetadataProvider {
             } else {
                 params["first_air_date_year"] = String(year)
             }
+        }
+        // Inclusive year range ("from the 2010s"). TMDB uses date-bound params,
+        // distinct between movies (primary_release_date) and TV (first_air_date).
+        let dateKey = type == .movie ? "primary_release_date" : "first_air_date"
+        if let yearGTE = filters.yearGTE {
+            params["\(dateKey).gte"] = "\(yearGTE)-01-01"
+        }
+        if let yearLTE = filters.yearLTE {
+            params["\(dateKey).lte"] = "\(yearLTE)-12-31"
         }
         if let minRating = filters.minRating {
             params["vote_average.gte"] = String(minRating)
@@ -306,6 +328,60 @@ actor TMDBService: MetadataProvider {
         return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
             let response: TMDBPagedResponse<TMDBSearchResult> = try await request(path: path, params: params)
             return response.results.compactMap { $0.toMediaPreview() }
+        }
+    }
+
+    // MARK: - Person / Cast pages
+
+    func getPerson(personId: Int) async throws -> Person {
+        let path = "/person/\(personId)"
+        let params = ["language": "en-US"]
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBPersonResponse = try await request(path: path, params: params)
+            return Person(
+                id: response.id,
+                name: response.name,
+                biography: response.biography,
+                knownForDepartment: response.knownForDepartment,
+                profilePath: response.profilePath,
+                birthday: response.birthday,
+                placeOfBirth: response.placeOfBirth
+            )
+        }
+    }
+
+    func getPersonCredits(personId: Int) async throws -> [MediaPreview] {
+        let path = "/person/\(personId)/combined_credits"
+        let params = ["language": "en-US"]
+        return try await cached(key: cacheKey(path, params), ttl: Self.shortTTL) {
+            let response: TMDBCombinedCreditsResponse = try await request(path: path, params: params)
+            // Cast + crew rows, mapped to MediaPreview. De-dupe by id (a person can
+            // appear as both actor and writer on the same title), then sort by
+            // popularity desc with recency as a tie-break so the best-known work
+            // surfaces first.
+            var seen = Set<Int>()
+            var entries: [(preview: MediaPreview, popularity: Double, year: Int)] = []
+            for credit in response.cast + response.crew {
+                guard let preview = credit.toMediaPreview() else { continue }
+                guard seen.insert(credit.id).inserted else { continue }
+                entries.append((preview, credit.popularity ?? 0, preview.year ?? 0))
+            }
+            entries.sort {
+                if $0.popularity != $1.popularity { return $0.popularity > $1.popularity }
+                return $0.year > $1.year
+            }
+            return entries.map(\.preview)
+        }
+    }
+
+    func searchKeywords(query: String) async throws -> [TMDBKeyword] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let path = "/search/keyword"
+        let params = ["query": trimmed, "page": "1"]
+        return try await cached(key: cacheKey(path, params), ttl: Self.longTTL) {
+            let response: TMDBPagedResponse<TMDBKeyword> = try await request(path: path, params: params)
+            return response.results
         }
     }
 
@@ -551,6 +627,68 @@ struct TMDBEpisode: Decodable {
 struct TMDBFindResponse: Decodable {
     let movieResults: [TMDBSearchResult]
     let tvResults: [TMDBSearchResult]
+}
+
+// MARK: - Person responses
+
+struct TMDBPersonResponse: Decodable {
+    let id: Int
+    let name: String
+    let biography: String?
+    let knownForDepartment: String?
+    let profilePath: String?
+    let birthday: String?
+    let placeOfBirth: String?
+}
+
+/// `/person/{id}/combined_credits` — cast + crew filmography across movies + TV.
+struct TMDBCombinedCreditsResponse: Decodable {
+    let cast: [TMDBPersonCredit]
+    let crew: [TMDBPersonCredit]
+}
+
+/// One filmography entry. `mediaType` is always present on combined_credits, so
+/// movie/TV mapping is unambiguous. Reuses the same fields as a search result.
+struct TMDBPersonCredit: Decodable {
+    let id: Int
+    let title: String?       // Movies
+    let name: String?         // TV
+    let mediaType: String?
+    let posterPath: String?
+    let backdropPath: String?
+    let releaseDate: String?  // Movies
+    let firstAirDate: String? // TV
+    let voteAverage: Double?
+    let popularity: Double?
+
+    func toMediaPreview() -> MediaPreview? {
+        let displayTitle = title ?? name ?? ""
+        guard !displayTitle.isEmpty else { return nil }
+
+        let type: MediaType
+        switch mediaType {
+        case "movie": type = .movie
+        case "tv": type = .series
+        default: return nil  // Skip non-title credits.
+        }
+
+        let dateStr = releaseDate ?? firstAirDate
+        let year = dateStr.flatMap { str -> Int? in
+            guard str.count >= 4 else { return nil }
+            return Int(str.prefix(4))
+        }
+
+        return MediaPreview(
+            id: "tmdb-\(id)",
+            type: type,
+            title: displayTitle,
+            year: year,
+            posterPath: posterPath,
+            imdbRating: voteAverage,
+            tmdbId: id,
+            backdropPath: backdropPath
+        )
+    }
 }
 
 // MARK: - Errors
