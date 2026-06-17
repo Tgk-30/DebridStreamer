@@ -30,8 +30,13 @@ function fixtureStarters(): MediaPreview[] {
 }
 
 export function Search() {
-  const { services, pendingSearch, consumePendingSearch, openDetail } =
-    useAppStore();
+  const {
+    services,
+    pendingSearch,
+    consumePendingSearch,
+    openDetail,
+    openBrowse,
+  } = useAppStore();
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TypeFilter>("all");
@@ -157,19 +162,44 @@ export function Search() {
           <MediaGrid items={starters} onSelect={openDetail} />
         </section>
       ) : (
-        <MediaGrid
-          items={results}
-          onSelect={openDetail}
-          empty={
-            !loading ? (
-              <EmptyState
-                icon="search"
-                title="No results"
-                subtitle={`Nothing matched “${query.trim()}”. Try a different title or filter.`}
-              />
-            ) : null
-          }
-        />
+        <>
+          {results.length > 0 && services.tmdb != null && (
+            <div className="search-results-head">
+              <h2 className="search-section-title">
+                Results for “{query.trim()}”
+              </h2>
+              <button
+                type="button"
+                className="search-see-all"
+                onClick={() =>
+                  openBrowse({
+                    kind: "search",
+                    type: filter === "all" ? null : filter,
+                    query: query.trim(),
+                  })
+                }
+              >
+                See all
+                <span className="search-see-all-arrow" aria-hidden>
+                  ›
+                </span>
+              </button>
+            </div>
+          )}
+          <MediaGrid
+            items={results}
+            onSelect={openDetail}
+            empty={
+              !loading ? (
+                <EmptyState
+                  icon="search"
+                  title="No results"
+                  subtitle={`Nothing matched “${query.trim()}”. Try a different title or filter.`}
+                />
+              ) : null
+            }
+          />
+        </>
       )}
     </div>
   );

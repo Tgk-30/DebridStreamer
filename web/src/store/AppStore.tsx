@@ -25,6 +25,7 @@ import {
 } from "react";
 import type { ScreenId } from "../components/NavRail";
 import type { MediaPreview } from "../models/media";
+import type { BrowseContext } from "../data/browse";
 import {
   type AppServices,
   type AppSettings,
@@ -54,6 +55,13 @@ export interface AppStore {
   detailItem: MediaPreview | null;
   openDetail: (item: MediaPreview) => void;
   closeDetail: () => void;
+
+  // Browse overlay ("See all" + advanced filters). Non-null mounts the Browse
+  // screen over the current content (like Detail). Opened from rail "See all"
+  // headers and Search with a context (category | genre | discover | search).
+  browseContext: BrowseContext | null;
+  openBrowse: (ctx: BrowseContext) => void;
+  closeBrowse: () => void;
 
   // A pending query handed to the Search screen from the global search field.
   pendingSearch: string | null;
@@ -93,6 +101,7 @@ const AppStoreContext = createContext<AppStore | null>(null);
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [route, setRoute] = useState<ScreenId>("discover");
   const [detailItem, setDetailItem] = useState<MediaPreview | null>(null);
+  const [browseContext, setBrowseContext] = useState<BrowseContext | null>(null);
   const [pendingSearch, setPendingSearch] = useState<string | null>(null);
 
   // Synchronous bootstrap so the first paint has something sane; the durable
@@ -135,7 +144,18 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   // Rebuild services only when settings actually change.
   const services = useMemo(() => buildServices(settings), [settings]);
 
-  const navigate = useCallback((next: ScreenId) => setRoute(next), []);
+  const navigate = useCallback((next: ScreenId) => {
+    // Switching primary destination dismisses any open overlays.
+    setBrowseContext(null);
+    setDetailItem(null);
+    setRoute(next);
+  }, []);
+
+  const openBrowse = useCallback((ctx: BrowseContext) => {
+    setBrowseContext(ctx);
+  }, []);
+
+  const closeBrowse = useCallback(() => setBrowseContext(null), []);
 
   const refreshCachedResolutions = useCallback(async () => {
     try {
@@ -279,6 +299,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     detailItem,
     openDetail,
     closeDetail,
+    browseContext,
+    openBrowse,
+    closeBrowse,
     pendingSearch,
     search,
     consumePendingSearch,

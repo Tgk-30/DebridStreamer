@@ -412,6 +412,22 @@ export class TMDBService implements MetadataProvider {
     });
   }
 
+  /** Like `discover`, but takes the full raw `/discover` query-param map so the
+   * advanced Browse filter slideover can use TMDB params beyond the core
+   * `DiscoverFilters` (multi-genre, year range, vote_count, runtime, original
+   * language). Additive — the Discover screen still uses `discover()`. `api_key`
+   * is appended by `request`; pass everything else (page/sort_by/language/…). */
+  async discoverWithParams(
+    type: MediaType,
+    params: Record<string, string>,
+  ): Promise<MetadataSearchResult> {
+    const path = `/discover/${MediaTypeNS.tmdbPath(type)}`;
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawPagedResponse<RawSearchResult>>(path, params);
+      return this.pagedToResult(response);
+    });
+  }
+
   async getGenres(type: MediaType): Promise<Genre[]> {
     const path = `/genre/${MediaTypeNS.tmdbPath(type)}/list`;
     const params = { language: "en-US" };

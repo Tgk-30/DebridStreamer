@@ -73,3 +73,33 @@
   font-size: 18px;
   font-weight: 700;
 }
+
+/* Results header — title + "See all" → deepen into Browse. */
+.search-results-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+.search-see-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 4px 2px;
+  transition: color 0.16s;
+}
+.search-see-all:hover {
+  color: var(--accent);
+}
+.search-see-all-arrow {
+  font-size: 15px;
+  line-height: 1;
+}

@@ -10,14 +10,27 @@ interface RailProps {
   title: string;
   items: MediaPreview[];
   onSelect?: (item: MediaPreview) => void;
+  /** When provided, render a "See all" affordance in the header that opens the
+   * full paginated Browse for this rail's exact category/genre. */
+  onSeeAll?: () => void;
 }
 
-export function Rail({ title, items, onSelect }: RailProps) {
+export function Rail({ title, items, onSelect, onSeeAll }: RailProps) {
   if (items.length === 0) return null;
 
   return (
     <section className="rail">
-      <h2 className="rail-title">{title}</h2>
+      <div className="rail-header">
+        <h2 className="rail-title">{title}</h2>
+        {onSeeAll && (
+          <button type="button" className="rail-see-all" onClick={onSeeAll}>
+            See all
+            <span className="rail-see-all-arrow" aria-hidden>
+              ›
+            </span>
+          </button>
+        )}
+      </div>
       <div className="rail-scroll rail-fade">
         <div className="rail-track">
           {items.map((item) => (

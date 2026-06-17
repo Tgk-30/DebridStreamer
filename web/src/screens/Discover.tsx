@@ -7,6 +7,8 @@
 
 import type { MediaPreview } from "../models/media";
 import { useDiscover } from "../data/discover";
+import { useAppStore } from "../store/AppStore";
+import type { BrowseContext } from "../data/browse";
 import { HeroSpotlight } from "../components/HeroSpotlight";
 import { MoodStrip } from "../components/MoodStrip";
 import { Rail } from "../components/Rail";
@@ -18,6 +20,10 @@ interface DiscoverProps {
 
 export function Discover({ onSelect }: DiscoverProps) {
   const { data, loading, source } = useDiscover();
+  const { openBrowse } = useAppStore();
+
+  // "See all" → open the full paginated Browse for a rail's exact category.
+  const seeAll = (ctx: BrowseContext) => () => openBrowse(ctx);
 
   if (loading || !data) {
     return <DiscoverSkeleton />;
@@ -46,12 +52,42 @@ export function Discover({ onSelect }: DiscoverProps) {
         }}
       />
 
-      <Rail title="Trending Movies" items={data.trendingMovies} onSelect={onSelect} />
-      <Rail title="Trending TV Shows" items={data.trendingTV} onSelect={onSelect} />
-      <Rail title="Popular Movies" items={data.popularMovies} onSelect={onSelect} />
-      <Rail title="Top Rated Movies" items={data.topRatedMovies} onSelect={onSelect} />
-      <Rail title="Now Playing" items={data.nowPlayingMovies} onSelect={onSelect} />
-      <Rail title="Upcoming" items={data.upcomingMovies} onSelect={onSelect} />
+      <Rail
+        title="Trending Movies"
+        items={data.trendingMovies}
+        onSelect={onSelect}
+        onSeeAll={seeAll({ kind: "category", type: "movie", category: "trending" })}
+      />
+      <Rail
+        title="Trending TV Shows"
+        items={data.trendingTV}
+        onSelect={onSelect}
+        onSeeAll={seeAll({ kind: "category", type: "series", category: "trending" })}
+      />
+      <Rail
+        title="Popular Movies"
+        items={data.popularMovies}
+        onSelect={onSelect}
+        onSeeAll={seeAll({ kind: "category", type: "movie", category: "popular" })}
+      />
+      <Rail
+        title="Top Rated Movies"
+        items={data.topRatedMovies}
+        onSelect={onSelect}
+        onSeeAll={seeAll({ kind: "category", type: "movie", category: "top_rated" })}
+      />
+      <Rail
+        title="Now Playing"
+        items={data.nowPlayingMovies}
+        onSelect={onSelect}
+        onSeeAll={seeAll({ kind: "category", type: "movie", category: "now_playing" })}
+      />
+      <Rail
+        title="Upcoming"
+        items={data.upcomingMovies}
+        onSelect={onSelect}
+        onSeeAll={seeAll({ kind: "category", type: "movie", category: "upcoming" })}
+      />
     </div>
   );
 }

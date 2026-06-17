@@ -19,12 +19,14 @@ import { Assistant } from "./screens/Assistant";
 import { DebridLibrary } from "./screens/DebridLibrary";
 import { Settings } from "./screens/Settings";
 import { Detail } from "./screens/Detail";
+import { Browse } from "./screens/Browse";
 import { useAppStore } from "./store/AppStore";
 import { checkForUpdates } from "./lib/updater";
 import "./App.css";
 
 export function App() {
-  const { route, navigate, detailItem, openDetail, search } = useAppStore();
+  const { route, navigate, detailItem, browseContext, openDetail, search } =
+    useAppStore();
 
   // Check for a desktop auto-update once on launch. No-op in the browser.
   useEffect(() => {
@@ -39,7 +41,8 @@ export function App() {
     route !== "search" &&
     route !== "calendar" &&
     route !== "debrid" &&
-    detailItem == null;
+    detailItem == null &&
+    browseContext == null;
 
   return (
     <div className="app">
@@ -52,7 +55,11 @@ export function App() {
 
         {renderScreen(route)}
 
-        {/* Detail overlay — mounts over the current screen. */}
+        {/* Browse overlay — mounts over the current screen ("See all" +
+            advanced filters), below the Detail overlay. */}
+        {browseContext != null && <Browse />}
+
+        {/* Detail overlay — mounts over the current screen (and over Browse). */}
         {detailItem != null && <Detail />}
       </main>
     </div>

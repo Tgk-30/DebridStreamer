@@ -222,6 +222,39 @@ describe("TMDBService catalog reads decode into MediaPreview", () => {
     expect(url.searchParams.get("sort_by")).toBe("vote_average.desc");
     expect(url.searchParams.get("page")).toBe("2");
   });
+
+  it("discoverWithParams forwards a raw param map to the discover path", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const result = await service.discoverWithParams("series", {
+      page: "3",
+      sort_by: "popularity.desc",
+      with_genres: "18,80",
+      "first_air_date.gte": "2015-01-01",
+      "vote_count.gte": "500",
+      with_original_language: "ko",
+    });
+
+    const url = mock.lastURL()!;
+    expect(url.pathname).toBe("/3/discover/tv");
+    expect(url.searchParams.get("with_genres")).toBe("18,80");
+    expect(url.searchParams.get("first_air_date.gte")).toBe("2015-01-01");
+    expect(url.searchParams.get("vote_count.gte")).toBe("500");
+    expect(url.searchParams.get("with_original_language")).toBe("ko");
+    expect(url.searchParams.get("page")).toBe("3");
+    expect(result.items).toHaveLength(1);
+  });
+
+  it("discoverWithParams memoizes identical param maps", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const params = { page: "1", sort_by: "popularity.desc", with_genres: "28" };
+    await service.discoverWithParams("movie", params);
+    await service.discoverWithParams("movie", { ...params });
+    expect(mock.hits()).toBe(1);
+  });
 });
 
 // MARK: - getDetail mapping (TMDBDetailResponseTests + getDetail path)

@@ -6,11 +6,42 @@
   gap: var(--sp-md);
 }
 
+.rail-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+
 .rail-title {
   margin: 0;
   font-size: 21px;
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+
+/* "See all" — a quiet text affordance; accent only on hover. */
+.rail-see-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 4px 2px;
+  transition: color 0.16s;
+}
+.rail-see-all:hover {
+  color: var(--accent);
+}
+.rail-see-all-arrow {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .rail-scroll {
