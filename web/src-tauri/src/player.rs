@@ -1,10 +1,16 @@
 // Bundled-mpv player (Phase 3 P1).
 //
-// Spawns the bundled mpv *sidecar* (declared in tauri.conf.json `externalBin`,
-// binary at `binaries/mpv-<target-triple>`) and drives it over mpv's JSON IPC
-// (a unix domain socket via `--input-ipc-server`). This is the lossless / non-
-// Real-Debrid MKV path: instead of handing the URL to a user-installed VLC, we
-// ship and fully control mpv ourselves (play / pause / seek / position / stop).
+// Spawns an mpv *sidecar* (via `app.shell().sidecar("mpv")`) and drives it over
+// mpv's JSON IPC (a unix domain socket via `--input-ipc-server`). This is the
+// lossless / non-Real-Debrid MKV path: instead of handing the URL to a user-
+// installed VLC, we control mpv ourselves (play / pause / seek / position / stop).
+//
+// NOTE: the `externalBin` entry that would bundle the mpv binary was removed so
+// the cross-platform release matrix can package without the (gitignored,
+// un-provisioned) per-triple binaries — `sidecar("mpv")` therefore returns a
+// clean "not bundled" error at runtime until provisioning + the shell capability
+// + `--wid` embedding are verified end-to-end (a tracked deferred item). The
+// in-webview HLS player remains the reliable cross-platform path regardless.
 //
 // === In-window embedding (`--wid`) — the known-risky part, READ THIS ===
 //
@@ -22,11 +28,8 @@
 // We cannot runtime-test actual video here (no display control in this env); the
 // goal for P1 is COMPILING + WIRED. See the task report for verified-vs-unverified.
 
-use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime, State, Window};
@@ -178,7 +181,17 @@ pub fn mpv_play<R: Runtime>(
 /// Send a JSON-IPC command to the current mpv and (optionally) return its reply.
 /// Connects to the unix socket fresh each call (mpv accepts many connections),
 /// retrying briefly because the socket appears slightly after spawn.
+///
+/// mpv's `--input-ipc-server` is a unix domain socket on macOS/Linux and a named
+/// pipe on Windows; only the unix-socket path is implemented. The Unix-specific
+/// imports live INSIDE this `#[cfg(unix)]` body so the crate still compiles for
+/// `windows-latest` in the release matrix — see the non-unix stub below.
+#[cfg(unix)]
 fn ipc_request(ipc_path: &PathBuf, command: &Value) -> Result<Value, String> {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+    use std::time::{Duration, Instant};
+
     let deadline = Instant::now() + Duration::from_millis(2000);
     let mut stream = loop {
         match UnixStream::connect(ipc_path) {
@@ -220,6 +233,15 @@ fn ipc_request(ipc_path: &PathBuf, command: &Value) -> Result<Value, String> {
         return Ok(Value::Null);
     }
     serde_json::from_slice(&buf).map_err(|e| format!("bad mpv reply: {e}"))
+}
+
+/// Non-unix stub: mpv IPC uses a Windows named pipe rather than a unix socket,
+/// which isn't implemented. The crate compiles + bundles on Windows; the bundled
+/// mpv control path is simply unavailable there (the in-webview HLS player is the
+/// cross-platform path). Implementing the named-pipe transport is a deferred item.
+#[cfg(not(unix))]
+fn ipc_request(_ipc_path: &PathBuf, _command: &Value) -> Result<Value, String> {
+    Err("mpv IPC control is only supported on macOS and Linux".to_string())
 }
 
 /// Run an IPC command against the current instance, if any.

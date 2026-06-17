@@ -59,13 +59,6 @@ function pickHero(
   );
 }
 
-/** Read the optional Vite env key without assuming `import.meta.env` exists. */
-function readTmdbKey(): string | null {
-  const env = (import.meta as ImportMeta & { env?: Record<string, string> }).env;
-  const key = env?.VITE_TMDB_KEY;
-  return key && key.trim().length > 0 ? key.trim() : null;
-}
-
 /** Load the Discover catalog live from TMDB, all rails concurrently. */
 export async function loadLiveDiscover(
   service: TMDBService,
@@ -112,7 +105,7 @@ export function loadFixtureDiscover(): DiscoverData {
  * live failure (bad key, offline) also falls back to fixtures so the UI never
  * dead-ends during this design phase.
  */
-export function useDiscover(): DiscoverState {
+export function useDiscover(tmdb: TMDBService | null): DiscoverState {
   const [state, setState] = useState<DiscoverState>({
     data: null,
     loading: true,
@@ -122,13 +115,16 @@ export function useDiscover(): DiscoverState {
 
   useEffect(() => {
     let cancelled = false;
-    const key = readTmdbKey();
 
     async function run() {
-      if (key) {
+      // Driven by the shared, settings-derived TMDB service (which already folds
+      // in the VITE_TMDB_KEY fallback). When the user saves a key in Settings the
+      // service identity changes and this effect re-runs, lighting up the catalog
+      // without a reload — matching Search/Browse.
+      if (tmdb) {
+        setState((s) => ({ ...s, loading: true }));
         try {
-          const service = new TMDBService(key);
-          const data = await loadLiveDiscover(service);
+          const data = await loadLiveDiscover(tmdb);
           if (!cancelled) {
             setState({ data, loading: false, error: null, source: "live" });
           }
@@ -162,7 +158,7 @@ export function useDiscover(): DiscoverState {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [tmdb]);
 
   return state.data ? state : { ...state, data: state.data ?? EMPTY };
 }

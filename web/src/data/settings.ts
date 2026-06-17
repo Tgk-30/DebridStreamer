@@ -324,7 +324,10 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
   // priority). A `built_in` row is written only to DISABLE the scrapers.
   const existingIndexers = await store.listIndexerConfigs();
   const keptIndexerIds = new Set<string>();
-  settings.sources.forEach((s, i) => {
+  // Await each write (not fire-and-forget): saveSettingsToStore() must not
+  // resolve until the indexer rows are actually persisted, or a reload/app quit
+  // immediately after Save could lose newly-added or edited sources.
+  for (const [i, s] of settings.sources.entries()) {
     keptIndexerIds.add(s.id);
     const record: IndexerConfigRecord = makeIndexerConfigRecord({
       id: s.id,
@@ -336,8 +339,8 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
       providerSubtype: providerSubtypeFor(s.type),
       priority: s.priority ?? i,
     });
-    void store.saveIndexerConfig(record);
-  });
+    await store.saveIndexerConfig(record);
+  }
   if (!settings.builtInIndexersEnabled) {
     keptIndexerIds.add("built-in");
     await store.saveIndexerConfig(
@@ -444,20 +447,28 @@ function getOrBuildDebridManager(settings: AppSettings): DebridManager | null {
   return manager;
 }
 
+/** Real delay for the debrid retry/poll loops. The services default their
+ *  `sleep` to a test no-op; in production we MUST pass a real timer or uncached
+ *  transfers and 5xx-retry backoffs spin with zero wait — hammering the service
+ *  and failing/rate-limiting instead of waiting for the torrent to cache. */
+const realSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
 function buildDebridService(entry: DebridTokenEntry): DebridService | null {
   const token = entry.apiToken.trim();
   if (token.length === 0) return null;
   // Route through `appFetch` so debrid hosts (CORS-blocked in a plain browser)
   // work in the Tauri desktop app; it degrades to the global fetch in a browser.
+  // `realSleep` makes the retry/poll backoffs actually wait in production.
   switch (entry.service) {
     case "real_debrid":
-      return new RealDebridService(token, appFetch);
+      return new RealDebridService(token, appFetch, realSleep);
     case "all_debrid":
-      return new AllDebridService(token, appFetch);
+      return new AllDebridService(token, appFetch, realSleep);
     case "premiumize":
-      return new PremiumizeService(token, appFetch);
+      return new PremiumizeService(token, appFetch, realSleep);
     case "torbox":
-      return new TorBoxService(token, appFetch);
+      return new TorBoxService(token, appFetch, realSleep);
   }
 }
 
@@ -529,12 +540,25 @@ function buildAIProvider(settings: AppSettings): AIAssistantProvider | null {
   }
 }
 
+/** Build-time TMDB key fallback (VITE_TMDB_KEY), read defensively. Lets the
+ *  catalog light up in dev/screenshot builds before any key is saved. */
+function readEnvTmdbKey(): string {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string> }).env;
+  const key = env?.VITE_TMDB_KEY;
+  return key && key.trim().length > 0 ? key.trim() : "";
+}
+
 /** Build the shared service instances from the current settings. */
 export function buildServices(settings: AppSettings): AppServices {
   const tmdbKey = settings.tmdbKey.trim();
   const omdbKey = settings.omdbKey.trim();
 
-  const tmdb = tmdbKey.length > 0 ? new TMDBService(tmdbKey) : null;
+  // Prefer the user's saved TMDB key; fall back to a build-time VITE_TMDB_KEY.
+  // Driving `services.tmdb` (used by Search/Browse AND now Discover) from this
+  // single source means saving a key in Settings lights up every screen — not
+  // just Search/Browse — without a reload.
+  const effectiveTmdbKey = tmdbKey.length > 0 ? tmdbKey : readEnvTmdbKey();
+  const tmdb = effectiveTmdbKey.length > 0 ? new TMDBService(effectiveTmdbKey) : null;
   const omdb = omdbKey.length > 0 ? new OMDBService(omdbKey) : null;
 
   // Debrid: priority order = insertion order (entry order in settings). The

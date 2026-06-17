@@ -25,8 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
-    "externalBin": ["binaries/mpv"],
+    "targets": "all",
     "category": "public.app-category.entertainment",
     "copyright": "Copyright © 2026 tgk30. All rights reserved.",
     "shortDescription": "Stream debrid media on your desktop.",

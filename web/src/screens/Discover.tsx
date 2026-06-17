@@ -19,8 +19,8 @@ interface DiscoverProps {
 }
 
 export function Discover({ onSelect }: DiscoverProps) {
-  const { data, loading, source } = useDiscover();
-  const { openBrowse } = useAppStore();
+  const { services, openBrowse } = useAppStore();
+  const { data, loading, source } = useDiscover(services.tmdb);
 
   // "See all" → open the full paginated Browse for a rail's exact category.
   const seeAll = (ctx: BrowseContext) => () => openBrowse(ctx);
