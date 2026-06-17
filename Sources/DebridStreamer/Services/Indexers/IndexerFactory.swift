@@ -29,6 +29,10 @@ enum IndexerFactory {
             return true
         }
 
+        if config.type == .stremioAddon {
+            return await testStremioAddon(config: config, session: session)
+        }
+
         // Validate the HTTP layer and require a positive signal (2xx AND a
         // parseable Torznab/RSS feed without an error envelope), rather than
         // merely "the request did not throw". A wrong base URL, bad path, or
@@ -44,6 +48,32 @@ enum IndexerFactory {
                 return false
             }
             return isPositiveTorznabResponse(data)
+        } catch {
+            return false
+        }
+    }
+
+    /// Validates a Stremio addon by fetching its `manifest.json`. A valid addon
+    /// returns a 2xx JSON manifest carrying at least an `id` field.
+    private static func testStremioAddon(config: IndexerConfig, session: URLSession) async -> Bool {
+        var base = config.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        while base.hasSuffix("/") { base.removeLast() }
+        // Accept either a bare base URL or a full `.../manifest.json`.
+        let manifestURLString = base.hasSuffix("manifest.json") ? base : "\(base)/manifest.json"
+        guard let url = URL(string: manifestURLString) else { return false }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode) else {
+                return false
+            }
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return false
+            }
+            return object["id"] != nil || object["resources"] != nil
         } catch {
             return false
         }
@@ -114,6 +144,12 @@ enum IndexerFactory {
                 sendAPIKeyAsHeader: sendAPIKeyAsHeader,
                 session: session
             )
+        case .stremioAddon:
+            let baseURL = config.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !baseURL.isEmpty, URL(string: baseURL) != nil else { return nil }
+            let displayName = config.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = (displayName?.isEmpty == false) ? displayName! : config.type.displayName
+            return StremioAddonIndexer(name: name, baseURL: baseURL)
         case .builtIn:
             return nil
         }

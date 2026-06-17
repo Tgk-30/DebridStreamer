@@ -204,6 +204,10 @@ enum SettingsKeys {
     static let traktClientSecret = "trakt_client_secret"
     static let traktAccessToken = "trakt_access_token"
     static let traktRefreshToken = "trakt_refresh_token"
+    /// Unix-seconds timestamp the current Trakt token was issued at (`created_at`).
+    static let traktTokenCreatedAt = "trakt_token_created_at"
+    /// Lifetime in seconds of the current Trakt token (`expires_in`).
+    static let traktTokenExpiresIn = "trakt_token_expires_in"
 
     static let personalizationEnabled = "personalization_enabled"
     static let discoverAICurationOnLaunch = "discover_ai_curation_on_launch"

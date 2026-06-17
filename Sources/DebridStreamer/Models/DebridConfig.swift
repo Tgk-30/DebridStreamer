@@ -96,6 +96,7 @@ struct IndexerConfig: Codable, Sendable, Identifiable, Equatable, FetchableRecor
         case prowlarr
         case torznab
         case zilean
+        case stremioAddon = "stremio_addon"
         case builtIn = "built_in"
 
         var displayName: String {
@@ -104,6 +105,7 @@ struct IndexerConfig: Codable, Sendable, Identifiable, Equatable, FetchableRecor
             case .prowlarr: return "Prowlarr"
             case .torznab: return "Torznab"
             case .zilean: return "Zilean"
+            case .stremioAddon: return "Stremio Addon"
             case .builtIn: return "Built-in Scrapers"
             }
         }
@@ -113,6 +115,7 @@ struct IndexerConfig: Codable, Sendable, Identifiable, Equatable, FetchableRecor
         case jackett
         case prowlarr
         case customTorznab = "custom_torznab"
+        case stremioAddon = "stremio_addon"
         case builtIn = "built_in"
 
         var displayName: String {
@@ -120,6 +123,7 @@ struct IndexerConfig: Codable, Sendable, Identifiable, Equatable, FetchableRecor
             case .jackett: return "Jackett"
             case .prowlarr: return "Prowlarr"
             case .customTorznab: return "Custom Torznab"
+            case .stremioAddon: return "Stremio Addon"
             case .builtIn: return "Built-in"
             }
         }
@@ -190,6 +194,8 @@ private extension IndexerConfig.IndexerType {
             return .prowlarr
         case .torznab, .zilean:
             return .customTorznab
+        case .stremioAddon:
+            return .stremioAddon
         case .builtIn:
             return .builtIn
         }
@@ -203,6 +209,10 @@ private extension IndexerConfig.IndexerType {
             return "/api/v1/search"
         case .torznab, .zilean:
             return "/api"
+        case .stremioAddon:
+            // Stremio addons are configured by their base manifest URL; the
+            // stream sub-path (/stream/{type}/{id}.json) is appended per-request.
+            return ""
         case .builtIn:
             return ""
         }

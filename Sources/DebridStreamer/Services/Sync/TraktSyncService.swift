@@ -99,6 +99,14 @@ struct TraktWatchlistPushResult: Decodable, Sendable, Equatable {
     }
 }
 
+/// Typed summary of a `POST /scrobble/{action}` response. Trakt echoes the
+/// reported `progress` and an `action` (e.g. `start`, `pause`, `scrobble`). All
+/// fields are optional so a thin/best-effort response still decodes.
+struct TraktScrobbleResult: Decodable, Sendable, Equatable {
+    var action: String?
+    var progress: Double?
+}
+
 actor TraktSyncService {
     private let session: URLSession
     private let baseURL = "https://api.trakt.tv"
@@ -216,6 +224,90 @@ actor TraktSyncService {
         let payload = Payload(movies: imdbIDs.map { .init(ids: .init(imdb: $0)) })
         return try await request(
             path: "/sync/watchlist",
+            method: "POST",
+            traktClientID: clientID,
+            accessToken: accessToken,
+            body: payload
+        )
+    }
+
+    /// The Trakt scrobble action. `start` marks playback began, `pause` a pause,
+    /// and `stop` finalizes — Trakt auto-marks the item watched when a `stop`
+    /// arrives with progress >= 80%.
+    enum ScrobbleAction: String, Sendable {
+        case start
+        case pause
+        case stop
+    }
+
+    /// Scrobbles a movie's playback progress to Trakt. `progressPercent` is the
+    /// 0...100 watched fraction. Only IMDb-identified movies are supported (the
+    /// id must look like `tt…`); callers should pass the bare IMDb id.
+    ///
+    /// This is best-effort: callers invoke it fire-and-forget and ignore errors so
+    /// playback is never blocked or interrupted by a Trakt failure.
+    @discardableResult
+    func scrobbleMovie(
+        clientID: String,
+        accessToken: String,
+        imdbID: String,
+        progressPercent: Double,
+        action: ScrobbleAction
+    ) async throws -> TraktScrobbleResult {
+        struct Payload: Encodable {
+            struct Movie: Encodable {
+                struct IDs: Encodable { let imdb: String }
+                let ids: IDs
+            }
+            let movie: Movie
+            let progress: Double
+        }
+
+        let clamped = min(max(progressPercent, 0), 100)
+        let payload = Payload(movie: .init(ids: .init(imdb: imdbID)), progress: clamped)
+        return try await request(
+            path: "/scrobble/\(action.rawValue)",
+            method: "POST",
+            traktClientID: clientID,
+            accessToken: accessToken,
+            body: payload
+        )
+    }
+
+    /// Scrobbles an episode's playback progress to Trakt, identifying the show by
+    /// IMDb id plus season/episode numbers.
+    @discardableResult
+    func scrobbleEpisode(
+        clientID: String,
+        accessToken: String,
+        showIMDbID: String,
+        season: Int,
+        episode: Int,
+        progressPercent: Double,
+        action: ScrobbleAction
+    ) async throws -> TraktScrobbleResult {
+        struct Payload: Encodable {
+            struct Show: Encodable {
+                struct IDs: Encodable { let imdb: String }
+                let ids: IDs
+            }
+            struct Episode: Encodable {
+                let season: Int
+                let number: Int
+            }
+            let show: Show
+            let episode: Episode
+            let progress: Double
+        }
+
+        let clamped = min(max(progressPercent, 0), 100)
+        let payload = Payload(
+            show: .init(ids: .init(imdb: showIMDbID)),
+            episode: .init(season: season, number: episode),
+            progress: clamped
+        )
+        return try await request(
+            path: "/scrobble/\(action.rawValue)",
             method: "POST",
             traktClientID: clientID,
             accessToken: accessToken,

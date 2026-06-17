@@ -52,6 +52,7 @@ struct SettingsView: View {
     @State private var newIndexerPriority = 10
     @State private var isTestingIndexer = false
     @State private var indexerTestStatus: String?
+    @State private var editingIndexerID: String?
 
     @State private var openAIApiKey = ""
     @State private var anthropicApiKey = ""
@@ -73,6 +74,8 @@ struct SettingsView: View {
     @State private var pendingTraktDeviceCode: String?
     @State private var traktUserCode: String?
     @State private var traktVerificationURL: String?
+    @State private var traktConnected = false
+    @State private var isImportingTraktWatchlist = false
 
     // Imports & sync (new)
     @State private var importDestination: UserLibraryEntry.ListType = .favorites
@@ -285,72 +288,198 @@ struct SettingsView: View {
 
     private var indexerTab: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            settingsCard("Configured Indexers") {
+            settingsCard("Sources") {
+                Text("Stream sources are searched top to bottom. Reorder by priority, toggle on or off, edit, or remove. Add Stremio addons to plug in the Torrentio-compatible ecosystem.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 if indexerConfigs.isEmpty {
-                    Text("No indexers configured yet.")
+                    Text("No sources configured yet.")
                         .foregroundStyle(.secondary)
                         .font(.caption)
                 } else {
-                    ForEach($indexerConfigs) { $config in
-                        HStack(spacing: AppTheme.Spacing.sm) {
-                            Toggle("", isOn: $config.isActive).labelsHidden()
-                            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                                Text(config.displayName ?? config.type.displayName)
-                                    .fontWeight(.semibold)
-                                if !config.baseURL.isEmpty {
-                                    Text(config.baseURL + config.endpointPath)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer()
-                            if config.type != .builtIn {
-                                Button("Remove") { removeIndexer(config.id) }
-                            }
-                        }
-                        .padding(AppTheme.Spacing.sm)
-                        .glassCard(radius: AppTheme.Radius.sm)
+                    ForEach(Array(indexerConfigs.enumerated()), id: \.element.id) { index, _ in
+                        sourceRow(at: index)
                     }
                 }
             }
 
-            settingsCard("Add External Indexer") {
+            settingsCard("Add Source") {
                 Picker("Type", selection: $newIndexerType) {
                     Text(IndexerConfig.IndexerType.jackett.displayName).tag(IndexerConfig.IndexerType.jackett)
                     Text(IndexerConfig.IndexerType.prowlarr.displayName).tag(IndexerConfig.IndexerType.prowlarr)
                     Text(IndexerConfig.IndexerType.torznab.displayName).tag(IndexerConfig.IndexerType.torznab)
+                    Text(IndexerConfig.IndexerType.stremioAddon.displayName).tag(IndexerConfig.IndexerType.stremioAddon)
                 }
                 .onChange(of: newIndexerType) {
                     newIndexerEndpointPath = defaultEndpointPath(for: newIndexerType)
                 }
 
-                TextField("Display Name (optional)", text: $newIndexerName)
+                TextField("Display name (optional)", text: $newIndexerName)
                     .textFieldStyle(.roundedBorder)
-                TextField("Base URL", text: $newIndexerBaseURL)
-                    .textFieldStyle(.roundedBorder)
-                NativeSecureField(placeholder: "API Key (optional)", text: $newIndexerApiKey)
-                TextField("Endpoint Path", text: $newIndexerEndpointPath)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Category Filter (optional)", text: $newIndexerCategoryFilter)
-                    .textFieldStyle(.roundedBorder)
+                TextField(
+                    newIndexerType == .stremioAddon ? "Addon base or manifest URL" : "Base URL",
+                    text: $newIndexerBaseURL
+                )
+                .textFieldStyle(.roundedBorder)
+
+                if draftShowsTorznabFields {
+                    NativeSecureField(placeholder: "API key (optional)", text: $newIndexerApiKey)
+                    TextField("Endpoint path", text: $newIndexerEndpointPath)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Category filter (optional)", text: $newIndexerCategoryFilter)
+                        .textFieldStyle(.roundedBorder)
+                } else {
+                    Text("Stremio addons resolve streams by IMDb id via /stream/{type}/{id}.json. Paste the addon's base URL (the part before /manifest.json) or the full manifest URL.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Stepper("Priority: \(newIndexerPriority)", value: $newIndexerPriority, in: 0...1000)
 
                 HStack {
-                    Button("Test Connection") { Task { await testDraftIndexerConnection() } }
+                    Button("Test connection") { Task { await testDraftIndexerConnection() } }
                         .disabled(isTestingIndexer || newIndexerBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    Button("Add Indexer") { addIndexerDraft() }
+                    Button("Add source") { addIndexerDraft() }
                         .disabled(newIndexerBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 if let indexerTestStatus {
                     Text(indexerTestStatus)
                         .font(.caption)
-                        .foregroundStyle(indexerTestStatus.contains("failed") ? AppTheme.danger : AppTheme.success)
+                        .foregroundStyle(indexerTestStatus.localizedCaseInsensitiveContains("failed") ? AppTheme.danger : AppTheme.success)
                 }
             }
 
-            saveBar("Save Indexer Settings") { Task { await saveIndexerSettings() } }
+            saveBar("Save sources") { Task { await saveIndexerSettings() } }
             statusView(for: [.indexers])
+        }
+    }
+
+    @ViewBuilder
+    private func sourceRow(at index: Int) -> some View {
+        let config = indexerConfigs[index]
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Toggle("", isOn: Binding(
+                    get: { indexerConfigs[index].isActive },
+                    set: { indexerConfigs[index].isActive = $0 }
+                ))
+                .labelsHidden()
+
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        Text(config.displayName?.nilIfEmpty ?? config.type.displayName)
+                            .fontWeight(.semibold)
+                        Text(config.type.displayName)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(.ultraThinMaterial))
+                            .foregroundStyle(.secondary)
+                    }
+                    if !config.baseURL.isEmpty {
+                        Text(config.baseURL + config.endpointPath)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                Text("P\(config.priority)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    moveSource(at: index, by: -1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .buttonStyle(.plain)
+                .disabled(index == 0)
+
+                Button {
+                    moveSource(at: index, by: 1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .buttonStyle(.plain)
+                .disabled(index == indexerConfigs.count - 1)
+            }
+
+            if config.type != .builtIn {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    Button(editingIndexerID == config.id ? "Done" : "Edit") {
+                        editingIndexerID = (editingIndexerID == config.id) ? nil : config.id
+                    }
+                    Button("Remove", role: .destructive) { removeIndexer(config.id) }
+                    Spacer()
+                }
+                .font(.caption)
+
+                if editingIndexerID == config.id {
+                    sourceEditor(at: index)
+                }
+            }
+        }
+        .padding(AppTheme.Spacing.sm)
+        .glassCard(radius: AppTheme.Radius.sm)
+    }
+
+    @ViewBuilder
+    private func sourceEditor(at index: Int) -> some View {
+        let isStremio = indexerConfigs[index].type == .stremioAddon
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            TextField("Display name", text: Binding(
+                get: { indexerConfigs[index].displayName ?? "" },
+                set: { indexerConfigs[index].displayName = $0.nilIfEmpty }
+            ))
+            .textFieldStyle(.roundedBorder)
+
+            TextField("Base URL", text: Binding(
+                get: { indexerConfigs[index].baseURL },
+                set: { indexerConfigs[index].baseURL = $0 }
+            ))
+            .textFieldStyle(.roundedBorder)
+
+            if !isStremio {
+                NativeSecureField(placeholder: "API key (optional)", text: Binding(
+                    get: { indexerConfigs[index].apiKey ?? "" },
+                    set: { indexerConfigs[index].apiKey = $0.nilIfEmpty }
+                ))
+                TextField("Endpoint path", text: Binding(
+                    get: { indexerConfigs[index].endpointPath },
+                    set: { indexerConfigs[index].endpointPath = $0 }
+                ))
+                .textFieldStyle(.roundedBorder)
+                TextField("Category filter (optional)", text: Binding(
+                    get: { indexerConfigs[index].categoryFilter ?? "" },
+                    set: { indexerConfigs[index].categoryFilter = $0.nilIfEmpty }
+                ))
+                .textFieldStyle(.roundedBorder)
+            }
+
+            Stepper("Priority: \(indexerConfigs[index].priority)", value: Binding(
+                get: { indexerConfigs[index].priority },
+                set: { indexerConfigs[index].priority = $0 }
+            ), in: 0...1000)
+        }
+        .padding(.top, AppTheme.Spacing.xs)
+    }
+
+    /// Swaps a source with its neighbor and re-derives contiguous priorities so the
+    /// new visual order is the persisted search order.
+    private func moveSource(at index: Int, by offset: Int) {
+        let target = index + offset
+        guard indexerConfigs.indices.contains(index), indexerConfigs.indices.contains(target) else { return }
+        indexerConfigs.swapAt(index, target)
+        reindexPriorities()
+    }
+
+    /// Renumbers priorities to match the current array order (0-based, step 10),
+    /// so reordering and the persisted `priority` field stay in sync.
+    private func reindexPriorities() {
+        for (offset, _) in indexerConfigs.enumerated() {
+            indexerConfigs[offset].priority = offset * 10
         }
     }
 
@@ -448,11 +577,23 @@ struct SettingsView: View {
             }
 
             settingsCard("Trakt") {
-                NativeSecureField(placeholder: "Trakt Client ID", text: $traktClientId)
-                NativeSecureField(placeholder: "Trakt Client Secret", text: $traktClientSecret)
+                HStack(spacing: AppTheme.Spacing.xs) {
+                    Image(systemName: traktConnected ? "checkmark.circle.fill" : "circle.dashed")
+                        .foregroundStyle(traktConnected ? AnyShapeStyle(AppTheme.success) : AnyShapeStyle(.secondary))
+                    Text(traktConnected ? "Connected" : "Not connected")
+                        .font(.callout.weight(.medium))
+                    Spacer()
+                    if traktConnected {
+                        Button("Disconnect", role: .destructive) { Task { await disconnectTrakt() } }
+                            .font(.caption)
+                    }
+                }
+
+                NativeSecureField(placeholder: "Trakt client ID", text: $traktClientId)
+                NativeSecureField(placeholder: "Trakt client secret", text: $traktClientSecret)
                 HStack(spacing: AppTheme.Spacing.sm) {
-                    Button("Start Device Auth") { Task { await startTraktDeviceAuth() } }
-                    Button("Complete Auth") { Task { await completeTraktDeviceAuth() } }
+                    Button("Start device auth") { Task { await startTraktDeviceAuth() } }
+                    Button("Complete auth") { Task { await completeTraktDeviceAuth() } }
                         .disabled(pendingTraktDeviceCode == nil)
                 }
                 if let traktUserCode, let traktVerificationURL {
@@ -462,6 +603,23 @@ struct SettingsView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+
+                Divider().opacity(0.3)
+
+                Text("Import your Trakt movie watchlist into the local watchlist. Scrobbling of playback progress happens automatically while connected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button {
+                    Task { await importTraktWatchlist() }
+                } label: {
+                    if isImportingTraktWatchlist {
+                        Label("Importing watchlist...", systemImage: "arrow.triangle.2.circlepath")
+                    } else {
+                        Label("Import Trakt watchlist", systemImage: "square.and.arrow.down")
+                    }
+                }
+                .buttonStyle(.glass)
+                .disabled(!traktConnected || isImportingTraktWatchlist)
             }
 
             settingsCard("AI Usage (Estimated)") {
@@ -669,6 +827,7 @@ struct SettingsView: View {
             ollamaEndpoint = try await settings.getValue(forKey: SettingsKeys.ollamaEndpoint) ?? "http://localhost:11434/api/chat"
             traktClientId = try await settings.getValue(forKey: SettingsKeys.traktClientId) ?? ""
             traktClientSecret = try await settings.getValue(forKey: SettingsKeys.traktClientSecret) ?? ""
+            traktConnected = await appState.traktCoordinator?.isConnected() ?? false
             aiCompareMode = (try await settings.getValue(forKey: SettingsKeys.aiCompareMode)) != "false"
 
             preferredPlayer = try await settings.getPreferredPlayer()
@@ -885,18 +1044,58 @@ struct SettingsView: View {
             statusMessage = "Error: Trakt client ID and secret are required."
             return
         }
+        // Ensure client id/secret are persisted before completing, so the coordinator
+        // (and later token refresh) can read them back from settings.
+        try? await settings.setValue(traktClientId.nilIfEmpty, forKey: SettingsKeys.traktClientId)
+        try? await settings.setValue(traktClientSecret.nilIfEmpty, forKey: SettingsKeys.traktClientSecret)
         do {
             let token = try await traktSyncService.exchangeDeviceCode(
                 clientID: traktClientId,
                 clientSecret: traktClientSecret,
                 deviceCode: deviceCode
             )
-            try await settings.setValue(token.accessToken, forKey: SettingsKeys.traktAccessToken)
-            try await settings.setValue(token.refreshToken, forKey: SettingsKeys.traktRefreshToken)
+            // Persist the token plus its created_at/expires_in so proactive refresh works.
+            if let coordinator = appState.traktCoordinator {
+                try await coordinator.storeToken(token)
+            } else {
+                try await settings.setValue(token.accessToken, forKey: SettingsKeys.traktAccessToken)
+                try await settings.setValue(token.refreshToken, forKey: SettingsKeys.traktRefreshToken)
+            }
             pendingTraktDeviceCode = nil
             traktUserCode = nil
             traktVerificationURL = nil
+            traktConnected = await appState.traktCoordinator?.isConnected() ?? true
             statusMessage = "Trakt auth complete."
+        } catch {
+            statusMessage = "Error: \(error.localizedDescription)"
+        }
+    }
+
+    private func disconnectTrakt() async {
+        await appState.traktCoordinator?.disconnect()
+        traktConnected = false
+        pendingTraktDeviceCode = nil
+        traktUserCode = nil
+        traktVerificationURL = nil
+        statusMessage = "Trakt disconnected."
+    }
+
+    private func importTraktWatchlist() async {
+        guard traktConnected else {
+            statusMessage = "Error: Connect Trakt first."
+            return
+        }
+        isImportingTraktWatchlist = true
+        defer { isImportingTraktWatchlist = false }
+        do {
+            let added = try await appState.importTraktWatchlist()
+            // Refresh Discover so the imported watchlist items surface immediately.
+            if added > 0 {
+                await appState.preloadDiscoverCatalog(forceRefresh: true)
+            }
+            statusMessage = added > 0
+                ? "Imported \(added) item(s) from Trakt watchlist."
+                : "Trakt watchlist already in sync."
         } catch {
             statusMessage = "Error: \(error.localizedDescription)"
         }
@@ -907,6 +1106,9 @@ struct SettingsView: View {
             statusMessage = "Error: Database not initialized"
             return
         }
+        // Persist the current visual order as contiguous priorities.
+        reindexPriorities()
+        editingIndexerID = nil
         do {
             let trimmedConfigs = indexerConfigs.map { config in
                 var updated = config
@@ -924,7 +1126,7 @@ struct SettingsView: View {
             }
             persistedIndexerIDs = currentIDs
             await appState.reloadIndexers()
-            statusMessage = "Indexer settings saved."
+            statusMessage = "Sources saved."
         } catch {
             statusMessage = "Error: \(error.localizedDescription)"
         }
@@ -934,21 +1136,11 @@ struct SettingsView: View {
         let baseURL = newIndexerBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !baseURL.isEmpty else { return }
 
-        let config = IndexerConfig(
-            id: "idx-\(UUID().uuidString)",
-            type: newIndexerType,
-            baseURL: baseURL,
-            apiKey: newIndexerApiKey.nilIfEmpty,
-            isActive: true,
-            displayName: newIndexerName.nilIfEmpty,
-            providerSubtype: providerSubtype(for: newIndexerType),
-            endpointPath: newIndexerEndpointPath.trimmingCharacters(in: .whitespacesAndNewlines),
-            categoryFilter: newIndexerCategoryFilter.nilIfEmpty,
-            priority: newIndexerPriority
-        )
+        let config = makeDraftConfig(id: "idx-\(UUID().uuidString)", baseURL: baseURL)
 
         indexerConfigs.append(config)
         indexerConfigs.sort { $0.priority < $1.priority }
+        reindexPriorities()
         newIndexerName = ""
         newIndexerBaseURL = ""
         newIndexerApiKey = ""
@@ -958,8 +1150,28 @@ struct SettingsView: View {
         indexerTestStatus = nil
     }
 
+    /// Builds an IndexerConfig from the draft form, zeroing out Torznab-only fields
+    /// for Stremio addons (which need only a base URL).
+    private func makeDraftConfig(id: String, baseURL: String) -> IndexerConfig {
+        let isStremio = newIndexerType == .stremioAddon
+        return IndexerConfig(
+            id: id,
+            type: newIndexerType,
+            baseURL: baseURL,
+            apiKey: isStremio ? nil : newIndexerApiKey.nilIfEmpty,
+            isActive: true,
+            displayName: newIndexerName.nilIfEmpty,
+            providerSubtype: providerSubtype(for: newIndexerType),
+            endpointPath: isStremio ? "" : newIndexerEndpointPath.trimmingCharacters(in: .whitespacesAndNewlines),
+            categoryFilter: isStremio ? nil : newIndexerCategoryFilter.nilIfEmpty,
+            priority: newIndexerPriority
+        )
+    }
+
     private func removeIndexer(_ id: String) {
         indexerConfigs.removeAll { $0.id == id }
+        if editingIndexerID == id { editingIndexerID = nil }
+        reindexPriorities()
     }
 
     private func testDraftIndexerConnection() async {
@@ -967,18 +1179,7 @@ struct SettingsView: View {
         guard !baseURL.isEmpty else { return }
         isTestingIndexer = true
         defer { isTestingIndexer = false }
-        let config = IndexerConfig(
-            id: "test-\(UUID().uuidString)",
-            type: newIndexerType,
-            baseURL: baseURL,
-            apiKey: newIndexerApiKey.nilIfEmpty,
-            isActive: true,
-            displayName: newIndexerName.nilIfEmpty,
-            providerSubtype: providerSubtype(for: newIndexerType),
-            endpointPath: newIndexerEndpointPath.trimmingCharacters(in: .whitespacesAndNewlines),
-            categoryFilter: newIndexerCategoryFilter.nilIfEmpty,
-            priority: newIndexerPriority
-        )
+        let config = makeDraftConfig(id: "test-\(UUID().uuidString)", baseURL: baseURL)
         let success = await IndexerFactory.testConnection(config: config)
         indexerTestStatus = success ? "Connection succeeded." : "Connection failed."
     }
@@ -988,6 +1189,7 @@ struct SettingsView: View {
         case .jackett: return "/api/v2.0/indexers/all/results/torznab/api"
         case .prowlarr: return "/api/v1/search"
         case .torznab, .zilean: return "/api"
+        case .stremioAddon: return ""
         case .builtIn: return ""
         }
     }
@@ -997,8 +1199,15 @@ struct SettingsView: View {
         case .jackett: return .jackett
         case .prowlarr: return .prowlarr
         case .torznab, .zilean: return .customTorznab
+        case .stremioAddon: return .stremioAddon
         case .builtIn: return .builtIn
         }
+    }
+
+    /// Whether the draft "Add Source" form should show Torznab-only fields
+    /// (endpoint path, category filter, API key). Stremio addons need only a base URL.
+    private var draftShowsTorznabFields: Bool {
+        newIndexerType != .stremioAddon
     }
 
     private func resolveDebridToken(for config: DebridConfig) async throws -> String? {

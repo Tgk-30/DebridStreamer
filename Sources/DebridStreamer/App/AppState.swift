@@ -36,6 +36,9 @@ final class AppState {
     /// actor-isolated `aiAssistantManager.hasAnyProvider` without an await.
     private(set) var aiAssistantHasProvider = false
     private(set) var userFeedbackService: UserFeedbackService?
+    /// Coordinates Trakt connection state, token refresh, watchlist sync, and
+    /// best-effort scrobbling. nil until `initialize()` runs.
+    private(set) var traktCoordinator: TraktCoordinator?
     private var playerWindowController: PlayerWindowController?
 
     init(secretStore: any SecretStore = KeychainSecretStore()) {
@@ -78,6 +81,7 @@ final class AppState {
 
         let settings = SettingsManager(database: dbManager, secretStore: secretStore)
         self.settingsManager = settings
+        self.traktCoordinator = TraktCoordinator(settings: settings)
 
         // One-time eager sweep of any lingering plaintext secrets into the keychain.
         // Best-effort: a failure must not abort the rest of bootstrap (the lazy
@@ -262,6 +266,88 @@ final class AppState {
         } catch {
             errorMessage = "Failed to reload indexers: \(error.localizedDescription)"
         }
+    }
+
+    /// Fire-and-forget Trakt scrobble keyed off the current playback context.
+    /// `mediaId` is the player's media id (IMDb `tt…` or a synthesized id);
+    /// non-IMDb ids and an unconnected Trakt are silently ignored. Never blocks
+    /// or fails playback. `episodeId` follows the `\(showId)-s\(season)e\(episode)`
+    /// shape produced by DetailView; season/episode are parsed back out for series.
+    func scrobbleTrakt(
+        mediaId: String,
+        episodeId: String?,
+        progressPercent: Double,
+        action: TraktSyncService.ScrobbleAction
+    ) {
+        guard let coordinator = traktCoordinator else { return }
+        let (season, episode) = Self.parseSeasonEpisode(from: episodeId)
+        Task.detached {
+            await coordinator.scrobble(
+                imdbID: mediaId,
+                season: season,
+                episode: episode,
+                progressPercent: progressPercent,
+                action: action
+            )
+        }
+    }
+
+    /// Parses `s{season}e{episode}` out of an episode id like `tt123-s2e5`.
+    static func parseSeasonEpisode(from episodeId: String?) -> (season: Int?, episode: Int?) {
+        guard let episodeId else { return (nil, nil) }
+        guard let match = episodeId.range(of: "s(\\d+)e(\\d+)", options: [.regularExpression, .caseInsensitive]) else {
+            return (nil, nil)
+        }
+        let token = String(episodeId[match])
+        let numbers = token.lowercased()
+            .replacingOccurrences(of: "s", with: " ")
+            .replacingOccurrences(of: "e", with: " ")
+            .split(separator: " ")
+            .compactMap { Int($0) }
+        guard numbers.count == 2 else { return (nil, nil) }
+        return (numbers[0], numbers[1])
+    }
+
+    /// Imports the user's Trakt movie watchlist into the local watchlist list.
+    /// Returns the number of newly-added entries. Existing entries are skipped.
+    /// Throws on a hard failure (not connected, network/auth error) so the caller
+    /// can surface a message.
+    @discardableResult
+    func importTraktWatchlist() async throws -> Int {
+        guard let coordinator = traktCoordinator, let db = databaseManager else {
+            throw TraktSyncError.invalidResponse
+        }
+        let items = try await coordinator.fetchWatchlist()
+        let folderId = try await db.fetchSystemLibraryFolderID(listType: .watchlist)
+
+        var added = 0
+        for item in items {
+            let mediaId = item.imdbID
+            let exists = (try? await db.isInLibrary(mediaId: mediaId, folderId: folderId)) ?? false
+            if exists { continue }
+
+            if (try? await db.fetchMedia(id: mediaId)) == nil {
+                let media = MediaItem(
+                    id: mediaId,
+                    type: .movie,
+                    title: item.title,
+                    year: item.year,
+                    lastFetched: Date()
+                )
+                try? await db.saveMedia(media)
+            }
+
+            let entry = UserLibraryEntry(
+                id: "\(mediaId)-\(folderId)",
+                mediaId: mediaId,
+                folderId: folderId,
+                listType: .watchlist,
+                addedAt: Date()
+            )
+            try await db.addToLibrary(entry)
+            added += 1
+        }
+        return added
     }
 
     private func migratedDebridConfigs(from database: DatabaseManager) async throws -> [DebridConfig] {

@@ -464,7 +464,10 @@ struct PlayerView: View {
         }
     }
 
-    private func persistWatchProgress(snapshot: PlayerViewModel.PlaybackProgressSnapshot?) async {
+    private func persistWatchProgress(
+        snapshot: PlayerViewModel.PlaybackProgressSnapshot?,
+        isFinalCheckpoint: Bool = false
+    ) async {
         guard let database = appState.databaseManager else { return }
         guard let snapshot else { return }
 
@@ -499,6 +502,21 @@ struct PlayerView: View {
                 durationSeconds: duration
             )
         }
+
+        // Best-effort Trakt scrobble. Fire-and-forget; never blocks/fails playback.
+        // A `stop` (vs `start`) at >= 95% lets Trakt auto-mark the item watched.
+        if let duration, duration > 0 {
+            let percent = min(max(current / duration * 100, 0), 100)
+            // A `stop` finalizes the scrobble (Trakt auto-marks watched at >= 80%);
+            // send it on completion or when the player is tearing down, otherwise a
+            // `start`/progress update keeps the item in "currently watching".
+            appState.scrobbleTrakt(
+                mediaId: mediaId,
+                episodeId: episodeId,
+                progressPercent: percent,
+                action: (completed || isFinalCheckpoint) ? .stop : .start
+            )
+        }
     }
 
     private func attemptResumeFromHistory() async {
@@ -529,7 +547,7 @@ struct PlayerView: View {
         if notifyParent {
             onClose()
         }
-        Task { await persistWatchProgress(snapshot: snapshot) }
+        Task { await persistWatchProgress(snapshot: snapshot, isFinalCheckpoint: true) }
     }
 
     private func timeString(_ value: Double) -> String {
