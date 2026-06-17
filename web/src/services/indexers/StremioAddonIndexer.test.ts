@@ -112,6 +112,28 @@ describe("StremioAddonIndexer", () => {
     );
   });
 
+  it("strips a configured /manifest.json base before building the stream URL", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 200,
+      body: JSON.stringify({ streams: [] }),
+    }));
+
+    // Settings accepts (and connectivity-tests) the addon's manifest URL, so a
+    // user may configure the base as `.../manifest.json`. It must not leak into
+    // the stream endpoint path.
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun/manifest.json",
+      mock.fetchImpl,
+    );
+
+    await indexer.search("tt1234567", "movie", null, null);
+
+    const url = new URL(mock.lastURL()!);
+    expect(url.pathname).toBe("/stream/movie/tt1234567.json");
+    expect(mock.lastURL()).not.toContain("manifest.json");
+  });
+
   it("non-IMDb media ids resolve to no streams without a network call", async () => {
     const mock = makeMockFetch(() => ({
       status: 200,

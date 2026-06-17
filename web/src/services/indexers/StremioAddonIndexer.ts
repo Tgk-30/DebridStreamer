@@ -108,6 +108,14 @@ export class StremioAddonIndexer implements TorrentIndexer {
     while (trimmedBase.endsWith("/")) {
       trimmedBase = trimmedBase.slice(0, -1);
     }
+    // Settings accepts the addon's manifest URL (…/manifest.json) and even
+    // validates connectivity against it; strip a trailing `/manifest.json` so we
+    // request the addon's `/stream/{type}/{id}.json` endpoint rather than the
+    // nonsensical `…/manifest.json/stream/…` (which returns no streams).
+    trimmedBase = trimmedBase.replace(/\/manifest\.json$/i, "");
+    while (trimmedBase.endsWith("/")) {
+      trimmedBase = trimmedBase.slice(0, -1);
+    }
     if (trimmedBase.length === 0) {
       throw IndexerError.badURL(this.baseURL);
     }
