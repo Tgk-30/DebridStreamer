@@ -7,18 +7,31 @@
   display: grid;
   place-items: center;
   padding: var(--sp-xl);
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(2, 3, 8, 0.86);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  animation: playerFadeIn 0.32s ease-out;
+}
+@keyframes playerFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .player {
-  width: min(1100px, 100%);
-  max-height: 90vh;
+  width: min(1180px, 100%);
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border-radius: var(--r-lg);
+  background: #07080e;
+  box-shadow: 0 40px 100px -24px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: playerRise 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes playerRise {
+  from { opacity: 0; transform: scale(0.96) translateY(16px); }
+  to { opacity: 1; transform: none; }
 }
 
 .player-bar {
@@ -133,17 +146,22 @@
 }
 .scrubbar-track {
   position: relative;
-  height: 5px;
+  height: 4px;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.18);
   overflow: visible;
+  transition: height 0.18s ease;
+}
+.scrubbar:hover .scrubbar-track {
+  height: 7px;
 }
 .scrubbar-fill {
   position: absolute;
   inset: 0 auto 0 0;
   height: 100%;
   border-radius: var(--r-pill);
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.6);
 }
 .scrubbar-hover {
   position: absolute;
