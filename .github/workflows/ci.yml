@@ -10,11 +10,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # VLCKit.xcframework is tracked via Git LFS; the build needs the real binary.
+          lfs: true
 
-      - name: Select Xcode 16
+      - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "16.0"
+          # Pin to whatever stable Xcode the runner image ships (16.0 was removed).
+          xcode-version: "latest-stable"
 
       - name: Build
         run: swift build

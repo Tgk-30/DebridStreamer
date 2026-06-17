@@ -5,7 +5,9 @@ struct DiscoverView: View {
     @State private var selectedItem: MediaPreview?
     @State private var showPersonalizationPrompt = false
     @State private var feedbackViewModel = DiscoverFeedbackViewModel()
-    /// Drives the tasteful staggered appear of the rails. Toggled once per load.
+    /// Drives the tasteful staggered appear of the rails. Latches `true` once — on
+    /// the first load that actually has rails to show — and stays true for the
+    /// view's lifetime (`triggerAppear()` is a no-op thereafter).
     @State private var appeared = false
 
     private var store: DiscoverCatalogStore { appState.discoverStore }
@@ -31,7 +33,12 @@ struct DiscoverView: View {
             await appState.preloadDiscoverAICuration()
             await evaluatePersonalizationPrompt()
             syncFeedbackVisibility()
-            triggerAppear()
+            // Only reveal once there are rails to stagger. With no TMDB key the
+            // flag must NOT latch true here, or the stagger would never run after
+            // the user later adds a key — the catalogRevision onChange handles that.
+            if appState.metadataService != nil {
+                triggerAppear()
+            }
         }
         .onChange(of: appState.metadataService != nil) {
             guard appState.metadataService != nil else { return }
