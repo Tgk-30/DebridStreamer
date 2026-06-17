@@ -190,7 +190,7 @@ function StreamRowItem({
     <li>
       <button
         type="button"
-        className="stream-row glass-rest glass-lit"
+        className={`stream-row glass-rest glass-lit${cached ? " is-instant" : ""}`}
         onClick={onSelect}
         disabled={resolving}
         title={result.title}
@@ -210,16 +210,23 @@ function StreamRowItem({
           </div>
         </div>
 
-        <span className={`stream-badge ${cached ? "is-cached" : "is-cache"}`}>
-          {cached ? (
-            <>
-              <Icon name="play" size={11} />
-              Instant · {DebridServiceType.shortCode(cachedOn!)}
-            </>
-          ) : (
-            "Will cache"
-          )}
-        </span>
+        {resolving ? (
+          <span className="stream-badge is-resolving">
+            <span className="stream-spin" aria-hidden="true" />
+            Resolving…
+          </span>
+        ) : (
+          <span className={`stream-badge ${cached ? "is-cached" : "is-cache"}`}>
+            {cached ? (
+              <>
+                <Icon name="play" size={11} />
+                Instant · {DebridServiceType.shortCode(cachedOn!)}
+              </>
+            ) : (
+              "Will cache"
+            )}
+          </span>
+        )}
       </button>
     </li>
   );
