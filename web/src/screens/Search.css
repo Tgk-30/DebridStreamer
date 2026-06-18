@@ -25,15 +25,19 @@
 .search-field {
   border-radius: var(--r-pill);
   max-width: 520px;
+  min-height: 44px;
+  padding: 0 var(--sp-md);
 }
 .search-field input {
   font-size: 15px;
+  min-height: 42px;
+  line-height: 42px;
 }
 .search-clear {
   display: inline-grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
   background: transparent;
@@ -48,6 +52,9 @@
 .search-filters {
   display: flex;
   gap: var(--sp-sm);
+}
+.search-filters .chip {
+  min-width: 44px;
 }
 .search-filters .chip.is-active {
   color: var(--accent);
@@ -113,6 +120,12 @@
 
   .search-field {
     max-width: none;
+    min-height: 48px;
+  }
+
+  .search-field input {
+    min-height: 46px;
+    line-height: 46px;
   }
 
   .search-filters {

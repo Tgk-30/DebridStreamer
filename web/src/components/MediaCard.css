@@ -223,6 +223,9 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.86);
   font-weight: 650;
+}
+.media-card-rating svg {
+  color: rgb(250, 184, 92);
 }

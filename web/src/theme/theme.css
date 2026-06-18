@@ -437,10 +437,12 @@ textarea::placeholder {
 .chip {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  min-height: 32px;
   font-size: 12px;
   font-weight: 500;
-  padding: 6px 12px;
+  padding: 7px 13px;
   border-radius: var(--r-pill);
   background: var(--glass-tint-control);
   backdrop-filter: blur(16px);
@@ -455,6 +457,13 @@ textarea::placeholder {
 .chip:hover {
   border-color: rgba(var(--accent-rgb), 0.55);
   background: rgba(var(--accent-rgb), 0.1);
+}
+
+@media (max-width: 760px) {
+  .chip {
+    min-height: 36px;
+    padding: 8px 14px;
+  }
 }
 
 /* Text-field shell (used by mood strip + global search). */

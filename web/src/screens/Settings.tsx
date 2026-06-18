@@ -558,7 +558,7 @@ export function Settings() {
       <h1 className="settings-h1">Settings</h1>
 
       <label className="settings-tab-select">
-        <span className="settings-label">Section</span>
+        <span className="settings-label">Category</span>
         <select value={tab} onChange={(event) => setTab(event.target.value as Tab)}>
           {tabs.map((t) => (
             <option key={t.id} value={t.id}>

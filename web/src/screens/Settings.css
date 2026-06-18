@@ -34,11 +34,16 @@
 .settings-tabs .chip {
   flex: 0 0 auto;
   scroll-snap-align: start;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.055);
 }
 .settings-tabs .chip.is-active {
-  color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.16);
-  border-color: rgba(var(--accent-rgb), 0.55);
+  color: #fff;
+  background: rgba(var(--accent-rgb), 0.22);
+  border-color: rgba(var(--accent-rgb), 0.58);
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--accent-rgb), 0.52),
+    0 6px 18px rgba(var(--accent-rgb), 0.1);
 }
 
 .settings-tabs .chip:focus-visible,
@@ -52,6 +57,10 @@
 
 .settings-tab-select {
   display: none;
+}
+
+.settings-tab-select select {
+  width: 100%;
 }
 
 .settings-panel {
@@ -204,15 +213,65 @@
 }
 
 .settings-toggle-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--sp-sm);
+  min-height: 44px;
   font-size: 14px;
   cursor: pointer;
 }
-.settings-toggle-row input {
-  accent-color: var(--accent);
+.settings-toggle-row input[type="checkbox"],
+.settings-source-active input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.24);
   cursor: pointer;
+  transition:
+    background 0.16s,
+    border-color 0.16s,
+    box-shadow 0.16s;
+}
+.settings-toggle-row input[type="checkbox"]::after,
+.settings-source-active input[type="checkbox"]::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  opacity: 0;
+  transform: translateY(-1px) rotate(45deg) scale(0.86);
+  transition:
+    opacity 0.12s,
+    transform 0.12s;
+}
+.settings-toggle-row input[type="checkbox"]:checked,
+.settings-source-active input[type="checkbox"]:checked {
+  border-color: rgba(var(--accent-rgb), 0.72);
+  background: rgba(var(--accent-rgb), 0.78);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 0 3px rgba(var(--accent-rgb), 0.13);
+}
+.settings-toggle-row input[type="checkbox"]:checked::after,
+.settings-source-active input[type="checkbox"]:checked::after {
+  opacity: 1;
+  transform: translateY(-1px) rotate(45deg) scale(1);
+}
+.settings-toggle-row input[type="checkbox"]:focus-visible,
+.settings-source-active input[type="checkbox"]:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.78);
+  outline-offset: 2px;
 }
 
 .settings-control-grid {
@@ -827,10 +886,11 @@
 
 @media (max-width: 560px) {
   .settings-screen {
+    position: relative;
     gap: var(--sp-md);
     padding: var(--sp-lg);
     padding-top: var(--sp-lg);
-    padding-bottom: 204px;
+    padding-bottom: calc(152px + env(safe-area-inset-bottom));
     width: 100%;
   }
 
@@ -843,10 +903,11 @@
   }
 
   .settings-footer {
-    position: fixed;
+    position: absolute;
     z-index: 45;
-    right: var(--sp-md);
-    bottom: calc(84px + env(safe-area-inset-bottom));
+    top: var(--sp-lg);
+    right: var(--sp-lg);
+    bottom: auto;
     left: auto;
     align-items: center;
     flex-direction: row;
@@ -880,18 +941,11 @@
   }
 
   .appearance-current-chips {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-  }
-
-  .appearance-current-chips::-webkit-scrollbar {
-    display: none;
+    flex-wrap: wrap;
   }
 
   .appearance-current-chips span {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
   }
 
   .settings-share-box {
@@ -939,7 +993,7 @@
 
   .settings-source-active {
     justify-content: center;
-    min-height: 40px;
+    min-height: 44px;
   }
 
   .settings-source-remove {
@@ -968,6 +1022,15 @@
     flex-direction: column;
     gap: 2px;
   }
+
+  .settings-toggle-row input[type="checkbox"],
+  .settings-source-active input[type="checkbox"] {
+    flex-basis: 24px;
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+  }
 }
 
 @media (max-width: 380px) {
@@ -981,20 +1044,11 @@
   }
 
   .accent-grid {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-  }
-
-  .accent-grid::-webkit-scrollbar {
-    display: none;
   }
 
   .accent-swatch {
-    flex: 0 0 104px;
     justify-content: flex-start;
     gap: 5px;
     min-height: 44px;
