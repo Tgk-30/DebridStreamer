@@ -29,15 +29,15 @@
   scroll-margin-top: var(--sp-xl);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 699px) {
   .detail {
-    inset: 0;
-    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    inset: 0 0 calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + var(--sp-xs)) 0;
+    padding-bottom: 0;
   }
 
   .detail-inner {
     gap: var(--sp-lg);
     padding: var(--sp-lg);
-    padding-bottom: calc(120px + env(safe-area-inset-bottom));
+    padding-bottom: var(--sp-xl);
   }
 }
