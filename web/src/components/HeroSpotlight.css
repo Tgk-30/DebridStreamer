@@ -302,6 +302,13 @@
   .hero-dots {
     right: var(--sp-sm);
     padding: 4px 6px;
+    background: rgba(0, 0, 0, 0.52);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+
+  .hero-dots-label {
+    min-width: 22px;
+    font-size: 10.5px;
   }
 
   .hero-dot {
@@ -321,6 +328,10 @@
 @media (max-width: 380px) {
   .hero {
     height: clamp(260px, 38vh, 300px);
+  }
+
+  .hero-dots {
+    right: 12px;
   }
 
   .hero-title {

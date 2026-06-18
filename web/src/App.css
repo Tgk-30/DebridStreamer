@@ -2,9 +2,9 @@
 
 .app {
   --nav-rail-width: 96px;
-  --mobile-nav-height: clamp(66px, 14.5vw, 72px);
-  --mobile-nav-bottom: max(10px, env(safe-area-inset-bottom));
-  --mobile-nav-reserve: calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + 16px);
+  --mobile-nav-height: clamp(64px, 14vw, 70px);
+  --mobile-nav-bottom: max(8px, env(safe-area-inset-bottom));
+  --mobile-nav-reserve: calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + 18px);
   position: relative;
   display: flex;
   min-height: 100vh;

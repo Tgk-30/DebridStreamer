@@ -49,3 +49,9 @@
     margin: var(--sp-md) var(--sp-lg) 0;
   }
 }
+
+@media (min-width: 700px) and (max-width: 1199px) {
+  .global-search {
+    width: min(520px, calc(100% - 48px));
+  }
+}

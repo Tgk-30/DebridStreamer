@@ -4,13 +4,13 @@ import {
   CalendarDays,
   Captions,
   Check,
-  Clapperboard,
   Clock3,
-  Compass,
   Copy,
   Eye,
   EyeOff,
+  Film,
   HardDriveDownload,
+  House,
   Info,
   MoreHorizontal,
   Play,
@@ -65,8 +65,8 @@ interface IconProps {
 }
 
 const ICONS: Record<IconName, LucideIcon> = {
-  discover: Compass,
-  library: Clapperboard,
+  discover: House,
+  library: Film,
   watchlist: Bookmark,
   history: Clock3,
   assistant: Bot,

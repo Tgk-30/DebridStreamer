@@ -11,6 +11,11 @@
   flex: 0 0 var(--nav-rail-width, 96px);
   padding: 30px var(--sp-sm) var(--sp-lg);
   height: 100vh;
+  background: rgba(10, 12, 22, 0.28);
+  border-right: 1px solid rgba(255, 255, 255, 0.055);
+  box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
 }
 
 .nav-rail-section {
@@ -47,7 +52,7 @@
   background: transparent;
   color: rgba(255, 255, 255, 0.68);
   cursor: pointer;
-  --nav-icon-stroke: 1.9;
+  --nav-icon-stroke: 1.8;
   transition:
     background 0.16s ease-out,
     border-color 0.16s ease-out,
@@ -83,7 +88,7 @@
 }
 
 .nav-rail-btn.is-selected {
-  --nav-icon-stroke: 2.25;
+  --nav-icon-stroke: 2.1;
   background: rgba(var(--accent-rgb), 0.12);
   border-color: rgba(var(--accent-rgb), 0.42);
   color: var(--text-primary);
@@ -172,13 +177,35 @@
 }
 
 @media (min-width: 768px) and (max-width: 1199px) {
+  .nav-rail {
+    gap: var(--sp-sm);
+    padding: max(24px, env(safe-area-inset-top)) 6px max(var(--sp-md), env(safe-area-inset-bottom));
+  }
+
+  .nav-rail-section {
+    gap: 4px;
+  }
+
   .nav-rail-section[data-group="Account"] {
     padding-top: var(--sp-sm);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 
+  .nav-rail-btn {
+    min-height: 56px;
+    padding: 7px 3px;
+    border-radius: 14px;
+  }
+
+  .nav-rail-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+
   .nav-rail-label {
-    font-size: 12px;
+    font-size: 11px;
+    line-height: 1.15;
+    text-align: center;
   }
 }
 
@@ -194,19 +221,19 @@
     flex-direction: row;
     align-items: center;
     justify-content: stretch;
-    gap: 3px;
-    width: min(420px, calc(100vw - 20px));
+    gap: 4px;
+    width: min(392px, calc(100vw - 24px));
     height: var(--mobile-nav-height);
-    padding: 8px;
+    padding: 6px;
     overflow: visible;
     border: 1px solid var(--nav-mobile-border);
-    border-radius: 24px;
+    border-radius: 22px;
     background: var(--nav-mobile-bg);
     backdrop-filter: blur(22px) saturate(1.35);
     -webkit-backdrop-filter: blur(22px) saturate(1.35);
     box-shadow:
-      0 14px 32px rgba(0, 0, 0, 0.42),
-      0 0 0 1px rgba(0, 0, 0, 0.16),
+      0 16px 38px rgba(0, 0, 0, 0.46),
+      0 0 0 1px rgba(0, 0, 0, 0.2),
       inset 0 1px 0 var(--nav-mobile-highlight);
     transform: translateX(-50%);
   }
@@ -244,22 +271,22 @@
     min-width: 0;
     min-height: 0;
     width: 100%;
-    height: calc(var(--mobile-nav-height) - 16px);
+    height: calc(var(--mobile-nav-height) - 12px);
     justify-content: center;
     gap: 3px;
-    padding: 3px 1px;
-    border-radius: 16px;
+    padding: 4px 1px;
+    border-radius: 15px;
   }
 
   .nav-rail-btn svg {
-    width: clamp(19px, 4.9vw, 21px);
-    height: clamp(19px, 4.9vw, 21px);
-    stroke-width: 2.05;
+    width: clamp(20px, 5.4vw, 23px);
+    height: clamp(20px, 5.4vw, 23px);
+    stroke-width: 1.85;
   }
 
   .nav-rail-icon {
-    width: clamp(25px, 6.2vw, 29px);
-    height: clamp(25px, 6.2vw, 29px);
+    width: clamp(27px, 7vw, 31px);
+    height: clamp(27px, 7vw, 31px);
     border-radius: 50%;
     background: var(--nav-mobile-icon-bg);
     box-shadow: none;
@@ -316,8 +343,8 @@
   .nav-rail-btn.is-selected::after {
     content: "";
     position: absolute;
-    inset: 4px;
-    border-radius: 14px;
+    inset: 3px;
+    border-radius: 13px;
     pointer-events: none;
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.14),
@@ -444,13 +471,14 @@
 @media (max-width: 380px) {
   .nav-rail {
     --nav-mobile-label-size: 9.5px;
-    width: min(100vw - 16px, 420px);
+    width: min(100vw - 24px, 392px);
     padding: 5px;
     border-radius: 20px;
   }
 
   .nav-rail-btn {
-    border-radius: 12px;
+    height: calc(var(--mobile-nav-height) - 10px);
+    border-radius: 13px;
     padding-inline: 1px;
   }
 
