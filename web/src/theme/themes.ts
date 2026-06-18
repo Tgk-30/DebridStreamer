@@ -24,6 +24,13 @@ export interface ThemeDef {
   swatchAccent: string;
 }
 
+export interface AccentDef {
+  id: string;
+  label: string;
+  color: string;
+  rgb: string;
+}
+
 /** The shipped themes. Order = display order in the picker. */
 export const THEMES: ThemeDef[] = [
   {
@@ -59,6 +66,19 @@ export const THEMES: ThemeDef[] = [
     swatchAccent: "rgb(250,138,92)",
   },
 ];
+
+export const ACCENTS: AccentDef[] = [
+  { id: "theme", label: "Theme", color: "var(--accent)", rgb: "" },
+  { id: "violet", label: "Violet", color: "rgb(140, 133, 250)", rgb: "140, 133, 250" },
+  { id: "cyan", label: "Cyan", color: "rgb(92, 189, 250)", rgb: "92, 189, 250" },
+  { id: "rose", label: "Rose", color: "rgb(250, 117, 189)", rgb: "250, 117, 189" },
+  { id: "green", label: "Green", color: "rgb(92, 217, 140)", rgb: "92, 217, 140" },
+  { id: "amber", label: "Amber", color: "rgb(250, 184, 92)", rgb: "250, 184, 92" },
+];
+
+export function accentById(id: string | null | undefined): AccentDef {
+  return ACCENTS.find((accent) => accent.id === id) ?? ACCENTS[0];
+}
 
 /** The default theme id (the historical Aurora-glass look). */
 export const DEFAULT_THEME_ID = "aurora";

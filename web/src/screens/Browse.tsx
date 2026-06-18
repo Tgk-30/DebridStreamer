@@ -27,7 +27,6 @@ import type { MediaType } from "../models/media";
 import { MediaCard } from "../components/MediaCard";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
-import { isServerMode } from "../lib/serverMode";
 import "./Browse.css";
 
 // The advanced filter panel is code-split out of the Browse chunk; it only
@@ -40,7 +39,7 @@ const FilterSlideover = lazy(() =>
 );
 
 export function Browse() {
-  const { browseContext, closeBrowse, openDetail, services } = useAppStore();
+  const { browseContext, closeBrowse, openDetail } = useAppStore();
   // A local working copy so the slideover can refine the context without round-
   // tripping through the store (the store just holds the initial target).
   const [ctx, setCtx] = useState<BrowseContext | null>(browseContext);
@@ -53,7 +52,6 @@ export function Browse() {
   }, [browseContext]);
 
   if (ctx == null) return null;
-  const serverMode = isServerMode();
   return (
     <BrowseInner
       ctx={ctx}
@@ -62,7 +60,6 @@ export function Browse() {
       setFiltersOpen={setFiltersOpen}
       onClose={closeBrowse}
       onSelect={openDetail}
-      hasTmdb={services.tmdb != null || serverMode}
     />
   );
 }
@@ -74,7 +71,6 @@ interface BrowseInnerProps {
   setFiltersOpen: (open: boolean) => void;
   onClose: () => void;
   onSelect: (item: import("../models/media").MediaPreview) => void;
-  hasTmdb: boolean;
 }
 
 function BrowseInner({
@@ -84,7 +80,6 @@ function BrowseInner({
   setFiltersOpen,
   onClose,
   onSelect,
-  hasTmdb,
 }: BrowseInnerProps) {
   const { services } = useAppStore();
   const state = useBrowse(services.tmdb, ctx);
@@ -170,13 +165,6 @@ function BrowseInner({
             Filters
           </button>
         </header>
-
-        {!hasTmdb && (
-          <div className="browse-devbadge" role="note">
-            Dev preview · sample catalog (set <code>VITE_TMDB_KEY</code> for live
-            data + pagination)
-          </div>
-        )}
 
         {activeChips.length > 0 && (
           <div className="browse-chips" aria-label="Active filters">

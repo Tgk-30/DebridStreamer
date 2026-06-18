@@ -13,7 +13,7 @@
   margin: 0;
   font-size: 28px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 .lib-sub {
   margin: 0 0 var(--sp-sm);
@@ -68,4 +68,12 @@
 .lib-remove:hover {
   border-color: rgba(250, 115, 115, 0.6);
   color: var(--danger);
+}
+
+@media (max-width: 760px) {
+  .lib-screen {
+    padding: var(--sp-lg);
+    padding-top: var(--sp-lg);
+    max-width: none;
+  }
 }

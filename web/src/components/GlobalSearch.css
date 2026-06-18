@@ -28,3 +28,14 @@
 .global-search-clear:hover {
   color: var(--text-primary);
 }
+
+@media (max-width: 760px) {
+  .global-search {
+    position: sticky;
+    top: var(--sp-sm);
+    right: auto;
+    z-index: 8;
+    width: auto;
+    margin: var(--sp-md) var(--sp-lg) 0;
+  }
+}

@@ -6,6 +6,7 @@
   gap: var(--sp-md);
   padding: var(--sp-lg);
   border-radius: var(--r-lg);
+  max-width: 920px;
 }
 
 .mood-header {
@@ -52,4 +53,55 @@
 }
 .mood-chips .chip {
   font-weight: 500;
+}
+
+@media (max-width: 560px) {
+  .mood {
+    padding: var(--sp-md);
+  }
+
+  .mood-prompt {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-items: center;
+    border-radius: var(--r-lg);
+    padding: var(--sp-md);
+  }
+
+  .mood-prompt input {
+    min-height: 32px;
+    font-size: 14px;
+  }
+
+  .mood-curate {
+    grid-column: 1 / -1;
+    justify-content: center;
+    min-height: 40px;
+    margin-top: var(--sp-xs);
+  }
+
+  .mood-chips {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .mood-chips .chip {
+    flex: 1 1 calc(50% - var(--sp-sm));
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 761px) {
+  .mood {
+    margin-inline: auto;
+    width: min(100%, 980px);
+  }
+
+  .mood-prompt {
+    min-height: 52px;
+  }
 }

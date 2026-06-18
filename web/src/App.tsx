@@ -51,7 +51,7 @@ export function App() {
 
   // Apply the persisted theme to the document root (instantly on change, and on
   // startup once the Store hydrates the saved choice).
-  useTheme(settings.theme);
+  useTheme(settings);
 
   // The global quick-search field is shown on browse screens but not Settings
   // (ContentView.showsGlobalSearch); the dedicated Search screen has its own

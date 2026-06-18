@@ -13,7 +13,7 @@
   margin: 0;
   font-size: 28px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 .assistant-sub {
   margin: 0 0 var(--sp-sm);
@@ -77,4 +77,27 @@
   margin: 4px 0 0;
   font-size: 13px;
   line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .assistant-screen {
+    padding: var(--sp-lg);
+    padding-top: var(--sp-lg);
+    max-width: none;
+  }
+
+  .assistant-prompt {
+    align-items: stretch;
+    flex-wrap: wrap;
+    border-radius: var(--r-lg);
+  }
+
+  .assistant-prompt input {
+    flex: 1 1 220px;
+  }
+
+  .assistant-prompt .btn {
+    justify-content: center;
+    flex: 1 0 100%;
+  }
 }

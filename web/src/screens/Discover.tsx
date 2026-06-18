@@ -20,7 +20,7 @@ interface DiscoverProps {
 
 export function Discover({ onSelect }: DiscoverProps) {
   const { services, openBrowse } = useAppStore();
-  const { data, loading, source } = useDiscover(services.tmdb);
+  const { data, loading } = useDiscover(services.tmdb);
 
   // "See all" → open the full paginated Browse for a rail's exact category.
   const seeAll = (ctx: BrowseContext) => () => openBrowse(ctx);
@@ -31,13 +31,6 @@ export function Discover({ onSelect }: DiscoverProps) {
 
   return (
     <div className="discover">
-      {source === "fixtures" && (
-        <div className="discover-devbadge" role="note">
-          Dev preview · sample catalog (set <code>VITE_TMDB_KEY</code> for live
-          data)
-        </div>
-      )}
-
       {data.hero && (
         <HeroSpotlight
           items={[data.hero, ...data.trendingMovies, ...data.trendingTV]

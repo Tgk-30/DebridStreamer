@@ -1,5 +1,4 @@
-/* NavRail — mirrors NavRail.swift geometry: 78px wide, top padding clears the
- * traffic-light zone, primary items then a hairline divider then Settings. */
+/* NavRail — breakpoint-specific primary navigation. */
 
 .nav-rail {
   position: relative;
@@ -7,32 +6,42 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--sp-xs);
-  width: 78px;
-  flex: 0 0 78px;
-  padding: 38px var(--sp-sm) var(--sp-lg);
+  gap: var(--sp-md);
+  width: var(--nav-rail-width, 96px);
+  flex: 0 0 var(--nav-rail-width, 96px);
+  padding: 30px var(--sp-sm) var(--sp-lg);
   height: 100vh;
 }
 
-.nav-rail-spacer {
-  flex: 1 1 auto;
-  min-height: var(--sp-lg);
+.nav-rail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
 }
 
-.nav-rail-divider {
-  align-self: center;
-  width: 28px;
-  height: 1px;
-  background: var(--glass-border);
-  margin-bottom: var(--sp-xs);
+.nav-rail-section[data-group="Account"] {
+  margin-top: auto;
+}
+
+.nav-rail-group-label {
+  display: none;
+  padding: 0 var(--sp-md);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .nav-rail-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: var(--sp-sm) 0;
+  justify-content: center;
+  gap: 4px;
+  min-height: 58px;
+  padding: var(--sp-sm) var(--sp-xs);
   border: 1px solid transparent;
   border-radius: var(--r-md);
   background: transparent;
@@ -46,20 +55,130 @@
 }
 
 .nav-rail-btn:hover {
-  background: rgba(var(--accent-rgb), 0.07);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
 }
 
+.nav-rail-btn:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.82);
+  outline-offset: 2px;
+}
+
 .nav-rail-btn.is-selected {
-  background: rgba(var(--accent-rgb), 0.16);
-  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.42);
   color: var(--accent);
-  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.nav-rail-btn.is-selected::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(180deg, var(--accent), var(--accent-secondary));
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.52);
 }
 
 .nav-rail-label {
-  font-size: 9px;
-  font-weight: 500;
+  font-size: 10px;
+  font-weight: 600;
   line-height: 1;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
+}
+
+@media (min-width: 1200px) {
+  .nav-rail {
+    padding: 28px var(--sp-md) var(--sp-lg);
+  }
+
+  .nav-rail-group-label {
+    display: block;
+  }
+
+  .nav-rail-btn {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--sp-md);
+    min-height: 44px;
+    padding: 0 var(--sp-md);
+    border-radius: var(--r-sm);
+  }
+
+  .nav-rail-btn.is-selected::before {
+    left: -6px;
+    top: 10px;
+    bottom: 10px;
+  }
+
+  .nav-rail-label {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 760px) {
+  .nav-rail {
+    position: fixed;
+    inset: auto max(var(--sp-sm), env(safe-area-inset-right)) max(var(--sp-sm), env(safe-area-inset-bottom)) max(var(--sp-sm), env(safe-area-inset-left));
+    z-index: 30;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    width: auto;
+    height: 68px;
+    padding: 6px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--r-lg);
+    background: rgba(7, 8, 18, 0.82);
+    backdrop-filter: blur(28px) saturate(1.65);
+    -webkit-backdrop-filter: blur(28px) saturate(1.65);
+    box-shadow:
+      0 18px 42px rgba(0, 0, 0, 0.42),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .nav-rail-section {
+    display: contents;
+  }
+
+  .nav-rail-group-label {
+    display: none;
+  }
+
+  .nav-rail-btn[data-mobile="false"] {
+    display: none;
+  }
+
+  .nav-rail-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 56px;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 2px;
+    border-radius: var(--r-sm);
+  }
+
+  .nav-rail-label {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-rail-btn.is-selected::before {
+    left: 18px;
+    right: 18px;
+    top: auto;
+    bottom: 5px;
+    width: auto;
+    height: 3px;
+  }
 }

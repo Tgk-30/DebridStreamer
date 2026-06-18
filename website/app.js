@@ -211,10 +211,10 @@ async function hydrateDownloads() {
     renderAssets(release);
   } catch {
     if (note) {
-      note.textContent = "Release assets could not be loaded. Opening GitHub Releases instead.";
+      note.textContent = "Latest desktop downloads are available on GitHub Releases.";
     }
     if (status) {
-      status.textContent = "Release metadata could not be loaded. Use the GitHub Releases link to see every asset.";
+      status.textContent = "Open GitHub Releases to see the current desktop assets.";
     }
   }
 }

@@ -61,6 +61,12 @@ const SettingsKeys = {
   aiModel: "ai_model",
   ollamaEndpoint: "ollama_endpoint",
   theme: "ui_theme",
+  appearanceAccent: "appearance_accent",
+  appearanceDensity: "appearance_density",
+  appearanceTextSize: "appearance_text_size",
+  appearanceMotion: "appearance_motion",
+  appearanceRadius: "appearance_radius",
+  appearanceBlur: "appearance_blur",
   openSubtitlesApiKey: "opensubtitles_api_key",
   autoUpdateChecks: "auto_update_checks",
   autoInstallUpdates: "auto_install_updates",
@@ -103,6 +109,17 @@ export interface DebridTokenEntry {
 }
 
 export type StreamMaxQuality = "any" | "4K" | "1080p" | "720p" | "480p" | "SD";
+export type AppearanceAccent =
+  | "theme"
+  | "violet"
+  | "cyan"
+  | "rose"
+  | "green"
+  | "amber";
+export type AppearanceDensity = "comfortable" | "compact";
+export type AppearanceTextSize = "s" | "m" | "l" | "xl";
+export type AppearanceMotion = "system" | "normal" | "reduced";
+export type AppearanceRadius = "sharp" | "default" | "round";
 
 /** Everything the user can configure, persisted to localStorage this phase. */
 export interface AppSettings {
@@ -117,6 +134,12 @@ export interface AppSettings {
   ollamaEndpoint: string;
   /** Selected UI theme id (see theme/themes.ts). */
   theme: string;
+  appearanceAccent: AppearanceAccent;
+  appearanceDensity: AppearanceDensity;
+  appearanceTextSize: AppearanceTextSize;
+  appearanceMotion: AppearanceMotion;
+  appearanceRadius: AppearanceRadius;
+  appearanceBlur: number;
   /** OpenSubtitles REST API key (powers in-player subtitle search). */
   openSubtitlesApiKey: string;
   /** Desktop builds check signed GitHub Releases on launch. */
@@ -154,6 +177,38 @@ export function normalizeStreamMaxSizeGB(value: unknown): number {
   return Math.min(500, Math.round(parsed * 10) / 10);
 }
 
+function normalizeAppearanceAccent(value: unknown): AppearanceAccent {
+  return value === "violet" ||
+    value === "cyan" ||
+    value === "rose" ||
+    value === "green" ||
+    value === "amber"
+    ? value
+    : "theme";
+}
+
+function normalizeAppearanceDensity(value: unknown): AppearanceDensity {
+  return value === "compact" ? "compact" : "comfortable";
+}
+
+function normalizeAppearanceTextSize(value: unknown): AppearanceTextSize {
+  return value === "s" || value === "l" || value === "xl" ? value : "m";
+}
+
+function normalizeAppearanceMotion(value: unknown): AppearanceMotion {
+  return value === "normal" || value === "reduced" ? value : "system";
+}
+
+function normalizeAppearanceRadius(value: unknown): AppearanceRadius {
+  return value === "sharp" || value === "round" ? value : "default";
+}
+
+function normalizeAppearanceBlur(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 18;
+  return Math.min(28, Math.max(6, Math.round(parsed)));
+}
+
 /** Defaults: pull what we can from env so the app works with zero config. */
 export function defaultSettings(): AppSettings {
   return {
@@ -167,6 +222,12 @@ export function defaultSettings(): AppSettings {
     aiModel: "",
     ollamaEndpoint: "http://localhost:11434",
     theme: env("VITE_THEME") || DEFAULT_THEME_ID,
+    appearanceAccent: "theme",
+    appearanceDensity: "comfortable",
+    appearanceTextSize: "m",
+    appearanceMotion: "system",
+    appearanceRadius: "default",
+    appearanceBlur: 18,
     openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
     autoUpdateChecks: true,
     autoInstallUpdates: false,
@@ -191,6 +252,12 @@ export function loadSettings(): AppSettings {
       sources: parsed.sources ?? base.sources,
       streamMaxQuality: normalizeStreamMaxQuality(parsed.streamMaxQuality),
       streamMaxSizeGB: normalizeStreamMaxSizeGB(parsed.streamMaxSizeGB),
+      appearanceAccent: normalizeAppearanceAccent(parsed.appearanceAccent),
+      appearanceDensity: normalizeAppearanceDensity(parsed.appearanceDensity),
+      appearanceTextSize: normalizeAppearanceTextSize(parsed.appearanceTextSize),
+      appearanceMotion: normalizeAppearanceMotion(parsed.appearanceMotion),
+      appearanceRadius: normalizeAppearanceRadius(parsed.appearanceRadius),
+      appearanceBlur: normalizeAppearanceBlur(parsed.appearanceBlur),
     };
   } catch {
     return base;
@@ -268,6 +335,12 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     ollamaEndpoint,
     builtIn,
     theme,
+    appearanceAccent,
+    appearanceDensity,
+    appearanceTextSize,
+    appearanceMotion,
+    appearanceRadius,
+    appearanceBlur,
     autoUpdateChecks,
     autoInstallUpdates,
     streamCachedOnly,
@@ -279,6 +352,12 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.ollamaEndpoint),
     store.getSetting(SettingsKeys.builtInIndexersEnabled),
     store.getSetting(SettingsKeys.theme),
+    store.getSetting(SettingsKeys.appearanceAccent),
+    store.getSetting(SettingsKeys.appearanceDensity),
+    store.getSetting(SettingsKeys.appearanceTextSize),
+    store.getSetting(SettingsKeys.appearanceMotion),
+    store.getSetting(SettingsKeys.appearanceRadius),
+    store.getSetting(SettingsKeys.appearanceBlur),
     store.getSetting(SettingsKeys.autoUpdateChecks),
     store.getSetting(SettingsKeys.autoInstallUpdates),
     store.getSetting(SettingsKeys.streamCachedOnly),
@@ -321,6 +400,22 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     aiModel: aiModel ?? base.aiModel,
     ollamaEndpoint: ollamaEndpoint ?? base.ollamaEndpoint,
     theme: resolveThemeId(theme ?? base.theme),
+    appearanceAccent: normalizeAppearanceAccent(
+      appearanceAccent ?? base.appearanceAccent,
+    ),
+    appearanceDensity: normalizeAppearanceDensity(
+      appearanceDensity ?? base.appearanceDensity,
+    ),
+    appearanceTextSize: normalizeAppearanceTextSize(
+      appearanceTextSize ?? base.appearanceTextSize,
+    ),
+    appearanceMotion: normalizeAppearanceMotion(
+      appearanceMotion ?? base.appearanceMotion,
+    ),
+    appearanceRadius: normalizeAppearanceRadius(
+      appearanceRadius ?? base.appearanceRadius,
+    ),
+    appearanceBlur: normalizeAppearanceBlur(appearanceBlur ?? base.appearanceBlur),
     openSubtitlesApiKey: openSubtitlesApiKey ?? base.openSubtitlesApiKey,
     autoUpdateChecks:
       autoUpdateChecks == null ? base.autoUpdateChecks : autoUpdateChecks === "true",
@@ -352,6 +447,30 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     store.setSetting(SettingsKeys.aiModel, settings.aiModel),
     store.setSetting(SettingsKeys.ollamaEndpoint, settings.ollamaEndpoint),
     store.setSetting(SettingsKeys.theme, resolveThemeId(settings.theme)),
+    store.setSetting(
+      SettingsKeys.appearanceAccent,
+      normalizeAppearanceAccent(settings.appearanceAccent),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceDensity,
+      normalizeAppearanceDensity(settings.appearanceDensity),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceTextSize,
+      normalizeAppearanceTextSize(settings.appearanceTextSize),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceMotion,
+      normalizeAppearanceMotion(settings.appearanceMotion),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceRadius,
+      normalizeAppearanceRadius(settings.appearanceRadius),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceBlur,
+      String(normalizeAppearanceBlur(settings.appearanceBlur)),
+    ),
     store.setSetting(
       SettingsKeys.autoUpdateChecks,
       settings.autoUpdateChecks ? "true" : "false",

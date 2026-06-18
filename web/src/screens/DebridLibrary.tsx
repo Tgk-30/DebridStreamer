@@ -129,8 +129,19 @@ export function DebridLibrary() {
         <h1 className="lib-h1">Debrid library</h1>
         <EmptyState
           icon="debrid"
-          title="Available in the desktop app"
-          subtitle="Managing your debrid account talks directly to the service's API, which a browser can't reach. Open DebridStreamer on the desktop to manage your torrents."
+          title="Open the desktop app to manage debrid"
+          subtitle="Browser builds cannot talk directly to debrid provider APIs. Install the desktop app to manage torrents, cached files, and provider cleanup from your machine."
+          actions={
+            <a
+              className="btn btn-prominent"
+              href="https://github.com/Tgk-30/DebridStreamer/releases/latest"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Icon name="debrid" size={15} />
+              Download desktop app
+            </a>
+          }
         />
       </div>
     );

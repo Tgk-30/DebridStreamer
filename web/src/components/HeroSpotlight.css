@@ -69,7 +69,7 @@
   cursor: default;
   font-weight: 600;
   color: #fff;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 .hero-year {
   font-size: 14px;
@@ -90,7 +90,7 @@
   font-size: clamp(34px, 4.4vw, 58px);
   font-weight: 800;
   line-height: 1.02;
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
   color: #fff;
   text-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
   display: -webkit-box;
@@ -157,4 +157,53 @@
   width: 34px;
   background: rgba(var(--accent-rgb), 1);
   box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.6);
+}
+
+@media (max-width: 760px) {
+  .hero {
+    height: clamp(320px, 46vh, 400px);
+    min-height: 0;
+    border-radius: var(--r-lg);
+  }
+
+  .hero-backdrop {
+    object-position: center;
+  }
+
+  .hero-content {
+    gap: var(--sp-sm);
+    max-width: none;
+    padding: var(--sp-lg);
+  }
+
+  .hero-badges {
+    gap: var(--sp-sm);
+  }
+
+  .hero-title {
+    font-size: clamp(30px, 9vw, 42px);
+    line-height: 1.04;
+  }
+
+  .hero-overview {
+    display: none;
+  }
+
+  .hero-actions {
+    flex-wrap: wrap;
+    gap: var(--sp-sm);
+    margin-top: var(--sp-sm);
+  }
+
+  .hero-play,
+  .hero-info {
+    flex: 1 1 130px;
+    justify-content: center;
+    padding: 12px 16px;
+  }
+
+  .hero-dots {
+    right: var(--sp-lg);
+    bottom: var(--sp-md);
+  }
 }

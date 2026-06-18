@@ -98,7 +98,7 @@
   font-size: 13.5px;
   font-weight: 650;
   line-height: 1.2;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   color: #fff;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -170,7 +170,7 @@
   border-radius: var(--r-pill);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   color: #07210f;
   background: rgba(var(--success-rgb, 92, 217, 140), 0.95);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);

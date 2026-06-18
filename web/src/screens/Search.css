@@ -13,7 +13,7 @@
   margin: 0;
   font-size: 28px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .search-controls {
@@ -102,4 +102,30 @@
 .search-see-all-arrow {
   font-size: 15px;
   line-height: 1;
+}
+
+@media (max-width: 760px) {
+  .search-screen {
+    padding: var(--sp-lg);
+    padding-top: var(--sp-lg);
+    max-width: none;
+  }
+
+  .search-field {
+    max-width: none;
+  }
+
+  .search-filters {
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .search-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .search-filters .chip {
+    flex: 0 0 auto;
+  }
 }

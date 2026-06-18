@@ -31,3 +31,10 @@
 .empty-state-note:hover {
   background: rgba(255, 255, 255, 0.06);
 }
+.empty-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-sm);
+}

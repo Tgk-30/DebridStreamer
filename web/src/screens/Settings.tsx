@@ -12,15 +12,31 @@
 // live data elsewhere. NOTE: real persistence + keychain storage of secrets
 // arrives with the storage port; localStorage is the stopgap.
 
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import QRCode from "qrcode";
 import { useAppStore } from "../store/AppStore";
-import type { AppSettings, SourceEntry, StreamMaxQuality } from "../data/settings";
+import type {
+  AppSettings,
+  AppearanceAccent,
+  AppearanceDensity,
+  AppearanceMotion,
+  AppearanceRadius,
+  AppearanceTextSize,
+  SourceEntry,
+  StreamMaxQuality,
+} from "../data/settings";
 import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
-import { THEMES } from "../theme/themes";
+import { ACCENTS, THEMES } from "../theme/themes";
 import {
   configuredServerURL,
   configuredServerURLSource,
@@ -358,6 +374,13 @@ export function Settings() {
     setSaved(true);
   }
 
+  function applyAppearance(next: Partial<AppSettings>) {
+    const merged = { ...draft, ...next };
+    setDraft(merged);
+    updateSettings(merged);
+    setSaved(true);
+  }
+
   const serverMode = isServerMode();
   const tabs = serverMode ? TABS : TABS.filter((t) => t.id !== "server");
 
@@ -374,6 +397,7 @@ export function Settings() {
           <button
             key={t.id}
             type="button"
+            data-tab={t.id}
             className={`chip${tab === t.id ? " is-active" : ""}`}
             onClick={() => setTab(t.id)}
           >
@@ -385,16 +409,8 @@ export function Settings() {
       <div className="settings-panel glass-raised glass-lit">
         {tab === "appearance" && (
           <AppearanceTab
-            currentTheme={settings.theme}
-            onSelectTheme={(theme) => {
-              // Themes apply + persist instantly (not via the Save button) so
-              // the swatch click is reflected immediately. We commit the live
-              // settings.theme rather than the draft so it survives discarding
-              // other unsaved edits.
-              updateSettings({ ...settings, theme });
-              // Keep the draft in sync so a later Save doesn't revert the theme.
-              setDraft((d) => ({ ...d, theme }));
-            }}
+            draft={draft}
+            applyAppearance={applyAppearance}
           />
         )}
         {tab === "install" && <InstallTab />}
@@ -2093,26 +2109,127 @@ function ServerUsagePanel({ usage }: { usage: ServerUsage }) {
 }
 
 function AppearanceTab({
-  currentTheme,
-  onSelectTheme,
+  draft,
+  applyAppearance,
 }: {
-  currentTheme: string;
-  onSelectTheme: (id: string) => void;
+  draft: AppSettings;
+  applyAppearance: (next: Partial<AppSettings>) => void;
 }) {
   return (
     <div className="settings-fields">
       <p className="settings-hint t-secondary">
-        Pick a skin — it applies instantly and is saved to this device.
+        Tune the interface for the device and room you are using. Changes apply
+        instantly and are saved to this profile.
       </p>
+
+      <div className="settings-control-grid">
+        <SegmentedControl
+          label="Density"
+          value={draft.appearanceDensity}
+          options={[
+            { value: "comfortable", label: "Comfortable" },
+            { value: "compact", label: "Compact" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({ appearanceDensity: value as AppearanceDensity })
+          }
+        />
+        <SegmentedControl
+          label="Text size"
+          value={draft.appearanceTextSize}
+          options={[
+            { value: "s", label: "S" },
+            { value: "m", label: "M" },
+            { value: "l", label: "L" },
+            { value: "xl", label: "XL" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({ appearanceTextSize: value as AppearanceTextSize })
+          }
+        />
+        <SegmentedControl
+          label="Motion"
+          value={draft.appearanceMotion}
+          options={[
+            { value: "system", label: "System" },
+            { value: "normal", label: "Normal" },
+            { value: "reduced", label: "Reduced" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({ appearanceMotion: value as AppearanceMotion })
+          }
+        />
+        <SegmentedControl
+          label="Corners"
+          value={draft.appearanceRadius}
+          options={[
+            { value: "sharp", label: "Sharp" },
+            { value: "default", label: "Default" },
+            { value: "round", label: "Round" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({ appearanceRadius: value as AppearanceRadius })
+          }
+        />
+      </div>
+
+      <div className="settings-source glass-rest">
+        <div className="settings-sources-head">
+          <span className="settings-sources-title">Accent</span>
+          <span className="settings-hint t-secondary">Theme is selected first</span>
+        </div>
+        <div className="accent-grid">
+          {ACCENTS.map((accent) => {
+            const active = draft.appearanceAccent === accent.id;
+            return (
+              <button
+                key={accent.id}
+                type="button"
+                className={`accent-swatch${active ? " is-active" : ""}`}
+                style={{ "--accent-preview": accent.color } as CSSProperties}
+                onClick={() =>
+                  applyAppearance({ appearanceAccent: accent.id as AppearanceAccent })
+                }
+                aria-pressed={active}
+              >
+                <span />
+                {accent.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <Field
+        label="Glass blur"
+        hint="Lower values make surfaces more solid; higher values make the app feel more frosted."
+      >
+        <input
+          type="range"
+          min={6}
+          max={28}
+          value={draft.appearanceBlur}
+          onChange={(event) =>
+            applyAppearance({ appearanceBlur: Number(event.target.value) })
+          }
+        />
+      </Field>
+
+      <div className="settings-divider" />
+
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Presets</span>
+        <span className="settings-hint t-secondary">One-click skins</span>
+      </div>
       <div className="theme-grid">
         {THEMES.map((t) => {
-          const active = t.id === currentTheme;
+          const active = t.id === draft.theme;
           return (
             <button
               key={t.id}
               type="button"
               className={`theme-card${active ? " is-active" : ""}`}
-              onClick={() => onSelectTheme(t.id)}
+              onClick={() => applyAppearance({ theme: t.id })}
               aria-pressed={active}
             >
               <span
@@ -2141,12 +2258,55 @@ function AppearanceTab({
   );
 }
 
+function SegmentedControl({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="settings-segment-block">
+      <span className="settings-label">{label}</span>
+      <div className="settings-segmented" role="group" aria-label={label}>
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={value === option.value ? "is-active" : ""}
+            onClick={() => onChange(option.value)}
+            aria-pressed={value === option.value}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const AI_MODEL_OPTIONS: Record<AppSettings["aiProvider"], string[]> = {
+  openai: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1"],
+  anthropic: ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-opus-4-1"],
+  ollama: ["llama3.2", "qwen2.5", "mistral"],
+};
+
+function modelOptions(provider: AppSettings["aiProvider"], current: string): string[] {
+  const base = AI_MODEL_OPTIONS[provider] ?? [];
+  return current.trim().length > 0 && !base.includes(current)
+    ? [current, ...base]
+    : base;
+}
+
 function KeysTab({ draft, patch }: TabProps) {
   return (
     <div className="settings-fields">
       <Field label="TMDB API key" hint="Powers Discover, Search, and Detail metadata.">
-        <input
-          type="password"
+        <SecretInput
           value={draft.tmdbKey}
           onChange={(e) => patch({ tmdbKey: e.target.value })}
           placeholder="v3 API key"
@@ -2154,8 +2314,7 @@ function KeysTab({ draft, patch }: TabProps) {
       </Field>
 
       <Field label="OMDB API key" hint="Optional — enriches IMDb / Rotten Tomatoes ratings.">
-        <input
-          type="password"
+        <SecretInput
           value={draft.omdbKey}
           onChange={(e) => patch({ omdbKey: e.target.value })}
           placeholder="OMDB key"
@@ -2166,8 +2325,7 @@ function KeysTab({ draft, patch }: TabProps) {
         label="OpenSubtitles API key"
         hint="Enables in-player subtitle search + download. Get one at opensubtitles.com."
       >
-        <input
-          type="password"
+        <SecretInput
           value={draft.openSubtitlesApiKey}
           onChange={(e) => patch({ openSubtitlesApiKey: e.target.value })}
           placeholder="OpenSubtitles REST API key"
@@ -2202,8 +2360,7 @@ function KeysTab({ draft, patch }: TabProps) {
         </Field>
       ) : (
         <Field label={`${AIProviderKind.displayName(draft.aiProvider)} API key`}>
-          <input
-            type="password"
+          <SecretInput
             value={draft.aiApiKey}
             onChange={(e) => patch({ aiApiKey: e.target.value })}
             placeholder="API key"
@@ -2211,19 +2368,119 @@ function KeysTab({ draft, patch }: TabProps) {
         </Field>
       )}
 
-      <Field label="Model" hint="Leave blank for the provider default.">
-        <input
-          type="text"
-          value={draft.aiModel}
-          onChange={(e) => patch({ aiModel: e.target.value })}
-          placeholder="e.g. gpt-4o-mini / claude-haiku-4-5"
-        />
+      <Field label="Model" hint="Provider default is selected first and recommended.">
+        <select
+          value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
+          onChange={(event) =>
+            patch({
+              aiModel:
+                event.target.value === "__default" ? "" : event.target.value,
+            })
+          }
+        >
+          <option value="__default">Provider default (recommended)</option>
+          {modelOptions(draft.aiProvider, draft.aiModel).map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
+        </select>
       </Field>
     </div>
   );
 }
 
+function SecretInput({
+  value,
+  onChange,
+  placeholder,
+  note = "Stored locally in this profile; desktop builds use the OS keychain when available.",
+}: {
+  value: string;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  placeholder: string;
+  note?: string;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  function handleChange(event: ChangeEvent<HTMLInputElement>) {
+    setMessage(null);
+    onChange(event);
+  }
+
+  async function copySecret() {
+    if (value.trim().length === 0) {
+      setMessage("Nothing to copy.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      setMessage("Copied.");
+    } catch {
+      setMessage("Clipboard unavailable.");
+    }
+  }
+
+  function checkSecret() {
+    setMessage(value.trim().length > 0 ? "Ready to save." : "Empty.");
+  }
+
+  return (
+    <div className="settings-secret-wrap">
+      <div className="settings-secret">
+        <input
+          type={revealed ? "text" : "password"}
+          value={value}
+          onChange={handleChange}
+          placeholder={placeholder}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <div className="settings-secret-actions">
+          <button
+            type="button"
+            className="settings-secret-btn"
+            onClick={() => setRevealed((current) => !current)}
+            aria-label={revealed ? "Hide secret" : "Reveal secret"}
+            title={revealed ? "Hide" : "Reveal"}
+          >
+            <Icon name={revealed ? "eye-off" : "eye"} size={15} />
+          </button>
+          <button
+            type="button"
+            className="settings-secret-btn"
+            onClick={() => void copySecret()}
+            aria-label="Copy secret"
+            title="Copy"
+          >
+            <Icon name="copy" size={15} />
+          </button>
+          <button
+            type="button"
+            className="settings-secret-btn"
+            onClick={checkSecret}
+            aria-label="Check secret is ready"
+            title="Check"
+          >
+            <Icon name="check" size={15} />
+          </button>
+        </div>
+      </div>
+      <div className="settings-secret-note">
+        <span>{note}</span>
+        {message != null && <strong>{message}</strong>}
+      </div>
+    </div>
+  );
+}
+
 function DebridTab({ draft, patch }: TabProps) {
+  const serviceOptions = DebridServiceType.allCases();
+  const [selectedService, setSelectedService] = useState<
+    AppSettings["debridTokens"][number]["service"]
+  >(serviceOptions[0]);
+
   function tokenFor(service: AppSettings["debridTokens"][number]["service"]) {
     return draft.debridTokens.find((t) => t.service === service)?.apiToken ?? "";
   }
@@ -2242,22 +2499,52 @@ function DebridTab({ draft, patch }: TabProps) {
   return (
     <div className="settings-fields">
       <p className="settings-hint t-secondary">
-        Tokens are tried in this order; the first that has a torrent cached wins.
+        Choose one provider at a time. Saved providers are tried in priority
+        order; the first that has a cached result wins.
       </p>
-      {DebridServiceType.allCases().map((service) => (
-        <Field
-          key={service}
-          label={`${DebridServiceType.displayName(service)} token`}
-          hint={`Short code ${DebridServiceType.shortCode(service)}`}
+
+      <Field label="Provider" hint="Real-Debrid is selected first by default.">
+        <select
+          value={selectedService}
+          onChange={(event) =>
+            setSelectedService(
+              event.target.value as AppSettings["debridTokens"][number]["service"],
+            )
+          }
         >
-          <input
-            type="password"
-            value={tokenFor(service)}
-            onChange={(e) => setToken(service, e.target.value)}
-            placeholder="API token"
-          />
-        </Field>
-      ))}
+          {serviceOptions.map((service) => (
+            <option key={service} value={service}>
+              {DebridServiceType.displayName(service)}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field
+        label={`${DebridServiceType.displayName(selectedService)} token`}
+        hint={`Short code ${DebridServiceType.shortCode(selectedService)}`}
+      >
+        <SecretInput
+          value={tokenFor(selectedService)}
+          onChange={(e) => setToken(selectedService, e.target.value)}
+          placeholder="API token"
+        />
+      </Field>
+
+      {draft.debridTokens.length > 0 && (
+        <div className="settings-url-list">
+          {draft.debridTokens.map((token, index) => (
+            <button
+              key={token.service}
+              type="button"
+              className="chip"
+              onClick={() => setSelectedService(token.service)}
+            >
+              {index + 1}. {DebridServiceType.displayName(token.service)}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2392,11 +2679,11 @@ function SourcesTab({ draft, patch }: TabProps) {
               onChange={(e) => updateSource(s.id, { baseURL: e.target.value })}
               placeholder="Base URL (e.g. http://localhost:9117)"
             />
-            <input
-              type="password"
+            <SecretInput
               value={s.apiKey ?? ""}
               onChange={(e) => updateSource(s.id, { apiKey: e.target.value })}
               placeholder="API key (if required)"
+              note="Saved only for this external indexer source."
             />
           </div>
         ))

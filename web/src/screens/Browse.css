@@ -68,7 +68,7 @@
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 .browse-count {
   font-size: 13px;
@@ -83,21 +83,6 @@
   color: var(--accent);
   border-color: rgba(var(--accent-rgb), 0.55);
   background: rgba(var(--accent-rgb), 0.12);
-}
-
-.browse-devbadge {
-  font-size: 12px;
-  color: var(--text-secondary);
-  padding: var(--sp-sm) var(--sp-md);
-  border-radius: var(--r-sm);
-  background: rgba(var(--warning-rgb), 0.1);
-  border: 0.75px solid rgba(var(--warning-rgb), 0.3);
-  width: fit-content;
-}
-.browse-devbadge code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  color: var(--warning);
 }
 
 /* ---- Active filter chips -------------------------------------------------- */

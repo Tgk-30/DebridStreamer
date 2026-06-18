@@ -1,6 +1,7 @@
 /* App shell layout — slim nav rail + flexible content area. */
 
 .app {
+  --nav-rail-width: 96px;
   position: relative;
   display: flex;
   min-height: 100vh;
@@ -37,5 +38,24 @@
 @media (prefers-reduced-motion: reduce) {
   .route-frame {
     animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .app {
+    --nav-rail-width: 0px;
+    display: block;
+  }
+
+  .app-content {
+    min-height: 100vh;
+    height: auto;
+    padding-bottom: 112px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .app {
+    --nav-rail-width: 208px;
   }
 }

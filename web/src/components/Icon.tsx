@@ -24,7 +24,10 @@ export type IconName =
   | "refresh"
   | "share"
   | "captions"
-  | "check";
+  | "check"
+  | "copy"
+  | "eye"
+  | "eye-off";
 
 interface IconProps {
   name: IconName;
@@ -177,6 +180,29 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
     </>
   ),
   check: () => <path d="M5 12l5 5L20 7" />,
+  // copy
+  copy: () => (
+    <>
+      <rect x="8" y="8" width="11" height="11" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V5a2 2 0 0 1 2-2h9a1 1 0 0 1 1 1v1" />
+    </>
+  ),
+  // eye
+  eye: () => (
+    <>
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  // eye.slash
+  "eye-off": () => (
+    <>
+      <path d="M3 3l18 18" />
+      <path d="M10.6 10.6A3 3 0 0 0 13.4 13.4" />
+      <path d="M7.1 7.6C4.2 9.2 2.5 12 2.5 12s3.5 6 9.5 6c1.5 0 2.8-.4 4-1" />
+      <path d="M14.2 6.3C18.8 7.1 21.5 12 21.5 12a17 17 0 0 1-2.7 3.3" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 20, className, filled = false }: IconProps) {

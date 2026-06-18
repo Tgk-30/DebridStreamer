@@ -1,10 +1,20 @@
 :root {
   color-scheme: dark;
+  --site-bg: #070711;
+  --site-panel: rgba(17, 19, 34, 0.72);
+  --site-panel-soft: rgba(255, 255, 255, 0.06);
+  --site-border: rgba(255, 255, 255, 0.13);
+  --site-text: #f8fafc;
+  --site-muted: rgba(248, 250, 252, 0.68);
+  --site-faint: rgba(248, 250, 252, 0.52);
+  --site-accent: #8c85fa;
+  --site-accent-2: #5cbdfa;
+  --site-accent-3: #fa75bd;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
-  background: #080b12;
-  color: #f8fafc;
+  background: var(--site-bg);
+  color: var(--site-text);
 }
 
 * {
@@ -15,9 +25,11 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 18% 10%, rgba(37, 99, 235, 0.28), transparent 34%),
-    radial-gradient(circle at 82% 0%, rgba(20, 184, 166, 0.18), transparent 30%),
-    #080b12;
+    radial-gradient(circle at 16% 8%, rgba(140, 133, 250, 0.26), transparent 34%),
+    radial-gradient(circle at 82% 0%, rgba(92, 189, 250, 0.18), transparent 30%),
+    radial-gradient(circle at 78% 72%, rgba(250, 117, 189, 0.12), transparent 34%),
+    linear-gradient(135deg, #0d0f1a 0%, #171729 50%, #0f121f 100%);
+  background-attachment: fixed;
 }
 
 a {
@@ -33,9 +45,10 @@ a {
   justify-content: space-between;
   gap: 24px;
   padding: 16px max(24px, calc((100vw - 1120px) / 2));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(8, 11, 18, 0.82);
-  backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--site-border);
+  background: rgba(8, 10, 20, 0.78);
+  backdrop-filter: blur(22px) saturate(1.45);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
 }
 
 .brand {
@@ -55,7 +68,7 @@ a {
 nav {
   display: flex;
   gap: 18px;
-  color: rgba(248, 250, 252, 0.72);
+  color: var(--site-muted);
   font-size: 14px;
 }
 
@@ -83,10 +96,10 @@ main {
 
 .eyebrow {
   margin: 0 0 12px;
-  color: #67e8f9;
+  color: var(--site-accent-2);
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.13em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -102,6 +115,7 @@ h1 {
   margin-bottom: 18px;
   font-size: clamp(42px, 7vw, 78px);
   line-height: 0.96;
+  text-shadow: 0 8px 36px rgba(0, 0, 0, 0.36);
 }
 
 h2 {
@@ -117,7 +131,7 @@ h3 {
 
 .lede,
 .section p {
-  color: rgba(248, 250, 252, 0.72);
+  color: var(--site-muted);
   font-size: 17px;
   line-height: 1.65;
 }
@@ -144,18 +158,20 @@ h3 {
 
 .primary-action,
 .download-card a {
-  background: #e0f2fe;
-  color: #06111f;
+  background: linear-gradient(135deg, var(--site-accent), var(--site-accent-2), var(--site-accent-3));
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(140, 133, 250, 0.32);
 }
 
 .secondary-action {
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--site-border);
   background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(14px);
 }
 
 .download-note {
   margin-top: 12px;
-  color: rgba(248, 250, 252, 0.54);
+  color: var(--site-faint);
   font-size: 13px;
 }
 
@@ -164,10 +180,11 @@ h3 {
 .code-card,
 .steps article,
 .status-list {
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--site-border);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.68);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  background: var(--site-panel);
+  backdrop-filter: blur(22px) saturate(1.35);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
 }
 
 .hero-panel {
@@ -179,7 +196,7 @@ h3 {
 .mode-card {
   padding: 18px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--site-panel-soft);
 }
 
 .mode-card strong,
@@ -189,7 +206,7 @@ h3 {
 
 .mode-card span {
   margin-top: 5px;
-  color: rgba(248, 250, 252, 0.64);
+  color: var(--site-faint);
   line-height: 1.45;
 }
 
@@ -236,10 +253,11 @@ h3 {
   gap: 20px;
   margin-top: 18px;
   padding: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--site-border);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.68);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  background: var(--site-panel);
+  backdrop-filter: blur(22px) saturate(1.35);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
 }
 
 .release-panel h3 {
@@ -248,7 +266,7 @@ h3 {
 
 .release-status {
   margin-bottom: 0;
-  color: rgba(248, 250, 252, 0.68);
+  color: var(--site-muted);
   font-size: 14px;
   line-height: 1.55;
 }
@@ -263,7 +281,7 @@ h3 {
 .asset-group {
   min-width: 0;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--site-panel-soft);
 }
 
 .asset-list > a {
@@ -308,7 +326,7 @@ h3 {
 
 .asset-link small {
   margin-top: 3px;
-  color: rgba(248, 250, 252, 0.54);
+  color: var(--site-faint);
   font-size: 12px;
 }
 
@@ -333,7 +351,7 @@ h3 {
 pre {
   margin: 16px 0 0;
   white-space: pre-wrap;
-  color: #bbf7d0;
+  color: #b7f7d3;
   line-height: 1.55;
 }
 
@@ -365,7 +383,7 @@ pre {
 .status-list span {
   padding: 12px 14px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--site-panel-soft);
   color: rgba(248, 250, 252, 0.78);
 }
 
@@ -375,7 +393,7 @@ pre {
   justify-content: center;
   gap: 18px;
   padding: 32px;
-  color: rgba(248, 250, 252, 0.58);
+  color: var(--site-faint);
   border-top: 1px solid rgba(255, 255, 255, 0.09);
 }
 

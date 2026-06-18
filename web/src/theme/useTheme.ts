@@ -7,12 +7,33 @@
 // is `applyTheme` in themes.ts (unit-tested); this is the thin React glue.
 
 import { useEffect } from "react";
-import { applyTheme } from "./themes";
+import type { AppSettings } from "../data/settings";
+import { accentById, applyTheme } from "./themes";
 
 /** Reflect `themeId` onto the document root. No-op outside a DOM (SSR/tests). */
-export function useTheme(themeId: string): void {
+export function useTheme(settings: AppSettings): void {
   useEffect(() => {
     if (typeof document === "undefined") return;
-    applyTheme(themeId, document.documentElement);
-  }, [themeId]);
+    const root = document.documentElement;
+    applyTheme(settings.theme, root);
+
+    root.dataset.density = settings.appearanceDensity;
+    root.dataset.textSize = settings.appearanceTextSize;
+    root.dataset.motion = settings.appearanceMotion;
+    root.dataset.radius = settings.appearanceRadius;
+
+    const accent = accentById(settings.appearanceAccent);
+    if (accent.id === "theme") {
+      root.style.removeProperty("--accent");
+      root.style.removeProperty("--accent-rgb");
+    } else {
+      root.style.setProperty("--accent", accent.color);
+      root.style.setProperty("--accent-rgb", accent.rgb);
+    }
+
+    const blur = Math.round(settings.appearanceBlur);
+    root.style.setProperty("--glass-blur-rest", `${Math.max(4, blur - 4)}px`);
+    root.style.setProperty("--glass-blur-raised", `${blur}px`);
+    root.style.setProperty("--glass-blur-hero", `${Math.min(36, blur + 10)}px`);
+  }, [settings]);
 }

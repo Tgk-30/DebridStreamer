@@ -55,15 +55,17 @@ export function Assistant() {
           icon="assistant"
           title="Configure an AI provider"
           subtitle="Add an OpenAI or Anthropic key (or point at a local Ollama) in Settings to get curated, taste-aware recommendations."
+          actions={
+            <button
+              type="button"
+              className="btn btn-prominent"
+              onClick={() => navigate("settings")}
+            >
+              <Icon name="settings" size={15} />
+              Open settings
+            </button>
+          }
         />
-        <button
-          type="button"
-          className="btn btn-prominent assistant-cta"
-          onClick={() => navigate("settings")}
-        >
-          <Icon name="settings" size={15} />
-          Open settings
-        </button>
       </div>
     );
   }
