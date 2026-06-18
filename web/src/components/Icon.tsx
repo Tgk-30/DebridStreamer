@@ -1,6 +1,32 @@
-// Lightweight inline-SVG icon set standing in for the native app's SF Symbols.
-// Each name maps to the closest equivalent of the SidebarItem.icon / view glyphs
-// used in the Swift sources.
+import {
+  Bot,
+  Bookmark,
+  CalendarDays,
+  Captions,
+  Check,
+  Clapperboard,
+  Clock3,
+  Compass,
+  Copy,
+  Eye,
+  EyeOff,
+  HardDriveDownload,
+  Info,
+  MoreHorizontal,
+  Play,
+  RefreshCw,
+  Save,
+  Search,
+  Settings,
+  Share2,
+  SlidersHorizontal,
+  Sparkles,
+  Star,
+  Trash2,
+  WandSparkles,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
 export type IconName =
   | "discover"
@@ -34,242 +60,51 @@ interface IconProps {
   name: IconName;
   size?: number;
   className?: string;
-  /** Pass a fill (e.g. for star.fill / play.fill). Defaults to stroke-only. */
+  /** Pass a fill for glyphs that have meaningful active variants. */
   filled?: boolean;
 }
 
-const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
-  // compass / discover
-  discover: (filled) => (
-    filled ? (
-      <>
-        <circle cx="12" cy="12" r="9" fill="currentColor" opacity=".18" />
-        <circle cx="12" cy="12" r="9" />
-        <path d="M15.2 8.8l-1.7 4.7-4.7 1.7 1.7-4.7z" fill="currentColor" />
-      </>
-    ) : (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M15.2 8.8l-1.7 4.7-4.7 1.7 1.7-4.7z" />
-      </>
-    )
-  ),
-  // film strip / library
-  library: (filled) => (
-    <>
-      {filled && (
-        <rect
-          x="4"
-          y="4"
-          width="16"
-          height="16"
-          rx="2.5"
-          fill="currentColor"
-          opacity=".18"
-        />
-      )}
-      <rect x="4" y="4" width="16" height="16" rx="2.5" />
-      <path d="M8 4v16M16 4v16" />
-      <path d="M4 8h4M16 8h4M4 12h4M16 12h4M4 16h4M16 16h4" />
-    </>
-  ),
-  // bookmark
-  watchlist: (filled) =>
-    filled ? (
-      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" fill="currentColor" stroke="none" />
-    ) : (
-      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
-    ),
-  // clock
-  history: () => (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </>
-  ),
-  // assistant bot
-  assistant: () => (
-    <>
-      <rect x="5" y="7" width="14" height="11" rx="3" />
-      <path d="M12 3v4" />
-      <path d="M4 12h1" />
-      <path d="M19 12h1" />
-      <circle cx="9.5" cy="12.5" r=".8" fill="currentColor" stroke="none" />
-      <circle cx="14.5" cy="12.5" r=".8" fill="currentColor" stroke="none" />
-      <path d="M9 16h6" />
-    </>
-  ),
-  // gear
-  settings: () => (
-    <>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 2.5l1.2 2 2.3-.3.8 2.2 2 1.2-.9 2.2.9 2.2-2 1.2-.8 2.2-2.3-.3L12 21.5l-1.2-2-2.3.3-.8-2.2-2-1.2.9-2.2-.9-2.2 2-1.2.8-2.2 2.3.3z" />
-    </>
-  ),
-  // magnifyingglass
-  search: (filled) => (
-    <>
-      {filled && <circle cx="11" cy="11" r="7" fill="currentColor" opacity=".18" />}
-      <circle cx="11" cy="11" r="7" />
-      <path d="M16 16l5 5" />
-    </>
-  ),
-  // play.fill
-  play: () => <path d="M7 5v14l12-7z" fill="currentColor" stroke="none" />,
-  // star.fill
-  star: () => (
-    <path
-      d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"
-      fill="currentColor"
-      stroke="none"
-    />
-  ),
-  // sparkles
-  sparkles: () => (
-    <>
-      <path d="M12 3l1.4 3.6L17 8l-3.6 1.4L12 13l-1.4-3.6L7 8l3.6-1.4z" />
-      <path d="M18 14l.7 1.8L20.5 16.5l-1.8.7L18 19l-.7-1.8L15.5 16.5l1.8-.7z" />
-    </>
-  ),
-  // sliders.horizontal
-  sliders: () => (
-    <>
-      <path d="M4 7h5" />
-      <path d="M15 7h5" />
-      <circle cx="12" cy="7" r="2" />
-      <path d="M4 17h9" />
-      <path d="M19 17h1" />
-      <circle cx="16" cy="17" r="2" />
-    </>
-  ),
-  // info.circle
-  info: () => (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 11v5" />
-      <path d="M12 8h.01" />
-    </>
-  ),
-  // xmark
-  xmark: () => (
-    <>
-      <path d="M9 9l6 6M15 9l-6 6" />
-    </>
-  ),
-  // wand with sparkles (mood strip)
-  "wand-search": () => (
-    <>
-      <path d="M5 19l10-10" />
-      <path d="M13 7l4 4" />
-      <path d="M17.5 3.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
-      <path d="M6.5 4.5l.5 1.2 1.2.5-1.2.5-.5 1.2L6 6.7l-1.2-.5L6 5.7z" />
-    </>
-  ),
-  // calendar
-  calendar: () => (
-    <>
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M3 9h18" />
-      <path d="M8 3v4M16 3v4" />
-    </>
-  ),
-  // externaldrive / debrid (a drive with a download arrow)
-  debrid: () => (
-    <>
-      <rect x="3" y="13" width="18" height="6" rx="2" />
-      <path d="M7 16h.01" />
-      <path d="M12 3v7M9 7l3 3 3-3" />
-    </>
-  ),
-  // trash
-  trash: () => (
-    <>
-      <path d="M4 7h16" />
-      <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-      <path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" />
-    </>
-  ),
-  // arrow.clockwise
-  refresh: () => (
-    <>
-      <path d="M20 11a8 8 0 1 0-2.3 5.7" />
-      <path d="M20 5v6h-6" />
-    </>
-  ),
-  // square.and.arrow.up
-  share: () => (
-    <>
-      <path d="M12 3v12" />
-      <path d="M8 7l4-4 4 4" />
-      <path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7" />
-    </>
-  ),
-  // checkmark
-  // captions — a rounded screen with two caption underlines
-  captions: () => (
-    <>
-      <rect x="3" y="5" width="18" height="14" rx="2.5" />
-      <path d="M7 11h3.5M7 14.5h3.5" />
-      <path d="M13.5 11H17M13.5 14.5H17" />
-    </>
-  ),
-  check: () => <path d="M5 12l5 5L20 7" />,
-  // floppy disk save glyph
-  save: () => (
-    <>
-      <path d="M5 3h12l2 2v16H5z" />
-      <path d="M8 3v6h8V3" />
-      <path d="M8 21v-7h8v7" />
-    </>
-  ),
-  // copy
-  copy: () => (
-    <>
-      <rect x="8" y="8" width="11" height="11" rx="2" />
-      <path d="M5 15H4a1 1 0 0 1-1-1V5a2 2 0 0 1 2-2h9a1 1 0 0 1 1 1v1" />
-    </>
-  ),
-  // eye
-  eye: () => (
-    <>
-      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" />
-      <circle cx="12" cy="12" r="3" />
-    </>
-  ),
-  // eye.slash
-  "eye-off": () => (
-    <>
-      <path d="M3 3l18 18" />
-      <path d="M10.6 10.6A3 3 0 0 0 13.4 13.4" />
-      <path d="M7.1 7.6C4.2 9.2 2.5 12 2.5 12s3.5 6 9.5 6c1.5 0 2.8-.4 4-1" />
-      <path d="M14.2 6.3C18.8 7.1 21.5 12 21.5 12a17 17 0 0 1-2.7 3.3" />
-    </>
-  ),
-  // more destinations
-  more: () => (
-    <>
-      <circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
-      <circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none" />
-    </>
-  ),
+const ICONS: Record<IconName, LucideIcon> = {
+  discover: Compass,
+  library: Clapperboard,
+  watchlist: Bookmark,
+  history: Clock3,
+  assistant: Bot,
+  settings: Settings,
+  search: Search,
+  play: Play,
+  star: Star,
+  sparkles: Sparkles,
+  sliders: SlidersHorizontal,
+  info: Info,
+  xmark: X,
+  "wand-search": WandSparkles,
+  calendar: CalendarDays,
+  debrid: HardDriveDownload,
+  trash: Trash2,
+  refresh: RefreshCw,
+  share: Share2,
+  captions: Captions,
+  check: Check,
+  copy: Copy,
+  eye: Eye,
+  "eye-off": EyeOff,
+  save: Save,
+  more: MoreHorizontal,
 };
 
 export function Icon({ name, size = 20, className, filled = false }: IconProps) {
+  const Glyph = ICONS[name];
+  const shouldFill = name === "play" || name === "star" || (name === "watchlist" && filled);
+
   return (
-    <svg
-      className={className}
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <Glyph
       aria-hidden="true"
-    >
-      {PATHS[name](filled)}
-    </svg>
+      className={className}
+      fill={shouldFill ? "currentColor" : "none"}
+      focusable="false"
+      size={size}
+      strokeWidth={shouldFill ? 0 : 1.8}
+    />
   );
 }
