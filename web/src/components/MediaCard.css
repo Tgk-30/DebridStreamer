@@ -2,7 +2,7 @@
    Transform/scale are driven by `motion` (variants); CSS handles the look. */
 
 .media-card {
-  --poster-w: 168px;
+  --poster-w: var(--poster-card-width, 168px);
   position: relative;
   display: flex;
   flex-direction: column;

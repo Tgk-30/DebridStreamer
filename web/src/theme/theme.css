@@ -66,6 +66,8 @@
   --glass-blur-raised: 28px;
   --glass-blur-hero: 40px;
   --text-scale: 1;
+  --poster-card-width: 168px;
+  --poster-grid-min: 184px;
 
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui,
     "Segoe UI", Roboto, sans-serif;
@@ -90,6 +92,16 @@
 }
 :root[data-text-size="xl"] {
   --text-scale: 1.16;
+}
+
+:root[data-poster-size="compact"] {
+  --poster-card-width: 142px;
+  --poster-grid-min: 158px;
+}
+
+:root[data-poster-size="large"] {
+  --poster-card-width: 194px;
+  --poster-grid-min: 214px;
 }
 
 :root[data-radius="sharp"] {

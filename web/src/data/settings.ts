@@ -69,6 +69,7 @@ const SettingsKeys = {
   appearanceBlur: "appearance_blur",
   appearanceChrome: "appearance_chrome",
   appearanceNavLabels: "appearance_nav_labels",
+  appearancePosterSize: "appearance_poster_size",
   openSubtitlesApiKey: "opensubtitles_api_key",
   autoUpdateChecks: "auto_update_checks",
   autoInstallUpdates: "auto_install_updates",
@@ -124,6 +125,7 @@ export type AppearanceMotion = "system" | "normal" | "reduced";
 export type AppearanceRadius = "sharp" | "default" | "round";
 export type AppearanceChrome = "translucent" | "balanced" | "solid";
 export type AppearanceNavLabels = "auto" | "labels" | "icons";
+export type AppearancePosterSize = "compact" | "default" | "large";
 
 /** Everything the user can configure, persisted to localStorage this phase. */
 export interface AppSettings {
@@ -146,6 +148,7 @@ export interface AppSettings {
   appearanceBlur: number;
   appearanceChrome: AppearanceChrome;
   appearanceNavLabels: AppearanceNavLabels;
+  appearancePosterSize: AppearancePosterSize;
   /** OpenSubtitles REST API key (powers in-player subtitle search). */
   openSubtitlesApiKey: string;
   /** Desktop builds check signed GitHub Releases on launch. */
@@ -223,6 +226,10 @@ function normalizeAppearanceNavLabels(value: unknown): AppearanceNavLabels {
   return value === "labels" || value === "icons" ? value : "auto";
 }
 
+function normalizeAppearancePosterSize(value: unknown): AppearancePosterSize {
+  return value === "compact" || value === "large" ? value : "default";
+}
+
 /** Defaults: pull what we can from env so the app works with zero config. */
 export function defaultSettings(): AppSettings {
   return {
@@ -244,6 +251,7 @@ export function defaultSettings(): AppSettings {
     appearanceBlur: 18,
     appearanceChrome: "balanced",
     appearanceNavLabels: "auto",
+    appearancePosterSize: "default",
     openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
     autoUpdateChecks: true,
     autoInstallUpdates: false,
@@ -276,6 +284,7 @@ export function loadSettings(): AppSettings {
       appearanceBlur: normalizeAppearanceBlur(parsed.appearanceBlur),
       appearanceChrome: normalizeAppearanceChrome(parsed.appearanceChrome),
       appearanceNavLabels: normalizeAppearanceNavLabels(parsed.appearanceNavLabels),
+      appearancePosterSize: normalizeAppearancePosterSize(parsed.appearancePosterSize),
     };
   } catch {
     return base;
@@ -361,6 +370,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceBlur,
     appearanceChrome,
     appearanceNavLabels,
+    appearancePosterSize,
     autoUpdateChecks,
     autoInstallUpdates,
     streamCachedOnly,
@@ -380,6 +390,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.appearanceBlur),
     store.getSetting(SettingsKeys.appearanceChrome),
     store.getSetting(SettingsKeys.appearanceNavLabels),
+    store.getSetting(SettingsKeys.appearancePosterSize),
     store.getSetting(SettingsKeys.autoUpdateChecks),
     store.getSetting(SettingsKeys.autoInstallUpdates),
     store.getSetting(SettingsKeys.streamCachedOnly),
@@ -444,6 +455,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceNavLabels: normalizeAppearanceNavLabels(
       appearanceNavLabels ?? base.appearanceNavLabels,
     ),
+    appearancePosterSize: normalizeAppearancePosterSize(
+      appearancePosterSize ?? base.appearancePosterSize,
+    ),
     openSubtitlesApiKey: openSubtitlesApiKey ?? base.openSubtitlesApiKey,
     autoUpdateChecks:
       autoUpdateChecks == null ? base.autoUpdateChecks : autoUpdateChecks === "true",
@@ -506,6 +520,10 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     store.setSetting(
       SettingsKeys.appearanceNavLabels,
       normalizeAppearanceNavLabels(settings.appearanceNavLabels),
+    ),
+    store.setSetting(
+      SettingsKeys.appearancePosterSize,
+      normalizeAppearancePosterSize(settings.appearancePosterSize),
     ),
     store.setSetting(
       SettingsKeys.autoUpdateChecks,

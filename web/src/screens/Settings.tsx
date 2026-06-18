@@ -29,6 +29,7 @@ import type {
   AppearanceDensity,
   AppearanceMotion,
   AppearanceNavLabels,
+  AppearancePosterSize,
   AppearanceRadius,
   AppearanceTextSize,
   SourceEntry,
@@ -133,6 +134,7 @@ interface AppearanceProfile {
     | "appearanceBlur"
     | "appearanceChrome"
     | "appearanceNavLabels"
+    | "appearancePosterSize"
   >;
 }
 
@@ -153,6 +155,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 18,
       appearanceChrome: "balanced",
       appearanceNavLabels: "auto",
+      appearancePosterSize: "default",
     },
   },
   {
@@ -169,6 +172,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 12,
       appearanceChrome: "solid",
       appearanceNavLabels: "icons",
+      appearancePosterSize: "compact",
     },
   },
   {
@@ -185,6 +189,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 14,
       appearanceChrome: "balanced",
       appearanceNavLabels: "labels",
+      appearancePosterSize: "large",
     },
   },
   {
@@ -201,6 +206,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 10,
       appearanceChrome: "solid",
       appearanceNavLabels: "auto",
+      appearancePosterSize: "default",
     },
   },
 ];
@@ -255,7 +261,8 @@ function appearanceProfileMatches(
     draft.appearanceRadius === settings.appearanceRadius &&
     draft.appearanceBlur === settings.appearanceBlur &&
     draft.appearanceChrome === settings.appearanceChrome &&
-    draft.appearanceNavLabels === settings.appearanceNavLabels
+    draft.appearanceNavLabels === settings.appearanceNavLabels &&
+    draft.appearancePosterSize === settings.appearancePosterSize
   );
 }
 
@@ -2473,6 +2480,13 @@ function AppearanceTab({
                 ? "Labeled nav"
                 : "Auto nav"}
           </span>
+          <span>
+            {draft.appearancePosterSize === "compact"
+              ? "Compact posters"
+              : draft.appearancePosterSize === "large"
+                ? "Large posters"
+                : "Default posters"}
+          </span>
         </div>
       </div>
 
@@ -2547,6 +2561,18 @@ function AppearanceTab({
           ]}
           onChange={(value) =>
             applyAppearance({ appearanceNavLabels: value as AppearanceNavLabels })
+          }
+        />
+        <SegmentedControl
+          label="Poster size"
+          value={draft.appearancePosterSize}
+          options={[
+            { value: "compact", label: "Compact" },
+            { value: "default", label: "Default" },
+            { value: "large", label: "Large" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({ appearancePosterSize: value as AppearancePosterSize })
           }
         />
       </div>
