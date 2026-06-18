@@ -24,7 +24,8 @@
   font-weight: 700;
 }
 .mood-subtitle {
-  font-size: 12px;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 13px;
 }
 
 .mood-prompt {
@@ -52,6 +53,7 @@
   gap: var(--sp-sm);
 }
 .mood-chips .chip {
+  color: rgba(255, 255, 255, 0.84);
   font-weight: 500;
 }
 
@@ -89,11 +91,12 @@
     flex: 1 1 calc(50% - var(--sp-sm));
     justify-content: center;
     min-width: 0;
-    min-height: 38px;
-    padding: 7px 9px;
+    min-height: 42px;
+    padding: 8px 10px;
     text-align: center;
     white-space: normal;
-    line-height: 1.18;
+    font-size: 12px;
+    line-height: 1.25;
   }
 }
 

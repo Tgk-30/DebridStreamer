@@ -24,6 +24,9 @@ export function Discover({ onSelect }: DiscoverProps) {
 
   // "See all" → open the full paginated Browse for a rail's exact category.
   const seeAll = (ctx: BrowseContext) => () => openBrowse(ctx);
+  const heroKey = data?.hero == null ? null : `${data.hero.type}:${data.hero.id}`;
+  const withoutHero = (items: MediaPreview[]) =>
+    heroKey == null ? items : items.filter((item) => `${item.type}:${item.id}` !== heroKey);
 
   if (loading || !data) {
     return <DiscoverSkeleton />;
@@ -53,37 +56,37 @@ export function Discover({ onSelect }: DiscoverProps) {
 
       <Rail
         title="Trending Movies"
-        items={data.trendingMovies}
+        items={withoutHero(data.trendingMovies)}
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "movie", category: "trending" })}
       />
       <Rail
         title="Trending TV Shows"
-        items={data.trendingTV}
+        items={withoutHero(data.trendingTV)}
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "series", category: "trending" })}
       />
       <Rail
         title="Popular Movies"
-        items={data.popularMovies}
+        items={withoutHero(data.popularMovies)}
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "movie", category: "popular" })}
       />
       <Rail
         title="Top Rated Movies"
-        items={data.topRatedMovies}
+        items={withoutHero(data.topRatedMovies)}
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "movie", category: "top_rated" })}
       />
       <Rail
         title="Now Playing"
-        items={data.nowPlayingMovies}
+        items={withoutHero(data.nowPlayingMovies)}
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "movie", category: "now_playing" })}
       />
       <Rail
         title="Upcoming"
-        items={data.upcomingMovies}
+        items={withoutHero(data.upcomingMovies)}
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "movie", category: "upcoming" })}
       />

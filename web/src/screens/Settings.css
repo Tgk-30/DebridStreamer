@@ -69,9 +69,9 @@
 }
 .settings-field-hint,
 .settings-hint {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.66);
 }
 .settings-hint {
   margin: 0;
@@ -123,7 +123,7 @@
 
 .settings-secret input {
   width: 100%;
-  padding-right: 112px;
+  padding-right: 132px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
@@ -132,20 +132,20 @@
 .settings-secret-actions {
   position: absolute;
   top: 50%;
-  right: 6px;
+  right: 5px;
   display: flex;
-  gap: 4px;
+  gap: 5px;
   transform: translateY(-50%);
 }
 
 .settings-secret-btn {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border: 0.75px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--r-xs);
+  border-radius: var(--r-sm);
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-secondary);
   cursor: pointer;
@@ -160,14 +160,21 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px 10px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
-  color: var(--text-tertiary);
+  color: rgba(255, 255, 255, 0.56);
 }
 
 .settings-secret-note strong {
   color: var(--accent);
   font-weight: 700;
+}
+
+.settings-secret-summary {
+  padding: var(--sp-sm) var(--sp-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .settings-divider {
@@ -572,14 +579,14 @@
 @media (min-width: 860px) {
   .settings-screen {
     display: grid;
-    grid-template-columns: 190px minmax(0, 760px);
+    grid-template-columns: 210px minmax(0, 900px);
     grid-template-areas:
       "title title"
       "tabs panel"
       "tabs footer";
     align-items: start;
     column-gap: var(--sp-xl);
-    width: min(100%, 1040px);
+    width: min(100%, 1180px);
   }
 
   .settings-h1 {

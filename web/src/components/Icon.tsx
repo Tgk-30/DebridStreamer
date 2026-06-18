@@ -69,13 +69,16 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
       <path d="M12 7v5l3 2" />
     </>
   ),
-  // wand.and.stars
+  // assistant bot
   assistant: () => (
     <>
-      <path d="M4 20L16 8" />
-      <path d="M14 6l2 2" />
-      <path d="M19 3.2l.5 1.3 1.3.5-1.3.5L19 6.8l-.5-1.3L17.2 5l1.3-.5z" />
-      <path d="M7 4l.4 1 1 .4-1 .4L7 6.8 6.6 5.8l-1-.4 1-.4z" />
+      <rect x="5" y="7" width="14" height="11" rx="3" />
+      <path d="M12 3v4" />
+      <path d="M4 12h1" />
+      <path d="M19 12h1" />
+      <circle cx="9.5" cy="12.5" r=".8" fill="currentColor" stroke="none" />
+      <circle cx="14.5" cy="12.5" r=".8" fill="currentColor" stroke="none" />
+      <path d="M9 16h6" />
     </>
   ),
   // gear

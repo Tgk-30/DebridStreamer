@@ -359,7 +359,7 @@ async function serverRequest<T>(
 
 export function Settings() {
   const { settings, updateSettings } = useAppStore();
-  const [tab, setTab] = useState<Tab>("keys");
+  const [tab, setTab] = useState<Tab>("appearance");
   // Edit a local draft; "Save" commits it through the store.
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saved, setSaved] = useState(false);
@@ -385,7 +385,7 @@ export function Settings() {
   const tabs = serverMode ? TABS : TABS.filter((t) => t.id !== "server");
 
   useEffect(() => {
-    if (!serverMode && tab === "server") setTab("keys");
+    if (!serverMode && tab === "server") setTab("appearance");
   }, [serverMode, tab]);
 
   return (
@@ -2316,6 +2316,11 @@ function modelOptions(provider: AppSettings["aiProvider"], current: string): str
 function KeysTab({ draft, patch }: TabProps) {
   return (
     <div className="settings-fields">
+      <p className="settings-hint settings-secret-summary">
+        Secrets stay in this profile. Desktop builds use OS keychain storage
+        when available.
+      </p>
+
       <Field label="TMDB API key" hint="Powers Discover, Search, and Detail metadata.">
         <SecretInput
           value={draft.tmdbKey}
@@ -2405,7 +2410,7 @@ function SecretInput({
   value,
   onChange,
   placeholder,
-  note = "Stored locally in this profile; desktop builds use the OS keychain when available.",
+  note = "",
 }: {
   value: string;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -2436,6 +2441,9 @@ function SecretInput({
   function checkSecret() {
     setMessage(value.trim().length > 0 ? "Ready to save." : "Empty.");
   }
+
+  const cleanedNote = note.trim();
+  const showNote = cleanedNote.length > 0 || message != null;
 
   return (
     <div className="settings-secret-wrap">
@@ -2478,10 +2486,12 @@ function SecretInput({
           </button>
         </div>
       </div>
-      <div className="settings-secret-note">
-        <span>{note}</span>
-        {message != null && <strong>{message}</strong>}
-      </div>
+      {showNote && (
+        <div className="settings-secret-note">
+          {cleanedNote.length > 0 && <span>{cleanedNote}</span>}
+          {message != null && <strong>{message}</strong>}
+        </div>
+      )}
     </div>
   );
 }
@@ -2511,7 +2521,8 @@ function DebridTab({ draft, patch }: TabProps) {
     <div className="settings-fields">
       <p className="settings-hint t-secondary">
         Choose one provider at a time. Saved providers are tried in priority
-        order; the first that has a cached result wins.
+        order; the first that has a cached result wins. Tokens stay in this
+        profile, with OS keychain storage in desktop builds when available.
       </p>
 
       <Field label="Provider" hint="Real-Debrid is selected first by default.">

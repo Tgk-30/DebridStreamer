@@ -73,6 +73,9 @@ nav {
 }
 
 nav a {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
   text-decoration: none;
 }
 
@@ -420,5 +423,75 @@ pre {
   .hero {
     min-height: auto;
     padding-top: 48px;
+  }
+}
+
+@media (max-width: 520px) {
+  main {
+    width: min(100% - 24px, 1120px);
+  }
+
+  .site-header {
+    gap: 12px;
+    padding: 14px 12px;
+  }
+
+  nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+
+  nav a {
+    justify-content: center;
+    min-height: 38px;
+    padding: 0 10px;
+    border: 1px solid var(--site-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.055);
+    font-weight: 700;
+  }
+
+  .hero {
+    gap: 20px;
+    padding: 36px 0 32px;
+  }
+
+  h1 {
+    font-size: clamp(40px, 12vw, 52px);
+    line-height: 1;
+  }
+
+  .lede,
+  .section p {
+    font-size: 16px;
+    line-height: 1.58;
+  }
+
+  .hero-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .primary-action,
+  .secondary-action,
+  .download-card a {
+    width: 100%;
+    min-height: 46px;
+    padding-inline: 16px;
+  }
+
+  .hero-panel {
+    padding: 14px;
+  }
+
+  .mode-card,
+  .download-card,
+  .code-card,
+  .steps article,
+  .status-list {
+    padding: 16px;
   }
 }

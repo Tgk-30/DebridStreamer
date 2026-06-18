@@ -124,8 +124,9 @@
 .hero-info {
   padding: 12px 22px;
   font-size: 15px;
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
   backdrop-filter: blur(10px);
 }
 .hero-info:hover {
@@ -142,11 +143,11 @@
   z-index: 2;
 }
 .hero-dot {
-  width: 22px;
-  height: 4px;
+  width: 24px;
+  height: 5px;
   border: 0;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.42);
   cursor: pointer;
   transition: background 0.3s, width 0.3s;
 }
@@ -154,7 +155,7 @@
   background: rgba(255, 255, 255, 0.55);
 }
 .hero-dot.is-active {
-  width: 34px;
+  width: 38px;
   background: rgba(var(--accent-rgb), 1);
   box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.6);
 }
