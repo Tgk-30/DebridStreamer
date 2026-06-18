@@ -426,6 +426,7 @@ interface HealthResponse {
 }
 
 type DeviceKind = "ios" | "android" | "mac" | "windows" | "linux" | "desktop" | "unknown";
+type InstallPath = "device" | "connect" | "downloads" | "deploy";
 
 function deviceKind(): DeviceKind {
   const ua = navigator.userAgent.toLowerCase();
@@ -746,6 +747,7 @@ function InstallTab() {
     null,
   );
   const [installed, setInstalled] = useState(() => isStandaloneDisplay());
+  const [installPath, setInstallPath] = useState<InstallPath>("device");
   const kind = deviceKind();
 
   useEffect(() => {
@@ -793,6 +795,34 @@ function InstallTab() {
               title: "Install this server",
               body: "Use your browser's install app action to add this self-hosted server to your launcher.",
             };
+  const installPathOptions: Array<{
+    id: InstallPath;
+    label: string;
+    summary: string;
+  }> = [
+    {
+      id: "device",
+      label: installed ? "Installed app" : primary.title,
+      summary: installed
+        ? "This device already has launcher access."
+        : "Set up launcher access or desktop hosting on this device.",
+    },
+    {
+      id: "connect",
+      label: "Connect to server",
+      summary: "Use a hosted DebridStreamer URL for shared profiles and keys.",
+    },
+    {
+      id: "downloads",
+      label: "Desktop downloads",
+      summary: "Get native Mac, Windows, and Linux builds.",
+    },
+    {
+      id: "deploy",
+      label: "Server setup",
+      summary: "Deploy Docker Compose on a NAS, VPS, or home server.",
+    },
+  ];
 
   return (
     <div className="settings-fields">
@@ -802,45 +832,93 @@ function InstallTab() {
         using now.
       </p>
 
-      <div className="settings-install-card glass-rest">
-        <div>
-          <h3>{installed ? "Installed" : primary.title}</h3>
-          <p className="t-secondary">{installed ? "This server is already running as an installed app." : primary.body}</p>
-        </div>
-        {promptEvent != null && !installed && (
-          <button type="button" className="btn" onClick={() => void promptInstall()}>
-            Install app
-          </button>
-        )}
+      <div className="settings-install-picker">
+        <label className="settings-label" htmlFor="settings-install-path">
+          Setup path
+        </label>
+        <select
+          id="settings-install-path"
+          value={installPath}
+          onChange={(event) => setInstallPath(event.target.value as InstallPath)}
+        >
+          {installPathOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <DesktopHostPanel />
+      <div className="settings-install-choices" aria-label="Setup path">
+        {installPathOptions.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            aria-pressed={installPath === option.id}
+            className={`settings-install-choice${installPath === option.id ? " is-active" : ""}`}
+            onClick={() => setInstallPath(option.id)}
+          >
+            <span>{option.label}</span>
+            <small>{option.summary}</small>
+          </button>
+        ))}
+      </div>
 
-      <ServerConnectionPanel />
+      <div className="settings-install-detail">
+        {installPath === "device" && (
+          <>
+            <div className="settings-install-card glass-rest">
+              <div>
+                <h3>{installed ? "Installed" : primary.title}</h3>
+                <p className="t-secondary">
+                  {installed
+                    ? "This server is already running as an installed app."
+                    : primary.body}
+                </p>
+              </div>
+              {promptEvent != null && !installed && (
+                <button type="button" className="btn" onClick={() => void promptInstall()}>
+                  Install app
+                </button>
+              )}
+            </div>
+            <DesktopHostPanel />
+          </>
+        )}
 
-      <div className="settings-install-grid">
-        <a
-          className="settings-install-card glass-rest"
-          href="https://github.com/Tgk-30/DebridStreamer/releases/latest"
-          target="_blank"
-          rel="noreferrer"
-        >
-          <strong>Desktop downloads</strong>
-          <span className="t-secondary">
-            Mac, Windows, and Linux release assets with signed update support.
-          </span>
-        </a>
-        <a
-          className="settings-install-card glass-rest"
-          href="https://github.com/Tgk-30/DebridStreamer/tree/main/deploy/compose"
-          target="_blank"
-          rel="noreferrer"
-        >
-          <strong>Server setup</strong>
-          <span className="t-secondary">
-            Docker Compose files for NAS, VPS, Raspberry Pi, and home servers.
-          </span>
-        </a>
+        {installPath === "connect" && <ServerConnectionPanel />}
+
+        {installPath === "downloads" && (
+          <div className="settings-install-grid">
+            <a
+              className="settings-install-card glass-rest"
+              href="https://github.com/Tgk-30/DebridStreamer/releases/latest"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <strong>Desktop downloads</strong>
+              <span className="t-secondary">
+                Mac, Windows, and Linux release assets with signed update support.
+              </span>
+            </a>
+          </div>
+        )}
+
+        {installPath === "deploy" && (
+          <div className="settings-install-grid">
+            <a
+              className="settings-install-card glass-rest"
+              href="https://github.com/Tgk-30/DebridStreamer/tree/main/deploy/compose"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <strong>Server setup</strong>
+              <span className="t-secondary">
+                Docker Compose files for NAS, VPS, Raspberry Pi, and home servers.
+              </span>
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );

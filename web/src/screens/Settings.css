@@ -48,6 +48,8 @@
 
 .settings-tabs .chip:focus-visible,
 .settings-segmented button:focus-visible,
+.settings-install-choice:focus-visible,
+.settings-install-picker select:focus-visible,
 .accent-swatch:focus-visible,
 .theme-card:focus-visible,
 .appearance-profile-picker select:focus-visible {
@@ -862,6 +864,75 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+.settings-install-picker {
+  display: none;
+}
+
+.settings-install-picker select {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--sp-sm) var(--sp-md);
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-primary);
+  font: inherit;
+  outline: none;
+}
+
+.settings-install-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--sp-sm);
+}
+
+.settings-install-choice {
+  display: flex;
+  min-width: 0;
+  min-height: 92px;
+  flex-direction: column;
+  gap: 5px;
+  justify-content: flex-start;
+  padding: var(--sp-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.settings-install-choice span {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.settings-install-choice small {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.settings-install-choice:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.settings-install-choice.is-active {
+  border-color: rgba(var(--accent-rgb), 0.62);
+  background: rgba(var(--accent-rgb), 0.18);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.48);
+}
+
+.settings-install-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
 .settings-install-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -1069,6 +1140,26 @@
   }
 
   .settings-key-card {
+    padding: var(--sp-md);
+  }
+
+  .settings-install-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .settings-install-choices {
+    display: none;
+  }
+
+  .settings-install-detail,
+  .settings-install-grid {
+    gap: var(--sp-sm);
+  }
+
+  .settings-install-card {
+    flex-direction: column;
     padding: var(--sp-md);
   }
 
