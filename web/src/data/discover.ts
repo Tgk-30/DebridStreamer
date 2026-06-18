@@ -13,6 +13,8 @@ import { useEffect, useState } from "react";
 import type { MediaPreview } from "../models/media";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import { TMDBService } from "../services/metadata/TMDBService";
+import { fetchServerDiscoverHome } from "../lib/serverApi";
+import { isServerMode } from "../lib/serverMode";
 import { loadDiscoverFixtures } from "./fixtures";
 
 export interface DiscoverData {
@@ -117,6 +119,28 @@ export function useDiscover(tmdb: TMDBService | null): DiscoverState {
     let cancelled = false;
 
     async function run() {
+      if (isServerMode()) {
+        setState((s) => ({ ...s, loading: true }));
+        try {
+          const data = await fetchServerDiscoverHome();
+          if (!cancelled) {
+            setState({ data, loading: false, error: null, source: "live" });
+          }
+          return;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (!cancelled) {
+            setState({
+              data: loadFixtureDiscover(),
+              loading: false,
+              error: message,
+              source: "fixtures",
+            });
+          }
+          return;
+        }
+      }
+
       // Driven by the shared, settings-derived TMDB service (which already folds
       // in the VITE_TMDB_KEY fallback). When the user saves a key in Settings the
       // service identity changes and this effect re-runs, lighting up the catalog

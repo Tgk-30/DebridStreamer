@@ -5,20 +5,21 @@
 // a green "Instant · RD/AD/PM/TB" badge when it's cached on a debrid service or
 // a grey "Will cache" badge otherwise, and seeders / size / indexer metadata.
 // A "Cached only" toggle filters to instant streams and the list is cached-first
-// sorted. Selecting a row resolves the stream via DebridManager.resolveStream
-// and hands the URL up for playback.
+// sorted. Selecting a row resolves the stream through the caller's resolver
+// (local DebridManager in Local Mode, self-hosted API in Server Mode) and hands
+// the URL up for playback.
 
 import { useMemo, useState } from "react";
-import type { DebridManager } from "../services/debrid/DebridManager";
 import { DebridServiceType, type StreamInfo } from "../services/debrid/models";
 import { TorrentResult } from "../services/indexers/models";
-import type { StreamRow, StreamsState } from "../data/streams";
+import { filterStreamRows, type StreamRow, type StreamsState } from "../data/streams";
+import { useAppStore } from "../store/AppStore";
 import { Icon } from "./Icon";
 import "./StreamPicker.css";
 
 interface StreamPickerProps {
   state: StreamsState;
-  debrid: DebridManager | null;
+  resolveStream: (row: StreamRow) => Promise<StreamInfo>;
   /** Called with the resolved stream + the torrent (for codec/container info). */
   onPlay: (stream: StreamInfo, source: TorrentResult) => void;
 }
@@ -36,35 +37,34 @@ function formatSize(bytes: number): string {
   return `${value.toFixed(value >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-export function StreamPicker({ state, debrid, onPlay }: StreamPickerProps) {
+export function StreamPicker({ state, resolveStream, onPlay }: StreamPickerProps) {
   const [cachedOnly, setCachedOnly] = useState(false);
   const [resolvingHash, setResolvingHash] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  const { settings } = useAppStore();
 
   // Cached-first sort (the underlying list is already quality/seeder sorted).
   const rows = useMemo(() => {
+    const dataSaverRows = filterStreamRows(state.rows, settings);
     const filtered = cachedOnly
-      ? state.rows.filter((r) => r.cachedOn != null)
-      : state.rows;
+      ? dataSaverRows.filter((r) => r.cachedOn != null)
+      : dataSaverRows;
     return [...filtered].sort((a, b) => {
       const aCached = a.cachedOn != null ? 1 : 0;
       const bCached = b.cachedOn != null ? 1 : 0;
       return bCached - aCached;
     });
-  }, [state.rows, cachedOnly]);
+  }, [state.rows, settings, cachedOnly]);
 
   async function select(row: StreamRow) {
-    if (debrid == null || !debrid.hasServices) {
+    if (!state.hasDebrid) {
       setResolveError("Configure a debrid service to play.");
       return;
     }
     setResolveError(null);
     setResolvingHash(row.result.infoHash);
     try {
-      const stream = await debrid.resolveStream(
-        row.result.infoHash,
-        row.cachedOn,
-      );
+      const stream = await resolveStream(row);
       onPlay(stream, row.result);
     } catch (err) {
       setResolveError(err instanceof Error ? err.message : String(err));
@@ -73,7 +73,8 @@ export function StreamPicker({ state, debrid, onPlay }: StreamPickerProps) {
     }
   }
 
-  const cachedCount = state.rows.filter((r) => r.cachedOn != null).length;
+  const filteredCount = filterStreamRows(state.rows, settings).length;
+  const cachedCount = filterStreamRows(state.rows, settings).filter((r) => r.cachedOn != null).length;
 
   return (
     <section className="streams">
@@ -83,6 +84,7 @@ export function StreamPicker({ state, debrid, onPlay }: StreamPickerProps) {
           <div className="streams-controls">
             <span className="streams-count t-secondary">
               {cachedCount} instant · {state.rows.length} total
+              {filteredCount < state.rows.length ? ` · ${filteredCount} shown` : ""}
             </span>
             <label className="streams-toggle">
               <input

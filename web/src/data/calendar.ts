@@ -14,6 +14,8 @@ import {
   getUpcomingEpisodesForSeries,
   type UpcomingEpisode,
 } from "../lib/metadata";
+import { fetchServerUpcomingEpisodes } from "../lib/serverApi";
+import { isServerMode } from "../lib/serverMode";
 
 /** A date-keyed group of upcoming episodes. */
 export interface CalendarGroup {
@@ -90,32 +92,40 @@ export function groupEpisodes(
 
 /** Resolve the calendar agenda for the user's series. */
 export function useCalendar(tmdb: TMDBService | null): CalendarState {
+  const serverMode = isServerMode();
   const [state, setState] = useState<CalendarState>({
     groups: [],
     loading: true,
     error: null,
     hasSeries: false,
-    hasTMDB: tmdb != null,
+    hasTMDB: tmdb != null || serverMode,
   });
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      setState((s) => ({ ...s, loading: true, error: null, hasTMDB: tmdb != null }));
+      setState((s) => ({
+        ...s,
+        loading: true,
+        error: null,
+        hasTMDB: tmdb != null || serverMode,
+      }));
       try {
         const series = await collectSeries();
         if (cancelled) return;
-        if (series.length === 0 || tmdb == null) {
+        if (series.length === 0 || (tmdb == null && !serverMode)) {
           setState({
             groups: [],
             loading: false,
             error: null,
             hasSeries: series.length > 0,
-            hasTMDB: tmdb != null,
+            hasTMDB: tmdb != null || serverMode,
           });
           return;
         }
-        const episodes = await getUpcomingEpisodesForSeries(series, tmdb);
+        const episodes = serverMode
+          ? await fetchServerUpcomingEpisodes(series)
+          : await getUpcomingEpisodesForSeries(series, tmdb);
         if (cancelled) return;
         setState({
           groups: groupEpisodes(episodes),
@@ -131,14 +141,14 @@ export function useCalendar(tmdb: TMDBService | null): CalendarState {
           loading: false,
           error: err instanceof Error ? err.message : String(err),
           hasSeries: false,
-          hasTMDB: tmdb != null,
+          hasTMDB: tmdb != null || serverMode,
         });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [tmdb]);
+  }, [tmdb, serverMode]);
 
   return state;
 }

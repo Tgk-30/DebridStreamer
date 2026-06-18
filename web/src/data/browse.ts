@@ -21,6 +21,12 @@ import {
   makeDiscoverFilters,
   SortOption,
 } from "../services/metadata/types";
+import {
+  discoverServerMedia,
+  fetchServerCategory,
+  searchServerMedia,
+} from "../lib/serverApi";
+import { isServerMode } from "../lib/serverMode";
 import { loadDiscoverFixtures } from "./fixtures";
 
 // ---- Browse context ---------------------------------------------------------
@@ -253,6 +259,50 @@ export async function loadBrowsePage(
   }
 }
 
+/** Server Mode equivalent of loadBrowsePage. The server owns the TMDB key and
+ * executes the same route mapping under the signed-in profile. */
+export async function loadServerBrowsePage(
+  ctx: BrowseContext,
+  page: number,
+): Promise<BrowsePage> {
+  switch (ctx.kind) {
+    case "category": {
+      const result = await fetchServerCategory({
+        type: ctx.type,
+        category: ctx.category,
+        page,
+      });
+      return toPage(result);
+    }
+    case "genre": {
+      const result = await discoverServerMedia({
+        type: ctx.type,
+        params: buildDiscoverParams(
+          ctx.type,
+          { ...emptyBrowseFilters(), genreIds: [ctx.genreId] },
+          page,
+        ),
+      });
+      return toPage(result);
+    }
+    case "search": {
+      const result = await searchServerMedia({
+        query: ctx.query,
+        type: ctx.type,
+        page,
+      });
+      return toPage(result);
+    }
+    case "discover": {
+      const result = await discoverServerMedia({
+        type: ctx.type,
+        params: buildDiscoverParams(ctx.type, ctx.filters, page),
+      });
+      return toPage(result);
+    }
+  }
+}
+
 function toPage(result: {
   items: MediaPreview[];
   page: number;
@@ -400,6 +450,7 @@ export function useBrowse(
   // A stable identity for the context so the effect re-runs only on a real
   // change (the slideover builds a fresh object each Apply).
   const ctxKey = useMemo(() => JSON.stringify(ctx), [ctx]);
+  const serverMode = isServerMode();
   // Guard against a stale async append after the context changed.
   const runIdRef = useRef(0);
 
@@ -409,7 +460,7 @@ export function useBrowse(
     setState({ ...EMPTY_STATE });
 
     void (async () => {
-      if (service == null) {
+      if (service == null && !serverMode) {
         const page = fixtureBrowsePage(ctx);
         if (runIdRef.current !== runId) return;
         setState({
@@ -427,7 +478,9 @@ export function useBrowse(
       }
 
       try {
-        const page = await loadBrowsePage(service, ctx, 1);
+        const page = serverMode
+          ? await loadServerBrowsePage(ctx, 1)
+          : await loadBrowsePage(service!, ctx, 1);
         if (runIdRef.current !== runId) return;
         setState({
           items: page.items,
@@ -457,12 +510,12 @@ export function useBrowse(
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxKey, service]);
+  }, [ctxKey, service, serverMode]);
 
   const loadMore = useCallback(() => {
     setState((prev) => {
       if (
-        service == null ||
+        (service == null && !serverMode) ||
         prev.loading ||
         prev.loadingMore ||
         prev.source !== "live" ||
@@ -476,7 +529,9 @@ export function useBrowse(
 
       void (async () => {
         try {
-          const page = await loadBrowsePage(service, ctx, next);
+          const page = serverMode
+            ? await loadServerBrowsePage(ctx, next)
+            : await loadBrowsePage(service!, ctx, next);
           if (runIdRef.current !== runId) return;
           setState((cur) => {
             // De-dup across pages (TMDB can repeat items between pages).
@@ -505,7 +560,7 @@ export function useBrowse(
       return { ...prev, loadingMore: true };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxKey, service]);
+  }, [ctxKey, service, serverMode]);
 
   return { ...state, loadMore };
 }

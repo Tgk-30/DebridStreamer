@@ -1,0 +1,15 @@
+.git
+.build
+.swiftpm
+Vendor
+web/node_modules
+web/dist
+web/src-tauri/target
+web/src-tauri/gen
+server/node_modules
+server/dist
+server/data
+poc-tauri/node_modules
+poc-tauri/src-tauri/target
+**/*.tsbuildinfo
+.DS_Store

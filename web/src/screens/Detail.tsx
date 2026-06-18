@@ -23,6 +23,9 @@ import { Spinner } from "../components/Spinner";
 import { isInWatchlist } from "../data/library";
 import { VideoCodec, type StreamInfo } from "../services/debrid/models";
 import type { TorrentResult } from "../services/indexers/models";
+import type { StreamRow } from "../data/streams";
+import { resolveServerStream } from "../lib/serverApi";
+import { isServerMode } from "../lib/serverMode";
 import "./Detail.css";
 
 // The VideoPlayer pulls in hls.js (large) and only mounts once the user starts
@@ -117,6 +120,16 @@ export function Detail() {
     setPlayer({ url: stream.streamURL, title, external: true });
   }
 
+  async function resolveSelectedStream(row: StreamRow): Promise<StreamInfo> {
+    if (isServerMode()) {
+      return resolveServerStream(row);
+    }
+    if (services.debrid == null || !services.debrid.hasServices) {
+      throw new Error("Configure a debrid service to play.");
+    }
+    return services.debrid.resolveStream(row.result.infoHash, row.cachedOn);
+  }
+
   async function handlePlay(stream: StreamInfo, source: TorrentResult) {
     const title = stream.fileName || source.title;
 
@@ -176,7 +189,7 @@ export function Detail() {
       >
         <StreamPicker
           state={streams}
-          debrid={services.debrid}
+          resolveStream={resolveSelectedStream}
           onPlay={handlePlay}
         />
       </div>

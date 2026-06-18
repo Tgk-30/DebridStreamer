@@ -103,6 +103,10 @@ verifies a **minisign signature** on each update against the **public key** in
 `tauri.conf.json` → `plugins.updater.pubkey`, so only releases signed with the
 matching private key are accepted.
 
+Updater artifacts are explicitly enabled in `tauri.conf.json` with
+`bundle.createUpdaterArtifacts: true`. Keep that set, or the desktop release can
+build without the signed artifacts that `latest.json` points installed apps to.
+
 ### Updater signing secrets
 
 The updater **private key** was generated with `tauri signer generate` and is

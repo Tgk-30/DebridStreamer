@@ -27,6 +27,7 @@ import type { MediaType } from "../models/media";
 import { MediaCard } from "../components/MediaCard";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { isServerMode } from "../lib/serverMode";
 import "./Browse.css";
 
 // The advanced filter panel is code-split out of the Browse chunk; it only
@@ -52,6 +53,7 @@ export function Browse() {
   }, [browseContext]);
 
   if (ctx == null) return null;
+  const serverMode = isServerMode();
   return (
     <BrowseInner
       ctx={ctx}
@@ -60,7 +62,7 @@ export function Browse() {
       setFiltersOpen={setFiltersOpen}
       onClose={closeBrowse}
       onSelect={openDetail}
-      hasTmdb={services.tmdb != null}
+      hasTmdb={services.tmdb != null || serverMode}
     />
   );
 }

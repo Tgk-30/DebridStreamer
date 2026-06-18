@@ -105,7 +105,10 @@ export function App() {
 
       {/* Desktop auto-update toast. Runs the launch-time check itself and is a
           no-op in a plain browser (isTauri-gated in updater.ts). */}
-      <UpdateBanner />
+      <UpdateBanner
+        autoCheck={settings.autoUpdateChecks}
+        autoInstall={settings.autoInstallUpdates}
+      />
     </div>
   );
 

@@ -12,14 +12,29 @@
 // live data elsewhere. NOTE: real persistence + keychain storage of secrets
 // arrives with the storage port; localStorage is the stopgap.
 
-import { useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import QRCode from "qrcode";
 import { useAppStore } from "../store/AppStore";
-import type { AppSettings, SourceEntry } from "../data/settings";
+import type { AppSettings, SourceEntry, StreamMaxQuality } from "../data/settings";
 import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import { THEMES } from "../theme/themes";
+import {
+  configuredServerURL,
+  configuredServerURLSource,
+  isServerMode,
+  saveServerURL,
+} from "../lib/serverMode";
+import {
+  desktopServerStatus,
+  isTauri,
+  openExternalURL,
+  startDesktopServer,
+  stopDesktopServer,
+  type DesktopServerStatus,
+} from "../lib/tauri";
 import "./Settings.css";
 
 /** The selectable external-source types. `stremio_addon` is persisted to the
@@ -49,14 +64,282 @@ function sourceTypeLabel(type: StoredIndexerType): string {
   }
 }
 
-type Tab = "keys" | "debrid" | "sources" | "appearance";
+type Tab =
+  | "keys"
+  | "debrid"
+  | "sources"
+  | "appearance"
+  | "playback"
+  | "updates"
+  | "install"
+  | "server";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "appearance", label: "Appearance" },
+  { id: "playback", label: "Playback" },
+  { id: "install", label: "Install" },
+  { id: "updates", label: "Updates" },
+  { id: "server", label: "Server" },
   { id: "keys", label: "API keys" },
   { id: "debrid", label: "Debrid" },
   { id: "sources", label: "Sources" },
 ];
+
+type ServerRole = "owner" | "admin" | "member" | "restricted";
+
+interface ServerProfile {
+  id: string;
+  username?: string;
+  displayName: string;
+  role: ServerRole;
+  simpleMode?: boolean;
+  disabled?: boolean;
+  self?: boolean;
+}
+
+interface ServerUsageSession {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  bytesServed: number;
+  lastAccessedAt: string | null;
+  completedAt: string | null;
+  lastStatus: number | null;
+}
+
+interface ServerUsageProfile {
+  profileId: string;
+  username: string;
+  displayName: string;
+  role: ServerRole;
+  totalBytes: number;
+  streamCount: number;
+  lastAccessedAt: string | null;
+}
+
+interface ServerUsage {
+  days: number;
+  totalBytes: number;
+  streamCount: number;
+  lastAccessedAt?: string | null;
+  sessions?: ServerUsageSession[];
+  profiles?: ServerUsageProfile[];
+}
+
+interface ServerHealth {
+  ok: boolean;
+  serverTime: string;
+  setupRequired: boolean;
+  counts: {
+    users: number;
+    profiles: number;
+    activeSessions: number;
+    activeStreamSessions: number;
+    credentials: number;
+    activeInvites: number;
+    auditEvents: number;
+    recentStreamErrors: number;
+  };
+  config: {
+    cookieSecure: boolean;
+    cookieSameSite: string;
+    trustProxy: boolean;
+    corsConfigured: boolean;
+    rawStreamUrlsEnabled: boolean;
+    webDistConfigured: boolean;
+    sessionTtlSeconds: number;
+  };
+  warnings: string[];
+}
+
+interface ActiveStreamSession {
+  id: string;
+  profileId: string;
+  username: string;
+  displayName: string;
+  title: string | null;
+  contentType: string | null;
+  createdAt: string;
+  expiresAt: string;
+  bytesServed: number;
+  lastAccessedAt: string | null;
+  lastStatus: number | null;
+  lastError: string | null;
+}
+
+interface ServerSessionEntry {
+  id: string;
+  userAgent: string | null;
+  ipHash: string | null;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  current: boolean;
+  active: boolean;
+}
+
+interface ServerInvite {
+  id: string;
+  label: string | null;
+  role: Exclude<ServerRole, "owner">;
+  simpleMode: boolean;
+  maxUses: number;
+  usedCount: number;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  active: boolean;
+}
+
+interface ServerAuditEvent {
+  id: string;
+  actorUserId: string | null;
+  actorProfileId: string | null;
+  actorUsername: string | null;
+  actorDisplayName: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  metadata: unknown;
+  createdAt: string;
+}
+
+type CredentialProvider =
+  | "tmdb"
+  | "omdb"
+  | "real_debrid"
+  | "all_debrid"
+  | "premiumize"
+  | "torbox"
+  | "openai"
+  | "anthropic"
+  | "ollama"
+  | "opensubtitles"
+  | "trakt";
+
+interface EffectiveCredential {
+  id: string | null;
+  provider: CredentialProvider;
+  scope: "server" | "profile" | null;
+  label: string | null;
+  priority?: number;
+  isActive?: boolean;
+  updatedAt?: string;
+}
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+}
+
+interface HealthResponse {
+  ok: boolean;
+  setupRequired?: boolean;
+}
+
+type DeviceKind = "ios" | "android" | "mac" | "windows" | "linux" | "desktop" | "unknown";
+
+function deviceKind(): DeviceKind {
+  const ua = navigator.userAgent.toLowerCase();
+  const platform = navigator.platform.toLowerCase();
+  const touchPoints = navigator.maxTouchPoints ?? 0;
+  if (/iphone|ipad|ipod/.test(ua)) return "ios";
+  if (platform.includes("mac") && touchPoints > 1) return "ios";
+  if (ua.includes("android")) return "android";
+  if (platform.includes("mac") || ua.includes("mac os")) return "mac";
+  if (platform.includes("win") || ua.includes("windows")) return "windows";
+  if (platform.includes("linux") || ua.includes("x11")) return "linux";
+  if (/desktop|cros/.test(ua)) return "desktop";
+  return "unknown";
+}
+
+function isStandaloneDisplay(): boolean {
+  const nav = navigator as Navigator & { standalone?: boolean };
+  return (
+    nav.standalone === true ||
+    window.matchMedia?.("(display-mode: standalone)").matches === true
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function formatShortDate(value: string | null | undefined): string {
+  if (value == null) return "Never";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function inferServerURL(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (trimmed.length === 0) throw new Error("Enter a server URL.");
+  if (/^https?:\/\//i.test(trimmed)) return new URL(trimmed).toString().replace(/\/+$/, "");
+
+  const host = trimmed.split("/", 1)[0] ?? trimmed;
+  const local =
+    host === "localhost" ||
+    host.startsWith("localhost:") ||
+    host.startsWith("127.") ||
+    host.startsWith("10.") ||
+    host.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+    host.endsWith(".local") ||
+    host.includes(".local:");
+  const scheme = local ? "http" : "https";
+  return new URL(`${scheme}://${trimmed}`).toString().replace(/\/+$/, "");
+}
+
+function csrfToken(): string | null {
+  const match = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("ds_csrf="));
+  return match == null ? null : decodeURIComponent(match.slice("ds_csrf=".length));
+}
+
+async function serverRequest<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const baseURL = configuredServerURL();
+  if (baseURL == null) throw new Error("Server Mode is not configured.");
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["content-type"] = "application/json";
+  if (method !== "GET" && method !== "HEAD") {
+    const csrf = csrfToken();
+    if (csrf != null) headers["x-csrf-token"] = csrf;
+  }
+  const response = await fetch(`${baseURL}${path}`, {
+    method,
+    credentials: "include",
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  const parsed = text.length > 0 ? (JSON.parse(text) as Record<string, unknown>) : {};
+  if (!response.ok) {
+    throw new Error(
+      typeof parsed.error === "string"
+        ? parsed.error
+        : `Server request failed (${response.status}).`,
+    );
+  }
+  return parsed as T;
+}
 
 export function Settings() {
   const { settings, updateSettings } = useAppStore();
@@ -75,12 +358,19 @@ export function Settings() {
     setSaved(true);
   }
 
+  const serverMode = isServerMode();
+  const tabs = serverMode ? TABS : TABS.filter((t) => t.id !== "server");
+
+  useEffect(() => {
+    if (!serverMode && tab === "server") setTab("keys");
+  }, [serverMode, tab]);
+
   return (
     <div className="settings-screen">
       <h1 className="settings-h1">Settings</h1>
 
       <div className="settings-tabs">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -107,6 +397,10 @@ export function Settings() {
             }}
           />
         )}
+        {tab === "install" && <InstallTab />}
+        {tab === "playback" && <PlaybackTab draft={draft} patch={patch} />}
+        {tab === "updates" && <UpdatesTab draft={draft} patch={patch} />}
+        {tab === "server" && <ServerTab />}
         {tab === "keys" && <KeysTab draft={draft} patch={patch} />}
         {tab === "debrid" && <DebridTab draft={draft} patch={patch} />}
         {tab === "sources" && <SourcesTab draft={draft} patch={patch} />}
@@ -114,7 +408,7 @@ export function Settings() {
 
       <div className="settings-footer">
         <span className="settings-note t-secondary">
-          Saved to local device storage · OS-keychain for secrets is the next step
+          Saved to this profile · desktop secrets use the OS keychain when available
         </span>
         <button type="button" className="btn btn-prominent" onClick={save}>
           {saved ? "Saved" : "Save changes"}
@@ -124,9 +418,1678 @@ export function Settings() {
   );
 }
 
+function UpdatesTab({ draft, patch }: TabProps) {
+  return (
+    <div className="settings-fields">
+      <p className="settings-hint t-secondary">
+        Desktop builds use signed release metadata from GitHub Releases. Browser
+        and PWA installs update through the web server instead.
+      </p>
+
+      <label className="settings-toggle-row">
+        <input
+          type="checkbox"
+          checked={draft.autoUpdateChecks}
+          onChange={(event) =>
+            patch({
+              autoUpdateChecks: event.target.checked,
+              autoInstallUpdates: event.target.checked
+                ? draft.autoInstallUpdates
+                : false,
+            })
+          }
+        />
+        <span>
+          <strong>Check for desktop updates on launch</strong>
+          <span className="t-secondary"> — shows a signed update prompt.</span>
+        </span>
+      </label>
+
+      <label className="settings-toggle-row">
+        <input
+          type="checkbox"
+          checked={draft.autoUpdateChecks && draft.autoInstallUpdates}
+          disabled={!draft.autoUpdateChecks}
+          onChange={(event) => patch({ autoInstallUpdates: event.target.checked })}
+        />
+        <span>
+          <strong>Install signed desktop updates automatically</strong>
+          <span className="t-secondary"> — downloads, applies, and relaunches.</span>
+        </span>
+      </label>
+    </div>
+  );
+}
+
 interface TabProps {
   draft: AppSettings;
   patch: (next: Partial<AppSettings>) => void;
+}
+
+const STREAM_QUALITY_OPTIONS: { value: StreamMaxQuality; label: string }[] = [
+  { value: "any", label: "Any quality" },
+  { value: "4K", label: "Up to 4K" },
+  { value: "1080p", label: "Up to 1080p" },
+  { value: "720p", label: "Up to 720p" },
+  { value: "480p", label: "Up to 480p" },
+  { value: "SD", label: "SD only" },
+];
+
+function PlaybackTab({ draft, patch }: TabProps) {
+  return (
+    <div className="settings-fields">
+      <p className="settings-hint t-secondary">
+        These profile controls hide stream results that are likely to use more
+        bandwidth. Server Mode applies them before sending stream rows to this
+        device.
+      </p>
+
+      <label className="settings-toggle-row">
+        <input
+          type="checkbox"
+          checked={draft.streamCachedOnly}
+          onChange={(event) => patch({ streamCachedOnly: event.target.checked })}
+        />
+        <span>
+          <strong>Show cached streams only</strong>
+          <span className="t-secondary"> — avoids streams that need to be cached first.</span>
+        </span>
+      </label>
+
+      <Field
+        label="Maximum quality"
+        hint="Higher-quality torrents are hidden from stream results."
+      >
+        <select
+          value={draft.streamMaxQuality}
+          onChange={(event) =>
+            patch({ streamMaxQuality: event.target.value as StreamMaxQuality })
+          }
+        >
+          {STREAM_QUALITY_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field
+        label="Maximum file size"
+        hint="Set 0 for no cap. This filters torrent result size, not transcoded playback bitrate."
+      >
+        <input
+          type="number"
+          min={0}
+          max={500}
+          step={0.5}
+          value={draft.streamMaxSizeGB}
+          onChange={(event) =>
+            patch({ streamMaxSizeGB: Number(event.target.value) || 0 })
+          }
+        />
+      </Field>
+    </div>
+  );
+}
+
+function InstallTab() {
+  const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(
+    null,
+  );
+  const [installed, setInstalled] = useState(() => isStandaloneDisplay());
+  const kind = deviceKind();
+
+  useEffect(() => {
+    const onPrompt = (event: Event) => {
+      event.preventDefault();
+      setPromptEvent(event as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setPromptEvent(null);
+    };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  async function promptInstall() {
+    if (promptEvent == null) return;
+    await promptEvent.prompt();
+    await promptEvent.userChoice.catch(() => null);
+    setPromptEvent(null);
+    setInstalled(isStandaloneDisplay());
+  }
+
+  const primary =
+    kind === "ios"
+      ? {
+          title: "Install on iPhone or iPad",
+          body: "Open this server URL in Safari, use Share, then Add to Home Screen.",
+        }
+      : kind === "android"
+        ? {
+            title: "Install on Android",
+            body: "Use the browser install prompt when available, or Install app from Chrome or Edge.",
+          }
+        : kind === "mac"
+          ? {
+              title: "Mac setup",
+              body: "Use the desktop app for native playback and signed updates, or keep this server URL pinned in your browser.",
+            }
+          : {
+              title: "Install this server",
+              body: "Use your browser's install app action to add this self-hosted server to your launcher.",
+            };
+
+  return (
+    <div className="settings-fields">
+      <p className="settings-hint t-secondary">
+        This guide follows the device you are currently using. Phones and
+        tablets install the self-hosted server as a PWA; desktop users can use
+        either the browser app or the pre-bundled desktop app.
+      </p>
+
+      <div className="settings-install-card glass-rest">
+        <div>
+          <h3>{installed ? "Installed" : primary.title}</h3>
+          <p className="t-secondary">{installed ? "This server is already running as an installed app." : primary.body}</p>
+        </div>
+        {promptEvent != null && !installed && (
+          <button type="button" className="btn" onClick={() => void promptInstall()}>
+            Install app
+          </button>
+        )}
+      </div>
+
+      <DesktopHostPanel />
+
+      <ServerConnectionPanel />
+
+      <div className="settings-install-grid">
+        <a
+          className="settings-install-card glass-rest"
+          href="https://github.com/Tgk-30/DebridStreamer/releases/latest"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <strong>Desktop downloads</strong>
+          <span className="t-secondary">
+            Mac, Windows, and Linux release assets with signed update support.
+          </span>
+        </a>
+        <a
+          className="settings-install-card glass-rest"
+          href="https://github.com/Tgk-30/DebridStreamer/tree/main/deploy/compose"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <strong>Server setup</strong>
+          <span className="t-secondary">
+            Docker Compose files for NAS, VPS, Raspberry Pi, and home servers.
+          </span>
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function DesktopHostPanel() {
+  const [status, setStatus] = useState<DesktopServerStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [qrDataURL, setQrDataURL] = useState<string | null>(null);
+  const desktop = isTauri();
+  const shareURL =
+    status?.share_url ?? status?.lan_urls[0] ?? status?.url ?? status?.urls[0] ?? null;
+
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    void desktopServerStatus()
+      .then((next) => {
+        if (!cancelled) setStatus(next);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [desktop]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!desktop || shareURL == null) {
+      setQrDataURL(null);
+      return;
+    }
+    void QRCode.toDataURL(shareURL, {
+      width: 180,
+      margin: 1,
+      color: {
+        dark: "#111827",
+        light: "#ffffff",
+      },
+    })
+      .then((dataURL) => {
+        if (!cancelled) setQrDataURL(dataURL);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataURL(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [desktop, shareURL]);
+
+  if (!desktop) return null;
+
+  async function start() {
+    setBusy(true);
+    setError(null);
+    setShareMessage(null);
+    try {
+      const next = await startDesktopServer();
+      setStatus(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stop() {
+    setBusy(true);
+    setError(null);
+    setShareMessage(null);
+    try {
+      const next = await stopDesktopServer();
+      setStatus(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openServer() {
+    if (shareURL == null) return;
+    await openExternalURL(shareURL);
+  }
+
+  async function copyShareURL(url: string) {
+    setError(null);
+    setShareMessage(null);
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareMessage("Copied.");
+    } catch {
+      setError("Clipboard is unavailable in this session.");
+    }
+  }
+
+  async function shareHostedApp() {
+    if (shareURL == null) return;
+    setError(null);
+    setShareMessage(null);
+    const nav = navigator as Navigator & {
+      share?: (data: ShareData) => Promise<void>;
+    };
+    if (nav.share == null) {
+      await copyShareURL(shareURL);
+      return;
+    }
+    try {
+      await nav.share({
+        title: "DebridStreamer",
+        text: "Open this DebridStreamer server.",
+        url: shareURL,
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setError(err instanceof Error ? err.message : "Share failed.");
+    }
+  }
+
+  return (
+    <div className="settings-source glass-rest settings-server-connect">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Host from this desktop</span>
+        {status?.running && <span className="chip is-active">Running</span>}
+      </div>
+      <p className="settings-hint t-secondary">
+        Start Server Mode on this computer, then open the hosted app URL for
+        profiles, shared credentials, and phone/tablet home-screen installs.
+      </p>
+      <div className="settings-source-row">
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void start()}
+          disabled={busy || status?.running === true}
+        >
+          {busy && status?.running !== true ? "Starting" : "Start hosting"}
+        </button>
+        <button
+          type="button"
+          className="chip"
+          onClick={() => void stop()}
+          disabled={busy || status?.running !== true}
+        >
+          Stop
+        </button>
+        <button
+          type="button"
+          className="chip"
+          onClick={() => void openServer()}
+          disabled={shareURL == null}
+        >
+          Open hosted app
+        </button>
+        <button
+          type="button"
+          className="chip"
+          onClick={() => void shareHostedApp()}
+          disabled={shareURL == null}
+        >
+          Share
+        </button>
+      </div>
+      {shareURL != null && (
+        <div className="settings-share-box">
+          {qrDataURL != null && (
+            <img
+              className="settings-share-qr"
+              src={qrDataURL}
+              alt="QR code for the hosted DebridStreamer server"
+            />
+          )}
+          <div className="settings-share-copy">
+            <span className="settings-label">Best setup URL</span>
+            <code>{shareURL}</code>
+            <div className="settings-source-row">
+              <button
+                type="button"
+                className="chip"
+                onClick={() => void copyShareURL(shareURL)}
+              >
+                Copy
+              </button>
+              {status?.url != null && status.url !== shareURL && (
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => void copyShareURL(status.url!)}
+                >
+                  Copy local
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {status?.running === true && status.urls.length > 1 && (
+        <div className="settings-url-list">
+          {status.urls.map((url) => (
+            <button
+              type="button"
+              key={url}
+              className="chip"
+              onClick={() => void copyShareURL(url)}
+            >
+              {url}
+            </button>
+          ))}
+        </div>
+      )}
+      {status != null && (
+        <p className="settings-hint t-secondary">{status.detail}</p>
+      )}
+      {status?.running === true && status.lan_urls.length === 0 && status.share_url == null && (
+        <p className="settings-hint t-secondary">
+          I could not detect a LAN address. Set
+          <code> DEBRIDSTREAMER_DESKTOP_SHARE_URL</code> when launching the app
+          to show a Tailscale or tunnel URL here.
+        </p>
+      )}
+      {shareMessage && <p className="settings-status">{shareMessage}</p>}
+      {status?.available === false && (
+        <p className="settings-hint t-secondary">
+          Release builds include this server bundle during CI. Development builds
+          need <code> cd server && npm run build</code> first.
+        </p>
+      )}
+      {error && <p className="settings-status is-error">{error}</p>}
+    </div>
+  );
+}
+
+function ServerConnectionPanel() {
+  const activeURL = configuredServerURL();
+  const source = configuredServerURLSource();
+  const [input, setInput] = useState(activeURL ?? "");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function connect() {
+    setBusy(true);
+    setStatus(null);
+    setError(null);
+    try {
+      const nextURL = inferServerURL(input);
+      const response = await fetch(`${nextURL}/api/health`, {
+        method: "GET",
+        credentials: "include",
+      });
+      const text = await response.text();
+      const parsed =
+        text.length > 0 ? (JSON.parse(text) as Partial<HealthResponse>) : {};
+      if (!response.ok || parsed.ok !== true) {
+        throw new Error(`Server check failed (${response.status}).`);
+      }
+      saveServerURL(nextURL);
+      setStatus(
+        parsed.setupRequired
+          ? "Connected. Owner setup will open next."
+          : "Connected. Sign in will open next.",
+      );
+      window.setTimeout(() => window.location.reload(), 350);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function disconnect() {
+    saveServerURL(null);
+    window.location.reload();
+  }
+
+  const envLocked = source === "env" || source === "same-origin";
+
+  return (
+    <div className="settings-source glass-rest settings-server-connect">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Connect to a server</span>
+        {activeURL != null && <span className="chip is-active">Server Mode</span>}
+      </div>
+      <p className="settings-hint t-secondary">
+        Paste a DebridStreamer server URL to use shared profiles, shared API
+        keys, and server-side stream forwarding across devices.
+      </p>
+      <div className="settings-source-row">
+        <input
+          className="settings-server-url-input"
+          type="url"
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="https://stream.example.com or http://192.168.1.5:43110"
+          disabled={envLocked}
+        />
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void connect()}
+          disabled={busy || envLocked}
+        >
+          {busy ? "Checking" : activeURL == null ? "Connect" : "Reconnect"}
+        </button>
+        {activeURL != null && (
+          <button
+            type="button"
+            className="chip"
+            onClick={disconnect}
+            disabled={envLocked}
+            title={
+              envLocked
+                ? "This server URL was set by the app build configuration."
+                : "Return this device to Local Mode."
+            }
+          >
+            Use Local Mode
+          </button>
+        )}
+      </div>
+      {envLocked && (
+        <p className="settings-hint t-secondary">
+          {source === "same-origin" ? (
+            "This app was opened directly from the server, so it uses the same-origin API."
+          ) : (
+            <>
+              This build is pinned to a server URL by
+              <code> VITE_DEBRIDSTREAMER_SERVER_URL</code>.
+            </>
+          )}
+        </p>
+      )}
+      <p className="settings-hint t-secondary">
+        If this app is connecting from a separate desktop build, the server must
+        allow this app origin with CORS. Opening the server URL directly avoids
+        that extra setup.
+      </p>
+      {status && <p className="settings-status">{status}</p>}
+      {error && <p className="settings-status is-error">{error}</p>}
+    </div>
+  );
+}
+
+const CREDENTIAL_OPTIONS: { provider: CredentialProvider; label: string }[] = [
+  { provider: "tmdb", label: "TMDB" },
+  { provider: "omdb", label: "OMDB" },
+  { provider: "real_debrid", label: "Real-Debrid" },
+  { provider: "all_debrid", label: "AllDebrid" },
+  { provider: "premiumize", label: "Premiumize" },
+  { provider: "torbox", label: "TorBox" },
+  { provider: "openai", label: "OpenAI" },
+  { provider: "anthropic", label: "Anthropic" },
+  { provider: "ollama", label: "Ollama" },
+  { provider: "opensubtitles", label: "OpenSubtitles" },
+  { provider: "trakt", label: "Trakt" },
+];
+
+function credentialProviderLabel(provider: CredentialProvider): string {
+  return (
+    CREDENTIAL_OPTIONS.find((option) => option.provider === provider)?.label ??
+    provider
+  );
+}
+
+function auditActionLabel(action: string): string {
+  return action
+    .split(".")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function sessionUserAgentLabel(userAgent: string | null): string {
+  if (userAgent == null || userAgent.trim().length === 0) return "Unknown device";
+  const value = userAgent.toLowerCase();
+  if (value.includes("iphone")) return "iPhone";
+  if (value.includes("ipad")) return "iPad";
+  if (value.includes("android")) return "Android";
+  if (value.includes("mac os") || value.includes("macintosh")) return "Mac";
+  if (value.includes("windows")) return "Windows";
+  if (value.includes("linux")) return "Linux";
+  return userAgent.slice(0, 72);
+}
+
+function ServerTab() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [role, setRole] = useState<ServerRole>("member");
+  const [session, setSession] = useState<{
+    username: string;
+    displayName: string;
+    role: ServerRole;
+  } | null>(null);
+  const [profiles, setProfiles] = useState<ServerProfile[]>([]);
+  const [usage, setUsage] = useState<ServerUsage | null>(null);
+  const [health, setHealth] = useState<ServerHealth | null>(null);
+  const [activeStreams, setActiveStreams] = useState<ActiveStreamSession[]>([]);
+  const [sessions, setSessions] = useState<ServerSessionEntry[]>([]);
+  const [invites, setInvites] = useState<ServerInvite[]>([]);
+  const [auditEvents, setAuditEvents] = useState<ServerAuditEvent[]>([]);
+  const [inviteDraft, setInviteDraft] = useState({
+    label: "",
+    role: "member" as Exclude<ServerRole, "owner">,
+    simpleMode: true,
+    maxUses: 1,
+    expiresDays: 7,
+  });
+  const [createdInviteURL, setCreatedInviteURL] = useState<string | null>(null);
+  const [newProfile, setNewProfile] = useState({
+    username: "",
+    displayName: "",
+    password: "",
+    role: "member" as Exclude<ServerRole, "owner">,
+    simpleMode: true,
+  });
+  const [passwordDraft, setPasswordDraft] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [effectiveCredentials, setEffectiveCredentials] = useState<EffectiveCredential[]>([]);
+  const [profileCredential, setProfileCredential] = useState({
+    provider: "real_debrid" as CredentialProvider,
+    label: "Personal",
+    value: "",
+  });
+  const [sharedCredential, setSharedCredential] = useState({
+    provider: "tmdb" as CredentialProvider,
+    label: "Shared",
+    value: "",
+  });
+
+  const canAdmin = role === "owner" || role === "admin";
+
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      const sessionResponse = await serverRequest<{
+        session: {
+          username: string;
+          displayName: string;
+          role: ServerRole;
+        };
+      }>("GET", "/api/auth/session");
+      const admin =
+        sessionResponse.session.role === "owner" ||
+        sessionResponse.session.role === "admin";
+      const [
+        profilesResponse,
+        usageResponse,
+        healthResponse,
+        activeStreamsResponse,
+        sessionsResponse,
+        invitesResponse,
+        credentialsResponse,
+        auditResponse,
+      ] = await Promise.all([
+        serverRequest<{ profiles: ServerProfile[] }>("GET", "/api/profiles"),
+        serverRequest<ServerUsage>(
+          "GET",
+          admin ? "/api/admin/usage/streams" : "/api/usage/streams",
+        ),
+        admin
+          ? serverRequest<ServerHealth>("GET", "/api/admin/health")
+          : Promise.resolve(null),
+        admin
+          ? serverRequest<{ streams: ActiveStreamSession[] }>(
+              "GET",
+              "/api/admin/streams/active",
+            )
+          : Promise.resolve({ streams: [] }),
+        serverRequest<{ sessions: ServerSessionEntry[] }>(
+          "GET",
+          "/api/auth/sessions",
+        ),
+        admin
+          ? serverRequest<{ invites: ServerInvite[] }>("GET", "/api/admin/invites")
+          : Promise.resolve({ invites: [] }),
+        serverRequest<{ credentials: EffectiveCredential[] }>(
+          "GET",
+          "/api/credentials/effective",
+        ),
+        admin
+          ? serverRequest<{ events: ServerAuditEvent[] }>(
+              "GET",
+              "/api/admin/audit-log?limit=25",
+            )
+          : Promise.resolve({ events: [] }),
+      ]);
+      setRole(sessionResponse.session.role);
+      setSession(sessionResponse.session);
+      setProfiles(profilesResponse.profiles);
+      setUsage(usageResponse);
+      setHealth(healthResponse);
+      setActiveStreams(activeStreamsResponse.streams);
+      setSessions(sessionsResponse.sessions);
+      setInvites(invitesResponse.invites);
+      setEffectiveCredentials(credentialsResponse.credentials);
+      setAuditEvents(auditResponse.events);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  async function createProfile() {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest("POST", "/api/profiles", {
+        username: newProfile.username,
+        displayName: newProfile.displayName || newProfile.username,
+        password: newProfile.password,
+        role: newProfile.role,
+        simpleMode: newProfile.simpleMode,
+      });
+      setNewProfile({
+        username: "",
+        displayName: "",
+        password: "",
+        role: "member",
+        simpleMode: true,
+      });
+      setMessage("Profile created.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function saveSharedCredential() {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest("PUT", "/api/admin/credentials", {
+        provider: sharedCredential.provider,
+        label: sharedCredential.label || "Shared",
+        value: sharedCredential.value,
+      });
+      setSharedCredential((current) => ({ ...current, value: "" }));
+      setMessage("Shared credential saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function saveProfileCredential() {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest("PUT", "/api/profile/credentials", {
+        provider: profileCredential.provider,
+        label: profileCredential.label || "Personal",
+        value: profileCredential.value,
+      });
+      setProfileCredential((current) => ({ ...current, value: "" }));
+      setMessage("Profile credential override saved.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function changePassword() {
+    setMessage(null);
+    setError(null);
+    try {
+      if (passwordDraft.newPassword !== passwordDraft.confirmPassword) {
+        throw new Error("New passwords do not match.");
+      }
+      await serverRequest("POST", "/api/auth/change-password", {
+        currentPassword: passwordDraft.currentPassword,
+        newPassword: passwordDraft.newPassword,
+      });
+      setPasswordDraft({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+      setMessage("Password changed. Other sessions were signed out.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function revokeSession(id: string) {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest(
+        "DELETE",
+        `/api/auth/sessions/${encodeURIComponent(id)}`,
+      );
+      setMessage("Session revoked.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function deleteProfileCredential(id: string) {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest(
+        "DELETE",
+        `/api/profile/credentials/${encodeURIComponent(id)}`,
+      );
+      setMessage("Profile credential override removed.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function createInvite() {
+    setMessage(null);
+    setError(null);
+    setCreatedInviteURL(null);
+    try {
+      const response = await serverRequest<{
+        invite: ServerInvite;
+        token: string;
+      }>("POST", "/api/admin/invites", {
+        label: inviteDraft.label.trim() || undefined,
+        role: inviteDraft.role,
+        simpleMode: inviteDraft.simpleMode,
+        maxUses: inviteDraft.maxUses,
+        expiresInSeconds: inviteDraft.expiresDays * 24 * 60 * 60,
+      });
+      const baseURL = configuredServerURL() ?? window.location.origin;
+      const inviteURL = new URL(baseURL);
+      inviteURL.searchParams.set("invite", response.token);
+      setCreatedInviteURL(inviteURL.toString());
+      setInvites((current) => [response.invite, ...current]);
+      setMessage("Invite link created.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function revokeInvite(id: string) {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest("DELETE", `/api/admin/invites/${encodeURIComponent(id)}`);
+      setMessage("Invite revoked.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function copyInviteURL() {
+    if (createdInviteURL == null) return;
+    setMessage(null);
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(createdInviteURL);
+      setMessage("Invite link copied.");
+    } catch {
+      setError("Clipboard is unavailable in this session.");
+    }
+  }
+
+  async function logout() {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest("POST", "/api/auth/logout");
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  if (loading) {
+    return <p className="settings-hint t-secondary">Loading server settings…</p>;
+  }
+
+  return (
+    <div className="settings-fields">
+      {error && <p className="settings-status is-error">{error}</p>}
+      {message && <p className="settings-status">{message}</p>}
+
+      <ServerConnectionPanel />
+
+      {session != null && (
+        <div className="settings-profile-row glass-rest">
+          <div>
+            <strong>{session.displayName}</strong>
+            <span className="t-secondary"> @{session.username}</span>
+          </div>
+          <div className="settings-profile-meta t-secondary">
+            <span>{session.role}</span>
+            <button type="button" className="chip" onClick={() => void logout()}>
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+
+      {canAdmin && health != null && <ServerHealthPanel health={health} />}
+
+      {canAdmin && <ActiveStreamsPanel streams={activeStreams} />}
+
+      {usage != null && <ServerUsagePanel usage={usage} />}
+
+      {canAdmin && <ServerAuditPanel events={auditEvents} />}
+
+      <PasswordPanel
+        draft={passwordDraft}
+        onDraftChange={setPasswordDraft}
+        onSave={() => void changePassword()}
+      />
+
+      <SessionsPanel
+        sessions={sessions}
+        onRevoke={(id) => void revokeSession(id)}
+      />
+
+      <ProfileCredentialPanel
+        credentials={effectiveCredentials}
+        draft={profileCredential}
+        onDraftChange={setProfileCredential}
+        onSave={() => void saveProfileCredential()}
+        onDelete={(id) => void deleteProfileCredential(id)}
+      />
+
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Profiles</span>
+        <button type="button" className="chip" onClick={() => void refresh()}>
+          <Icon name="refresh" size={13} /> Refresh
+        </button>
+      </div>
+
+      <div className="settings-profile-list">
+        {profiles.map((profile) => (
+          <div key={profile.id} className="settings-profile-row glass-rest">
+            <div>
+              <strong>{profile.displayName}</strong>
+              <span className="t-secondary">
+                {profile.username ? ` @${profile.username}` : ""}
+              </span>
+            </div>
+            <div className="settings-profile-meta t-secondary">
+              <span>{profile.role}</span>
+              {profile.simpleMode != null && (
+                <span>{profile.simpleMode ? "Simple" : "Advanced"}</span>
+              )}
+              {profile.disabled && <span>Disabled</span>}
+              {profile.self && <span>You</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {canAdmin && (
+        <>
+          <div className="settings-divider" />
+
+          <div className="settings-source glass-rest">
+            <div className="settings-sources-head">
+              <span className="settings-sources-title">Invite link</span>
+              <span className="chip">Profiles</span>
+            </div>
+            <div className="settings-source-row">
+              <input
+                type="text"
+                value={inviteDraft.label}
+                onChange={(event) =>
+                  setInviteDraft((current) => ({
+                    ...current,
+                    label: event.target.value,
+                  }))
+                }
+                placeholder="Label, e.g. Family"
+              />
+              <select
+                value={inviteDraft.role}
+                onChange={(event) =>
+                  setInviteDraft((current) => ({
+                    ...current,
+                    role: event.target.value as Exclude<ServerRole, "owner">,
+                  }))
+                }
+              >
+                <option value="member">Member</option>
+                <option value="restricted">Restricted</option>
+                {role === "owner" && <option value="admin">Admin</option>}
+              </select>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={inviteDraft.maxUses}
+                onChange={(event) =>
+                  setInviteDraft((current) => ({
+                    ...current,
+                    maxUses: Number(event.target.value) || 1,
+                  }))
+                }
+                aria-label="Maximum uses"
+              />
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={inviteDraft.expiresDays}
+                onChange={(event) =>
+                  setInviteDraft((current) => ({
+                    ...current,
+                    expiresDays: Number(event.target.value) || 1,
+                  }))
+                }
+                aria-label="Expires after days"
+              />
+              <label className="settings-source-active">
+                <input
+                  type="checkbox"
+                  checked={inviteDraft.simpleMode}
+                  onChange={(event) =>
+                    setInviteDraft((current) => ({
+                      ...current,
+                      simpleMode: event.target.checked,
+                    }))
+                  }
+                />
+                Simple
+              </label>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void createInvite()}
+              >
+                Create invite
+              </button>
+            </div>
+            {createdInviteURL != null && (
+              <div className="settings-invite-link">
+                <code>{createdInviteURL}</code>
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => void copyInviteURL()}
+                >
+                  Copy
+                </button>
+              </div>
+            )}
+            {invites.length > 0 && (
+              <div className="settings-usage-list">
+                {invites.slice(0, 6).map((invite) => (
+                  <div key={invite.id} className="settings-usage-row">
+                    <span>
+                      <strong>{invite.label ?? invite.role}</strong>
+                      <span className="t-secondary">
+                        {" "}
+                        {invite.usedCount}/{invite.maxUses} used · expires{" "}
+                        {formatShortDate(invite.expiresAt)}
+                      </span>
+                    </span>
+                    <span className="settings-profile-meta t-secondary">
+                      <span>{invite.active ? "Active" : "Inactive"}</span>
+                      <span>{invite.simpleMode ? "Simple" : "Advanced"}</span>
+                      {invite.active && (
+                        <button
+                          type="button"
+                          className="chip"
+                          onClick={() => void revokeInvite(invite.id)}
+                        >
+                          Revoke
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="settings-source glass-rest">
+            <div className="settings-source-row">
+              <input
+                type="text"
+                value={newProfile.username}
+                onChange={(event) =>
+                  setNewProfile((current) => ({
+                    ...current,
+                    username: event.target.value,
+                  }))
+                }
+                placeholder="Username"
+              />
+              <input
+                type="text"
+                value={newProfile.displayName}
+                onChange={(event) =>
+                  setNewProfile((current) => ({
+                    ...current,
+                    displayName: event.target.value,
+                  }))
+                }
+                placeholder="Display name"
+              />
+            </div>
+            <div className="settings-source-row">
+              <input
+                type="password"
+                value={newProfile.password}
+                onChange={(event) =>
+                  setNewProfile((current) => ({
+                    ...current,
+                    password: event.target.value,
+                  }))
+                }
+                placeholder="Password"
+              />
+              <select
+                value={newProfile.role}
+                onChange={(event) =>
+                  setNewProfile((current) => ({
+                    ...current,
+                    role: event.target.value as Exclude<ServerRole, "owner">,
+                  }))
+                }
+              >
+                <option value="member">Member</option>
+                <option value="restricted">Restricted</option>
+                {role === "owner" && <option value="admin">Admin</option>}
+              </select>
+              <label className="settings-source-active">
+                <input
+                  type="checkbox"
+                  checked={newProfile.simpleMode}
+                  onChange={(event) =>
+                    setNewProfile((current) => ({
+                      ...current,
+                      simpleMode: event.target.checked,
+                    }))
+                  }
+                />
+                Simple
+              </label>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void createProfile()}
+              >
+                Create profile
+              </button>
+            </div>
+          </div>
+
+          <div className="settings-source glass-rest">
+            <div className="settings-source-row">
+              <select
+                value={sharedCredential.provider}
+                onChange={(event) =>
+                  setSharedCredential((current) => ({
+                    ...current,
+                    provider: event.target.value as CredentialProvider,
+                  }))
+                }
+              >
+                {CREDENTIAL_OPTIONS.map((item) => (
+                  <option key={item.provider} value={item.provider}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={sharedCredential.label}
+                onChange={(event) =>
+                  setSharedCredential((current) => ({
+                    ...current,
+                    label: event.target.value,
+                  }))
+                }
+                placeholder="Label"
+              />
+            </div>
+            <div className="settings-source-row">
+              <input
+                type="password"
+                value={sharedCredential.value}
+                onChange={(event) =>
+                  setSharedCredential((current) => ({
+                    ...current,
+                    value: event.target.value,
+                  }))
+                }
+                placeholder="Token or API key"
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void saveSharedCredential()}
+              >
+                Save shared credential
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ServerAuditPanel({ events }: { events: ServerAuditEvent[] }) {
+  return (
+    <div className="settings-source glass-rest">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Audit log</span>
+        <span className="chip">Recent</span>
+      </div>
+      {events.length === 0 ? (
+        <p className="settings-hint t-secondary">No recent audit events.</p>
+      ) : (
+        <div className="settings-usage-list">
+          {events.map((event) => {
+            const actor =
+              event.actorDisplayName ?? event.actorUsername ?? "System";
+            const target =
+              event.targetType != null && event.targetId != null
+                ? `${event.targetType}:${event.targetId}`
+                : event.targetType ?? "server";
+            return (
+              <div key={event.id} className="settings-usage-row">
+                <span>
+                  <strong>{auditActionLabel(event.action)}</strong>
+                  <span className="t-secondary"> by {actor}</span>
+                </span>
+                <span className="settings-profile-meta t-secondary">
+                  <span>{target}</span>
+                  <span>{formatShortDate(event.createdAt)}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ServerHealthPanel({ health }: { health: ServerHealth }) {
+  const flags = [
+    `Cookies ${health.config.cookieSecure ? "secure" : "not secure"}`,
+    `SameSite ${health.config.cookieSameSite}`,
+    health.config.trustProxy ? "Proxy trusted" : "Proxy not trusted",
+    health.config.webDistConfigured ? "Hosted PWA ready" : "API only",
+    health.config.rawStreamUrlsEnabled ? "Raw stream sessions on" : "Raw stream sessions off",
+  ];
+
+  return (
+    <div className="settings-source glass-rest">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Server health</span>
+        <span className={`chip${health.ok ? " is-active" : ""}`}>
+          {health.ok ? "Online" : "Check"}
+        </span>
+      </div>
+
+      <div className="settings-usage-grid">
+        <div>
+          <strong>{health.counts.users}</strong>
+          <span className="t-secondary">Users</span>
+        </div>
+        <div>
+          <strong>{health.counts.activeSessions}</strong>
+          <span className="t-secondary">Active sessions</span>
+        </div>
+        <div>
+          <strong>{health.counts.activeStreamSessions}</strong>
+          <span className="t-secondary">Active streams</span>
+        </div>
+        <div>
+          <strong>{health.counts.credentials}</strong>
+          <span className="t-secondary">Credentials</span>
+        </div>
+        <div>
+          <strong>{health.counts.activeInvites}</strong>
+          <span className="t-secondary">Active invites</span>
+        </div>
+        <div>
+          <strong>{health.counts.recentStreamErrors}</strong>
+          <span className="t-secondary">24h stream errors</span>
+        </div>
+      </div>
+
+      <div className="settings-url-list">
+        {flags.map((flag) => (
+          <span key={flag} className="chip">
+            {flag}
+          </span>
+        ))}
+      </div>
+
+      {health.warnings.length > 0 && (
+        <div className="settings-usage-list">
+          {health.warnings.map((warning) => (
+            <div key={warning} className="settings-usage-row">
+              <span>{warning}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p className="settings-hint t-secondary">
+        Last checked {formatShortDate(health.serverTime)}
+      </p>
+    </div>
+  );
+}
+
+function ActiveStreamsPanel({ streams }: { streams: ActiveStreamSession[] }) {
+  return (
+    <div className="settings-source glass-rest">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Active streams</span>
+        <span className="chip">{streams.length} active</span>
+      </div>
+      {streams.length === 0 ? (
+        <p className="settings-hint t-secondary">No active stream sessions.</p>
+      ) : (
+        <div className="settings-usage-list">
+          {streams.map((stream) => (
+            <div key={stream.id} className="settings-usage-row">
+              <span>
+                <strong>{stream.title ?? "Stream session"}</strong>
+                <span className="t-secondary">
+                  {" "}
+                  {stream.displayName} @{stream.username}
+                </span>
+              </span>
+              <span className="settings-profile-meta t-secondary">
+                <span>{formatBytes(stream.bytesServed)}</span>
+                {stream.lastStatus != null && <span>HTTP {stream.lastStatus}</span>}
+                {stream.lastError != null && <span>{stream.lastError}</span>}
+                <span>
+                  {stream.lastAccessedAt == null
+                    ? `Started ${formatShortDate(stream.createdAt)}`
+                    : `Last ${formatShortDate(stream.lastAccessedAt)}`}
+                </span>
+                <span>Expires {formatShortDate(stream.expiresAt)}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PasswordPanel({
+  draft,
+  onDraftChange,
+  onSave,
+}: {
+  draft: {
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  };
+  onDraftChange: Dispatch<
+    SetStateAction<{
+      currentPassword: string;
+      newPassword: string;
+      confirmPassword: string;
+    }>
+  >;
+  onSave: () => void;
+}) {
+  return (
+    <div className="settings-source glass-rest">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Password</span>
+        <span className="chip">Account</span>
+      </div>
+      <div className="settings-source-row">
+        <input
+          type="password"
+          value={draft.currentPassword}
+          onChange={(event) =>
+            onDraftChange((current) => ({
+              ...current,
+              currentPassword: event.target.value,
+            }))
+          }
+          placeholder="Current password"
+        />
+      </div>
+      <div className="settings-source-row">
+        <input
+          type="password"
+          value={draft.newPassword}
+          onChange={(event) =>
+            onDraftChange((current) => ({
+              ...current,
+              newPassword: event.target.value,
+            }))
+          }
+          placeholder="New password"
+        />
+        <input
+          type="password"
+          value={draft.confirmPassword}
+          onChange={(event) =>
+            onDraftChange((current) => ({
+              ...current,
+              confirmPassword: event.target.value,
+            }))
+          }
+          placeholder="Confirm new password"
+        />
+        <button type="button" className="btn" onClick={onSave}>
+          Change password
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SessionsPanel({
+  sessions,
+  onRevoke,
+}: {
+  sessions: ServerSessionEntry[];
+  onRevoke: (id: string) => void;
+}) {
+  const activeSessions = sessions.filter((session) => session.active);
+  return (
+    <div className="settings-source glass-rest">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Signed-in devices</span>
+        <span className="chip">{activeSessions.length} active</span>
+      </div>
+      {sessions.length === 0 ? (
+        <p className="settings-hint t-secondary">No sessions found.</p>
+      ) : (
+        <div className="settings-usage-list">
+          {sessions.map((session) => (
+            <div key={session.id} className="settings-usage-row">
+              <span>
+                <strong>{sessionUserAgentLabel(session.userAgent)}</strong>
+                <span className="t-secondary">
+                  {" "}
+                  {session.current ? "Current session" : `Started ${formatShortDate(session.createdAt)}`}
+                </span>
+              </span>
+              <span className="settings-profile-meta t-secondary">
+                <span>
+                  {session.active
+                    ? `Expires ${formatShortDate(session.expiresAt)}`
+                    : session.revokedAt != null
+                      ? `Revoked ${formatShortDate(session.revokedAt)}`
+                      : "Expired"}
+                </span>
+                {session.active && !session.current && (
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => onRevoke(session.id)}
+                  >
+                    Revoke
+                  </button>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProfileCredentialPanel({
+  credentials,
+  draft,
+  onDraftChange,
+  onSave,
+  onDelete,
+}: {
+  credentials: EffectiveCredential[];
+  draft: {
+    provider: CredentialProvider;
+    label: string;
+    value: string;
+  };
+  onDraftChange: Dispatch<
+    SetStateAction<{
+      provider: CredentialProvider;
+      label: string;
+      value: string;
+    }>
+  >;
+  onSave: () => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="settings-source glass-rest">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Credential overrides</span>
+        <span className="chip">Profile</span>
+      </div>
+      <p className="settings-hint t-secondary">
+        Your profile can use a personal API key or debrid token instead of the
+        shared server default for the selected provider.
+      </p>
+
+      <div className="settings-source-row">
+        <select
+          value={draft.provider}
+          onChange={(event) =>
+            onDraftChange((current) => ({
+              ...current,
+              provider: event.target.value as CredentialProvider,
+            }))
+          }
+        >
+          {CREDENTIAL_OPTIONS.map((item) => (
+            <option key={item.provider} value={item.provider}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={draft.label}
+          onChange={(event) =>
+            onDraftChange((current) => ({
+              ...current,
+              label: event.target.value,
+            }))
+          }
+          placeholder="Label"
+        />
+      </div>
+      <div className="settings-source-row">
+        <input
+          type="password"
+          value={draft.value}
+          onChange={(event) =>
+            onDraftChange((current) => ({
+              ...current,
+              value: event.target.value,
+            }))
+          }
+          placeholder="Token or API key"
+        />
+        <button type="button" className="btn" onClick={onSave}>
+          Save profile override
+        </button>
+      </div>
+
+      <div className="settings-usage-list">
+        {credentials.map((credential) => (
+          <div key={credential.provider} className="settings-usage-row">
+            <span>
+              <strong>{credentialProviderLabel(credential.provider)}</strong>
+              <span className="t-secondary">
+                {" "}
+                {credential.label ?? "Not configured"}
+              </span>
+            </span>
+            <span className="settings-profile-meta t-secondary">
+              <span>
+                {credential.scope === "profile"
+                  ? "Profile override"
+                  : credential.scope === "server"
+                    ? "Shared server"
+                    : "Missing"}
+              </span>
+              {credential.scope === "profile" && credential.id != null && (
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => onDelete(credential.id!)}
+                >
+                  Remove
+                </button>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ServerUsagePanel({ usage }: { usage: ServerUsage }) {
+  const topProfiles = usage.profiles?.slice(0, 6) ?? [];
+  const recentSessions = usage.sessions?.slice(0, 6) ?? [];
+  return (
+    <div className="settings-source glass-rest">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Stream forwarding</span>
+        <span className="chip">{usage.days} days</span>
+      </div>
+      <div className="settings-usage-grid">
+        <div>
+          <strong>{formatBytes(usage.totalBytes)}</strong>
+          <span className="t-secondary">Forwarded</span>
+        </div>
+        <div>
+          <strong>{usage.streamCount}</strong>
+          <span className="t-secondary">Stream sessions</span>
+        </div>
+        <div>
+          <strong>{formatShortDate(usage.lastAccessedAt)}</strong>
+          <span className="t-secondary">Last activity</span>
+        </div>
+      </div>
+
+      {topProfiles.length > 0 && (
+        <div className="settings-usage-list">
+          {topProfiles.map((profile) => (
+            <div key={profile.profileId} className="settings-usage-row">
+              <span>
+                <strong>{profile.displayName}</strong>
+                <span className="t-secondary"> @{profile.username}</span>
+              </span>
+              <span className="t-secondary">
+                {formatBytes(profile.totalBytes)} · {profile.streamCount} streams
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {recentSessions.length > 0 && (
+        <div className="settings-usage-list">
+          {recentSessions.map((session) => (
+            <div key={session.id} className="settings-usage-row">
+              <span>{session.title ?? "Stream session"}</span>
+              <span className="t-secondary">
+                {formatBytes(session.bytesServed)} · {formatShortDate(session.lastAccessedAt)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function AppearanceTab({

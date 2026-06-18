@@ -1,0 +1,22 @@
+services:
+  debridstreamer:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: debridstreamer:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: ${PORT:-43110}
+      HOST: 0.0.0.0
+      DS_SERVER_DATA_DIR: /data
+      DS_SERVER_DB_PATH: /data/debridstreamer.sqlite
+      DS_WEB_DIST: /app/web-dist
+    ports:
+      - "${PORT:-43110}:43110"
+    volumes:
+      - debridstreamer-data:/data
+
+volumes:
+  debridstreamer-data:

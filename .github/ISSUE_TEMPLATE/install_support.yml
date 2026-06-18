@@ -1,0 +1,41 @@
+name: Install or update support
+description: Get help with desktop installers, Docker, PWA install, or OTA updates.
+title: "[Install]: "
+labels:
+  - support
+body:
+  - type: dropdown
+    id: target
+    attributes:
+      label: Install target
+      options:
+        - macOS desktop app
+        - Windows desktop app
+        - Linux desktop app
+        - Docker / NAS / VPS
+        - Raspberry Pi / ARM64
+        - iPhone / iPad PWA
+        - Android PWA
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Download or deployment source
+      placeholder: GitHub Release URL, GHCR tag, local build, compose file
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include error text, updater status, or browser install behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, browser, Docker version, architecture, reverse proxy/tunnel if used.
+    validations:
+      required: true

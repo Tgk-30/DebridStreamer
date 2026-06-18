@@ -15,6 +15,10 @@ mod player;
 // OS-keychain SecretStore backend (keychain_get / keychain_set / keychain_delete).
 mod keychain;
 
+// Desktop Host Mode: supervises the bundled/self-built Server Mode process so a
+// desktop app can host the PWA/API for other devices.
+mod server_host;
+
 #[tauri::command]
 fn open_in_external_player(url: String) -> Result<String, String> {
     // Preference order: VLC (installed here, matches the current VLCKit player), then mpv, then IINA.
@@ -64,7 +68,9 @@ pub fn run() {
         // auto-updater downloads + installs a new version (see updater.ts).
         .plugin(tauri_plugin_process::init())
         // At-most-one mpv instance, shared across the mpv_* commands.
-        .manage(player::MpvState::default());
+        .manage(player::MpvState::default())
+        // At-most-one local DebridStreamer server process.
+        .manage(server_host::ServerState::default());
 
     // Auto-updater is desktop-only. The JS side (web/src/lib/updater.ts) calls
     // the plugin's `check()` once on launch; releases are signed with the
@@ -86,6 +92,9 @@ pub fn run() {
             keychain::keychain_get,
             keychain::keychain_set,
             keychain::keychain_delete,
+            server_host::desktop_server_status,
+            server_host::desktop_server_start,
+            server_host::desktop_server_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

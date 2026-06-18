@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="DebridStreamer is a desktop, PWA, and self-hosted debrid streaming app with profiles, shared credentials, and OTA updates."
+    />
+    <meta name="theme-color" content="#0f172a" />
+    <title>DebridStreamer</title>
+    <link rel="icon" href="./icons/icon-128.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="DebridStreamer home">
+        <img src="./icons/icon-128.png" alt="" />
+        <span>DebridStreamer</span>
+      </a>
+      <nav aria-label="Primary">
+        <a href="#download">Download</a>
+        <a href="#self-host">Self-host</a>
+        <a href="#updates">Updates</a>
+        <a href="https://github.com/Tgk-30/DebridStreamer">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Desktop app · PWA · Self-hosted server</p>
+          <h1>Debrid streaming that works across your devices.</h1>
+          <p class="lede">
+            Browse, resolve, and play debrid media locally or from your own
+            server. Server Mode adds profiles, shared credentials, private
+            history, bandwidth-aware stream filters, and one debrid-facing IP
+            for your household or trusted group.
+          </p>
+          <div class="hero-actions">
+            <a id="smart-download" class="primary-action" href="#download">
+              Detecting download…
+            </a>
+            <a class="secondary-action" href="#self-host">Self-host options</a>
+          </div>
+          <p id="download-note" class="download-note">
+            Latest release links load from GitHub Releases.
+          </p>
+        </div>
+        <div class="hero-panel" aria-label="DebridStreamer modes">
+          <div class="mode-card">
+            <strong>Local Mode</strong>
+            <span>Pre-bundled desktop app for Mac, Windows, and Linux.</span>
+          </div>
+          <div class="mode-card">
+            <strong>Server Mode</strong>
+            <span>Profiles, shared credentials, and stream forwarding.</span>
+          </div>
+          <div class="mode-card">
+            <strong>Phone & tablet</strong>
+            <span>Install the hosted server as a PWA from Safari or Chrome.</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="download" class="section">
+        <div class="section-head">
+          <p class="eyebrow">Download</p>
+          <h2>Choose the right install path.</h2>
+        </div>
+
+        <div class="download-grid">
+          <article class="download-card">
+            <h3>macOS</h3>
+            <p>Recommended for most Mac users. Includes the desktop shell and auto-updater.</p>
+            <a data-download="mac" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
+              Download for macOS
+            </a>
+            <span class="download-meta" data-download-meta="mac">Latest release page</span>
+          </article>
+          <article class="download-card">
+            <h3>Windows</h3>
+            <p>Installer build for Windows desktops and home theater PCs.</p>
+            <a data-download="windows" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
+              Download for Windows
+            </a>
+            <span class="download-meta" data-download-meta="windows">Latest release page</span>
+          </article>
+          <article class="download-card">
+            <h3>Linux</h3>
+            <p>Use the AppImage, deb, or rpm package from the latest release.</p>
+            <a data-download="linux" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
+              Download for Linux
+            </a>
+            <span class="download-meta" data-download-meta="linux">Latest release page</span>
+          </article>
+          <article class="download-card">
+            <h3>iPhone, iPad, Android</h3>
+            <p>Connect to your self-hosted server, then add it to the home screen.</p>
+            <a href="#pwa">Install PWA</a>
+            <span class="download-meta">No app store account required</span>
+          </article>
+        </div>
+
+        <div class="release-panel" aria-live="polite">
+          <div>
+            <p class="eyebrow">Release downloader</p>
+            <h3>Latest desktop assets</h3>
+            <p id="release-status" class="release-status">
+              Loading release metadata from GitHub Releases.
+            </p>
+          </div>
+          <div id="release-assets" class="asset-list">
+            <a href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
+              Open all release assets
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section id="self-host" class="section split">
+        <div>
+          <p class="eyebrow">Self-host</p>
+          <h2>Run the server where it makes sense.</h2>
+          <p>
+            Use an always-on desktop, NAS, VPS, Raspberry Pi, or private home
+            server. The server owns profile isolation, encrypted credentials,
+            stream sessions, bandwidth visibility, and the debrid-facing IP.
+          </p>
+          <p>
+            The desktop app can also start Server Mode from Settings, then open
+            the hosted PWA for phones, tablets, and other computers with a
+            copyable setup URL and QR code.
+          </p>
+          <p>
+            Owners can send invite links so each person creates their own
+            profile, password, history, and optional credential overrides.
+            Profiles can also keep stream results cached-only or cap visible
+            quality/file size before playback.
+          </p>
+        </div>
+        <div class="code-card">
+          <span>Docker Compose</span>
+          <pre><code>git clone https://github.com/Tgk-30/DebridStreamer
+cd DebridStreamer/deploy/compose
+docker compose up -d --build</code></pre>
+        </div>
+      </section>
+
+      <section id="pwa" class="section">
+        <div class="section-head">
+          <p class="eyebrow">Phones & tablets</p>
+          <h2>Install your server as an app.</h2>
+        </div>
+        <div class="steps">
+          <article>
+            <strong>iPhone or iPad</strong>
+            <p>Open your server URL in Safari, tap Share, then Add to Home Screen.</p>
+          </article>
+          <article>
+            <strong>Android</strong>
+            <p>Open your server URL in Chrome or Edge and use Install app from the browser menu.</p>
+          </article>
+          <article>
+            <strong>Mac browser</strong>
+            <p>Use the downloadable desktop app, or connect to your own Server Mode URL.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="updates" class="section split">
+        <div>
+          <p class="eyebrow">Updates</p>
+          <h2>Signed OTA updates for the pre-bundled app.</h2>
+          <p>
+            The desktop app checks GitHub Releases for a signed
+            <code>latest.json</code>. When a new version is available, the
+            in-app updater can download, install, and relaunch into the new
+            build. Auto-checks can be controlled from Settings.
+          </p>
+        </div>
+        <div class="status-list">
+          <span>Signed update manifest</span>
+          <span>macOS notarization ready</span>
+          <span>Windows and Linux release assets</span>
+          <span>Draft releases before publishing</span>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>Open-source project in progress.</span>
+      <a href="https://github.com/Tgk-30/DebridStreamer/releases/latest">Latest release</a>
+      <a href="https://github.com/Tgk-30/DebridStreamer">Source</a>
+    </footer>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

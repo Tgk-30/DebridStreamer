@@ -62,6 +62,11 @@ const SettingsKeys = {
   ollamaEndpoint: "ollama_endpoint",
   theme: "ui_theme",
   openSubtitlesApiKey: "opensubtitles_api_key",
+  autoUpdateChecks: "auto_update_checks",
+  autoInstallUpdates: "auto_install_updates",
+  streamCachedOnly: "stream_cached_only",
+  streamMaxQuality: "stream_max_quality",
+  streamMaxSizeGB: "stream_max_size_gb",
 } as const;
 
 /** Marker written into the KV table for secret-valued keys; the real value
@@ -97,6 +102,8 @@ export interface DebridTokenEntry {
   apiToken: string;
 }
 
+export type StreamMaxQuality = "any" | "4K" | "1080p" | "720p" | "480p" | "SD";
+
 /** Everything the user can configure, persisted to localStorage this phase. */
 export interface AppSettings {
   tmdbKey: string;
@@ -112,6 +119,16 @@ export interface AppSettings {
   theme: string;
   /** OpenSubtitles REST API key (powers in-player subtitle search). */
   openSubtitlesApiKey: string;
+  /** Desktop builds check signed GitHub Releases on launch. */
+  autoUpdateChecks: boolean;
+  /** Desktop builds install signed updates automatically after a successful check. */
+  autoInstallUpdates: boolean;
+  /** Hide non-cached stream results by default. */
+  streamCachedOnly: boolean;
+  /** Highest stream quality to show. */
+  streamMaxQuality: StreamMaxQuality;
+  /** Maximum stream result size in GB; 0 disables the cap. */
+  streamMaxSizeGB: number;
 }
 
 /** Read a `VITE_*` env var without assuming `import.meta.env` exists. */
@@ -119,6 +136,22 @@ function env(key: string): string {
   const e = (import.meta as ImportMeta & { env?: Record<string, string> }).env;
   const v = e?.[key];
   return v && v.trim().length > 0 ? v.trim() : "";
+}
+
+export function normalizeStreamMaxQuality(value: unknown): StreamMaxQuality {
+  return value === "4K" ||
+    value === "1080p" ||
+    value === "720p" ||
+    value === "480p" ||
+    value === "SD"
+    ? value
+    : "any";
+}
+
+export function normalizeStreamMaxSizeGB(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.min(500, Math.round(parsed * 10) / 10);
 }
 
 /** Defaults: pull what we can from env so the app works with zero config. */
@@ -135,6 +168,11 @@ export function defaultSettings(): AppSettings {
     ollamaEndpoint: "http://localhost:11434",
     theme: env("VITE_THEME") || DEFAULT_THEME_ID,
     openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
+    autoUpdateChecks: true,
+    autoInstallUpdates: false,
+    streamCachedOnly: false,
+    streamMaxQuality: "any",
+    streamMaxSizeGB: 0,
   };
 }
 
@@ -151,6 +189,8 @@ export function loadSettings(): AppSettings {
       // Don't let a missing array clobber the [] default.
       debridTokens: parsed.debridTokens ?? base.debridTokens,
       sources: parsed.sources ?? base.sources,
+      streamMaxQuality: normalizeStreamMaxQuality(parsed.streamMaxQuality),
+      streamMaxSizeGB: normalizeStreamMaxSizeGB(parsed.streamMaxSizeGB),
     };
   } catch {
     return base;
@@ -222,12 +262,28 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     getStoredValue(SettingsKeys.aiApiKey),
     getStoredValue(SettingsKeys.openSubtitlesApiKey),
   ]);
-  const [aiProvider, aiModel, ollamaEndpoint, builtIn, theme] = await Promise.all([
+  const [
+    aiProvider,
+    aiModel,
+    ollamaEndpoint,
+    builtIn,
+    theme,
+    autoUpdateChecks,
+    autoInstallUpdates,
+    streamCachedOnly,
+    streamMaxQuality,
+    streamMaxSizeGB,
+  ] = await Promise.all([
     store.getSetting(SettingsKeys.aiProvider),
     store.getSetting(SettingsKeys.aiModel),
     store.getSetting(SettingsKeys.ollamaEndpoint),
     store.getSetting(SettingsKeys.builtInIndexersEnabled),
     store.getSetting(SettingsKeys.theme),
+    store.getSetting(SettingsKeys.autoUpdateChecks),
+    store.getSetting(SettingsKeys.autoInstallUpdates),
+    store.getSetting(SettingsKeys.streamCachedOnly),
+    store.getSetting(SettingsKeys.streamMaxQuality),
+    store.getSetting(SettingsKeys.streamMaxSizeGB),
   ]);
 
   const debridConfigs = await store.listDebridConfigs();
@@ -266,6 +322,14 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     ollamaEndpoint: ollamaEndpoint ?? base.ollamaEndpoint,
     theme: resolveThemeId(theme ?? base.theme),
     openSubtitlesApiKey: openSubtitlesApiKey ?? base.openSubtitlesApiKey,
+    autoUpdateChecks:
+      autoUpdateChecks == null ? base.autoUpdateChecks : autoUpdateChecks === "true",
+    autoInstallUpdates:
+      autoInstallUpdates == null ? base.autoInstallUpdates : autoInstallUpdates === "true",
+    streamCachedOnly:
+      streamCachedOnly == null ? base.streamCachedOnly : streamCachedOnly === "true",
+    streamMaxQuality: normalizeStreamMaxQuality(streamMaxQuality ?? base.streamMaxQuality),
+    streamMaxSizeGB: normalizeStreamMaxSizeGB(streamMaxSizeGB ?? base.streamMaxSizeGB),
   };
 }
 
@@ -288,6 +352,26 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     store.setSetting(SettingsKeys.aiModel, settings.aiModel),
     store.setSetting(SettingsKeys.ollamaEndpoint, settings.ollamaEndpoint),
     store.setSetting(SettingsKeys.theme, resolveThemeId(settings.theme)),
+    store.setSetting(
+      SettingsKeys.autoUpdateChecks,
+      settings.autoUpdateChecks ? "true" : "false",
+    ),
+    store.setSetting(
+      SettingsKeys.autoInstallUpdates,
+      settings.autoInstallUpdates ? "true" : "false",
+    ),
+    store.setSetting(
+      SettingsKeys.streamCachedOnly,
+      settings.streamCachedOnly ? "true" : "false",
+    ),
+    store.setSetting(
+      SettingsKeys.streamMaxQuality,
+      normalizeStreamMaxQuality(settings.streamMaxQuality),
+    ),
+    store.setSetting(
+      SettingsKeys.streamMaxSizeGB,
+      String(normalizeStreamMaxSizeGB(settings.streamMaxSizeGB)),
+    ),
     store.setSetting(
       SettingsKeys.builtInIndexersEnabled,
       settings.builtInIndexersEnabled ? "true" : "false",

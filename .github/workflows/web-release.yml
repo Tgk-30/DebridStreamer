@@ -70,7 +70,7 @@ jobs:
       - name: Install Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -99,6 +99,33 @@ jobs:
         working-directory: web
         run: npm ci
 
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Build server bundle
+        working-directory: server
+        run: npm run build
+
+      - name: Build hosted PWA assets
+        working-directory: web
+        run: npm run build
+
+      - name: Prepare desktop server resources
+        run: node scripts/prepare_tauri_server_resources.mjs
+
+      - name: Bundle Node runtime for macOS
+        if: matrix.platform == 'macos-latest'
+        run: node scripts/download_tauri_node_runtime.mjs darwin-arm64 darwin-x64
+
+      - name: Bundle Node runtime for Linux
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/download_tauri_node_runtime.mjs linux-x64
+
+      - name: Bundle Node runtime for Windows
+        if: matrix.platform == 'windows-latest'
+        run: node scripts/download_tauri_node_runtime.mjs win-x64
+
       - name: Build, bundle, sign & release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -125,4 +152,5 @@ jobs:
           prerelease: false
           # `includeUpdaterJson` (default true) emits latest.json next to the
           # bundles for the in-app updater.
+          includeUpdaterJson: true
           args: ${{ matrix.args }}

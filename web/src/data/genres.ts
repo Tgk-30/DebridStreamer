@@ -8,6 +8,8 @@ import { useEffect, useState } from "react";
 import type { MediaType } from "../models/media";
 import type { Genre } from "../services/metadata/types";
 import type { TMDBService } from "../services/metadata/TMDBService";
+import { fetchServerGenres } from "../lib/serverApi";
+import { isServerMode } from "../lib/serverMode";
 
 /** Canonical TMDB movie genre ids/names (the static no-key fallback). */
 const MOVIE_GENRES: Genre[] = [
@@ -74,6 +76,19 @@ export function useGenres(
   useEffect(() => {
     // Reset to the type's fallback immediately on a type switch.
     setGenres(fallbackGenres(type));
+    if (isServerMode()) {
+      let cancelled = false;
+      void fetchServerGenres(type)
+        .then((live) => {
+          if (!cancelled && live.length > 0) setGenres(live);
+        })
+        .catch(() => {
+          // Keep the fallback on any failure.
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     if (service == null) return;
 
     let cancelled = false;

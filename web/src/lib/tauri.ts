@@ -83,3 +83,49 @@ export async function mpvStop(): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("mpv_stop");
 }
+
+export interface DesktopServerStatus {
+  available: boolean;
+  running: boolean;
+  url: string | null;
+  urls: string[];
+  lan_urls: string[];
+  share_url: string | null;
+  port: number;
+  detail: string;
+  server_entry: string | null;
+  web_dist: string | null;
+}
+
+export async function desktopServerStatus(): Promise<DesktopServerStatus> {
+  if (!isTauri()) {
+    throw new Error("Not running under Tauri — no desktop server supervisor.");
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<DesktopServerStatus>("desktop_server_status");
+}
+
+export async function startDesktopServer(): Promise<DesktopServerStatus> {
+  if (!isTauri()) {
+    throw new Error("Not running under Tauri — no desktop server supervisor.");
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<DesktopServerStatus>("desktop_server_start");
+}
+
+export async function stopDesktopServer(): Promise<DesktopServerStatus> {
+  if (!isTauri()) {
+    throw new Error("Not running under Tauri — no desktop server supervisor.");
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<DesktopServerStatus>("desktop_server_stop");
+}
+
+export async function openExternalURL(url: string): Promise<void> {
+  if (isTauri()) {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}

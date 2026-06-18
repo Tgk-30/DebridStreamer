@@ -9,6 +9,8 @@
 import { useEffect, useState } from "react";
 import type { CastMember, MediaItem, MediaPreview } from "../models/media";
 import type { TMDBService } from "../services/metadata/TMDBService";
+import { fetchServerDetail } from "../lib/serverApi";
+import { isServerMode } from "../lib/serverMode";
 
 export interface DetailData {
   item: MediaItem | null;
@@ -89,21 +91,51 @@ export function useDetail(
 
   useEffect(() => {
     if (preview == null) return;
+    const currentPreview = preview;
     let cancelled = false;
 
     setState({
-      data: { item: previewToItem(preview), cast: [], related: [], imdbId: null },
+      data: { item: previewToItem(currentPreview), cast: [], related: [], imdbId: null },
       loading: true,
       error: null,
       source: "fixtures",
     });
 
     async function run() {
-      if (service == null || preview == null) {
+      if (isServerMode()) {
+        try {
+          const data = await fetchServerDetail({
+            id: currentPreview.id,
+            type: currentPreview.type,
+          });
+          if (!cancelled) {
+            setState({ data, loading: false, error: null, source: "live" });
+          }
+          return;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (!cancelled) {
+            setState({
+              data: {
+                item: previewToItem(currentPreview),
+                cast: [],
+                related: [],
+                imdbId: null,
+              },
+              loading: false,
+              error: message,
+              source: "fixtures",
+            });
+          }
+          return;
+        }
+      }
+
+      if (service == null) {
         if (!cancelled) {
           setState({
             data: {
-              item: previewToItem(preview!),
+              item: previewToItem(currentPreview),
               cast: [],
               related: [],
               imdbId: null,
@@ -117,7 +149,7 @@ export function useDetail(
       }
 
       try {
-        const data = await loadLive(service, preview);
+        const data = await loadLive(service, currentPreview);
         if (!cancelled) {
           setState({ data, loading: false, error: null, source: "live" });
         }
@@ -126,7 +158,7 @@ export function useDetail(
         if (!cancelled) {
           setState({
             data: {
-              item: previewToItem(preview),
+              item: previewToItem(currentPreview),
               cast: [],
               related: [],
               imdbId: null,

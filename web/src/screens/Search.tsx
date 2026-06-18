@@ -13,6 +13,8 @@ import { loadDiscoverFixtures } from "../data/fixtures";
 import { MediaGrid } from "../components/MediaGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { searchServerMedia } from "../lib/serverApi";
+import { isServerMode } from "../lib/serverMode";
 import "./Search.css";
 
 type TypeFilter = "all" | "movie" | "series";
@@ -46,6 +48,7 @@ export function Search() {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const starters = useMemo(() => fixtureStarters(), []);
+  const serverMode = isServerMode();
 
   // Pick up a query handed over from the global search field.
   useEffect(() => {
@@ -72,8 +75,34 @@ export function Search() {
       return;
     }
 
-    // No key → filter the fixtures locally so the screen still works.
-    if (services.tmdb == null) {
+    setLoading(true);
+    setError(null);
+    try {
+      const tmdbType: MediaType | null = type === "all" ? null : type;
+      const result = serverMode
+        ? await searchServerMedia({ query: trimmed, type: tmdbType })
+        : services.tmdb != null
+          ? await services.tmdb.search(trimmed, tmdbType)
+          : null;
+
+      if (result != null) {
+        const filtered =
+          type === "all"
+            ? result.items
+            : result.items.filter((i) => i.type === type);
+        setResults(filtered);
+        return;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setResults([]);
+      return;
+    } finally {
+      setLoading(false);
+    }
+
+    // No key / no server → filter the fixtures locally so the screen still works.
+    if (services.tmdb == null && !serverMode) {
       const matches = starters.filter(
         (s) =>
           s.title.toLowerCase().includes(trimmed.toLowerCase()) &&
@@ -81,24 +110,6 @@ export function Search() {
       );
       setResults(matches);
       setError(null);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const tmdbType: MediaType | null = type === "all" ? null : type;
-      const result = await services.tmdb.search(trimmed, tmdbType);
-      const filtered =
-        type === "all"
-          ? result.items
-          : result.items.filter((i) => i.type === type);
-      setResults(filtered);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setResults([]);
-    } finally {
       setLoading(false);
     }
   }

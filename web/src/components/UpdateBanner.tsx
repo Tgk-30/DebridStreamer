@@ -17,7 +17,13 @@ import "./UpdateBanner.css";
 
 type Phase = "idle" | "installing" | "error";
 
-export function UpdateBanner() {
+export function UpdateBanner({
+  autoCheck,
+  autoInstall,
+}: {
+  autoCheck: boolean;
+  autoInstall: boolean;
+}) {
   const [update, setUpdate] = useState<PendingUpdate | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   /** 0..1 install fraction, or null for an indeterminate (unknown-size) bar. */
@@ -26,14 +32,23 @@ export function UpdateBanner() {
 
   // Run the check once on launch. No-op (resolves null) in the browser.
   useEffect(() => {
+    if (!autoCheck) return;
     let cancelled = false;
     void checkForUpdates().then((u) => {
-      if (!cancelled) setUpdate(u);
+      if (cancelled) return;
+      setUpdate(u);
+      if (u != null && autoInstall) {
+        setPhase("installing");
+        setProgress(0);
+        void u.install((fraction) => setProgress(fraction)).catch(() => {
+          setPhase("error");
+        });
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [autoCheck, autoInstall]);
 
   if (update == null || dismissed) return null;
 

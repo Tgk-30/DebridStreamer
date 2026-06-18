@@ -13,7 +13,10 @@ import type { DebridManager } from "../services/debrid/DebridManager";
 import type { DebridServiceType } from "../services/debrid/models";
 import { CacheStatus } from "../services/debrid/models";
 import type { IndexerManager } from "../services/indexers/IndexerManager";
-import type { TorrentResult } from "../services/indexers/models";
+import { VideoQuality, type TorrentResult } from "../services/indexers/models";
+import type { AppSettings, StreamMaxQuality } from "./settings";
+import { fetchServerStreams } from "../lib/serverApi";
+import { configuredServerURL } from "../lib/serverMode";
 
 /** A torrent result plus its resolved cache state. */
 export interface StreamRow {
@@ -39,6 +42,34 @@ const EMPTY: StreamsState = {
   hasIndexers: false,
   hasDebrid: false,
 };
+
+function maxQualityOrder(maxQuality: StreamMaxQuality): number | null {
+  return maxQuality === "any" ? null : VideoQuality.sortOrder(maxQuality);
+}
+
+export function streamMatchesDataSaver(row: StreamRow, settings: AppSettings): boolean {
+  if (settings.streamCachedOnly && row.cachedOn == null) return false;
+
+  const maxOrder = maxQualityOrder(settings.streamMaxQuality);
+  if (
+    maxOrder != null &&
+    row.result.quality !== VideoQuality.unknown &&
+    VideoQuality.sortOrder(row.result.quality) > maxOrder
+  ) {
+    return false;
+  }
+
+  const maxBytes = settings.streamMaxSizeGB > 0
+    ? settings.streamMaxSizeGB * 1024 * 1024 * 1024
+    : 0;
+  if (maxBytes > 0 && row.result.sizeBytes > maxBytes) return false;
+
+  return true;
+}
+
+export function filterStreamRows(rows: StreamRow[], settings: AppSettings): StreamRow[] {
+  return rows.filter((row) => streamMatchesDataSaver(row, settings));
+}
 
 async function resolveStreams(
   imdbId: string,
@@ -79,8 +110,10 @@ export function useStreams(
   indexers: IndexerManager,
   debrid: DebridManager | null,
 ): StreamsState {
-  const hasIndexers = indexers.activeIndexers.length > 0;
-  const hasDebrid = debrid != null && debrid.hasServices;
+  const serverURL = configuredServerURL();
+  const serverMode = serverURL != null;
+  const hasIndexers = serverMode ? true : indexers.activeIndexers.length > 0;
+  const hasDebrid = serverMode ? true : debrid != null && debrid.hasServices;
 
   const [state, setState] = useState<StreamsState>({
     ...EMPTY,
@@ -97,6 +130,19 @@ export function useStreams(
       }
       setState((s) => ({ ...s, loading: true, error: null, hasIndexers, hasDebrid }));
       try {
+        if (serverMode) {
+          const remote = await fetchServerStreams({ imdbId, type });
+          if (!signal.cancelled) {
+            setState({
+              rows: remote.rows,
+              loading: false,
+              error: null,
+              hasIndexers: remote.hasIndexers,
+              hasDebrid: remote.hasDebrid,
+            });
+          }
+          return;
+        }
         const rows = await resolveStreams(imdbId, type, indexers, debrid);
         if (!signal.cancelled) {
           setState({ rows, loading: false, error: null, hasIndexers, hasDebrid });
@@ -108,7 +154,7 @@ export function useStreams(
         }
       }
     },
-    [imdbId, type, indexers, debrid, hasIndexers, hasDebrid],
+    [imdbId, type, indexers, debrid, hasIndexers, hasDebrid, serverMode],
   );
 
   useEffect(() => {

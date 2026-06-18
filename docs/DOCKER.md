@@ -1,0 +1,104 @@
+# Docker Server Setup
+
+Use Docker when DebridStreamer should run on a NAS, home server, Raspberry Pi,
+VPS, or other always-on device.
+
+## Image
+
+CI publishes multi-arch images to GHCR for:
+
+- `linux/amd64`
+- `linux/arm64`
+
+```text
+ghcr.io/tgk-30/debridstreamer:latest
+```
+
+Tags are created from `main` and Git tags by `.github/workflows/docker-image.yml`.
+
+## Quick Start
+
+```sh
+cd deploy/compose
+cp .env.example .env
+openssl rand -base64 32
+```
+
+Paste the generated value into `DS_SERVER_SECRET_KEY` in `.env`, then start:
+
+```sh
+docker compose up -d --build
+```
+
+Open:
+
+```text
+http://localhost:43110
+```
+
+Create the owner account on first launch.
+
+## Use Published Image
+
+The default compose file builds locally from the repo. To pull GHCR instead,
+replace the service `build:` block with:
+
+```yaml
+image: ghcr.io/tgk-30/debridstreamer:latest
+```
+
+Then run:
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+## Persistent Data
+
+The container stores SQLite data and the generated server key under `/data`.
+The compose file mounts that path as `debridstreamer-data`.
+
+Back up both:
+
+- the SQLite files in `/data`
+- `server.key`, unless you provide `DS_SERVER_SECRET_KEY`
+
+Without the same secret key, encrypted credentials cannot be decrypted after a
+restore.
+
+## Network Access
+
+Recommended private access paths:
+
+- LAN-only: `http://server-ip:43110`
+- Tailscale: `http://machine-name:43110`
+- Cloudflare Tunnel or reverse proxy: terminate HTTPS before forwarding to
+  `43110`
+
+When exposing through HTTPS, set:
+
+```env
+DS_SERVER_COOKIE_SECURE=true
+DS_SERVER_TRUST_PROXY=true
+```
+
+Use DebridStreamer profiles even when Cloudflare Access or Tailscale protects
+the outer network. Those layers are additional protection, not a replacement for
+per-profile history, credentials, and session boundaries.
+
+## Updates
+
+For local builds:
+
+```sh
+git pull
+docker compose up -d --build
+```
+
+For GHCR images:
+
+```sh
+docker compose pull
+docker compose up -d
+```
