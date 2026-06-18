@@ -84,7 +84,6 @@ export function HeroSpotlight({
         >
           <div className="hero-badges">
             <span className="chip hero-featured">
-              <Icon name="sparkles" size={12} />
               Featured
             </span>
             {active.year != null && <span className="hero-year">{active.year}</span>}

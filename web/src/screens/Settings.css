@@ -541,6 +541,34 @@
   }
 }
 
+@media (max-width: 380px) {
+  .settings-control-grid {
+    gap: var(--sp-sm);
+  }
+
+  .settings-source {
+    padding: var(--sp-sm);
+  }
+
+  .accent-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .accent-swatch {
+    justify-content: center;
+    gap: 5px;
+    min-height: 34px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .accent-swatch span {
+    width: 14px;
+    height: 14px;
+  }
+}
+
 @media (min-width: 860px) {
   .settings-screen {
     display: grid;

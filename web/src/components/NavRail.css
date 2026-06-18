@@ -125,6 +125,17 @@
   }
 }
 
+@media (min-width: 761px) and (max-width: 1199px) {
+  .nav-rail-section[data-group="Account"] {
+    padding-top: var(--sp-sm);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .nav-rail-label {
+    font-size: 11px;
+  }
+}
+
 @media (max-width: 760px) {
   .nav-rail {
     position: fixed;
@@ -170,9 +181,9 @@
     z-index: 29;
     display: block;
     border: 0;
-    background: rgba(0, 0, 0, 0.22);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    background: rgba(0, 0, 0, 0.48);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
     cursor: default;
   }
 

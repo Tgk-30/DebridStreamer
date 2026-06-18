@@ -204,12 +204,13 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
       <path d="M14.2 6.3C18.8 7.1 21.5 12 21.5 12a17 17 0 0 1-2.7 3.3" />
     </>
   ),
-  // ellipsis
+  // app grid / more destinations
   more: () => (
     <>
-      <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
-      <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <rect x="5" y="5" width="5" height="5" rx="1.2" />
+      <rect x="14" y="5" width="5" height="5" rx="1.2" />
+      <rect x="5" y="14" width="5" height="5" rx="1.2" />
+      <rect x="14" y="14" width="5" height="5" rx="1.2" />
     </>
   ),
 };
