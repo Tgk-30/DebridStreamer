@@ -36,7 +36,6 @@ const NAV_ITEMS: RailItem[] = [
     id: "watchlist",
     icon: "watchlist",
     label: "Watchlist",
-    mobileLabel: "Saved",
     group: "Library",
     mobile: true,
   },

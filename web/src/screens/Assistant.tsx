@@ -54,7 +54,7 @@ export function Assistant() {
         <EmptyState
           icon="assistant"
           title="Configure an AI provider"
-          subtitle="Add an OpenAI or Anthropic key (or point at a local Ollama) in Settings to get curated, taste-aware recommendations."
+          subtitle="Add an AI provider in Settings to turn mood prompts into focused watch recommendations."
           actions={
             <button
               type="button"

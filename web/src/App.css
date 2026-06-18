@@ -48,9 +48,10 @@
   }
 
   .app-content {
-    min-height: 100vh;
-    height: auto;
-    padding-bottom: calc(128px + env(safe-area-inset-bottom));
+    height: calc(100vh - 88px - env(safe-area-inset-bottom));
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: var(--sp-lg);
   }
 }
 

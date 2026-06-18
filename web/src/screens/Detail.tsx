@@ -69,6 +69,7 @@ export function Detail() {
     detailItem,
     closeDetail,
     openDetail,
+    navigate,
     services,
     settings,
     watchlist,
@@ -191,6 +192,10 @@ export function Detail() {
           state={streams}
           resolveStream={resolveSelectedStream}
           onPlay={handlePlay}
+          onOpenSettings={() => {
+            closeDetail();
+            navigate("settings");
+          }}
         />
       </div>
 

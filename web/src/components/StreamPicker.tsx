@@ -22,6 +22,7 @@ interface StreamPickerProps {
   resolveStream: (row: StreamRow) => Promise<StreamInfo>;
   /** Called with the resolved stream + the torrent (for codec/container info). */
   onPlay: (stream: StreamInfo, source: TorrentResult) => void;
+  onOpenSettings?: () => void;
 }
 
 /** Bytes → "1.4 GB" style. */
@@ -37,7 +38,12 @@ function formatSize(bytes: number): string {
   return `${value.toFixed(value >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-export function StreamPicker({ state, resolveStream, onPlay }: StreamPickerProps) {
+export function StreamPicker({
+  state,
+  resolveStream,
+  onPlay,
+  onOpenSettings,
+}: StreamPickerProps) {
   const [cachedOnly, setCachedOnly] = useState(false);
   const [resolvingHash, setResolvingHash] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
@@ -103,8 +109,12 @@ export function StreamPicker({ state, resolveStream, onPlay }: StreamPickerProps
       <StreamBody
         state={state}
         rows={rows}
+        cachedOnly={cachedOnly}
+        filteredCount={filteredCount}
         resolvingHash={resolvingHash}
         onSelect={select}
+        onShowAll={() => setCachedOnly(false)}
+        onOpenSettings={onOpenSettings}
       />
     </section>
   );
@@ -113,13 +123,21 @@ export function StreamPicker({ state, resolveStream, onPlay }: StreamPickerProps
 function StreamBody({
   state,
   rows,
+  cachedOnly,
+  filteredCount,
   resolvingHash,
   onSelect,
+  onShowAll,
+  onOpenSettings,
 }: {
   state: StreamsState;
   rows: StreamRow[];
+  cachedOnly: boolean;
+  filteredCount: number;
   resolvingHash: string | null;
   onSelect: (row: StreamRow) => void;
+  onShowAll: () => void;
+  onOpenSettings?: () => void;
 }) {
   if (state.loading) {
     return (
@@ -138,6 +156,18 @@ function StreamBody({
           Add an indexer (or enable the built-in scrapers) in Settings to find
           streams.
         </p>
+        {onOpenSettings && (
+          <div className="streams-empty-actions">
+            <button
+              type="button"
+              className="btn btn-prominent"
+              onClick={onOpenSettings}
+            >
+              <Icon name="settings" size={15} />
+              Open settings
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -152,12 +182,42 @@ function StreamBody({
   }
 
   if (rows.length === 0) {
+    const cachedOnlyEmpty = cachedOnly && filteredCount > 0;
+    const filtersEmpty = state.rows.length > 0 && filteredCount === 0;
+
     return (
       <div className="streams-empty glass-rest">
-        <p className="streams-empty-title">No streams found</p>
-        <p className="t-secondary streams-empty-sub">
-          Nothing matched on the configured indexers.
+        <p className="streams-empty-title">
+          {cachedOnlyEmpty
+            ? "No instant streams shown"
+            : filtersEmpty
+              ? "Playback filters hid every stream"
+              : "No streams found"}
         </p>
+        <p className="t-secondary streams-empty-sub">
+          {cachedOnlyEmpty
+            ? "Switch off Cached only to show sources that can be cached first."
+            : filtersEmpty
+              ? "Your quality or file-size limits removed the available results for this title."
+              : "The configured sources did not return a match for this title yet. Add another indexer or try a different release."}
+        </p>
+        <div className="streams-empty-actions">
+          {cachedOnlyEmpty && (
+            <button type="button" className="btn" onClick={onShowAll}>
+              Show all streams
+            </button>
+          )}
+          {onOpenSettings && (
+            <button
+              type="button"
+              className={cachedOnlyEmpty ? "btn" : "btn btn-prominent"}
+              onClick={onOpenSettings}
+            >
+              <Icon name="settings" size={15} />
+              Open settings
+            </button>
+          )}
+        </div>
       </div>
     );
   }

@@ -61,6 +61,7 @@ export function App() {
     route !== "search" &&
     route !== "calendar" &&
     route !== "debrid" &&
+    route !== "assistant" &&
     detailItem == null &&
     browseContext == null;
 

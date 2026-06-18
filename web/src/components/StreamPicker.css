@@ -217,3 +217,10 @@
   max-width: 380px;
   line-height: 1.5;
 }
+.streams-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-xs);
+}

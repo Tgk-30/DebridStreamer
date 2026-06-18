@@ -106,8 +106,8 @@ export function Library() {
         <EmptyState
           icon="library"
           title="Your library is empty"
-          subtitle="Saved titles and collections live here."
-          note="Folders persist on device · Trakt/IMDb sync is the next step"
+          subtitle="Favorites and custom collections will appear here as you save titles."
+          note="Stored on this device"
         />
       ) : (
         <>

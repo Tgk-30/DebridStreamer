@@ -154,16 +154,18 @@ export function DebridLibrary() {
         <EmptyState
           icon="debrid"
           title="Configure a debrid service"
-          subtitle="Add a Real-Debrid or AllDebrid token in Settings to see and manage the torrents on your account."
+          subtitle="Add a provider token in Settings to see cached files, duplicates, and cleanup actions."
+          actions={
+            <button
+              type="button"
+              className="btn btn-prominent"
+              onClick={() => navigate("settings")}
+            >
+              <Icon name="settings" size={15} />
+              Open settings
+            </button>
+          }
         />
-        <button
-          type="button"
-          className="btn btn-prominent dl-cta"
-          onClick={() => navigate("settings")}
-        >
-          <Icon name="settings" size={15} />
-          Open settings
-        </button>
       </div>
     );
   }

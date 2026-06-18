@@ -31,8 +31,8 @@ export function Watchlist() {
         <EmptyState
           icon="watchlist"
           title="Your watchlist is empty"
-          subtitle="Open a title and tap Watchlist to save it here."
-          note="Saved on device · Trakt/IMDb sync is the next step"
+          subtitle="Open any title and tap Watchlist to keep it ready for later."
+          note="Stored on this device"
         />
       ) : (
         <div className="lib-grid-wrap">

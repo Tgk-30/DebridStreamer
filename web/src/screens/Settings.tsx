@@ -258,7 +258,7 @@ type Tab =
 const TABS: { id: Tab; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "playback", label: "Playback" },
-  { id: "install", label: "Install" },
+  { id: "install", label: "Install & setup" },
   { id: "updates", label: "Updates" },
   { id: "server", label: "Server" },
   { id: "keys", label: "API keys" },
@@ -790,9 +790,9 @@ function InstallTab() {
   return (
     <div className="settings-fields">
       <p className="settings-hint t-secondary">
-        This guide follows the device you are currently using. Phones and
-        tablets install the self-hosted server as a PWA; desktop users can use
-        either the browser app or the pre-bundled desktop app.
+        Set up this device for native playback, launcher access, and self-hosted
+        streaming. The options below adjust to the browser or desktop app you are
+        using now.
       </p>
 
       <div className="settings-install-card glass-rest">
@@ -1132,7 +1132,7 @@ function ServerConnectionPanel() {
           type="url"
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="https://stream.example.com or http://192.168.1.5:43110"
+          placeholder="https://stream.example.com"
           disabled={envLocked}
         />
         <button
@@ -1159,6 +1159,9 @@ function ServerConnectionPanel() {
           </button>
         )}
       </div>
+      <p className="settings-hint t-secondary">
+        Example: <code>http://192.168.1.5:43110</code>
+      </p>
       {envLocked && (
         <p className="settings-hint t-secondary">
           {source === "same-origin" ? (
@@ -1172,9 +1175,8 @@ function ServerConnectionPanel() {
         </p>
       )}
       <p className="settings-hint t-secondary">
-        If this app is connecting from a separate desktop build, the server must
-        allow this app origin with CORS. Opening the server URL directly avoids
-        that extra setup.
+        Opening the server URL directly is the simplest setup. Separate desktop
+        builds may need that server to allow this app as a trusted origin.
       </p>
       {status && <p className="settings-status">{status}</p>}
       {error && <p className="settings-status is-error">{error}</p>}
