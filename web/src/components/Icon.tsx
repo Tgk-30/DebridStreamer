@@ -104,7 +104,7 @@ export function Icon({ name, size = 20, className, filled = false }: IconProps) 
       fill={shouldFill ? "currentColor" : "none"}
       focusable="false"
       size={size}
-      strokeWidth={shouldFill ? 0 : 1.8}
+      strokeWidth={shouldFill ? 0 : filled ? 2.25 : 1.8}
     />
   );
 }

@@ -23,6 +23,7 @@ export function useTheme(settings: AppSettings): void {
     root.dataset.radius = settings.appearanceRadius;
     root.dataset.chrome = settings.appearanceChrome;
     root.dataset.navLabels = settings.appearanceNavLabels;
+    root.dataset.navTint = settings.appearanceNavTint;
     root.dataset.posterSize = settings.appearancePosterSize;
 
     const accent = accentById(settings.appearanceAccent);

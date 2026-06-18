@@ -169,12 +169,12 @@ function NavRailButton({
       <span className="nav-rail-icon">
         <Icon name={item.icon} size={20} filled={selected} />
       </span>
-      <span className="nav-rail-label nav-rail-label-default">{item.label}</span>
-      {item.mobileLabel != null && (
-        <span className="nav-rail-label nav-rail-label-mobile">
-          {item.mobileLabel}
-        </span>
-      )}
+      <span
+        className="nav-rail-label"
+        data-mobile-label={item.mobileLabel}
+      >
+        {item.label}
+      </span>
     </button>
   );
 }

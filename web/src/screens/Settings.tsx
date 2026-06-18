@@ -29,6 +29,7 @@ import type {
   AppearanceDensity,
   AppearanceMotion,
   AppearanceNavLabels,
+  AppearanceNavTint,
   AppearancePosterSize,
   AppearanceRadius,
   AppearanceTextSize,
@@ -134,6 +135,7 @@ interface AppearanceProfile {
     | "appearanceBlur"
     | "appearanceChrome"
     | "appearanceNavLabels"
+    | "appearanceNavTint"
     | "appearancePosterSize"
   >;
 }
@@ -155,6 +157,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 18,
       appearanceChrome: "balanced",
       appearanceNavLabels: "auto",
+      appearanceNavTint: "balanced",
       appearancePosterSize: "default",
     },
   },
@@ -172,6 +175,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 12,
       appearanceChrome: "solid",
       appearanceNavLabels: "icons",
+      appearanceNavTint: "solid",
       appearancePosterSize: "compact",
     },
   },
@@ -189,6 +193,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 14,
       appearanceChrome: "balanced",
       appearanceNavLabels: "labels",
+      appearanceNavTint: "airy",
       appearancePosterSize: "large",
     },
   },
@@ -206,6 +211,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 10,
       appearanceChrome: "solid",
       appearanceNavLabels: "auto",
+      appearanceNavTint: "solid",
       appearancePosterSize: "default",
     },
   },
@@ -262,6 +268,7 @@ function appearanceProfileMatches(
     draft.appearanceBlur === settings.appearanceBlur &&
     draft.appearanceChrome === settings.appearanceChrome &&
     draft.appearanceNavLabels === settings.appearanceNavLabels &&
+    draft.appearanceNavTint === settings.appearanceNavTint &&
     draft.appearancePosterSize === settings.appearancePosterSize
   );
 }
@@ -2481,6 +2488,13 @@ function AppearanceTab({
                 : "Auto nav"}
           </span>
           <span>
+            {draft.appearanceNavTint === "airy"
+              ? "Airy dock"
+              : draft.appearanceNavTint === "solid"
+                ? "Solid dock"
+                : "Balanced dock"}
+          </span>
+          <span>
             {draft.appearancePosterSize === "compact"
               ? "Compact posters"
               : draft.appearancePosterSize === "large"
@@ -2561,6 +2575,18 @@ function AppearanceTab({
           ]}
           onChange={(value) =>
             applyAppearance({ appearanceNavLabels: value as AppearanceNavLabels })
+          }
+        />
+        <SegmentedControl
+          label="Dock tint"
+          value={draft.appearanceNavTint}
+          options={[
+            { value: "airy", label: "Airy" },
+            { value: "balanced", label: "Balanced" },
+            { value: "solid", label: "Solid" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({ appearanceNavTint: value as AppearanceNavTint })
           }
         />
         <SegmentedControl

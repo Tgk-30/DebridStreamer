@@ -69,6 +69,7 @@ const SettingsKeys = {
   appearanceBlur: "appearance_blur",
   appearanceChrome: "appearance_chrome",
   appearanceNavLabels: "appearance_nav_labels",
+  appearanceNavTint: "appearance_nav_tint",
   appearancePosterSize: "appearance_poster_size",
   openSubtitlesApiKey: "opensubtitles_api_key",
   autoUpdateChecks: "auto_update_checks",
@@ -125,6 +126,7 @@ export type AppearanceMotion = "system" | "normal" | "reduced";
 export type AppearanceRadius = "sharp" | "default" | "round";
 export type AppearanceChrome = "translucent" | "balanced" | "solid";
 export type AppearanceNavLabels = "auto" | "labels" | "icons";
+export type AppearanceNavTint = "airy" | "balanced" | "solid";
 export type AppearancePosterSize = "compact" | "default" | "large";
 
 /** Everything the user can configure, persisted to localStorage this phase. */
@@ -148,6 +150,7 @@ export interface AppSettings {
   appearanceBlur: number;
   appearanceChrome: AppearanceChrome;
   appearanceNavLabels: AppearanceNavLabels;
+  appearanceNavTint: AppearanceNavTint;
   appearancePosterSize: AppearancePosterSize;
   /** OpenSubtitles REST API key (powers in-player subtitle search). */
   openSubtitlesApiKey: string;
@@ -226,6 +229,10 @@ function normalizeAppearanceNavLabels(value: unknown): AppearanceNavLabels {
   return value === "labels" || value === "icons" ? value : "auto";
 }
 
+function normalizeAppearanceNavTint(value: unknown): AppearanceNavTint {
+  return value === "airy" || value === "solid" ? value : "balanced";
+}
+
 function normalizeAppearancePosterSize(value: unknown): AppearancePosterSize {
   return value === "compact" || value === "large" ? value : "default";
 }
@@ -251,6 +258,7 @@ export function defaultSettings(): AppSettings {
     appearanceBlur: 18,
     appearanceChrome: "balanced",
     appearanceNavLabels: "auto",
+    appearanceNavTint: "balanced",
     appearancePosterSize: "default",
     openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
     autoUpdateChecks: true,
@@ -284,6 +292,7 @@ export function loadSettings(): AppSettings {
       appearanceBlur: normalizeAppearanceBlur(parsed.appearanceBlur),
       appearanceChrome: normalizeAppearanceChrome(parsed.appearanceChrome),
       appearanceNavLabels: normalizeAppearanceNavLabels(parsed.appearanceNavLabels),
+      appearanceNavTint: normalizeAppearanceNavTint(parsed.appearanceNavTint),
       appearancePosterSize: normalizeAppearancePosterSize(parsed.appearancePosterSize),
     };
   } catch {
@@ -370,6 +379,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceBlur,
     appearanceChrome,
     appearanceNavLabels,
+    appearanceNavTint,
     appearancePosterSize,
     autoUpdateChecks,
     autoInstallUpdates,
@@ -390,6 +400,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.appearanceBlur),
     store.getSetting(SettingsKeys.appearanceChrome),
     store.getSetting(SettingsKeys.appearanceNavLabels),
+    store.getSetting(SettingsKeys.appearanceNavTint),
     store.getSetting(SettingsKeys.appearancePosterSize),
     store.getSetting(SettingsKeys.autoUpdateChecks),
     store.getSetting(SettingsKeys.autoInstallUpdates),
@@ -454,6 +465,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     ),
     appearanceNavLabels: normalizeAppearanceNavLabels(
       appearanceNavLabels ?? base.appearanceNavLabels,
+    ),
+    appearanceNavTint: normalizeAppearanceNavTint(
+      appearanceNavTint ?? base.appearanceNavTint,
     ),
     appearancePosterSize: normalizeAppearancePosterSize(
       appearancePosterSize ?? base.appearancePosterSize,
@@ -520,6 +534,10 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     store.setSetting(
       SettingsKeys.appearanceNavLabels,
       normalizeAppearanceNavLabels(settings.appearanceNavLabels),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceNavTint,
+      normalizeAppearanceNavTint(settings.appearanceNavTint),
     ),
     store.setSetting(
       SettingsKeys.appearancePosterSize,
