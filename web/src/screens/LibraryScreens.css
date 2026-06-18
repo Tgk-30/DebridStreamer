@@ -78,7 +78,7 @@
   color: var(--danger);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 699px) {
   .lib-screen {
     padding: var(--sp-lg);
     padding-top: var(--sp-lg);
