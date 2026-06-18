@@ -148,6 +148,13 @@
   color: var(--text-tertiary);
 }
 
+.settings-size-cap {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-sm);
+  min-width: 0;
+}
+
 .settings-secret-wrap {
   display: flex;
   flex-direction: column;

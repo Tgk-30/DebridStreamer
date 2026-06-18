@@ -709,7 +709,24 @@ const STREAM_QUALITY_OPTIONS: { value: StreamMaxQuality; label: string }[] = [
   { value: "SD", label: "SD only" },
 ];
 
+const STREAM_SIZE_CAP_OPTIONS = [
+  { value: 0, label: "No cap" },
+  { value: 2, label: "Up to 2 GB" },
+  { value: 5, label: "Up to 5 GB" },
+  { value: 10, label: "Up to 10 GB" },
+  { value: 20, label: "Up to 20 GB" },
+  { value: 50, label: "Up to 50 GB" },
+] as const;
+
+const CUSTOM_STREAM_SIZE_CAP = "custom";
+
 function PlaybackTab({ draft, patch }: TabProps) {
+  const sizeCapOption =
+    STREAM_SIZE_CAP_OPTIONS.find((option) => option.value === draft.streamMaxSizeGB) ??
+    null;
+  const sizeCapValue =
+    sizeCapOption == null ? CUSTOM_STREAM_SIZE_CAP : String(sizeCapOption.value);
+
   return (
     <div className="settings-fields">
       <p className="settings-hint t-secondary">
@@ -750,18 +767,45 @@ function PlaybackTab({ draft, patch }: TabProps) {
 
       <Field
         label="Maximum file size"
-        hint="Set 0 for no cap. This filters torrent result size, not transcoded playback bitrate."
+        hint="Common caps are listed first. Custom still filters torrent result size, not transcoded playback bitrate."
       >
-        <input
-          type="number"
-          min={0}
-          max={500}
-          step={0.5}
-          value={draft.streamMaxSizeGB}
-          onChange={(event) =>
-            patch({ streamMaxSizeGB: Number(event.target.value) || 0 })
-          }
-        />
+        <div className="settings-size-cap">
+          <select
+            value={sizeCapValue}
+            onChange={(event) => {
+              if (event.target.value === CUSTOM_STREAM_SIZE_CAP) {
+                patch({
+                  streamMaxSizeGB:
+                    sizeCapOption == null && draft.streamMaxSizeGB > 0
+                      ? draft.streamMaxSizeGB
+                      : 25,
+                });
+                return;
+              }
+              patch({ streamMaxSizeGB: Number(event.target.value) });
+            }}
+          >
+            {STREAM_SIZE_CAP_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+            <option value={CUSTOM_STREAM_SIZE_CAP}>Custom</option>
+          </select>
+          {sizeCapOption == null && (
+            <input
+              type="number"
+              min={0}
+              max={500}
+              step={0.5}
+              value={draft.streamMaxSizeGB}
+              onChange={(event) =>
+                patch({ streamMaxSizeGB: Number(event.target.value) || 0 })
+              }
+              aria-label="Custom maximum file size in GB"
+            />
+          )}
+        </div>
       </Field>
     </div>
   );
