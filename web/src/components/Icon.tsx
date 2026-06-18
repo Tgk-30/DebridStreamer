@@ -27,7 +27,8 @@ export type IconName =
   | "check"
   | "copy"
   | "eye"
-  | "eye-off";
+  | "eye-off"
+  | "more";
 
 interface IconProps {
   name: IconName;
@@ -201,6 +202,14 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
       <path d="M10.6 10.6A3 3 0 0 0 13.4 13.4" />
       <path d="M7.1 7.6C4.2 9.2 2.5 12 2.5 12s3.5 6 9.5 6c1.5 0 2.8-.4 4-1" />
       <path d="M14.2 6.3C18.8 7.1 21.5 12 21.5 12a17 17 0 0 1-2.7 3.3" />
+    </>
+  ),
+  // ellipsis
+  more: () => (
+    <>
+      <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
     </>
   ),
 };

@@ -1,11 +1,10 @@
 // Port of Sources/DebridStreamer/Views/Shell/NavRail.swift.
 //
-// A slim (78px) glass icon+label rail. Primary destinations sit at the top,
-// a hairline divider then the pinned Settings gear at the bottom. Selection is
-// a soft accent-ring glass capsule (accent fill 0.16 + accent stroke 0.55 +
-// accent glow) — never a loud system highlight. Search lives in the top-right
-// global field, not here.
+// Breakpoint-aware primary navigation: labeled side rail on tablet/desktop and
+// a compact five-item bottom bar on phones with a More drawer for secondary
+// destinations.
 
+import { useState } from "react";
 import { Icon, type IconName } from "./Icon";
 import "./NavRail.css";
 
@@ -37,8 +36,11 @@ const NAV_ITEMS: RailItem[] = [
   { id: "history", icon: "history", label: "History", group: "Library" },
   { id: "assistant", icon: "assistant", label: "Assistant", group: "Tools" },
   { id: "debrid", icon: "debrid", label: "Debrid", group: "Tools" },
-  { id: "settings", icon: "settings", label: "Settings", group: "Account", mobile: true },
+  { id: "settings", icon: "settings", label: "Settings", group: "Account" },
 ];
+
+const MOBILE_MORE_ITEMS = NAV_ITEMS.filter((item) => !item.mobile || item.id === "settings");
+const GROUPS = ["Primary", "Library", "Tools", "Account"] as const;
 
 interface NavRailProps {
   selected: ScreenId;
@@ -46,9 +48,26 @@ interface NavRailProps {
 }
 
 export function NavRail({ selected, onSelect }: NavRailProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreSelected = MOBILE_MORE_ITEMS.some((item) => item.id === selected);
+
+  function selectScreen(id: ScreenId) {
+    setMoreOpen(false);
+    onSelect(id);
+  }
+
   return (
     <nav className="nav-rail" aria-label="Primary">
-      {(["Primary", "Library", "Tools", "Account"] as const).map((group) => (
+      {moreOpen && (
+        <button
+          type="button"
+          className="nav-rail-more-scrim"
+          aria-label="Close more menu"
+          onClick={() => setMoreOpen(false)}
+        />
+      )}
+
+      {GROUPS.map((group) => (
         <div key={group} className="nav-rail-section" data-group={group}>
           <div className="nav-rail-group-label">{group}</div>
           {NAV_ITEMS.filter((item) => item.group === group).map((item) => (
@@ -56,11 +75,61 @@ export function NavRail({ selected, onSelect }: NavRailProps) {
               key={item.id}
               item={item}
               selected={selected === item.id}
-              onSelect={onSelect}
+              onSelect={selectScreen}
             />
           ))}
         </div>
       ))}
+
+      <button
+        type="button"
+        className={`nav-rail-btn nav-rail-more${moreSelected ? " is-selected" : ""}`}
+        data-mobile="true"
+        data-mobile-overflow="true"
+        onClick={() => setMoreOpen((open) => !open)}
+        aria-expanded={moreOpen}
+        aria-controls="mobile-nav-more"
+        title="More"
+      >
+        <Icon name="more" size={20} />
+        <span className="nav-rail-label">More</span>
+      </button>
+
+      <div
+        id="mobile-nav-more"
+        className={`nav-rail-more-sheet${moreOpen ? " is-open" : ""}`}
+        aria-hidden={!moreOpen}
+      >
+        <div className="nav-rail-more-head">
+          <span>More</span>
+          <button
+            type="button"
+            className="nav-rail-more-close"
+            onClick={() => setMoreOpen(false)}
+            tabIndex={moreOpen ? 0 : -1}
+            aria-label="Close more menu"
+          >
+            <Icon name="xmark" size={16} />
+          </button>
+        </div>
+        {MOBILE_MORE_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`nav-rail-more-action${item.id === "settings" ? " is-wide" : ""}${selected === item.id ? " is-selected" : ""}`}
+            data-screen={item.id}
+            onClick={() => selectScreen(item.id)}
+            tabIndex={moreOpen ? 0 : -1}
+          >
+            <Icon
+              name={item.icon}
+              size={18}
+              filled={selected === item.id && item.id === "watchlist"}
+            />
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
     </nav>
   );
 }

@@ -39,6 +39,10 @@
   border-color: rgba(var(--accent-rgb), 0.55);
 }
 
+.settings-tab-select {
+  display: none;
+}
+
 .settings-panel {
   padding: var(--sp-xl);
   border-radius: var(--r-lg);
@@ -484,6 +488,29 @@
   flex-direction: column;
 }
 
+@media (max-width: 760px) {
+  .settings-tabs {
+    display: none;
+  }
+
+  .settings-tab-select {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .settings-tab-select select {
+    min-height: 44px;
+    padding: var(--sp-sm) var(--sp-md);
+    border: 0.75px solid var(--glass-border);
+    border-radius: var(--r-sm);
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--text-primary);
+    font: inherit;
+    outline: none;
+  }
+}
+
 @media (max-width: 560px) {
   .settings-screen {
     padding: var(--sp-lg);
@@ -545,6 +572,10 @@
     backdrop-filter: blur(var(--glass-blur-rest));
     -webkit-mask-image: none;
     mask-image: none;
+  }
+
+  .settings-tab-select {
+    display: none;
   }
 
   .settings-tabs .chip {

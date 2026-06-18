@@ -392,6 +392,17 @@ export function Settings() {
     <div className="settings-screen">
       <h1 className="settings-h1">Settings</h1>
 
+      <label className="settings-tab-select">
+        <span className="settings-label">Section</span>
+        <select value={tab} onChange={(event) => setTab(event.target.value as Tab)}>
+          {tabs.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <div className="settings-tabs">
         {tabs.map((t) => (
           <button
@@ -2328,7 +2339,7 @@ function KeysTab({ draft, patch }: TabProps) {
         <SecretInput
           value={draft.openSubtitlesApiKey}
           onChange={(e) => patch({ openSubtitlesApiKey: e.target.value })}
-          placeholder="OpenSubtitles REST API key"
+          placeholder="OpenSubtitles key"
         />
       </Field>
 
