@@ -64,3 +64,9 @@
     --nav-rail-width: 208px;
   }
 }
+
+@media (min-width: 768px) {
+  :root[data-nav-labels="icons"] .app {
+    --nav-rail-width: 96px;
+  }
+}

@@ -22,6 +22,7 @@ export function useTheme(settings: AppSettings): void {
     root.dataset.motion = settings.appearanceMotion;
     root.dataset.radius = settings.appearanceRadius;
     root.dataset.chrome = settings.appearanceChrome;
+    root.dataset.navLabels = settings.appearanceNavLabels;
 
     const accent = accentById(settings.appearanceAccent);
     if (accent.id === "theme") {

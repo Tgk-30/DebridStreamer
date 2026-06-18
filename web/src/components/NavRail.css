@@ -117,6 +117,19 @@
   display: none;
 }
 
+:root[data-nav-labels="icons"] .nav-rail {
+  align-items: stretch;
+}
+
+:root[data-nav-labels="icons"] .nav-rail-btn {
+  justify-content: center;
+}
+
+:root[data-nav-labels="icons"] .nav-rail-label,
+:root[data-nav-labels="icons"] .nav-rail-group-label {
+  display: none;
+}
+
 @media (min-width: 1200px) {
   .nav-rail {
     padding: 28px var(--sp-md) var(--sp-lg);
@@ -148,6 +161,11 @@
 
   .nav-rail-label {
     font-size: 14px;
+  }
+
+  :root[data-nav-labels="icons"] .nav-rail-btn {
+    justify-content: center;
+    padding-inline: var(--sp-xs);
   }
 }
 

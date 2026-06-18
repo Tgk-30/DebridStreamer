@@ -28,6 +28,7 @@ import type {
   AppearanceChrome,
   AppearanceDensity,
   AppearanceMotion,
+  AppearanceNavLabels,
   AppearanceRadius,
   AppearanceTextSize,
   SourceEntry,
@@ -131,6 +132,7 @@ interface AppearanceProfile {
     | "appearanceRadius"
     | "appearanceBlur"
     | "appearanceChrome"
+    | "appearanceNavLabels"
   >;
 }
 
@@ -150,6 +152,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceRadius: "default",
       appearanceBlur: 18,
       appearanceChrome: "balanced",
+      appearanceNavLabels: "auto",
     },
   },
   {
@@ -165,6 +168,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceRadius: "sharp",
       appearanceBlur: 12,
       appearanceChrome: "solid",
+      appearanceNavLabels: "icons",
     },
   },
   {
@@ -180,6 +184,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceRadius: "round",
       appearanceBlur: 14,
       appearanceChrome: "balanced",
+      appearanceNavLabels: "labels",
     },
   },
   {
@@ -195,6 +200,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceRadius: "default",
       appearanceBlur: 10,
       appearanceChrome: "solid",
+      appearanceNavLabels: "auto",
     },
   },
 ];
@@ -248,7 +254,8 @@ function appearanceProfileMatches(
     draft.appearanceMotion === settings.appearanceMotion &&
     draft.appearanceRadius === settings.appearanceRadius &&
     draft.appearanceBlur === settings.appearanceBlur &&
-    draft.appearanceChrome === settings.appearanceChrome
+    draft.appearanceChrome === settings.appearanceChrome &&
+    draft.appearanceNavLabels === settings.appearanceNavLabels
   );
 }
 
@@ -2455,6 +2462,13 @@ function AppearanceTab({
                 ? "Light glass"
                 : "Balanced glass"}
           </span>
+          <span>
+            {draft.appearanceNavLabels === "icons"
+              ? "Icon nav"
+              : draft.appearanceNavLabels === "labels"
+                ? "Labeled nav"
+                : "Auto nav"}
+          </span>
         </div>
       </div>
 
@@ -2517,6 +2531,18 @@ function AppearanceTab({
           ]}
           onChange={(value) =>
             applyAppearance({ appearanceChrome: value as AppearanceChrome })
+          }
+        />
+        <SegmentedControl
+          label="Nav labels"
+          value={draft.appearanceNavLabels}
+          options={[
+            { value: "auto", label: "Auto" },
+            { value: "labels", label: "Labels" },
+            { value: "icons", label: "Icons" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({ appearanceNavLabels: value as AppearanceNavLabels })
           }
         />
       </div>
