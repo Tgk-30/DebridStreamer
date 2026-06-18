@@ -76,14 +76,6 @@ interface SourcePreset {
 
 const SOURCE_PRESETS: SourcePreset[] = [
   {
-    id: "torznab-jackett-all",
-    label: "Torznab custom",
-    type: "torznab",
-    baseURL: "http://localhost:9117",
-    displayName: "Torznab",
-    note: "Uses the generic Torznab path, useful for custom endpoints.",
-  },
-  {
     id: "jackett-local",
     label: "Jackett local",
     type: "jackett",
@@ -114,6 +106,14 @@ const SOURCE_PRESETS: SourcePreset[] = [
     baseURL: "https://torrentio.strem.fun",
     displayName: "Torrentio",
     note: "Manifest URLs also work; playback resolves through stream endpoints.",
+  },
+  {
+    id: "torznab-custom",
+    label: "Custom Torznab URL",
+    type: "torznab",
+    baseURL: "http://localhost:9117",
+    displayName: "Torznab",
+    note: "Generic Torznab base URL for custom endpoints.",
   },
 ];
 
