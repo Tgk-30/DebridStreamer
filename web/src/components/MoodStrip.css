@@ -12,7 +12,7 @@
 .mood-header {
   display: flex;
   align-items: center;
-  gap: var(--sp-sm);
+  gap: 10px;
 }
 .mood-heading {
   display: flex;
@@ -38,12 +38,18 @@
 }
 
 .mood-curate {
+  justify-content: center;
+  min-width: 88px;
+  min-height: 40px;
   padding: 7px 16px;
   font-size: 13px;
   color: #fff;
 }
 .mood-curate:disabled {
-  opacity: 0.5;
+  opacity: 1;
+  color: rgba(255, 255, 255, 0.66);
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   cursor: not-allowed;
   box-shadow: none;
 }
@@ -72,15 +78,17 @@
 
 @media (max-width: 560px) {
   .mood {
+    gap: 10px;
     padding: var(--sp-md);
   }
 
   .mood-prompt {
     display: grid;
-    grid-template-columns: 20px minmax(0, 1fr);
+    grid-template-columns: 18px minmax(0, 1fr) minmax(76px, auto);
     align-items: center;
-    border-radius: var(--r-lg);
-    padding: var(--sp-md);
+    min-height: 52px;
+    border-radius: var(--r-md);
+    padding: 8px 9px;
   }
 
   .mood-prompt input {
@@ -89,10 +97,9 @@
   }
 
   .mood-curate {
-    grid-column: 1 / -1;
-    justify-content: center;
-    min-height: 40px;
-    margin-top: var(--sp-xs);
+    min-width: 76px;
+    min-height: 36px;
+    padding: 7px 12px;
   }
 
   .mood-chips {
@@ -103,6 +110,8 @@
     overflow-x: auto;
     padding: 0 var(--sp-xs) 2px;
     scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+    mask-image: linear-gradient(90deg, #000 88%, transparent);
   }
 
   .mood-chips::-webkit-scrollbar {
@@ -147,20 +156,22 @@
   }
 
   .mood-prompt {
-    grid-template-columns: 18px minmax(0, 1fr);
-    gap: 7px;
-    padding: 10px;
+    grid-template-columns: 16px minmax(0, 1fr) 70px;
+    gap: 6px;
+    min-height: 48px;
+    padding: 7px 8px;
     border-radius: var(--r-md);
   }
 
   .mood-prompt input {
     min-height: 28px;
+    font-size: 13px;
   }
 
   .mood-curate {
-    min-height: 36px;
-    margin-top: 2px;
-    padding: 7px 12px;
+    min-width: 70px;
+    min-height: 34px;
+    padding: 6px 10px;
   }
 
   .mood-chips {

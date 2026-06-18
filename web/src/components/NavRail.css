@@ -74,7 +74,7 @@
 .nav-rail-btn.is-selected {
   background: rgba(var(--accent-rgb), 0.12);
   border-color: rgba(var(--accent-rgb), 0.42);
-  color: var(--accent);
+  color: var(--text-primary);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
@@ -157,25 +157,27 @@
     position: fixed;
     left: 50%;
     right: auto;
-    bottom: max(8px, env(safe-area-inset-bottom));
+    bottom: max(10px, env(safe-area-inset-bottom));
     z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
-    gap: 3px;
-    width: min(430px, calc(100vw - 20px));
-    height: 68px;
-    padding: 6px;
+    justify-content: stretch;
+    gap: 2px;
+    width: min(420px, calc(100vw - 24px));
+    height: 64px;
+    padding: 5px;
     overflow: visible;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 17px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
     background:
-      linear-gradient(180deg, rgba(42, 45, 70, 0.76), rgba(13, 15, 27, 0.86));
-    backdrop-filter: blur(26px) saturate(1.55);
-    -webkit-backdrop-filter: blur(26px) saturate(1.55);
+      linear-gradient(180deg, rgba(55, 58, 86, 0.58), rgba(13, 15, 27, 0.72));
+    backdrop-filter: blur(24px) saturate(1.65);
+    -webkit-backdrop-filter: blur(24px) saturate(1.65);
     box-shadow:
-      0 14px 34px rgba(0, 0, 0, 0.36),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      0 12px 30px rgba(0, 0, 0, 0.42),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
     transform: translateX(-50%);
   }
 
@@ -208,25 +210,29 @@
   }
 
   .nav-rail-btn {
-    flex: 1 1 0;
+    flex: none;
     min-width: 0;
-    height: 56px;
+    width: 100%;
+    height: 54px;
     justify-content: center;
     gap: 3px;
-    padding: 0 1px;
-    border-radius: var(--r-sm);
+    padding: 0 1px 2px;
+    border-radius: 15px;
   }
 
   .nav-rail-btn svg {
-    width: 22px;
-    height: 22px;
+    width: 21px;
+    height: 21px;
+    stroke-width: 1.75;
   }
 
   .nav-rail-btn.is-selected {
-    color: var(--accent);
-    border-color: transparent;
-    background: transparent;
-    box-shadow: none;
+    color: #fff;
+    border-color: rgba(var(--accent-rgb), 0.24);
+    background: rgba(var(--accent-rgb), 0.18);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 7px 18px rgba(var(--accent-rgb), 0.14);
   }
 
   .nav-rail-label {
@@ -234,7 +240,7 @@
     max-width: 100%;
     overflow: hidden;
     font-size: 10.5px;
-    font-weight: 700;
+    font-weight: 650;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -248,28 +254,49 @@
   }
 
   .nav-rail-btn.is-selected::before {
-    left: 28%;
-    right: 28%;
-    top: auto;
-    bottom: 4px;
-    width: auto;
-    height: 4px;
+    left: 50%;
+    right: auto;
+    top: 5px;
+    bottom: auto;
+    width: 16px;
+    height: 2px;
+    transform: translateX(-50%);
+    border-radius: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.62);
+  }
+
+  .nav-rail-btn.is-selected::after {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    border-radius: 11px;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+
+  .nav-rail-more:not(.is-selected)::before {
+    display: none;
+  }
+
+  .nav-rail-more svg {
+    transform: translateY(-1px);
   }
 
   .nav-rail-more-sheet {
     position: fixed;
     left: 50%;
     right: auto;
-    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 78px);
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 74px);
     z-index: 31;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    width: min(430px, calc(100vw - 20px));
+    width: min(420px, calc(100vw - 24px));
     padding: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.13);
     border-radius: 18px;
-    background: rgba(7, 8, 18, 0.965);
+    background: rgba(13, 15, 27, 0.92);
     backdrop-filter: blur(30px) saturate(1.7);
     -webkit-backdrop-filter: blur(30px) saturate(1.7);
     box-shadow:

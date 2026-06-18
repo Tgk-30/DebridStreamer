@@ -1,8 +1,6 @@
 // Lightweight inline-SVG icon set standing in for the native app's SF Symbols.
 // Each name maps to the closest equivalent of the SidebarItem.icon / view glyphs
-// used in the Swift sources (sparkles.tv, books.vertical, bookmark, clock,
-// wand.and.stars, gear, magnifyingglass, play.fill, star.fill, sparkles,
-// info.circle, xmark, sparkle.magnifyingglass).
+// used in the Swift sources.
 
 export type IconName =
   | "discover"
@@ -41,20 +39,19 @@ interface IconProps {
 }
 
 const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
-  // sparkles.tv — a screen with a spark
+  // compass / discover
   discover: () => (
     <>
-      <rect x="3" y="5" width="18" height="12" rx="2" />
-      <path d="M8 21h8" />
-      <path d="M17.2 3.2l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5L15 5.3l1.5-.6z" />
+      <circle cx="12" cy="12" r="9" />
+      <path d="M15.2 8.8l-1.7 4.7-4.7 1.7 1.7-4.7z" />
     </>
   ),
-  // books.vertical
+  // film strip / library
   library: () => (
     <>
-      <path d="M5 4h3v16H5z" />
-      <path d="M10 4h3v16h-3z" />
-      <path d="M15.5 4.6l3 .8-3.2 14.4-3-.8z" />
+      <rect x="4" y="4" width="16" height="16" rx="2.5" />
+      <path d="M8 4v16M16 4v16" />
+      <path d="M4 8h4M16 8h4M4 12h4M16 12h4M4 16h4M16 16h4" />
     </>
   ),
   // bookmark
@@ -231,9 +228,9 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
   // more destinations
   more: () => (
     <>
+      <circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none" />
       <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="5" r="1.8" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="19" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none" />
     </>
   ),
 };

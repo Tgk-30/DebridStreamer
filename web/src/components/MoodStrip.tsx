@@ -44,7 +44,7 @@ export function MoodStrip({
   return (
     <section className="mood glass-raised glass-lit">
       <div className="mood-header">
-        <Icon name="assistant" size={20} className="t-accent" />
+        <Icon name="sparkles" size={19} className="t-accent" />
         <div className="mood-heading">
           <div className="mood-title">Describe a vibe</div>
           <div className="mood-subtitle t-secondary">
