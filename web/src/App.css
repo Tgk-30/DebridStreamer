@@ -44,7 +44,7 @@
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 699px) {
   .app {
     --nav-rail-width: 0px;
     display: block;
@@ -65,7 +65,7 @@
   }
 }
 
-@media (min-width: 768px) {
+@media (min-width: 700px) {
   :root[data-nav-labels="icons"] .app {
     --nav-rail-width: 96px;
   }

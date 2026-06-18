@@ -22,6 +22,8 @@ export function useTheme(settings: AppSettings): void {
     root.dataset.motion = settings.appearanceMotion;
     root.dataset.radius = settings.appearanceRadius;
     root.dataset.chrome = settings.appearanceChrome;
+    root.dataset.backdrop = settings.appearanceBackdrop;
+    root.dataset.panelContrast = settings.appearancePanelContrast;
     root.dataset.navLabels = settings.appearanceNavLabels;
     root.dataset.navTint = settings.appearanceNavTint;
     root.dataset.posterSize = settings.appearancePosterSize;

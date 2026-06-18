@@ -142,6 +142,8 @@
   --glass-tint-hero: rgba(255, 255, 255, 0.09);
   --glass-tint-control: rgba(255, 255, 255, 0.06);
   --glass-tint-control-hover: rgba(255, 255, 255, 0.1);
+  --ambient-primary-alpha: 0.13;
+  --ambient-secondary-alpha: 0.1;
   --nav-mobile-bg: linear-gradient(
     180deg,
     rgba(16, 19, 31, 0.84),
@@ -361,6 +363,56 @@
   --nav-mobile-icon-bg: rgba(34, 40, 68, 0.045);
 }
 
+:root[data-backdrop="subtle"] {
+  --ambient-primary-alpha: 0.07;
+  --ambient-secondary-alpha: 0.055;
+}
+
+:root[data-backdrop="plain"] {
+  --ambient-primary-alpha: 0;
+  --ambient-secondary-alpha: 0;
+}
+
+:root[data-panel-contrast="soft"] {
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.16);
+  --glass-tint-rest: rgba(255, 255, 255, 0.038);
+  --glass-tint-raised: rgba(255, 255, 255, 0.055);
+  --glass-tint-hero: rgba(255, 255, 255, 0.075);
+  --glass-tint-control: rgba(255, 255, 255, 0.045);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.085);
+}
+
+:root[data-panel-contrast="high"] {
+  --glass-border: rgba(255, 255, 255, 0.22);
+  --glass-highlight: rgba(255, 255, 255, 0.32);
+  --glass-tint-rest: rgba(255, 255, 255, 0.072);
+  --glass-tint-raised: rgba(255, 255, 255, 0.095);
+  --glass-tint-hero: rgba(255, 255, 255, 0.12);
+  --glass-tint-control: rgba(255, 255, 255, 0.085);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.14);
+}
+
+:root[data-theme="light"][data-panel-contrast="soft"] {
+  --glass-border: rgba(20, 24, 48, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.72);
+  --glass-tint-rest: rgba(255, 255, 255, 0.42);
+  --glass-tint-raised: rgba(255, 255, 255, 0.52);
+  --glass-tint-hero: rgba(255, 255, 255, 0.62);
+  --glass-tint-control: rgba(255, 255, 255, 0.48);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.74);
+}
+
+:root[data-theme="light"][data-panel-contrast="high"] {
+  --glass-border: rgba(20, 24, 48, 0.24);
+  --glass-highlight: rgba(255, 255, 255, 0.92);
+  --glass-tint-rest: rgba(255, 255, 255, 0.72);
+  --glass-tint-raised: rgba(255, 255, 255, 0.84);
+  --glass-tint-hero: rgba(255, 255, 255, 0.9);
+  --glass-tint-control: rgba(255, 255, 255, 0.78);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.94);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -411,7 +463,7 @@ textarea::placeholder {
 .aurora-glow::before {
   width: 72vw;
   height: 72vw;
-  background: rgba(var(--accent-rgb), 0.13);
+  background: rgba(var(--accent-rgb), var(--ambient-primary-alpha));
   filter: blur(150px);
   left: -30vw;
   top: -34vh;
@@ -420,7 +472,7 @@ textarea::placeholder {
 .aurora-glow::after {
   width: 62vw;
   height: 62vw;
-  background: rgba(var(--accent-secondary-rgb), 0.1);
+  background: rgba(var(--accent-secondary-rgb), var(--ambient-secondary-alpha));
   filter: blur(160px);
   right: -26vw;
   bottom: -22vh;

@@ -1,4 +1,4 @@
-// Settings screen — on-brand tabbed config, persisted to localStorage.
+// Settings screen — on-brand tabbed config, persisted through the app store.
 //
 // Three tabs:
 //   • API keys — TMDB / OMDB metadata keys + the AI provider (kind, key, model).
@@ -9,8 +9,8 @@
 //
 // Saving writes through the store (updateSettings → saveSettings), which rebuilds
 // the shared service instances, so a TMDB key entered here immediately lights up
-// live data elsewhere. NOTE: real persistence + keychain storage of secrets
-// arrives with the storage port; localStorage is the stopgap.
+// live data elsewhere. Credential values are routed through the SecretStore
+// abstraction; desktop builds can back that with native secure storage.
 
 import {
   useEffect,
@@ -25,11 +25,13 @@ import { useAppStore } from "../store/AppStore";
 import type {
   AppSettings,
   AppearanceAccent,
+  AppearanceBackdrop,
   AppearanceChrome,
   AppearanceDensity,
   AppearanceMotion,
   AppearanceNavLabels,
   AppearanceNavTint,
+  AppearancePanelContrast,
   AppearancePosterSize,
   AppearanceRadius,
   AppearanceTextSize,
@@ -134,6 +136,8 @@ interface AppearanceProfile {
     | "appearanceRadius"
     | "appearanceBlur"
     | "appearanceChrome"
+    | "appearanceBackdrop"
+    | "appearancePanelContrast"
     | "appearanceNavLabels"
     | "appearanceNavTint"
     | "appearancePosterSize"
@@ -156,6 +160,8 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceRadius: "default",
       appearanceBlur: 18,
       appearanceChrome: "balanced",
+      appearanceBackdrop: "ambient",
+      appearancePanelContrast: "standard",
       appearanceNavLabels: "auto",
       appearanceNavTint: "balanced",
       appearancePosterSize: "default",
@@ -174,6 +180,8 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceRadius: "sharp",
       appearanceBlur: 12,
       appearanceChrome: "solid",
+      appearanceBackdrop: "plain",
+      appearancePanelContrast: "high",
       appearanceNavLabels: "icons",
       appearanceNavTint: "solid",
       appearancePosterSize: "compact",
@@ -192,6 +200,8 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceRadius: "round",
       appearanceBlur: 14,
       appearanceChrome: "balanced",
+      appearanceBackdrop: "subtle",
+      appearancePanelContrast: "standard",
       appearanceNavLabels: "labels",
       appearanceNavTint: "airy",
       appearancePosterSize: "large",
@@ -210,6 +220,8 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceRadius: "default",
       appearanceBlur: 10,
       appearanceChrome: "solid",
+      appearanceBackdrop: "subtle",
+      appearancePanelContrast: "soft",
       appearanceNavLabels: "auto",
       appearanceNavTint: "solid",
       appearancePosterSize: "default",
@@ -267,6 +279,8 @@ function appearanceProfileMatches(
     draft.appearanceRadius === settings.appearanceRadius &&
     draft.appearanceBlur === settings.appearanceBlur &&
     draft.appearanceChrome === settings.appearanceChrome &&
+    draft.appearanceBackdrop === settings.appearanceBackdrop &&
+    draft.appearancePanelContrast === settings.appearancePanelContrast &&
     draft.appearanceNavLabels === settings.appearanceNavLabels &&
     draft.appearanceNavTint === settings.appearanceNavTint &&
     draft.appearancePosterSize === settings.appearancePosterSize
@@ -582,11 +596,70 @@ export function Settings() {
     if (!serverMode && tab === "server") setTab("appearance");
   }, [serverMode, tab]);
 
+  const selectedTab = tabs.find((t) => t.id === tab) ?? tabs[0];
+  const selectedProfile =
+    APPEARANCE_PROFILES.find((profile) => appearanceProfileMatches(draft, profile)) ??
+    null;
+  const configuredDebridCount = draft.debridTokens.filter(
+    (entry) => entry.apiToken.trim().length > 0,
+  ).length;
+  const activeSourceCount =
+    draft.sources.filter((source) => source.isActive).length +
+    (draft.builtInIndexersEnabled ? 1 : 0);
+  const metadataState = draft.tmdbKey.trim().length > 0 ? "Live metadata" : "Sample metadata";
+
   return (
     <div className="settings-screen">
-      <header className="settings-header">
+      <header className="settings-header settings-hero glass-raised glass-lit">
         <div className="settings-title-block">
+          <div className="settings-kicker">
+            <Icon name="settings" size={15} />
+            <span>Control center</span>
+          </div>
           <h1 className="settings-h1">Settings</h1>
+          <p className="settings-subtitle t-secondary">
+            {selectedTab.label} controls for this profile, device, and server session.
+          </p>
+          <div className="settings-insight-grid" aria-label="Settings summary">
+            <button
+              type="button"
+              className="settings-insight"
+              onClick={() => setTab("appearance")}
+            >
+              <span>Appearance</span>
+              <strong>{selectedProfile?.label ?? "Custom current"}</strong>
+            </button>
+            <button
+              type="button"
+              className="settings-insight"
+              onClick={() => setTab("keys")}
+            >
+              <span>Catalog</span>
+              <strong>{metadataState}</strong>
+            </button>
+            <button
+              type="button"
+              className="settings-insight"
+              onClick={() => setTab("debrid")}
+            >
+              <span>Debrid</span>
+              <strong>
+                {configuredDebridCount === 0
+                  ? "No provider"
+                  : `${configuredDebridCount} provider${configuredDebridCount === 1 ? "" : "s"}`}
+              </strong>
+            </button>
+            <button
+              type="button"
+              className="settings-insight"
+              onClick={() => setTab("sources")}
+            >
+              <span>Sources</span>
+              <strong>
+                {activeSourceCount} active source{activeSourceCount === 1 ? "" : "s"}
+              </strong>
+            </button>
+          </div>
         </div>
 
         {tab !== "install" && (
@@ -2525,6 +2598,20 @@ function AppearanceTab({
                 : "Balanced glass"}
           </span>
           <span>
+            {draft.appearanceBackdrop === "plain"
+              ? "Plain backdrop"
+              : draft.appearanceBackdrop === "subtle"
+                ? "Subtle glow"
+                : "Ambient glow"}
+          </span>
+          <span>
+            {draft.appearancePanelContrast === "high"
+              ? "High contrast"
+              : draft.appearancePanelContrast === "soft"
+                ? "Soft contrast"
+                : "Standard contrast"}
+          </span>
+          <span>
             {draft.appearanceNavLabels === "icons"
               ? "Icon nav"
               : draft.appearanceNavLabels === "labels"
@@ -2545,6 +2632,15 @@ function AppearanceTab({
                 ? "Large posters"
                 : "Default posters"}
           </span>
+        </div>
+      </div>
+
+      <div className="appearance-section-head">
+        <div>
+          <span className="settings-sources-title">Display</span>
+          <p className="settings-hint t-secondary">
+            Device-scale defaults come first; switch only the dimensions that need it.
+          </p>
         </div>
       </div>
 
@@ -2609,6 +2705,44 @@ function AppearanceTab({
             applyAppearance({ appearanceChrome: value as AppearanceChrome })
           }
         />
+        <SegmentedControl
+          label="Backdrop"
+          value={draft.appearanceBackdrop}
+          options={[
+            { value: "ambient", label: "Ambient" },
+            { value: "subtle", label: "Subtle" },
+            { value: "plain", label: "Plain" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({ appearanceBackdrop: value as AppearanceBackdrop })
+          }
+        />
+        <SegmentedControl
+          label="Panel contrast"
+          value={draft.appearancePanelContrast}
+          options={[
+            { value: "soft", label: "Soft" },
+            { value: "standard", label: "Standard" },
+            { value: "high", label: "High" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({
+              appearancePanelContrast: value as AppearancePanelContrast,
+            })
+          }
+        />
+      </div>
+
+      <div className="appearance-section-head">
+        <div>
+          <span className="settings-sources-title">Navigation and catalog</span>
+          <p className="settings-hint t-secondary">
+            Tune the dock, rail labels, and poster density for the screen in use.
+          </p>
+        </div>
+      </div>
+
+      <div className="settings-control-grid">
         <SegmentedControl
           label="Nav labels"
           value={draft.appearanceNavLabels}
@@ -2799,6 +2933,24 @@ function modelOptions(provider: AppSettings["aiProvider"], current: string): str
 }
 
 function KeysTab({ draft, patch }: TabProps) {
+  const [keyPanel, setKeyPanel] = useState<"catalog" | "assistant">("catalog");
+  const keyPanels: Array<{
+    id: "catalog" | "assistant";
+    label: string;
+    summary: string;
+  }> = [
+    {
+      id: "catalog",
+      label: "Catalog metadata",
+      summary: "Search, posters, ratings",
+    },
+    {
+      id: "assistant",
+      label: "Assistant AI",
+      summary: "Mood discovery and chat",
+    },
+  ];
+
   return (
     <div className="settings-fields">
       <p className="settings-hint settings-secret-summary">
@@ -2806,7 +2958,40 @@ function KeysTab({ draft, patch }: TabProps) {
         when available.
       </p>
 
-      <div className="settings-key-grid">
+      <div className="settings-subsection-picker">
+        <label className="settings-subsection-select">
+          <span className="settings-label">Credential group</span>
+          <select
+            value={keyPanel}
+            onChange={(event) =>
+              setKeyPanel(event.target.value as "catalog" | "assistant")
+            }
+          >
+            {keyPanels.map((panel) => (
+              <option key={panel.id} value={panel.id}>
+                {panel.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="settings-option-strip" aria-label="Credential group">
+          {keyPanels.map((panel) => (
+            <button
+              key={panel.id}
+              type="button"
+              className={`settings-option-card${keyPanel === panel.id ? " is-active" : ""}`}
+              onClick={() => setKeyPanel(panel.id)}
+              aria-pressed={keyPanel === panel.id}
+            >
+              <span>{panel.label}</span>
+              <small>{panel.summary}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="settings-key-grid is-single">
+        {keyPanel === "catalog" && (
         <section className="settings-key-card glass-rest">
           <div className="settings-key-card-head">
             <span className="settings-sources-title">Catalog metadata</span>
@@ -2840,7 +3025,9 @@ function KeysTab({ draft, patch }: TabProps) {
             />
           </Field>
         </section>
+        )}
 
+        {keyPanel === "assistant" && (
         <section className="settings-key-card glass-rest">
           <div className="settings-key-card-head">
             <span className="settings-sources-title">Assistant AI</span>
@@ -2902,6 +3089,7 @@ function KeysTab({ draft, patch }: TabProps) {
             </Field>
           )}
         </section>
+        )}
       </div>
     </div>
   );

@@ -176,7 +176,7 @@
   }
 }
 
-@media (min-width: 768px) and (max-width: 1199px) {
+@media (min-width: 700px) and (max-width: 1199px) {
   .nav-rail {
     gap: var(--sp-sm);
     padding: max(24px, env(safe-area-inset-top)) 6px max(var(--sp-md), env(safe-area-inset-bottom));
@@ -209,7 +209,7 @@
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 699px) {
   .nav-rail {
     position: fixed;
     left: 50%;

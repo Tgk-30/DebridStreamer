@@ -68,6 +68,8 @@ const SettingsKeys = {
   appearanceRadius: "appearance_radius",
   appearanceBlur: "appearance_blur",
   appearanceChrome: "appearance_chrome",
+  appearanceBackdrop: "appearance_backdrop",
+  appearancePanelContrast: "appearance_panel_contrast",
   appearanceNavLabels: "appearance_nav_labels",
   appearanceNavTint: "appearance_nav_tint",
   appearancePosterSize: "appearance_poster_size",
@@ -125,6 +127,8 @@ export type AppearanceTextSize = "s" | "m" | "l" | "xl";
 export type AppearanceMotion = "system" | "normal" | "reduced";
 export type AppearanceRadius = "sharp" | "default" | "round";
 export type AppearanceChrome = "translucent" | "balanced" | "solid";
+export type AppearanceBackdrop = "ambient" | "subtle" | "plain";
+export type AppearancePanelContrast = "soft" | "standard" | "high";
 export type AppearanceNavLabels = "auto" | "labels" | "icons";
 export type AppearanceNavTint = "airy" | "balanced" | "solid";
 export type AppearancePosterSize = "compact" | "default" | "large";
@@ -149,6 +153,8 @@ export interface AppSettings {
   appearanceRadius: AppearanceRadius;
   appearanceBlur: number;
   appearanceChrome: AppearanceChrome;
+  appearanceBackdrop: AppearanceBackdrop;
+  appearancePanelContrast: AppearancePanelContrast;
   appearanceNavLabels: AppearanceNavLabels;
   appearanceNavTint: AppearanceNavTint;
   appearancePosterSize: AppearancePosterSize;
@@ -225,6 +231,14 @@ function normalizeAppearanceChrome(value: unknown): AppearanceChrome {
   return value === "translucent" || value === "solid" ? value : "balanced";
 }
 
+function normalizeAppearanceBackdrop(value: unknown): AppearanceBackdrop {
+  return value === "subtle" || value === "plain" ? value : "ambient";
+}
+
+function normalizeAppearancePanelContrast(value: unknown): AppearancePanelContrast {
+  return value === "soft" || value === "high" ? value : "standard";
+}
+
 function normalizeAppearanceNavLabels(value: unknown): AppearanceNavLabels {
   return value === "labels" || value === "icons" ? value : "auto";
 }
@@ -257,6 +271,8 @@ export function defaultSettings(): AppSettings {
     appearanceRadius: "default",
     appearanceBlur: 18,
     appearanceChrome: "balanced",
+    appearanceBackdrop: "ambient",
+    appearancePanelContrast: "standard",
     appearanceNavLabels: "auto",
     appearanceNavTint: "balanced",
     appearancePosterSize: "default",
@@ -291,6 +307,10 @@ export function loadSettings(): AppSettings {
       appearanceRadius: normalizeAppearanceRadius(parsed.appearanceRadius),
       appearanceBlur: normalizeAppearanceBlur(parsed.appearanceBlur),
       appearanceChrome: normalizeAppearanceChrome(parsed.appearanceChrome),
+      appearanceBackdrop: normalizeAppearanceBackdrop(parsed.appearanceBackdrop),
+      appearancePanelContrast: normalizeAppearancePanelContrast(
+        parsed.appearancePanelContrast,
+      ),
       appearanceNavLabels: normalizeAppearanceNavLabels(parsed.appearanceNavLabels),
       appearanceNavTint: normalizeAppearanceNavTint(parsed.appearanceNavTint),
       appearancePosterSize: normalizeAppearancePosterSize(parsed.appearancePosterSize),
@@ -378,6 +398,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceRadius,
     appearanceBlur,
     appearanceChrome,
+    appearanceBackdrop,
+    appearancePanelContrast,
     appearanceNavLabels,
     appearanceNavTint,
     appearancePosterSize,
@@ -399,6 +421,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.appearanceRadius),
     store.getSetting(SettingsKeys.appearanceBlur),
     store.getSetting(SettingsKeys.appearanceChrome),
+    store.getSetting(SettingsKeys.appearanceBackdrop),
+    store.getSetting(SettingsKeys.appearancePanelContrast),
     store.getSetting(SettingsKeys.appearanceNavLabels),
     store.getSetting(SettingsKeys.appearanceNavTint),
     store.getSetting(SettingsKeys.appearancePosterSize),
@@ -462,6 +486,12 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceBlur: normalizeAppearanceBlur(appearanceBlur ?? base.appearanceBlur),
     appearanceChrome: normalizeAppearanceChrome(
       appearanceChrome ?? base.appearanceChrome,
+    ),
+    appearanceBackdrop: normalizeAppearanceBackdrop(
+      appearanceBackdrop ?? base.appearanceBackdrop,
+    ),
+    appearancePanelContrast: normalizeAppearancePanelContrast(
+      appearancePanelContrast ?? base.appearancePanelContrast,
     ),
     appearanceNavLabels: normalizeAppearanceNavLabels(
       appearanceNavLabels ?? base.appearanceNavLabels,
@@ -530,6 +560,14 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     store.setSetting(
       SettingsKeys.appearanceChrome,
       normalizeAppearanceChrome(settings.appearanceChrome),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceBackdrop,
+      normalizeAppearanceBackdrop(settings.appearanceBackdrop),
+    ),
+    store.setSetting(
+      SettingsKeys.appearancePanelContrast,
+      normalizeAppearancePanelContrast(settings.appearancePanelContrast),
     ),
     store.setSetting(
       SettingsKeys.appearanceNavLabels,
