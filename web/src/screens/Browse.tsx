@@ -161,7 +161,7 @@ function BrowseInner({
             className={`btn browse-filter-btn${filtersActive ? " browse-filter-on" : ""}`}
             onClick={() => setFiltersOpen(true)}
           >
-            <Icon name="sparkles" size={15} />
+            <Icon name="sliders" size={15} />
             Filters
           </button>
         </header>

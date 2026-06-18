@@ -97,17 +97,27 @@
 
   .mood-chips {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin-inline: calc(-1 * var(--sp-xs));
+    overflow-x: auto;
+    padding: 0 var(--sp-xs) 2px;
+    scrollbar-width: none;
+  }
+
+  .mood-chips::-webkit-scrollbar {
+    display: none;
   }
 
   .mood-chips .chip {
-    flex: 1 1 calc(50% - var(--sp-sm));
+    flex: 0 0 auto;
     justify-content: center;
-    min-width: 0;
+    min-width: max-content;
+    max-width: 78vw;
     min-height: 44px;
     padding: 10px 12px;
     text-align: center;
-    white-space: normal;
+    white-space: nowrap;
     font-size: 12px;
     line-height: 1.25;
   }

@@ -109,7 +109,7 @@ export function NavRail({ selected, onSelect }: NavRailProps) {
             tabIndex={moreOpen ? 0 : -1}
             aria-label="Close more menu"
           >
-            <Icon name="xmark" size={16} />
+            <Icon name="xmark" size={19} />
           </button>
         </div>
         {MOBILE_MORE_ITEMS.map((item) => (

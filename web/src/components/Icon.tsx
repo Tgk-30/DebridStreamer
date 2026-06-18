@@ -15,6 +15,7 @@ export type IconName =
   | "play"
   | "star"
   | "sparkles"
+  | "sliders"
   | "info"
   | "xmark"
   | "wand-search"
@@ -112,6 +113,17 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
       <path d="M18 14l.7 1.8L20.5 16.5l-1.8.7L18 19l-.7-1.8L15.5 16.5l1.8-.7z" />
     </>
   ),
+  // sliders.horizontal
+  sliders: () => (
+    <>
+      <path d="M4 7h5" />
+      <path d="M15 7h5" />
+      <circle cx="12" cy="7" r="2" />
+      <path d="M4 17h9" />
+      <path d="M19 17h1" />
+      <circle cx="16" cy="17" r="2" />
+    </>
+  ),
   // info.circle
   info: () => (
     <>
@@ -120,19 +132,19 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
       <path d="M12 8h.01" />
     </>
   ),
-  // xmark.circle.fill (used as clear button)
+  // xmark
   xmark: () => (
     <>
-      <circle cx="12" cy="12" r="9" />
       <path d="M9 9l6 6M15 9l-6 6" />
     </>
   ),
-  // sparkle.magnifyingglass (mood strip)
+  // wand with sparkles (mood strip)
   "wand-search": () => (
     <>
-      <circle cx="10.5" cy="10.5" r="6" />
-      <path d="M15 15l5 5" />
-      <path d="M10.5 7.5l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z" />
+      <path d="M5 19l10-10" />
+      <path d="M13 7l4 4" />
+      <path d="M17.5 3.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
+      <path d="M6.5 4.5l.5 1.2 1.2.5-1.2.5-.5 1.2L6 6.7l-1.2-.5L6 5.7z" />
     </>
   ),
   // calendar
@@ -207,13 +219,12 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
       <path d="M14.2 6.3C18.8 7.1 21.5 12 21.5 12a17 17 0 0 1-2.7 3.3" />
     </>
   ),
-  // app grid / more destinations
+  // more destinations
   more: () => (
     <>
-      <rect x="5" y="5" width="5" height="5" rx="1.2" />
-      <rect x="14" y="5" width="5" height="5" rx="1.2" />
-      <rect x="5" y="14" width="5" height="5" rx="1.2" />
-      <rect x="14" y="14" width="5" height="5" rx="1.2" />
+      <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="5" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="19" r="1.8" fill="currentColor" stroke="none" />
     </>
   ),
 };
