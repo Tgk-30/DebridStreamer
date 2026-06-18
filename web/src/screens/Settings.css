@@ -9,6 +9,23 @@
   width: min(880px, 100%);
 }
 
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  min-width: 0;
+}
+
+.settings-title-block {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+  min-width: 0;
+}
+
 .settings-h1 {
   margin: 0;
   font-size: 32px;
@@ -811,9 +828,11 @@
 .settings-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--sp-md);
+  flex: 1 1 auto;
   flex-wrap: wrap;
+  min-width: min(100%, 280px);
 }
 
 .settings-save-icon {
@@ -825,8 +844,11 @@
 }
 
 .settings-note {
+  flex: 1 1 240px;
   color: var(--text-secondary);
   font-size: 12px;
+  line-height: 1.35;
+  text-align: right;
 }
 
 .settings-status {
@@ -988,11 +1010,22 @@
 @media (max-width: 560px) {
   .settings-screen {
     position: relative;
-    gap: var(--sp-md);
+    gap: var(--sp-sm);
     padding: var(--sp-lg);
     padding-top: var(--sp-lg);
-    padding-bottom: var(--sp-lg);
+    padding-bottom: var(--sp-xxl);
     width: 100%;
+  }
+
+  .settings-header {
+    align-items: flex-start;
+    gap: var(--sp-sm);
+  }
+
+  .settings-title-block {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
   }
 
   .settings-h1 {
@@ -1008,12 +1041,8 @@
   }
 
   .settings-footer {
-    position: absolute;
-    z-index: 45;
-    top: var(--sp-lg);
-    right: var(--sp-lg);
-    bottom: auto;
-    left: auto;
+    flex: 0 0 auto;
+    min-width: auto;
     align-items: center;
     flex-direction: row;
     padding: 0;
@@ -1260,16 +1289,15 @@
     display: grid;
     grid-template-columns: 210px minmax(0, 900px);
     grid-template-areas:
-      "title title"
-      "tabs panel"
-      "tabs footer";
+      "header header"
+      "tabs panel";
     align-items: start;
     column-gap: var(--sp-xl);
     width: min(100%, 1180px);
   }
 
-  .settings-h1 {
-    grid-area: title;
+  .settings-header {
+    grid-area: header;
   }
 
   .settings-tabs {
@@ -1300,10 +1328,6 @@
 
   .settings-panel {
     grid-area: panel;
-  }
-
-  .settings-footer {
-    grid-area: footer;
   }
 }
 

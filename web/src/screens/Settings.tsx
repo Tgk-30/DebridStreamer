@@ -570,7 +570,29 @@ export function Settings() {
 
   return (
     <div className="settings-screen">
-      <h1 className="settings-h1">Settings</h1>
+      <header className="settings-header">
+        <div className="settings-title-block">
+          <h1 className="settings-h1">Settings</h1>
+        </div>
+
+        {tab !== "install" && (
+          <div className="settings-footer">
+            <span className="settings-note t-secondary" aria-live="polite">
+              Saved to this profile · desktop secrets use the OS keychain when available
+            </span>
+            <button
+              type="button"
+              className="btn btn-prominent"
+              onClick={save}
+              aria-label={saved ? "Settings saved" : "Save changes"}
+              title={saved ? "Saved" : "Save changes"}
+            >
+              <Icon name={saved ? "check" : "save"} size={16} className="settings-save-icon" />
+              <span className="settings-save-label">{saved ? "Saved" : "Save changes"}</span>
+            </button>
+          </div>
+        )}
+      </header>
 
       <label className="settings-tab-select">
         <span className="settings-label">Category</span>
@@ -612,24 +634,6 @@ export function Settings() {
         {tab === "debrid" && <DebridTab draft={draft} patch={patch} />}
         {tab === "sources" && <SourcesTab draft={draft} patch={patch} />}
       </div>
-
-      {tab !== "install" && (
-        <div className="settings-footer">
-          <span className="settings-note t-secondary" aria-live="polite">
-            Saved to this profile · desktop secrets use the OS keychain when available
-          </span>
-          <button
-            type="button"
-            className="btn btn-prominent"
-            onClick={save}
-            aria-label={saved ? "Settings saved" : "Save changes"}
-            title={saved ? "Saved" : "Save changes"}
-          >
-            <Icon name={saved ? "check" : "save"} size={16} className="settings-save-icon" />
-            <span className="settings-save-label">{saved ? "Saved" : "Save changes"}</span>
-          </button>
-        </div>
-      )}
     </div>
   );
 }
