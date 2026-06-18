@@ -2,7 +2,7 @@
 
 .browse {
   position: fixed;
-  inset: 0 0 0 78px;
+  inset: 0 0 0 var(--nav-rail-width, 96px);
   /* Below Detail (z-index 20) so a Detail opened from Browse layers on top,
    * above the base content + global search. */
   z-index: 18;
@@ -158,4 +158,42 @@
   text-align: center;
   font-size: 13px;
   margin: 0 0 var(--sp-md);
+}
+
+@media (max-width: 760px) {
+  .browse {
+    inset: 0;
+  }
+
+  .browse-inner {
+    padding: var(--sp-lg);
+    padding-bottom: 112px;
+  }
+
+  .browse-head {
+    align-items: flex-start;
+  }
+
+  .browse-title-row {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .browse-h1 {
+    font-size: 25px;
+    line-height: 1.08;
+  }
+
+  .browse-filter-btn {
+    margin-left: auto;
+  }
+
+  .browse-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-md) var(--sp-sm);
+  }
+
+  .browse-grid .media-card {
+    --poster-w: min(144px, calc((100vw - 64px) / 2));
+  }
 }

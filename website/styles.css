@@ -443,6 +443,11 @@ pre {
     gap: 8px;
   }
 
+  nav a:nth-child(1),
+  nav a:nth-child(2) {
+    display: none;
+  }
+
   nav a {
     justify-content: center;
     min-height: 38px;

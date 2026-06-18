@@ -2,10 +2,8 @@
 // "Describe a vibe" AI mood strip — the app's differentiator).
 //
 // Header (wand glyph + "Describe a vibe" + subtitle), a prompt field with a
-// Curate button, and starter suggestion chips. VISUAL-ONLY this phase: there's
-// no AIAssistantManager wired yet, so Curate emits the vibe through an optional
-// callback (the parent currently no-ops / shows a hint). The real path
-// (assistant.discoverFilters → service.discover) lands in a later phase.
+// Curate button, and starter suggestion chips. The parent decides whether the
+// vibe is handled by AI recommendations or a regular Browse search fallback.
 
 import { useState } from "react";
 import { Icon } from "./Icon";
@@ -20,19 +18,27 @@ const SUGGESTIONS = [
 ];
 
 interface MoodStripProps {
-  /** Fired on Curate / chip tap. Visual-only this phase. */
-  onCurate?: (vibe: string) => void;
+  /** Fired on Curate / chip tap. */
+  onCurate?: (vibe: string) => void | Promise<void>;
+  loading?: boolean;
+  status?: string | null;
+  error?: string | null;
 }
 
-export function MoodStrip({ onCurate }: MoodStripProps) {
+export function MoodStrip({
+  onCurate,
+  loading = false,
+  status = null,
+  error = null,
+}: MoodStripProps) {
   const [vibe, setVibe] = useState("");
 
   const trimmed = vibe.trim();
 
   function curate(value: string) {
     const v = value.trim();
-    if (!v) return;
-    onCurate?.(v);
+    if (!v || loading) return;
+    void onCurate?.(v);
   }
 
   return (
@@ -62,10 +68,10 @@ export function MoodStrip({ onCurate }: MoodStripProps) {
         <button
           type="button"
           className="btn btn-prominent mood-curate"
-          disabled={trimmed.length === 0}
+          disabled={trimmed.length === 0 || loading}
           onClick={() => curate(vibe)}
         >
-          Curate
+          {loading ? "Curating" : "Curate"}
         </button>
       </div>
 
@@ -84,6 +90,12 @@ export function MoodStrip({ onCurate }: MoodStripProps) {
           </button>
         ))}
       </div>
+
+      {(status != null || error != null) && (
+        <p className={`mood-status${error != null ? " is-error" : ""}`} role="status">
+          {error ?? status}
+        </p>
+      )}
     </section>
   );
 }

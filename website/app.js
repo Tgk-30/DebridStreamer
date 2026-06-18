@@ -38,15 +38,17 @@ const platforms = {
 function platformKey() {
   const ua = navigator.userAgent.toLowerCase();
   const platform = navigator.platform.toLowerCase();
+  const narrow = window.matchMedia?.("(max-width: 640px)").matches === true;
+  const touch = navigator.maxTouchPoints > 1;
+  if (/iphone|ipad|android|mobile/.test(ua) || narrow || touch) return "mobile";
   if (platform.includes("mac") || ua.includes("mac os")) return "mac";
   if (platform.includes("win") || ua.includes("windows")) return "windows";
   if (platform.includes("linux") || ua.includes("x11")) return "linux";
-  if (/iphone|ipad|android/.test(ua)) return "mobile";
   return "unknown";
 }
 
 function labelFor(platform) {
-  if (platform === "mobile") return "Install from your server";
+  if (platform === "mobile") return "Install hosted PWA";
   return platforms[platform]?.button ?? "View downloads";
 }
 

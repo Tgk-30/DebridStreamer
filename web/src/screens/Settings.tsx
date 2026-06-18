@@ -2187,7 +2187,7 @@ function AppearanceTab({
       <div className="settings-source glass-rest">
         <div className="settings-sources-head">
           <span className="settings-sources-title">Accent</span>
-          <span className="settings-hint t-secondary">Theme is selected first</span>
+          <span className="settings-hint t-secondary">Theme accent is the default</span>
         </div>
         <div className="accent-grid">
           {ACCENTS.map((accent) => {
@@ -2215,15 +2215,18 @@ function AppearanceTab({
         label="Glass blur"
         hint="Lower values make surfaces more solid; higher values make the app feel more frosted."
       >
-        <input
-          type="range"
-          min={6}
-          max={28}
-          value={draft.appearanceBlur}
-          onChange={(event) =>
-            applyAppearance({ appearanceBlur: Number(event.target.value) })
-          }
-        />
+        <div className="settings-range-control">
+          <input
+            type="range"
+            min={6}
+            max={28}
+            value={draft.appearanceBlur}
+            onChange={(event) =>
+              applyAppearance({ appearanceBlur: Number(event.target.value) })
+            }
+          />
+          <span>{draft.appearanceBlur}px</span>
+        </div>
       </Field>
 
       <div className="settings-divider" />
@@ -2283,7 +2286,12 @@ function SegmentedControl({
   return (
     <div className="settings-segment-block">
       <span className="settings-label">{label}</span>
-      <div className="settings-segmented" role="group" aria-label={label}>
+      <div
+        className="settings-segmented"
+        role="group"
+        aria-label={label}
+        data-option-count={options.length}
+      >
         {options.map((option) => (
           <button
             key={option.value}

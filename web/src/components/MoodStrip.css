@@ -40,6 +40,7 @@
 .mood-curate {
   padding: 7px 16px;
   font-size: 13px;
+  color: #fff;
 }
 .mood-curate:disabled {
   opacity: 0.5;
@@ -55,6 +56,17 @@
 .mood-chips .chip {
   color: rgba(255, 255, 255, 0.84);
   font-weight: 500;
+}
+
+.mood-status {
+  margin: calc(-1 * var(--sp-xs)) 0 0;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.mood-status.is-error {
+  color: var(--danger);
 }
 
 @media (max-width: 560px) {
@@ -92,7 +104,7 @@
     justify-content: center;
     min-width: 0;
     min-height: 42px;
-    padding: 8px 10px;
+    padding: 9px 12px;
     text-align: center;
     white-space: normal;
     font-size: 12px;

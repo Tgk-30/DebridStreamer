@@ -157,12 +157,13 @@
     justify-content: space-between;
     gap: 4px;
     width: auto;
-    height: 74px;
+    height: 72px;
     padding: 7px;
     overflow: visible;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: var(--r-lg);
-    background: rgba(7, 8, 18, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: var(--r-md);
+    background:
+      linear-gradient(180deg, rgba(22, 24, 40, 0.94), rgba(8, 9, 18, 0.96));
     backdrop-filter: blur(28px) saturate(1.65);
     -webkit-backdrop-filter: blur(28px) saturate(1.65);
     box-shadow:
@@ -201,11 +202,23 @@
   .nav-rail-btn {
     flex: 1 1 0;
     min-width: 0;
-    height: 60px;
+    height: 58px;
     justify-content: center;
     gap: 3px;
     padding: 0 2px;
     border-radius: var(--r-sm);
+  }
+
+  .nav-rail-btn svg {
+    width: 23px;
+    height: 23px;
+  }
+
+  .nav-rail-btn.is-selected {
+    color: var(--accent);
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
   }
 
   .nav-rail-label {
@@ -219,8 +232,8 @@
   }
 
   .nav-rail-btn.is-selected::before {
-    left: 18px;
-    right: 18px;
+    left: 28%;
+    right: 28%;
     top: auto;
     bottom: 5px;
     width: auto;
@@ -231,7 +244,7 @@
     position: fixed;
     left: max(var(--sp-sm), env(safe-area-inset-left));
     right: max(var(--sp-sm), env(safe-area-inset-right));
-    bottom: calc(max(var(--sp-sm), env(safe-area-inset-bottom)) + 86px);
+    bottom: calc(max(var(--sp-sm), env(safe-area-inset-bottom)) + 84px);
     z-index: 31;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -274,8 +287,8 @@
   .nav-rail-more-close {
     display: grid;
     place-items: center;
-    width: 34px;
-    height: 34px;
+    width: 40px;
+    height: 40px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--r-sm);
     background: rgba(255, 255, 255, 0.06);

@@ -204,8 +204,15 @@
   }
 
   .hero-dots {
-    right: var(--sp-lg);
-    bottom: var(--sp-md);
+    top: var(--sp-md);
+    right: var(--sp-md);
+    bottom: auto;
+    padding: 5px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: var(--r-pill);
+    background: rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 }
 
@@ -219,6 +226,6 @@
   }
 
   .hero-dots {
-    bottom: var(--sp-sm);
+    top: var(--sp-sm);
   }
 }

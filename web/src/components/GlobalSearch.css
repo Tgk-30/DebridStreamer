@@ -7,10 +7,20 @@
   z-index: 5;
   border-radius: var(--r-pill);
   width: 260px;
+  min-height: 44px;
+  background: rgba(34, 36, 56, 0.76);
 }
 
 .global-search input {
   font-size: 14px;
+}
+
+.global-search input::placeholder {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.global-search .t-secondary {
+  color: rgba(255, 255, 255, 0.64);
 }
 
 .global-search-clear {
