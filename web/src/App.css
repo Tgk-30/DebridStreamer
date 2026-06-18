@@ -50,7 +50,7 @@
   .app-content {
     min-height: 100vh;
     height: auto;
-    padding-bottom: 112px;
+    padding-bottom: calc(128px + env(safe-area-inset-bottom));
   }
 }
 

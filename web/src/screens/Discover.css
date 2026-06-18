@@ -63,3 +63,11 @@
   }
 
 }
+
+@media (max-width: 380px) {
+  .discover {
+    gap: var(--sp-md);
+    padding: var(--sp-md);
+    padding-top: var(--sp-lg);
+  }
+}

@@ -23,6 +23,7 @@ interface RailItem {
   id: ScreenId;
   icon: IconName;
   label: string;
+  mobileLabel?: string;
   group: "Primary" | "Library" | "Tools" | "Account";
   mobile?: boolean;
 }
@@ -31,7 +32,14 @@ const NAV_ITEMS: RailItem[] = [
   { id: "discover", icon: "discover", label: "Discover", group: "Primary", mobile: true },
   { id: "search", icon: "search", label: "Search", group: "Primary", mobile: true },
   { id: "library", icon: "library", label: "Library", group: "Library", mobile: true },
-  { id: "watchlist", icon: "watchlist", label: "Watchlist", group: "Library", mobile: true },
+  {
+    id: "watchlist",
+    icon: "watchlist",
+    label: "Watchlist",
+    mobileLabel: "Saved",
+    group: "Library",
+    mobile: true,
+  },
   { id: "calendar", icon: "calendar", label: "Calendar", group: "Library" },
   { id: "history", icon: "history", label: "History", group: "Library" },
   { id: "assistant", icon: "assistant", label: "Assistant", group: "Tools" },
@@ -146,7 +154,7 @@ function NavRailButton({
   return (
     <button
       type="button"
-      className={`nav-rail-btn${selected ? " is-selected" : ""}`}
+      className={`nav-rail-btn${selected ? " is-selected" : ""}${item.mobileLabel != null ? " has-mobile-label" : ""}`}
       data-screen={item.id}
       data-mobile={item.mobile ? "true" : "false"}
       onClick={() => onSelect(item.id)}
@@ -158,7 +166,12 @@ function NavRailButton({
         size={20}
         filled={selected && item.id === "watchlist"}
       />
-      <span className="nav-rail-label">{item.label}</span>
+      <span className="nav-rail-label nav-rail-label-default">{item.label}</span>
+      {item.mobileLabel != null && (
+        <span className="nav-rail-label nav-rail-label-mobile">
+          {item.mobileLabel}
+        </span>
+      )}
     </button>
   );
 }

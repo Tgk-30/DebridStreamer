@@ -229,3 +229,22 @@
     top: var(--sp-sm);
   }
 }
+
+@media (max-width: 380px) {
+  .hero {
+    height: clamp(260px, 38vh, 300px);
+  }
+
+  .hero-title {
+    font-size: clamp(28px, 8.4vw, 36px);
+  }
+
+  .hero-actions {
+    gap: 7px;
+  }
+
+  .hero-play,
+  .hero-info {
+    padding: 10px 12px;
+  }
+}
