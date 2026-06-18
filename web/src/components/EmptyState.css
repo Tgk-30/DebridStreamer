@@ -40,3 +40,15 @@
   gap: var(--sp-sm);
   margin-top: var(--sp-sm);
 }
+
+@media (max-width: 520px) {
+  .empty-state-actions {
+    align-self: stretch;
+    flex-direction: column;
+  }
+
+  .empty-state-actions .btn {
+    justify-content: center;
+    width: 100%;
+  }
+}

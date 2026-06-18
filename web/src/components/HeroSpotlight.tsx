@@ -86,12 +86,20 @@ export function HeroSpotlight({
             <span className="chip hero-featured">
               Featured
             </span>
-            {active.year != null && <span className="hero-year">{active.year}</span>}
+            {active.year != null && (
+              <>
+                <span className="hero-meta-separator" aria-hidden="true" />
+                <span className="hero-year">{active.year}</span>
+              </>
+            )}
             {rating !== "" && (
-              <span className="hero-rating">
-                <Icon name="star" size={12} className="t-warning" />
-                {rating}
-              </span>
+              <>
+                <span className="hero-meta-separator" aria-hidden="true" />
+                <span className="hero-rating">
+                  <Icon name="star" size={12} className="t-warning" />
+                  {rating}
+                </span>
+              </>
             )}
           </div>
 
@@ -113,6 +121,9 @@ export function HeroSpotlight({
 
       {list.length > 1 && (
         <div className="hero-dots">
+          <span className="hero-dots-label">
+            {index + 1}/{list.length}
+          </span>
           {list.map((it, i) => (
             <button
               key={it.id}

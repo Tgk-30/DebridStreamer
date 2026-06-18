@@ -2,7 +2,7 @@
 
 .app {
   --nav-rail-width: 96px;
-  --mobile-nav-height: clamp(62px, 14.5vw, 68px);
+  --mobile-nav-height: clamp(66px, 14.5vw, 72px);
   --mobile-nav-bottom: max(10px, env(safe-area-inset-bottom));
   --mobile-nav-reserve: calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + 16px);
   position: relative;

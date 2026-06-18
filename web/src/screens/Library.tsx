@@ -19,7 +19,7 @@ import "./LibraryScreens.css";
 const ALL = "__all__";
 
 export function Library() {
-  const { watchlist, openDetail } = useAppStore();
+  const { watchlist, openDetail, openBrowse, navigate } = useAppStore();
   const [folders, setFolders] = useState<LibraryFolderRecord[]>([]);
   const [entries, setEntries] = useState<LibraryEntryRecord[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string>(ALL);
@@ -107,7 +107,22 @@ export function Library() {
           icon="library"
           title="Your library is empty"
           subtitle="Favorites and custom collections will appear here as you save titles."
-          note="Stored on this device"
+          actions={
+            <>
+              <button
+                type="button"
+                className="btn btn-prominent"
+                onClick={() =>
+                  openBrowse({ kind: "category", type: "movie", category: "trending" })
+                }
+              >
+                Browse trending
+              </button>
+              <button type="button" className="btn" onClick={() => navigate("search")}>
+                Search catalog
+              </button>
+            </>
+          }
         />
       ) : (
         <>
