@@ -139,23 +139,40 @@
   right: clamp(var(--sp-xl), 4vw, 56px);
   bottom: clamp(var(--sp-xl), 4vw, 56px);
   display: flex;
-  gap: 7px;
+  gap: 4px;
   z-index: 2;
 }
 .hero-dot {
-  width: 24px;
-  height: 5px;
+  position: relative;
+  width: 34px;
+  height: 32px;
   border: 0;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.42);
+  background: transparent;
   cursor: pointer;
-  transition: background 0.3s, width 0.3s;
+  transition: width 0.3s;
 }
-.hero-dot:hover {
+.hero-dot::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 50%;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.42);
+  transform: translateY(-50%);
+  transition:
+    background 0.3s,
+    box-shadow 0.3s;
+}
+.hero-dot:hover::before {
   background: rgba(255, 255, 255, 0.55);
 }
 .hero-dot.is-active {
-  width: 38px;
+  width: 48px;
+}
+.hero-dot.is-active::before {
   background: rgba(var(--accent-rgb), 1);
   box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.6);
 }

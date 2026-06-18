@@ -15,6 +15,9 @@
   backdrop-filter: blur(20px) saturate(1.2);
   -webkit-backdrop-filter: blur(20px) saturate(1.2);
 }
+.browse.has-filters-open {
+  z-index: 42;
+}
 
 .browse-inner {
   display: flex;
@@ -169,7 +172,7 @@
 
   .browse-inner {
     padding: var(--sp-lg);
-    padding-bottom: 112px;
+    padding-bottom: calc(136px + env(safe-area-inset-bottom));
   }
 
   .browse-head {

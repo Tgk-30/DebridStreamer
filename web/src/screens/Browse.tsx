@@ -132,7 +132,7 @@ function BrowseInner({
   const filtersActive = ctx.kind === "discover" && hasActiveFilters(ctx.filters);
 
   return (
-    <div className="browse">
+    <div className={`browse${filtersOpen ? " has-filters-open" : ""}`}>
       <div className="browse-inner">
         <header className="browse-head">
           <button

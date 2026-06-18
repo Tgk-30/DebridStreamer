@@ -32,11 +32,12 @@
 @media (max-width: 760px) {
   .detail {
     inset: 0;
-    padding-bottom: 80px;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
   }
 
   .detail-inner {
     gap: var(--sp-lg);
     padding: var(--sp-lg);
+    padding-bottom: calc(120px + env(safe-area-inset-bottom));
   }
 }
