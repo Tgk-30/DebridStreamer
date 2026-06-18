@@ -3,3 +3,21 @@
 
 # local preview/launch config
 .claude/
+
+# local assistant/workspace files
+.codex/
+.cursor/
+.windsurf/
+CLAUDE.md
+claude.md
+CODEX.md
+codex.md
+AGENTS.md
+agents.md
+AGENT.md
+agent.md
+
+# local secrets
+.env
+.env.local
+.env.*.local
