@@ -635,6 +635,7 @@ textarea::placeholder {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-sm);
+  min-height: 44px;
   font-size: 14px;
   font-weight: 600;
   padding: var(--sp-sm) var(--sp-lg);

@@ -260,18 +260,22 @@
 
 @media (min-width: 700px) and (max-width: 767px) {
   .hero-backdrop {
-    filter: brightness(3) saturate(1.22) contrast(1.08);
+    filter: brightness(1.32) saturate(1.12) contrast(1.04);
     object-position: center 18%;
+  }
+
+  .hero-dots {
+    right: var(--sp-lg);
   }
 
   .hero-scrim {
     background:
-      linear-gradient(to top, rgba(8, 9, 18, 0.38) 0%, rgba(8, 9, 18, 0.07) 44%, rgba(8, 9, 18, 0) 76%),
-      linear-gradient(to right, rgba(8, 9, 18, 0.18) 0%, rgba(8, 9, 18, 0.03) 54%, rgba(8, 9, 18, 0) 84%);
+      linear-gradient(to top, rgba(8, 9, 18, 0.66) 0%, rgba(8, 9, 18, 0.18) 44%, rgba(8, 9, 18, 0) 76%),
+      linear-gradient(to right, rgba(8, 9, 18, 0.42) 0%, rgba(8, 9, 18, 0.08) 54%, rgba(8, 9, 18, 0) 84%);
   }
 
   .hero-vignette {
-    box-shadow: inset 0 0 72px 10px rgba(0, 0, 0, 0.08);
+    box-shadow: inset 0 0 88px 14px rgba(0, 0, 0, 0.18);
   }
 
   .hero-actions {
@@ -282,6 +286,14 @@
   .hero-info {
     flex: 0 0 auto;
     min-width: 132px;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1199px) {
+  .hero-dots {
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(0, 0, 0, 0.52);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
   }
 }
 
@@ -377,6 +389,30 @@
 
 @media (max-width: 380px) and (max-height: 620px) {
   .hero {
-    height: clamp(190px, 38vh, 218px);
+    height: clamp(182px, 35vh, 202px);
+  }
+
+  .hero-dots {
+    gap: 4px;
+    right: 12px;
+    padding: 4px 5px;
+  }
+
+  .hero-dots-label {
+    min-width: 20px;
+    font-size: 10px;
+  }
+
+  .hero-dot {
+    width: 14px;
+    height: 24px;
+  }
+
+  .hero-dot.is-active {
+    width: 24px;
+  }
+
+  .hero-dot::before {
+    height: 5px;
   }
 }
