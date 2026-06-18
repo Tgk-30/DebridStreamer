@@ -1233,6 +1233,17 @@
   }
 }
 
+@media (min-width: 700px) and (max-width: 819px) {
+  .settings-screen {
+    width: min(620px, 100%);
+    margin-inline: auto;
+  }
+
+  .settings-subtitle {
+    max-width: 560px;
+  }
+}
+
 @media (min-width: 820px) and (max-width: 1099px) {
   .settings-header {
     align-items: stretch;

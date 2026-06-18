@@ -286,7 +286,7 @@ export function FilterSlideover({
           )}
 
           {/* Original language */}
-          <FilterGroup label="Language">
+          <FilterGroup label="Language" className="fs-language-group">
             <div className="fs-row fs-wrap">
               {LANGUAGES.map((l) => {
                 const on = (draft.originalLanguage ?? "") === l.code;
@@ -335,12 +335,14 @@ export function FilterSlideover({
 function FilterGroup({
   label,
   children,
+  className,
 }: {
   label: string;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <section className="fs-group">
+    <section className={`fs-group${className ? ` ${className}` : ""}`}>
       <h3 className="fs-group-label t-secondary">{label}</h3>
       {children}
     </section>

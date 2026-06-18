@@ -101,6 +101,10 @@
   flex-wrap: wrap;
 }
 
+.fs-language-group .chip {
+  min-width: 68px;
+}
+
 /* Active chip — accent for selection only (matches Search/Settings chips). */
 .fs-chip-active {
   color: var(--accent);
@@ -204,6 +208,11 @@
 
   .fs-row {
     gap: 6px;
+  }
+
+  .fs-language-group .chip {
+    min-width: 62px;
+    padding-inline: 10px;
   }
 
   .fs-foot {
