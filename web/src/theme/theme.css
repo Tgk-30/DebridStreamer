@@ -144,6 +144,13 @@
   --glass-tint-control-hover: rgba(255, 255, 255, 0.1);
   --ambient-primary-alpha: 0.13;
   --ambient-secondary-alpha: 0.1;
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(17, 20, 34, 0.56),
+    rgba(7, 9, 17, 0.64)
+  );
+  --nav-rail-border: rgba(255, 255, 255, 0.105);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.075);
   --nav-mobile-bg: linear-gradient(
     180deg,
     rgba(16, 19, 31, 0.84),
@@ -191,6 +198,13 @@
   --glass-tint-hero: rgba(255, 255, 255, 0.78);
   --glass-tint-control: rgba(255, 255, 255, 0.6);
   --glass-tint-control-hover: rgba(255, 255, 255, 0.85);
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.62),
+    rgba(238, 243, 252, 0.74)
+  );
+  --nav-rail-border: rgba(34, 40, 68, 0.16);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.92);
 }
 
 /* Midnight — near-black, low-saturation, minimal glow. */
@@ -269,6 +283,13 @@
   --glass-tint-hero: rgba(255, 255, 255, 0.065);
   --glass-tint-control: rgba(255, 255, 255, 0.04);
   --glass-tint-control-hover: rgba(255, 255, 255, 0.08);
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(28, 33, 52, 0.42),
+    rgba(8, 11, 20, 0.56)
+  );
+  --nav-rail-border: rgba(255, 255, 255, 0.12);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.1);
   --nav-mobile-bg: linear-gradient(
     180deg,
     rgba(32, 37, 58, 0.72),
@@ -287,6 +308,13 @@
   --glass-tint-hero: rgba(255, 255, 255, 0.11);
   --glass-tint-control: rgba(255, 255, 255, 0.085);
   --glass-tint-control-hover: rgba(255, 255, 255, 0.13);
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(15, 18, 30, 0.88),
+    rgba(5, 7, 13, 0.94)
+  );
+  --nav-rail-border: rgba(255, 255, 255, 0.14);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.055);
   --nav-mobile-bg: linear-gradient(
     180deg,
     rgba(15, 18, 30, 0.96),
@@ -305,6 +333,13 @@
   --glass-tint-hero: rgba(255, 255, 255, 0.62);
   --glass-tint-control: rgba(255, 255, 255, 0.48);
   --glass-tint-control-hover: rgba(255, 255, 255, 0.72);
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.46),
+    rgba(239, 244, 253, 0.58)
+  );
+  --nav-rail-border: rgba(34, 40, 68, 0.13);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.88);
 }
 
 :root[data-theme="light"][data-chrome="solid"] {
@@ -313,9 +348,23 @@
   --glass-tint-hero: rgba(255, 255, 255, 0.88);
   --glass-tint-control: rgba(255, 255, 255, 0.76);
   --glass-tint-control-hover: rgba(255, 255, 255, 0.92);
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.86),
+    rgba(234, 240, 250, 0.94)
+  );
+  --nav-rail-border: rgba(34, 40, 68, 0.2);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.96);
 }
 
 :root[data-nav-tint="airy"] {
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(30, 35, 55, 0.42),
+    rgba(8, 11, 20, 0.55)
+  );
+  --nav-rail-border: rgba(255, 255, 255, 0.14);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.11);
   --nav-mobile-bg: linear-gradient(
     180deg,
     rgba(32, 37, 58, 0.72),
@@ -329,6 +378,13 @@
 }
 
 :root[data-nav-tint="solid"] {
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(13, 16, 28, 0.92),
+    rgba(5, 7, 13, 0.98)
+  );
+  --nav-rail-border: rgba(255, 255, 255, 0.12);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.05);
   --nav-mobile-bg: linear-gradient(
     180deg,
     rgba(14, 17, 29, 0.98),
@@ -342,6 +398,13 @@
 }
 
 :root[data-theme="light"][data-nav-tint="airy"] {
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.58),
+    rgba(244, 248, 255, 0.72)
+  );
+  --nav-rail-border: rgba(34, 40, 68, 0.14);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.9);
   --nav-mobile-bg: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.78),
@@ -353,6 +416,13 @@
 }
 
 :root[data-theme="light"][data-nav-tint="solid"] {
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(234, 240, 250, 0.96)
+  );
+  --nav-rail-border: rgba(34, 40, 68, 0.2);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.96);
   --nav-mobile-bg: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.94),

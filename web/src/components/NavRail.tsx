@@ -1,8 +1,7 @@
 // Port of Sources/DebridStreamer/Views/Shell/NavRail.swift.
 //
-// Breakpoint-aware primary navigation: labeled side rail on tablet/desktop and
-// a compact five-item bottom bar on phones with a More drawer for secondary
-// destinations.
+// Breakpoint-aware primary navigation: compact rail on tablets, labeled rail on
+// wide desktop, and a five-item bottom bar on phones with a More drawer.
 
 import { useState } from "react";
 import { Icon, type IconName } from "./Icon";
