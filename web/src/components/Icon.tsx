@@ -29,6 +29,7 @@ export type IconName =
   | "copy"
   | "eye"
   | "eye-off"
+  | "save"
   | "more";
 
 interface IconProps {
@@ -196,6 +197,14 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
     </>
   ),
   check: () => <path d="M5 12l5 5L20 7" />,
+  // floppy disk save glyph
+  save: () => (
+    <>
+      <path d="M5 3h12l2 2v16H5z" />
+      <path d="M8 3v6h8V3" />
+      <path d="M8 21v-7h8v7" />
+    </>
+  ),
   // copy
   copy: () => (
     <>

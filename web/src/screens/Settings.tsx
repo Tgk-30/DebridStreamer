@@ -116,6 +116,83 @@ const SOURCE_PRESETS: SourcePreset[] = [
   },
 ];
 
+interface AppearanceProfile {
+  id: string;
+  label: string;
+  description: string;
+  settings: Pick<
+    AppSettings,
+    | "theme"
+    | "appearanceAccent"
+    | "appearanceDensity"
+    | "appearanceTextSize"
+    | "appearanceMotion"
+    | "appearanceRadius"
+    | "appearanceBlur"
+  >;
+}
+
+const CUSTOM_APPEARANCE_PROFILE = "__custom";
+
+const APPEARANCE_PROFILES: AppearanceProfile[] = [
+  {
+    id: "default-cinema",
+    label: "Default cinema",
+    description: "Dark Aurora glass, comfortable spacing, system motion.",
+    settings: {
+      theme: "aurora",
+      appearanceAccent: "theme",
+      appearanceDensity: "comfortable",
+      appearanceTextSize: "m",
+      appearanceMotion: "system",
+      appearanceRadius: "default",
+      appearanceBlur: 18,
+    },
+  },
+  {
+    id: "compact-control",
+    label: "Compact control",
+    description: "Tighter panels for desktop remotes and dense libraries.",
+    settings: {
+      theme: "midnight",
+      appearanceAccent: "cyan",
+      appearanceDensity: "compact",
+      appearanceTextSize: "s",
+      appearanceMotion: "normal",
+      appearanceRadius: "sharp",
+      appearanceBlur: 12,
+    },
+  },
+  {
+    id: "daylight-room",
+    label: "Daylight room",
+    description: "Bright Daybreak skin with larger text and softer corners.",
+    settings: {
+      theme: "light",
+      appearanceAccent: "theme",
+      appearanceDensity: "comfortable",
+      appearanceTextSize: "l",
+      appearanceMotion: "system",
+      appearanceRadius: "round",
+      appearanceBlur: 14,
+    },
+  },
+  {
+    id: "quiet-focus",
+    label: "Quiet focus",
+    description: "Low-glow dark mode with reduced motion and solid glass.",
+    settings: {
+      theme: "midnight",
+      appearanceAccent: "theme",
+      appearanceDensity: "comfortable",
+      appearanceTextSize: "m",
+      appearanceMotion: "reduced",
+      appearanceRadius: "default",
+      appearanceBlur: 10,
+    },
+  },
+];
+
 function sourceTypeLabel(type: StoredIndexerType): string {
   switch (type) {
     case "torznab":
@@ -150,6 +227,22 @@ function sourceURLChoices(type: StoredIndexerType, current: string) {
   return trimmed.length > 0 && !base.some((option) => option.value === trimmed)
     ? [{ label: "Current custom URL", value: trimmed }, ...base]
     : base;
+}
+
+function appearanceProfileMatches(
+  draft: AppSettings,
+  profile: AppearanceProfile,
+): boolean {
+  const settings = profile.settings;
+  return (
+    draft.theme === settings.theme &&
+    draft.appearanceAccent === settings.appearanceAccent &&
+    draft.appearanceDensity === settings.appearanceDensity &&
+    draft.appearanceTextSize === settings.appearanceTextSize &&
+    draft.appearanceMotion === settings.appearanceMotion &&
+    draft.appearanceRadius === settings.appearanceRadius &&
+    draft.appearanceBlur === settings.appearanceBlur
+  );
 }
 
 type Tab =
@@ -506,11 +599,18 @@ export function Settings() {
       </div>
 
       <div className="settings-footer">
-        <span className="settings-note t-secondary">
+        <span className="settings-note t-secondary" aria-live="polite">
           Saved to this profile · desktop secrets use the OS keychain when available
         </span>
-        <button type="button" className="btn btn-prominent" onClick={save}>
-          {saved ? "Saved" : "Save changes"}
+        <button
+          type="button"
+          className="btn btn-prominent"
+          onClick={save}
+          aria-label={saved ? "Settings saved" : "Save changes"}
+          title={saved ? "Saved" : "Save changes"}
+        >
+          <Icon name={saved ? "check" : "save"} size={16} className="settings-save-icon" />
+          <span className="settings-save-label">{saved ? "Saved" : "Save changes"}</span>
         </button>
       </div>
     </div>
@@ -2198,12 +2298,69 @@ function AppearanceTab({
   draft: AppSettings;
   applyAppearance: (next: Partial<AppSettings>) => void;
 }) {
+  const selectedProfile =
+    APPEARANCE_PROFILES.find((profile) => appearanceProfileMatches(draft, profile)) ??
+    null;
+  const selectedProfileId = selectedProfile?.id ?? CUSTOM_APPEARANCE_PROFILE;
+  const currentTheme = THEMES.find((theme) => theme.id === draft.theme) ?? THEMES[0];
+  const currentAccent =
+    ACCENTS.find((accent) => accent.id === draft.appearanceAccent) ?? ACCENTS[0];
+
   return (
     <div className="settings-fields">
       <p className="settings-hint t-secondary">
         Tune the interface for the device and room you are using. Appearance
         changes apply instantly and are saved to this profile.
       </p>
+
+      <div className="appearance-profile-card settings-source glass-rest">
+        <div className="appearance-profile-head">
+          <div>
+            <span className="settings-label">Quick profile</span>
+            <p className="settings-hint t-secondary">
+              Apply a complete interface setup, then fine tune each control below.
+            </p>
+          </div>
+          <label className="appearance-profile-picker">
+            <span className="settings-secret-label">Profile</span>
+            <select
+              value={selectedProfileId}
+              onChange={(event) => {
+                const profile = APPEARANCE_PROFILES.find(
+                  (item) => item.id === event.target.value,
+                );
+                if (profile) applyAppearance(profile.settings);
+              }}
+            >
+              {selectedProfile == null && (
+                <option value={CUSTOM_APPEARANCE_PROFILE}>Custom current</option>
+              )}
+              {APPEARANCE_PROFILES.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="appearance-profile-summary">
+          {selectedProfile?.description ??
+            "Custom mix saved from the fine-tune controls below."}
+        </div>
+        <div className="appearance-current-chips" aria-label="Current appearance summary">
+          <span>{currentTheme.label}</span>
+          <span>
+            {currentAccent.id === "theme"
+              ? "Default accent"
+              : `${currentAccent.label} accent`}
+          </span>
+          <span>
+            {draft.appearanceDensity === "compact" ? "Compact" : "Comfortable"}
+          </span>
+          <span>{draft.appearanceTextSize.toUpperCase()} text</span>
+          <span>{draft.appearanceBlur}px blur</span>
+        </div>
+      </div>
 
       <div className="settings-control-grid">
         <SegmentedControl
@@ -2259,9 +2416,9 @@ function AppearanceTab({
       <div className="settings-source glass-rest">
         <div className="settings-sources-head">
           <span className="settings-sources-title">Accent</span>
-          <span className="settings-hint t-secondary">Theme accent is the default</span>
+          <span className="settings-hint t-secondary">Default follows preset</span>
         </div>
-        <div className="accent-grid">
+        <div className="accent-grid" role="radiogroup" aria-label="Accent color">
           {ACCENTS.map((accent) => {
             const active = draft.appearanceAccent === accent.id;
             return (
@@ -2273,7 +2430,9 @@ function AppearanceTab({
                 onClick={() =>
                   applyAppearance({ appearanceAccent: accent.id as AppearanceAccent })
                 }
-                aria-pressed={active}
+                role="radio"
+                aria-checked={active}
+                aria-label={`${accent.label} accent`}
               >
                 <span />
                 {accent.label}
@@ -2287,18 +2446,25 @@ function AppearanceTab({
         label="Glass blur"
         hint="Lower values make surfaces more solid; higher values make the app feel more frosted."
       >
-        <div className="settings-range-control">
-          <input
-            type="range"
-            min={6}
-            max={28}
-            step={2}
-            value={draft.appearanceBlur}
-            onChange={(event) =>
-              applyAppearance({ appearanceBlur: Number(event.target.value) })
-            }
-          />
-          <span>{draft.appearanceBlur}px</span>
+        <div className="settings-range-shell">
+          <div className="settings-range-control">
+            <input
+              type="range"
+              min={6}
+              max={28}
+              step={2}
+              value={draft.appearanceBlur}
+              onChange={(event) =>
+                applyAppearance({ appearanceBlur: Number(event.target.value) })
+              }
+              aria-label="Glass blur"
+            />
+            <output aria-live="polite">{draft.appearanceBlur}px</output>
+          </div>
+          <div className="settings-range-labels" aria-hidden="true">
+            <span>Solid</span>
+            <span>Frosted</span>
+          </div>
         </div>
       </Field>
 
@@ -2337,6 +2503,9 @@ function AppearanceTab({
               </span>
               <span className="theme-card-label">{t.label}</span>
               <span className="theme-card-desc t-secondary">{t.description}</span>
+              <span className={`theme-card-status${active ? " is-active" : ""}`}>
+                {active ? "Selected" : "Preset"}
+              </span>
             </button>
           );
         })}
@@ -2361,7 +2530,7 @@ function SegmentedControl({
       <span className="settings-label">{label}</span>
       <div
         className="settings-segmented"
-        role="group"
+        role="radiogroup"
         aria-label={label}
         data-option-count={options.length}
       >
@@ -2371,7 +2540,8 @@ function SegmentedControl({
             type="button"
             className={value === option.value ? "is-active" : ""}
             onClick={() => onChange(option.value)}
-            aria-pressed={value === option.value}
+            role="radio"
+            aria-checked={value === option.value}
           >
             {option.label}
           </button>
