@@ -206,6 +206,36 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+.settings-key-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--sp-lg);
+}
+
+.settings-key-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  min-width: 0;
+}
+
+.settings-key-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+
+.settings-key-card-head .settings-hint {
+  text-align: right;
+}
+
+.settings-key-provider-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-md);
+}
+
 .settings-divider {
   height: 1px;
   background: var(--glass-border);
@@ -1019,6 +1049,49 @@
 
   .settings-source-url-line {
     grid-template-columns: 1fr;
+  }
+
+  .settings-built-in-list {
+    display: block;
+    margin-top: 3px;
+    margin-left: 0;
+  }
+
+  .settings-pill {
+    width: fit-content;
+    margin-top: 7px;
+    margin-left: 0;
+  }
+
+  .settings-key-grid {
+    grid-template-columns: 1fr;
+    gap: var(--sp-md);
+  }
+
+  .settings-key-card {
+    padding: var(--sp-md);
+  }
+
+  .settings-key-card-head {
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .settings-key-card-head .settings-hint {
+    text-align: left;
+  }
+
+  .settings-key-provider-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-secret input {
+    padding-right: 82px;
+  }
+
+  .settings-secret-btn {
+    width: 34px;
+    height: 34px;
   }
 
   .settings-segmented button {
