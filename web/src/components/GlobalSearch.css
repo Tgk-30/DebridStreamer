@@ -16,11 +16,11 @@
 }
 
 .global-search input::placeholder {
-  color: rgba(255, 255, 255, 0.58);
+  color: var(--text-tertiary);
 }
 
 .global-search .t-secondary {
-  color: rgba(255, 255, 255, 0.64);
+  color: var(--text-secondary);
 }
 
 .global-search-clear {

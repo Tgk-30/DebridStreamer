@@ -38,11 +38,12 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-xs);
-  padding: var(--sp-xs) var(--sp-md) var(--sp-xs) var(--sp-sm);
+  min-height: 44px;
+  padding: 0 var(--sp-md) 0 var(--sp-sm);
   border-radius: var(--r-pill);
   border: 0.75px solid var(--glass-border);
   background: rgba(255, 255, 255, 0.05);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -77,6 +78,7 @@
 
 .browse-filter-btn {
   flex-shrink: 0;
+  min-height: 44px;
 }
 /* When filters are applied, mark the button with an accent ring. */
 .browse-filter-on {

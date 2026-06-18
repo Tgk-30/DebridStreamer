@@ -36,8 +36,8 @@
 
   /* ---- Text ---- */
   --text-primary: rgba(255, 255, 255, 0.94);
-  --text-secondary: rgba(255, 255, 255, 0.58);
-  --text-tertiary: rgba(255, 255, 255, 0.4);
+  --text-secondary: rgba(255, 255, 255, 0.72);
+  --text-tertiary: rgba(255, 255, 255, 0.58);
 
   /* ---- Background aurora stops (AppTheme.background, dark) ---- */
   --bg-1: rgb(13, 15, 26); /* 0.05,0.06,0.10 */
@@ -155,8 +155,8 @@
   --glass-highlight: rgba(255, 255, 255, 0.85);
 
   --text-primary: rgba(22, 25, 42, 0.94);
-  --text-secondary: rgba(22, 25, 42, 0.6);
-  --text-tertiary: rgba(22, 25, 42, 0.42);
+  --text-secondary: rgba(22, 25, 42, 0.72);
+  --text-tertiary: rgba(22, 25, 42, 0.56);
 
   --bg-1: rgb(238, 241, 248);
   --bg-2: rgb(223, 228, 242);
@@ -189,8 +189,8 @@
   --glass-highlight: rgba(255, 255, 255, 0.16);
 
   --text-primary: rgba(235, 238, 245, 0.95);
-  --text-secondary: rgba(235, 238, 245, 0.55);
-  --text-tertiary: rgba(235, 238, 245, 0.38);
+  --text-secondary: rgba(235, 238, 245, 0.68);
+  --text-tertiary: rgba(235, 238, 245, 0.52);
 
   --bg-1: rgb(6, 7, 10);
   --bg-2: rgb(12, 13, 18);
@@ -223,8 +223,8 @@
   --glass-highlight: rgba(255, 240, 230, 0.28);
 
   --text-primary: rgba(255, 246, 242, 0.95);
-  --text-secondary: rgba(255, 246, 242, 0.62);
-  --text-tertiary: rgba(255, 246, 242, 0.42);
+  --text-secondary: rgba(255, 246, 242, 0.72);
+  --text-tertiary: rgba(255, 246, 242, 0.56);
 
   --bg-1: rgb(28, 16, 20);
   --bg-2: rgb(36, 20, 25);
@@ -259,6 +259,12 @@ body {
     var(--bg-3) 100%
   );
   background-attachment: fixed;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+  opacity: 1;
 }
 
 /* ---------------------------------------------------------------------------

@@ -165,6 +165,15 @@ function renderAssets(release) {
   }
 }
 
+function setDownloadNote(note, text) {
+  note.textContent = "";
+  note.append(document.createTextNode(`${text} `));
+  const link = document.createElement("a");
+  link.href = releaseURL;
+  link.textContent = "GitHub Releases";
+  note.append(link, document.createTextNode("."));
+}
+
 async function hydrateDownloads() {
   const smart = document.querySelector("#smart-download");
   const note = document.querySelector("#download-note");
@@ -198,7 +207,7 @@ async function hydrateDownloads() {
       smart.textContent = `${labelFor(platform)} ${release.tag_name ?? ""}`.trim();
     }
     if (note) {
-      note.textContent = `Latest release: ${release.tag_name ?? "available on GitHub"}.`;
+      setDownloadNote(note, `Latest release: ${release.tag_name ?? "available on"}`);
     }
     if (status) {
       const published = release.published_at
@@ -213,7 +222,7 @@ async function hydrateDownloads() {
     renderAssets(release);
   } catch {
     if (note) {
-      note.textContent = "Latest desktop downloads are available on GitHub Releases.";
+      setDownloadNote(note, "Latest desktop downloads are available on");
     }
     if (status) {
       status.textContent = "Open GitHub Releases to see the current desktop assets.";

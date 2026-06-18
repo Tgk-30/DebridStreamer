@@ -5,8 +5,8 @@
   --site-panel-soft: rgba(255, 255, 255, 0.06);
   --site-border: rgba(255, 255, 255, 0.13);
   --site-text: #f8fafc;
-  --site-muted: rgba(248, 250, 252, 0.68);
-  --site-faint: rgba(248, 250, 252, 0.52);
+  --site-muted: rgba(248, 250, 252, 0.76);
+  --site-faint: rgba(248, 250, 252, 0.64);
   --site-accent: #8c85fa;
   --site-accent-2: #5cbdfa;
   --site-accent-3: #fa75bd;
@@ -174,8 +174,15 @@ h3 {
 
 .download-note {
   margin-top: 12px;
-  color: var(--site-faint);
-  font-size: 13px;
+  color: var(--site-muted);
+  font-size: 14px;
+}
+
+.download-note a {
+  color: var(--site-text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 .hero-panel,
@@ -432,15 +439,28 @@ pre {
   }
 
   .site-header {
-    gap: 12px;
+    align-items: center;
+    flex-direction: row;
+    gap: 10px;
     padding: 14px 12px;
   }
 
+  .brand {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .brand span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   nav {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-    gap: 8px;
+    display: flex;
+    flex: 0 0 auto;
+    width: auto;
+    gap: 6px;
   }
 
   nav a:nth-child(1),
@@ -450,12 +470,15 @@ pre {
 
   nav a {
     justify-content: center;
-    min-height: 38px;
+    min-width: 70px;
+    min-height: 44px;
     padding: 0 10px;
-    border: 1px solid var(--site-border);
+    border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.055);
-    font-weight: 700;
+    background: rgba(255, 255, 255, 0.035);
+    color: var(--site-muted);
+    font-size: 13px;
+    font-weight: 750;
   }
 
   .hero {
@@ -465,7 +488,7 @@ pre {
 
   h1 {
     font-size: clamp(40px, 12vw, 52px);
-    line-height: 1;
+    line-height: 1.08;
   }
 
   .lede,
@@ -497,6 +520,6 @@ pre {
   .code-card,
   .steps article,
   .status-list {
-    padding: 16px;
+    padding: 20px;
   }
 }

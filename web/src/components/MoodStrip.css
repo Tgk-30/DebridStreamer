@@ -24,7 +24,7 @@
   font-weight: 700;
 }
 .mood-subtitle {
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--text-secondary);
   font-size: 13px;
 }
 
@@ -51,16 +51,17 @@
 .mood-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-sm);
+  gap: 10px;
 }
 .mood-chips .chip {
-  color: rgba(255, 255, 255, 0.84);
-  font-weight: 500;
+  min-height: 44px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 650;
 }
 
 .mood-status {
   margin: calc(-1 * var(--sp-xs)) 0 0;
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -103,8 +104,8 @@
     flex: 1 1 calc(50% - var(--sp-sm));
     justify-content: center;
     min-width: 0;
-    min-height: 42px;
-    padding: 9px 12px;
+    min-height: 44px;
+    padding: 10px 12px;
     text-align: center;
     white-space: normal;
     font-size: 12px;

@@ -2129,8 +2129,8 @@ function AppearanceTab({
   return (
     <div className="settings-fields">
       <p className="settings-hint t-secondary">
-        Tune the interface for the device and room you are using. Changes apply
-        instantly and are saved to this profile.
+        Tune the interface for the device and room you are using. Appearance
+        changes apply instantly and are saved to this profile.
       </p>
 
       <div className="settings-control-grid">
@@ -2220,6 +2220,7 @@ function AppearanceTab({
             type="range"
             min={6}
             max={28}
+            step={2}
             value={draft.appearanceBlur}
             onChange={(event) =>
               applyAppearance({ appearanceBlur: Number(event.target.value) })
@@ -2233,7 +2234,7 @@ function AppearanceTab({
 
       <div className="settings-sources-head">
         <span className="settings-sources-title">Presets</span>
-        <span className="settings-hint t-secondary">One-click skins</span>
+        <span className="settings-hint t-secondary">One-click theme presets</span>
       </div>
       <div className="theme-grid">
         {THEMES.map((t) => {

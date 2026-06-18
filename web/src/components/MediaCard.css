@@ -214,6 +214,7 @@
   justify-content: space-between;
   width: var(--poster-w);
   font-size: 12px;
+  min-height: 18px;
 }
 .media-card-year {
   color: var(--text-secondary);
@@ -221,7 +222,7 @@
 .media-card-rating {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: 650;
 }
