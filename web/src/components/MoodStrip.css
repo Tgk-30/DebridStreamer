@@ -80,15 +80,17 @@
   .mood {
     gap: 10px;
     padding: var(--sp-md);
+    width: 100%;
+    max-width: none;
   }
 
   .mood-prompt {
     display: grid;
-    grid-template-columns: 18px minmax(0, 1fr) minmax(76px, auto);
+    grid-template-columns: 20px minmax(0, 1fr);
     align-items: center;
     min-height: 52px;
     border-radius: var(--r-md);
-    padding: 8px 9px;
+    padding: 9px;
   }
 
   .mood-prompt input {
@@ -97,9 +99,11 @@
   }
 
   .mood-curate {
-    min-width: 76px;
-    min-height: 36px;
-    padding: 7px 12px;
+    grid-column: 1 / -1;
+    min-width: 0;
+    min-height: 40px;
+    width: 100%;
+    padding: 8px 12px;
   }
 
   .mood-chips {
@@ -109,6 +113,7 @@
     margin-inline: calc(-1 * var(--sp-xs));
     overflow-x: auto;
     padding: 0 var(--sp-xs) 2px;
+    scroll-snap-type: x proximity;
     scrollbar-width: none;
     -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
     mask-image: linear-gradient(90deg, #000 88%, transparent);
@@ -121,14 +126,25 @@
   .mood-chips .chip {
     flex: 0 0 auto;
     justify-content: center;
-    min-width: max-content;
-    max-width: 78vw;
+    min-width: 132px;
+    max-width: min(196px, 52vw);
     min-height: 44px;
+    overflow: hidden;
     padding: 10px 12px;
+    scroll-snap-align: start;
     text-align: center;
+    text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 12px;
     line-height: 1.25;
+  }
+
+  .mood-chip-label {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -156,7 +172,7 @@
   }
 
   .mood-prompt {
-    grid-template-columns: 16px minmax(0, 1fr) 70px;
+    grid-template-columns: 18px minmax(0, 1fr);
     gap: 6px;
     min-height: 48px;
     padding: 7px 8px;
@@ -169,7 +185,7 @@
   }
 
   .mood-curate {
-    min-width: 70px;
+    min-width: 0;
     min-height: 34px;
     padding: 6px 10px;
   }
@@ -180,12 +196,14 @@
 
   .mood-chips .chip {
     min-height: 38px;
+    min-width: 120px;
+    max-width: min(190px, 58vw);
     padding: 8px 10px;
     font-size: 11.5px;
   }
 }
 
-@media (min-width: 761px) {
+@media (min-width: 861px) {
   .mood {
     margin-inline: auto;
     width: min(100%, 980px);
@@ -193,5 +211,33 @@
 
   .mood-prompt {
     min-height: 52px;
+  }
+}
+
+@media (min-width: 561px) and (max-width: 920px) {
+  .mood {
+    width: 100%;
+    max-width: none;
+  }
+
+  .mood-prompt {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) 96px;
+    align-items: center;
+    min-height: 54px;
+  }
+
+  .mood-chips {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mood-chips .chip {
+    justify-content: center;
+    min-width: 0;
+    width: 100%;
+    overflow: hidden;
+    text-align: center;
   }
 }

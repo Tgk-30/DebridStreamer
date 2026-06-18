@@ -276,7 +276,7 @@
 
 .settings-control-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
   gap: var(--sp-md);
 }
 
@@ -861,7 +861,7 @@
   flex-direction: column;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .settings-tabs {
     display: none;
   }
@@ -1007,6 +1007,11 @@
 
   .settings-segmented button {
     min-height: 44px;
+  }
+
+  .settings-segmented {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
   }
 
   .settings-range-control {

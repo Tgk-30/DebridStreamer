@@ -67,6 +67,7 @@ const SettingsKeys = {
   appearanceMotion: "appearance_motion",
   appearanceRadius: "appearance_radius",
   appearanceBlur: "appearance_blur",
+  appearanceChrome: "appearance_chrome",
   openSubtitlesApiKey: "opensubtitles_api_key",
   autoUpdateChecks: "auto_update_checks",
   autoInstallUpdates: "auto_install_updates",
@@ -120,6 +121,7 @@ export type AppearanceDensity = "comfortable" | "compact";
 export type AppearanceTextSize = "s" | "m" | "l" | "xl";
 export type AppearanceMotion = "system" | "normal" | "reduced";
 export type AppearanceRadius = "sharp" | "default" | "round";
+export type AppearanceChrome = "translucent" | "balanced" | "solid";
 
 /** Everything the user can configure, persisted to localStorage this phase. */
 export interface AppSettings {
@@ -140,6 +142,7 @@ export interface AppSettings {
   appearanceMotion: AppearanceMotion;
   appearanceRadius: AppearanceRadius;
   appearanceBlur: number;
+  appearanceChrome: AppearanceChrome;
   /** OpenSubtitles REST API key (powers in-player subtitle search). */
   openSubtitlesApiKey: string;
   /** Desktop builds check signed GitHub Releases on launch. */
@@ -209,6 +212,10 @@ function normalizeAppearanceBlur(value: unknown): number {
   return Math.min(28, Math.max(6, Math.round(parsed)));
 }
 
+function normalizeAppearanceChrome(value: unknown): AppearanceChrome {
+  return value === "translucent" || value === "solid" ? value : "balanced";
+}
+
 /** Defaults: pull what we can from env so the app works with zero config. */
 export function defaultSettings(): AppSettings {
   return {
@@ -228,6 +235,7 @@ export function defaultSettings(): AppSettings {
     appearanceMotion: "system",
     appearanceRadius: "default",
     appearanceBlur: 18,
+    appearanceChrome: "balanced",
     openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
     autoUpdateChecks: true,
     autoInstallUpdates: false,
@@ -258,6 +266,7 @@ export function loadSettings(): AppSettings {
       appearanceMotion: normalizeAppearanceMotion(parsed.appearanceMotion),
       appearanceRadius: normalizeAppearanceRadius(parsed.appearanceRadius),
       appearanceBlur: normalizeAppearanceBlur(parsed.appearanceBlur),
+      appearanceChrome: normalizeAppearanceChrome(parsed.appearanceChrome),
     };
   } catch {
     return base;
@@ -341,6 +350,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceMotion,
     appearanceRadius,
     appearanceBlur,
+    appearanceChrome,
     autoUpdateChecks,
     autoInstallUpdates,
     streamCachedOnly,
@@ -358,6 +368,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.appearanceMotion),
     store.getSetting(SettingsKeys.appearanceRadius),
     store.getSetting(SettingsKeys.appearanceBlur),
+    store.getSetting(SettingsKeys.appearanceChrome),
     store.getSetting(SettingsKeys.autoUpdateChecks),
     store.getSetting(SettingsKeys.autoInstallUpdates),
     store.getSetting(SettingsKeys.streamCachedOnly),
@@ -416,6 +427,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
       appearanceRadius ?? base.appearanceRadius,
     ),
     appearanceBlur: normalizeAppearanceBlur(appearanceBlur ?? base.appearanceBlur),
+    appearanceChrome: normalizeAppearanceChrome(
+      appearanceChrome ?? base.appearanceChrome,
+    ),
     openSubtitlesApiKey: openSubtitlesApiKey ?? base.openSubtitlesApiKey,
     autoUpdateChecks:
       autoUpdateChecks == null ? base.autoUpdateChecks : autoUpdateChecks === "true",
@@ -470,6 +484,10 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     store.setSetting(
       SettingsKeys.appearanceBlur,
       String(normalizeAppearanceBlur(settings.appearanceBlur)),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceChrome,
+      normalizeAppearanceChrome(settings.appearanceChrome),
     ),
     store.setSetting(
       SettingsKeys.autoUpdateChecks,

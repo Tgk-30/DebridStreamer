@@ -130,6 +130,16 @@
   --glass-tint-hero: rgba(255, 255, 255, 0.09);
   --glass-tint-control: rgba(255, 255, 255, 0.06);
   --glass-tint-control-hover: rgba(255, 255, 255, 0.1);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(24, 27, 45, 0.88),
+    rgba(8, 10, 18, 0.94)
+  );
+  --nav-mobile-border: rgba(255, 255, 255, 0.17);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.11);
+  --nav-mobile-icon-bg: rgba(255, 255, 255, 0.06);
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.18);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.44);
 }
 
 /* Daybreak — bright frosted glass. Dark text, dark-on-glass tints, a deeper
@@ -235,6 +245,60 @@
   --glass-tint-hero: rgba(255, 235, 225, 0.1);
   --glass-tint-control: rgba(255, 235, 225, 0.07);
   --glass-tint-control-hover: rgba(255, 235, 225, 0.12);
+}
+
+/* Chrome depth is applied after theme skins so the Appearance control always
+ * wins while keeping light and dark glass readable. */
+:root[data-chrome="translucent"] {
+  --glass-tint-rest: rgba(255, 255, 255, 0.035);
+  --glass-tint-raised: rgba(255, 255, 255, 0.05);
+  --glass-tint-hero: rgba(255, 255, 255, 0.065);
+  --glass-tint-control: rgba(255, 255, 255, 0.04);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.08);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(55, 58, 86, 0.54),
+    rgba(13, 15, 27, 0.74)
+  );
+  --nav-mobile-border: rgba(255, 255, 255, 0.14);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.16);
+  --nav-mobile-icon-bg: rgba(255, 255, 255, 0.05);
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.16);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.35);
+}
+
+:root[data-chrome="solid"] {
+  --glass-tint-rest: rgba(255, 255, 255, 0.075);
+  --glass-tint-raised: rgba(255, 255, 255, 0.095);
+  --glass-tint-hero: rgba(255, 255, 255, 0.11);
+  --glass-tint-control: rgba(255, 255, 255, 0.085);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.13);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(18, 20, 34, 0.96),
+    rgba(7, 9, 16, 0.99)
+  );
+  --nav-mobile-border: rgba(255, 255, 255, 0.2);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.09);
+  --nav-mobile-icon-bg: rgba(255, 255, 255, 0.075);
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.22);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.52);
+}
+
+:root[data-theme="light"][data-chrome="translucent"] {
+  --glass-tint-rest: rgba(255, 255, 255, 0.42);
+  --glass-tint-raised: rgba(255, 255, 255, 0.52);
+  --glass-tint-hero: rgba(255, 255, 255, 0.62);
+  --glass-tint-control: rgba(255, 255, 255, 0.48);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.72);
+}
+
+:root[data-theme="light"][data-chrome="solid"] {
+  --glass-tint-rest: rgba(255, 255, 255, 0.72);
+  --glass-tint-raised: rgba(255, 255, 255, 0.82);
+  --glass-tint-hero: rgba(255, 255, 255, 0.88);
+  --glass-tint-control: rgba(255, 255, 255, 0.76);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.92);
 }
 
 * {
@@ -459,7 +523,7 @@ textarea::placeholder {
   background: rgba(var(--accent-rgb), 0.1);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .chip {
     min-height: 36px;
     padding: 8px 14px;

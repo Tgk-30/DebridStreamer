@@ -21,6 +21,7 @@ export function useTheme(settings: AppSettings): void {
     root.dataset.textSize = settings.appearanceTextSize;
     root.dataset.motion = settings.appearanceMotion;
     root.dataset.radius = settings.appearanceRadius;
+    root.dataset.chrome = settings.appearanceChrome;
 
     const accent = accentById(settings.appearanceAccent);
     if (accent.id === "theme") {

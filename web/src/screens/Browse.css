@@ -165,7 +165,7 @@
   margin: 0 0 var(--sp-md);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .browse {
     inset: 0;
   }

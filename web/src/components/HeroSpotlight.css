@@ -133,14 +133,20 @@
   background: rgba(255, 255, 255, 0.22);
 }
 
-/* Bar indicators (bottom-right). */
+/* Bar indicators. */
 .hero-dots {
   position: absolute;
+  top: clamp(var(--sp-xl), 4vw, 56px);
   right: clamp(var(--sp-xl), 4vw, 56px);
-  bottom: clamp(var(--sp-xl), 4vw, 56px);
   display: flex;
   gap: 4px;
   z-index: 2;
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .hero-dot {
   position: relative;
@@ -177,7 +183,7 @@
   box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.6);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .hero {
     height: clamp(320px, 46vh, 400px);
     min-height: 0;
@@ -223,17 +229,10 @@
   .hero-dots {
     top: var(--sp-md);
     right: var(--sp-md);
-    bottom: auto;
-    padding: 5px 7px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: var(--r-pill);
-    background: rgba(0, 0, 0, 0.34);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
   }
 }
 
-@media (max-width: 760px) and (max-height: 820px) {
+@media (max-width: 860px) and (max-height: 820px) {
   .hero {
     height: clamp(292px, 40vh, 340px);
   }

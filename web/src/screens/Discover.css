@@ -54,7 +54,7 @@
   animation: skel-pulse 1.6s ease-in-out infinite;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .discover {
     gap: var(--sp-lg);
     padding: var(--sp-lg);

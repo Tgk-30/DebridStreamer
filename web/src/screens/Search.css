@@ -111,7 +111,7 @@
   line-height: 1;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .search-screen {
     padding: var(--sp-lg);
     padding-top: var(--sp-lg);

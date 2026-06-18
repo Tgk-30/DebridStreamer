@@ -2,6 +2,9 @@
 
 .app {
   --nav-rail-width: 96px;
+  --mobile-nav-height: 70px;
+  --mobile-nav-bottom: max(12px, env(safe-area-inset-bottom));
+  --mobile-nav-reserve: calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + 18px);
   position: relative;
   display: flex;
   min-height: 100vh;
@@ -41,14 +44,15 @@
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .app {
     --nav-rail-width: 0px;
     display: block;
   }
 
   .app-content {
-    height: calc(100vh - 88px - env(safe-area-inset-bottom));
+    height: calc(100vh - var(--mobile-nav-reserve));
+    height: calc(100dvh - var(--mobile-nav-reserve));
     min-height: 0;
     overflow-y: auto;
     padding-bottom: var(--sp-lg);

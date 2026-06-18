@@ -25,6 +25,7 @@ import { useAppStore } from "../store/AppStore";
 import type {
   AppSettings,
   AppearanceAccent,
+  AppearanceChrome,
   AppearanceDensity,
   AppearanceMotion,
   AppearanceRadius,
@@ -129,6 +130,7 @@ interface AppearanceProfile {
     | "appearanceMotion"
     | "appearanceRadius"
     | "appearanceBlur"
+    | "appearanceChrome"
   >;
 }
 
@@ -147,6 +149,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceMotion: "system",
       appearanceRadius: "default",
       appearanceBlur: 18,
+      appearanceChrome: "balanced",
     },
   },
   {
@@ -161,6 +164,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceMotion: "normal",
       appearanceRadius: "sharp",
       appearanceBlur: 12,
+      appearanceChrome: "solid",
     },
   },
   {
@@ -175,6 +179,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceMotion: "system",
       appearanceRadius: "round",
       appearanceBlur: 14,
+      appearanceChrome: "balanced",
     },
   },
   {
@@ -189,6 +194,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceMotion: "reduced",
       appearanceRadius: "default",
       appearanceBlur: 10,
+      appearanceChrome: "solid",
     },
   },
 ];
@@ -241,7 +247,8 @@ function appearanceProfileMatches(
     draft.appearanceTextSize === settings.appearanceTextSize &&
     draft.appearanceMotion === settings.appearanceMotion &&
     draft.appearanceRadius === settings.appearanceRadius &&
-    draft.appearanceBlur === settings.appearanceBlur
+    draft.appearanceBlur === settings.appearanceBlur &&
+    draft.appearanceChrome === settings.appearanceChrome
   );
 }
 
@@ -2363,6 +2370,13 @@ function AppearanceTab({
           </span>
           <span>{draft.appearanceTextSize.toUpperCase()} text</span>
           <span>{draft.appearanceBlur}px blur</span>
+          <span>
+            {draft.appearanceChrome === "solid"
+              ? "Solid glass"
+              : draft.appearanceChrome === "translucent"
+                ? "Light glass"
+                : "Balanced glass"}
+          </span>
         </div>
       </div>
 
@@ -2413,6 +2427,18 @@ function AppearanceTab({
           ]}
           onChange={(value) =>
             applyAppearance({ appearanceRadius: value as AppearanceRadius })
+          }
+        />
+        <SegmentedControl
+          label="Glass depth"
+          value={draft.appearanceChrome}
+          options={[
+            { value: "translucent", label: "Light" },
+            { value: "balanced", label: "Balanced" },
+            { value: "solid", label: "Solid" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({ appearanceChrome: value as AppearanceChrome })
           }
         />
       </div>

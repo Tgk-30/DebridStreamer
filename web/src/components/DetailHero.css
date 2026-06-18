@@ -181,7 +181,7 @@
   background: rgba(var(--accent-rgb), 0.14);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .detail-hero {
     min-height: auto;
   }

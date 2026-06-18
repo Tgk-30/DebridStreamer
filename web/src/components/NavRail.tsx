@@ -98,7 +98,9 @@ export function NavRail({ selected, onSelect }: NavRailProps) {
         aria-controls="mobile-nav-more"
         title="More"
       >
-        <Icon name="more" size={20} />
+        <span className="nav-rail-icon">
+          <Icon name="more" size={20} />
+        </span>
         <span className="nav-rail-label">More</span>
       </button>
 
@@ -128,11 +130,13 @@ export function NavRail({ selected, onSelect }: NavRailProps) {
             onClick={() => selectScreen(item.id)}
             tabIndex={moreOpen ? 0 : -1}
           >
-            <Icon
-              name={item.icon}
-              size={18}
-              filled={selected === item.id && item.id === "watchlist"}
-            />
+            <span className="nav-rail-more-icon">
+              <Icon
+                name={item.icon}
+                size={18}
+                filled={selected === item.id && item.id === "watchlist"}
+              />
+            </span>
             <span>{item.label}</span>
           </button>
         ))}
@@ -158,13 +162,16 @@ function NavRailButton({
       data-mobile={item.mobile ? "true" : "false"}
       onClick={() => onSelect(item.id)}
       title={item.label}
+      aria-label={item.label}
       aria-current={selected ? "page" : undefined}
     >
-      <Icon
-        name={item.icon}
-        size={20}
-        filled={selected && item.id === "watchlist"}
-      />
+      <span className="nav-rail-icon">
+        <Icon
+          name={item.icon}
+          size={20}
+          filled={selected && item.id === "watchlist"}
+        />
+      </span>
       <span className="nav-rail-label nav-rail-label-default">{item.label}</span>
       {item.mobileLabel != null && (
         <span className="nav-rail-label nav-rail-label-mobile">

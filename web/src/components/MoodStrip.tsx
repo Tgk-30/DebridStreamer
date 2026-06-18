@@ -81,12 +81,13 @@ export function MoodStrip({
             key={s}
             type="button"
             className="chip"
+            title={s}
             onClick={() => {
               setVibe(s);
               curate(s);
             }}
           >
-            {s}
+            <span className="mood-chip-label">{s}</span>
           </button>
         ))}
       </div>

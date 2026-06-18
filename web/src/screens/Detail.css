@@ -29,7 +29,7 @@
   scroll-margin-top: var(--sp-xl);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .detail {
     inset: 0;
     padding-bottom: calc(96px + env(safe-area-inset-bottom));
