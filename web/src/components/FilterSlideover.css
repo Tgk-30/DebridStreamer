@@ -164,7 +164,7 @@
   justify-content: center;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 767px) {
   .fs-scrim {
     left: 0;
   }

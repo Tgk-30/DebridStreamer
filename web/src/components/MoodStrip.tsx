@@ -12,9 +12,9 @@ import "./MoodStrip.css";
 // MoodDiscoveryView.suggestions
 const SUGGESTIONS = [
   "Cozy fall mysteries",
-  "Mind-bending sci-fi from the 2010s",
+  "2010s sci-fi puzzles",
   "Feel-good road trips",
-  "Slow-burn psychological thrillers",
+  "Slow-burn thrillers",
 ];
 
 interface MoodStripProps {

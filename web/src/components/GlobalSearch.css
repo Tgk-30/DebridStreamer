@@ -39,7 +39,7 @@
   color: var(--text-primary);
 }
 
-@media (max-width: 860px) {
+@media (max-width: 767px) {
   .global-search {
     position: sticky;
     top: var(--sp-sm);

@@ -183,7 +183,7 @@
   box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.6);
 }
 
-@media (max-width: 860px) {
+@media (max-width: 767px) {
   .hero {
     height: clamp(320px, 46vh, 400px);
     min-height: 0;
@@ -232,7 +232,7 @@
   }
 }
 
-@media (max-width: 860px) and (max-height: 820px) {
+@media (max-width: 767px) and (max-height: 820px) {
   .hero {
     height: clamp(292px, 40vh, 340px);
   }

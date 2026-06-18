@@ -79,7 +79,7 @@
   line-height: 1.45;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 767px) {
   .assistant-screen {
     padding: var(--sp-lg);
     padding-top: var(--sp-lg);

@@ -151,7 +151,7 @@
   }
 }
 
-@media (min-width: 861px) and (max-width: 1199px) {
+@media (min-width: 768px) and (max-width: 1199px) {
   .nav-rail-section[data-group="Account"] {
     padding-top: var(--sp-sm);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -162,7 +162,7 @@
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 767px) {
   .nav-rail {
     position: fixed;
     left: 50%;
@@ -174,19 +174,19 @@
     flex-direction: row;
     align-items: center;
     justify-content: stretch;
-    gap: 3px;
-    width: min(430px, calc(100vw - 20px));
+    gap: 2px;
+    width: min(390px, calc(100vw - 24px));
     height: var(--mobile-nav-height);
-    padding: 5px 6px;
+    padding: 6px;
     overflow: visible;
     border: 1px solid var(--nav-mobile-border);
-    border-radius: 22px;
+    border-radius: 19px;
     background: var(--nav-mobile-bg);
-    backdrop-filter: blur(var(--glass-blur-raised)) saturate(1.55);
-    -webkit-backdrop-filter: blur(var(--glass-blur-raised)) saturate(1.55);
+    backdrop-filter: blur(22px) saturate(1.35);
+    -webkit-backdrop-filter: blur(22px) saturate(1.35);
     box-shadow:
-      0 14px 34px rgba(0, 0, 0, 0.42),
-      0 0 0 1px rgba(0, 0, 0, 0.15),
+      0 10px 28px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(0, 0, 0, 0.18),
       inset 0 1px 0 var(--nav-mobile-highlight);
     transform: translateX(-50%);
   }
@@ -222,26 +222,27 @@
   .nav-rail-btn {
     flex: none;
     min-width: 0;
+    min-height: 0;
     width: 100%;
-    height: calc(var(--mobile-nav-height) - 10px);
+    height: calc(var(--mobile-nav-height) - 12px);
     justify-content: center;
-    gap: 1px;
-    padding: 3px 1px 4px;
-    border-radius: 15px;
+    gap: 2px;
+    padding: 3px 1px;
+    border-radius: 13px;
   }
 
   .nav-rail-btn svg {
-    width: 18px;
-    height: 18px;
-    stroke-width: 1.95;
+    width: 19px;
+    height: 19px;
+    stroke-width: 2;
   }
 
   .nav-rail-icon {
-    width: 28px;
-    height: 27px;
-    border-radius: 12px;
+    width: 24px;
+    height: 23px;
+    border-radius: 10px;
     background: var(--nav-mobile-icon-bg);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+    box-shadow: none;
   }
 
   .nav-rail-btn.is-selected {
@@ -254,21 +255,15 @@
   }
 
   .nav-rail-btn.is-selected .nav-rail-icon {
-    background: linear-gradient(
-      135deg,
-      rgba(var(--accent-rgb), 0.56),
-      rgba(var(--accent-secondary-rgb), 0.28)
-    );
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      0 6px 14px rgba(var(--accent-rgb), 0.18);
+    background: transparent;
+    color: #fff;
   }
 
   .nav-rail-label {
     display: block;
     max-width: 100%;
     overflow: hidden;
-    font-size: 9.8px;
+    font-size: 10px;
     font-weight: 700;
     line-height: 1.1;
     text-overflow: ellipsis;
@@ -290,8 +285,8 @@
   .nav-rail-btn.is-selected::after {
     content: "";
     position: absolute;
-    inset: 4px;
-    border-radius: 13px;
+    inset: 3px;
+    border-radius: 11px;
     pointer-events: none;
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.09),
@@ -310,18 +305,18 @@
     position: fixed;
     left: 50%;
     right: auto;
-    bottom: calc(var(--mobile-nav-bottom) + var(--mobile-nav-height) + 12px);
+    bottom: calc(var(--mobile-nav-bottom) + var(--mobile-nav-height) + 10px);
     z-index: 31;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px;
-    width: min(430px, calc(100vw - 20px));
+    width: min(390px, calc(100vw - 24px));
     max-height: min(430px, calc(100dvh - var(--mobile-nav-height) - var(--mobile-nav-bottom) - 42px));
     overflow-y: auto;
-    padding: 12px;
+    padding: 11px;
     border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 22px;
-    background: linear-gradient(180deg, rgb(25, 28, 45), rgb(9, 11, 19));
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgb(22, 25, 40), rgb(8, 10, 17));
     backdrop-filter: blur(18px) saturate(1.25);
     -webkit-backdrop-filter: blur(18px) saturate(1.25);
     box-shadow:
@@ -416,14 +411,13 @@
 
 @media (max-width: 380px) {
   .nav-rail {
-    gap: 3px;
-    width: min(100vw - 16px, 430px);
+    width: min(100vw - 18px, 390px);
     padding: 5px;
-    border-radius: 22px;
+    border-radius: 18px;
   }
 
   .nav-rail-btn {
-    border-radius: 15px;
+    border-radius: 12px;
     padding-inline: 1px;
   }
 

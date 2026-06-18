@@ -962,7 +962,7 @@
   flex-direction: column;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 767px) {
   .settings-tabs {
     display: none;
   }
@@ -1255,7 +1255,7 @@
   }
 }
 
-@media (min-width: 860px) {
+@media (min-width: 768px) {
   .settings-screen {
     display: grid;
     grid-template-columns: 210px minmax(0, 900px);

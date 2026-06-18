@@ -2,9 +2,9 @@
 
 .app {
   --nav-rail-width: 96px;
-  --mobile-nav-height: 66px;
+  --mobile-nav-height: 62px;
   --mobile-nav-bottom: max(12px, env(safe-area-inset-bottom));
-  --mobile-nav-reserve: calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + 20px);
+  --mobile-nav-reserve: calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + 18px);
   position: relative;
   display: flex;
   min-height: 100vh;
@@ -44,7 +44,7 @@
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 767px) {
   .app {
     --nav-rail-width: 0px;
     display: block;
