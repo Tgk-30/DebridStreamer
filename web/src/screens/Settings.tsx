@@ -5,7 +5,7 @@
 //   • Debrid — per-service tokens (Real-Debrid / AllDebrid / Premiumize / TorBox),
 //     in priority order.
 //   • Sources — the built-in scrapers toggle + a list of external indexers
-//     (Torznab / Jackett / Prowlarr).
+//     (Torznab / Jackett / Prowlarr / Zilean / Stremio add-ons).
 //
 // Saving writes through the store (updateSettings → saveSettings), which rebuilds
 // the shared service instances, so a TMDB key entered here immediately lights up
@@ -53,14 +53,67 @@ import {
 } from "../lib/tauri";
 import "./Settings.css";
 
-/** The selectable external-source types. `stremio_addon` is persisted to the
- * Store faithfully even though the ported web IndexerManager cannot build it
- * yet — it is the documented Stremio-source follow-up. */
+/** The selectable external-source types. */
 const SOURCE_TYPES: StoredIndexerType[] = [
   "torznab",
   "jackett",
   "prowlarr",
+  "zilean",
   "stremio_addon",
+];
+
+const CUSTOM_SOURCE_URL = "__custom";
+
+interface SourcePreset {
+  id: string;
+  label: string;
+  type: StoredIndexerType;
+  baseURL: string;
+  displayName: string;
+  note: string;
+}
+
+const SOURCE_PRESETS: SourcePreset[] = [
+  {
+    id: "torznab-jackett-all",
+    label: "Torznab custom",
+    type: "torznab",
+    baseURL: "http://localhost:9117",
+    displayName: "Torznab",
+    note: "Uses the generic Torznab path, useful for custom endpoints.",
+  },
+  {
+    id: "jackett-local",
+    label: "Jackett local",
+    type: "jackett",
+    baseURL: "http://localhost:9117",
+    displayName: "Jackett",
+    note: "Uses Jackett's all-indexers Torznab API.",
+  },
+  {
+    id: "prowlarr-local",
+    label: "Prowlarr local",
+    type: "prowlarr",
+    baseURL: "http://localhost:9696",
+    displayName: "Prowlarr",
+    note: "Sends the API key as the Prowlarr header.",
+  },
+  {
+    id: "zilean-local",
+    label: "Zilean local",
+    type: "zilean",
+    baseURL: "http://localhost:8181",
+    displayName: "Zilean",
+    note: "Torznab-compatible Zilean endpoint.",
+  },
+  {
+    id: "stremio-torrentio",
+    label: "Torrentio addon",
+    type: "stremio_addon",
+    baseURL: "https://torrentio.strem.fun",
+    displayName: "Torrentio",
+    note: "Manifest URLs also work; playback resolves through stream endpoints.",
+  },
 ];
 
 function sourceTypeLabel(type: StoredIndexerType): string {
@@ -78,6 +131,25 @@ function sourceTypeLabel(type: StoredIndexerType): string {
     case "built_in":
       return "Built-in Scrapers";
   }
+}
+
+function sourcePreset(id: string): SourcePreset {
+  return SOURCE_PRESETS.find((preset) => preset.id === id) ?? SOURCE_PRESETS[0];
+}
+
+function defaultSourcePreset(type: StoredIndexerType): SourcePreset {
+  return SOURCE_PRESETS.find((preset) => preset.type === type) ?? SOURCE_PRESETS[0];
+}
+
+function sourceURLChoices(type: StoredIndexerType, current: string) {
+  const base = SOURCE_PRESETS.filter((preset) => preset.type === type).map((preset) => ({
+    label: preset.label,
+    value: preset.baseURL,
+  }));
+  const trimmed = current.trim();
+  return trimmed.length > 0 && !base.some((option) => option.value === trimmed)
+    ? [{ label: "Current custom URL", value: trimmed }, ...base]
+    : base;
 }
 
 type Tab =
@@ -2419,11 +2491,13 @@ function SecretInput({
   value,
   onChange,
   placeholder,
+  label,
   note = "",
 }: {
   value: string;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   placeholder: string;
+  label?: string;
   note?: string;
 }) {
   const [revealed, setRevealed] = useState(false);
@@ -2447,21 +2521,21 @@ function SecretInput({
     }
   }
 
-  function checkSecret() {
-    setMessage(value.trim().length > 0 ? "Ready to save." : "Empty.");
-  }
-
   const cleanedNote = note.trim();
   const showNote = cleanedNote.length > 0 || message != null;
 
   return (
     <div className="settings-secret-wrap">
+      {label != null && label.trim().length > 0 && (
+        <span className="settings-secret-label">{label}</span>
+      )}
       <div className="settings-secret">
         <input
           type={revealed ? "text" : "password"}
           value={value}
           onChange={handleChange}
           placeholder={placeholder}
+          aria-label={label ?? placeholder}
           autoComplete="off"
           spellCheck={false}
         />
@@ -2483,15 +2557,6 @@ function SecretInput({
             title="Copy"
           >
             <Icon name="copy" size={15} />
-          </button>
-          <button
-            type="button"
-            className="settings-secret-btn"
-            onClick={checkSecret}
-            aria-label="Check secret is ready"
-            title="Check"
-          >
-            <Icon name="check" size={15} />
           </button>
         </div>
       </div>
@@ -2581,14 +2646,18 @@ function DebridTab({ draft, patch }: TabProps) {
 }
 
 function SourcesTab({ draft, patch }: TabProps) {
+  const [selectedPresetId, setSelectedPresetId] = useState(SOURCE_PRESETS[0].id);
+
   function addSource() {
+    const preset = sourcePreset(selectedPresetId);
     const entry: SourceEntry = {
       id: `src-${Date.now()}`,
-      type: "torznab",
-      baseURL: "",
+      type: preset.type,
+      baseURL: preset.baseURL,
       apiKey: "",
       isActive: true,
-      displayName: "",
+      displayName: preset.displayName,
+      priority: draft.sources.length,
     };
     patch({ sources: [...draft.sources, entry] });
   }
@@ -2610,6 +2679,17 @@ function SourcesTab({ draft, patch }: TabProps) {
     reordered.splice(next, 0, moved);
     patch({ sources: reordered.map((s, i) => ({ ...s, priority: i })) });
   }
+  function changeSourceType(source: SourceEntry, type: StoredIndexerType) {
+    const preset = defaultSourcePreset(type);
+    updateSource(source.id, {
+      type,
+      baseURL: preset.baseURL,
+      displayName:
+        source.displayName != null && source.displayName.trim().length > 0
+          ? source.displayName
+          : preset.displayName,
+    });
+  }
 
   return (
     <div className="settings-fields">
@@ -2621,7 +2701,10 @@ function SourcesTab({ draft, patch }: TabProps) {
         />
         <span>
           <strong>Built-in scrapers</strong>
-          <span className="t-secondary"> — APIBay, YTS, EZTV (no setup)</span>
+          <span className="settings-built-in-list t-secondary">
+            APIBay, YTS, EZTV
+          </span>
+          <span className="settings-pill">No setup needed</span>
         </span>
       </label>
 
@@ -2629,9 +2712,26 @@ function SourcesTab({ draft, patch }: TabProps) {
 
       <div className="settings-sources-head">
         <span className="settings-sources-title">External indexers</span>
-        <button type="button" className="chip" onClick={addSource}>
-          <Icon name="sparkles" size={13} /> Add source
-        </button>
+        <div className="settings-add-source">
+          <select
+            value={selectedPresetId}
+            onChange={(event) => setSelectedPresetId(event.target.value)}
+            aria-label="Source preset"
+          >
+            {SOURCE_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn btn-prominent settings-add-source-btn"
+            onClick={addSource}
+          >
+            <Icon name="check" size={13} /> Add source
+          </button>
+        </div>
       </div>
 
       {draft.sources.length === 0 ? (
@@ -2639,85 +2739,144 @@ function SourcesTab({ draft, patch }: TabProps) {
           No external indexers. The built-in scrapers cover most titles.
         </p>
       ) : (
-        draft.sources.map((s, i) => (
-          <div key={s.id} className="settings-source glass-rest">
-            <div className="settings-source-row">
-              <select
-                value={s.type}
-                onChange={(e) =>
-                  updateSource(s.id, {
-                    type: e.target.value as SourceEntry["type"],
-                  })
-                }
+        draft.sources.map((s, i) => {
+          const choices = sourceURLChoices(s.type, s.baseURL);
+          const urlSelectValue = choices.some((choice) => choice.value === s.baseURL)
+            ? s.baseURL
+            : CUSTOM_SOURCE_URL;
+          const selectedChoice = choices.find((choice) => choice.value === s.baseURL);
+          const preset = defaultSourcePreset(s.type);
+
+          return (
+            <div key={s.id} className="settings-source glass-rest">
+              <div className="settings-source-row">
+                <div className="settings-source-main">
+                  <label className="settings-source-control settings-source-type-control">
+                    <span>Protocol</span>
+                    <select
+                      className="settings-source-type-select"
+                      value={s.type}
+                      onChange={(e) =>
+                        changeSourceType(s, e.target.value as SourceEntry["type"])
+                      }
+                    >
+                      {SOURCE_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {sourceTypeLabel(t)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="settings-source-control settings-source-name-control">
+                    <span>Indexer name</span>
+                    <input
+                      type="text"
+                      className="settings-source-name"
+                      value={s.displayName ?? ""}
+                      onChange={(e) =>
+                        updateSource(s.id, { displayName: e.target.value })
+                      }
+                      placeholder="Display name"
+                    />
+                  </label>
+                </div>
+                <div className="settings-source-actions">
+                  <label className="settings-source-active">
+                    <input
+                      type="checkbox"
+                      checked={s.isActive}
+                      onChange={(e) =>
+                        updateSource(s.id, { isActive: e.target.checked })
+                      }
+                    />
+                    Enabled
+                  </label>
+                  <div className="settings-source-button-group">
+                    <button
+                      type="button"
+                      className="settings-source-remove"
+                      onClick={() => moveSource(s.id, -1)}
+                      aria-label="Move source up"
+                      title="Move up"
+                      disabled={i === 0}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-source-remove"
+                      onClick={() => moveSource(s.id, 1)}
+                      aria-label="Move source down"
+                      title="Move down"
+                      disabled={i === draft.sources.length - 1}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-source-remove"
+                      onClick={() => removeSource(s.id)}
+                      aria-label="Remove source"
+                    >
+                      <Icon name="xmark" size={15} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className={`settings-source-url-line${
+                  urlSelectValue === CUSTOM_SOURCE_URL ? " has-custom" : ""
+                }`}
               >
-                {SOURCE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {sourceTypeLabel(t)}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                className="settings-source-name"
-                value={s.displayName ?? ""}
-                onChange={(e) =>
-                  updateSource(s.id, { displayName: e.target.value })
-                }
-                placeholder="Name (optional)"
+                <label className="settings-source-control">
+                  <span>URL preset</span>
+                  <select
+                    className="settings-source-url-select"
+                    value={urlSelectValue}
+                    onChange={(event) => {
+                      if (event.target.value !== CUSTOM_SOURCE_URL) {
+                        updateSource(s.id, { baseURL: event.target.value });
+                      }
+                    }}
+                  >
+                    {choices.map((choice) => (
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
+                      </option>
+                    ))}
+                    <option value={CUSTOM_SOURCE_URL}>Custom URL</option>
+                  </select>
+                </label>
+                {urlSelectValue === CUSTOM_SOURCE_URL && (
+                  <label className="settings-source-control">
+                    <span>Custom URL</span>
+                    <input
+                      type="url"
+                      className="settings-source-url-input"
+                      value={s.baseURL}
+                      onChange={(e) =>
+                        updateSource(s.id, { baseURL: e.target.value })
+                      }
+                      placeholder="https://indexer.example.com"
+                    />
+                  </label>
+                )}
+              </div>
+
+              <p className="settings-source-meta">
+                {selectedChoice?.label ?? "Custom URL"} · {preset.note}
+              </p>
+              <SecretInput
+                value={s.apiKey ?? ""}
+                onChange={(e) => updateSource(s.id, { apiKey: e.target.value })}
+                label="API key"
+                placeholder="API key (if required)"
+                note="Saved only for this external indexer source."
               />
-              <label className="settings-source-active">
-                <input
-                  type="checkbox"
-                  checked={s.isActive}
-                  onChange={(e) =>
-                    updateSource(s.id, { isActive: e.target.checked })
-                  }
-                />
-                Active
-              </label>
-              <button
-                type="button"
-                className="settings-source-remove"
-                onClick={() => moveSource(s.id, -1)}
-                aria-label="Move source up"
-                title="Move up"
-                disabled={i === 0}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                className="settings-source-remove"
-                onClick={() => moveSource(s.id, 1)}
-                aria-label="Move source down"
-                title="Move down"
-                disabled={i === draft.sources.length - 1}
-              >
-                ↓
-              </button>
-              <button
-                type="button"
-                className="settings-source-remove"
-                onClick={() => removeSource(s.id)}
-                aria-label="Remove source"
-              >
-                <Icon name="xmark" size={15} />
-              </button>
             </div>
-            <input
-              type="text"
-              value={s.baseURL}
-              onChange={(e) => updateSource(s.id, { baseURL: e.target.value })}
-              placeholder="Base URL (e.g. http://localhost:9117)"
-            />
-            <SecretInput
-              value={s.apiKey ?? ""}
-              onChange={(e) => updateSource(s.id, { apiKey: e.target.value })}
-              placeholder="API key (if required)"
-              note="Saved only for this external indexer source."
-            />
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );
