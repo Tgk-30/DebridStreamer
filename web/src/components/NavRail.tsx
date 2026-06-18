@@ -36,6 +36,7 @@ const NAV_ITEMS: RailItem[] = [
     id: "watchlist",
     icon: "watchlist",
     label: "Watchlist",
+    mobileLabel: "Saved",
     group: "Library",
     mobile: true,
   },
@@ -99,7 +100,7 @@ export function NavRail({ selected, onSelect }: NavRailProps) {
         title="More"
       >
         <span className="nav-rail-icon">
-          <Icon name="more" size={20} />
+          <Icon name="more" size={20} filled={moreSelected} />
         </span>
         <span className="nav-rail-label">More</span>
       </button>
@@ -134,7 +135,7 @@ export function NavRail({ selected, onSelect }: NavRailProps) {
               <Icon
                 name={item.icon}
                 size={18}
-                filled={selected === item.id && item.id === "watchlist"}
+                filled={selected === item.id}
               />
             </span>
             <span>{item.label}</span>
@@ -166,11 +167,7 @@ function NavRailButton({
       aria-current={selected ? "page" : undefined}
     >
       <span className="nav-rail-icon">
-        <Icon
-          name={item.icon}
-          size={20}
-          filled={selected && item.id === "watchlist"}
-        />
+        <Icon name={item.icon} size={20} filled={selected} />
       </span>
       <span className="nav-rail-label nav-rail-label-default">{item.label}</span>
       {item.mobileLabel != null && (

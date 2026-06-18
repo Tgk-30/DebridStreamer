@@ -40,15 +40,34 @@ interface IconProps {
 
 const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
   // compass / discover
-  discover: () => (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M15.2 8.8l-1.7 4.7-4.7 1.7 1.7-4.7z" />
-    </>
+  discover: (filled) => (
+    filled ? (
+      <>
+        <circle cx="12" cy="12" r="9" fill="currentColor" opacity=".18" />
+        <circle cx="12" cy="12" r="9" />
+        <path d="M15.2 8.8l-1.7 4.7-4.7 1.7 1.7-4.7z" fill="currentColor" />
+      </>
+    ) : (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M15.2 8.8l-1.7 4.7-4.7 1.7 1.7-4.7z" />
+      </>
+    )
   ),
   // film strip / library
-  library: () => (
+  library: (filled) => (
     <>
+      {filled && (
+        <rect
+          x="4"
+          y="4"
+          width="16"
+          height="16"
+          rx="2.5"
+          fill="currentColor"
+          opacity=".18"
+        />
+      )}
       <rect x="4" y="4" width="16" height="16" rx="2.5" />
       <path d="M8 4v16M16 4v16" />
       <path d="M4 8h4M16 8h4M4 12h4M16 12h4M4 16h4M16 16h4" />
@@ -88,8 +107,9 @@ const PATHS: Record<IconName, (filled: boolean) => JSX.Element> = {
     </>
   ),
   // magnifyingglass
-  search: () => (
+  search: (filled) => (
     <>
+      {filled && <circle cx="11" cy="11" r="7" fill="currentColor" opacity=".18" />}
       <circle cx="11" cy="11" r="7" />
       <path d="M16 16l5 5" />
     </>
