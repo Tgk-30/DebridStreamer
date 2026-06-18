@@ -941,11 +941,23 @@
   }
 
   .appearance-current-chips {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .appearance-current-chips span {
-    flex: 0 1 auto;
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0 6px;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .settings-control-grid {
+    grid-template-columns: 1fr;
   }
 
   .settings-share-box {
