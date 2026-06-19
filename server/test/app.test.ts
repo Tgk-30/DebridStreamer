@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { buildApp } from "../src/app.js";
@@ -737,6 +738,283 @@ describe("DebridStreamer server", () => {
     } finally {
       await hardened.close();
     }
+  });
+
+  it("server subtitles search: requires a key, enforces auth + CSRF, and parses results", async () => {
+    const owner = await setupOwner(app);
+
+    const noKey = await request(owner, {
+      method: "POST",
+      url: "/api/subtitles/search",
+      csrf: true,
+      payload: { imdbId: "tt1375666" },
+    });
+    expect(noKey.statusCode).toBe(400);
+    expect(json<{ error: string }>(noKey).error).toMatch(/configure an opensubtitles/i);
+
+    expect(
+      (await request(owner, { method: "POST", url: "/api/subtitles/search", payload: { imdbId: "tt1" } })).statusCode,
+    ).toBe(403); // no CSRF
+    expect(
+      (await app.inject({ method: "POST", url: "/api/subtitles/search", payload: { imdbId: "tt1" } })).statusCode,
+    ).toBe(401); // unauthenticated
+
+    // A search with neither imdbId nor query → 400 (zod refine).
+    expect(
+      (await request(owner, { method: "POST", url: "/api/subtitles/search", csrf: true, payload: { languages: ["en"] } })).statusCode,
+    ).toBe(400);
+
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "opensubtitles", value: "os-key", label: "OS" },
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      if (String(url).startsWith("https://api.opensubtitles.com/api/v1/subtitles")) {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        // Echo the Api-Key back as the release name to prove credential selection.
+        const body = {
+          data: [
+            { attributes: { language: "en", release: headers["Api-Key"], download_count: 42, files: [{ file_id: 111 }] } },
+          ],
+        };
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const res = await request(owner, {
+        method: "POST",
+        url: "/api/subtitles/search",
+        csrf: true,
+        payload: { imdbId: "tt1375666", languages: ["en"] },
+      });
+      expect(res.statusCode).toBe(200);
+      const results = json<{ results: Array<{ fileId: string; language: string; release: string }> }>(res).results;
+      expect(results).toHaveLength(1);
+      expect(results[0].fileId).toBe("111");
+      expect(results[0].language).toBe("en");
+      expect(results[0].release).toBe("os-key"); // used the stored server key
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server subtitles fetch: downloads, decompresses gzip, and returns decoded VTT", async () => {
+    const owner = await setupOwner(app);
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "opensubtitles", value: "os-key", label: "OS" },
+    });
+
+    // A real local server serving a GZIPPED SRT — proves undici auto-decompresses
+    // before .text(), then subsrt-ts parses and cuesToVTT runs under Node.
+    const srt = "1\n00:00:01,000 --> 00:00:02,000\nHello world\n";
+    upstream = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/x-subrip", "content-encoding": "gzip" });
+      res.end(gzipSync(Buffer.from(srt)));
+    });
+    await new Promise<void>((resolve) => upstream?.listen(0, "127.0.0.1", () => resolve()));
+    const address = upstream.address();
+    if (address == null || typeof address === "string") throw new Error("Expected TCP test server.");
+    upstreamUrl = `http://127.0.0.1:${address.port}/sub.srt.gz`;
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      const u = String(url);
+      if (u.startsWith(upstreamUrl)) return originalFetch(url, init); // real gzip server
+      if (u.startsWith("https://api.opensubtitles.com/api/v1/download")) {
+        return new Response(JSON.stringify({ link: upstreamUrl }), { status: 200 });
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const res = await request(owner, {
+        method: "POST",
+        url: "/api/subtitles/fetch",
+        csrf: true,
+        payload: { fileId: "111" },
+      });
+      expect(res.statusCode).toBe(200);
+      const vtt = json<{ vtt: string }>(res).vtt;
+      expect(vtt.startsWith("WEBVTT")).toBe(true);
+      expect(vtt).toContain("Hello world");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server subtitles fetch: returns 422 for an empty/unreadable subtitle", async () => {
+    const owner = await setupOwner(app);
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "opensubtitles", value: "os-key", label: "OS" },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      const u = String(url);
+      if (u.startsWith("https://api.opensubtitles.com/api/v1/download")) {
+        return new Response(JSON.stringify({ link: "https://dl.opensubtitles.example/garbage" }), { status: 200 });
+      }
+      if (u.startsWith("https://dl.opensubtitles.example/")) {
+        return new Response("not a subtitle file — no timestamps here", { status: 200 });
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const res = await request(owner, { method: "POST", url: "/api/subtitles/fetch", csrf: true, payload: { fileId: "111" } });
+      expect(res.statusCode).toBe(422);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server subtitles: search is profile-scoped (a profile key overrides, no cross-profile leak)", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "erin", "erin-password");
+    const erin = await login(app, "erin", "erin-password");
+
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "opensubtitles", value: "os-server", label: "OS" },
+    });
+    await request(erin, {
+      method: "PUT",
+      url: "/api/profile/credentials",
+      csrf: true,
+      payload: { provider: "opensubtitles", value: "os-erin", label: "OS" },
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      if (String(url).startsWith("https://api.opensubtitles.com/api/v1/subtitles")) {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const body = { data: [{ attributes: { language: "en", release: headers["Api-Key"], download_count: 1, files: [{ file_id: 1 }] } }] };
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const releaseFor = async (client: typeof owner) =>
+        json<{ results: Array<{ release: string }> }>(
+          await request(client, { method: "POST", url: "/api/subtitles/search", csrf: true, payload: { imdbId: "tt1" } }),
+        ).results[0].release;
+      expect(await releaseFor(owner)).toBe("os-server"); // owner → shared server key
+      expect(await releaseFor(erin)).toBe("os-erin"); // erin's profile override wins
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server subtitles translate: requires an AI key and translates cues preserving timing", async () => {
+    const owner = await setupOwner(app);
+    const cues = [{ start: 1000, end: 2000, text: "Hello world" }];
+
+    const noKey = await request(owner, {
+      method: "POST",
+      url: "/api/subtitles/translate",
+      csrf: true,
+      payload: { cues, targetLanguage: "Spanish" },
+    });
+    expect(noKey.statusCode).toBe(400);
+    expect(json<{ error: string }>(noKey).error).toMatch(/configure an ai provider/i);
+
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "anthropic", value: "sk", label: "AI" },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      if (String(url).startsWith("https://api.anthropic.com")) {
+        // Echo the [[0]] marker with translated text, preserving the protocol.
+        return new Response(
+          JSON.stringify({ content: [{ type: "text", text: "[[0]] Hola mundo" }], model: "m" }),
+          { status: 200 },
+        );
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const res = await request(owner, {
+        method: "POST",
+        url: "/api/subtitles/translate",
+        csrf: true,
+        payload: { cues, targetLanguage: "Spanish" },
+      });
+      expect(res.statusCode).toBe(200);
+      const out = json<{ cues: Array<{ start: number; end: number; text: string }>; providerKind: string }>(res);
+      expect(out.providerKind).toBe("anthropic");
+      expect(out.cues).toHaveLength(1);
+      expect(out.cues[0].text).toBe("Hola mundo"); // translated
+      expect(out.cues[0].start).toBe(1000); // timing preserved
+      expect(out.cues[0].end).toBe(2000);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server subtitles fetch: SSRF-blocks an internal CDN download link when raw URLs are off", async () => {
+    const hardened = await buildApp({
+      config: {
+        databasePath: ":memory:",
+        dataDir: ".test-data",
+        secretKey: randomBytes(32),
+        cookieSecure: false,
+        logger: false,
+        allowRawStreamUrls: false,
+      },
+    });
+    try {
+      const owner = await setupOwner(hardened);
+      await request(owner, {
+        method: "PUT",
+        url: "/api/admin/credentials",
+        csrf: true,
+        payload: { provider: "opensubtitles", value: "os-key", label: "OS" },
+      });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (url, init) => {
+        if (String(url).startsWith("https://api.opensubtitles.com/api/v1/download")) {
+          // A compromised/MITM'd API "returns" a link at the cloud-metadata address.
+          return new Response(JSON.stringify({ link: "http://169.254.169.254/latest/meta-data/" }), { status: 200 });
+        }
+        return originalFetch(url, init);
+      }) as typeof fetch;
+      try {
+        const res = await request(owner, { method: "POST", url: "/api/subtitles/fetch", csrf: true, payload: { fileId: "111" } });
+        // The guard refuses the private address before fetching it → 502.
+        expect(res.statusCode).toBe(502);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    } finally {
+      await hardened.close();
+    }
+  });
+
+  it("server subtitles translate: rate-limits per profile (10/min)", async () => {
+    const owner = await setupOwner(app);
+    const payload = { cues: [{ start: 0, end: 1000, text: "Hi" }], targetLanguage: "Spanish" };
+    // No AI key configured: each call clears the rate limiter then 400s (missing
+    // key). The limiter (10/min) trips the 11th call with a 429 before the handler.
+    const codes: number[] = [];
+    for (let i = 0; i < 11; i += 1) {
+      const res = await request(owner, { method: "POST", url: "/api/subtitles/translate", csrf: true, payload });
+      codes.push(res.statusCode);
+    }
+    expect(codes.slice(0, 10).every((c) => c === 400)).toBe(true);
+    expect(codes[10]).toBe(429);
   });
 
   it("uses server credentials by default and profile credentials as overrides", async () => {

@@ -21,9 +21,11 @@ describe("isScreenHidden", () => {
     }
   });
 
-  it("Server Mode hides assistant + debrid (dead-ends), keeps calendar", () => {
-    expect(isScreenHidden("assistant", { serverMode: true, simpleMode: false })).toBe(true);
+  it("Server Mode hides only debrid (Tauri-only); assistant + calendar work", () => {
+    // The Assistant routes to /api/ai in Server Mode, so it's no longer a
+    // dead-end and stays visible. Debrid Library is Tauri-only → still hidden.
     expect(isScreenHidden("debrid", { serverMode: true, simpleMode: false })).toBe(true);
+    expect(isScreenHidden("assistant", { serverMode: true, simpleMode: false })).toBe(false);
     expect(isScreenHidden("calendar", { serverMode: true, simpleMode: false })).toBe(false);
   });
 

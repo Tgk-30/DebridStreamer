@@ -20,8 +20,8 @@ import {
   playWithMpv,
   mpvStop,
 } from "../lib/tauri";
-import type { OpenSubtitlesClient } from "../services/subtitles/OpenSubtitlesClient";
-import type { TranslatorConfig } from "../services/subtitles/SubtitleTranslator";
+import type { SubtitleClient } from "../services/subtitles/OpenSubtitlesClient";
+import type { Translator } from "../services/subtitles/SubtitleTranslator";
 import { useSubtitleTracks } from "./player/useSubtitleTracks";
 import { useScrubThumbnails } from "./player/useScrubThumbnails";
 import { ScrubBar } from "./player/ScrubBar";
@@ -43,12 +43,12 @@ interface VideoPlayerProps {
    * player seeks here once, on first metadata load — making cross-device resume
    * actually pick up where you left off. 0/undefined starts from the beginning. */
   startPositionSeconds?: number;
-  /** OpenSubtitles client (when a key is configured) — powers subtitle search.
-   * Null disables the search UI (a "configure key" state is shown). */
-  subtitleClient?: OpenSubtitlesClient | null;
-  /** AI provider config (when configured) — powers subtitle translation. Null
-   * hides the translate action. */
-  translatorConfig?: TranslatorConfig | null;
+  /** Subtitle source (local OpenSubtitles client or the Server-Mode client) when
+   * available — powers subtitle search. Null disables the search UI. */
+  subtitleClient?: SubtitleClient | null;
+  /** Subtitle translator (local or Server-Mode) when available — powers subtitle
+   * translation. Null hides the translate action. */
+  translator?: Translator | null;
   /** Auto-seed context for the captions search. */
   imdbId?: string | null;
   season?: number | null;
@@ -78,7 +78,7 @@ export function VideoPlayer({
   onProgress,
   startPositionSeconds,
   subtitleClient,
-  translatorConfig,
+  translator,
   imdbId,
   season,
   episode,
@@ -160,7 +160,7 @@ export function VideoPlayer({
               setExternalError("This browser can't play HLS. Try the desktop app.")
             }
             subtitleClient={subtitleClient ?? null}
-            translatorConfig={translatorConfig ?? null}
+            translator={translator ?? null}
             imdbId={imdbId ?? null}
             season={season ?? null}
             episode={episode ?? null}
@@ -188,7 +188,7 @@ function WebviewPlayer({
   startPositionSeconds,
   onHlsUnsupported,
   subtitleClient,
-  translatorConfig,
+  translator,
   imdbId,
   season,
   episode,
@@ -198,8 +198,8 @@ function WebviewPlayer({
   onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
   startPositionSeconds?: number;
   onHlsUnsupported: () => void;
-  subtitleClient: OpenSubtitlesClient | null;
-  translatorConfig: TranslatorConfig | null;
+  subtitleClient: SubtitleClient | null;
+  translator: Translator | null;
   imdbId: string | null;
   season: number | null;
   episode: number | null;
@@ -209,7 +209,7 @@ function WebviewPlayer({
   const [duration, setDuration] = useState(0);
   const [captionsOpen, setCaptionsOpen] = useState(false);
 
-  const subs = useSubtitleTracks(subtitleClient, translatorConfig);
+  const subs = useSubtitleTracks(subtitleClient, translator);
   // Thumbnails only work on a progressive source the browser can re-open and
   // seek (MP4/WebM). For HLS the manifest URL can't drive a second <video>
   // reliably, so gate them to non-HLS in-webview sources.

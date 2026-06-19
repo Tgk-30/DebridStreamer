@@ -73,7 +73,6 @@ export function Detail() {
     openDetail,
     navigate,
     services,
-    settings,
     watchlist,
     toggleWatchlist,
     recordResume,
@@ -244,16 +243,7 @@ export function Detail() {
             // the OpenSubtitles key / AI provider aren't configured, so the
             // player gates those affordances gracefully.
             subtitleClient={services.subtitles}
-            translatorConfig={
-              services.hasAI
-                ? {
-                    provider: settings.aiProvider,
-                    apiKey: settings.aiApiKey,
-                    model: settings.aiModel,
-                    ollamaEndpoint: settings.ollamaEndpoint,
-                  }
-                : null
-            }
+            translator={services.translator}
             imdbId={detail.data.imdbId}
           />
         </Suspense>

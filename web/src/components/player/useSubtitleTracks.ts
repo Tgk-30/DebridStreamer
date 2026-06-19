@@ -10,16 +10,15 @@
 // Blob URLs are created lazily and revoked when a track's cues change (delay /
 // translation) or the player unmounts, so we don't leak object URLs.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { OpenSubtitlesClient, SubtitleSearchParams, SubtitleSearchResult } from "../../services/subtitles/OpenSubtitlesClient";
-import { SubtitleTranslator, type TranslatorConfig } from "../../services/subtitles/SubtitleTranslator";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { SubtitleClient, SubtitleSearchParams, SubtitleSearchResult } from "../../services/subtitles/OpenSubtitlesClient";
+import type { Translator } from "../../services/subtitles/SubtitleTranslator";
 import {
   cuesToVTT,
   parseSubtitles,
   shiftCues,
   type SubtitleCue,
 } from "../../services/subtitles/cues";
-import { appFetch } from "../../lib/http";
 
 /** A loaded subtitle track the player can attach as a `<track>`. */
 export interface SubtitleTrack {
@@ -72,8 +71,8 @@ function makeVttUrl(cues: SubtitleCue[], delayMs: number): string {
 }
 
 export function useSubtitleTracks(
-  client: OpenSubtitlesClient | null,
-  translatorConfig: TranslatorConfig | null,
+  client: SubtitleClient | null,
+  translator: Translator | null,
 ): UseSubtitleTracks {
   const [tracks, setTracks] = useState<SubtitleTrack[]>([]);
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
@@ -100,14 +99,6 @@ export function useSubtitleTracks(
       urls.clear();
     };
   }, []);
-
-  const translator = useMemo(
-    () =>
-      translatorConfig != null
-        ? new SubtitleTranslator(translatorConfig, appFetch)
-        : null,
-    [translatorConfig],
-  );
 
   const canSearch = client != null && client.hasKey;
   const canTranslate = translator != null && translator.available;

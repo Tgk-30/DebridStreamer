@@ -48,6 +48,17 @@ export interface SubtitleSearchParams {
   languages?: string[];
 }
 
+/** The subtitle-source surface the player depends on. Implemented by the local
+ *  `OpenSubtitlesClient` and the Server-Mode `ServerSubtitlesClient`, so the
+ *  player (useSubtitleTracks) is agnostic to where the key/network live. */
+export interface SubtitleClient {
+  /** Whether searches can run (a key is configured, here or server-side). */
+  readonly hasKey: boolean;
+  search(params: SubtitleSearchParams): Promise<SubtitleSearchResult[]>;
+  /** Resolve a file id to raw subtitle text (SRT/VTT — parseSubtitles handles both). */
+  download(fileId: string): Promise<string>;
+}
+
 export class OpenSubtitlesError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -116,7 +127,7 @@ export function parseSearchResponse(json: unknown): SubtitleSearchResult[] {
   return out;
 }
 
-export class OpenSubtitlesClient {
+export class OpenSubtitlesClient implements SubtitleClient {
   private readonly apiKey: string;
   private readonly fetchImpl: FetchImpl;
   private readonly userAgent: string;

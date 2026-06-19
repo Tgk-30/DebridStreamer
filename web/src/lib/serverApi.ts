@@ -2,6 +2,11 @@ import type { MediaType } from "../models/media";
 import type { CastMember, MediaItem, MediaPreview } from "../models/media";
 import type { AIMovieRecommendation, AIUsageMetrics } from "../services/ai/models";
 import type { StreamInfo } from "../services/debrid/models";
+import type {
+  SubtitleSearchParams,
+  SubtitleSearchResult,
+} from "../services/subtitles/OpenSubtitlesClient";
+import type { SubtitleCue } from "../services/subtitles/cues";
 import type { Genre, MediaCategory } from "../services/metadata/types";
 import type { StreamRow } from "../data/streams";
 import type { UpcomingEpisode } from "./metadata";
@@ -217,6 +222,23 @@ export async function curateServerAI(input: {
     prompt: input.prompt,
     count: input.count ?? 8,
   });
+}
+
+export async function searchServerSubtitles(
+  params: SubtitleSearchParams,
+): Promise<{ results: SubtitleSearchResult[] }> {
+  return serverRequest("POST", "/api/subtitles/search", params);
+}
+
+export async function fetchServerSubtitle(fileId: string): Promise<{ vtt: string }> {
+  return serverRequest("POST", "/api/subtitles/fetch", { fileId });
+}
+
+export async function translateServerSubtitles(input: {
+  cues: SubtitleCue[];
+  targetLanguage: string;
+}): Promise<{ cues: SubtitleCue[]; providerKind: string }> {
+  return serverRequest("POST", "/api/subtitles/translate", input);
 }
 
 export async function fetchServerDetail(input: {

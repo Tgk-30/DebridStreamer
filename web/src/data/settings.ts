@@ -38,8 +38,18 @@ import { AnthropicProvider } from "../services/ai/AnthropicProvider";
 import { OllamaProvider } from "../services/ai/OllamaProvider";
 import { getSecretStore, getStore } from "../storage";
 import { appFetch } from "../lib/http";
+import { isServerMode } from "../lib/serverMode";
 import { DEFAULT_THEME_ID, resolveThemeId } from "../theme/themes";
-import { OpenSubtitlesClient } from "../services/subtitles/OpenSubtitlesClient";
+import {
+  OpenSubtitlesClient,
+  type SubtitleClient,
+} from "../services/subtitles/OpenSubtitlesClient";
+import { ServerSubtitlesClient } from "../services/subtitles/ServerSubtitlesClient";
+import {
+  SubtitleTranslator,
+  type Translator,
+} from "../services/subtitles/SubtitleTranslator";
+import { ServerSubtitleTranslator } from "../services/subtitles/ServerSubtitleTranslator";
 import {
   type IndexerConfigRecord,
   makeIndexerConfigRecord,
@@ -737,8 +747,11 @@ export interface AppServices {
   debrid: DebridManager | null;
   indexers: IndexerManager;
   ai: AIAssistantProvider | null;
-  /** OpenSubtitles client when a key is configured, else null. */
-  subtitles: OpenSubtitlesClient | null;
+  /** Subtitle source: the local OpenSubtitles client, the Server-Mode client, or
+   *  null when no key is configured in Local Mode. */
+  subtitles: SubtitleClient | null;
+  /** Subtitle translator: local, Server-Mode, or null when no AI is configured. */
+  translator: Translator | null;
   /** Whether anything was configured (vs. the fixtures/empty fallback path). */
   hasTMDB: boolean;
   hasDebrid: boolean;
@@ -915,10 +928,31 @@ export function buildServices(settings: AppSettings): AppServices {
 
   const ai = buildAIProvider(settings);
 
-  // OpenSubtitles client when a key is configured. Routes through `appFetch` so
-  // it works CORS-free under Tauri (rest.opensubtitles.com blocks browser CORS).
+  // Subtitles. In Server Mode the OpenSubtitles + AI keys live on the server, so
+  // search/download and translation route through it (the player is agnostic to
+  // which client/translator it gets). Local Mode is unchanged: build the
+  // OpenSubtitles client only when a key is set, and the translator only when an
+  // AI provider is configured. `appFetch` is CORS-free under Tauri.
+  const serverMode = isServerMode();
   const osKey = settings.openSubtitlesApiKey.trim();
-  const subtitles = osKey.length > 0 ? new OpenSubtitlesClient(osKey, appFetch) : null;
+  const subtitles: SubtitleClient | null = serverMode
+    ? new ServerSubtitlesClient()
+    : osKey.length > 0
+      ? new OpenSubtitlesClient(osKey, appFetch)
+      : null;
+  const translator: Translator | null = serverMode
+    ? new ServerSubtitleTranslator()
+    : ai != null
+      ? new SubtitleTranslator(
+          {
+            provider: settings.aiProvider,
+            apiKey: settings.aiApiKey,
+            model: settings.aiModel,
+            ollamaEndpoint: settings.ollamaEndpoint,
+          },
+          appFetch,
+        )
+      : null;
 
   return {
     tmdb,
@@ -927,6 +961,7 @@ export function buildServices(settings: AppSettings): AppServices {
     indexers,
     ai,
     subtitles,
+    translator,
     hasTMDB: tmdb !== null,
     hasDebrid: debrid !== null,
     hasIndexers: indexers.activeIndexers.length > 0,

@@ -38,7 +38,7 @@ function missingKeyError() {
  * exactly once (success XOR error path). When `guard` is set — the user-supplied
  * Ollama endpoint — each URL is SSRF-checked first.
  */
-function makeAIFetch(guard) {
+export function makeAIFetch(guard) {
   return async (url, init) => {
     if (guard != null) await assertSafeUpstream(url, guard.allowPrivate);
     const controller = new AbortController();
@@ -63,28 +63,35 @@ function makeAIFetch(guard) {
  * deployment can't be used to probe the internal network. Returns null when no
  * provider is configured.
  */
-function selectProvider(db, config, profileId) {
+/** The first configured AI credential for this profile, in PROVIDER_ORDER, or
+ *  null. For openai/anthropic the value is an API key; for ollama it's the
+ *  endpoint URL. Shared with the subtitle translator (subtitles-runtime.js). */
+export function selectAICredential(db, config, profileId) {
   for (const kind of PROVIDER_ORDER) {
     const value = effectiveCredentialValue(db, config, profileId, kind);
-    if (value == null || value.trim().length === 0) continue;
-    const trimmed = value.trim();
-    if (kind === "openai") {
-      return { kind, provider: new OpenAIProvider(trimmed, undefined, makeAIFetch(null)) };
-    }
-    if (kind === "anthropic") {
-      return { kind, provider: new AnthropicProvider(trimmed, undefined, makeAIFetch(null)) };
-    }
-    // ollama: the credential value is the endpoint URL, not an API key.
-    return {
-      kind,
-      provider: new OllamaProvider(
-        trimmed,
-        undefined,
-        makeAIFetch({ allowPrivate: config.allowRawStreamUrls }),
-      ),
-    };
+    if (value != null && value.trim().length > 0) return { kind, value: value.trim() };
   }
   return null;
+}
+
+function selectProvider(db, config, profileId) {
+  const sel = selectAICredential(db, config, profileId);
+  if (sel == null) return null;
+  if (sel.kind === "openai") {
+    return { kind: sel.kind, provider: new OpenAIProvider(sel.value, undefined, makeAIFetch(null)) };
+  }
+  if (sel.kind === "anthropic") {
+    return { kind: sel.kind, provider: new AnthropicProvider(sel.value, undefined, makeAIFetch(null)) };
+  }
+  // ollama: the credential value is the endpoint URL, not an API key — SSRF-guarded.
+  return {
+    kind: sel.kind,
+    provider: new OllamaProvider(
+      sel.value,
+      undefined,
+      makeAIFetch({ allowPrivate: config.allowRawStreamUrls }),
+    ),
+  };
 }
 
 async function runRecommend(db, config, profileId, body) {

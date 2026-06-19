@@ -138,7 +138,20 @@ export function buildChatCall(
 /** Progress callback: (completedBatches, totalBatches). */
 export type TranslationProgress = (done: number, total: number) => void;
 
-export class SubtitleTranslator {
+/** The translation surface the player depends on. Implemented by the local
+ *  `SubtitleTranslator` and the Server-Mode `ServerSubtitleTranslator`, so the
+ *  player (useSubtitleTracks) is agnostic to where the AI key/network live. */
+export interface Translator {
+  /** Whether translation can run (a provider is configured, here or server-side). */
+  readonly available: boolean;
+  translate(
+    cues: SubtitleCue[],
+    targetLanguage: string,
+    onProgress?: TranslationProgress,
+  ): Promise<SubtitleCue[]>;
+}
+
+export class SubtitleTranslator implements Translator {
   private readonly config: TranslatorConfig;
   private readonly fetchImpl: FetchImpl;
 

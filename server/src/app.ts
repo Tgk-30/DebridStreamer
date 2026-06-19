@@ -28,6 +28,11 @@ import {
 } from "./metadata-runtime.js";
 import { curateServerAI, recommendServerAI } from "./ai-runtime.js";
 import {
+  fetchServerSubtitle,
+  searchServerSubtitles,
+  translateServerSubtitle,
+} from "./subtitles-runtime.js";
+import {
   addSecondsISO,
   decryptSecret,
   encryptSecret,
@@ -184,6 +189,36 @@ const credentialBodySchema = z.object({
 const aiRecommendBodySchema = z.object({
   prompt: z.string().trim().min(1).max(2000),
   count: z.number().int().min(1).max(20).default(8),
+});
+
+const subtitleSearchBodySchema = z
+  .object({
+    imdbId: z.string().trim().max(32).nullish(),
+    query: z.string().trim().max(200).nullish(),
+    season: z.number().int().min(0).max(10_000).nullish(),
+    episode: z.number().int().min(0).max(10_000).nullish(),
+    languages: z.array(z.string().trim().min(1).max(12)).max(10).optional(),
+  })
+  .refine((b) => (b.imdbId?.length ?? 0) > 0 || (b.query?.length ?? 0) > 0, {
+    message: "Provide an imdbId or a query.",
+  });
+
+const subtitleFetchBodySchema = z.object({
+  fileId: z.string().trim().min(1).max(64),
+});
+
+const subtitleTranslateBodySchema = z.object({
+  cues: z
+    .array(
+      z.object({
+        start: z.number().finite().min(0),
+        end: z.number().finite().min(0),
+        text: z.string().max(2000),
+      }),
+    )
+    .min(1)
+    .max(5000),
+  targetLanguage: z.string().trim().min(1).max(40),
 });
 
 const rawStreamSessionSchema = z.object({
@@ -2418,6 +2453,49 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
       matched: out.items.length,
     });
     return { items: out.items, unmatched: out.unmatched };
+  });
+
+  // Subtitle search (OpenSubtitles) using the server's stored key for this profile.
+  app.post("/api/subtitles/search", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    rateLimit(request, `subtitles:search:${auth.profileId}`, 60, 60 * 1000);
+    const body = parseBody(subtitleSearchBodySchema, request.body);
+    const results = await searchServerSubtitles(db, config, auth.profileId, body);
+    audit(db, auth, "subtitles.search", "subtitle", undefined, {
+      imdbId: body.imdbId ?? null, // media id — safe to log
+      languages: body.languages ?? ["en"], // lang codes — safe
+      freeText: (body.query?.length ?? 0) > 0, // boolean only — NOT the query text
+      results: results.length,
+    });
+    return { results };
+  });
+
+  // Download a chosen subtitle and return it as a decoded WebVTT string.
+  app.post("/api/subtitles/fetch", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    rateLimit(request, `subtitles:fetch:${auth.profileId}`, 60, 60 * 1000);
+    const body = parseBody(subtitleFetchBodySchema, request.body);
+    const vtt = await fetchServerSubtitle(db, config, auth.profileId, body.fileId);
+    audit(db, auth, "subtitles.fetch", "subtitle", body.fileId);
+    return { vtt };
+  });
+
+  // AI-translate a track's cues, preserving timing. Reuses the profile's AI key.
+  app.post("/api/subtitles/translate", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    // Tight limit: each translate fans out many AI calls and is long-running.
+    rateLimit(request, `subtitles:translate:${auth.profileId}`, 10, 60 * 1000);
+    const body = parseBody(subtitleTranslateBodySchema, request.body);
+    const out = await translateServerSubtitle(db, config, auth.profileId, body);
+    audit(db, auth, "subtitles.translate", "subtitle", undefined, {
+      provider: out.providerKind,
+      target: body.targetLanguage,
+      cues: body.cues.length,
+    });
+    return { cues: out.cues, providerKind: out.providerKind };
   });
 
   app.get("/api/media/detail", async (request) => {
