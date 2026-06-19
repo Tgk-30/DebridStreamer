@@ -198,3 +198,25 @@ CREATE INDEX invites_active_idx ON invites(expires_at, revoked_at);
 export const MIGRATION_005 = `
 ALTER TABLE stream_sessions ADD COLUMN transcode_dir TEXT;
 `;
+
+// Phase 4: title requests with an approve/deny lifecycle (kids/members request,
+// owner/admins decide; approved titles surface in a shared "Requested" list).
+export const MIGRATION_006 = `
+CREATE TABLE requests (
+  id TEXT PRIMARY KEY,
+  requester_profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  media_id TEXT NOT NULL,
+  preview_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'denied')) DEFAULT 'pending',
+  decided_by_profile_id TEXT REFERENCES profiles(id) ON DELETE SET NULL,
+  decision_reason TEXT,
+  requested_at TEXT NOT NULL,
+  decided_at TEXT
+);
+-- One LIVE pending request per (profile, media): a denied/approved row never
+-- blocks a re-request, and there can't be two pending duplicates.
+CREATE UNIQUE INDEX requests_one_pending_idx
+  ON requests(requester_profile_id, media_id) WHERE status = 'pending';
+CREATE INDEX requests_status_idx ON requests(status, requested_at DESC);
+CREATE INDEX requests_requester_idx ON requests(requester_profile_id, requested_at DESC);
+`;

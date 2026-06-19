@@ -7,6 +7,7 @@ import {
   MIGRATION_003,
   MIGRATION_004,
   MIGRATION_005,
+  MIGRATION_006,
 } from "./schema.js";
 
 export class AppDatabase {
@@ -87,6 +88,14 @@ export class AppDatabase {
       this.sqlite
         .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
         .run(5, new Date().toISOString());
+      current = 5;
+    }
+
+    if (current < 6) {
+      this.sqlite.exec(MIGRATION_006);
+      this.sqlite
+        .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
+        .run(6, new Date().toISOString());
     }
   }
 }

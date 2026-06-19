@@ -1065,6 +1065,89 @@ describe("DebridStreamer server", () => {
     expect(codes[10]).toBe(429);
   });
 
+  // --- Phase 4: title requests + approve/deny queue --------------------------
+
+  it("requests: create + admin queue + approve→shared list, with IDOR + CSRF + dedup", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "mallory", "mallory-password");
+    const mallory = await login(app, "mallory", "mallory-password");
+
+    const preview = { id: "tt100", type: "movie", title: "Requested Movie" };
+    const created = await request(owner, {
+      method: "POST",
+      url: "/api/library/requests",
+      csrf: true,
+      payload: { mediaId: "tt100", preview },
+    });
+    expect(created.statusCode).toBe(200);
+    const req = json<{ request: { id: string; status: string } }>(created).request;
+    expect(req.status).toBe("pending");
+
+    const ownList = () => request(owner, { method: "GET", url: "/api/library/requests" });
+    const queue = () => request(owner, { method: "GET", url: "/api/admin/requests" });
+    expect(json<{ requests: Array<{ id: string }> }>(await ownList()).requests.some((r) => r.id === req.id)).toBe(true);
+    expect(json<{ requests: Array<{ id: string }> }>(await queue()).requests.some((r) => r.id === req.id)).toBe(true);
+
+    // Duplicate live pending → 409.
+    expect(
+      (await request(owner, { method: "POST", url: "/api/library/requests", csrf: true, payload: { mediaId: "tt100", preview } })).statusCode,
+    ).toBe(409);
+
+    // IDOR / authz: a different account sees none of it; non-admin is blocked.
+    expect(json<{ requests: unknown[] }>(await request(mallory, { method: "GET", url: "/api/library/requests" })).requests).toHaveLength(0);
+    expect((await request(mallory, { method: "GET", url: "/api/admin/requests" })).statusCode).toBe(403);
+    expect((await request(mallory, { method: "POST", url: `/api/admin/requests/${req.id}/approve`, csrf: true })).statusCode).toBe(403);
+    // CSRF required on approve.
+    expect((await request(owner, { method: "POST", url: `/api/admin/requests/${req.id}/approve` })).statusCode).toBe(403);
+
+    // Approve → leaves the pending queue + lands in the shared Requested list.
+    expect((await request(owner, { method: "POST", url: `/api/admin/requests/${req.id}/approve`, csrf: true })).statusCode).toBe(200);
+    expect(json<{ requests: Array<{ id: string }> }>(await queue()).requests.some((r) => r.id === req.id)).toBe(false);
+    expect(
+      json<{ items: Array<{ mediaId: string }> }>(await request(owner, { method: "GET", url: "/api/library/requested" })).items.some((i) => i.mediaId === "tt100"),
+    ).toBe(true);
+    // ...and a different account does not see it.
+    expect(json<{ items: unknown[] }>(await request(mallory, { method: "GET", url: "/api/library/requested" })).items).toHaveLength(0);
+    // Approving an already-decided request → 404.
+    expect((await request(owner, { method: "POST", url: `/api/admin/requests/${req.id}/approve`, csrf: true })).statusCode).toBe(404);
+  });
+
+  it("requests: a denied title can be re-requested; the deny reason is stored", async () => {
+    const owner = await setupOwner(app);
+    const preview = { id: "tt200", type: "movie", title: "Denied" };
+    const first = json<{ request: { id: string } }>(
+      await request(owner, { method: "POST", url: "/api/library/requests", csrf: true, payload: { mediaId: "tt200", preview } }),
+    ).request.id;
+    expect(
+      (await request(owner, { method: "POST", url: `/api/admin/requests/${first}/deny`, csrf: true, payload: { reason: "Too violent" } })).statusCode,
+    ).toBe(200);
+    // The denial frees the partial-unique slot → a re-request succeeds.
+    expect(
+      (await request(owner, { method: "POST", url: "/api/library/requests", csrf: true, payload: { mediaId: "tt200", preview } })).statusCode,
+    ).toBe(200);
+    const denied = json<{ requests: Array<{ id: string; status: string; decisionReason: string | null }> }>(
+      await request(owner, { method: "GET", url: "/api/library/requests" }),
+    ).requests.find((r) => r.id === first);
+    expect(denied?.status).toBe("denied");
+    expect(denied?.decisionReason).toBe("Too violent");
+  });
+
+  it("requests: an approved title is visible to every profile of the same account", async () => {
+    const owner = await setupOwner(app);
+    const sub = json<{ profile: { id: string } }>(
+      await request(owner, { method: "POST", url: "/api/account/profiles", csrf: true, payload: { displayName: "Kid" } }),
+    ).profile.id;
+    const id = json<{ request: { id: string } }>(
+      await request(owner, { method: "POST", url: "/api/library/requests", csrf: true, payload: { mediaId: "tt300", preview: { id: "tt300", type: "movie", title: "Shared" } } }),
+    ).request.id;
+    await request(owner, { method: "POST", url: `/api/admin/requests/${id}/approve`, csrf: true });
+    // Switch the active profile to the sub-profile; the shared list is account-scoped.
+    expect((await request(owner, { method: "POST", url: "/api/profiles/switch", csrf: true, payload: { profileId: sub } })).statusCode).toBe(200);
+    expect(
+      json<{ items: Array<{ mediaId: string }> }>(await request(owner, { method: "GET", url: "/api/library/requested" })).items.some((i) => i.mediaId === "tt300"),
+    ).toBe(true);
+  });
+
   it("uses server credentials by default and profile credentials as overrides", async () => {
     const owner = await setupOwner(app);
     await createProfile(owner, "bob", "bob-password");

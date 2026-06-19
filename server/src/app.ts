@@ -185,6 +185,21 @@ const historyBodySchema = z.object({
   lastWatched: z.string().datetime().optional(),
 });
 
+const requestBodySchema = z.object({
+  mediaId: mediaIdParamSchema,
+  preview: boundedPreview,
+});
+
+const requestStatusQuerySchema = z.object({
+  status: z.enum(["pending", "approved", "denied"]).optional(),
+});
+
+const requestDenyBodySchema = z.object({
+  reason: z.string().trim().max(500).nullish(),
+});
+
+const requestIdParamSchema = z.string().trim().min(1).max(128);
+
 const listTypeSchema = z.enum(["watchlist", "favorites", "custom"]);
 
 const libraryUpsertBodySchema = z.object({
@@ -680,6 +695,30 @@ function mapInviteRow(row: {
       row.revoked_at == null &&
       row.used_count < row.max_uses &&
       new Date(row.expires_at).getTime() > Date.now(),
+  };
+}
+
+function mapRequestRow(row: {
+  id: string;
+  media_id: string;
+  preview_json: string;
+  status: string;
+  decision_reason: string | null;
+  requested_at: string;
+  decided_at: string | null;
+  requester_display_name?: string | null;
+  decided_by_display_name?: string | null;
+}) {
+  return {
+    id: row.id,
+    mediaId: row.media_id,
+    preview: deserializePreview(row.preview_json),
+    status: row.status as "pending" | "approved" | "denied",
+    decisionReason: row.decision_reason,
+    requestedAt: row.requested_at,
+    decidedAt: row.decided_at,
+    requestedByDisplayName: row.requester_display_name ?? null,
+    decidedByDisplayName: row.decided_by_display_name ?? null,
   };
 }
 
@@ -2360,6 +2399,133 @@ function registerRoutes(
       )
       .run(auth.profileId, mediaId, nowISO(), serializePreview(body.preview));
     audit(db, auth, "watchlist.upsert", "media", mediaId);
+    return { ok: true };
+  });
+
+  // --- Phase 4: title requests + approve/deny queue (Server Mode) -------------
+
+  // Any profile (incl. a kid/restricted) can request a title for the family.
+  app.post("/api/library/requests", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(requestBodySchema, request.body);
+    const id = randomId("request");
+    try {
+      db.sqlite
+        .prepare(
+          `INSERT INTO requests
+           (id, requester_profile_id, media_id, preview_json, status, requested_at)
+           VALUES (?, ?, ?, ?, 'pending', ?)`,
+        )
+        .run(id, auth.profileId, body.mediaId, serializePreview(body.preview), nowISO());
+    } catch (err) {
+      // The partial-unique index rejects a second LIVE pending request.
+      if (String((err as { message?: string })?.message ?? "").toUpperCase().includes("UNIQUE")) {
+        throw httpError(409, "You've already requested this title.");
+      }
+      throw err;
+    }
+    audit(db, auth, "request.create", "request", id, { mediaId: body.mediaId });
+    const row = db.sqlite
+      .prepare(
+        `SELECT id, media_id, preview_json, status, decision_reason, requested_at, decided_at
+         FROM requests WHERE id = ?`,
+      )
+      .get(id) as Parameters<typeof mapRequestRow>[0];
+    return { request: mapRequestRow(row) };
+  });
+
+  // The caller's OWN requests (any status), newest first — IDOR-safe by profile.
+  app.get("/api/library/requests", async (request) => {
+    const auth = requireAuth(db, request);
+    const query = parseBody(requestStatusQuerySchema, request.query);
+    const status = query.status ?? null;
+    const rows = db.sqlite
+      .prepare(
+        `SELECT id, media_id, preview_json, status, decision_reason, requested_at, decided_at
+         FROM requests
+         WHERE requester_profile_id = ? AND (? IS NULL OR status = ?)
+         ORDER BY requested_at DESC
+         LIMIT 200`,
+      )
+      .all(auth.profileId, status, status) as Array<Parameters<typeof mapRequestRow>[0]>;
+    return { requests: rows.map(mapRequestRow) };
+  });
+
+  // The shared account-level "Requested" list: every approved request across the
+  // account's profiles, so the household sees what's been greenlit.
+  app.get("/api/library/requested", async (request) => {
+    const auth = requireAuth(db, request);
+    const rows = db.sqlite
+      .prepare(
+        `SELECT r.id, r.media_id, r.preview_json, r.status, r.decision_reason,
+                r.requested_at, r.decided_at,
+                req.display_name AS requester_display_name
+         FROM requests r
+         JOIN profiles req ON req.id = r.requester_profile_id
+         WHERE req.user_id = ? AND r.status = 'approved'
+         ORDER BY r.decided_at DESC
+         LIMIT 200`,
+      )
+      .all(auth.userId) as Array<Parameters<typeof mapRequestRow>[0]>;
+    return { items: rows.map(mapRequestRow) };
+  });
+
+  // Admin queue (pending by default), with requester + decider identity.
+  app.get("/api/admin/requests", async (request) => {
+    const auth = requireAuth(db, request);
+    requireAdmin(auth);
+    const query = parseBody(requestStatusQuerySchema, request.query);
+    const status = query.status ?? "pending";
+    const rows = db.sqlite
+      .prepare(
+        `SELECT r.id, r.media_id, r.preview_json, r.status, r.decision_reason,
+                r.requested_at, r.decided_at,
+                req.display_name AS requester_display_name,
+                dec.display_name AS decided_by_display_name
+         FROM requests r
+         JOIN profiles req ON req.id = r.requester_profile_id
+         LEFT JOIN profiles dec ON dec.id = r.decided_by_profile_id
+         WHERE r.status = ?
+         ORDER BY r.requested_at DESC
+         LIMIT 100`,
+      )
+      .all(status) as Array<Parameters<typeof mapRequestRow>[0]>;
+    return { requests: rows.map(mapRequestRow) };
+  });
+
+  app.post("/api/admin/requests/:id/approve", async (request) => {
+    const auth = requireAuth(db, request);
+    requireAdmin(auth);
+    requireCsrf(request);
+    const id = requestIdParamSchema.parse((request.params as { id: string }).id);
+    const result = db.sqlite
+      .prepare(
+        `UPDATE requests
+         SET status = 'approved', decided_by_profile_id = ?, decided_at = ?
+         WHERE id = ? AND status = 'pending'`,
+      )
+      .run(auth.profileId, nowISO(), id);
+    if (result.changes === 0) throw httpError(404, "Pending request not found.");
+    audit(db, auth, "request.approve", "request", id);
+    return { ok: true };
+  });
+
+  app.post("/api/admin/requests/:id/deny", async (request) => {
+    const auth = requireAuth(db, request);
+    requireAdmin(auth);
+    requireCsrf(request);
+    const id = requestIdParamSchema.parse((request.params as { id: string }).id);
+    const body = parseBody(requestDenyBodySchema, request.body);
+    const result = db.sqlite
+      .prepare(
+        `UPDATE requests
+         SET status = 'denied', decided_by_profile_id = ?, decided_at = ?, decision_reason = ?
+         WHERE id = ? AND status = 'pending'`,
+      )
+      .run(auth.profileId, nowISO(), body.reason ?? null, id);
+    if (result.changes === 0) throw httpError(404, "Pending request not found.");
+    audit(db, auth, "request.deny", "request", id, { reason: body.reason ?? null });
     return { ok: true };
   });
 
