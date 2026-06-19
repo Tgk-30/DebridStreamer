@@ -39,6 +39,10 @@ interface VideoPlayerProps {
   /** Reports playback progress (seconds watched + total duration) so the store
    * can persist a resume position. Called periodically and on close. */
   onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
+  /** Resume position (seconds) from the saved watch history. The in-webview
+   * player seeks here once, on first metadata load — making cross-device resume
+   * actually pick up where you left off. 0/undefined starts from the beginning. */
+  startPositionSeconds?: number;
   /** OpenSubtitles client (when a key is configured) — powers subtitle search.
    * Null disables the search UI (a "configure key" state is shown). */
   subtitleClient?: OpenSubtitlesClient | null;
@@ -72,6 +76,7 @@ export function VideoPlayer({
   kind,
   onClose,
   onProgress,
+  startPositionSeconds,
   subtitleClient,
   translatorConfig,
   imdbId,
@@ -150,6 +155,7 @@ export function VideoPlayer({
             url={url}
             title={title}
             onProgress={onProgress}
+            startPositionSeconds={startPositionSeconds}
             onHlsUnsupported={() =>
               setExternalError("This browser can't play HLS. Try the desktop app.")
             }
@@ -179,6 +185,7 @@ function WebviewPlayer({
   url,
   title,
   onProgress,
+  startPositionSeconds,
   onHlsUnsupported,
   subtitleClient,
   translatorConfig,
@@ -189,6 +196,7 @@ function WebviewPlayer({
   url: string;
   title: string;
   onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
+  startPositionSeconds?: number;
   onHlsUnsupported: () => void;
   subtitleClient: OpenSubtitlesClient | null;
   translatorConfig: TranslatorConfig | null;
@@ -215,9 +223,15 @@ function WebviewPlayer({
   // render (onProgress identity changes every render → re-subscribe loop).
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
+  // Resume position is captured in a ref + a one-shot guard so we seek exactly
+  // once, when metadata first loads, without re-subscribing the effect.
+  const startPositionRef = useRef(startPositionSeconds);
+  startPositionRef.current = startPositionSeconds;
+  const didSeekRef = useRef(false);
   useEffect(() => {
     const video = videoRef.current;
     if (video == null) return;
+    didSeekRef.current = false;
 
     const report = () => {
       const d = Number.isFinite(video.duration) ? video.duration : null;
@@ -233,6 +247,24 @@ function WebviewPlayer({
     };
     const onLoadedMeta = () => {
       if (Number.isFinite(video.duration)) setDuration(video.duration);
+      // Cross-device resume: seek to the saved position once, but only if it's a
+      // meaningful offset and not basically at the end (so a finished item still
+      // starts fresh). Re-applied via durationchange for HLS where duration may
+      // arrive slightly later.
+      if (didSeekRef.current) return;
+      const start = startPositionRef.current ?? 0;
+      if (start <= 5) return;
+      const d = Number.isFinite(video.duration) ? video.duration : 0;
+      if (d > 0 && start >= d - 10) {
+        didSeekRef.current = true; // basically finished — don't resume
+        return;
+      }
+      didSeekRef.current = true;
+      try {
+        video.currentTime = start;
+      } catch {
+        // Some sources reject an early seek; the timeupdate path will catch up.
+      }
     };
     const onDurationChange = () => {
       if (Number.isFinite(video.duration)) setDuration(video.duration);

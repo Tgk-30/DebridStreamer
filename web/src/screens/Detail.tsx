@@ -40,6 +40,8 @@ interface ActivePlayer {
   title: string;
   /** Force the external path for MKV/HEVC. */
   external: boolean;
+  /** Saved resume position (seconds) to seek to on load; 0 starts fresh. */
+  startPositionSeconds: number;
 }
 
 /** True when the resolved file is a container/codec the webview can't decode
@@ -75,6 +77,7 @@ export function Detail() {
     watchlist,
     toggleWatchlist,
     recordResume,
+    continueWatching,
     cachedResolutions,
   } = useAppStore();
 
@@ -96,6 +99,22 @@ export function Detail() {
   // A pre-resolved, ready-to-play stream from the watchlist auto-resolve job.
   const cached = cachedResolutions[detailItem.id] ?? null;
 
+  /** Resume position (seconds) for this title, read from the already-loaded
+   * Continue Watching list (cross-device synced in Server Mode) — 0 when there's
+   * no in-progress record or it's completed. */
+  function resumeSecondsFor(): number {
+    if (detailItem == null) return 0;
+    const record = continueWatching.find(
+      (h) => h.mediaId === detailItem.id && h.episodeId == null,
+    );
+    return record != null && !record.completed ? record.progressSeconds : 0;
+  }
+
+  /** Open the player, seeking to any saved resume position. */
+  function openPlayer(url: string, title: string, external: boolean): void {
+    setPlayer({ url, title, external, startPositionSeconds: resumeSecondsFor() });
+  }
+
   /** Play an already-resolved StreamInfo directly (the instant-play path for a
    * cached resolution). Mirrors handlePlay's container/codec routing but without
    * a TorrentResult to cross-check, so it keys off the stream alone. */
@@ -110,15 +129,15 @@ export function Detail() {
     const badCodec =
       stream.codec === VideoCodec.h265 || stream.codec === VideoCodec.av1;
     if (!badContainer && !badCodec) {
-      setPlayer({ url: stream.streamURL, title, external: false });
+      openPlayer(stream.streamURL, title, false);
       return;
     }
     const hlsUrl = await services.debrid?.getTranscodeHLS(stream).catch(() => null);
     if (hlsUrl != null) {
-      setPlayer({ url: hlsUrl, title, external: false });
+      openPlayer(hlsUrl, title, false);
       return;
     }
-    setPlayer({ url: stream.streamURL, title, external: true });
+    openPlayer(stream.streamURL, title, true);
   }
 
   async function resolveSelectedStream(row: StreamRow): Promise<StreamInfo> {
@@ -136,7 +155,7 @@ export function Detail() {
 
     // Browser-playable (MP4/WebM/H.264) — play the direct link in-webview.
     if (!needsTranscodeOrExternal(stream, source)) {
-      setPlayer({ url: stream.streamURL, title, external: false });
+      openPlayer(stream.streamURL, title, false);
       return;
     }
 
@@ -147,12 +166,12 @@ export function Detail() {
     const hlsUrl = await services.debrid?.getTranscodeHLS(stream).catch(() => null);
     if (hlsUrl != null) {
       // In-window: the .m3u8 routes through the webview hls.js path.
-      setPlayer({ url: hlsUrl, title, external: false });
+      openPlayer(hlsUrl, title, false);
       return;
     }
 
     // Fallback: native player (mpv/VLC) via the desktop hand-off.
-    setPlayer({ url: stream.streamURL, title, external: true });
+    openPlayer(stream.streamURL, title, true);
   }
 
   return (
@@ -214,6 +233,7 @@ export function Detail() {
             url={player.url}
             title={player.title}
             kind={player.external ? "external" : undefined}
+            startPositionSeconds={player.startPositionSeconds}
             onClose={() => setPlayer(null)}
             onProgress={(current, duration) => {
               // Persist a resume position against the title being viewed so the

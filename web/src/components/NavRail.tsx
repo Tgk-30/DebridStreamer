@@ -5,7 +5,13 @@
 
 import { useState } from "react";
 import { Icon, type IconName } from "./Icon";
+import { isServerMode } from "../lib/serverMode";
 import "./NavRail.css";
+
+// Screens with no working backend in Server Mode (Debrid Library is Tauri-only;
+// the AI Assistant needs a provider key the browser can't read back from the
+// server). Hidden from the rail in Server Mode so the nav has no dead-ends.
+const SERVER_MODE_HIDDEN: ReadonlySet<string> = new Set(["debrid", "assistant"]);
 
 export type ScreenId =
   | "discover"
@@ -63,7 +69,14 @@ interface NavRailProps {
 
 export function NavRail({ selected, onSelect }: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const moreSelected = MOBILE_MORE_ITEMS.some((item) => item.id === selected);
+  const serverMode = isServerMode();
+  const navItems = serverMode
+    ? NAV_ITEMS.filter((item) => !SERVER_MODE_HIDDEN.has(item.id))
+    : NAV_ITEMS;
+  const moreItems = serverMode
+    ? MOBILE_MORE_ITEMS.filter((item) => !SERVER_MODE_HIDDEN.has(item.id))
+    : MOBILE_MORE_ITEMS;
+  const moreSelected = moreItems.some((item) => item.id === selected);
 
   function selectScreen(id: ScreenId) {
     setMoreOpen(false);
@@ -84,7 +97,7 @@ export function NavRail({ selected, onSelect }: NavRailProps) {
       {GROUPS.map((group) => (
         <div key={group} className="nav-rail-section" data-group={group}>
           <div className="nav-rail-group-label">{group}</div>
-          {NAV_ITEMS.filter((item) => item.group === group).map((item) => (
+          {navItems.filter((item) => item.group === group).map((item) => (
             <NavRailButton
               key={item.id}
               item={item}
@@ -128,7 +141,7 @@ export function NavRail({ selected, onSelect }: NavRailProps) {
             <Icon name="xmark" size={19} />
           </button>
         </div>
-        {MOBILE_MORE_ITEMS.map((item) => (
+        {moreItems.map((item) => (
           <button
             key={item.id}
             type="button"
