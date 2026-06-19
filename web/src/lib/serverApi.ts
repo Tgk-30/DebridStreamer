@@ -241,6 +241,13 @@ export async function translateServerSubtitles(input: {
   return serverRequest("POST", "/api/subtitles/translate", input);
 }
 
+export async function revokeServerStreamSession(id: string): Promise<void> {
+  await serverRequest(
+    "POST",
+    `/api/admin/streams/${encodeURIComponent(id)}/revoke`,
+  );
+}
+
 export async function fetchServerDetail(input: {
   id: string;
   type: MediaType;
