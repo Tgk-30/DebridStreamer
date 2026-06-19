@@ -80,6 +80,7 @@ async function createProfile(
   owner: TestClient,
   username: string,
   password: string,
+  role: "admin" | "member" | "restricted" = "member",
 ): Promise<string> {
   const response = await request(owner, {
     method: "POST",
@@ -89,7 +90,7 @@ async function createProfile(
       username,
       password,
       displayName: username,
-      role: "member",
+      role,
     },
   });
   expect(response.statusCode).toBe(200);
@@ -1262,5 +1263,142 @@ describe("DebridStreamer server", () => {
       url: playbackUrl,
     });
     expect(bobStream.statusCode).toBe(404);
+  });
+
+  it("kill-switch: admin revokes a stream session and the proxy then refuses it", async () => {
+    upstream = createServer((_req, res) => {
+      const body = Buffer.from("abcdefghij");
+      res.writeHead(200, {
+        "accept-ranges": "bytes",
+        "content-length": String(body.length),
+        "content-type": "text/plain",
+      });
+      res.end(body);
+    });
+    await new Promise<void>((resolve) => upstream?.listen(0, "127.0.0.1", () => resolve()));
+    const address = upstream.address();
+    if (address == null || typeof address === "string") throw new Error("Expected TCP test server.");
+    upstreamUrl = `http://127.0.0.1:${address.port}/video`;
+
+    const owner = await setupOwner(app);
+    await createProfile(owner, "carol", "carol-password");
+    const carol = await login(app, "carol", "carol-password");
+
+    // carol starts a stream session.
+    const created = await request(carol, {
+      method: "POST",
+      url: "/api/streams/sessions/raw",
+      csrf: true,
+      payload: { upstreamUrl, contentType: "text/plain" },
+    });
+    expect(created.statusCode).toBe(200);
+    const session = json<{ session: { id: string; playbackUrl: string } }>(created).session;
+
+    // The fresh session shows up in the admin active-streams list (a full GET
+    // would mark it completed and drop it from the list, so check it first).
+    const active = await request(owner, { method: "GET", url: "/api/admin/streams/active" });
+    expect(active.statusCode).toBe(200);
+    expect(
+      json<{ streams: Array<{ id: string }> }>(active).streams.some((s) => s.id === session.id),
+    ).toBe(true);
+
+    // Playback works before revocation.
+    const before = await request(carol, { method: "GET", url: session.playbackUrl });
+    expect(before.statusCode).toBe(200);
+
+    // A non-admin cannot revoke.
+    const carolRevoke = await request(carol, {
+      method: "POST",
+      url: `/api/admin/streams/${session.id}/revoke`,
+      csrf: true,
+    });
+    expect(carolRevoke.statusCode).toBe(403);
+
+    // Revoke without CSRF is rejected.
+    const noCsrf = await request(owner, {
+      method: "POST",
+      url: `/api/admin/streams/${session.id}/revoke`,
+    });
+    expect(noCsrf.statusCode).toBe(403);
+
+    // Admin revokes with CSRF.
+    const revoke = await request(owner, {
+      method: "POST",
+      url: `/api/admin/streams/${session.id}/revoke`,
+      csrf: true,
+    });
+    expect(revoke.statusCode).toBe(200);
+
+    // The proxy now refuses the revoked session for its owner.
+    const after = await request(carol, { method: "GET", url: session.playbackUrl });
+    expect(after.statusCode).toBe(404);
+
+    // Revoking again (already revoked) reports not-found.
+    const again = await request(owner, {
+      method: "POST",
+      url: `/api/admin/streams/${session.id}/revoke`,
+      csrf: true,
+    });
+    expect(again.statusCode).toBe(404);
+  });
+
+  it("restricted role: blocks management routes but allows browse + watchlist", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "rest", "rest-password", "restricted");
+    await createProfile(owner, "memb", "memb-password", "member");
+    const restricted = await login(app, "rest", "rest-password");
+    const member = await login(app, "memb", "memb-password");
+
+    // Management route (profile credential override) is blocked for restricted.
+    // requireNotRestricted fires before body parsing, so the 403 is the role gate.
+    const restrictedCred = await request(restricted, {
+      method: "PUT",
+      url: "/api/profile/credentials",
+      csrf: true,
+      payload: { provider: "tmdb", label: "Mine", value: "abc123" },
+    });
+    expect(restrictedCred.statusCode).toBe(403);
+
+    // Profile management (PATCH) is blocked for restricted. The role gate runs
+    // before the id/ownership check, so any id yields the same 403.
+    const restrictedPatch = await request(restricted, {
+      method: "PATCH",
+      url: "/api/profiles/any-profile-id",
+      csrf: true,
+      payload: { displayName: "Hacker" },
+    });
+    expect(restrictedPatch.statusCode).toBe(403);
+
+    // Browse/viewing data is allowed for restricted: write + read the watchlist.
+    const restrictedWatchPut = await request(restricted, {
+      method: "PUT",
+      url: "/api/library/watchlist/tt0111161",
+      csrf: true,
+      payload: { preview: { id: "tt0111161", title: "Movie" } },
+    });
+    expect(restrictedWatchPut.statusCode).toBe(200);
+    const restrictedWatchGet = await request(restricted, {
+      method: "GET",
+      url: "/api/library/watchlist",
+    });
+    expect(restrictedWatchGet.statusCode).toBe(200);
+
+    // A member is unaffected: the same management route succeeds.
+    const memberCred = await request(member, {
+      method: "PUT",
+      url: "/api/profile/credentials",
+      csrf: true,
+      payload: { provider: "tmdb", label: "Mine", value: "abc123" },
+    });
+    expect(memberCred.statusCode).toBe(200);
+
+    // The owner is unaffected too.
+    const ownerCred = await request(owner, {
+      method: "PUT",
+      url: "/api/profile/credentials",
+      csrf: true,
+      payload: { provider: "tmdb", label: "Owner", value: "abc123" },
+    });
+    expect(ownerCred.statusCode).toBe(200);
   });
 });

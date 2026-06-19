@@ -1606,6 +1606,10 @@ function ServerTab() {
   });
 
   const canAdmin = role === "owner" || role === "admin";
+  // A restricted profile can browse + watch but cannot perform management
+  // actions (e.g. credential overrides). The server enforces this; hide the UI
+  // so it isn't offered. Admin-only panels are already gated by canAdmin.
+  const isRestricted = role === "restricted";
 
   async function refresh() {
     setLoading(true);
@@ -1779,6 +1783,21 @@ function ServerTab() {
     }
   }
 
+  async function revokeStream(id: string) {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest(
+        "POST",
+        `/api/admin/streams/${encodeURIComponent(id)}/revoke`,
+      );
+      setMessage("Stream terminated.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function deleteProfileCredential(id: string) {
     setMessage(null);
     setError(null);
@@ -1883,7 +1902,9 @@ function ServerTab() {
 
       {canAdmin && health != null && <ServerHealthPanel health={health} />}
 
-      {canAdmin && <ActiveStreamsPanel streams={activeStreams} />}
+      {canAdmin && (
+        <ActiveStreamsPanel streams={activeStreams} onRevoke={revokeStream} />
+      )}
 
       {usage != null && <ServerUsagePanel usage={usage} />}
 
@@ -1900,13 +1921,15 @@ function ServerTab() {
         onRevoke={(id) => void revokeSession(id)}
       />
 
-      <ProfileCredentialPanel
-        credentials={effectiveCredentials}
-        draft={profileCredential}
-        onDraftChange={setProfileCredential}
-        onSave={() => void saveProfileCredential()}
-        onDelete={(id) => void deleteProfileCredential(id)}
-      />
+      {!isRestricted && (
+        <ProfileCredentialPanel
+          credentials={effectiveCredentials}
+          draft={profileCredential}
+          onDraftChange={setProfileCredential}
+          onSave={() => void saveProfileCredential()}
+          onDelete={(id) => void deleteProfileCredential(id)}
+        />
+      )}
 
       <div className="settings-sources-head">
         <span className="settings-sources-title">Profiles</span>
@@ -2296,7 +2319,13 @@ function ServerHealthPanel({ health }: { health: ServerHealth }) {
   );
 }
 
-function ActiveStreamsPanel({ streams }: { streams: ActiveStreamSession[] }) {
+function ActiveStreamsPanel({
+  streams,
+  onRevoke,
+}: {
+  streams: ActiveStreamSession[];
+  onRevoke: (id: string) => void;
+}) {
   return (
     <div className="settings-source glass-rest">
       <div className="settings-sources-head">
@@ -2326,6 +2355,13 @@ function ActiveStreamsPanel({ streams }: { streams: ActiveStreamSession[] }) {
                     : `Last ${formatShortDate(stream.lastAccessedAt)}`}
                 </span>
                 <span>Expires {formatShortDate(stream.expiresAt)}</span>
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => onRevoke(stream.id)}
+                >
+                  Terminate
+                </button>
               </span>
             </div>
           ))}

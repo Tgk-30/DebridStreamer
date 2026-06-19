@@ -810,6 +810,16 @@ function requireAdmin(auth: AuthContext): void {
   if (!isAdmin(auth.role)) throw httpError(403, "Admin access required.");
 }
 
+// A "restricted" profile can browse + watch but is strictly less-privileged than
+// a "member": it cannot perform any management/write action (credential edits,
+// profile management, etc.). Apply this to those routes; do NOT apply it to
+// normal viewing/search/watchlist/history/streaming.
+function requireNotRestricted(auth: AuthContext): void {
+  if (auth.role === "restricted") {
+    throw httpError(403, "This action is not available for restricted profiles.");
+  }
+}
+
 function requireCsrf(request: FastifyRequest): void {
   if (!unsafeMethods.has(request.method)) return;
   const cookieToken = request.cookies?.[CSRF_COOKIE];
@@ -1822,6 +1832,7 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
 
   app.patch("/api/profiles/:id", async (request) => {
     const auth = requireAuth(db, request);
+    requireNotRestricted(auth);
     requireCsrf(request);
     const id = (request.params as { id: string }).id;
     if (auth.profileId !== id && !isAdmin(auth.role)) {
@@ -2352,6 +2363,7 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
 
   app.put("/api/profile/credentials", async (request) => {
     const auth = requireAuth(db, request);
+    requireNotRestricted(auth);
     requireCsrf(request);
     const body = parseBody(credentialBodySchema, request.body);
     const credential = upsertCredential(db, config, body, "profile", auth.profileId);
@@ -2363,6 +2375,7 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
 
   app.delete("/api/profile/credentials/:id", async (request) => {
     const auth = requireAuth(db, request);
+    requireNotRestricted(auth);
     requireCsrf(request);
     const id = (request.params as { id: string }).id;
     db.sqlite
@@ -2589,6 +2602,29 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
     const auth = requireAuth(db, request);
     requireAdmin(auth);
     return adminActiveStreamSessions(db);
+  });
+
+  // Stream kill-switch: an admin marks a live stream session revoked. The proxy
+  // route (/api/stream/:id) already refuses sessions with a non-null revoked_at,
+  // so the in-flight playback fails on its next range request.
+  app.post("/api/admin/streams/:id/revoke", async (request) => {
+    const auth = requireAuth(db, request);
+    requireAdmin(auth);
+    requireCsrf(request);
+    const id = sessionIdParamSchema.parse((request.params as { id: string }).id);
+    const result = db.sqlite
+      .prepare(
+        `UPDATE stream_sessions
+         SET revoked_at = ?
+         WHERE id = ?
+           AND revoked_at IS NULL`,
+      )
+      .run(nowISO(), id);
+    if (result.changes === 0) {
+      throw httpError(404, "Active stream session not found.");
+    }
+    audit(db, auth, "stream_session.revoke", "stream_session", id);
+    return { ok: true };
   });
 
   app.route({
