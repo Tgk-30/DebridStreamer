@@ -1893,3 +1893,43 @@
   font-size: 12.5px;
   line-height: 1.45;
 }
+
+/* Remote-access (Tailscale / Cloudflare Tunnel) guided steps in the Server tab. */
+.settings-remote-access .settings-segment-block {
+  margin: 0;
+}
+.settings-remote-steps {
+  list-style: none;
+  margin: var(--sp-sm) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+.settings-remote-step {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+.settings-remote-step-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+}
+.settings-remote-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.settings-remote-step-body strong {
+  font-size: 13.5px;
+}

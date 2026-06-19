@@ -166,3 +166,201 @@
 .first-run-secondary:hover {
   color: var(--text-primary);
 }
+
+/* ── Server first-run setup wizard ──────────────────────────────────────────
+   Reuses the .first-run shell + card; these add the multi-step progress rail,
+   the API-keys field stack, the access cards, and the invite QR/result. */
+
+.server-setup-card {
+  width: min(680px, 100%);
+}
+
+.server-setup-progress {
+  display: flex;
+  list-style: none;
+  margin: 0 0 var(--sp-lg);
+  padding: 0;
+  gap: 6px;
+  counter-reset: none;
+}
+.server-setup-progress-dot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+.server-setup-progress-dot.is-active,
+.server-setup-progress-dot.is-done {
+  opacity: 1;
+  color: var(--text-primary);
+}
+.server-setup-progress-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  border: 0.75px solid var(--glass-border);
+}
+.server-setup-progress-dot.is-active .server-setup-progress-num {
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  color: #fff;
+  border-color: transparent;
+}
+.server-setup-progress-dot.is-done .server-setup-progress-num {
+  background: rgba(var(--accent-rgb), 0.18);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+.server-setup-progress-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .server-setup-progress-label { display: none; }
+}
+
+.server-setup-list {
+  margin: 0 0 var(--sp-lg);
+  padding-left: 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.server-setup-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-md);
+}
+.server-setup-field-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+.server-setup-fields .first-run-field input {
+  margin-bottom: 2px;
+}
+
+.server-setup-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.server-setup-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.server-setup-ok,
+.server-setup-note {
+  margin: 0 0 var(--sp-sm);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.server-setup-ok {
+  color: var(--accent);
+}
+
+.server-setup-access {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-md);
+}
+@media (max-width: 560px) {
+  .server-setup-access { grid-template-columns: 1fr; }
+}
+.server-setup-access-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-decoration: none;
+  padding: var(--sp-md) var(--sp-lg);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 0.75px solid var(--glass-border);
+  color: var(--text-primary);
+  transition: border-color 0.16s, background 0.16s, transform 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.server-setup-access-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+.server-setup-access-card strong {
+  font-size: 14.5px;
+}
+.server-setup-access-card span {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.server-setup-invite-result {
+  display: flex;
+  gap: var(--sp-lg);
+  align-items: center;
+  margin-bottom: var(--sp-md);
+  flex-wrap: wrap;
+}
+.server-setup-qr {
+  width: 168px;
+  height: 168px;
+  border-radius: var(--r-md);
+  background: #fff;
+  padding: 8px;
+  flex-shrink: 0;
+}
+.server-setup-invite-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+  flex: 1;
+}
+.server-setup-invite-url {
+  display: block;
+  font-size: 12px;
+  word-break: break-all;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
+  border: 0.75px solid var(--glass-border);
+}
+.server-setup-invite-copy .first-run-secondary {
+  align-self: flex-start;
+}
+
+.server-setup-skip-inline {
+  display: block;
+  margin: var(--sp-md) auto 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+}
+.server-setup-skip-inline:hover {
+  color: var(--text-primary);
+}

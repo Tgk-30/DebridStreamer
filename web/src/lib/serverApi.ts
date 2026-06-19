@@ -256,3 +256,69 @@ export async function fetchServerDetail(input: {
   });
   return serverRequest("GET", `/api/media/detail?${params.toString()}`);
 }
+
+// ── Server first-run setup helpers ───────────────────────────────────────────
+// Thin wrappers over the EXISTING admin endpoints the Settings → Server tab
+// already drives. They exist so the guided Server setup wizard can reuse the
+// same save/invite/health paths without re-implementing the fetch/CSRF plumbing
+// (serverRequest above already handles credentials + x-csrf-token).
+
+/** Provider key the setup wizard / Settings store credentials under. Mirrors
+ *  CredentialProvider in Settings.tsx. */
+export type ServerCredentialProvider =
+  | "tmdb"
+  | "omdb"
+  | "real_debrid"
+  | "all_debrid"
+  | "premiumize"
+  | "torbox"
+  | "openai"
+  | "anthropic"
+  | "ollama"
+  | "opensubtitles"
+  | "trakt";
+
+/** Save (or overwrite) a SHARED server credential — same PUT the Server tab's
+ *  "Save shared credential" button uses. Owner/admin only on the server. */
+export async function saveServerSharedCredential(input: {
+  provider: ServerCredentialProvider;
+  label: string;
+  value: string;
+}): Promise<void> {
+  await serverRequest("PUT", "/api/admin/credentials", {
+    provider: input.provider,
+    label: input.label.trim().length > 0 ? input.label : "Shared",
+    value: input.value,
+  });
+}
+
+export interface ServerInviteResult {
+  token: string;
+  invite: { id: string };
+}
+
+/** Create a household invite — same POST the Server tab's invite form uses. The
+ *  caller builds the shareable URL from the returned token. */
+export async function createServerInvite(input: {
+  label?: string;
+  role: "member" | "admin" | "restricted";
+  simpleMode: boolean;
+  maxUses: number;
+  expiresInSeconds: number;
+}): Promise<ServerInviteResult> {
+  return serverRequest<ServerInviteResult>("POST", "/api/admin/invites", {
+    label: input.label?.trim() || undefined,
+    role: input.role,
+    simpleMode: input.simpleMode,
+    maxUses: input.maxUses,
+    expiresInSeconds: input.expiresInSeconds,
+  });
+}
+
+/** Read the owner-only health summary so the setup gate can count existing
+ *  credentials (and the wizard can show how many keys are configured). */
+export async function fetchServerAdminHealth(): Promise<{
+  counts: { credentials: number; profiles: number; activeInvites: number };
+}> {
+  return serverRequest("GET", "/api/admin/health");
+}
