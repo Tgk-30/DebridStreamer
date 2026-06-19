@@ -35,6 +35,9 @@ interface ServerSessionContextValue {
   /** The account's household profiles (drives the picker). */
   profiles: ServerProfileSummary[];
   setProfiles: (profiles: ServerProfileSummary[]) => void;
+  /** Whether the server can transcode (operator flag on + ffmpeg present). A
+   *  static server capability captured once at bootstrap. */
+  transcodeAvailable: boolean;
 }
 
 const ServerSessionCtx = createContext<ServerSessionContextValue>({
@@ -42,15 +45,18 @@ const ServerSessionCtx = createContext<ServerSessionContextValue>({
   setSession: () => {},
   profiles: [],
   setProfiles: () => {},
+  transcodeAvailable: false,
 });
 
 export function ServerSessionProvider({
   initial,
   initialProfiles = [],
+  initialTranscodeAvailable = false,
   children,
 }: {
   initial: ServerSession | null;
   initialProfiles?: ServerProfileSummary[];
+  initialTranscodeAvailable?: boolean;
   children: ReactNode;
 }) {
   const [session, setSession] = useState<ServerSession | null>(initial);
@@ -62,11 +68,22 @@ export function ServerSessionProvider({
   );
   return (
     <ServerSessionCtx.Provider
-      value={{ session, setSession: set, profiles, setProfiles: setList }}
+      value={{
+        session,
+        setSession: set,
+        profiles,
+        setProfiles: setList,
+        transcodeAvailable: initialTranscodeAvailable,
+      }}
     >
       {children}
     </ServerSessionCtx.Provider>
   );
+}
+
+/** Whether the server advertises transcoding (Server Mode capability). */
+export function useTranscodeAvailable(): boolean {
+  return useContext(ServerSessionCtx).transcodeAvailable;
 }
 
 /** The current Server-Mode session, or null in Local Mode / before sign-in. */

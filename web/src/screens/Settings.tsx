@@ -26,6 +26,7 @@ import QRCode from "qrcode";
 import { useAppStore } from "../store/AppStore";
 import {
   useServerSession,
+  useTranscodeAvailable,
   useSetServerSession,
 } from "../lib/ServerSessionContext";
 import { readCsrfToken } from "../lib/serverSession";
@@ -905,6 +906,9 @@ function PlaybackTab({ draft, patch }: TabProps) {
     null;
   const sizeCapValue =
     sizeCapOption == null ? CUSTOM_STREAM_SIZE_CAP : String(sizeCapOption.value);
+  // The server-transcode option is only meaningful in Server Mode AND only when
+  // the operator enabled it (+ ffmpeg present), advertised via bootstrap.
+  const canTranscode = isServerMode() && useTranscodeAvailable();
 
   return (
     <div className="settings-fields">
@@ -926,6 +930,20 @@ function PlaybackTab({ draft, patch }: TabProps) {
           <span className="t-secondary"> — prefer smaller, lower-resolution sources (≤720p, ≤5&nbsp;GB) to use less bandwidth, including for instant/watchlist playback. No re-encoding.</span>
         </span>
       </label>
+
+      {canTranscode && (
+        <label className="settings-toggle-row">
+          <input
+            type="checkbox"
+            checked={draft.transcode}
+            onChange={(event) => patch({ transcode: event.target.checked })}
+          />
+          <span>
+            <strong>Reduce playback bitrate (server transcode)</strong>
+            <span className="t-secondary"> — the server re-encodes playback to a 720p stream to use less bandwidth (uses more server CPU). Complements Data Saver, which only caps the source file picked.</span>
+          </span>
+        </label>
+      )}
 
       <label className="settings-toggle-row">
         <input

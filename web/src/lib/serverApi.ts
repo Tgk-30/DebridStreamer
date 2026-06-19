@@ -101,7 +101,10 @@ export async function fetchServerStreams(input: {
   };
 }
 
-export async function resolveServerStream(row: StreamRow): Promise<StreamInfo> {
+export async function resolveServerStream(
+  row: StreamRow,
+  opts: { transcode?: boolean } = {},
+): Promise<StreamInfo> {
   const response = await serverRequest<{ stream: StreamInfo }>(
     "POST",
     "/api/streams/resolve",
@@ -110,9 +113,15 @@ export async function resolveServerStream(row: StreamRow): Promise<StreamInfo> {
       preferredService: row.cachedOn,
     },
   );
+  // When transcoding is requested, point the player at the session's HLS manifest
+  // variant of the same playback URL. VideoPlayer sniffs the ".m3u8" suffix and
+  // plays it via hls.js — so no player change is needed.
+  const path = opts.transcode
+    ? `${response.stream.streamURL}/index.m3u8`
+    : response.stream.streamURL;
   return {
     ...response.stream,
-    streamURL: absoluteServerURL(response.stream.streamURL),
+    streamURL: absoluteServerURL(path),
   };
 }
 

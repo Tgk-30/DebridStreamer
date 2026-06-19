@@ -92,6 +92,7 @@ const SettingsKeys = {
   streamMaxQuality: "stream_max_quality",
   streamMaxSizeGB: "stream_max_size_gb",
   dataSaver: "data_saver",
+  transcode: "transcode",
 } as const;
 
 /** Marker written into the KV table for secret-valued keys; the real value
@@ -191,6 +192,10 @@ export interface AppSettings {
   /** Master Data Saver — clamps the stream list AND automatic (watchlist)
    *  playback to a bandwidth-friendly tier (≤720p, ≤5 GB) without transcoding. */
   dataSaver: boolean;
+  /** Server-Mode only: request the server's transcoded 720p HLS variant for
+   *  playback (lower bitrate, re-encoded). Only effective when the server
+   *  advertises transcodeAvailable. */
+  transcode: boolean;
 }
 
 /** Read a `VITE_*` env var without assuming `import.meta.env` exists. */
@@ -310,6 +315,7 @@ export function defaultSettings(): AppSettings {
     streamMaxQuality: "any",
     streamMaxSizeGB: 0,
     dataSaver: false,
+    transcode: false,
   };
 }
 
@@ -439,6 +445,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     streamMaxQuality,
     streamMaxSizeGB,
     dataSaver,
+    transcode,
     simpleMode,
   ] = await Promise.all([
     store.getSetting(SettingsKeys.aiProvider),
@@ -465,6 +472,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.streamMaxQuality),
     store.getSetting(SettingsKeys.streamMaxSizeGB),
     store.getSetting(SettingsKeys.dataSaver),
+    store.getSetting(SettingsKeys.transcode),
     store.getSetting(SettingsKeys.simpleMode),
   ]);
 
@@ -551,6 +559,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     streamMaxQuality: normalizeStreamMaxQuality(streamMaxQuality ?? base.streamMaxQuality),
     streamMaxSizeGB: normalizeStreamMaxSizeGB(streamMaxSizeGB ?? base.streamMaxSizeGB),
     dataSaver: dataSaver == null ? base.dataSaver : dataSaver === "true",
+    transcode: transcode == null ? base.transcode : transcode === "true",
   };
 }
 
@@ -649,6 +658,10 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     store.setSetting(
       SettingsKeys.dataSaver,
       settings.dataSaver ? "true" : "false",
+    ),
+    store.setSetting(
+      SettingsKeys.transcode,
+      settings.transcode ? "true" : "false",
     ),
     store.setSetting(
       SettingsKeys.builtInIndexersEnabled,

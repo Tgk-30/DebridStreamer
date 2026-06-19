@@ -26,6 +26,7 @@ import type { TorrentResult } from "../services/indexers/models";
 import type { StreamRow } from "../data/streams";
 import { resolveServerStream } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
+import { useTranscodeAvailable } from "../lib/ServerSessionContext";
 import "./Detail.css";
 
 // The VideoPlayer pulls in hls.js (large) and only mounts once the user starts
@@ -73,12 +74,14 @@ export function Detail() {
     openDetail,
     navigate,
     services,
+    settings,
     watchlist,
     toggleWatchlist,
     recordResume,
     continueWatching,
     cachedResolutions,
   } = useAppStore();
+  const transcodeAvailable = useTranscodeAvailable();
 
   const detail = useDetail(detailItem, services.tmdb);
   const streams = useStreams(
@@ -141,7 +144,11 @@ export function Detail() {
 
   async function resolveSelectedStream(row: StreamRow): Promise<StreamInfo> {
     if (isServerMode()) {
-      return resolveServerStream(row);
+      // Request the server's 720p HLS transcode when the user opted in and the
+      // server actually supports it; otherwise the plain proxy URL.
+      return resolveServerStream(row, {
+        transcode: settings.transcode && transcodeAvailable,
+      });
     }
     if (services.debrid == null || !services.debrid.hasServices) {
       throw new Error("Configure a debrid service to play.");

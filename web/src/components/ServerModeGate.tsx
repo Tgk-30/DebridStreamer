@@ -22,6 +22,7 @@ interface BootstrapResponse {
   session: ServerSession | null;
   profiles?: ProfileState | null;
   csrfToken?: string | null;
+  transcodeAvailable?: boolean;
 }
 
 interface AuthResponse {
@@ -91,6 +92,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
   const [session, setSession] = useState<ServerSession | null>(null);
   const [profiles, setProfiles] = useState<ServerProfileSummary[]>([]);
+  const [transcodeAvailable, setTranscodeAvailable] = useState(false);
   const [state, setState] = useState<GateState>(() =>
     baseURL == null ? { kind: "local" } : { kind: "loading", baseURL },
   );
@@ -132,6 +134,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         // Capture the CSRF token so mutating requests work cross-origin (where
         // document.cookie can't see ds_csrf).
         setCsrfToken(bootstrap.csrfToken);
+        setTranscodeAvailable(bootstrap.transcodeAvailable ?? false);
         if (bootstrap.setupRequired) setState({ kind: "setup", baseURL });
         else if (bootstrap.session != null) {
           setSession(bootstrap.session);
@@ -155,7 +158,11 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
 
   if (state.kind === "local" || state.kind === "ready") {
     return (
-      <ServerSessionProvider initial={session} initialProfiles={profiles}>
+      <ServerSessionProvider
+        initial={session}
+        initialProfiles={profiles}
+        initialTranscodeAvailable={transcodeAvailable}
+      >
         {children}
       </ServerSessionProvider>
     );
