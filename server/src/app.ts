@@ -44,7 +44,10 @@ import {
   sha256,
   verifyPassword,
 } from "./crypto.js";
-import { fetchUpstreamSafely } from "./ssrf.js";
+import { assertSafeUpstream, fetchUpstreamSafely } from "./ssrf.js";
+import { readFile } from "node:fs/promises";
+import { realTranscoder } from "./transcode.js";
+import { MANIFEST_NAME, TranscodeRegistry } from "./transcodeSession.js";
 import {
   CREDENTIAL_PROVIDERS,
   type AuthContext,
@@ -1511,7 +1514,12 @@ function streamContentType(fileName: string): string | null {
   return MIME_TYPES[ext] ?? null;
 }
 
-function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerConfig): void {
+function registerRoutes(
+  app: FastifyInstance,
+  db: AppDatabase,
+  config: ServerConfig,
+  transcode: { ready: boolean; registry: TranscodeRegistry },
+): void {
   const rateLimit = createRateLimiter();
 
   app.get("/api/health", async () => ({
@@ -1532,6 +1540,9 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
       // read document.cookie) can attach it as the x-csrf-token header on
       // mutating requests after a reload. Null when unauthenticated.
       csrfToken: auth != null ? (request.cookies?.[CSRF_COOKIE] ?? null) : null,
+      // Whether server-side transcoding is actually usable (operator flag on AND
+      // ffmpeg present at boot), so the client only offers it when it'll work.
+      transcodeAvailable: transcode.ready,
     };
   });
 
@@ -3016,11 +3027,89 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
       );
     },
   });
+
+  // --- Server-side transcoding (Phase 3b, opt-in) ----------------------------
+  // When transcoding isn't available (flag off OR ffmpeg absent), both routes
+  // 404 — indistinguishable from "not found" — and nothing above changes.
+
+  /** Load + ownership-validate a stream session (same scoping as the proxy). */
+  const loadTranscodeSession = (
+    request: FastifyRequest,
+  ): { id: string; encrypted_upstream_url: string } | null => {
+    const auth = requireAuth(db, request);
+    const id = (request.params as { id: string }).id;
+    return (
+      (db.sqlite
+        .prepare(
+          `SELECT id, encrypted_upstream_url
+           FROM stream_sessions
+           WHERE id = ? AND profile_id = ? AND revoked_at IS NULL AND expires_at > ?
+           LIMIT 1`,
+        )
+        .get(id, auth.profileId, nowISO()) as
+        | { id: string; encrypted_upstream_url: string }
+        | undefined) ?? null
+    );
+  };
+
+  // HLS manifest: starts/reuses an ffmpeg job and returns the playlist with each
+  // segment URI rewritten to an absolute, auth'd API path.
+  app.get("/api/stream/:id/index.m3u8", async (request, reply) => {
+    if (!transcode.ready) throw httpError(404, "Transcoding is not available.");
+    const row = loadTranscodeSession(request);
+    if (row == null) throw httpError(404, "Stream session not found.");
+    const upstreamUrl = decryptSecret(row.encrypted_upstream_url, config.secretKey);
+    // SSRF: validate the FIRST hop before handing the URL to ffmpeg (private
+    // addresses blocked unless the operator opted into raw URLs). Residual,
+    // accepted for now (consistent with the DNS-rebinding note in ssrf.ts): ffmpeg
+    // follows its OWN HTTP redirects, which are not re-validated per hop like the
+    // proxy's fetchUpstreamSafely does. Low risk in practice — the only upstreams
+    // are trusted debrid CDNs and admin-only raw sessions; a pre-resolve of the
+    // terminal URL is deferred because it would re-fetch (and could consume)
+    // single-use debrid links. Hardening follow-up: resolve+pin the final hop.
+    await assertSafeUpstream(upstreamUrl, config.allowRawStreamUrls);
+    const dir = await transcode.registry.ensureJob(row.id, upstreamUrl);
+    const manifest = await readFile(join(dir, MANIFEST_NAME), "utf8");
+    const rewritten = manifest.replace(
+      /^seg_\d{5}\.ts$/gm,
+      (name) => `/api/stream/${encodeURIComponent(row.id)}/${name}`,
+    );
+    reply.header("content-type", "application/vnd.apple.mpegurl");
+    reply.header("cache-control", "no-store");
+    return reply.send(rewritten);
+  });
+
+  // HLS segment: strict `seg_NNNNN.ts` only (no path traversal), served from the
+  // session's transcode dir.
+  app.get("/api/stream/:id/:segment", async (request, reply) => {
+    if (!transcode.ready) throw httpError(404, "Transcoding is not available.");
+    const segment = (request.params as { segment: string }).segment;
+    if (!/^seg_\d{5}\.ts$/.test(segment)) throw httpError(404, "Not found.");
+    const row = loadTranscodeSession(request);
+    if (row == null) throw httpError(404, "Stream session not found.");
+    const dir = transcode.registry.dirFor(row.id);
+    if (dir == null) throw httpError(404, "Segment not found.");
+    const path = join(dir, segment);
+    if (!existsSync(path)) throw httpError(404, "Segment not ready.");
+    reply.header("content-type", "video/mp2t");
+    reply.header("cache-control", "no-store");
+    return reply.send(createReadStream(path));
+  });
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const config = loadConfig(options.config);
   const db = new AppDatabase(config.databasePath);
+
+  // Transcoding (Phase 3b): probe ffmpeg ONLY when the operator opted in (zero
+  // boot cost otherwise). transcodeReady gates the routes + the bootstrap
+  // capability; the registry owns ffmpeg processes + temp dirs.
+  const transcoder = options.transcoder ?? realTranscoder;
+  const ffmpegPresent = config.enableTranscode ? await transcoder.detect() : false;
+  const transcodeReady = config.enableTranscode && ffmpegPresent;
+  const transcodeRegistry = new TranscodeRegistry(db, config, transcoder);
+  if (transcodeReady) transcodeRegistry.start();
+
   const app = Fastify({
     logger: config.logger,
     trustProxy: config.trustProxy,
@@ -3063,10 +3152,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.addHook("onClose", async () => {
+    await transcodeRegistry.stop();
     db.close();
   });
 
-  registerRoutes(app, db, config);
+  registerRoutes(app, db, config, { ready: transcodeReady, registry: transcodeRegistry });
   registerStaticApp(app, config);
   return app;
 }

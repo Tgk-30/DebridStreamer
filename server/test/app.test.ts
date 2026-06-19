@@ -1,9 +1,56 @@
 import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { gzipSync } from "node:zlib";
+import { EventEmitter } from "node:events";
+import { writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { buildApp } from "../src/app.js";
+import type { Transcoder } from "../src/transcode.js";
+
+// A fake ffmpeg surface so transcode tests run without a real binary: detect()
+// returns the configured availability, and spawnHls synchronously writes a stub
+// HLS manifest + one segment into the dir encoded in the argv, then returns a
+// fake child that "dies" cleanly when killed.
+const FAKE_MANIFEST = [
+  "#EXTM3U",
+  "#EXT-X-VERSION:3",
+  "#EXT-X-TARGETDURATION:6",
+  "#EXT-X-PLAYLIST-TYPE:VOD",
+  "#EXTINF:6.0,",
+  "seg_00000.ts",
+  "#EXT-X-ENDLIST",
+  "",
+].join("\n");
+
+function makeFakeTranscoder(opts: { detect?: boolean; writeOutput?: boolean } = {}): Transcoder {
+  return {
+    async detect() {
+      return opts.detect ?? true;
+    },
+    spawnHls(args: string[]) {
+      const manifestPath = args[args.length - 1] as string;
+      const dir = dirname(manifestPath);
+      // writeOutput:false simulates an ffmpeg that never produces a manifest (so
+      // ensureJob's start-timeout → 504 can be exercised).
+      if (opts.writeOutput !== false) {
+        writeFileSync(manifestPath, FAKE_MANIFEST);
+        writeFileSync(join(dir, "seg_00000.ts"), Buffer.from([0, 0, 0, 0]));
+      }
+      const child = new EventEmitter() as EventEmitter & {
+        kill: (signal?: string) => boolean;
+        stderr: null;
+      };
+      child.kill = () => {
+        setImmediate(() => child.emit("close", 0));
+        return true;
+      };
+      child.stderr = null;
+      return child as unknown as ReturnType<Transcoder["spawnHls"]>;
+    },
+  };
+}
 
 interface TestClient {
   app: FastifyInstance;
@@ -1340,6 +1387,182 @@ describe("DebridStreamer server", () => {
       csrf: true,
     });
     expect(again.statusCode).toBe(404);
+  });
+
+  // --- Phase 3b: server-side transcoding -------------------------------------
+
+  async function buildTranscodeApp(
+    config: Record<string, unknown> = {},
+    transcoder: Transcoder = makeFakeTranscoder(),
+  ): Promise<FastifyInstance> {
+    return buildApp({
+      config: {
+        databasePath: ":memory:",
+        dataDir: ".test-data",
+        secretKey: randomBytes(32),
+        cookieSecure: false,
+        logger: false,
+        allowRawStreamUrls: true,
+        enableTranscode: true,
+        ...config,
+      },
+      transcoder,
+    });
+  }
+
+  async function createRawSession(
+    client: TestClient,
+    upstreamUrl = "http://127.0.0.1:9/video",
+  ): Promise<{ id: string; playbackUrl: string }> {
+    const created = await request(client, {
+      method: "POST",
+      url: "/api/streams/sessions/raw",
+      csrf: true,
+      payload: { upstreamUrl, contentType: "video/mp4" },
+    });
+    expect(created.statusCode).toBe(200);
+    return json<{ session: { id: string; playbackUrl: string } }>(created).session;
+  }
+
+  it("transcode OFF: routes 404, capability false, and the proxy is unchanged", async () => {
+    const off = await buildTranscodeApp({ enableTranscode: false });
+    upstream = createServer((_req, res) => {
+      const body = Buffer.from("hello-bytes");
+      res.writeHead(200, {
+        "content-length": String(body.length),
+        "content-type": "video/mp4",
+        "accept-ranges": "bytes",
+      });
+      res.end(body);
+    });
+    await new Promise<void>((resolve) => upstream?.listen(0, "127.0.0.1", () => resolve()));
+    const address = upstream.address();
+    if (address == null || typeof address === "string") throw new Error("Expected TCP test server.");
+    upstreamUrl = `http://127.0.0.1:${address.port}/v`;
+    try {
+      const owner = await setupOwner(off);
+      const session = await createRawSession(owner, upstreamUrl);
+      expect(
+        json<{ transcodeAvailable: boolean }>(await request(owner, { method: "GET", url: "/api/bootstrap" })).transcodeAvailable,
+      ).toBe(false);
+      expect((await request(owner, { method: "GET", url: `/api/stream/${session.id}/index.m3u8` })).statusCode).toBe(404);
+      expect((await request(owner, { method: "GET", url: `/api/stream/${session.id}/seg_00000.ts` })).statusCode).toBe(404);
+      // The plain proxy still works (byte-identical to before this feature).
+      const proxied = await request(owner, { method: "GET", url: session.playbackUrl });
+      expect(proxied.statusCode).toBe(200);
+      expect(proxied.body).toBe("hello-bytes");
+    } finally {
+      await off.close();
+    }
+  });
+
+  it("transcode: ffmpeg absent → capability false and routes 404 even with the flag on", async () => {
+    const noFfmpeg = await buildTranscodeApp({ enableTranscode: true }, makeFakeTranscoder({ detect: false }));
+    try {
+      const owner = await setupOwner(noFfmpeg);
+      const session = await createRawSession(owner);
+      expect(
+        json<{ transcodeAvailable: boolean }>(await request(owner, { method: "GET", url: "/api/bootstrap" })).transcodeAvailable,
+      ).toBe(false);
+      expect((await request(owner, { method: "GET", url: `/api/stream/${session.id}/index.m3u8` })).statusCode).toBe(404);
+    } finally {
+      await noFfmpeg.close();
+    }
+  });
+
+  it("transcode ON (+ffmpeg): advertises the capability and serves an HLS manifest + segment", async () => {
+    const on = await buildTranscodeApp({ enableTranscode: true });
+    try {
+      const owner = await setupOwner(on);
+      expect(
+        json<{ transcodeAvailable: boolean }>(await request(owner, { method: "GET", url: "/api/bootstrap" })).transcodeAvailable,
+      ).toBe(true);
+      const session = await createRawSession(owner);
+
+      const manifest = await request(owner, { method: "GET", url: `/api/stream/${session.id}/index.m3u8` });
+      expect(manifest.statusCode).toBe(200);
+      expect(String(manifest.headers["content-type"])).toContain("application/vnd.apple.mpegurl");
+      expect(manifest.body).toContain("#EXTM3U");
+      // Segment URI rewritten to the absolute, auth'd API path.
+      expect(manifest.body).toContain(`/api/stream/${session.id}/seg_00000.ts`);
+
+      const seg = await request(owner, { method: "GET", url: `/api/stream/${session.id}/seg_00000.ts` });
+      expect(seg.statusCode).toBe(200);
+      expect(String(seg.headers["content-type"])).toContain("video/mp2t");
+    } finally {
+      await on.close();
+    }
+  });
+
+  it("transcode: a profile cannot read another profile's manifest/segments (IDOR)", async () => {
+    const on = await buildTranscodeApp({ enableTranscode: true });
+    try {
+      const owner = await setupOwner(on);
+      await createProfile(owner, "dave", "dave-password");
+      const dave = await login(on, "dave", "dave-password");
+      const session = await createRawSession(owner);
+      expect((await request(owner, { method: "GET", url: `/api/stream/${session.id}/index.m3u8` })).statusCode).toBe(200);
+      expect((await request(dave, { method: "GET", url: `/api/stream/${session.id}/index.m3u8` })).statusCode).toBe(404);
+      expect((await request(dave, { method: "GET", url: `/api/stream/${session.id}/seg_00000.ts` })).statusCode).toBe(404);
+    } finally {
+      await on.close();
+    }
+  });
+
+  it("transcode: a revoked session is refused by the transcode routes", async () => {
+    const on = await buildTranscodeApp({ enableTranscode: true });
+    try {
+      const owner = await setupOwner(on);
+      const session = await createRawSession(owner);
+      expect((await request(owner, { method: "GET", url: `/api/stream/${session.id}/index.m3u8` })).statusCode).toBe(200);
+      expect((await request(owner, { method: "POST", url: `/api/admin/streams/${session.id}/revoke`, csrf: true })).statusCode).toBe(200);
+      expect((await request(owner, { method: "GET", url: `/api/stream/${session.id}/index.m3u8` })).statusCode).toBe(404);
+      expect((await request(owner, { method: "GET", url: `/api/stream/${session.id}/seg_00000.ts` })).statusCode).toBe(404);
+    } finally {
+      await on.close();
+    }
+  });
+
+  it("transcode: the segment route rejects non-segment paths (no traversal)", async () => {
+    const on = await buildTranscodeApp({ enableTranscode: true });
+    try {
+      const owner = await setupOwner(on);
+      const session = await createRawSession(owner);
+      await request(owner, { method: "GET", url: `/api/stream/${session.id}/index.m3u8` }); // start the job
+      for (const bad of ["passwd", "seg_00000.ts.bak", "seg_0.ts", "seg_99999.txt", "evil.ts"]) {
+        expect((await request(owner, { method: "GET", url: `/api/stream/${session.id}/${bad}` })).statusCode).toBe(404);
+      }
+    } finally {
+      await on.close();
+    }
+  });
+
+  it("transcode: enforces the concurrency cap (503 when busy)", async () => {
+    const on = await buildTranscodeApp({ enableTranscode: true, maxTranscodes: 1 });
+    try {
+      const owner = await setupOwner(on);
+      const s1 = await createRawSession(owner);
+      const s2 = await createRawSession(owner);
+      expect((await request(owner, { method: "GET", url: `/api/stream/${s1.id}/index.m3u8` })).statusCode).toBe(200);
+      expect((await request(owner, { method: "GET", url: `/api/stream/${s2.id}/index.m3u8` })).statusCode).toBe(503);
+    } finally {
+      await on.close();
+    }
+  });
+
+  it("transcode: returns 504 when ffmpeg never produces a manifest", async () => {
+    const on = await buildTranscodeApp(
+      { enableTranscode: true, transcodeStartTimeoutMs: 200 },
+      makeFakeTranscoder({ writeOutput: false }), // never writes the HLS output
+    );
+    try {
+      const owner = await setupOwner(on);
+      const session = await createRawSession(owner);
+      const res = await request(owner, { method: "GET", url: `/api/stream/${session.id}/index.m3u8` });
+      expect(res.statusCode).toBe(504);
+    } finally {
+      await on.close();
+    }
   });
 
   it("restricted role: blocks management routes but allows browse + watchlist", async () => {

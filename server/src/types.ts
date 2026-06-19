@@ -39,6 +39,15 @@ export interface ServerConfig {
   cookieSameSite: CookieSameSite;
   sessionTtlSeconds: number;
   allowRawStreamUrls: boolean;
+  /** Operator opt-in for server-side HLS transcoding (Phase 3b). Default false.
+   *  When false — or when ffmpeg is absent at boot — the transcode routes 404 and
+   *  the /api/stream/:id proxy is byte-for-byte unchanged. */
+  enableTranscode: boolean;
+  /** Max concurrent ffmpeg transcode jobs. Default 1 (Pi-friendly). */
+  maxTranscodes: number;
+  /** How long to wait for ffmpeg to produce the first HLS manifest+segment
+   *  before giving up with a 504. Default 30s (raise on slow disks/CPUs). */
+  transcodeStartTimeoutMs: number;
   trustProxy: boolean;
   corsOrigin: string | null;
   logger: boolean;
@@ -62,4 +71,7 @@ export interface AuthContext {
 
 export interface BuildAppOptions {
   config?: Partial<ServerConfig>;
+  /** Test injection seam: swap the real ffmpeg child_process surface for a fake
+   *  so CI never needs a real ffmpeg binary. Defaults to realTranscoder. */
+  transcoder?: import("./transcode.js").Transcoder;
 }

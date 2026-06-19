@@ -192,3 +192,9 @@ CREATE TABLE invites (
 
 CREATE INDEX invites_active_idx ON invites(expires_at, revoked_at);
 `;
+
+// Phase 3b: track a session's active transcode temp dir so a crash leftover can
+// be swept on boot. Nullable → existing rows + the proxy path are unaffected.
+export const MIGRATION_005 = `
+ALTER TABLE stream_sessions ADD COLUMN transcode_dir TEXT;
+`;

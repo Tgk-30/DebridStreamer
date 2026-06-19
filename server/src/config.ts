@@ -70,6 +70,15 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     allowRawStreamUrls:
       overrides.allowRawStreamUrls ??
       boolEnv("DS_SERVER_ALLOW_RAW_STREAM_URLS", process.env.NODE_ENV !== "production"),
+    // Hard-default OFF in every environment (incl. dev) — transcoding is a
+    // deliberate operator opt-in, not a dev convenience.
+    enableTranscode:
+      overrides.enableTranscode ?? boolEnv("DS_SERVER_ENABLE_TRANSCODE", false),
+    maxTranscodes:
+      overrides.maxTranscodes ?? numberEnv("DS_SERVER_MAX_TRANSCODES", 1),
+    transcodeStartTimeoutMs:
+      overrides.transcodeStartTimeoutMs ??
+      numberEnv("DS_SERVER_TRANSCODE_START_TIMEOUT_MS", 30_000),
     trustProxy: overrides.trustProxy ?? boolEnv("DS_SERVER_TRUST_PROXY", false),
     corsOrigin: overrides.corsOrigin ?? process.env.DS_SERVER_CORS_ORIGIN ?? null,
     logger: overrides.logger ?? boolEnv("DS_SERVER_LOGGER", process.env.NODE_ENV === "production"),
