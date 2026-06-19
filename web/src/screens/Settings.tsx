@@ -615,7 +615,7 @@ export function Settings() {
   const saveLabel = hasUnsavedChanges ? "Save changes" : saved ? "Saved" : "Up to date";
   const saveNote = hasUnsavedChanges
     ? "Unsaved changes are local until you save this profile."
-    : "Saved to this profile · desktop secrets use the OS keychain when available";
+    : "Profile saved · keychain protected";
 
   return (
     <div className="settings-screen">

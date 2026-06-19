@@ -85,6 +85,14 @@
   color: rgba(255, 255, 255, 0.9);
   font-weight: 650;
   scroll-snap-align: start;
+  white-space: nowrap;
+}
+.mood-chip-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mood-status {
@@ -151,13 +159,6 @@
     line-height: 1.15;
   }
 
-  .mood-chip-label {
-    display: block;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 }
 
 @media (max-width: 380px) {

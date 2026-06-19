@@ -180,8 +180,8 @@
 
 @media (min-width: 700px) and (max-width: 1199px) {
   .nav-rail {
-    gap: var(--sp-sm);
-    padding: max(24px, env(safe-area-inset-top)) 8px max(28px, env(safe-area-inset-bottom));
+    gap: 10px;
+    padding: max(24px, env(safe-area-inset-top)) 10px max(28px, env(safe-area-inset-bottom));
   }
 
   .nav-rail-section {
@@ -193,26 +193,43 @@
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 
+  .nav-rail-group-label {
+    display: block;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+
   .nav-rail-btn {
-    min-height: 54px;
-    padding: 0;
-    border-radius: 16px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 9px;
+    min-height: 44px;
+    padding: 0 9px;
+    border-radius: 13px;
   }
 
   .nav-rail-btn svg {
-    width: 23px;
-    height: 23px;
+    width: 21px;
+    height: 21px;
   }
 
   .nav-rail-icon {
-    width: 34px;
-    height: 34px;
-    border-radius: 14px;
+    width: 29px;
+    height: 29px;
+    border-radius: 11px;
     background: rgba(255, 255, 255, 0.045);
   }
 
   .nav-rail-label {
-    display: none;
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    color: currentColor;
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .nav-rail-btn.is-selected {
@@ -279,15 +296,19 @@
   }
 
   .nav-rail-more-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 29;
+    position: absolute;
+    left: 50%;
+    bottom: calc(-1 * var(--mobile-nav-bottom));
+    z-index: 31;
     display: block;
+    width: 100vw;
+    height: 100dvh;
     border: 0;
-    background: rgba(0, 0, 0, 0.74);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background: rgba(0, 0, 0, 0.58);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     cursor: default;
+    transform: translateX(-50%);
   }
 
   .nav-rail-btn {
