@@ -116,8 +116,21 @@ const patchProfileSchema = z.object({
   disabled: z.boolean().optional(),
 });
 
+// A MediaPreview display snapshot. Cap its serialized size so a client can't
+// persist arbitrarily large blobs per row (defense-in-depth above Fastify's 1MB
+// body limit). 32 KB is ~16x a normal preview, so no legitimate payload is cut.
+const boundedPreview = z
+  .unknown()
+  .refine((value) => JSON.stringify(value ?? null).length <= 32_768, {
+    message: "preview payload is too large",
+  });
+
+// Bounds the :mediaId path param (written into watchlist/history rows + audit
+// log). Matches the cap on other id params in this file; rejects empty/oversized.
+const mediaIdParamSchema = z.string().trim().min(1).max(128);
+
 const watchlistBodySchema = z.object({
-  preview: z.unknown(),
+  preview: boundedPreview,
 });
 
 const historyBodySchema = z.object({
@@ -126,7 +139,7 @@ const historyBodySchema = z.object({
   durationSeconds: z.number().positive().nullable().optional(),
   completed: z.boolean().default(false),
   streamQuality: z.string().trim().max(80).nullable().optional(),
-  preview: z.unknown(),
+  preview: boundedPreview,
   lastWatched: z.string().datetime().optional(),
 });
 
@@ -354,6 +367,15 @@ function createUserAndProfile(
   const userId = randomId("user");
   const profileId = randomId("profile");
   const now = nowISO();
+  // Surface a duplicate username as a clean 409 instead of an opaque 500 from the
+  // UNIQUE(username) constraint. Callers run this inside a BEGIN IMMEDIATE
+  // transaction, so this check + insert are atomic (no TOCTOU).
+  const existingUser = db.sqlite
+    .prepare("SELECT 1 FROM users WHERE username = ? COLLATE NOCASE LIMIT 1")
+    .get(input.username);
+  if (existingUser != null) {
+    throw httpError(409, "Username already taken.");
+  }
   db.sqlite
     .prepare(
       `INSERT INTO users
@@ -1779,7 +1801,9 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
   app.put("/api/library/watchlist/:mediaId", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
-    const mediaId = (request.params as { mediaId: string }).mediaId;
+    const mediaId = mediaIdParamSchema.parse(
+      (request.params as { mediaId: string }).mediaId,
+    );
     const body = parseBody(watchlistBodySchema, request.body);
     db.sqlite
       .prepare(
@@ -1796,7 +1820,9 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
   app.delete("/api/library/watchlist/:mediaId", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
-    const mediaId = (request.params as { mediaId: string }).mediaId;
+    const mediaId = mediaIdParamSchema.parse(
+      (request.params as { mediaId: string }).mediaId,
+    );
     db.sqlite
       .prepare("DELETE FROM watchlist WHERE profile_id = ? AND media_id = ?")
       .run(auth.profileId, mediaId);
@@ -1824,7 +1850,9 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
   app.put("/api/history/:mediaId", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
-    const mediaId = (request.params as { mediaId: string }).mediaId;
+    const mediaId = mediaIdParamSchema.parse(
+      (request.params as { mediaId: string }).mediaId,
+    );
     const body = parseBody(historyBodySchema, request.body);
     const episodeId = body.episodeId ?? null;
     const episodeKey = episodeId ?? "";
@@ -1927,7 +1955,10 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
     const params = stringQueryParams(rawQuery, new Set(["type"]));
     if (params.page == null) params.page = "1";
     if (params.language == null) params.language = "en-US";
-    if (params.include_adult == null) params.include_adult = "false";
+    // Force include_adult off server-side (overwrite, not default): the client
+    // only ever wants false, and a hand-crafted include_adult=true must not pull
+    // adult results through the server.
+    params.include_adult = "false";
     return discoverServerMedia(db, config, auth.profileId, {
       type: query.type,
       params,

@@ -40,7 +40,12 @@ function platformKey() {
   const platform = navigator.platform.toLowerCase();
   const narrow = window.matchMedia?.("(max-width: 640px)").matches === true;
   const touch = navigator.maxTouchPoints > 1;
-  if (/iphone|ipad|android|mobile/.test(ua) || narrow || touch) return "mobile";
+  // iPadOS 13+ reports a desktop "Mac OS" UA, so detect an iPad as a Mac UA that
+  // ALSO has a touchscreen (real Macs report maxTouchPoints 0). A bare `touch`
+  // check would instead misclassify Windows touchscreen laptops / Surface /
+  // 2-in-1s (wide screen, maxTouchPoints ~10) as mobile and hide their installer.
+  const isIpadOS = touch && (platform.includes("mac") || ua.includes("mac os"));
+  if (/iphone|ipad|android|mobile/.test(ua) || narrow || isIpadOS) return "mobile";
   if (platform.includes("mac") || ua.includes("mac os")) return "mac";
   if (platform.includes("win") || ua.includes("windows")) return "windows";
   if (platform.includes("linux") || ua.includes("x11")) return "linux";

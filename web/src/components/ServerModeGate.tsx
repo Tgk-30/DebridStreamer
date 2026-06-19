@@ -47,7 +47,16 @@ function jsonFetch<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   }).then(async (response) => {
     const text = await response.text();
-    const parsed = text.length > 0 ? (JSON.parse(text) as { error?: string }) : {};
+    let parsed: { error?: string } = {};
+    if (text.length > 0) {
+      try {
+        parsed = JSON.parse(text) as { error?: string };
+      } catch {
+        // Non-JSON body (e.g. a reverse-proxy HTML error page) — fall back to a
+        // status-based message instead of throwing a misleading parse error.
+        parsed = {};
+      }
+    }
     if (!response.ok) {
       throw new Error(parsed.error ?? `Server request failed (${response.status}).`);
     }

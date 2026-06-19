@@ -45,13 +45,24 @@ async function serverRequest<T>(
   });
 
   const text = await response.text();
-  const parsed = text.length > 0 ? (JSON.parse(text) as JsonObject) : {};
+  let parsed: JsonObject = {};
+  if (text.length > 0) {
+    try {
+      parsed = JSON.parse(text) as JsonObject;
+    } catch {
+      // Non-JSON body (e.g. an HTML 5xx page from a reverse proxy) — fall back to
+      // a status-based message rather than throwing a misleading parse error.
+      parsed = {};
+    }
+  }
   if (!response.ok) {
     const message =
       typeof parsed.error === "string"
         ? parsed.error
         : `Server request failed (${response.status}).`;
-    throw new Error(message);
+    const error = new Error(message) as Error & { status: number };
+    error.status = response.status;
+    throw error;
   }
   return parsed as T;
 }

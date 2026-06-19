@@ -86,13 +86,25 @@ class ServerAPI {
     });
 
     const text = await response.text();
-    const parsed = text.length > 0 ? (JSON.parse(text) as JsonObject) : {};
+    let parsed: JsonObject = {};
+    if (text.length > 0) {
+      try {
+        parsed = JSON.parse(text) as JsonObject;
+      } catch {
+        // Non-JSON body (e.g. an HTML 5xx page from a reverse proxy). Fall back
+        // to a status-based message below rather than throwing a parse error
+        // that masks the real HTTP status.
+        parsed = {};
+      }
+    }
     if (!response.ok) {
       const message =
         typeof parsed.error === "string"
           ? parsed.error
           : `Server request failed (${response.status}).`;
-      throw new Error(message);
+      const error = new Error(message) as Error & { status: number };
+      error.status = response.status;
+      throw error;
     }
     return parsed as T;
   }
@@ -177,7 +189,13 @@ export class RemoteStore implements Store, SecretStore {
     const provider = SECRET_CREDENTIAL_PROVIDERS[key];
     if (provider != null) {
       if (value.trim().length === 0) {
-        await this.deleteSecret(key);
+        // Empty = NO CHANGE, never a delete. In Server Mode getSecret() always
+        // returns null (write-only), so saveSettingsToStore re-sends every
+        // provider key as "" on any unrelated save; treating that as a delete
+        // would silently destroy a working server credential the user never
+        // touched. Explicit removal goes through the Server tab's credentials UI
+        // (DELETE /api/profile/credentials/:id). Mirrors why listDebridConfigs()
+        // returns [] to keep debrid tokens out of destructive reconciliation.
         return;
       }
       await this.api.put("/api/profile/credentials", {
@@ -197,11 +215,12 @@ export class RemoteStore implements Store, SecretStore {
   }
 
   async deleteSecret(key: string): Promise<void> {
-    const provider = SECRET_CREDENTIAL_PROVIDERS[key];
-    if (provider != null) {
-      await this.api.delete(`/api/profile/credentials/${encodeURIComponent(`profile-${provider}`)}`)
-        .catch(() => {});
-    }
+    // Provider credentials are deliberately NOT deleted through this settings
+    // round-trip (see setSecret): the phantom empty value that arrives on every
+    // unrelated save would otherwise destroy a server credential the user never
+    // touched. Explicit removal is done via the Server tab's credentials UI
+    // (DELETE /api/profile/credentials/:id). Non-provider keys only ever lived in
+    // the in-memory pending map, so clearing that is sufficient.
     this.pendingSecrets.delete(key);
   }
 
@@ -232,18 +251,36 @@ export class RemoteStore implements Store, SecretStore {
   }
 
   async recordHistory(entry: WatchHistoryUpsert): Promise<WatchHistoryRecord> {
+    const episodeId = entry.episodeId ?? null;
+    const progressSeconds = entry.progressSeconds ?? 0;
+    const durationSeconds = entry.durationSeconds ?? null;
+    const completed = entry.completed ?? false;
+    const streamQuality = entry.streamQuality ?? null;
+    const lastWatched = entry.lastWatched ?? nowISO();
     await this.api.put(`/api/history/${encodeURIComponent(entry.mediaId)}`, {
-      episodeId: entry.episodeId ?? null,
-      progressSeconds: entry.progressSeconds ?? 0,
-      durationSeconds: entry.durationSeconds ?? null,
-      completed: entry.completed ?? false,
-      streamQuality: entry.streamQuality ?? null,
+      episodeId,
+      progressSeconds,
+      durationSeconds,
+      completed,
+      streamQuality,
       preview: entry.preview,
-      lastWatched: entry.lastWatched ?? nowISO(),
+      lastWatched,
     });
-    const saved = await this.getResume(entry.mediaId, entry.episodeId ?? null);
-    if (saved == null) throw new Error("History write did not round-trip.");
-    return saved;
+    // The PUT is authoritative; build the record locally instead of re-fetching
+    // up to 500 history rows to re-find the row we just wrote — that read-back
+    // could page the new row out (when >500 newer rows exist) and spuriously
+    // throw even though the write succeeded.
+    return {
+      id: historyKey(entry.mediaId, episodeId),
+      mediaId: entry.mediaId,
+      episodeId,
+      progressSeconds,
+      durationSeconds,
+      completed,
+      lastWatched,
+      streamQuality,
+      preview: entry.preview,
+    };
   }
 
   async listHistory(limit = 100): Promise<WatchHistoryRecord[]> {
