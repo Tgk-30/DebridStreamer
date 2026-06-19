@@ -2178,6 +2178,12 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
       throw httpError(404, "Folder not found.");
     }
     if (existing.is_system === 1) throw httpError(400, "System folders cannot be edited.");
+    // A re-parent must point at one of THIS profile's folders — else the raw FK
+    // would 500 on a dangling id, or (worse) accept another profile's folder id
+    // (the FK checks existence, not ownership). Mirrors the createFolder guard.
+    if (body.parentId != null && !folderExistsForProfile(db, auth.profileId, body.parentId)) {
+      throw httpError(400, "Unknown parent folder.");
+    }
     db.sqlite
       .prepare(
         `UPDATE library_folders SET name = ?, parent_id = ?, updated_at = ?
@@ -2244,6 +2250,7 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (profile_id, media_id, folder_id) DO UPDATE SET
            list_type = excluded.list_type,
+           added_at = COALESCE(?, user_library.added_at),
            custom_list_name = COALESCE(excluded.custom_list_name, user_library.custom_list_name),
            release_date_hint = COALESCE(excluded.release_date_hint, user_library.release_date_hint),
            renewal_status = COALESCE(excluded.renewal_status, user_library.renewal_status),
@@ -2260,6 +2267,10 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
         body.releaseDateHint ?? null,
         body.renewalStatus ?? null,
         serializePreview(body.preview),
+        // On conflict: a caller-supplied addedAt wins (DexieStore parity); omitted
+        // → NULL → COALESCE keeps the existing added_at. Distinct from the insert
+        // value above (which defaults to `now` to satisfy NOT NULL on first add).
+        body.addedAt ?? null,
       );
     audit(db, auth, "library.entry.upsert", "library_entry", mediaId);
     const row = db.sqlite

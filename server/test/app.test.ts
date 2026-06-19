@@ -365,6 +365,14 @@ describe("DebridStreamer server", () => {
     ).entry;
     expect(e1b.id).toBe(e1.id);
     expect(e1b.customListName).toBe("Fav");
+
+    // An explicit addedAt on re-add wins (DexieStore parity); omitting it keeps
+    // the existing value (already covered by the m1 dedup above).
+    expect(
+      json<{ entry: { addedAt: string } }>(
+        await request(owner, { method: "PUT", url: "/api/library/m3", csrf: true, payload: { listType: "favorites", addedAt: "2030-01-01T00:00:00.000Z", preview: { id: "m3" } } }),
+      ).entry.addedAt,
+    ).toBe("2030-01-01T00:00:00.000Z");
     expect(
       json<{ items: Array<{ mediaId: string }> }>(
         await request(owner, { method: "GET", url: "/api/library?listType=favorites" }),
@@ -434,6 +442,42 @@ describe("DebridStreamer server", () => {
     expect(
       json<{ folders: Array<{ name: string }> }>(await request(owner, { method: "GET", url: "/api/library/folders?listType=favorites" })).folders.some((f) => f.name === "Owner Folder"),
     ).toBe(true);
+  });
+
+  it("saveFolder validates parentId: unknown or cross-profile → 400 (no 500, no IDOR re-parent)", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "dave", "dave-password");
+    const dave = await login(app, "dave", "dave-password");
+
+    const ownerFolderId = json<{ folder: { id: string } }>(
+      await request(owner, { method: "POST", url: "/api/library/folders", csrf: true, payload: { name: "Owner", listType: "favorites" } }),
+    ).folder.id;
+    const daveFolderId = json<{ folder: { id: string } }>(
+      await request(dave, { method: "POST", url: "/api/library/folders", csrf: true, payload: { name: "Dave", listType: "favorites" } }),
+    ).folder.id;
+
+    const saveBody = (parentId: string | null) => ({
+      name: "Renamed",
+      parentId,
+      listType: "favorites",
+      folderKind: "manual",
+      isSystem: false,
+      createdAt: "2020-01-01T00:00:00.000Z",
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    });
+
+    // Unknown parent → clean 400 (not a raw FK 500).
+    expect(
+      (await request(dave, { method: "PUT", url: `/api/library/folders/${daveFolderId}`, csrf: true, payload: saveBody("does-not-exist") })).statusCode,
+    ).toBe(400);
+    // Another profile's folder as parent → 400 (no cross-profile re-parent).
+    expect(
+      (await request(dave, { method: "PUT", url: `/api/library/folders/${daveFolderId}`, csrf: true, payload: saveBody(ownerFolderId) })).statusCode,
+    ).toBe(400);
+    // Valid same-profile rename (no parent) → 200.
+    expect(
+      (await request(dave, { method: "PUT", url: `/api/library/folders/${daveFolderId}`, csrf: true, payload: saveBody(null) })).statusCode,
+    ).toBe(200);
   });
 
   it("uses server credentials by default and profile credentials as overrides", async () => {
