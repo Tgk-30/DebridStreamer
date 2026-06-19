@@ -7,13 +7,20 @@ import {
 } from "../lib/serverSession";
 import {
   ServerSessionProvider,
+  type ServerProfileSummary,
   type ServerSession,
 } from "../lib/ServerSessionContext";
 import "./ServerModeGate.css";
 
+interface ProfileState {
+  profiles: ServerProfileSummary[];
+  activeProfileId: string;
+}
+
 interface BootstrapResponse {
   setupRequired: boolean;
   session: ServerSession | null;
+  profiles?: ProfileState | null;
   csrfToken?: string | null;
 }
 
@@ -83,18 +90,25 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
   const inviteToken = useMemo(() => inviteTokenFromURL(), []);
   const [attempt, setAttempt] = useState(0);
   const [session, setSession] = useState<ServerSession | null>(null);
+  const [profiles, setProfiles] = useState<ServerProfileSummary[]>([]);
   const [state, setState] = useState<GateState>(() =>
     baseURL == null ? { kind: "local" } : { kind: "loading", baseURL },
   );
 
   // Auth forms reach "ready" without a session object in hand; fetch it once so
-  // consumers (simpleMode/role) have the value without waiting for a reload.
+  // consumers (simpleMode/role + the "who's watching" picker) have the value
+  // without waiting for a reload.
   async function captureSession(url: string): Promise<void> {
     try {
-      const res = await jsonFetch<{ session: ServerSession | null }>(url, "/api/auth/session");
+      const res = await jsonFetch<{
+        session: ServerSession | null;
+        profiles?: ProfileState | null;
+      }>(url, "/api/auth/session");
       setSession(res.session);
+      setProfiles(res.profiles?.profiles ?? []);
     } catch {
       setSession(null);
+      setProfiles([]);
     }
   }
 
@@ -121,6 +135,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         if (bootstrap.setupRequired) setState({ kind: "setup", baseURL });
         else if (bootstrap.session != null) {
           setSession(bootstrap.session);
+          setProfiles(bootstrap.profiles?.profiles ?? []);
           setState({ kind: "ready", baseURL });
         }
         else if (inviteToken != null) {
@@ -139,7 +154,11 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
   }, [baseURL, inviteToken, attempt]);
 
   if (state.kind === "local" || state.kind === "ready") {
-    return <ServerSessionProvider initial={session}>{children}</ServerSessionProvider>;
+    return (
+      <ServerSessionProvider initial={session} initialProfiles={profiles}>
+        {children}
+      </ServerSessionProvider>
+    );
   }
   if (state.kind === "loading") {
     return <GateShell title="Connecting" copy="Checking the DebridStreamer server." baseURL={state.baseURL} />;

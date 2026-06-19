@@ -7,6 +7,10 @@ import { useState } from "react";
 import { Icon, type IconName } from "./Icon";
 import { isServerMode } from "../lib/serverMode";
 import { useSimpleMode } from "../store/AppStore";
+import {
+  useServerProfiles,
+  useServerSession,
+} from "../lib/ServerSessionContext";
 import "./NavRail.css";
 
 // Screens with no working backend in Server Mode (Debrid Library is Tauri-only).
@@ -30,6 +34,18 @@ export function isScreenHidden(
   if (opts.serverMode && SERVER_MODE_HIDDEN.has(id)) return true;
   if (opts.simpleMode && SIMPLE_MODE_HIDDEN.has(id)) return true;
   return false;
+}
+
+/** Whether to show the "who's watching" switcher entry. Pure + testable: only
+ *  in Server Mode, only with a handler wired, and only when the account has more
+ *  than one profile (a single-profile account has nothing to switch to, so there
+ *  is no forced picker). */
+export function shouldShowProfileSwitch(opts: {
+  serverMode: boolean;
+  hasHandler: boolean;
+  profileCount: number;
+}): boolean {
+  return opts.serverMode && opts.hasHandler && opts.profileCount > 1;
 }
 
 /** Pure, testable nav filter for the current modes. */
@@ -92,15 +108,37 @@ const GROUPS = ["Primary", "Library", "Tools", "Account"] as const;
 interface NavRailProps {
   selected: ScreenId;
   onSelect: (id: ScreenId) => void;
+  /** Opens the "who's watching" picker (Server Mode only). When absent or when
+   *  the account has a single profile, the switch entry is not shown. */
+  onSwitchProfile?: () => void;
 }
 
-export function NavRail({ selected, onSelect }: NavRailProps) {
+function initialOf(name: string): string {
+  const trimmed = name.trim();
+  return trimmed.length > 0 ? trimmed[0]!.toUpperCase() : "?";
+}
+
+export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const serverMode = isServerMode();
   const simpleMode = useSimpleMode();
+  const session = useServerSession();
+  const profiles = useServerProfiles();
   const navItems = visibleNavItems(NAV_ITEMS, { serverMode, simpleMode });
   const moreItems = visibleNavItems(MOBILE_MORE_ITEMS, { serverMode, simpleMode });
   const moreSelected = moreItems.some((item) => item.id === selected);
+  // Show the switcher only in Server Mode with a handler AND more than one
+  // profile — a single-profile account has no one to switch to (no forced
+  // picker, per the spec).
+  const showProfileSwitch = shouldShowProfileSwitch({
+    serverMode,
+    hasHandler: onSwitchProfile != null,
+    profileCount: profiles.length,
+  });
+  const activeProfile =
+    session != null
+      ? profiles.find((p) => p.id === session.profileId) ?? null
+      : null;
 
   function selectScreen(id: ScreenId) {
     setMoreOpen(false);
@@ -121,6 +159,30 @@ export function NavRail({ selected, onSelect }: NavRailProps) {
       {GROUPS.map((group) => (
         <div key={group} className="nav-rail-section" data-group={group}>
           <div className="nav-rail-group-label">{group}</div>
+          {group === "Account" && showProfileSwitch && (
+            <button
+              type="button"
+              className="nav-rail-btn nav-rail-profile"
+              data-mobile="false"
+              onClick={() => {
+                setMoreOpen(false);
+                onSwitchProfile?.();
+              }}
+              title="Switch profile"
+              aria-label={`Switch profile (current: ${session?.displayName ?? "profile"})`}
+            >
+              <span className="nav-rail-icon">
+                <span
+                  className="nav-rail-profile-avatar"
+                  style={{ background: activeProfile?.avatarColor ?? "#475569" }}
+                  aria-hidden
+                >
+                  {initialOf(session?.displayName ?? "?")}
+                </span>
+              </span>
+              <span className="nav-rail-label">Switch</span>
+            </button>
+          )}
           {navItems.filter((item) => item.group === group).map((item) => (
             <NavRailButton
               key={item.id}

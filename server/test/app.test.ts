@@ -1401,4 +1401,279 @@ describe("DebridStreamer server", () => {
     });
     expect(ownerCred.statusCode).toBe(200);
   });
+
+  // ---- Household sub-profiles ("who's watching") ---------------------------
+
+  interface AccountProfile {
+    id: string;
+    displayName: string;
+    avatarColor: string | null;
+    simpleMode: boolean;
+    isDefault: boolean;
+  }
+  interface ProfileState {
+    profiles: AccountProfile[];
+    activeProfileId: string;
+  }
+
+  async function createAccountProfile(
+    client: TestClient,
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    const response = await request(client, {
+      method: "POST",
+      url: "/api/account/profiles",
+      csrf: true,
+      payload,
+    });
+    expect(response.statusCode).toBe(200);
+    return json<{ profile: { id: string } }>(response).profile.id;
+  }
+
+  async function switchProfile(
+    client: TestClient,
+    profileId: string,
+  ): Promise<LightMyRequestResponse> {
+    return request(client, {
+      method: "POST",
+      url: "/api/profiles/switch",
+      csrf: true,
+      payload: { profileId },
+    });
+  }
+
+  it("creates household sub-profiles under one account and lists them with the default first", async () => {
+    const owner = await setupOwner(app);
+
+    const initial = json<ProfileState>(
+      await request(owner, { method: "GET", url: "/api/account/profiles" }),
+    );
+    expect(initial.profiles).toHaveLength(1);
+    expect(initial.profiles[0]?.isDefault).toBe(true);
+    expect(initial.activeProfileId).toBe(initial.profiles[0]?.id);
+
+    // A viewer profile needs no username; password is optional.
+    const kidId = await createAccountProfile(owner, {
+      displayName: "Kid",
+      avatarColor: "#22c55e",
+    });
+
+    const state = json<ProfileState>(
+      await request(owner, { method: "GET", url: "/api/account/profiles" }),
+    );
+    expect(state.profiles).toHaveLength(2);
+    expect(state.profiles[0]?.isDefault).toBe(true); // default first
+    const kid = state.profiles.find((p) => p.id === kidId);
+    expect(kid).toMatchObject({ displayName: "Kid", avatarColor: "#22c55e", isDefault: false });
+
+    // bootstrap + session both echo the picker payload.
+    const boot = json<{ profiles: ProfileState | null }>(
+      await request(owner, { method: "GET", url: "/api/bootstrap" }),
+    );
+    expect(boot.profiles?.profiles).toHaveLength(2);
+    const session = json<{ profiles: ProfileState }>(
+      await request(owner, { method: "GET", url: "/api/auth/session" }),
+    );
+    expect(session.profiles.profiles).toHaveLength(2);
+  });
+
+  it("switching the active profile changes the data scope (watchlist differs per profile)", async () => {
+    const owner = await setupOwner(app);
+    const defaultId = json<ProfileState>(
+      await request(owner, { method: "GET", url: "/api/account/profiles" }),
+    ).activeProfileId;
+    const kidId = await createAccountProfile(owner, { displayName: "Kid" });
+
+    // Default profile adds an item.
+    await request(owner, {
+      method: "PUT",
+      url: "/api/library/watchlist/tt-default",
+      csrf: true,
+      payload: { preview: { id: "tt-default", title: "Default pick" } },
+    });
+
+    // Switch to the kid profile — session + active scope follow it.
+    const switched = json<{ session: { profileId: string }; profiles: ProfileState }>(
+      await switchProfile(owner, kidId),
+    );
+    expect(switched.session.profileId).toBe(kidId);
+    expect(switched.profiles.activeProfileId).toBe(kidId);
+
+    // The kid profile starts empty (data is isolated by the active profile).
+    const kidWatchlist = json<{ items: unknown[] }>(
+      await request(owner, { method: "GET", url: "/api/library/watchlist" }),
+    );
+    expect(kidWatchlist.items).toHaveLength(0);
+
+    await request(owner, {
+      method: "PUT",
+      url: "/api/library/watchlist/tt-kid",
+      csrf: true,
+      payload: { preview: { id: "tt-kid", title: "Kid pick" } },
+    });
+    const kidAfter = json<{ items: Array<{ mediaId: string }> }>(
+      await request(owner, { method: "GET", url: "/api/library/watchlist" }),
+    );
+    expect(kidAfter.items.map((i) => i.mediaId)).toEqual(["tt-kid"]);
+
+    // Switch back to the default — its original item is intact, the kid's is not.
+    await switchProfile(owner, defaultId);
+    const defaultAfter = json<{ items: Array<{ mediaId: string }> }>(
+      await request(owner, { method: "GET", url: "/api/library/watchlist" }),
+    );
+    expect(defaultAfter.items.map((i) => i.mediaId)).toEqual(["tt-default"]);
+  });
+
+  it("renames, recolors, and deletes a sub-profile but keeps the default protected", async () => {
+    const owner = await setupOwner(app);
+    const defaultId = json<ProfileState>(
+      await request(owner, { method: "GET", url: "/api/account/profiles" }),
+    ).activeProfileId;
+    const kidId = await createAccountProfile(owner, { displayName: "Kid" });
+
+    // Rename + recolor.
+    const patched = json<{ profiles: AccountProfile[] }>(
+      await request(owner, {
+        method: "PATCH",
+        url: `/api/account/profiles/${kidId}`,
+        csrf: true,
+        payload: { displayName: "Teen", avatarColor: "#6366f1" },
+      }),
+    );
+    expect(patched.profiles.find((p) => p.id === kidId)).toMatchObject({
+      displayName: "Teen",
+      avatarColor: "#6366f1",
+    });
+
+    // The default profile can never be deleted.
+    const deleteDefault = await request(owner, {
+      method: "DELETE",
+      url: `/api/account/profiles/${defaultId}`,
+      csrf: true,
+    });
+    expect(deleteDefault.statusCode).toBe(400);
+
+    // A non-default sub-profile deletes cleanly.
+    const deleteKid = await request(owner, {
+      method: "DELETE",
+      url: `/api/account/profiles/${kidId}`,
+      csrf: true,
+    });
+    expect(deleteKid.statusCode).toBe(200);
+    const remaining = json<{ profiles: AccountProfile[] }>(deleteKid);
+    expect(remaining.profiles).toHaveLength(1);
+    expect(remaining.profiles[0]?.id).toBe(defaultId);
+  });
+
+  it("a session whose active profile is deleted falls back to the default", async () => {
+    const owner = await setupOwner(app);
+    const defaultId = json<ProfileState>(
+      await request(owner, { method: "GET", url: "/api/account/profiles" }),
+    ).activeProfileId;
+    const kidId = await createAccountProfile(owner, { displayName: "Kid" });
+
+    await switchProfile(owner, kidId);
+    expect(
+      json<{ session: { profileId: string } }>(
+        await request(owner, { method: "GET", url: "/api/auth/session" }),
+      ).session.profileId,
+    ).toBe(kidId);
+
+    // Delete the active profile, then confirm the session degrades to default.
+    await request(owner, {
+      method: "DELETE",
+      url: `/api/account/profiles/${kidId}`,
+      csrf: true,
+    });
+    expect(
+      json<{ session: { profileId: string } }>(
+        await request(owner, { method: "GET", url: "/api/auth/session" }),
+      ).session.profileId,
+    ).toBe(defaultId);
+  });
+
+  it("cannot switch to, read, rename, or delete another account's profile (IDOR-safe)", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "bob", "bob-password");
+    const bob = await login(app, "bob", "bob-password");
+
+    // Owner creates a household sub-profile.
+    const ownerKidId = await createAccountProfile(owner, { displayName: "Owner Kid" });
+
+    // bob's list never includes the owner's profiles.
+    const bobState = json<ProfileState>(
+      await request(bob, { method: "GET", url: "/api/account/profiles" }),
+    );
+    expect(bobState.profiles.some((p) => p.id === ownerKidId)).toBe(false);
+
+    // bob cannot switch to the owner's profile.
+    expect((await switchProfile(bob, ownerKidId)).statusCode).toBe(404);
+    // bob cannot rename it.
+    expect(
+      (
+        await request(bob, {
+          method: "PATCH",
+          url: `/api/account/profiles/${ownerKidId}`,
+          csrf: true,
+          payload: { displayName: "hacked" },
+        })
+      ).statusCode,
+    ).toBe(404);
+    // bob cannot delete it.
+    expect(
+      (
+        await request(bob, {
+          method: "DELETE",
+          url: `/api/account/profiles/${ownerKidId}`,
+          csrf: true,
+        })
+      ).statusCode,
+    ).toBe(404);
+
+    // The owner's profile is untouched.
+    const ownerState = json<ProfileState>(
+      await request(owner, { method: "GET", url: "/api/account/profiles" }),
+    );
+    expect(ownerState.profiles.find((p) => p.id === ownerKidId)?.displayName).toBe("Owner Kid");
+  });
+
+  it("requires auth and CSRF for sub-profile mutations", async () => {
+    const owner = await setupOwner(app);
+    const kidId = await createAccountProfile(owner, { displayName: "Kid" });
+
+    // Unauthenticated client.
+    const anon: TestClient = { app, cookies: new Map() };
+    expect(
+      (await request(anon, { method: "GET", url: "/api/account/profiles" })).statusCode,
+    ).toBe(401);
+
+    // Authenticated but missing CSRF → 403 on every unsafe route.
+    expect(
+      (
+        await request(owner, {
+          method: "POST",
+          url: "/api/account/profiles",
+          payload: { displayName: "NoCsrf" },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect((await request(owner, { method: "POST", url: "/api/profiles/switch", payload: { profileId: kidId } })).statusCode).toBe(403);
+    expect(
+      (await request(owner, { method: "PATCH", url: `/api/account/profiles/${kidId}`, payload: { displayName: "x" } })).statusCode,
+    ).toBe(403);
+    expect(
+      (await request(owner, { method: "DELETE", url: `/api/account/profiles/${kidId}` })).statusCode,
+    ).toBe(403);
+  });
+
+  it("restricted role cannot create/manage household sub-profiles", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "limited", "limited-password", "restricted");
+    const limited = await login(app, "limited", "limited-password");
+    // A restricted account can switch among its own profiles (a viewing
+    // convenience) but cannot create/rename/delete them (management).
+    expect(
+      (await request(limited, { method: "POST", url: "/api/account/profiles", csrf: true, payload: { displayName: "Kid" } })).statusCode,
+    ).toBe(403);
+  });
 });

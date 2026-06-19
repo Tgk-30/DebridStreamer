@@ -248,6 +248,75 @@ export async function revokeServerStreamSession(id: string): Promise<void> {
   );
 }
 
+// ---- Household sub-profiles ("who's watching") ----------------------------
+// These talk to the account-scoped /api/account/profiles + /api/profiles/switch
+// routes. A sub-profile is a viewer WITHIN the current account (no username; the
+// password is optional), distinct from the admin account-management surface in
+// Settings that uses /api/profiles. serverRequest already attaches credentials +
+// the CSRF header on the unsafe methods.
+
+export interface AccountProfile {
+  id: string;
+  displayName: string;
+  avatarColor: string | null;
+  simpleMode: boolean;
+  isDefault: boolean;
+}
+
+export interface AccountProfileState {
+  profiles: AccountProfile[];
+  activeProfileId: string;
+}
+
+export async function fetchAccountProfiles(): Promise<AccountProfileState> {
+  return serverRequest("GET", "/api/account/profiles");
+}
+
+export async function createAccountProfile(input: {
+  displayName: string;
+  avatarColor?: string | null;
+  password?: string | null;
+  simpleMode?: boolean;
+}): Promise<{ profile: AccountProfile }> {
+  return serverRequest("POST", "/api/account/profiles", {
+    displayName: input.displayName,
+    avatarColor: input.avatarColor ?? null,
+    // Only send a password when one was actually entered — the server treats it
+    // as optional for household viewer profiles.
+    ...(input.password != null && input.password.length > 0
+      ? { password: input.password }
+      : {}),
+    simpleMode: input.simpleMode ?? true,
+  });
+}
+
+export async function updateAccountProfile(
+  id: string,
+  patch: { displayName?: string; avatarColor?: string | null; simpleMode?: boolean },
+): Promise<{ ok: true; profiles: AccountProfile[] }> {
+  return serverRequest("PATCH", `/api/account/profiles/${encodeURIComponent(id)}`, patch);
+}
+
+export async function deleteAccountProfile(
+  id: string,
+): Promise<{ ok: true; profiles: AccountProfile[] }> {
+  return serverRequest("DELETE", `/api/account/profiles/${encodeURIComponent(id)}`);
+}
+
+export async function switchAccountProfile(profileId: string): Promise<{
+  session: {
+    profileId: string;
+    displayName: string;
+    avatarColor: string | null;
+    role: "owner" | "admin" | "member" | "restricted";
+    username: string;
+    simpleMode: boolean;
+  } | null;
+  profiles: AccountProfileState | null;
+}> {
+  return serverRequest("POST", "/api/profiles/switch", { profileId });
+}
+
 export async function fetchServerDetail(input: {
   id: string;
   type: MediaType;

@@ -48,10 +48,15 @@ export interface AuthContext {
   userId: string;
   username: string;
   role: UserRole;
+  /** The ACTIVE household sub-profile for this session (the "who's watching"
+   * choice), resolved from sessions.active_profile_id with a fallback to the
+   * account's is_default profile. All per-profile data scoping follows it. */
   profileId: string;
   displayName: string;
+  /** The active profile's avatar tint (hex/keyword), or null for the default. */
+  avatarColor: string | null;
   sessionId: string;
-  /** Whether the default profile is in Simple (progressive-disclosure) mode. */
+  /** Whether the active profile is in Simple (progressive-disclosure) mode. */
   simpleMode: boolean;
 }
 

@@ -89,6 +89,20 @@
   outline-offset: 2px;
 }
 
+/* "Who's watching" switcher entry in the Account group: a small avatar chip
+   (display-name initial on the active profile's color) instead of a glyph. */
+.nav-rail-profile-avatar {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
 .nav-rail-btn.is-selected {
   --nav-icon-stroke: 2.1;
   background: rgba(var(--accent-rgb), 0.12);

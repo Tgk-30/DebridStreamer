@@ -44,6 +44,7 @@ import {
 } from "../data/library";
 import type { CachedResolutionRecord, WatchHistoryRecord } from "../storage/models";
 import { getStore } from "../storage";
+import { RemoteStore } from "../storage/RemoteStore";
 import { AutoResolveScheduler } from "../lib/autoResolve";
 import { isServerMode } from "../lib/serverMode";
 import { useServerSession } from "../lib/ServerSessionContext";
@@ -95,6 +96,10 @@ export interface AppStore {
   refreshCachedResolutions: () => void;
   toggleWatchlist: (item: MediaPreview) => void;
   removeFromWatchlist: (id: string) => void;
+  /** Re-hydrate all per-profile data from the Store (watchlist / history /
+   * continue-watching / settings). Called after a Server-Mode "who's watching"
+   * profile switch so the UI reflects the newly-active profile's data. */
+  reloadProfileData: () => Promise<void>;
   /** Record a real resume position (called from the player). */
   recordResume: (
     item: MediaPreview,
@@ -151,6 +156,25 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Re-pull every per-profile slice from the Store. Used after a Server-Mode
+  // profile switch: the RemoteStore's cached settings are dropped first so the
+  // refetch reflects the NEW active profile (the server resolves the active
+  // profile from the session, so the same endpoints now return its data).
+  const reloadProfileData = useCallback(async () => {
+    const store = getStore();
+    if (store instanceof RemoteStore) store.resetProfileCache();
+    const [loadedSettings, wl, hist, cw] = await Promise.all([
+      loadSettingsFromStore(),
+      loadWatchlist(),
+      loadHistory(),
+      loadContinueWatching(),
+    ]);
+    setSettings(loadedSettings);
+    setWatchlist(wl);
+    setHistory(hist);
+    setContinueWatching(cw);
   }, []);
 
   // Rebuild services only when settings actually change.
@@ -342,6 +366,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     refreshCachedResolutions,
     toggleWatchlist,
     removeFromWatchlist,
+    reloadProfileData,
     recordResume,
   };
 
