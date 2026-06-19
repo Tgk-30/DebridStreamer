@@ -9,6 +9,8 @@ import { useState } from "react";
 import type { MediaPreview } from "../models/media";
 import { useDiscover } from "../data/discover";
 import { useAppStore } from "../store/AppStore";
+import { isServerMode } from "../lib/serverMode";
+import { curateServerAI } from "../lib/serverApi";
 import {
   emptyBrowseFilters,
   type BrowseContext,
@@ -108,6 +110,26 @@ export function Discover({ onSelect }: DiscoverProps) {
     setMoodResults([]);
     setMoodQuery(vibe);
     setMoodTitle(`Mood picks for “${vibe}”`);
+
+    // Server Mode: the assistant + TMDB keys live on the server, so curate and
+    // resolve there and render the returned previews directly.
+    if (isServerMode()) {
+      setMoodLoading(true);
+      try {
+        const { items } = await curateServerAI({ prompt: vibe, count: 8 });
+        if (items.length === 0) {
+          setMoodError("The assistant returned titles, but none could be matched.");
+          return;
+        }
+        setMoodResults(items);
+        setMoodStatus(`${items.length} titles matched.`);
+      } catch (err) {
+        setMoodError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setMoodLoading(false);
+      }
+      return;
+    }
 
     if (services.ai == null) {
       setMoodStatus("No AI provider is configured, so this opened a filter-based browse.");

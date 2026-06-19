@@ -9,10 +9,10 @@ import { isServerMode } from "../lib/serverMode";
 import { useSimpleMode } from "../store/AppStore";
 import "./NavRail.css";
 
-// Screens with no working backend in Server Mode (Debrid Library is Tauri-only;
-// the AI Assistant needs a provider key the browser can't read back from the
-// server). Hidden from the rail in Server Mode so the nav has no dead-ends.
-const SERVER_MODE_HIDDEN: ReadonlySet<string> = new Set(["debrid", "assistant"]);
+// Screens with no working backend in Server Mode (Debrid Library is Tauri-only).
+// The AI Assistant DOES work in Server Mode — it routes to /api/ai/recommend,
+// which uses the server's stored provider key — so it is no longer hidden here.
+const SERVER_MODE_HIDDEN: ReadonlySet<string> = new Set(["debrid"]);
 // Power-user destinations hidden in Simple mode (progressive disclosure). The
 // essentials — discover/search/library/watchlist/history/settings — always show;
 // Settings must never hide (it hosts the Simple/Advanced toggle).

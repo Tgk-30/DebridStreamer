@@ -10,6 +10,16 @@ export type MediaCategory =
   | "airing_today"
   | "on_the_air";
 
+/** Resolves the decrypted credential value for a provider, with profile-scoped
+ *  credentials taking precedence over server-scoped. Returns null when unset or
+ *  on a decrypt failure. */
+export function effectiveCredentialValue(
+  db: AppDatabase,
+  config: ServerConfig,
+  profileId: string,
+  provider: string,
+): string | null;
+
 export function getServerDiscoverHome(
   db: AppDatabase,
   config: ServerConfig,

@@ -480,6 +480,265 @@ describe("DebridStreamer server", () => {
     ).toBe(200);
   });
 
+  it("server AI recommend: requires a key, enforces auth + CSRF, and parses provider output", async () => {
+    const owner = await setupOwner(app);
+
+    // No AI credential configured → 400 with the configure message.
+    const noKey = await request(owner, {
+      method: "POST",
+      url: "/api/ai/recommend",
+      csrf: true,
+      payload: { prompt: "cozy mysteries" },
+    });
+    expect(noKey.statusCode).toBe(400);
+    expect(json<{ error: string }>(noKey).error).toMatch(/configure an ai provider/i);
+
+    // Missing CSRF → 403; unauthenticated → 401.
+    expect(
+      (await request(owner, { method: "POST", url: "/api/ai/recommend", payload: { prompt: "x" } })).statusCode,
+    ).toBe(403);
+    expect(
+      (await app.inject({ method: "POST", url: "/api/ai/recommend", payload: { prompt: "x" } })).statusCode,
+    ).toBe(401);
+
+    // Store a server-wide Anthropic key and stub the upstream. The stub echoes the
+    // x-api-key it received back as the recommendation title, so the assertion also
+    // proves which credential the server selected.
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "anthropic", value: "sk-server", label: "AI" },
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      if (String(url).startsWith("https://api.anthropic.com")) {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const text = JSON.stringify({
+          recommendations: [{ title: `key:${headers["x-api-key"]}`, year: 2014, reason: "r", score: 0.9 }],
+        });
+        return new Response(
+          JSON.stringify({ content: [{ type: "text", text }], model: "claude-haiku-4-5", usage: { input_tokens: 5, output_tokens: 7 } }),
+          { status: 200 },
+        );
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const ok = await request(owner, {
+        method: "POST",
+        url: "/api/ai/recommend",
+        csrf: true,
+        payload: { prompt: "mind-bending sci-fi" },
+      });
+      expect(ok.statusCode).toBe(200);
+      const recs = json<{ recommendations: Array<{ title: string; year: number }> }>(ok).recommendations;
+      expect(recs).toHaveLength(1);
+      expect(recs[0].title).toBe("key:sk-server");
+      expect(recs[0].year).toBe(2014);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server AI: a profile-scoped key overrides the server key for that profile only", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "carol", "carol-password");
+    const carol = await login(app, "carol", "carol-password");
+
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "anthropic", value: "sk-server", label: "AI" },
+    });
+    await request(carol, {
+      method: "PUT",
+      url: "/api/profile/credentials",
+      csrf: true,
+      payload: { provider: "anthropic", value: "sk-carol", label: "AI" },
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      if (String(url).startsWith("https://api.anthropic.com")) {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const text = JSON.stringify({
+          recommendations: [{ title: headers["x-api-key"], year: 2000, reason: "r", score: 0.5 }],
+        });
+        return new Response(JSON.stringify({ content: [{ type: "text", text }], model: "m" }), { status: 200 });
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const ownerTitle = json<{ recommendations: Array<{ title: string }> }>(
+        await request(owner, { method: "POST", url: "/api/ai/recommend", csrf: true, payload: { prompt: "x" } }),
+      ).recommendations[0].title;
+      const carolTitle = json<{ recommendations: Array<{ title: string }> }>(
+        await request(carol, { method: "POST", url: "/api/ai/recommend", csrf: true, payload: { prompt: "x" } }),
+      ).recommendations[0].title;
+      expect(ownerTitle).toBe("sk-server"); // owner falls back to the shared server key
+      expect(carolTitle).toBe("sk-carol"); // carol's profile override wins for carol
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server AI: maps an upstream provider failure to 502", async () => {
+    const owner = await setupOwner(app);
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "anthropic", value: "sk", label: "AI" },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      if (String(url).startsWith("https://api.anthropic.com")) return new Response("upstream boom", { status: 500 });
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const res = await request(owner, { method: "POST", url: "/api/ai/recommend", csrf: true, payload: { prompt: "x" } });
+      expect(res.statusCode).toBe(502);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server AI curate: resolves AI titles via TMDB and counts unmatched", async () => {
+    const owner = await setupOwner(app);
+    for (const cred of [
+      { provider: "anthropic", value: "sk", label: "AI" },
+      { provider: "tmdb", value: "tmdb-key", label: "TMDB" },
+    ]) {
+      await request(owner, { method: "PUT", url: "/api/admin/credentials", csrf: true, payload: cred });
+    }
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      const u = String(url);
+      if (u.startsWith("https://api.anthropic.com")) {
+        const text = JSON.stringify({
+          recommendations: [
+            { title: "Inception", year: 2010, reason: "r", score: 0.9 },
+            { title: "Nonexistent Film 9000", year: 1900, reason: "r", score: 0.4 },
+          ],
+        });
+        return new Response(JSON.stringify({ content: [{ type: "text", text }], model: "m" }), { status: 200 });
+      }
+      if (u.startsWith("https://api.themoviedb.org")) {
+        const query = new URL(u).searchParams.get("query") ?? "";
+        const results = query.startsWith("Inception")
+          ? [{ id: 27205, media_type: "movie", title: "Inception", release_date: "2010-07-16", poster_path: "/p.jpg", vote_average: 8.3 }]
+          : [];
+        return new Response(JSON.stringify({ page: 1, total_pages: 1, total_results: results.length, results }), { status: 200 });
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const res = await request(owner, { method: "POST", url: "/api/ai/curate", csrf: true, payload: { prompt: "heist" } });
+      expect(res.statusCode).toBe(200);
+      const out = json<{ items: Array<{ id: string; title: string }>; unmatched: number }>(res);
+      expect(out.items).toHaveLength(1);
+      expect(out.items[0].title).toBe("Inception");
+      expect(out.items[0].id).toBe("tmdb-27205");
+      expect(out.unmatched).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server AI recommend: enforces the count bounds (1..20)", async () => {
+    const owner = await setupOwner(app);
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "anthropic", value: "sk", label: "AI" },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      if (String(url).startsWith("https://api.anthropic.com")) {
+        return new Response(
+          JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ recommendations: [] }) }], model: "m" }),
+          { status: 200 },
+        );
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const recommend = (count: number) =>
+        request(owner, { method: "POST", url: "/api/ai/recommend", csrf: true, payload: { prompt: "x", count } });
+      expect((await recommend(0)).statusCode).toBe(400); // below min
+      expect((await recommend(21)).statusCode).toBe(400); // above max
+      expect((await recommend(1)).statusCode).toBe(200); // min ok
+      expect((await recommend(20)).statusCode).toBe(200); // max ok
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server AI: falls back to a guarded Ollama endpoint when no cloud key is set", async () => {
+    const owner = await setupOwner(app);
+    // Only an Ollama endpoint configured → selectProvider must pick ollama. The
+    // app is built with allowRawStreamUrls:true (see beforeEach), so the SSRF
+    // guard permits the loopback endpoint.
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "ollama", value: "http://127.0.0.1:11434/api/chat", label: "Ollama" },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url, init) => {
+      if (String(url).startsWith("http://127.0.0.1:11434")) {
+        // Ollama's chat shape: the provider reads message.content.
+        const text = JSON.stringify({ recommendations: [{ title: "Local Pick", year: 2024, reason: "r", score: 0.7 }] });
+        return new Response(JSON.stringify({ message: { role: "assistant", content: text } }), { status: 200 });
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const res = await request(owner, { method: "POST", url: "/api/ai/recommend", csrf: true, payload: { prompt: "x" } });
+      expect(res.statusCode).toBe(200);
+      const recs = json<{ recommendations: Array<{ title: string }> }>(res).recommendations;
+      expect(recs).toHaveLength(1);
+      expect(recs[0].title).toBe("Local Pick");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server AI: the Ollama SSRF guard blocks an internal endpoint when raw URLs are off", async () => {
+    // A locked-down deployment (allowRawStreamUrls:false) must not let an Ollama
+    // endpoint pointing at the cloud-metadata address reach the internal network.
+    const hardened = await buildApp({
+      config: {
+        databasePath: ":memory:",
+        dataDir: ".test-data",
+        secretKey: randomBytes(32),
+        cookieSecure: false,
+        logger: false,
+        allowRawStreamUrls: false,
+      },
+    });
+    try {
+      const owner = await setupOwner(hardened);
+      await request(owner, {
+        method: "PUT",
+        url: "/api/admin/credentials",
+        csrf: true,
+        payload: { provider: "ollama", value: "http://169.254.169.254/api/chat", label: "Ollama" },
+      });
+      // The guard throws before any fetch; mapped to a generic 502 (no detail leak).
+      const res = await request(owner, { method: "POST", url: "/api/ai/recommend", csrf: true, payload: { prompt: "x" } });
+      expect(res.statusCode).toBe(502);
+    } finally {
+      await hardened.close();
+    }
+  });
+
   it("uses server credentials by default and profile credentials as overrides", async () => {
     const owner = await setupOwner(app);
     await createProfile(owner, "bob", "bob-password");

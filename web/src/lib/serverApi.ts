@@ -1,5 +1,6 @@
 import type { MediaType } from "../models/media";
 import type { CastMember, MediaItem, MediaPreview } from "../models/media";
+import type { AIMovieRecommendation, AIUsageMetrics } from "../services/ai/models";
 import type { StreamInfo } from "../services/debrid/models";
 import type { Genre, MediaCategory } from "../services/metadata/types";
 import type { StreamRow } from "../data/streams";
@@ -192,6 +193,30 @@ export async function fetchServerUpcomingEpisodes(
     { series },
   );
   return response.episodes;
+}
+
+export async function recommendServerAI(input: {
+  prompt: string;
+  count?: number;
+}): Promise<{
+  recommendations: AIMovieRecommendation[];
+  model: string | null;
+  usage: AIUsageMetrics | null;
+}> {
+  return serverRequest("POST", "/api/ai/recommend", {
+    prompt: input.prompt,
+    count: input.count ?? 8,
+  });
+}
+
+export async function curateServerAI(input: {
+  prompt: string;
+  count?: number;
+}): Promise<{ items: MediaPreview[]; unmatched: number }> {
+  return serverRequest("POST", "/api/ai/curate", {
+    prompt: input.prompt,
+    count: input.count ?? 8,
+  });
 }
 
 export async function fetchServerDetail(input: {

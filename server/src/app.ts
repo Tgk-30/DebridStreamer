@@ -26,6 +26,7 @@ import {
   getServerUpcomingEpisodes,
   searchServerMedia,
 } from "./metadata-runtime.js";
+import { curateServerAI, recommendServerAI } from "./ai-runtime.js";
 import {
   addSecondsISO,
   decryptSecret,
@@ -178,6 +179,11 @@ const credentialBodySchema = z.object({
   value: z.string().min(1).max(8192),
   priority: z.number().int().min(0).max(1000).default(0),
   isActive: z.boolean().default(true),
+});
+
+const aiRecommendBodySchema = z.object({
+  prompt: z.string().trim().min(1).max(2000),
+  count: z.number().int().min(1).max(20).default(8),
 });
 
 const rawStreamSessionSchema = z.object({
@@ -2382,6 +2388,36 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
     return getServerUpcomingEpisodes(db, config, auth.profileId, {
       series: body.series.filter(isSeriesPreviewInput),
     });
+  });
+
+  // AI recommendations (Assistant). Uses the server's stored AI provider key for
+  // this profile; raw recommendations, no catalog resolution.
+  app.post("/api/ai/recommend", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(aiRecommendBodySchema, request.body);
+    const result = await recommendServerAI(db, config, auth.profileId, body);
+    audit(db, auth, "ai.recommend", "ai", undefined, { provider: result.providerKind });
+    return {
+      recommendations: result.recommendations,
+      model: result.model,
+      usage: result.usage,
+    };
+  });
+
+  // AI mood-curate (Discover "Describe a vibe"). Recommends, then resolves each
+  // title to a real catalog item server-side (the client has no TMDB key in
+  // Server Mode), returning ready-to-render previews.
+  app.post("/api/ai/curate", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(aiRecommendBodySchema, request.body);
+    const out = await curateServerAI(db, config, auth.profileId, body);
+    audit(db, auth, "ai.curate", "ai", undefined, {
+      provider: out.providerKind,
+      matched: out.items.length,
+    });
+    return { items: out.items, unmatched: out.unmatched };
   });
 
   app.get("/api/media/detail", async (request) => {

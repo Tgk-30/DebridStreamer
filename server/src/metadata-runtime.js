@@ -22,7 +22,7 @@ function todayISODate(now = Date.now()) {
   return new Date(now).toISOString().slice(0, 10);
 }
 
-function effectiveCredentialValue(db, config, profileId, provider) {
+export function effectiveCredentialValue(db, config, profileId, provider) {
   const row = db.sqlite
     .prepare(
       `SELECT encrypted_value

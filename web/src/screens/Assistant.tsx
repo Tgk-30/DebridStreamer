@@ -10,6 +10,8 @@
 import { useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import type { AIMovieRecommendation } from "../services/ai/models";
+import { isServerMode } from "../lib/serverMode";
+import { recommendServerAI } from "../lib/serverApi";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import "./Assistant.css";
@@ -30,14 +32,22 @@ export function Assistant() {
   const [results, setResults] = useState<AIMovieRecommendation[] | null>(null);
 
   const provider = services.ai;
+  // In Server Mode the provider key lives on the server; the Assistant routes to
+  // /api/ai/recommend instead of building a local provider. Available whenever a
+  // local provider is configured OR we're in Server Mode (the server reports a
+  // missing key as a 400, surfaced via the error state below).
+  const serverMode = isServerMode();
+  const aiAvailable = serverMode || provider != null;
 
   async function recommend(text: string) {
     const q = text.trim();
-    if (q.length === 0 || provider == null) return;
+    if (q.length === 0 || !aiAvailable) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await provider.recommend(q, [], 8);
+      const result = serverMode
+        ? await recommendServerAI({ prompt: q, count: 8 })
+        : await provider!.recommend(q, [], 8);
       setResults(result.recommendations);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -47,7 +57,7 @@ export function Assistant() {
     }
   }
 
-  if (provider == null) {
+  if (!aiAvailable) {
     return (
       <div className="assistant-screen">
         <h1 className="assistant-h1">AI Assistant</h1>
