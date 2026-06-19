@@ -179,7 +179,7 @@ h3 {
 }
 
 .download-note a {
-  color: var(--site-text);
+  color: var(--site-accent-2);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
@@ -526,7 +526,7 @@ pre {
   }
 }
 
-@media (max-width: 360px) {
+@media (max-width: 480px) {
   nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

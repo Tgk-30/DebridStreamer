@@ -64,6 +64,15 @@
 
 }
 
+@media (max-width: 950px) and (max-height: 500px) {
+  .discover {
+    gap: var(--sp-md);
+    padding: var(--sp-md);
+    padding-top: var(--sp-md);
+    max-width: none;
+  }
+}
+
 @media (max-width: 767px) and (max-height: 620px) {
   .discover {
     gap: var(--sp-md);

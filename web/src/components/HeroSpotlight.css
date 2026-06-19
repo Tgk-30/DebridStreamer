@@ -364,6 +364,46 @@
   }
 }
 
+@media (max-width: 950px) and (max-height: 500px) {
+  .hero {
+    height: clamp(178px, 48vh, 220px);
+    min-height: 0;
+  }
+
+  .hero-content {
+    gap: 8px;
+    max-width: 420px;
+    padding: 12px 14px;
+  }
+
+  .hero-title {
+    font-size: clamp(26px, 5vw, 34px);
+    -webkit-line-clamp: 1;
+  }
+
+  .hero-overview {
+    display: none;
+  }
+
+  .hero-actions {
+    gap: 8px;
+    margin-top: 0;
+  }
+
+  .hero-play,
+  .hero-info {
+    min-height: 38px;
+    padding: 8px 13px;
+    font-size: 13px;
+  }
+
+  .hero-dots {
+    top: 10px;
+    right: 10px;
+    padding: 4px 6px;
+  }
+}
+
 @media (max-width: 380px) {
   .hero {
     height: clamp(260px, 38vh, 300px);

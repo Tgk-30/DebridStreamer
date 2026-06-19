@@ -614,6 +614,10 @@
   gap: var(--sp-sm);
 }
 
+.settings-sources-head .settings-hint {
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .settings-range-shell {
   display: flex;
   flex-direction: column;
@@ -1754,8 +1758,11 @@
 }
 
 .theme-card-status.is-active {
-  background: rgba(var(--accent-rgb), 0.18);
-  color: var(--text-primary);
+  min-height: 20px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
 }
 
 @media (max-width: 560px) {

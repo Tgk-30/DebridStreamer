@@ -124,7 +124,7 @@ export function NavRail({ selected, onSelect }: NavRailProps) {
           <button
             key={item.id}
             type="button"
-            className={`nav-rail-more-action${item.id === "settings" ? " is-wide" : ""}${selected === item.id ? " is-selected" : ""}`}
+            className={`nav-rail-more-action${selected === item.id ? " is-selected" : ""}`}
             data-screen={item.id}
             onClick={() => selectScreen(item.id)}
             tabIndex={moreOpen ? 0 : -1}
