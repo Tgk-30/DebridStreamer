@@ -47,10 +47,45 @@ function maxQualityOrder(maxQuality: StreamMaxQuality): number | null {
   return maxQuality === "any" ? null : VideoQuality.sortOrder(maxQuality);
 }
 
-export function streamMatchesDataSaver(row: StreamRow, settings: AppSettings): boolean {
-  if (settings.streamCachedOnly && row.cachedOn == null) return false;
+/** The bandwidth-friendly ceiling the master Data Saver toggle clamps to. */
+export const DATA_SAVER_MAX_QUALITY: StreamMaxQuality = "720p";
+export const DATA_SAVER_MAX_SIZE_GB = 5;
 
-  const maxOrder = maxQualityOrder(settings.streamMaxQuality);
+/** Effective stream caps for a profile, applying the master Data Saver clamp.
+ *
+ * Data Saver only ever TIGHTENS (a `min` over quality + size) — it never loosens
+ * a stricter explicit cap, so a user who already set 480p / 2 GB keeps those. The
+ * cached-only constraint is left to its own explicit toggle. Off → the raw three
+ * fields, so existing behavior is unchanged when Data Saver is off. */
+export function effectiveDataSaver(settings: AppSettings): {
+  cachedOnly: boolean;
+  maxQuality: StreamMaxQuality;
+  maxSizeGB: number;
+} {
+  if (!settings.dataSaver) {
+    return {
+      cachedOnly: settings.streamCachedOnly,
+      maxQuality: settings.streamMaxQuality,
+      maxSizeGB: settings.streamMaxSizeGB,
+    };
+  }
+  const currentOrder = maxQualityOrder(settings.streamMaxQuality); // null = "any" (uncapped)
+  const saverOrder = maxQualityOrder(DATA_SAVER_MAX_QUALITY) ?? 0; // "720p" is never "any"
+  const maxQuality =
+    currentOrder == null || currentOrder > saverOrder
+      ? DATA_SAVER_MAX_QUALITY
+      : settings.streamMaxQuality;
+  // 0 means "no size cap", so treat it as larger than the Data Saver ceiling.
+  const currentSize = settings.streamMaxSizeGB > 0 ? settings.streamMaxSizeGB : Infinity;
+  const maxSizeGB = Math.min(currentSize, DATA_SAVER_MAX_SIZE_GB);
+  return { cachedOnly: settings.streamCachedOnly, maxQuality, maxSizeGB };
+}
+
+export function streamMatchesDataSaver(row: StreamRow, settings: AppSettings): boolean {
+  const caps = effectiveDataSaver(settings);
+  if (caps.cachedOnly && row.cachedOn == null) return false;
+
+  const maxOrder = maxQualityOrder(caps.maxQuality);
   if (
     maxOrder != null &&
     row.result.quality !== VideoQuality.unknown &&
@@ -59,9 +94,7 @@ export function streamMatchesDataSaver(row: StreamRow, settings: AppSettings): b
     return false;
   }
 
-  const maxBytes = settings.streamMaxSizeGB > 0
-    ? settings.streamMaxSizeGB * 1024 * 1024 * 1024
-    : 0;
+  const maxBytes = caps.maxSizeGB > 0 ? caps.maxSizeGB * 1024 * 1024 * 1024 : 0;
   if (maxBytes > 0 && row.result.sizeBytes > maxBytes) return false;
 
   return true;

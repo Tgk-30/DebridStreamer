@@ -37,6 +37,22 @@ export interface ServerStreamsResult {
   indexerErrors: Array<{ indexer: string; error: string }>;
 }
 
+export interface StreamFilters {
+  cachedOnly: boolean;
+  maxQuality: string;
+  maxSizeGB: number;
+}
+
+/** Applies the master Data Saver clamp to resolved stream filters (mirrors the
+ *  client effectiveDataSaver). No-op when dataSaverOn is false. */
+export function withDataSaverClamp(filters: StreamFilters, dataSaverOn: boolean): StreamFilters;
+
+/** True when a stream row passes the (already Data-Saver-clamped) filters. */
+export function rowMatchesStreamFilters(
+  row: { result?: { quality?: string; sizeBytes?: number } | null; cachedOn: unknown },
+  filters: StreamFilters,
+): boolean;
+
 export function searchServerStreams(
   db: AppDatabase,
   config: ServerConfig,

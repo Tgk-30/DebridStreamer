@@ -910,9 +910,22 @@ function PlaybackTab({ draft, patch }: TabProps) {
     <div className="settings-fields">
       <p className="settings-hint t-secondary">
         These profile controls hide stream results that are likely to use more
-        bandwidth. Server Mode applies them before sending stream rows to this
-        device.
+        bandwidth. <strong>Data Saver</strong> adds a ≤720p / ≤5&nbsp;GB ceiling on
+        top and also governs automatic (watchlist) playback. Server Mode applies
+        them before sending stream rows to this device.
       </p>
+
+      <label className="settings-toggle-row">
+        <input
+          type="checkbox"
+          checked={draft.dataSaver}
+          onChange={(event) => patch({ dataSaver: event.target.checked })}
+        />
+        <span>
+          <strong>Data Saver</strong>
+          <span className="t-secondary"> — prefer smaller, lower-resolution sources (≤720p, ≤5&nbsp;GB) to use less bandwidth, including for instant/watchlist playback. No re-encoding.</span>
+        </span>
+      </label>
 
       <label className="settings-toggle-row">
         <input

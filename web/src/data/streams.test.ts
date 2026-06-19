@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { filterStreamRows, type StreamRow } from "./streams";
+import {
+  DATA_SAVER_MAX_SIZE_GB,
+  effectiveDataSaver,
+  filterStreamRows,
+  streamMatchesDataSaver,
+  type StreamRow,
+} from "./streams";
 import { defaultSettings, type AppSettings } from "./settings";
 import { DebridServiceType } from "../services/debrid/models";
 import {
@@ -116,5 +122,40 @@ describe("filterStreamRows", () => {
         (item) => item.result.infoHash,
       ),
     ).toEqual(["small"]);
+  });
+});
+
+describe("effectiveDataSaver", () => {
+  it("returns the raw caps when Data Saver is off", () => {
+    const s = settings({ dataSaver: false, streamMaxQuality: "4K", streamMaxSizeGB: 50, streamCachedOnly: true });
+    expect(effectiveDataSaver(s)).toEqual({ cachedOnly: true, maxQuality: "4K", maxSizeGB: 50 });
+  });
+
+  it("clamps an uncapped profile to the bandwidth-friendly ceiling", () => {
+    const s = settings({ dataSaver: true, streamMaxQuality: "any", streamMaxSizeGB: 0 });
+    expect(effectiveDataSaver(s)).toMatchObject({ maxQuality: "720p", maxSizeGB: DATA_SAVER_MAX_SIZE_GB });
+  });
+
+  it("clamps a looser explicit cap down (min), never up", () => {
+    const s = settings({ dataSaver: true, streamMaxQuality: "4K", streamMaxSizeGB: 50 });
+    expect(effectiveDataSaver(s)).toMatchObject({ maxQuality: "720p", maxSizeGB: 5 });
+  });
+
+  it("keeps a stricter explicit cap (never loosens it)", () => {
+    const s = settings({ dataSaver: true, streamMaxQuality: "480p", streamMaxSizeGB: 2 });
+    expect(effectiveDataSaver(s)).toMatchObject({ maxQuality: "480p", maxSizeGB: 2 });
+  });
+
+  it("leaves cached-only to its own explicit toggle", () => {
+    expect(effectiveDataSaver(settings({ dataSaver: true, streamCachedOnly: false })).cachedOnly).toBe(false);
+    expect(effectiveDataSaver(settings({ dataSaver: true, streamCachedOnly: true })).cachedOnly).toBe(true);
+  });
+});
+
+describe("streamMatchesDataSaver with the master Data Saver toggle", () => {
+  it("filters out an over-ceiling source even when no explicit caps are set", () => {
+    const s = settings({ dataSaver: true }); // no explicit quality/size caps
+    expect(streamMatchesDataSaver(row("1080p-12gb", VideoQuality.hd1080p, 12), s)).toBe(false);
+    expect(streamMatchesDataSaver(row("720p-4gb", VideoQuality.hd720p, 4), s)).toBe(true);
   });
 });

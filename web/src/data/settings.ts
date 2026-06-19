@@ -91,6 +91,7 @@ const SettingsKeys = {
   streamCachedOnly: "stream_cached_only",
   streamMaxQuality: "stream_max_quality",
   streamMaxSizeGB: "stream_max_size_gb",
+  dataSaver: "data_saver",
 } as const;
 
 /** Marker written into the KV table for secret-valued keys; the real value
@@ -187,6 +188,9 @@ export interface AppSettings {
   streamMaxQuality: StreamMaxQuality;
   /** Maximum stream result size in GB; 0 disables the cap. */
   streamMaxSizeGB: number;
+  /** Master Data Saver — clamps the stream list AND automatic (watchlist)
+   *  playback to a bandwidth-friendly tier (≤720p, ≤5 GB) without transcoding. */
+  dataSaver: boolean;
 }
 
 /** Read a `VITE_*` env var without assuming `import.meta.env` exists. */
@@ -305,6 +309,7 @@ export function defaultSettings(): AppSettings {
     streamCachedOnly: false,
     streamMaxQuality: "any",
     streamMaxSizeGB: 0,
+    dataSaver: false,
   };
 }
 
@@ -433,6 +438,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     streamCachedOnly,
     streamMaxQuality,
     streamMaxSizeGB,
+    dataSaver,
     simpleMode,
   ] = await Promise.all([
     store.getSetting(SettingsKeys.aiProvider),
@@ -458,6 +464,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.streamCachedOnly),
     store.getSetting(SettingsKeys.streamMaxQuality),
     store.getSetting(SettingsKeys.streamMaxSizeGB),
+    store.getSetting(SettingsKeys.dataSaver),
     store.getSetting(SettingsKeys.simpleMode),
   ]);
 
@@ -543,6 +550,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
       streamCachedOnly == null ? base.streamCachedOnly : streamCachedOnly === "true",
     streamMaxQuality: normalizeStreamMaxQuality(streamMaxQuality ?? base.streamMaxQuality),
     streamMaxSizeGB: normalizeStreamMaxSizeGB(streamMaxSizeGB ?? base.streamMaxSizeGB),
+    dataSaver: dataSaver == null ? base.dataSaver : dataSaver === "true",
   };
 }
 
@@ -637,6 +645,10 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     store.setSetting(
       SettingsKeys.streamMaxSizeGB,
       String(normalizeStreamMaxSizeGB(settings.streamMaxSizeGB)),
+    ),
+    store.setSetting(
+      SettingsKeys.dataSaver,
+      settings.dataSaver ? "true" : "false",
     ),
     store.setSetting(
       SettingsKeys.builtInIndexersEnabled,

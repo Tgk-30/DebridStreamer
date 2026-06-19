@@ -210,6 +210,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   // single instance across renders.
   const servicesRef = useRef(services);
   servicesRef.current = services;
+  // A ref so the scheduler's deps closure always reads the CURRENT settings (for
+  // the data-saver caps), not the ones captured when it was first constructed.
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const schedulerRef = useRef<AutoResolveScheduler | null>(null);
   if (schedulerRef.current == null) {
     schedulerRef.current = new AutoResolveScheduler(() => ({
@@ -217,6 +221,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       indexers: servicesRef.current.indexers,
       debrid: servicesRef.current.debrid,
       store: getStore(),
+      settings: settingsRef.current,
     }));
   }
 

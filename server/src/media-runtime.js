@@ -13,6 +13,12 @@ export const SERVER_INDEXER_CONFIGS_KEY = "server_indexer_configs";
 const STREAM_CACHED_ONLY_KEY = "stream_cached_only";
 const STREAM_MAX_QUALITY_KEY = "stream_max_quality";
 const STREAM_MAX_SIZE_GB_KEY = "stream_max_size_gb";
+const DATA_SAVER_KEY = "data_saver";
+// The bandwidth-friendly ceiling the master Data Saver toggle clamps to. MUST
+// mirror the client web/src/data/streams.ts effectiveDataSaver, or Server Mode
+// and Local Mode would show different lists.
+const DATA_SAVER_MAX_QUALITY = "720p";
+const DATA_SAVER_MAX_SIZE_GB = 5;
 
 const DEBRID_PROVIDERS = [
   "real_debrid",
@@ -58,15 +64,34 @@ function normalizeMaxQuality(value) {
   return Object.prototype.hasOwnProperty.call(QUALITY_ORDER, value) ? value : "any";
 }
 
-function profileStreamFilters(db, profileId) {
-  const cachedOnly = settingValue(db, profileId, STREAM_CACHED_ONLY_KEY) === "true";
-  const maxQuality = normalizeMaxQuality(settingValue(db, profileId, STREAM_MAX_QUALITY_KEY));
-  const rawMaxSize = Number(settingValue(db, profileId, STREAM_MAX_SIZE_GB_KEY));
-  const maxSizeGB = Number.isFinite(rawMaxSize) && rawMaxSize > 0 ? rawMaxSize : 0;
-  return { cachedOnly, maxQuality, maxSizeGB };
+/** Apply the master Data Saver clamp to resolved filters. Pure + exported for
+ *  tests; mirrors the client effectiveDataSaver (never loosens a stricter cap). */
+export function withDataSaverClamp(filters, dataSaverOn) {
+  if (!dataSaverOn) return filters;
+  const currentQ = QUALITY_ORDER[filters.maxQuality]; // undefined for "any" (uncapped)
+  const saverQ = QUALITY_ORDER[DATA_SAVER_MAX_QUALITY];
+  const maxQuality =
+    filters.maxQuality === "any" || (currentQ != null && currentQ > saverQ)
+      ? DATA_SAVER_MAX_QUALITY
+      : filters.maxQuality;
+  const currentSize = filters.maxSizeGB > 0 ? filters.maxSizeGB : Infinity;
+  const maxSizeGB = Math.min(currentSize, DATA_SAVER_MAX_SIZE_GB);
+  return { cachedOnly: filters.cachedOnly, maxQuality, maxSizeGB };
 }
 
-function rowMatchesStreamFilters(row, filters) {
+function profileStreamFilters(db, profileId) {
+  const base = {
+    cachedOnly: settingValue(db, profileId, STREAM_CACHED_ONLY_KEY) === "true",
+    maxQuality: normalizeMaxQuality(settingValue(db, profileId, STREAM_MAX_QUALITY_KEY)),
+    maxSizeGB: (() => {
+      const raw = Number(settingValue(db, profileId, STREAM_MAX_SIZE_GB_KEY));
+      return Number.isFinite(raw) && raw > 0 ? raw : 0;
+    })(),
+  };
+  return withDataSaverClamp(base, settingValue(db, profileId, DATA_SAVER_KEY) === "true");
+}
+
+export function rowMatchesStreamFilters(row, filters) {
   if (filters.cachedOnly && row.cachedOn == null) return false;
   if (filters.maxQuality !== "any") {
     const quality = row.result?.quality;

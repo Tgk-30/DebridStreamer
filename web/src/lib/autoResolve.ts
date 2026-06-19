@@ -23,6 +23,12 @@ import type { DebridManager, MergedCacheEntry } from "../services/debrid/DebridM
 import { CacheStatus as CacheStatusNS } from "../services/debrid/models";
 import type { Store } from "../storage/types";
 import type { CachedResolutionRecord } from "../storage/models";
+import type { AppSettings } from "../data/settings";
+import {
+  effectiveDataSaver,
+  streamMatchesDataSaver,
+  type StreamRow,
+} from "../data/streams";
 import { resolveImdbId } from "./metadata";
 
 /** The dependencies a resolve pass needs, all injectable for testing. */
@@ -31,6 +37,8 @@ export interface AutoResolveDeps {
   indexers: IndexerManager;
   debrid: DebridManager | null;
   store: Store;
+  /** Current settings — so automatic selection honors the data-saver caps. */
+  settings: AppSettings;
 }
 
 /** Outcome of a single pass — handy for diagnostics + tests. */
@@ -65,7 +73,7 @@ export async function resolveOne(
   preview: MediaPreview,
   deps: AutoResolveDeps,
 ): Promise<CachedResolutionRecord | null> {
-  const { tmdb, indexers, debrid, store } = deps;
+  const { tmdb, indexers, debrid, store, settings } = deps;
   if (debrid == null || !debrid.hasServices) return null;
 
   try {
@@ -77,23 +85,41 @@ export async function resolveOne(
     const results = await indexers.searchAll(imdbId, preview.type as MediaType);
     if (results.length === 0) return null;
 
-    // 3. Cache-check across debrid; keep only the ready (cached) ones so playback
-    //    is instant. Prefer the first ready result (best quality given the sort).
+    // 3. Cache-check across debrid, then pick the best ready (cached) source so
+    //    playback is instant. The pick must respect the same data-saver caps the
+    //    manual picker applies — otherwise a 720p-capped user could still get a
+    //    4K/huge source pre-cached. Build StreamRow-shaped candidates and filter.
     const hashes = results.map((r) => r.infoHash);
     const merged: Record<string, MergedCacheEntry> = await debrid
       .checkCacheAll(hashes)
       .catch(() => ({}));
-    const readyHashes = new Set(
-      Object.entries(merged)
-        .filter(([, entry]) => CacheStatusNS.isCached(entry.status))
-        .map(([hash]) => hash),
-    );
-    const ready = results.find((r) => readyHashes.has(r.infoHash));
+    const rows: StreamRow[] = results.map((result) => {
+      const entry = merged[result.infoHash];
+      const cachedOn =
+        entry != null && CacheStatusNS.isCached(entry.status) ? entry.service : null;
+      return { result, cachedOn };
+    });
 
-    // Fall back to the top result when no service confirms cache (RD reports
-    // "unknown" rather than "cached"); resolveStream will add+poll if needed.
-    const chosen = ready ?? results[0];
-    const preferred = ready ? merged[ready.infoHash]?.service ?? null : null;
+    const allowed = rows.filter((row) => streamMatchesDataSaver(row, settings));
+    let pickFrom: StreamRow[];
+    if (allowed.length > 0) {
+      pickFrom = allowed;
+    } else if (effectiveDataSaver(settings).cachedOnly) {
+      // Cached-only is a hard constraint: nothing instant fits the caps, so don't
+      // pre-cache a download-triggering source — leave it for manual play.
+      return null;
+    } else {
+      // Only the quality/size caps emptied the set — pre-cache the best available
+      // anyway (a ready badge beats none); the user can still override at play.
+      pickFrom = rows;
+    }
+
+    // Prefer a cached (instant) candidate; else the best by the indexer sort. Fall
+    // back when no service confirms cache (RD reports "unknown"); resolveStream
+    // will add+poll if needed.
+    const chosenRow = pickFrom.find((row) => row.cachedOn != null) ?? pickFrom[0];
+    const chosen = chosenRow.result;
+    const preferred = chosenRow.cachedOn;
 
     // 4. Resolve to a concrete, ready stream URL.
     const stream = await debrid.resolveStream(chosen.infoHash, preferred);
