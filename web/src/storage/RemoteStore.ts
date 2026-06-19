@@ -3,6 +3,7 @@ import type {
   CachedResolutionRecord,
   DebridConfigRecord,
   IndexerConfigRecord,
+  FolderKind,
   LibraryEntryRecord,
   LibraryFolderRecord,
   ListType,
@@ -51,6 +52,10 @@ class ServerAPI {
 
   async put<T>(path: string, body: unknown): Promise<T> {
     return this.request<T>("PUT", path, body);
+  }
+
+  async post<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>("POST", path, body);
   }
 
   async delete<T>(path: string): Promise<T> {
@@ -135,6 +140,55 @@ function mapHistory(row: ServerHistoryResponse["items"][number]): WatchHistoryRe
     lastWatched: row.lastWatched,
     streamQuality: row.streamQuality,
     preview: row.preview,
+  };
+}
+
+// ---- Library + folders (Server Mode) --------------------------------------
+interface ServerLibraryEntry {
+  id: string;
+  mediaId: string;
+  folderId: string | null;
+  listType: ListType;
+  addedAt: string;
+  customListName: string | null;
+  releaseDateHint: string | null;
+  renewalStatus: string | null;
+  preview: MediaPreview;
+}
+interface ServerFolder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  listType: ListType;
+  folderKind: FolderKind;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function mapLibraryEntry(r: ServerLibraryEntry): LibraryEntryRecord {
+  return {
+    id: r.id,
+    mediaId: r.mediaId,
+    folderId: r.folderId,
+    listType: r.listType,
+    addedAt: r.addedAt,
+    customListName: r.customListName,
+    releaseDateHint: r.releaseDateHint,
+    renewalStatus: r.renewalStatus,
+    preview: r.preview,
+  };
+}
+function mapFolder(r: ServerFolder): LibraryFolderRecord {
+  return {
+    id: r.id,
+    name: r.name,
+    parentId: r.parentId,
+    listType: r.listType,
+    folderKind: r.folderKind,
+    isSystem: r.isSystem,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   };
 }
 
@@ -301,43 +355,76 @@ export class RemoteStore implements Store, SecretStore {
   }
 
   async addToLibrary(entry: LibraryEntryUpsert): Promise<LibraryEntryRecord> {
-    throw unsupportedRemoteWrite(`addToLibrary(${entry.listType})`);
+    const resp = await this.api.put<{ entry: ServerLibraryEntry }>(
+      `/api/library/${encodeURIComponent(entry.mediaId)}`,
+      {
+        listType: entry.listType,
+        folderId: entry.folderId ?? null,
+        customListName: entry.customListName ?? null,
+        releaseDateHint: entry.releaseDateHint ?? null,
+        renewalStatus: entry.renewalStatus ?? null,
+        preview: entry.preview,
+        addedAt: entry.addedAt,
+      },
+    );
+    return mapLibraryEntry(resp.entry);
   }
 
-  async removeFromLibrary(_id: string): Promise<void> {
-    throw unsupportedRemoteWrite("removeFromLibrary");
+  async removeFromLibrary(id: string): Promise<void> {
+    await this.api.delete(`/api/library/entry/${encodeURIComponent(id)}`);
   }
 
-  async listLibrary(_listType?: ListType): Promise<LibraryEntryRecord[]> {
-    return [];
+  async listLibrary(listType?: ListType): Promise<LibraryEntryRecord[]> {
+    const q = listType ? `?listType=${encodeURIComponent(listType)}` : "";
+    const resp = await this.api.get<{ items: ServerLibraryEntry[] }>(`/api/library${q}`);
+    return resp.items.map(mapLibraryEntry);
   }
 
-  async listLibraryByFolder(_folderId: string): Promise<LibraryEntryRecord[]> {
-    return [];
+  async listLibraryByFolder(folderId: string): Promise<LibraryEntryRecord[]> {
+    const resp = await this.api.get<{ items: ServerLibraryEntry[] }>(
+      `/api/library/folder/${encodeURIComponent(folderId)}`,
+    );
+    return resp.items.map(mapLibraryEntry);
   }
 
-  async saveFolder(_folder: LibraryFolderRecord): Promise<void> {
-    throw unsupportedRemoteWrite("saveFolder");
+  async saveFolder(folder: LibraryFolderRecord): Promise<void> {
+    await this.api.put(`/api/library/folders/${encodeURIComponent(folder.id)}`, {
+      name: folder.name,
+      parentId: folder.parentId,
+      listType: folder.listType,
+      folderKind: folder.folderKind,
+      isSystem: folder.isSystem,
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
+    });
   }
 
   async createFolder(
-    _name: string,
-    _listType: ListType,
-    _parentId: string | null,
+    name: string,
+    listType: ListType,
+    parentId: string | null,
   ): Promise<LibraryFolderRecord> {
-    throw unsupportedRemoteWrite("createFolder");
+    const resp = await this.api.post<{ folder: ServerFolder }>(`/api/library/folders`, {
+      name,
+      listType,
+      parentId,
+    });
+    return mapFolder(resp.folder);
   }
 
-  async listFolders(_listType?: ListType): Promise<LibraryFolderRecord[]> {
-    return [];
+  async listFolders(listType?: ListType): Promise<LibraryFolderRecord[]> {
+    const q = listType ? `?listType=${encodeURIComponent(listType)}` : "";
+    const resp = await this.api.get<{ folders: ServerFolder[] }>(`/api/library/folders${q}`);
+    return resp.folders.map(mapFolder);
   }
 
-  async deleteFolder(_id: string): Promise<void> {
-    throw unsupportedRemoteWrite("deleteFolder");
+  async deleteFolder(id: string): Promise<void> {
+    await this.api.delete(`/api/library/folders/${encodeURIComponent(id)}`);
   }
 
   async ensureSystemFolders(): Promise<void> {
-    // Server owns folder initialization once the library endpoints are added.
+    // The server seeds system folders lazily on every library/folder read+write,
+    // so there is nothing to do from the client.
   }
 
   private async remoteIndexerConfigs(): Promise<IndexerConfigRecord[]> {

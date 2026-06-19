@@ -143,6 +143,34 @@ const historyBodySchema = z.object({
   lastWatched: z.string().datetime().optional(),
 });
 
+const listTypeSchema = z.enum(["watchlist", "favorites", "custom"]);
+
+const libraryUpsertBodySchema = z.object({
+  listType: listTypeSchema,
+  folderId: z.string().trim().min(1).max(128).nullish(),
+  customListName: z.string().max(200).nullish(),
+  releaseDateHint: z.string().max(64).nullish(),
+  renewalStatus: z.string().max(64).nullish(),
+  preview: boundedPreview,
+  addedAt: z.string().datetime().optional(),
+});
+
+const folderCreateBodySchema = z.object({
+  name: z.string().max(120),
+  listType: listTypeSchema,
+  parentId: z.string().trim().min(1).max(128).nullish(),
+});
+
+const folderSaveBodySchema = z.object({
+  name: z.string().max(120),
+  parentId: z.string().max(128).nullable(),
+  listType: listTypeSchema,
+  folderKind: z.enum(["system_root", "manual", "watched", "release_wait"]),
+  isSystem: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 const credentialBodySchema = z.object({
   id: z.string().trim().min(1).max(120).optional(),
   provider: providerSchema,
@@ -326,6 +354,148 @@ function deserializePreview(raw: string): unknown {
 
 function userCount(db: AppDatabase): number {
   return (db.sqlite.prepare("SELECT COUNT(*) AS count FROM users").get() as { count: number }).count;
+}
+
+// ---- Library + folders (mirrors web DexieStore, profile-scoped) ------------
+const LIST_TYPES = ["watchlist", "favorites", "custom"] as const;
+type ListType = (typeof LIST_TYPES)[number];
+
+function listTypeSupportsFolders(listType: ListType): boolean {
+  return listType !== "watchlist";
+}
+function systemRootName(listType: ListType): string {
+  switch (listType) {
+    case "watchlist":
+      return "Watchlist";
+    case "favorites":
+      return "Library";
+    case "custom":
+      return "Custom";
+  }
+}
+// System-folder ids are namespaced PER PROFILE so the deterministic identity
+// doesn't collide across profiles on the single-column PK (no migration needed).
+// The client references ids returned by listFolders, so only per-profile
+// consistency matters, not the exact string.
+function systemRootId(profileId: string, listType: ListType): string {
+  return `sys-${listType}-${profileId}`;
+}
+function favWatchedId(profileId: string): string {
+  return `sys-favorites-watched-${profileId}`;
+}
+function favReleaseWaitId(profileId: string): string {
+  return `sys-favorites-release-wait-${profileId}`;
+}
+
+/** Seed a profile's 5 system folders (idempotent). Mirrors
+ *  DexieStore.ensureSystemFolders: 3 roots + Watched / Release Wait under
+ *  the favorites root. */
+function ensureLibrarySystemFolders(db: AppDatabase, profileId: string): void {
+  const now = nowISO();
+  const insert = db.sqlite.prepare(
+    `INSERT OR IGNORE INTO library_folders
+       (id, profile_id, name, parent_id, list_type, folder_kind, is_system, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+  );
+  db.transaction(() => {
+    for (const lt of LIST_TYPES) {
+      insert.run(systemRootId(profileId, lt), profileId, systemRootName(lt), null, lt, "system_root", now, now);
+    }
+    const favRoot = systemRootId(profileId, "favorites");
+    insert.run(favWatchedId(profileId), profileId, "Watched", favRoot, "favorites", "watched", now, now);
+    insert.run(favReleaseWaitId(profileId), profileId, "Release Wait", favRoot, "favorites", "release_wait", now, now);
+  });
+}
+
+interface LibraryFolderRow {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  list_type: string;
+  folder_kind: string;
+  is_system: number;
+  created_at: string;
+  updated_at: string;
+}
+function mapFolderRow(r: LibraryFolderRow) {
+  return {
+    id: r.id,
+    name: r.name,
+    parentId: r.parent_id,
+    listType: r.list_type,
+    folderKind: r.folder_kind,
+    isSystem: r.is_system === 1,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+const FOLDER_COLS =
+  "id, name, parent_id, list_type, folder_kind, is_system, created_at, updated_at";
+
+interface LibraryRow {
+  id: string;
+  media_id: string;
+  folder_id: string | null;
+  list_type: string;
+  added_at: string;
+  custom_list_name: string | null;
+  release_date_hint: string | null;
+  renewal_status: string | null;
+  preview_json: string;
+}
+function mapLibraryRow(r: LibraryRow) {
+  return {
+    id: r.id,
+    mediaId: r.media_id,
+    folderId: r.folder_id,
+    listType: r.list_type,
+    addedAt: r.added_at,
+    customListName: r.custom_list_name,
+    releaseDateHint: r.release_date_hint,
+    renewalStatus: r.renewal_status,
+    preview: deserializePreview(r.preview_json),
+  };
+}
+const LIBRARY_COLS =
+  "id, media_id, folder_id, list_type, added_at, custom_list_name, release_date_hint, renewal_status, preview_json";
+
+/** True if a folder id belongs to this profile (guards FK + IDOR). */
+function folderExistsForProfile(db: AppDatabase, profileId: string, folderId: string): boolean {
+  return (
+    db.sqlite
+      .prepare("SELECT 1 FROM library_folders WHERE id = ? AND profile_id = ? LIMIT 1")
+      .get(folderId, profileId) != null
+  );
+}
+
+/** DexieStore.uniqueFolderName parity: disambiguate among siblings (same
+ *  listType + parentId) with " (2)", " (3)", … */
+function uniqueFolderName(
+  db: AppDatabase,
+  profileId: string,
+  desired: string,
+  listType: ListType,
+  parentId: string | null,
+): string {
+  const base = desired.trim().length > 0 ? desired.trim() : "New Folder";
+  const siblings = (
+    parentId == null
+      ? db.sqlite
+          .prepare(
+            "SELECT name FROM library_folders WHERE profile_id = ? AND list_type = ? AND parent_id IS NULL",
+          )
+          .all(profileId, listType)
+      : db.sqlite
+          .prepare(
+            "SELECT name FROM library_folders WHERE profile_id = ? AND list_type = ? AND parent_id = ?",
+          )
+          .all(profileId, listType, parentId)
+  ) as Array<{ name: string }>;
+  const taken = new Set(siblings.map((s) => s.name));
+  if (!taken.has(base)) return base;
+  let i = 2;
+  while (taken.has(`${base} (${i})`)) i += 1;
+  return `${base} (${i})`;
 }
 
 function audit(
@@ -1893,6 +2063,221 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
         serializePreview(body.preview),
       );
     audit(db, auth, "history.upsert", "media", mediaId);
+    return { ok: true };
+  });
+
+  // ---- Library + folders (per-profile, mirrors DexieStore) ------------------
+
+  const parseListType = (query: unknown): ListType | undefined => {
+    const raw = (query as { listType?: unknown }).listType;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return value === "watchlist" || value === "favorites" || value === "custom"
+      ? value
+      : undefined;
+  };
+
+  app.get("/api/library", async (request) => {
+    const auth = requireAuth(db, request);
+    ensureLibrarySystemFolders(db, auth.profileId);
+    const listType = parseListType(request.query);
+    const rows = (
+      listType
+        ? db.sqlite
+            .prepare(
+              `SELECT ${LIBRARY_COLS} FROM user_library
+               WHERE profile_id = ? AND list_type = ? ORDER BY added_at DESC`,
+            )
+            .all(auth.profileId, listType)
+        : db.sqlite
+            .prepare(
+              `SELECT ${LIBRARY_COLS} FROM user_library
+               WHERE profile_id = ? ORDER BY added_at DESC`,
+            )
+            .all(auth.profileId)
+    ) as unknown as LibraryRow[];
+    return { items: rows.map(mapLibraryRow) };
+  });
+
+  app.get("/api/library/folder/:folderId", async (request) => {
+    const auth = requireAuth(db, request);
+    const folderId = mediaIdParamSchema.parse(
+      (request.params as { folderId: string }).folderId,
+    );
+    const rows = db.sqlite
+      .prepare(
+        `SELECT ${LIBRARY_COLS} FROM user_library
+         WHERE profile_id = ? AND folder_id = ? ORDER BY added_at DESC`,
+      )
+      .all(auth.profileId, folderId) as unknown as LibraryRow[];
+    return { items: rows.map(mapLibraryRow) };
+  });
+
+  app.get("/api/library/folders", async (request) => {
+    const auth = requireAuth(db, request);
+    ensureLibrarySystemFolders(db, auth.profileId);
+    const listType = parseListType(request.query);
+    const rows = (
+      listType
+        ? db.sqlite
+            .prepare(
+              `SELECT ${FOLDER_COLS} FROM library_folders WHERE profile_id = ? AND list_type = ?`,
+            )
+            .all(auth.profileId, listType)
+        : db.sqlite
+            .prepare(`SELECT ${FOLDER_COLS} FROM library_folders WHERE profile_id = ?`)
+            .all(auth.profileId)
+    ) as unknown as LibraryFolderRow[];
+    // System folders first, then by name (matches DexieStore.listFolders).
+    const folders = rows.map(mapFolderRow).sort((a, b) => {
+      if (a.isSystem !== b.isSystem) return a.isSystem ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return { folders };
+  });
+
+  app.post("/api/library/folders", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(folderCreateBodySchema, request.body);
+    if (!listTypeSupportsFolders(body.listType)) {
+      throw httpError(400, `Folders are not supported for ${body.listType}.`);
+    }
+    ensureLibrarySystemFolders(db, auth.profileId);
+    const parentId = body.parentId ?? systemRootId(auth.profileId, body.listType);
+    if (!folderExistsForProfile(db, auth.profileId, parentId)) {
+      throw httpError(400, "Unknown parent folder.");
+    }
+    const name = uniqueFolderName(db, auth.profileId, body.name, body.listType, parentId);
+    const id = randomId("folder");
+    const now = nowISO();
+    db.sqlite
+      .prepare(
+        `INSERT INTO library_folders
+           (id, profile_id, name, parent_id, list_type, folder_kind, is_system, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'manual', 0, ?, ?)`,
+      )
+      .run(id, auth.profileId, name, parentId, body.listType, now, now);
+    audit(db, auth, "library.folder.create", "library_folder", id);
+    const row = db.sqlite
+      .prepare(`SELECT ${FOLDER_COLS} FROM library_folders WHERE id = ?`)
+      .get(id) as unknown as LibraryFolderRow;
+    return { folder: mapFolderRow(row) };
+  });
+
+  app.put("/api/library/folders/:id", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const id = mediaIdParamSchema.parse((request.params as { id: string }).id);
+    const body = parseBody(folderSaveBodySchema, request.body);
+    // saveFolder is a rename/update of an EXISTING folder. Refuse to mint a new
+    // (possibly system) folder here, and never touch another profile's folder.
+    const existing = db.sqlite
+      .prepare("SELECT profile_id, is_system FROM library_folders WHERE id = ?")
+      .get(id) as { profile_id: string; is_system: number } | undefined;
+    if (existing == null || existing.profile_id !== auth.profileId) {
+      throw httpError(404, "Folder not found.");
+    }
+    if (existing.is_system === 1) throw httpError(400, "System folders cannot be edited.");
+    db.sqlite
+      .prepare(
+        `UPDATE library_folders SET name = ?, parent_id = ?, updated_at = ?
+         WHERE id = ? AND profile_id = ?`,
+      )
+      .run(body.name, body.parentId, nowISO(), id, auth.profileId);
+    audit(db, auth, "library.folder.save", "library_folder", id);
+    return { ok: true };
+  });
+
+  app.delete("/api/library/folders/:id", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const id = mediaIdParamSchema.parse((request.params as { id: string }).id);
+    const folder = db.sqlite
+      .prepare("SELECT list_type, is_system FROM library_folders WHERE id = ? AND profile_id = ?")
+      .get(id, auth.profileId) as { list_type: string; is_system: number } | undefined;
+    if (folder == null) return { ok: true }; // missing → no-op (DexieStore parity)
+    if (folder.is_system === 1) throw httpError(400, "System folders cannot be deleted.");
+    const fallback = systemRootId(auth.profileId, folder.list_type as ListType);
+    db.transaction(() => {
+      // Re-parent this folder's entries to the system root, deduping on media_id.
+      const entries = db.sqlite
+        .prepare("SELECT id, media_id FROM user_library WHERE profile_id = ? AND folder_id = ?")
+        .all(auth.profileId, id) as Array<{ id: string; media_id: string }>;
+      for (const e of entries) {
+        const collides =
+          db.sqlite
+            .prepare(
+              "SELECT 1 FROM user_library WHERE profile_id = ? AND media_id = ? AND folder_id = ? LIMIT 1",
+            )
+            .get(auth.profileId, e.media_id, fallback) != null;
+        if (collides) {
+          db.sqlite.prepare("DELETE FROM user_library WHERE id = ?").run(e.id);
+        } else {
+          db.sqlite.prepare("UPDATE user_library SET folder_id = ? WHERE id = ?").run(fallback, e.id);
+        }
+      }
+      db.sqlite.prepare("DELETE FROM library_folders WHERE id = ? AND profile_id = ?").run(id, auth.profileId);
+    });
+    audit(db, auth, "library.folder.delete", "library_folder", id);
+    return { ok: true };
+  });
+
+  app.put("/api/library/:mediaId", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const mediaId = mediaIdParamSchema.parse((request.params as { mediaId: string }).mediaId);
+    const body = parseBody(libraryUpsertBodySchema, request.body);
+    ensureLibrarySystemFolders(db, auth.profileId);
+    // Folder resolution mirrors DexieStore: non-folder list types pin to the
+    // system root; folder list types default an empty folderId to the root.
+    const resolvedFolderId = listTypeSupportsFolders(body.listType)
+      ? (body.folderId?.trim() || systemRootId(auth.profileId, body.listType))
+      : systemRootId(auth.profileId, body.listType);
+    if (!folderExistsForProfile(db, auth.profileId, resolvedFolderId)) {
+      throw httpError(400, "Unknown folder.");
+    }
+    const now = nowISO();
+    db.sqlite
+      .prepare(
+        `INSERT INTO user_library
+           (id, profile_id, media_id, folder_id, list_type, added_at, custom_list_name, release_date_hint, renewal_status, preview_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (profile_id, media_id, folder_id) DO UPDATE SET
+           list_type = excluded.list_type,
+           custom_list_name = COALESCE(excluded.custom_list_name, user_library.custom_list_name),
+           release_date_hint = COALESCE(excluded.release_date_hint, user_library.release_date_hint),
+           renewal_status = COALESCE(excluded.renewal_status, user_library.renewal_status),
+           preview_json = excluded.preview_json`,
+      )
+      .run(
+        randomId("lib"),
+        auth.profileId,
+        mediaId,
+        resolvedFolderId,
+        body.listType,
+        body.addedAt ?? now,
+        body.customListName ?? null,
+        body.releaseDateHint ?? null,
+        body.renewalStatus ?? null,
+        serializePreview(body.preview),
+      );
+    audit(db, auth, "library.entry.upsert", "library_entry", mediaId);
+    const row = db.sqlite
+      .prepare(
+        `SELECT ${LIBRARY_COLS} FROM user_library WHERE profile_id = ? AND media_id = ? AND folder_id = ?`,
+      )
+      .get(auth.profileId, mediaId, resolvedFolderId) as unknown as LibraryRow;
+    return { entry: mapLibraryRow(row) };
+  });
+
+  app.delete("/api/library/entry/:id", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const id = mediaIdParamSchema.parse((request.params as { id: string }).id);
+    db.sqlite
+      .prepare("DELETE FROM user_library WHERE id = ? AND profile_id = ?")
+      .run(id, auth.profileId);
+    audit(db, auth, "library.entry.delete", "library_entry", id);
     return { ok: true };
   });
 

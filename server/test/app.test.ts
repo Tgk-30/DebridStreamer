@@ -308,6 +308,134 @@ describe("DebridStreamer server", () => {
     expect(bobHist.items[0]).toMatchObject({ progressSeconds: 90, completed: true });
   });
 
+  it("seeds system folders and supports folder + entry CRUD with DexieStore parity", async () => {
+    const owner = await setupOwner(app);
+
+    // System folders are seeded lazily on first read: 3 roots + Watched + Release Wait.
+    const folders0 = json<{
+      folders: Array<{ id: string; folderKind: string; isSystem: boolean; name: string }>;
+    }>(await request(owner, { method: "GET", url: "/api/library/folders" })).folders;
+    expect(folders0.map((f) => f.folderKind).sort()).toEqual([
+      "release_wait",
+      "system_root",
+      "system_root",
+      "system_root",
+      "watched",
+    ]);
+    expect(folders0.every((f) => f.isSystem)).toBe(true);
+    const favRootId = folders0.find((f) => f.folderKind === "system_root" && f.name === "Library")!.id;
+
+    // No CSRF → 403 on a write.
+    expect(
+      (await request(owner, { method: "PUT", url: "/api/library/m1", payload: { listType: "favorites", preview: { id: "m1" } } })).statusCode,
+    ).toBe(403);
+
+    // Create folder under favorites (manual, non-system).
+    const created = json<{ folder: { id: string; name: string; folderKind: string; isSystem: boolean } }>(
+      await request(owner, { method: "POST", url: "/api/library/folders", csrf: true, payload: { name: "Action", listType: "favorites" } }),
+    ).folder;
+    expect(created).toMatchObject({ name: "Action", folderKind: "manual", isSystem: false });
+    const actionId = created.id;
+
+    // Duplicate name disambiguates to "Action (2)".
+    expect(
+      json<{ folder: { name: string } }>(
+        await request(owner, { method: "POST", url: "/api/library/folders", csrf: true, payload: { name: "Action", listType: "favorites" } }),
+      ).folder.name,
+    ).toBe("Action (2)");
+
+    // Folders unsupported for watchlist.
+    expect(
+      (await request(owner, { method: "POST", url: "/api/library/folders", csrf: true, payload: { name: "x", listType: "watchlist" } })).statusCode,
+    ).toBe(400);
+
+    // Add to the manual folder; add another with no folderId → defaults to favorites root.
+    const e1 = json<{ entry: { id: string; folderId: string } }>(
+      await request(owner, { method: "PUT", url: "/api/library/m1", csrf: true, payload: { listType: "favorites", folderId: actionId, preview: { id: "m1", title: "M1" } } }),
+    ).entry;
+    expect(e1.folderId).toBe(actionId);
+    const e3 = json<{ entry: { folderId: string } }>(
+      await request(owner, { method: "PUT", url: "/api/library/m3", csrf: true, payload: { listType: "favorites", preview: { id: "m3" } } }),
+    ).entry;
+    expect(e3.folderId).toBe(favRootId);
+
+    // Dedup + COALESCE: re-add m1 to the same folder updates in place; addedAt preserved.
+    const e1b = json<{ entry: { id: string; customListName: string | null } }>(
+      await request(owner, { method: "PUT", url: "/api/library/m1", csrf: true, payload: { listType: "favorites", folderId: actionId, customListName: "Fav", preview: { id: "m1", title: "M1b" } } }),
+    ).entry;
+    expect(e1b.id).toBe(e1.id);
+    expect(e1b.customListName).toBe("Fav");
+    expect(
+      json<{ items: Array<{ mediaId: string }> }>(
+        await request(owner, { method: "GET", url: "/api/library?listType=favorites" }),
+      ).items.map((e) => e.mediaId).sort(),
+    ).toEqual(["m1", "m3"]);
+
+    // Remove an entry.
+    await request(owner, { method: "DELETE", url: `/api/library/entry/${e1.id}`, csrf: true });
+    expect(
+      json<{ items: Array<{ mediaId: string }> }>(
+        await request(owner, { method: "GET", url: "/api/library?listType=favorites" }),
+      ).items.map((e) => e.mediaId),
+    ).toEqual(["m3"]);
+
+    // Delete system folder → 400; delete manual → 200; delete missing → 200 (no-op).
+    expect((await request(owner, { method: "DELETE", url: `/api/library/folders/${favRootId}`, csrf: true })).statusCode).toBe(400);
+    expect((await request(owner, { method: "DELETE", url: `/api/library/folders/${actionId}`, csrf: true })).statusCode).toBe(200);
+    expect((await request(owner, { method: "DELETE", url: "/api/library/folders/nope", csrf: true })).statusCode).toBe(200);
+  });
+
+  it("re-parents entries to the system root on folder delete, deduping collisions", async () => {
+    const owner = await setupOwner(app);
+    const favRootId = json<{ folders: Array<{ id: string; folderKind: string }> }>(
+      await request(owner, { method: "GET", url: "/api/library/folders?listType=favorites" }),
+    ).folders.find((f) => f.folderKind === "system_root")!.id;
+    const actionId = json<{ folder: { id: string } }>(
+      await request(owner, { method: "POST", url: "/api/library/folders", csrf: true, payload: { name: "Action", listType: "favorites" } }),
+    ).folder.id;
+
+    // m1 lives in both Action and the root (collision); m9 only in Action.
+    await request(owner, { method: "PUT", url: "/api/library/m1", csrf: true, payload: { listType: "favorites", folderId: actionId, preview: { id: "m1" } } });
+    await request(owner, { method: "PUT", url: "/api/library/m1", csrf: true, payload: { listType: "favorites", folderId: favRootId, preview: { id: "m1" } } });
+    await request(owner, { method: "PUT", url: "/api/library/m9", csrf: true, payload: { listType: "favorites", folderId: actionId, preview: { id: "m9" } } });
+
+    await request(owner, { method: "DELETE", url: `/api/library/folders/${actionId}`, csrf: true });
+
+    const items = json<{ items: Array<{ mediaId: string; folderId: string }> }>(
+      await request(owner, { method: "GET", url: "/api/library?listType=favorites" }),
+    ).items;
+    expect(items.filter((e) => e.mediaId === "m1")).toHaveLength(1); // collision deduped
+    expect(items.find((e) => e.mediaId === "m9")?.folderId).toBe(favRootId); // re-parented
+  });
+
+  it("isolates library + folders per profile (no IDOR)", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "carol", "carol-password");
+    const carol = await login(app, "carol", "carol-password");
+
+    const fA = json<{ folder: { id: string } }>(
+      await request(owner, { method: "POST", url: "/api/library/folders", csrf: true, payload: { name: "Owner Folder", listType: "favorites" } }),
+    ).folder;
+    const eA = json<{ entry: { id: string } }>(
+      await request(owner, { method: "PUT", url: "/api/library/o1", csrf: true, payload: { listType: "favorites", folderId: fA.id, preview: { id: "o1" } } }),
+    ).entry;
+
+    // Carol sees none of owner's rows.
+    expect(json<{ items: unknown[] }>(await request(carol, { method: "GET", url: "/api/library?listType=favorites" })).items).toHaveLength(0);
+    expect(
+      json<{ folders: Array<{ name: string }> }>(await request(carol, { method: "GET", url: "/api/library/folders?listType=favorites" })).folders.some((f) => f.name === "Owner Folder"),
+    ).toBe(false);
+    expect(json<{ items: unknown[] }>(await request(carol, { method: "GET", url: `/api/library/folder/${fA.id}` })).items).toHaveLength(0);
+
+    // Carol's deletes can't touch owner's rows.
+    await request(carol, { method: "DELETE", url: `/api/library/entry/${eA.id}`, csrf: true });
+    await request(carol, { method: "DELETE", url: `/api/library/folders/${fA.id}`, csrf: true });
+    expect(json<{ items: unknown[] }>(await request(owner, { method: "GET", url: "/api/library?listType=favorites" })).items).toHaveLength(1);
+    expect(
+      json<{ folders: Array<{ name: string }> }>(await request(owner, { method: "GET", url: "/api/library/folders?listType=favorites" })).folders.some((f) => f.name === "Owner Folder"),
+    ).toBe(true);
+  });
+
   it("uses server credentials by default and profile credentials as overrides", async () => {
     const owner = await setupOwner(app);
     await createProfile(owner, "bob", "bob-password");
