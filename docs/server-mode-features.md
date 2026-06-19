@@ -105,10 +105,14 @@ The hosted app is installable on iPhone, iPad, Android, and desktop browsers via
 - **Debrid Library screen is desktop-only.** The dedicated "Debrid" file-library
   browser is a desktop (Tauri) feature and is hidden in Server Mode. Streaming
   itself still works through the proxy.
-- **No server-side transcoding / adaptive bitrate (yet).** The server relays the
-  original video bytes; it does not re-encode to a lower bitrate. The cached-only
-  / max-quality / max-size controls reduce heavy playback but don't shrink the
-  stream itself. True bitrate reduction (adaptive HLS/transcoding) is future
+- **Server-side transcoding is opt-in (operator).** By default the server relays
+  the original video bytes and the cached-only / max-quality / max-size controls
+  (plus Data Saver) shape bandwidth by *choosing a smaller source*. An operator
+  who runs `DS_SERVER_ENABLE_TRANSCODE=true` on a box with **ffmpeg** installed
+  unlocks a "Reduce playback bitrate (server transcode)" toggle (Settings →
+  Playback) that re-encodes playback to a 720p HLS stream — true bitrate
+  reduction, at the cost of server CPU. Not recommended on a Raspberry Pi; left
+  off by default. Multi-rendition adaptive bitrate + hardware encoding are future
   work.
 - **A feature needs its credential configured.** Each capability requires the
   matching credential to be present (shared or per-profile): metadata needs a
@@ -135,4 +139,4 @@ The hosted app is installable on iPhone, iPad, Android, and desktop browsers via
 | Debrid streaming via single-IP proxy (Range/seek) | Works |
 | Per-profile cached-only / quality / size filters | Works |
 | Debrid Library file browser | Desktop only |
-| Server-side transcoding / true bitrate reduction | Not yet |
+| Server-side transcoding (720p HLS) | Opt-in (operator flag + ffmpeg) |
