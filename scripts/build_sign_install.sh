@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
-export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
-ID="Apple Development: Brendan Toscano (5CF38X85X3)"
-REPO=/Users/brendan/Desktop/DebridStreamer
+# Local-only dev helper. Override the toolchain + signing identity via env vars;
+# REPO is derived from this script's location so it works from any checkout.
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"
+ID="${SIGN_IDENTITY:-Apple Development: Brendan Toscano (5CF38X85X3)}"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REL=/tmp/ds-scratch/out/Products/Release
 VLCSRC="$REPO/Vendor/VLCKit.xcframework/macos-arm64_x86_64/VLCKit.framework"
 STAGE=/tmp/ds-app-stage3; APP="$STAGE/DebridStreamer.app"
