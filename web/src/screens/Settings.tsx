@@ -591,9 +591,13 @@ export function Settings() {
   }
 
   function applyAppearance(next: Partial<AppSettings>) {
-    const merged = { ...draft, ...next };
-    setDraft(merged);
-    updateSettings(merged);
+    // Appearance controls are instant-apply. Reflect the change in the preview
+    // draft, but PERSIST only the appearance change layered on the last-SAVED
+    // settings — NOT the whole draft. Persisting the draft would silently commit
+    // unsaved edits from other tabs (e.g. a half-typed API key or debrid token)
+    // and wrongly clear the "unsaved changes" indicator on a mere theme nudge.
+    setDraft((d) => ({ ...d, ...next }));
+    updateSettings({ ...settings, ...next });
     setSaved(true);
   }
 
@@ -3234,11 +3238,21 @@ function DebridTab({ draft, patch }: TabProps) {
     service: AppSettings["debridTokens"][number]["service"],
     token: string,
   ) {
-    const others = draft.debridTokens.filter((t) => t.service !== service);
-    const next =
-      token.trim().length > 0
-        ? [...others, { service, apiToken: token }]
-        : others;
+    const exists = draft.debridTokens.some((t) => t.service === service);
+    let next: AppSettings["debridTokens"];
+    if (token.trim().length === 0) {
+      // Clearing → drop the entry, preserving the order of the rest.
+      next = draft.debridTokens.filter((t) => t.service !== service);
+    } else if (exists) {
+      // Update IN PLACE. Array order is provider priority (saveSettingsToStore
+      // assigns priority by index), so filter+re-append would silently demote an
+      // edited provider to last and change which service is preferred.
+      next = draft.debridTokens.map((t) =>
+        t.service === service ? { ...t, apiToken: token } : t,
+      );
+    } else {
+      next = [...draft.debridTokens, { service, apiToken: token }];
+    }
     patch({ debridTokens: next });
   }
 

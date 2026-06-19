@@ -1202,6 +1202,10 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
     return {
       setupRequired: userCount(db) === 0,
       session: auth,
+      // Echo the CSRF token from the cookie so a cross-origin client (which can't
+      // read document.cookie) can attach it as the x-csrf-token header on
+      // mutating requests after a reload. Null when unauthenticated.
+      csrfToken: auth != null ? (request.cookies?.[CSRF_COOKIE] ?? null) : null,
     };
   });
 

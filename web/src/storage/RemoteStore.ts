@@ -18,6 +18,8 @@ import type {
   WatchHistoryUpsert,
 } from "./types";
 
+import { notifyUnauthorized, readCsrfToken } from "../lib/serverSession";
+
 type JsonObject = Record<string, unknown>;
 
 const SECRET_MARKER = "secret:";
@@ -31,16 +33,6 @@ const SECRET_CREDENTIAL_PROVIDERS: Record<
   omdb_api_key: "omdb",
   opensubtitles_api_key: "opensubtitles",
 };
-
-function csrfToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith("ds_csrf="));
-  if (match == null) return null;
-  return decodeURIComponent(match.slice("ds_csrf=".length));
-}
 
 function historyKey(mediaId: string, episodeId: string | null | undefined): string {
   return `${mediaId}:${episodeId ?? ""}`;
@@ -74,7 +66,7 @@ class ServerAPI {
     const unsafe = method !== "GET" && method !== "HEAD";
     if (body !== undefined) headers["content-type"] = "application/json";
     if (unsafe) {
-      const csrf = csrfToken();
+      const csrf = readCsrfToken();
       if (csrf != null) headers["x-csrf-token"] = csrf;
     }
 
@@ -98,6 +90,7 @@ class ServerAPI {
       }
     }
     if (!response.ok) {
+      if (response.status === 401) notifyUnauthorized();
       const message =
         typeof parsed.error === "string"
           ? parsed.error

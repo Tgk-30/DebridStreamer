@@ -5,18 +5,9 @@ import type { Genre, MediaCategory } from "../services/metadata/types";
 import type { StreamRow } from "../data/streams";
 import type { UpcomingEpisode } from "./metadata";
 import { configuredServerURL } from "./serverMode";
+import { notifyUnauthorized, readCsrfToken } from "./serverSession";
 
 type JsonObject = Record<string, unknown>;
-
-function csrfToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith("ds_csrf="));
-  if (match == null) return null;
-  return decodeURIComponent(match.slice("ds_csrf=".length));
-}
 
 function serverBaseURL(): string {
   const baseURL = configuredServerURL();
@@ -33,7 +24,7 @@ async function serverRequest<T>(
   const unsafe = method !== "GET" && method !== "HEAD";
   if (body !== undefined) headers["content-type"] = "application/json";
   if (unsafe) {
-    const csrf = csrfToken();
+    const csrf = readCsrfToken();
     if (csrf != null) headers["x-csrf-token"] = csrf;
   }
 
@@ -56,6 +47,7 @@ async function serverRequest<T>(
     }
   }
   if (!response.ok) {
+    if (response.status === 401) notifyUnauthorized();
     const message =
       typeof parsed.error === "string"
         ? parsed.error

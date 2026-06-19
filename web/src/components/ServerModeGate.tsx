@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { configuredServerURL } from "../lib/serverMode";
+import {
+  clearServerSession,
+  onUnauthorized,
+  setCsrfToken,
+} from "../lib/serverSession";
 import "./ServerModeGate.css";
 
 interface BootstrapResponse {
   setupRequired: boolean;
   session: unknown | null;
+  csrfToken?: string | null;
+}
+
+interface AuthResponse {
+  csrfToken?: string | null;
 }
 
 type GateState =
@@ -67,16 +77,31 @@ function jsonFetch<T>(
 export function ServerModeGate({ children }: { children: ReactNode }) {
   const baseURL = useMemo(() => configuredServerURL(), []);
   const inviteToken = useMemo(() => inviteTokenFromURL(), []);
+  const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<GateState>(() =>
     baseURL == null ? { kind: "local" } : { kind: "loading", baseURL },
   );
 
+  // If a request 401s (session expired/revoked while the app is open), return to
+  // the login screen instead of leaving a half-broken authenticated shell.
+  useEffect(() => {
+    if (baseURL == null) return;
+    return onUnauthorized(() => {
+      clearServerSession();
+      setState({ kind: "login", baseURL });
+    });
+  }, [baseURL]);
+
   useEffect(() => {
     if (baseURL == null) return;
     let cancelled = false;
+    setState({ kind: "loading", baseURL });
     void jsonFetch<BootstrapResponse>(baseURL, "/api/bootstrap")
       .then((bootstrap) => {
         if (cancelled) return;
+        // Capture the CSRF token so mutating requests work cross-origin (where
+        // document.cookie can't see ds_csrf).
+        setCsrfToken(bootstrap.csrfToken);
         if (bootstrap.setupRequired) setState({ kind: "setup", baseURL });
         else if (bootstrap.session != null) setState({ kind: "ready", baseURL });
         else if (inviteToken != null) {
@@ -92,7 +117,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [baseURL, inviteToken]);
+  }, [baseURL, inviteToken, attempt]);
 
   if (state.kind === "local" || state.kind === "ready") return <>{children}</>;
   if (state.kind === "loading") {
@@ -104,6 +129,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         title="Server unavailable"
         copy={state.message}
         baseURL={state.baseURL}
+        onRetry={() => setAttempt((n) => n + 1)}
       />
     );
   }
@@ -116,9 +142,10 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         submitLabel="Create owner"
         includeDisplayName
         onSubmit={(payload) =>
-          jsonFetch(state.baseURL, "/api/auth/setup-owner", payload).then(() =>
-            setState({ kind: "ready", baseURL: state.baseURL }),
-          )
+          jsonFetch<AuthResponse>(state.baseURL, "/api/auth/setup-owner", payload).then((res) => {
+            setCsrfToken(res.csrfToken);
+            setState({ kind: "ready", baseURL: state.baseURL });
+          })
         }
       />
     );
@@ -132,10 +159,11 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         submitLabel="Create profile"
         includeDisplayName
         onSubmit={(payload) =>
-          jsonFetch(state.baseURL, "/api/auth/invite", {
+          jsonFetch<AuthResponse>(state.baseURL, "/api/auth/invite", {
             ...payload,
             token: state.token,
-          }).then(() => {
+          }).then((res) => {
+            setCsrfToken(res.csrfToken);
             clearInviteFromURL();
             setState({ kind: "ready", baseURL: state.baseURL });
           })
@@ -150,9 +178,10 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
       baseURL={state.baseURL}
       submitLabel="Sign in"
       onSubmit={(payload) =>
-        jsonFetch(state.baseURL, "/api/auth/login", payload).then(() =>
-          setState({ kind: "ready", baseURL: state.baseURL }),
-        )
+        jsonFetch<AuthResponse>(state.baseURL, "/api/auth/login", payload).then((res) => {
+          setCsrfToken(res.csrfToken);
+          setState({ kind: "ready", baseURL: state.baseURL });
+        })
       }
     />
   );
@@ -162,16 +191,23 @@ function GateShell({
   title,
   copy,
   baseURL,
+  onRetry,
 }: {
   title: string;
   copy: string;
   baseURL: string;
+  onRetry?: () => void;
 }) {
   return (
     <div className="server-gate">
       <div className="server-gate-card">
         <h1 className="server-gate-title">{title}</h1>
         <p className="server-gate-copy">{copy}</p>
+        {onRetry != null && (
+          <button className="server-gate-button" type="button" onClick={onRetry}>
+            Retry
+          </button>
+        )}
         <div className="server-gate-meta">{baseURL || window.location.origin}</div>
       </div>
     </div>
