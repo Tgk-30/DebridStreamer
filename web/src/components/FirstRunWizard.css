@@ -1,0 +1,168 @@
+/* Persona first-run wizard — a centered glass card over the app background. */
+
+.first-run {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-xl);
+  overflow-y: auto;
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(var(--accent-rgb), 0.16), transparent 60%),
+    rgba(6, 8, 14, 0.55);
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+  animation: firstRunFade 0.32s ease-out;
+}
+@keyframes firstRunFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.first-run-card {
+  position: relative;
+  width: min(640px, 100%);
+  padding: clamp(var(--sp-xl), 4vw, 44px);
+  border-radius: var(--r-lg);
+  background: var(--glass-tint-panel, rgba(20, 24, 36, 0.72));
+  border: 0.75px solid var(--glass-border);
+  box-shadow: 0 40px 100px -28px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.first-run-skip {
+  position: absolute;
+  top: var(--sp-lg);
+  right: var(--sp-lg);
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+}
+.first-run-skip:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.first-run-title {
+  margin: 0 0 6px;
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.first-run-sub {
+  margin: 0 0 var(--sp-lg);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-width: 48ch;
+}
+
+.first-run-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-md);
+}
+@media (max-width: 560px) {
+  .first-run-choices { grid-template-columns: 1fr; }
+}
+
+.first-run-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: var(--sp-md) var(--sp-lg);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 0.75px solid var(--glass-border);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.16s, transform 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.18s, background 0.16s;
+}
+.first-run-choice:hover {
+  transform: translateY(-2px);
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.08);
+  box-shadow: 0 10px 26px -10px rgba(var(--accent-rgb), 0.4);
+}
+.first-run-choice-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.first-run-choice-copy {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.first-run-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+.first-run-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.first-run-field input {
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  padding: 11px 13px;
+  outline: none;
+}
+.first-run-field input:focus-visible {
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+.first-run-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.first-run-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-md);
+}
+.first-run-primary,
+.first-run-secondary {
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 10px 20px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  border: 0.75px solid var(--glass-border);
+}
+.first-run-primary {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.first-run-primary:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.first-run-secondary {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+}
+.first-run-secondary:hover {
+  color: var(--text-primary);
+}

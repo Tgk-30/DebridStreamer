@@ -13,6 +13,7 @@
 // abstraction; desktop builds can back that with native secure storage.
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -23,6 +24,11 @@ import {
 } from "react";
 import QRCode from "qrcode";
 import { useAppStore } from "../store/AppStore";
+import {
+  useServerSession,
+  useSetServerSession,
+} from "../lib/ServerSessionContext";
+import { readCsrfToken } from "../lib/serverSession";
 import type {
   AppSettings,
   AppearanceAccent,
@@ -316,6 +322,28 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "sources", label: "Sources" },
 ];
 
+// Tabs visible in Simple mode (progressive disclosure). Advanced unlocks the
+// rest (Updates, Server, Sources). Server is also hidden in Local Mode.
+const SIMPLE_TABS = new Set<Tab>([
+  "appearance",
+  "playback",
+  "install",
+  "keys",
+  "debrid",
+]);
+
+/** Pure, testable tab filter for the current modes. */
+export function visibleTabs(opts: {
+  serverMode: boolean;
+  simpleMode: boolean;
+}): { id: Tab; label: string }[] {
+  return TABS.filter((t) => {
+    if (!opts.serverMode && t.id === "server") return false;
+    if (opts.simpleMode && !SIMPLE_TABS.has(t.id)) return false;
+    return true;
+  });
+}
+
 type ServerRole = "owner" | "admin" | "member" | "restricted";
 
 interface ServerProfile {
@@ -574,7 +602,9 @@ async function serverRequest<T>(
 }
 
 export function Settings() {
-  const { settings, updateSettings } = useAppStore();
+  const { settings, updateSettings, simpleMode } = useAppStore();
+  const serverSession = useServerSession();
+  const setServerSession = useSetServerSession();
   const [tab, setTab] = useState<Tab>("appearance");
   // Edit a local draft; "Save" commits it through the store.
   const [draft, setDraft] = useState<AppSettings>(settings);
@@ -602,11 +632,43 @@ export function Settings() {
   }
 
   const serverMode = isServerMode();
-  const tabs = serverMode ? TABS : TABS.filter((t) => t.id !== "server");
+  const tabs = visibleTabs({ serverMode, simpleMode });
 
+  // Redirect off a now-hidden tab (e.g. after flipping to Simple while on
+  // Server/Sources/Updates) so the user never lands on a blank pane.
   useEffect(() => {
-    if (!serverMode && tab === "server") setTab("appearance");
-  }, [serverMode, tab]);
+    if (!visibleTabs({ serverMode, simpleMode }).some((t) => t.id === tab)) {
+      setTab("appearance");
+    }
+  }, [serverMode, simpleMode, tab]);
+
+  // Toggle the experience tier. Local Mode persists to AppSettings; Server Mode
+  // PATCHes the profile's simple_mode and optimistically updates the session.
+  const setExperience = useCallback(
+    (simple: boolean) => {
+      if (isServerMode()) {
+        const base = configuredServerURL();
+        const profileId = serverSession?.profileId;
+        if (base == null || profileId == null) return;
+        const csrf = readCsrfToken();
+        void fetch(`${base}/api/profiles/${encodeURIComponent(profileId)}`, {
+          method: "PATCH",
+          credentials: "include",
+          headers: {
+            "content-type": "application/json",
+            ...(csrf != null ? { "x-csrf-token": csrf } : {}),
+          },
+          body: JSON.stringify({ simpleMode: simple }),
+        }).catch(() => {});
+        if (serverSession != null) {
+          setServerSession({ ...serverSession, simpleMode: simple });
+        }
+      } else {
+        updateSettings({ ...settings, simpleMode: simple });
+      }
+    },
+    [settings, updateSettings, serverSession, setServerSession],
+  );
 
   const selectedTab = tabs.find((t) => t.id === tab) ?? tabs[0];
   const selectedProfile =
@@ -706,6 +768,23 @@ export function Settings() {
           </div>
         )}
       </header>
+
+      <div className="settings-experience">
+        <SegmentedControl
+          label="Experience"
+          value={simpleMode ? "simple" : "advanced"}
+          options={[
+            { value: "simple", label: "Simple" },
+            { value: "advanced", label: "Advanced" },
+          ]}
+          onChange={(v) => setExperience(v === "simple")}
+        />
+        <p className="settings-experience-hint t-secondary">
+          {simpleMode
+            ? "Simple shows the essentials. Switch to Advanced for sources, updates, and every dial."
+            : "Advanced reveals all tabs and controls."}
+        </p>
+      </div>
 
       <label className="settings-tab-select">
         <span className="settings-label">Settings category</span>

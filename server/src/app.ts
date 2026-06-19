@@ -567,6 +567,7 @@ function readAuth(db: AppDatabase, request: FastifyRequest): AuthContext | null 
          users.role AS role,
          profiles.id AS profileId,
          profiles.display_name AS displayName,
+         profiles.simple_mode AS simpleMode,
          sessions.id AS sessionId
        FROM sessions
        JOIN users ON users.id = sessions.user_id
@@ -580,9 +581,12 @@ function readAuth(db: AppDatabase, request: FastifyRequest): AuthContext | null 
        LIMIT 1`,
     )
     .get(cookieValue.sessionId, sha256(cookieValue.rawToken), nowISO()) as
-    | AuthContext
+    | (Omit<AuthContext, "simpleMode"> & { simpleMode: number })
     | undefined;
-  return row ?? null;
+  // simple_mode is an INTEGER column — map to a real boolean (a raw cast would
+  // leak a number, defeating `=== true` / `?? true` checks downstream).
+  if (row == null) return null;
+  return { ...row, simpleMode: row.simpleMode === 1 };
 }
 
 function requireAuth(db: AppDatabase, request: FastifyRequest): AuthContext {

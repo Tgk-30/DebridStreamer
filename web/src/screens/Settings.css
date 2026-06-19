@@ -1883,3 +1883,13 @@
     grid-area: status;
   }
 }
+
+/* Simple/Advanced experience toggle (above the tab navigation). */
+.settings-experience {
+  margin: 0 0 var(--sp-md);
+}
+.settings-experience-hint {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}

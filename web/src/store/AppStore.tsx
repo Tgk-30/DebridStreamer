@@ -45,6 +45,8 @@ import {
 import type { CachedResolutionRecord, WatchHistoryRecord } from "../storage/models";
 import { getStore } from "../storage";
 import { AutoResolveScheduler } from "../lib/autoResolve";
+import { isServerMode } from "../lib/serverMode";
+import { useServerSession } from "../lib/ServerSessionContext";
 
 export interface AppStore {
   // Routing
@@ -74,6 +76,9 @@ export interface AppStore {
   // Settings (storage-port backed)
   settings: AppSettings;
   updateSettings: (next: AppSettings) => void;
+  /** Effective Simple/Advanced experience: Server Mode reads the profile
+   * session; Local Mode reads AppSettings. Drives progressive disclosure. */
+  simpleMode: boolean;
 
   // Watchlist + History (storage-port backed)
   watchlist: MediaPreview[];
@@ -298,6 +303,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [refreshHistory],
   );
 
+  // Effective experience tier. Server Mode is authoritative from the profile
+  // session (default Simple when the session hasn't loaded yet); Local Mode uses
+  // the AppSettings flag.
+  const serverSession = useServerSession();
+  const simpleMode = isServerMode()
+    ? (serverSession?.simpleMode ?? true)
+    : settings.simpleMode;
+
   const value: AppStore = {
     route,
     navigate,
@@ -313,6 +326,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     services,
     settings,
     updateSettings,
+    simpleMode,
     watchlist,
     history,
     continueWatching,
@@ -337,4 +351,9 @@ export function useAppStore(): AppStore {
     throw new Error("useAppStore must be used within an <AppStoreProvider>");
   }
   return store;
+}
+
+/** Convenience hook for the effective Simple/Advanced experience tier. */
+export function useSimpleMode(): boolean {
+  return useAppStore().simpleMode;
 }

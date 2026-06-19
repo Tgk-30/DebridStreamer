@@ -51,6 +51,8 @@ export interface AuthContext {
   profileId: string;
   displayName: string;
   sessionId: string;
+  /** Whether the default profile is in Simple (progressive-disclosure) mode. */
+  simpleMode: boolean;
 }
 
 export interface BuildAppOptions {

@@ -6,12 +6,39 @@
 import { useState } from "react";
 import { Icon, type IconName } from "./Icon";
 import { isServerMode } from "../lib/serverMode";
+import { useSimpleMode } from "../store/AppStore";
 import "./NavRail.css";
 
 // Screens with no working backend in Server Mode (Debrid Library is Tauri-only;
 // the AI Assistant needs a provider key the browser can't read back from the
 // server). Hidden from the rail in Server Mode so the nav has no dead-ends.
 const SERVER_MODE_HIDDEN: ReadonlySet<string> = new Set(["debrid", "assistant"]);
+// Power-user destinations hidden in Simple mode (progressive disclosure). The
+// essentials — discover/search/library/watchlist/history/settings — always show;
+// Settings must never hide (it hosts the Simple/Advanced toggle).
+const SIMPLE_MODE_HIDDEN: ReadonlySet<string> = new Set([
+  "assistant",
+  "debrid",
+  "calendar",
+]);
+
+/** True when a screen is hidden from the nav under the current modes. */
+export function isScreenHidden(
+  id: ScreenId,
+  opts: { serverMode: boolean; simpleMode: boolean },
+): boolean {
+  if (opts.serverMode && SERVER_MODE_HIDDEN.has(id)) return true;
+  if (opts.simpleMode && SIMPLE_MODE_HIDDEN.has(id)) return true;
+  return false;
+}
+
+/** Pure, testable nav filter for the current modes. */
+export function visibleNavItems(
+  items: readonly RailItem[],
+  opts: { serverMode: boolean; simpleMode: boolean },
+): RailItem[] {
+  return items.filter((item) => !isScreenHidden(item.id, opts));
+}
 
 export type ScreenId =
   | "discover"
@@ -70,12 +97,9 @@ interface NavRailProps {
 export function NavRail({ selected, onSelect }: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const serverMode = isServerMode();
-  const navItems = serverMode
-    ? NAV_ITEMS.filter((item) => !SERVER_MODE_HIDDEN.has(item.id))
-    : NAV_ITEMS;
-  const moreItems = serverMode
-    ? MOBILE_MORE_ITEMS.filter((item) => !SERVER_MODE_HIDDEN.has(item.id))
-    : MOBILE_MORE_ITEMS;
+  const simpleMode = useSimpleMode();
+  const navItems = visibleNavItems(NAV_ITEMS, { serverMode, simpleMode });
+  const moreItems = visibleNavItems(MOBILE_MORE_ITEMS, { serverMode, simpleMode });
   const moreSelected = moreItems.some((item) => item.id === selected);
 
   function selectScreen(id: ScreenId) {

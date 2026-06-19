@@ -6,12 +6,15 @@
 // overlay that mounts over the content area whenever a media item is selected.
 
 import "./theme/theme.css";
-import { lazy, Suspense } from "react";
-import { NavRail, type ScreenId } from "./components/NavRail";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { NavRail, isScreenHidden, type ScreenId } from "./components/NavRail";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { FirstRunWizard } from "./components/FirstRunWizard";
 import { useAppStore } from "./store/AppStore";
+import { isServerMode } from "./lib/serverMode";
+import { isFirstRun } from "./lib/firstRun";
 import { useTheme } from "./theme/useTheme";
 import "./App.css";
 
@@ -45,13 +48,36 @@ const Detail = lazy(() =>
   import("./screens/Detail").then((m) => ({ default: m.Detail })),
 );
 
+/** Gates a genuine first-run (Local Mode) behind the persona wizard, then the
+ *  app. Renders nothing until the async first-run check resolves to avoid a flash
+ *  of the app before the wizard. Lives inside AppStoreProvider so both branches
+ *  have store access. */
+export function FirstRunHost() {
+  const [firstRun, setFirstRun] = useState<boolean | null>(null);
+  useEffect(() => {
+    void isFirstRun().then(setFirstRun);
+  }, []);
+  if (firstRun == null) return null;
+  if (firstRun) return <FirstRunWizard onDone={() => setFirstRun(false)} />;
+  return <App />;
+}
+
 export function App() {
-  const { route, navigate, detailItem, browseContext, openDetail, search, settings } =
+  const { route, navigate, detailItem, browseContext, openDetail, search, settings, simpleMode } =
     useAppStore();
 
   // Apply the persisted theme to the document root (instantly on change, and on
   // startup once the Store hydrates the saved choice).
   useTheme(settings);
+
+  // If the current screen is hidden under the active modes (e.g. the user flips
+  // to Simple while on Assistant/Debrid, or is in Server Mode), redirect to
+  // Discover so they're never stranded on a now-unreachable screen.
+  useEffect(() => {
+    if (isScreenHidden(route, { serverMode: isServerMode(), simpleMode })) {
+      navigate("discover");
+    }
+  }, [route, simpleMode, navigate]);
 
   // The global quick-search field is shown on browse screens but not Settings
   // (ContentView.showsGlobalSearch); the dedicated Search screen has its own

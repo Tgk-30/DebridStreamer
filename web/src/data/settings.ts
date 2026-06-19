@@ -76,6 +76,7 @@ const SettingsKeys = {
   appearancePosterSize: "appearance_poster_size",
   openSubtitlesApiKey: "opensubtitles_api_key",
   autoUpdateChecks: "auto_update_checks",
+  simpleMode: "simple_mode",
   autoInstallUpdates: "auto_install_updates",
   streamCachedOnly: "stream_cached_only",
   streamMaxQuality: "stream_max_quality",
@@ -163,6 +164,9 @@ export interface AppSettings {
   appearancePosterSize: AppearancePosterSize;
   /** OpenSubtitles REST API key (powers in-player subtitle search). */
   openSubtitlesApiKey: string;
+  /** Progressive disclosure: Simple hides advanced tabs/controls. Local-Mode
+   * source of truth (Server Mode reads it from the profile session instead). */
+  simpleMode: boolean;
   /** Desktop builds check signed GitHub Releases on launch. */
   autoUpdateChecks: boolean;
   /** Desktop builds install signed updates automatically after a successful check. */
@@ -285,6 +289,7 @@ export function defaultSettings(): AppSettings {
     appearanceNavTint: "balanced",
     appearancePosterSize: "default",
     openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
+    simpleMode: true,
     autoUpdateChecks: true,
     autoInstallUpdates: false,
     streamCachedOnly: false,
@@ -418,6 +423,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     streamCachedOnly,
     streamMaxQuality,
     streamMaxSizeGB,
+    simpleMode,
   ] = await Promise.all([
     store.getSetting(SettingsKeys.aiProvider),
     store.getSetting(SettingsKeys.aiModel),
@@ -442,6 +448,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.streamCachedOnly),
     store.getSetting(SettingsKeys.streamMaxQuality),
     store.getSetting(SettingsKeys.streamMaxSizeGB),
+    store.getSetting(SettingsKeys.simpleMode),
   ]);
 
   const debridConfigs = await store.listDebridConfigs();
@@ -517,6 +524,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
       appearancePosterSize ?? base.appearancePosterSize,
     ),
     openSubtitlesApiKey: openSubtitlesApiKey ?? base.openSubtitlesApiKey,
+    simpleMode: simpleMode == null ? base.simpleMode : simpleMode === "true",
     autoUpdateChecks:
       autoUpdateChecks == null ? base.autoUpdateChecks : autoUpdateChecks === "true",
     autoInstallUpdates:
@@ -603,6 +611,7 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
       SettingsKeys.autoUpdateChecks,
       settings.autoUpdateChecks ? "true" : "false",
     ),
+    store.setSetting(SettingsKeys.simpleMode, settings.simpleMode ? "true" : "false"),
     store.setSetting(
       SettingsKeys.autoInstallUpdates,
       settings.autoInstallUpdates ? "true" : "false",

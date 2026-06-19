@@ -5,11 +5,15 @@ import {
   onUnauthorized,
   setCsrfToken,
 } from "../lib/serverSession";
+import {
+  ServerSessionProvider,
+  type ServerSession,
+} from "../lib/ServerSessionContext";
 import "./ServerModeGate.css";
 
 interface BootstrapResponse {
   setupRequired: boolean;
-  session: unknown | null;
+  session: ServerSession | null;
   csrfToken?: string | null;
 }
 
@@ -78,9 +82,21 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
   const baseURL = useMemo(() => configuredServerURL(), []);
   const inviteToken = useMemo(() => inviteTokenFromURL(), []);
   const [attempt, setAttempt] = useState(0);
+  const [session, setSession] = useState<ServerSession | null>(null);
   const [state, setState] = useState<GateState>(() =>
     baseURL == null ? { kind: "local" } : { kind: "loading", baseURL },
   );
+
+  // Auth forms reach "ready" without a session object in hand; fetch it once so
+  // consumers (simpleMode/role) have the value without waiting for a reload.
+  async function captureSession(url: string): Promise<void> {
+    try {
+      const res = await jsonFetch<{ session: ServerSession | null }>(url, "/api/auth/session");
+      setSession(res.session);
+    } catch {
+      setSession(null);
+    }
+  }
 
   // If a request 401s (session expired/revoked while the app is open), return to
   // the login screen instead of leaving a half-broken authenticated shell.
@@ -103,7 +119,10 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         // document.cookie can't see ds_csrf).
         setCsrfToken(bootstrap.csrfToken);
         if (bootstrap.setupRequired) setState({ kind: "setup", baseURL });
-        else if (bootstrap.session != null) setState({ kind: "ready", baseURL });
+        else if (bootstrap.session != null) {
+          setSession(bootstrap.session);
+          setState({ kind: "ready", baseURL });
+        }
         else if (inviteToken != null) {
           setState({ kind: "invite", baseURL, token: inviteToken });
         }
@@ -119,7 +138,9 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
     };
   }, [baseURL, inviteToken, attempt]);
 
-  if (state.kind === "local" || state.kind === "ready") return <>{children}</>;
+  if (state.kind === "local" || state.kind === "ready") {
+    return <ServerSessionProvider initial={session}>{children}</ServerSessionProvider>;
+  }
   if (state.kind === "loading") {
     return <GateShell title="Connecting" copy="Checking the DebridStreamer server." baseURL={state.baseURL} />;
   }
@@ -142,8 +163,9 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         submitLabel="Create owner"
         includeDisplayName
         onSubmit={(payload) =>
-          jsonFetch<AuthResponse>(state.baseURL, "/api/auth/setup-owner", payload).then((res) => {
+          jsonFetch<AuthResponse>(state.baseURL, "/api/auth/setup-owner", payload).then(async (res) => {
             setCsrfToken(res.csrfToken);
+            await captureSession(state.baseURL);
             setState({ kind: "ready", baseURL: state.baseURL });
           })
         }
@@ -162,8 +184,9 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
           jsonFetch<AuthResponse>(state.baseURL, "/api/auth/invite", {
             ...payload,
             token: state.token,
-          }).then((res) => {
+          }).then(async (res) => {
             setCsrfToken(res.csrfToken);
+            await captureSession(state.baseURL);
             clearInviteFromURL();
             setState({ kind: "ready", baseURL: state.baseURL });
           })
@@ -178,8 +201,9 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
       baseURL={state.baseURL}
       submitLabel="Sign in"
       onSubmit={(payload) =>
-        jsonFetch<AuthResponse>(state.baseURL, "/api/auth/login", payload).then((res) => {
+        jsonFetch<AuthResponse>(state.baseURL, "/api/auth/login", payload).then(async (res) => {
           setCsrfToken(res.csrfToken);
+          await captureSession(state.baseURL);
           setState({ kind: "ready", baseURL: state.baseURL });
         })
       }
