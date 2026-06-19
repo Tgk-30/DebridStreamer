@@ -2,7 +2,11 @@
 
 .hero {
   position: relative;
-  height: clamp(420px, 52vh, 560px);
+  height: clamp(
+    var(--hero-min-height, 420px),
+    var(--hero-fluid-height, 52vh),
+    var(--hero-max-height, 560px)
+  );
   border-radius: var(--r-lg);
   overflow: hidden;
   box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6),
@@ -211,7 +215,11 @@
 
 @media (max-width: 767px) {
   .hero {
-    height: clamp(320px, 46vh, 400px);
+    height: clamp(
+      var(--hero-mobile-min-height, 320px),
+      var(--hero-mobile-fluid-height, 46vh),
+      var(--hero-mobile-max-height, 400px)
+    );
     min-height: 0;
     border-radius: var(--r-lg);
   }
@@ -299,7 +307,11 @@
 
 @media (max-width: 767px) and (max-height: 820px) {
   .hero {
-    height: clamp(292px, 40vh, 340px);
+    height: clamp(
+      min(292px, var(--hero-mobile-min-height, 320px)),
+      40vh,
+      min(340px, var(--hero-mobile-max-height, 400px))
+    );
   }
 
   .hero-content {

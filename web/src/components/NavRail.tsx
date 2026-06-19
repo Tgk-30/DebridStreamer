@@ -28,13 +28,21 @@ interface RailItem {
 }
 
 const NAV_ITEMS: RailItem[] = [
-  { id: "discover", icon: "discover", label: "Discover", group: "Primary", mobile: true },
+  {
+    id: "discover",
+    icon: "discover",
+    label: "Discover",
+    mobileLabel: "Discover",
+    group: "Primary",
+    mobile: true,
+  },
   { id: "search", icon: "search", label: "Search", group: "Primary", mobile: true },
   { id: "library", icon: "library", label: "Library", group: "Library", mobile: true },
   {
     id: "watchlist",
     icon: "watchlist",
     label: "Watchlist",
+    mobileLabel: "Watchlist",
     group: "Library",
     mobile: true,
   },

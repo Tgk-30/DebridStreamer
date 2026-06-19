@@ -68,6 +68,12 @@
   --text-scale: 1;
   --poster-card-width: 168px;
   --poster-grid-min: 184px;
+  --hero-min-height: 420px;
+  --hero-fluid-height: 52vh;
+  --hero-max-height: 560px;
+  --hero-mobile-min-height: 320px;
+  --hero-mobile-fluid-height: 46vh;
+  --hero-mobile-max-height: 400px;
 
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui,
     "Segoe UI", Roboto, sans-serif;
@@ -102,6 +108,24 @@
 :root[data-poster-size="large"] {
   --poster-card-width: 194px;
   --poster-grid-min: 214px;
+}
+
+:root[data-hero-scale="compact"] {
+  --hero-min-height: 340px;
+  --hero-fluid-height: 44vh;
+  --hero-max-height: 460px;
+  --hero-mobile-min-height: 260px;
+  --hero-mobile-fluid-height: 38vh;
+  --hero-mobile-max-height: 330px;
+}
+
+:root[data-hero-scale="cinematic"] {
+  --hero-min-height: 480px;
+  --hero-fluid-height: 58vh;
+  --hero-max-height: 640px;
+  --hero-mobile-min-height: 360px;
+  --hero-mobile-fluid-height: 50vh;
+  --hero-mobile-max-height: 440px;
 }
 
 :root[data-radius="sharp"] {
@@ -153,14 +177,14 @@
   --nav-rail-highlight: rgba(255, 255, 255, 0.075);
   --nav-mobile-bg: linear-gradient(
     180deg,
-    rgba(16, 19, 31, 0.84),
-    rgba(6, 8, 15, 0.94)
+    rgba(18, 22, 34, 0.9),
+    rgba(7, 10, 17, 0.97)
   );
-  --nav-mobile-border: rgba(255, 255, 255, 0.15);
-  --nav-mobile-highlight: rgba(255, 255, 255, 0.16);
-  --nav-mobile-icon-bg: rgba(255, 255, 255, 0.025);
-  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.18);
-  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.56);
+  --nav-mobile-border: rgba(255, 255, 255, 0.18);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.14);
+  --nav-mobile-icon-bg: transparent;
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.19);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.48);
 }
 
 /* Daybreak — bright frosted glass. Dark text, dark-on-glass tints, a deeper
@@ -205,6 +229,16 @@
   );
   --nav-rail-border: rgba(34, 40, 68, 0.16);
   --nav-rail-highlight: rgba(255, 255, 255, 0.92);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.86),
+    rgba(238, 243, 252, 0.96)
+  );
+  --nav-mobile-border: rgba(34, 40, 68, 0.18);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.88);
+  --nav-mobile-icon-bg: transparent;
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.14);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.38);
 }
 
 /* Midnight — near-black, low-saturation, minimal glow. */
@@ -292,14 +326,14 @@
   --nav-rail-highlight: rgba(255, 255, 255, 0.1);
   --nav-mobile-bg: linear-gradient(
     180deg,
-    rgba(32, 37, 58, 0.72),
-    rgba(8, 11, 20, 0.88)
+    rgba(28, 34, 54, 0.76),
+    rgba(8, 11, 20, 0.9)
   );
-  --nav-mobile-border: rgba(255, 255, 255, 0.16);
-  --nav-mobile-highlight: rgba(255, 255, 255, 0.18);
+  --nav-mobile-border: rgba(255, 255, 255, 0.2);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.16);
   --nav-mobile-icon-bg: transparent;
-  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.12);
-  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.42);
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.15);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.44);
 }
 
 :root[data-chrome="solid"] {
@@ -317,8 +351,8 @@
   --nav-rail-highlight: rgba(255, 255, 255, 0.055);
   --nav-mobile-bg: linear-gradient(
     180deg,
-    rgba(15, 18, 30, 0.96),
-    rgba(5, 7, 13, 0.99)
+    rgba(15, 18, 30, 0.98),
+    rgba(5, 7, 13, 1)
   );
   --nav-mobile-border: rgba(255, 255, 255, 0.2);
   --nav-mobile-highlight: rgba(255, 255, 255, 0.09);
@@ -367,14 +401,14 @@
   --nav-rail-highlight: rgba(255, 255, 255, 0.11);
   --nav-mobile-bg: linear-gradient(
     180deg,
-    rgba(32, 37, 58, 0.72),
-    rgba(8, 11, 20, 0.88)
+    rgba(29, 35, 55, 0.78),
+    rgba(8, 11, 20, 0.9)
   );
-  --nav-mobile-border: rgba(255, 255, 255, 0.24);
-  --nav-mobile-highlight: rgba(255, 255, 255, 0.2);
-  --nav-mobile-icon-bg: rgba(255, 255, 255, 0.035);
+  --nav-mobile-border: rgba(255, 255, 255, 0.22);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.18);
+  --nav-mobile-icon-bg: transparent;
   --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.16);
-  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.48);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.44);
 }
 
 :root[data-nav-tint="solid"] {
@@ -392,7 +426,7 @@
   );
   --nav-mobile-border: rgba(255, 255, 255, 0.17);
   --nav-mobile-highlight: rgba(255, 255, 255, 0.08);
-  --nav-mobile-icon-bg: rgba(255, 255, 255, 0.02);
+  --nav-mobile-icon-bg: transparent;
   --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.24);
   --nav-mobile-active-border: rgba(var(--accent-rgb), 0.58);
 }

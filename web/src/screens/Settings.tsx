@@ -29,6 +29,7 @@ import type {
   AppearanceBackdrop,
   AppearanceChrome,
   AppearanceDensity,
+  AppearanceHeroScale,
   AppearanceMotion,
   AppearanceNavLabels,
   AppearanceNavTint,
@@ -138,6 +139,7 @@ interface AppearanceProfile {
     | "appearanceBlur"
     | "appearanceChrome"
     | "appearanceBackdrop"
+    | "appearanceHeroScale"
     | "appearancePanelContrast"
     | "appearanceNavLabels"
     | "appearanceNavTint"
@@ -150,8 +152,8 @@ const CUSTOM_APPEARANCE_PROFILE = "__custom";
 const APPEARANCE_PROFILES: AppearanceProfile[] = [
   {
     id: "default-cinema",
-    label: "Default cinema",
-    description: "Dark Aurora glass, comfortable spacing, system motion.",
+    label: "Cinema room",
+    description: "Dark Aurora panels, comfortable spacing, system motion.",
     settings: {
       theme: "aurora",
       appearanceAccent: "theme",
@@ -162,6 +164,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 18,
       appearanceChrome: "balanced",
       appearanceBackdrop: "ambient",
+      appearanceHeroScale: "standard",
       appearancePanelContrast: "standard",
       appearanceNavLabels: "auto",
       appearanceNavTint: "balanced",
@@ -182,6 +185,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 12,
       appearanceChrome: "solid",
       appearanceBackdrop: "plain",
+      appearanceHeroScale: "compact",
       appearancePanelContrast: "high",
       appearanceNavLabels: "icons",
       appearanceNavTint: "solid",
@@ -202,6 +206,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 14,
       appearanceChrome: "balanced",
       appearanceBackdrop: "subtle",
+      appearanceHeroScale: "cinematic",
       appearancePanelContrast: "standard",
       appearanceNavLabels: "labels",
       appearanceNavTint: "airy",
@@ -222,6 +227,7 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearanceBlur: 10,
       appearanceChrome: "solid",
       appearanceBackdrop: "subtle",
+      appearanceHeroScale: "standard",
       appearancePanelContrast: "soft",
       appearanceNavLabels: "auto",
       appearanceNavTint: "solid",
@@ -281,6 +287,7 @@ function appearanceProfileMatches(
     draft.appearanceBlur === settings.appearanceBlur &&
     draft.appearanceChrome === settings.appearanceChrome &&
     draft.appearanceBackdrop === settings.appearanceBackdrop &&
+    draft.appearanceHeroScale === settings.appearanceHeroScale &&
     draft.appearancePanelContrast === settings.appearancePanelContrast &&
     draft.appearanceNavLabels === settings.appearanceNavLabels &&
     draft.appearanceNavTint === settings.appearanceNavTint &&
@@ -305,7 +312,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "updates", label: "Updates" },
   { id: "server", label: "Server" },
   { id: "keys", label: "API keys" },
-  { id: "debrid", label: "Debrid" },
+  { id: "debrid", label: "Providers" },
   { id: "sources", label: "Sources" },
 ];
 
@@ -607,7 +614,8 @@ export function Settings() {
   const activeSourceCount =
     draft.sources.filter((source) => source.isActive).length +
     (draft.builtInIndexersEnabled ? 1 : 0);
-  const metadataState = draft.tmdbKey.trim().length > 0 ? "Live metadata" : "Sample metadata";
+  const metadataState =
+    draft.tmdbKey.trim().length > 0 ? "Live catalog" : "Built-in catalog";
   const hasUnsavedChanges = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(settings),
     [draft, settings],
@@ -615,7 +623,7 @@ export function Settings() {
   const saveLabel = hasUnsavedChanges ? "Save changes" : saved ? "Saved" : "Up to date";
   const saveNote = hasUnsavedChanges
     ? "Unsaved changes are local until you save this profile."
-    : "Profile saved · keychain protected";
+    : "Profile saved · credentials protected";
 
   return (
     <div className="settings-screen">
@@ -651,10 +659,10 @@ export function Settings() {
               className="settings-insight"
               onClick={() => setTab("debrid")}
             >
-              <span>Debrid</span>
+              <span>Providers</span>
               <strong>
                 {configuredDebridCount === 0
-                  ? "No provider"
+                  ? "No stream provider"
                   : `${configuredDebridCount} provider${configuredDebridCount === 1 ? "" : "s"}`}
               </strong>
             </button>
@@ -665,14 +673,14 @@ export function Settings() {
             >
               <span>Sources</span>
               <strong>
-                {activeSourceCount} active source{activeSourceCount === 1 ? "" : "s"}
+                {activeSourceCount} catalog source{activeSourceCount === 1 ? "" : "s"}
               </strong>
             </button>
           </div>
         </div>
 
         {tab !== "install" && (
-          <div className="settings-footer">
+          <div className={`settings-footer${hasUnsavedChanges ? " is-dirty" : " is-clean"}`}>
             <span className="settings-note t-secondary" aria-live="polite">
               {saveNote}
             </span>
@@ -2596,20 +2604,32 @@ function AppearanceTab({
           <span>{currentTheme.label}</span>
           <span>
             {currentAccent.id === "theme"
-              ? "Default accent"
+              ? "Theme accent"
               : `${currentAccent.label} accent`}
           </span>
           <span>
-            {draft.appearanceDensity === "compact" ? "Compact" : "Comfortable"}
+            {draft.appearanceDensity === "compact" ? "Compact spacing" : "Roomy spacing"}
           </span>
-          <span>{draft.appearanceTextSize.toUpperCase()} text</span>
-          <span>{draft.appearanceBlur}px blur</span>
+          <span>
+            {draft.appearanceTextSize === "s"
+              ? "Small type"
+              : draft.appearanceTextSize === "l"
+                ? "Large type"
+                : "Medium type"}
+          </span>
+          <span>
+            {draft.appearanceBlur <= 12
+              ? "Crisp depth"
+              : draft.appearanceBlur >= 18
+                ? "Soft depth"
+                : "Balanced depth"}
+          </span>
           <span>
             {draft.appearanceChrome === "solid"
-              ? "Solid glass"
+              ? "Solid panels"
               : draft.appearanceChrome === "translucent"
-                ? "Light glass"
-                : "Balanced glass"}
+                ? "Translucent panels"
+                : "Balanced panels"}
           </span>
           <span>
             {draft.appearanceBackdrop === "plain"
@@ -2619,18 +2639,25 @@ function AppearanceTab({
                 : "Ambient glow"}
           </span>
           <span>
+            {draft.appearanceHeroScale === "compact"
+              ? "Compact hero"
+              : draft.appearanceHeroScale === "cinematic"
+                ? "Cinematic hero"
+                : "Balanced hero"}
+          </span>
+          <span>
             {draft.appearancePanelContrast === "high"
               ? "High contrast"
               : draft.appearancePanelContrast === "soft"
                 ? "Soft contrast"
-                : "Standard contrast"}
+                : "Balanced contrast"}
           </span>
           <span>
             {draft.appearanceNavLabels === "icons"
               ? "Icon nav"
               : draft.appearanceNavLabels === "labels"
                 ? "Labeled nav"
-                : "Auto nav"}
+                : "Adaptive nav"}
           </span>
           <span>
             {draft.appearanceNavTint === "airy"
@@ -2644,7 +2671,7 @@ function AppearanceTab({
               ? "Compact posters"
               : draft.appearancePosterSize === "large"
                 ? "Large posters"
-                : "Default posters"}
+                : "Medium posters"}
           </span>
         </div>
       </div>
@@ -2729,6 +2756,18 @@ function AppearanceTab({
           ]}
           onChange={(value) =>
             applyAppearance({ appearanceBackdrop: value as AppearanceBackdrop })
+          }
+        />
+        <SegmentedControl
+          label="Hero scale"
+          value={draft.appearanceHeroScale}
+          options={[
+            { value: "compact", label: "Compact" },
+            { value: "standard", label: "Standard" },
+            { value: "cinematic", label: "Cinema" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({ appearanceHeroScale: value as AppearanceHeroScale })
           }
         />
         <SegmentedControl
@@ -2968,11 +3007,26 @@ function KeysTab({ draft, patch }: TabProps) {
   return (
     <div className="settings-fields">
       <p className="settings-hint settings-secret-summary">
-        Secrets stay in this profile. Desktop builds use OS keychain storage
-        when available.
+        Secrets stay in this profile. Desktop builds keep them in secure device
+        storage when available.
       </p>
 
       <div className="settings-subsection-picker is-option-only">
+        <label className="settings-subsection-select settings-mobile-picker">
+          <span>Credential group</span>
+          <select
+            value={keyPanel}
+            onChange={(event) =>
+              setKeyPanel(event.target.value as "catalog" | "assistant")
+            }
+          >
+            {keyPanels.map((panel) => (
+              <option key={panel.id} value={panel.id}>
+                {panel.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="settings-option-strip" aria-label="Credential group">
           {keyPanels.map((panel) => (
             <button
@@ -3193,7 +3247,7 @@ function DebridTab({ draft, patch }: TabProps) {
       <p className="settings-hint t-secondary">
         Choose one provider at a time. Saved providers are tried in priority
         order; the first that has a cached result wins. Tokens stay in this
-        profile, with OS keychain storage in desktop builds when available.
+        profile, with secure device storage in desktop builds when available.
       </p>
 
       <Field label="Provider" hint="Real-Debrid is selected first by default.">
@@ -3215,7 +3269,7 @@ function DebridTab({ draft, patch }: TabProps) {
 
       <Field
         label={`${DebridServiceType.displayName(selectedService)} token`}
-        hint={`Short code ${DebridServiceType.shortCode(selectedService)}`}
+        hint="Paste the API token for this provider."
       >
         <SecretInput
           value={tokenFor(selectedService)}

@@ -69,6 +69,7 @@ const SettingsKeys = {
   appearanceBlur: "appearance_blur",
   appearanceChrome: "appearance_chrome",
   appearanceBackdrop: "appearance_backdrop",
+  appearanceHeroScale: "appearance_hero_scale",
   appearancePanelContrast: "appearance_panel_contrast",
   appearanceNavLabels: "appearance_nav_labels",
   appearanceNavTint: "appearance_nav_tint",
@@ -128,6 +129,7 @@ export type AppearanceMotion = "system" | "normal" | "reduced";
 export type AppearanceRadius = "sharp" | "default" | "round";
 export type AppearanceChrome = "translucent" | "balanced" | "solid";
 export type AppearanceBackdrop = "ambient" | "subtle" | "plain";
+export type AppearanceHeroScale = "compact" | "standard" | "cinematic";
 export type AppearancePanelContrast = "soft" | "standard" | "high";
 export type AppearanceNavLabels = "auto" | "labels" | "icons";
 export type AppearanceNavTint = "airy" | "balanced" | "solid";
@@ -154,6 +156,7 @@ export interface AppSettings {
   appearanceBlur: number;
   appearanceChrome: AppearanceChrome;
   appearanceBackdrop: AppearanceBackdrop;
+  appearanceHeroScale: AppearanceHeroScale;
   appearancePanelContrast: AppearancePanelContrast;
   appearanceNavLabels: AppearanceNavLabels;
   appearanceNavTint: AppearanceNavTint;
@@ -235,6 +238,10 @@ function normalizeAppearanceBackdrop(value: unknown): AppearanceBackdrop {
   return value === "subtle" || value === "plain" ? value : "ambient";
 }
 
+function normalizeAppearanceHeroScale(value: unknown): AppearanceHeroScale {
+  return value === "compact" || value === "cinematic" ? value : "standard";
+}
+
 function normalizeAppearancePanelContrast(value: unknown): AppearancePanelContrast {
   return value === "soft" || value === "high" ? value : "standard";
 }
@@ -272,6 +279,7 @@ export function defaultSettings(): AppSettings {
     appearanceBlur: 18,
     appearanceChrome: "balanced",
     appearanceBackdrop: "ambient",
+    appearanceHeroScale: "standard",
     appearancePanelContrast: "standard",
     appearanceNavLabels: "auto",
     appearanceNavTint: "balanced",
@@ -308,6 +316,7 @@ export function loadSettings(): AppSettings {
       appearanceBlur: normalizeAppearanceBlur(parsed.appearanceBlur),
       appearanceChrome: normalizeAppearanceChrome(parsed.appearanceChrome),
       appearanceBackdrop: normalizeAppearanceBackdrop(parsed.appearanceBackdrop),
+      appearanceHeroScale: normalizeAppearanceHeroScale(parsed.appearanceHeroScale),
       appearancePanelContrast: normalizeAppearancePanelContrast(
         parsed.appearancePanelContrast,
       ),
@@ -399,6 +408,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceBlur,
     appearanceChrome,
     appearanceBackdrop,
+    appearanceHeroScale,
     appearancePanelContrast,
     appearanceNavLabels,
     appearanceNavTint,
@@ -422,6 +432,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.appearanceBlur),
     store.getSetting(SettingsKeys.appearanceChrome),
     store.getSetting(SettingsKeys.appearanceBackdrop),
+    store.getSetting(SettingsKeys.appearanceHeroScale),
     store.getSetting(SettingsKeys.appearancePanelContrast),
     store.getSetting(SettingsKeys.appearanceNavLabels),
     store.getSetting(SettingsKeys.appearanceNavTint),
@@ -489,6 +500,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     ),
     appearanceBackdrop: normalizeAppearanceBackdrop(
       appearanceBackdrop ?? base.appearanceBackdrop,
+    ),
+    appearanceHeroScale: normalizeAppearanceHeroScale(
+      appearanceHeroScale ?? base.appearanceHeroScale,
     ),
     appearancePanelContrast: normalizeAppearancePanelContrast(
       appearancePanelContrast ?? base.appearancePanelContrast,
@@ -564,6 +578,10 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     store.setSetting(
       SettingsKeys.appearanceBackdrop,
       normalizeAppearanceBackdrop(settings.appearanceBackdrop),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceHeroScale,
+      normalizeAppearanceHeroScale(settings.appearanceHeroScale),
     ),
     store.setSetting(
       SettingsKeys.appearancePanelContrast,

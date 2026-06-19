@@ -3,22 +3,23 @@
 .settings-screen {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-lg);
+  gap: var(--sp-xl);
   padding: var(--sp-xl);
   padding-top: var(--sp-xl);
-  width: min(980px, 100%);
+  width: min(1120px, 100%);
+  margin-inline: auto;
 }
 
 .settings-header {
   display: flex;
-  align-items: stretch;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: var(--sp-md);
+  gap: var(--sp-lg);
   min-width: 0;
 }
 
 .settings-hero {
-  padding: var(--sp-lg);
+  padding: clamp(var(--sp-md), 2.2vw, var(--sp-xl));
   border-radius: var(--r-lg);
 }
 
@@ -49,7 +50,7 @@
 
 .settings-h1 {
   margin: 0;
-  font-size: 32px;
+  font-size: clamp(28px, 3vw, 34px);
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: 0;
@@ -66,7 +67,7 @@
 
 .settings-insight-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
   gap: var(--sp-sm);
   width: 100%;
   margin-top: var(--sp-xs);
@@ -161,7 +162,7 @@
 }
 
 .settings-panel {
-  padding: var(--sp-xl);
+  padding: clamp(var(--sp-md), 2.4vw, var(--sp-xl));
   border-radius: var(--r-lg);
   min-width: 0;
 }
@@ -337,6 +338,10 @@
   min-width: 0;
   flex-direction: column;
   gap: 6px;
+}
+
+.settings-mobile-picker {
+  display: none;
 }
 
 .settings-subsection-select select {
@@ -829,6 +834,12 @@
   gap: var(--sp-sm);
   flex-wrap: wrap;
 }
+
+.settings-source-row > input,
+.settings-source-row > select {
+  flex: 1 1 190px;
+  min-width: min(100%, 170px);
+}
 .settings-server-url-input {
   flex: 1 1 300px;
   min-width: min(100%, 220px);
@@ -1206,14 +1217,32 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
+  .settings-hero .settings-footer.is-clean {
+    justify-content: flex-end;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
   .settings-note {
     display: block;
     flex: 1 1 280px;
     text-align: left;
   }
 
+  .settings-footer.is-clean .settings-note {
+    flex: 0 1 auto;
+    text-align: right;
+  }
+
   .settings-footer .btn {
     min-height: 44px;
+  }
+
+  .settings-footer.is-clean .btn {
+    min-height: 38px;
+    padding-inline: 15px;
   }
 
   .settings-tabs {
@@ -1239,6 +1268,10 @@
 
   .settings-subsection-picker {
     grid-template-columns: 1fr;
+  }
+
+  .settings-subsection-picker.is-option-only {
+    gap: var(--sp-sm);
   }
 }
 
@@ -1281,10 +1314,28 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
+  .settings-hero .settings-footer.is-clean {
+    justify-content: flex-end;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
   .settings-note {
     display: block;
     flex: 1 1 280px;
     text-align: left;
+  }
+
+  .settings-footer.is-clean .settings-note {
+    flex: 0 1 auto;
+    text-align: right;
+  }
+
+  .settings-footer.is-clean .btn {
+    min-height: 38px;
+    padding-inline: 15px;
   }
 }
 
@@ -1304,6 +1355,14 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
+  .settings-footer.is-clean {
+    justify-content: flex-end;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
   .settings-hero .settings-footer {
     align-self: stretch;
     flex: 0 0 auto;
@@ -1318,6 +1377,11 @@
   .settings-footer .btn {
     flex: 0 0 auto;
     min-height: 44px;
+  }
+
+  .settings-footer.is-clean .btn {
+    min-height: 38px;
+    padding-inline: 15px;
   }
 
 }
@@ -1359,6 +1423,14 @@
     padding: var(--sp-md);
   }
 
+  .settings-mobile-picker {
+    display: flex;
+  }
+
+  .settings-subsection-picker.is-option-only .settings-option-strip {
+    display: none;
+  }
+
   .appearance-profile-card {
     padding: var(--sp-md);
   }
@@ -1372,6 +1444,11 @@
     padding: var(--sp-sm);
   }
 
+  .settings-footer.is-clean {
+    align-items: flex-end;
+    padding: 0;
+  }
+
   .settings-footer .btn {
     flex: 0 0 auto;
     justify-content: center;
@@ -1379,6 +1456,13 @@
     min-height: 44px;
     padding: 0 var(--sp-md);
     box-shadow: var(--shadow-lg);
+  }
+
+  .settings-footer.is-clean .btn {
+    width: auto;
+    min-height: 38px;
+    padding: 0 15px;
+    box-shadow: none;
   }
 
   .settings-save-label {
@@ -1628,7 +1712,7 @@
   }
 }
 
-@media (min-width: 820px) {
+@media (min-width: 1100px) {
   .settings-screen {
     display: grid;
     grid-template-columns: 210px minmax(0, 900px);
