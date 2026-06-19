@@ -12,9 +12,13 @@ import { GlobalSearch } from "./components/GlobalSearch";
 import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { FirstRunWizard } from "./components/FirstRunWizard";
+import { ServerSetupWizard } from "./components/ServerSetupWizard";
 import { useAppStore } from "./store/AppStore";
+import { useServerSession } from "./lib/ServerSessionContext";
 import { isServerMode } from "./lib/serverMode";
 import { isFirstRun } from "./lib/firstRun";
+import { shouldShowServerSetup } from "./lib/serverSetup";
+import { fetchServerAdminHealth } from "./lib/serverApi";
 import { useTheme } from "./theme/useTheme";
 import "./App.css";
 
@@ -48,21 +52,66 @@ const Detail = lazy(() =>
   import("./screens/Detail").then((m) => ({ default: m.Detail })),
 );
 
-/** Gates a genuine first-run (Local Mode) behind the persona wizard, then the
- *  app. Renders nothing until the async first-run check resolves to avoid a flash
- *  of the app before the wizard. Lives inside AppStoreProvider so both branches
- *  have store access. */
+/** Gates a genuine first-run behind the right wizard, then the app:
+ *   • Local Mode  → the persona FirstRunWizard (isFirstRun).
+ *   • Server Mode → the owner-only ServerSetupWizard for a fresh server
+ *     (shouldShowServerSetup), driven off the live admin health counts.
+ *
+ *  Renders nothing until the async checks resolve to avoid a flash of the app
+ *  before a wizard. Lives inside AppStoreProvider + ServerSessionProvider so all
+ *  branches have store + session access. */
 export function FirstRunHost() {
   const { hydrated } = useAppStore();
+  const session = useServerSession();
+  const serverMode = isServerMode();
+
+  // Local-Mode persona wizard gate.
   const [firstRun, setFirstRun] = useState<boolean | null>(null);
+  // Server-Mode owner setup gate (null = undecided, false = skip/done/non-owner).
+  const [serverSetup, setServerSetup] = useState<boolean | null>(null);
+
   useEffect(() => {
     void isFirstRun().then(setFirstRun);
   }, []);
-  // Wait for BOTH the first-run check AND Store hydration before deciding. This
+
+  // Decide the Server-Mode setup gate once a session is known. Non-owners and
+  // Local Mode resolve to false immediately; owners need the live credential
+  // count from admin health to know whether the server still looks empty.
+  useEffect(() => {
+    if (!serverMode || session == null) {
+      setServerSetup(false);
+      return;
+    }
+    if (session.role !== "owner") {
+      setServerSetup(false);
+      return;
+    }
+    let cancelled = false;
+    void fetchServerAdminHealth()
+      .then((health) =>
+        shouldShowServerSetup({
+          role: session.role,
+          credentialCount: health.counts.credentials,
+        }),
+      )
+      .then((show) => {
+        if (!cancelled) setServerSetup(show);
+      })
+      .catch(() => {
+        // If health can't be read, never trap the owner behind setup.
+        if (!cancelled) setServerSetup(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverMode, session]);
+
+  // Wait for BOTH the relevant gate AND Store hydration before deciding. This
   // ensures the wizard's choice (e.g. Advanced → simpleMode false) is applied
   // AFTER hydration's setSettings, so a late hydration can't revert it.
-  if (firstRun == null || !hydrated) return null;
+  if (firstRun == null || serverSetup == null || !hydrated) return null;
   if (firstRun) return <FirstRunWizard onDone={() => setFirstRun(false)} />;
+  if (serverSetup) return <ServerSetupWizard onDone={() => setServerSetup(false)} />;
   return <App />;
 }
 

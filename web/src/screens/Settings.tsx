@@ -50,6 +50,7 @@ import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
+import { AdvancedOnly } from "../components/AdvancedOnly";
 import { ACCENTS, THEMES } from "../theme/themes";
 import {
   configuredServerURL,
@@ -925,24 +926,29 @@ function PlaybackTab({ draft, patch }: TabProps) {
         </span>
       </label>
 
-      <Field
-        label="Maximum quality"
-        hint="Higher-quality torrents are hidden from stream results."
-      >
-        <select
-          value={draft.streamMaxQuality}
-          onChange={(event) =>
-            patch({ streamMaxQuality: event.target.value as StreamMaxQuality })
-          }
+      {/* Quality + size caps are power-user filters — hidden in Simple mode,
+          which keeps "cached only" as the one safe, essential toggle. */}
+      <AdvancedOnly>
+        <Field
+          label="Maximum quality"
+          hint="Higher-quality torrents are hidden from stream results."
         >
-          {STREAM_QUALITY_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </Field>
+          <select
+            value={draft.streamMaxQuality}
+            onChange={(event) =>
+              patch({ streamMaxQuality: event.target.value as StreamMaxQuality })
+            }
+          >
+            {STREAM_QUALITY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </AdvancedOnly>
 
+      <AdvancedOnly>
       <Field
         label="Maximum file size"
         hint="Common caps are listed first. Custom still filters torrent result size, not transcoded playback bitrate."
@@ -985,6 +991,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
           )}
         </div>
       </Field>
+      </AdvancedOnly>
     </div>
   );
 }
@@ -1516,6 +1523,136 @@ function ServerConnectionPanel() {
   );
 }
 
+// Static guided setup for exposing a self-hosted server off the local network.
+// Two tabbed tracks (Tailscale / Cloudflare Tunnel) with official links and the
+// where-to-paste-the-URL note. No live integration — this is documentation that
+// ships with the app so the owner doesn't have to leave to find it. The persona
+// + server-setup wizards point here ("Settings → Server → Remote access").
+
+interface RemoteAccessStep {
+  title: string;
+  detail: string;
+}
+
+const TAILSCALE_STEPS: RemoteAccessStep[] = [
+  {
+    title: "Install Tailscale on the server",
+    detail:
+      "Sign up free, then install Tailscale on the machine running DebridStreamer and run tailscale up. It joins your private mesh (a tailnet).",
+  },
+  {
+    title: "Install Tailscale on your devices",
+    detail:
+      "Add the same Tailscale account on each phone, tablet, or laptop. They can now reach the server by its tailnet IP or MagicDNS name on any network.",
+  },
+  {
+    title: "Optional: expose a public HTTPS URL with Funnel",
+    detail:
+      "Run tailscale funnel <port> (e.g. the server port shown above) to get a public https://<name>.ts.net URL for people not on your tailnet.",
+  },
+  {
+    title: "Use the URL here",
+    detail:
+      "Paste the tailnet or Funnel URL into Connect to a server above (or set DEBRIDSTREAMER_DESKTOP_SHARE_URL when launching the desktop host). That URL is what you share in invites.",
+  },
+];
+
+const CLOUDFLARE_STEPS: RemoteAccessStep[] = [
+  {
+    title: "Create a Cloudflare Tunnel",
+    detail:
+      "In the Cloudflare Zero Trust dashboard, create a tunnel and install cloudflared on the server (or run it via Docker alongside DebridStreamer).",
+  },
+  {
+    title: "Route a hostname to the server",
+    detail:
+      "Add a public hostname (e.g. stream.yourdomain.com) and point it at http://localhost:<port> — the local DebridStreamer server port shown above.",
+  },
+  {
+    title: "Run the connector",
+    detail:
+      "Start cloudflared with your tunnel token. Cloudflare now serves your hostname over HTTPS and forwards traffic to the server through the tunnel.",
+  },
+  {
+    title: "Use the URL here",
+    detail:
+      "Paste https://stream.yourdomain.com into Connect to a server above (or set DEBRIDSTREAMER_DESKTOP_SHARE_URL for the desktop host). That URL is what you share in invites.",
+  },
+];
+
+function RemoteAccessPanel() {
+  const [track, setTrack] = useState<"tailscale" | "cloudflare">("tailscale");
+  const steps = track === "tailscale" ? TAILSCALE_STEPS : CLOUDFLARE_STEPS;
+  const guideURL =
+    track === "tailscale"
+      ? "https://tailscale.com/kb/1223/funnel"
+      : "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/";
+
+  return (
+    <div className="settings-source glass-rest settings-remote-access">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Remote access</span>
+        <span className="chip">Tunnel</span>
+      </div>
+      <p className="settings-hint t-secondary">
+        Expose this self-hosted server to phones and tablets off your network
+        with a tunnel — no router ports to open, and traffic stays encrypted.
+      </p>
+
+      <div className="settings-source-row">
+        <SegmentedControl
+          label="Method"
+          value={track}
+          options={[
+            { value: "tailscale", label: "Tailscale" },
+            { value: "cloudflare", label: "Cloudflare Tunnel" },
+          ]}
+          onChange={(value) => setTrack(value as "tailscale" | "cloudflare")}
+        />
+      </div>
+
+      <ol className="settings-remote-steps">
+        {steps.map((step, index) => (
+          <li key={step.title} className="settings-remote-step">
+            <span className="settings-remote-step-num">{index + 1}</span>
+            <span className="settings-remote-step-body">
+              <strong>{step.title}</strong>
+              <span className="t-secondary">{step.detail}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+
+      <div className="settings-source-row">
+        <a className="chip" href={guideURL} target="_blank" rel="noreferrer">
+          {track === "tailscale" ? "Tailscale Funnel guide" : "Cloudflare Tunnel guide"}
+        </a>
+        <a
+          className="chip"
+          href="https://tailscale.com/download"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Download Tailscale
+        </a>
+        <a
+          className="chip"
+          href="https://one.dash.cloudflare.com/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Cloudflare Zero Trust
+        </a>
+      </div>
+      <p className="settings-hint t-secondary">
+        Once you have the public URL, paste it into <strong>Connect to a
+        server</strong> above. The desktop host can also show it automatically —
+        launch with <code>DEBRIDSTREAMER_DESKTOP_SHARE_URL</code> set.
+      </p>
+    </div>
+  );
+}
+
 const CREDENTIAL_OPTIONS: { provider: CredentialProvider; label: string }[] = [
   { provider: "tmdb", label: "TMDB" },
   { provider: "omdb", label: "OMDB" },
@@ -1884,6 +2021,8 @@ function ServerTab() {
       {message && <p className="settings-status">{message}</p>}
 
       <ServerConnectionPanel />
+
+      <RemoteAccessPanel />
 
       {session != null && (
         <div className="settings-profile-row glass-rest">
@@ -3173,13 +3312,16 @@ function KeysTab({ draft, patch }: TabProps) {
               />
             </Field>
 
-            <Field label="OMDB API key" hint="Optional IMDb / Rotten Tomatoes enrichment.">
-              <SecretInput
-                value={draft.omdbKey}
-                onChange={(e) => patch({ omdbKey: e.target.value })}
-                placeholder="OMDB key"
-              />
-            </Field>
+            {/* OMDB is optional enrichment on top of TMDB — an Advanced extra. */}
+            <AdvancedOnly>
+              <Field label="OMDB API key" hint="Optional IMDb / Rotten Tomatoes enrichment.">
+                <SecretInput
+                  value={draft.omdbKey}
+                  onChange={(e) => patch({ omdbKey: e.target.value })}
+                  placeholder="OMDB key"
+                />
+              </Field>
+            </AdvancedOnly>
 
             <Field
               label="OpenSubtitles API key"
@@ -3212,24 +3354,28 @@ function KeysTab({ draft, patch }: TabProps) {
                 </select>
               </Field>
 
-              <Field label="Model" hint="Recommended default stays first.">
-                <select
-                  value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
-                  onChange={(event) =>
-                    patch({
-                      aiModel:
-                        event.target.value === "__default" ? "" : event.target.value,
-                    })
-                  }
-                >
-                  <option value="__default">Provider default (recommended)</option>
-                  {modelOptions(draft.aiProvider, draft.aiModel).map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              {/* The explicit model override is an Advanced dial — Simple mode
+                  sticks with the recommended provider default. */}
+              <AdvancedOnly>
+                <Field label="Model" hint="Recommended default stays first.">
+                  <select
+                    value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
+                    onChange={(event) =>
+                      patch({
+                        aiModel:
+                          event.target.value === "__default" ? "" : event.target.value,
+                      })
+                    }
+                  >
+                    <option value="__default">Provider default (recommended)</option>
+                    {modelOptions(draft.aiProvider, draft.aiModel).map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </AdvancedOnly>
             </div>
 
             {draft.aiProvider === "ollama" ? (
