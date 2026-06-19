@@ -10,19 +10,52 @@ This guide covers how accounts, roles, and credentials fit together.
 
 ## Accounts and profiles
 
-Each person who uses the server gets an **account** with its own username and
-password, paired with a **household profile** that owns their personal data.
+There are two related ideas:
 
-A profile keeps these **separate per person**:
+- An **account** is a sign-in: a username, a password, and a role. The first
+  account is the owner; others join by invite or are created by an admin.
+- A **profile** is a viewer that owns a private set of data. Every account has at
+  least one profile, and an account can add more **household sub-profiles** — for
+  kids, guests, or a shared living-room TV — that switch _without re-signing-in_.
+  See [Household sub-profiles](#household-sub-profiles-whos-watching) below.
+
+Each profile keeps these **separate**:
 
 - **Watch history** and **resume points** ("Continue Watching")
 - **Watchlist**
 - **Library** and its **folders**
 - Personal **settings** (including the Simple/Advanced experience tier)
-- Sign-in **sessions / devices** (each person can review and revoke their own)
+- Sign-in **sessions / devices** (each account can review and revoke their own)
 - Optional **personal credential overrides** (see below)
 
-One person never sees another person's history, watchlist, or library.
+One profile never sees another profile's history, watchlist, or library.
+
+---
+
+## Household sub-profiles ("Who's watching?")
+
+Within a single account you can keep several **viewer profiles** that share the
+sign-in but not the data — the same idea as the profile row on a streaming
+service. Each sub-profile has its own history, watchlist, library, and
+Simple/Advanced tier.
+
+- **Add / rename / remove** sub-profiles in the account area (a colour-coded
+  avatar is generated from the name). The original profile is the default and
+  can't be removed; an account always keeps at least one.
+- **Switch** with the **"Who's watching?"** picker. Picking a profile changes the
+  active viewer for the session and instantly reloads that profile's data — no
+  password and no re-sign-in. The switcher only appears once an account has more
+  than one profile.
+- A sub-profile is a **viewer, not a login**: it has no separate username, and an
+  optional profile password is reserved for a future per-profile PIN (it isn't
+  required to switch today — switching is allowed because you're already signed
+  in to the account).
+- Sub-profiles **inherit the account's role and credentials.** They're for
+  separating *viewing*, not for granting different permissions; use separate
+  accounts (with roles) when you need different privileges.
+
+> Household sub-profiles are a **Server Mode** feature — they live on the
+> self-hosted server, which is what stores each profile's separate data.
 
 ---
 
@@ -35,7 +68,7 @@ Every account has a role that controls what it can do:
 | **Owner** | The first account created at setup. Full control: manage everyone, shared credentials, admin invites, diagnostics. Cannot be disabled. |
 | **Admin** | Manage profiles, invites, shared credentials, and view usage/diagnostics. (Only the **owner** can create *admin*-level accounts or invites.) |
 | **Member** | A normal household user: their own history, watchlist, library, settings, and optional personal overrides. |
-| **Restricted** | A more limited member role for tighter setups. |
+| **Restricted** | A view-only household user. Can browse, search, watch, and keep their own history/watchlist/library + per-profile settings (and change their own password), but **cannot manage anything** — no credential changes, no creating/renaming/deleting profiles or sub-profiles, no invites, no admin/diagnostics. Strictly less than a Member. Use it for kids or guests who should watch but not reconfigure the server. The limits are enforced on the **server**, not just hidden in the UI. |
 
 ---
 
@@ -102,7 +135,9 @@ Owners/admins get diagnostics in **Settings → Server**:
 - **Usage:** per-profile bandwidth served by the proxy — who is using the hosted
   network path, and how much.
 - **Active streams:** which profiles are streaming right now, bytes sent, HTTP
-  status, and expiry.
+  status, and expiry. An admin can **Terminate** any active stream — this revokes
+  its proxy session immediately, so the next request for it is refused (useful to
+  cut off a stuck or unwanted stream).
 - **Health & warnings:** session counts, configuration flags (HTTPS cookies,
   proxy trust, etc.), and recent stream errors.
 - **Audit log:** auth, credential changes, profile changes, and stream starts.

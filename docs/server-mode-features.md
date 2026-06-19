@@ -85,9 +85,13 @@ filters, not server-side transcoding.)
 
 - Login/logout, per-device **session listing and revocation**, self-service
   **password change**.
+- **Household sub-profiles** — one account can keep several viewer profiles (kids,
+  guests, a shared TV) with separate history/watchlist/library, and switch between
+  them with the **"Who's watching?"** picker without re-signing-in. See
+  [Multi-user & profiles](multi-user-and-profiles.md#household-sub-profiles-whos-watching).
 - Owner/admin: **invites**, **profile management**, **shared + per-profile
-  credentials**, **usage**, **active streams**, **health/warnings**, and an
-  **audit log**.
+  credentials**, **usage**, **active streams** (with one-click **Terminate** to
+  kill a stuck or unwanted stream), **health/warnings**, and an **audit log**.
 
 ### Install anywhere (PWA)
 
