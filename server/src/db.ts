@@ -1,7 +1,12 @@
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { MIGRATION_001, MIGRATION_002, MIGRATION_003 } from "./schema.js";
+import {
+  MIGRATION_001,
+  MIGRATION_002,
+  MIGRATION_003,
+  MIGRATION_004,
+} from "./schema.js";
 
 export class AppDatabase {
   readonly sqlite: DatabaseSync;
@@ -65,6 +70,14 @@ export class AppDatabase {
       this.sqlite
         .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
         .run(3, new Date().toISOString());
+      current = 3;
+    }
+
+    if (current < 4) {
+      this.sqlite.exec(MIGRATION_004);
+      this.sqlite
+        .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
+        .run(4, new Date().toISOString());
     }
   }
 }

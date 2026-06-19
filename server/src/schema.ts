@@ -162,6 +162,18 @@ ALTER TABLE stream_sessions ADD COLUMN last_error TEXT;
 CREATE INDEX stream_sessions_created_idx ON stream_sessions(profile_id, created_at);
 `;
 
+// Household sub-profiles: a session now remembers WHICH of an account's profiles
+// is active ("who's watching"). Nullable + migration-safe — existing rows get
+// NULL and readAuth falls back to the account's is_default profile, so a
+// single-profile deployment keeps working with zero manual steps. ON DELETE SET
+// NULL so deleting a profile (which cascades its data) cleanly drops the pointer
+// rather than orphaning sessions.
+export const MIGRATION_004 = `
+ALTER TABLE sessions
+  ADD COLUMN active_profile_id TEXT
+  REFERENCES profiles(id) ON DELETE SET NULL;
+`;
+
 export const MIGRATION_003 = `
 CREATE TABLE invites (
   id TEXT PRIMARY KEY,

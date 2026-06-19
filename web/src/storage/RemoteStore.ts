@@ -205,6 +205,14 @@ export class RemoteStore implements Store, SecretStore {
     this.api = new ServerAPI(baseURL);
   }
 
+  /** Drop the per-profile settings cache. Called after a "who's watching"
+   *  profile switch so the next read re-fetches the NEW active profile's
+   *  settings instead of serving the previous profile's cached copy. */
+  resetProfileCache(): void {
+    this.settingsCache = null;
+    this.pendingSecrets.clear();
+  }
+
   async getSetting(key: string): Promise<string | null> {
     const settings = await this.allSettings();
     return settings[key] ?? null;

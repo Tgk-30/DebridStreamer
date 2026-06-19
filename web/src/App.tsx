@@ -12,6 +12,7 @@ import { GlobalSearch } from "./components/GlobalSearch";
 import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { FirstRunWizard } from "./components/FirstRunWizard";
+import { ProfilePicker } from "./components/ProfilePicker";
 import { useAppStore } from "./store/AppStore";
 import { isServerMode } from "./lib/serverMode";
 import { isFirstRun } from "./lib/firstRun";
@@ -70,6 +71,9 @@ export function App() {
   const { route, navigate, detailItem, browseContext, openDetail, search, settings, simpleMode } =
     useAppStore();
 
+  // "Who's watching" picker visibility (Server Mode only; opened from the rail).
+  const [profilePickerOpen, setProfilePickerOpen] = useState(false);
+
   // Apply the persisted theme to the document root (instantly on change, and on
   // startup once the Store hydrates the saved choice).
   useTheme(settings);
@@ -99,7 +103,11 @@ export function App() {
     <div className="app">
       <div className="aurora-glow" />
 
-      <NavRail selected={route} onSelect={navigate} />
+      <NavRail
+        selected={route}
+        onSelect={navigate}
+        onSwitchProfile={() => setProfilePickerOpen(true)}
+      />
 
       <main className="app-content">
         {showsGlobalSearch && <GlobalSearch onSubmit={search} />}
@@ -133,6 +141,12 @@ export function App() {
           </Suspense>
         )}
       </main>
+
+      {/* "Who's watching" picker overlay (Server Mode only) — mounts above
+          everything when opened from the rail's profile switcher. */}
+      {profilePickerOpen && (
+        <ProfilePicker onClose={() => setProfilePickerOpen(false)} />
+      )}
 
       {/* Desktop auto-update toast. Runs the launch-time check itself and is a
           no-op in a plain browser (isTauri-gated in updater.ts). */}

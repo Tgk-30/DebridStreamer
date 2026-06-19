@@ -1,0 +1,246 @@
+/* "Who's watching?" overlay — full-viewport glass scrim over the app shell.
+   Mirrors the dark aurora-glass language used by ServerModeGate. */
+.profile-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(82, 113, 255, 0.22), transparent 32%),
+    radial-gradient(circle at 85% 20%, rgba(32, 201, 151, 0.16), transparent 28%),
+    rgba(6, 9, 16, 0.92);
+  backdrop-filter: blur(22px);
+  color: #f8fafc;
+  animation: profile-picker-in 160ms ease-out;
+}
+
+@keyframes profile-picker-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.profile-picker-inner {
+  width: min(720px, 100%);
+  text-align: center;
+}
+
+.profile-picker-title {
+  margin: 0 0 28px;
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+  font-weight: 700;
+}
+
+.profile-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 24px;
+}
+
+.profile-grid > li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 14px;
+}
+
+.profile-tile:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.profile-avatar {
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #fff;
+  font-weight: 700;
+  border: 3px solid transparent;
+  transition: border-color 140ms ease, transform 140ms ease;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+}
+
+.profile-tile:not(:disabled):hover .profile-avatar,
+.profile-tile:focus-visible .profile-avatar {
+  border-color: rgba(255, 255, 255, 0.85);
+  transform: translateY(-2px);
+}
+
+.profile-tile.is-active .profile-avatar {
+  border-color: #60a5fa;
+}
+
+.profile-avatar-add {
+  width: 96px;
+  height: 96px;
+  font-size: 44px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  color: rgba(248, 250, 252, 0.8);
+}
+
+.profile-tile-name {
+  font-size: 0.96rem;
+  color: rgba(248, 250, 252, 0.82);
+}
+
+.profile-tile-busy {
+  font-size: 0.78rem;
+  color: rgba(248, 250, 252, 0.6);
+}
+
+.profile-tile-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.profile-mini-btn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(248, 250, 252, 0.82);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.profile-mini-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.profile-mini-btn.is-danger {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.profile-picker-error {
+  margin: 20px auto 0;
+  max-width: 420px;
+  color: #fecaca;
+  font-size: 0.9rem;
+}
+
+.profile-picker-foot {
+  margin-top: 32px;
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.profile-text-btn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(248, 250, 252, 0.85);
+  border-radius: 10px;
+  padding: 10px 18px;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.profile-text-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.profile-text-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.profile-solid-btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 22px;
+  background: #e5f0ff;
+  color: #08111f;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.profile-solid-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* ---- Add / edit form ---- */
+.profile-form {
+  width: min(440px, 100%);
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(11, 18, 32, 0.82);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+  padding: 28px;
+}
+
+.profile-form .profile-picker-title {
+  text-align: left;
+  margin-bottom: 20px;
+  font-size: 1.4rem;
+}
+
+.profile-field {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+  color: rgba(248, 250, 252, 0.8);
+  font-size: 0.84rem;
+}
+
+.profile-field input {
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.profile-field input:focus {
+  outline: 2px solid rgba(96, 165, 250, 0.7);
+  outline-offset: 2px;
+}
+
+.profile-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.profile-color-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.profile-color-dot.is-selected {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.7);
+}

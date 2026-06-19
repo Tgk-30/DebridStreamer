@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isScreenHidden, visibleNavItems } from "./NavRail";
+import {
+  isScreenHidden,
+  shouldShowProfileSwitch,
+  visibleNavItems,
+} from "./NavRail";
 import type { ScreenId } from "./NavRail";
 
 const ALL: ScreenId[] = [
@@ -52,5 +56,28 @@ describe("visibleNavItems", () => {
     ] as unknown as Parameters<typeof visibleNavItems>[0];
     const out = visibleNavItems(items, { serverMode: false, simpleMode: true }).map((i) => i.id);
     expect(out).toEqual(["discover", "settings"]);
+  });
+});
+
+describe("shouldShowProfileSwitch", () => {
+  it("shows only in Server Mode with a handler and >1 profile", () => {
+    expect(
+      shouldShowProfileSwitch({ serverMode: true, hasHandler: true, profileCount: 2 }),
+    ).toBe(true);
+  });
+
+  it("hides for a single-profile account (no forced picker)", () => {
+    expect(
+      shouldShowProfileSwitch({ serverMode: true, hasHandler: true, profileCount: 1 }),
+    ).toBe(false);
+  });
+
+  it("hides in Local Mode and when no handler is wired", () => {
+    expect(
+      shouldShowProfileSwitch({ serverMode: false, hasHandler: true, profileCount: 3 }),
+    ).toBe(false);
+    expect(
+      shouldShowProfileSwitch({ serverMode: true, hasHandler: false, profileCount: 3 }),
+    ).toBe(false);
   });
 });

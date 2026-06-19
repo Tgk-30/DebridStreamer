@@ -16,30 +16,54 @@ export interface ServerSession {
   username: string;
   displayName: string;
   role: "owner" | "admin" | "member" | "restricted";
+  avatarColor?: string | null;
   simpleMode: boolean;
+}
+
+/** One viewer in the account's "who's watching" picker. */
+export interface ServerProfileSummary {
+  id: string;
+  displayName: string;
+  avatarColor: string | null;
+  simpleMode: boolean;
+  isDefault: boolean;
 }
 
 interface ServerSessionContextValue {
   session: ServerSession | null;
   setSession: (session: ServerSession | null) => void;
+  /** The account's household profiles (drives the picker). */
+  profiles: ServerProfileSummary[];
+  setProfiles: (profiles: ServerProfileSummary[]) => void;
 }
 
 const ServerSessionCtx = createContext<ServerSessionContextValue>({
   session: null,
   setSession: () => {},
+  profiles: [],
+  setProfiles: () => {},
 });
 
 export function ServerSessionProvider({
   initial,
+  initialProfiles = [],
   children,
 }: {
   initial: ServerSession | null;
+  initialProfiles?: ServerProfileSummary[];
   children: ReactNode;
 }) {
   const [session, setSession] = useState<ServerSession | null>(initial);
+  const [profiles, setProfiles] = useState<ServerProfileSummary[]>(initialProfiles);
   const set = useCallback((next: ServerSession | null) => setSession(next), []);
+  const setList = useCallback(
+    (next: ServerProfileSummary[]) => setProfiles(next),
+    [],
+  );
   return (
-    <ServerSessionCtx.Provider value={{ session, setSession: set }}>
+    <ServerSessionCtx.Provider
+      value={{ session, setSession: set, profiles, setProfiles: setList }}
+    >
       {children}
     </ServerSessionCtx.Provider>
   );
@@ -50,7 +74,18 @@ export function useServerSession(): ServerSession | null {
   return useContext(ServerSessionCtx).session;
 }
 
-/** Update the in-memory session (e.g. optimistic simpleMode toggle). */
+/** Update the in-memory session (e.g. optimistic simpleMode toggle, or a
+ *  profile switch). */
 export function useSetServerSession(): (session: ServerSession | null) => void {
   return useContext(ServerSessionCtx).setSession;
+}
+
+/** The account's household profiles for the "who's watching" picker. */
+export function useServerProfiles(): ServerProfileSummary[] {
+  return useContext(ServerSessionCtx).profiles;
+}
+
+/** Replace the in-memory household profile list (after create/rename/delete). */
+export function useSetServerProfiles(): (profiles: ServerProfileSummary[]) => void {
+  return useContext(ServerSessionCtx).setProfiles;
 }

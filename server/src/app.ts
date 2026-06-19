@@ -122,6 +122,39 @@ const patchProfileSchema = z.object({
   disabled: z.boolean().optional(),
 });
 
+// Household sub-profile ("who's watching") schemas. Distinct from the account
+// schemas above: a sub-profile is a viewer within ONE account, not a separate
+// login — so no username, and the password is OPTIONAL (kid/guest profiles).
+// avatarColor is a short style token (hex or keyword) the picker renders as a
+// tint behind the display-name initial.
+const avatarColorSchema = z.string().trim().min(1).max(32);
+
+const createAccountProfileSchema = z.object({
+  displayName: z.string().trim().min(1).max(100),
+  avatarColor: avatarColorSchema.nullish(),
+  simpleMode: z.boolean().default(true),
+});
+
+const patchAccountProfileSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(100).optional(),
+    avatarColor: avatarColorSchema.nullish(),
+    simpleMode: z.boolean().optional(),
+  })
+  .refine(
+    (b) =>
+      b.displayName !== undefined ||
+      b.avatarColor !== undefined ||
+      b.simpleMode !== undefined,
+    { message: "Provide at least one field to update." },
+  );
+
+const switchProfileSchema = z.object({
+  profileId: z.string().trim().min(1).max(128),
+});
+
+const accountProfileIdParamSchema = z.string().trim().min(1).max(128);
+
 // A MediaPreview display snapshot. Cap its serialized size so a client can't
 // persist arbitrarily large blobs per row (defense-in-depth above Fastify's 1MB
 // body limit). 32 KB is ~16x a normal preview, so no legitimate payload is cut.
@@ -770,25 +803,37 @@ function readSessionCookie(request: FastifyRequest): { sessionId: string; rawTok
 function readAuth(db: AppDatabase, request: FastifyRequest): AuthContext | null {
   const cookieValue = readSessionCookie(request);
   if (cookieValue == null) return null;
+  // The active profile is sessions.active_profile_id when it still points at a
+  // live profile OWNED BY THIS USER (the AND profiles.user_id guard makes the
+  // pointer IDOR-safe even if a stale id from another account ever leaked in),
+  // otherwise the account's is_default profile. COALESCE on the joined ids lets
+  // one query pick the active row and fall back without a second round-trip:
+  // NULL active id (single-profile deployments, pre-migration sessions) or a
+  // since-disabled/deleted active profile both degrade to the default.
   const row = db.sqlite
     .prepare(
       `SELECT
          users.id AS userId,
          users.username AS username,
          users.role AS role,
-         profiles.id AS profileId,
-         profiles.display_name AS displayName,
-         profiles.simple_mode AS simpleMode,
+         COALESCE(active.id, def.id) AS profileId,
+         COALESCE(active.display_name, def.display_name) AS displayName,
+         COALESCE(active.avatar_color, def.avatar_color) AS avatarColor,
+         COALESCE(active.simple_mode, def.simple_mode) AS simpleMode,
          sessions.id AS sessionId
        FROM sessions
        JOIN users ON users.id = sessions.user_id
-       JOIN profiles ON profiles.user_id = users.id AND profiles.is_default = 1
+       JOIN profiles AS def
+         ON def.user_id = users.id AND def.is_default = 1 AND def.disabled_at IS NULL
+       LEFT JOIN profiles AS active
+         ON active.id = sessions.active_profile_id
+        AND active.user_id = users.id
+        AND active.disabled_at IS NULL
        WHERE sessions.id = ?
          AND sessions.token_hash = ?
          AND sessions.revoked_at IS NULL
          AND sessions.expires_at > ?
          AND users.disabled_at IS NULL
-         AND profiles.disabled_at IS NULL
        LIMIT 1`,
     )
     .get(cookieValue.sessionId, sha256(cookieValue.rawToken), nowISO()) as
@@ -916,6 +961,50 @@ function registerStaticApp(app: FastifyInstance, config: ServerConfig): void {
     }
     return reply.send(createReadStream(file));
   });
+}
+
+// ---- Household sub-profiles ("who's watching") ----------------------------
+
+interface AccountProfileRow {
+  id: string;
+  display_name: string;
+  avatar_color: string | null;
+  simple_mode: number;
+  is_default: number;
+}
+
+function mapAccountProfile(row: AccountProfileRow) {
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    avatarColor: row.avatar_color,
+    simpleMode: row.simple_mode === 1,
+    isDefault: row.is_default === 1,
+  };
+}
+
+/** Every live (not-disabled) sub-profile owned by an account, default first.
+ *  Drives the picker. Account-scoped, so it can never surface another user's
+ *  profiles. */
+function listAccountProfiles(db: AppDatabase, userId: string) {
+  const rows = db.sqlite
+    .prepare(
+      `SELECT id, display_name, avatar_color, simple_mode, is_default
+       FROM profiles
+       WHERE user_id = ? AND disabled_at IS NULL
+       ORDER BY is_default DESC, created_at ASC`,
+    )
+    .all(userId) as unknown as AccountProfileRow[];
+  return rows.map(mapAccountProfile);
+}
+
+/** The picker payload echoed from bootstrap / session / switch: the account's
+ *  profiles plus which one the session currently has active. */
+function accountProfileState(db: AppDatabase, auth: AuthContext) {
+  return {
+    profiles: listAccountProfiles(db, auth.userId),
+    activeProfileId: auth.profileId,
+  };
 }
 
 function effectiveCredentials(db: AppDatabase, profileId: string) {
@@ -1417,6 +1506,10 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
     return {
       setupRequired: userCount(db) === 0,
       session: auth,
+      // The account's household profiles + the active one, so the client can
+      // render the "who's watching" picker on load without a second request.
+      // Null when unauthenticated.
+      profiles: auth != null ? accountProfileState(db, auth) : null,
       // Echo the CSRF token from the cookie so a cross-origin client (which can't
       // read document.cookie) can attach it as the x-csrf-token header on
       // mutating requests after a reload. Null when unauthenticated.
@@ -1633,7 +1726,7 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
 
   app.get("/api/auth/session", async (request) => {
     const auth = requireAuth(db, request);
-    return { session: auth };
+    return { session: auth, profiles: accountProfileState(db, auth) };
   });
 
   app.get("/api/auth/sessions", async (request) => {
@@ -1885,6 +1978,199 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
     db.sqlite.prepare("UPDATE users SET disabled_at = ? WHERE id = ?").run(now, row.user_id);
     audit(db, auth, "profile.disable", "profile", id);
     return { ok: true };
+  });
+
+  // ---- Household sub-profiles ("who's watching") --------------------------
+  // These manage VIEWER profiles WITHIN the current account and are the surface
+  // the picker drives. They are intentionally separate from the /api/profiles/*
+  // routes above, which manage other ACCOUNTS (admin/owner only). Everything
+  // here is account-scoped: a user can only ever see/mutate/switch to a profile
+  // whose user_id is their own, so cross-account access is impossible (IDOR-safe
+  // by the WHERE user_id = auth.userId guard on every read and write).
+
+  /** Owns + lives under this account? (guards every mutate/switch path). */
+  function ownedLiveProfile(
+    userId: string,
+    profileId: string,
+  ): { id: string; is_default: number } | null {
+    return (
+      (db.sqlite
+        .prepare(
+          `SELECT id, is_default
+           FROM profiles
+           WHERE id = ? AND user_id = ? AND disabled_at IS NULL
+           LIMIT 1`,
+        )
+        .get(profileId, userId) as { id: string; is_default: number } | undefined) ?? null
+    );
+  }
+
+  app.get("/api/account/profiles", async (request) => {
+    const auth = requireAuth(db, request);
+    return accountProfileState(db, auth);
+  });
+
+  app.post("/api/account/profiles", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(createAccountProfileSchema, request.body);
+    // A household viewer profile is NOT a login: it has no username and its
+    // password is optional (kid/guest profiles switch without one). When a
+    // password is supplied we hash it for parity with accounts, but it is not
+    // used as a credential yet — switching is gated by account ownership, not a
+    // per-profile password. Profile data is isolated by profile_id as usual.
+    const password = (request.body as { password?: unknown })?.password;
+    if (password != null) passwordSchema.parse(password);
+    const passwordHash =
+      typeof password === "string" ? await hashPassword(password) : null;
+
+    const created = db.transaction(() => {
+      // Cap the number of profiles per account (defense-in-depth against a
+      // runaway client filling the picker). 12 is generous for a household.
+      const count = countScalar(
+        db,
+        "SELECT COUNT(*) AS count FROM profiles WHERE user_id = ? AND disabled_at IS NULL",
+        auth.userId,
+      );
+      if (count >= 12) throw httpError(409, "Profile limit reached for this account.");
+      const profileId = randomId("profile");
+      const now = nowISO();
+      db.sqlite
+        .prepare(
+          `INSERT INTO profiles
+           (id, user_id, display_name, avatar_color, simple_mode, is_default, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+        )
+        .run(
+          profileId,
+          auth.userId,
+          body.displayName,
+          body.avatarColor ?? null,
+          body.simpleMode ? 1 : 0,
+          now,
+          now,
+        );
+      // Park the optional password on profile_settings (write-only, hashed) so
+      // it is available if per-profile PINs are wired up later, without adding a
+      // column. No-op when absent.
+      if (passwordHash != null) {
+        db.sqlite
+          .prepare(
+            `INSERT INTO profile_settings (profile_id, key, value)
+             VALUES (?, 'profile_password_hash', ?)
+             ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
+          )
+          .run(profileId, passwordHash);
+      }
+      audit(db, auth, "account.profile.create", "profile", profileId, {
+        displayName: body.displayName,
+      });
+      return profileId;
+    });
+
+    return {
+      profile: {
+        id: created,
+        displayName: body.displayName,
+        avatarColor: body.avatarColor ?? null,
+        simpleMode: body.simpleMode,
+        isDefault: false,
+      },
+    };
+  });
+
+  app.patch("/api/account/profiles/:id", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const id = accountProfileIdParamSchema.parse((request.params as { id: string }).id);
+    const body = parseBody(patchAccountProfileSchema, request.body);
+    // Ownership check makes rename/recolor IDOR-safe — another account's id 404s.
+    if (ownedLiveProfile(auth.userId, id) == null) {
+      throw httpError(404, "Profile not found.");
+    }
+    const now = nowISO();
+    if (body.displayName !== undefined) {
+      db.sqlite
+        .prepare("UPDATE profiles SET display_name = ?, updated_at = ? WHERE id = ?")
+        .run(body.displayName, now, id);
+    }
+    if (body.avatarColor !== undefined) {
+      db.sqlite
+        .prepare("UPDATE profiles SET avatar_color = ?, updated_at = ? WHERE id = ?")
+        .run(body.avatarColor ?? null, now, id);
+    }
+    if (body.simpleMode !== undefined) {
+      db.sqlite
+        .prepare("UPDATE profiles SET simple_mode = ?, updated_at = ? WHERE id = ?")
+        .run(body.simpleMode ? 1 : 0, now, id);
+    }
+    audit(db, auth, "account.profile.update", "profile", id);
+    return { ok: true, profiles: listAccountProfiles(db, auth.userId) };
+  });
+
+  app.delete("/api/account/profiles/:id", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const id = accountProfileIdParamSchema.parse((request.params as { id: string }).id);
+    const target = ownedLiveProfile(auth.userId, id);
+    if (target == null) throw httpError(404, "Profile not found.");
+    // Never delete the default profile, and always keep at least one profile so
+    // the account is never left with nothing to switch to.
+    if (target.is_default === 1) {
+      throw httpError(400, "The default profile cannot be deleted.");
+    }
+    const remaining = countScalar(
+      db,
+      "SELECT COUNT(*) AS count FROM profiles WHERE user_id = ? AND disabled_at IS NULL",
+      auth.userId,
+    );
+    if (remaining <= 1) throw httpError(400, "An account needs at least one profile.");
+
+    db.transaction(() => {
+      // Audit BEFORE the delete: the actor's active profile may BE the one being
+      // removed (you can delete the profile you're currently watching as), and
+      // audit_log.actor_profile_id FKs profiles(id) — inserting after the delete
+      // would violate it. The target id is still captured in the row.
+      audit(db, auth, "account.profile.delete", "profile", id);
+      // Explicitly clear any session pointing at this profile. The
+      // sessions.active_profile_id FK is declared ON DELETE SET NULL, but it was
+      // added via ALTER TABLE ADD COLUMN and SQLite does not enforce that action
+      // for ALTER-added columns — so without this the FK would BLOCK the delete.
+      // Nulling here is correct regardless: those sessions transparently fall
+      // back to the default profile on their next readAuth.
+      db.sqlite
+        .prepare("UPDATE sessions SET active_profile_id = NULL WHERE active_profile_id = ?")
+        .run(id);
+      // Hard delete: ON DELETE CASCADE clears this profile's watchlist/history/
+      // library/settings rows.
+      db.sqlite.prepare("DELETE FROM profiles WHERE id = ?").run(id);
+    });
+    return { ok: true, profiles: listAccountProfiles(db, auth.userId) };
+  });
+
+  app.post("/api/profiles/switch", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(switchProfileSchema, request.body);
+    // Ownership check is the IDOR gate: a profile that isn't this account's (or
+    // is disabled) 404s, so a session can never be pointed at someone else's
+    // profile. On success the session's active pointer is updated and ALL
+    // per-profile scoping (watchlist/history/library/settings) follows it on the
+    // next readAuth.
+    if (ownedLiveProfile(auth.userId, body.profileId) == null) {
+      throw httpError(404, "Profile not found.");
+    }
+    db.sqlite
+      .prepare("UPDATE sessions SET active_profile_id = ? WHERE id = ?")
+      .run(body.profileId, auth.sessionId);
+    audit(db, auth, "account.profile.switch", "profile", body.profileId);
+    // Re-read so the response reflects the freshly-activated profile (display
+    // name, simpleMode, avatar) for the client to hydrate against.
+    const next = readAuth(db, request);
+    return {
+      session: next,
+      profiles: next != null ? accountProfileState(db, next) : null,
+    };
   });
 
   app.get("/api/admin/invites", async (request) => {
