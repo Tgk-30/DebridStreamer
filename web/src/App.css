@@ -59,6 +59,12 @@
   }
 }
 
+@media (max-width: 380px) {
+  .app {
+    --mobile-nav-height: 66px;
+  }
+}
+
 @media (min-width: 1200px) {
   .app {
     --nav-rail-width: 208px;

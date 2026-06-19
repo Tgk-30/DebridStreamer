@@ -2972,22 +2972,7 @@ function KeysTab({ draft, patch }: TabProps) {
         when available.
       </p>
 
-      <div className="settings-subsection-picker">
-        <label className="settings-subsection-select">
-          <span className="settings-label">Credential group</span>
-          <select
-            value={keyPanel}
-            onChange={(event) =>
-              setKeyPanel(event.target.value as "catalog" | "assistant")
-            }
-          >
-            {keyPanels.map((panel) => (
-              <option key={panel.id} value={panel.id}>
-                {panel.label}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="settings-subsection-picker is-option-only">
         <div className="settings-option-strip" aria-label="Credential group">
           {keyPanels.map((panel) => (
             <button
@@ -3006,103 +2991,93 @@ function KeysTab({ draft, patch }: TabProps) {
 
       <div className="settings-key-grid is-single">
         {keyPanel === "catalog" && (
-        <section className="settings-key-card glass-rest">
-          <div className="settings-key-card-head">
-            <span className="settings-sources-title">Catalog metadata</span>
-            <span className="settings-hint t-secondary">Search, posters, ratings</span>
-          </div>
+          <section className="settings-key-card glass-rest" aria-label="Catalog metadata credentials">
+            <Field label="TMDB API key" hint="Powers Discover, Search, and Detail metadata.">
+              <SecretInput
+                value={draft.tmdbKey}
+                onChange={(e) => patch({ tmdbKey: e.target.value })}
+                placeholder="v3 API key"
+              />
+            </Field>
 
-          <Field label="TMDB API key" hint="Powers Discover, Search, and Detail metadata.">
-            <SecretInput
-              value={draft.tmdbKey}
-              onChange={(e) => patch({ tmdbKey: e.target.value })}
-              placeholder="v3 API key"
-            />
-          </Field>
+            <Field label="OMDB API key" hint="Optional IMDb / Rotten Tomatoes enrichment.">
+              <SecretInput
+                value={draft.omdbKey}
+                onChange={(e) => patch({ omdbKey: e.target.value })}
+                placeholder="OMDB key"
+              />
+            </Field>
 
-          <Field label="OMDB API key" hint="Optional IMDb / Rotten Tomatoes enrichment.">
-            <SecretInput
-              value={draft.omdbKey}
-              onChange={(e) => patch({ omdbKey: e.target.value })}
-              placeholder="OMDB key"
-            />
-          </Field>
-
-          <Field
-            label="OpenSubtitles API key"
-            hint="Enables in-player subtitle search and download."
-          >
-            <SecretInput
-              value={draft.openSubtitlesApiKey}
-              onChange={(e) => patch({ openSubtitlesApiKey: e.target.value })}
-              placeholder="OpenSubtitles key"
-            />
-          </Field>
-        </section>
+            <Field
+              label="OpenSubtitles API key"
+              hint="Enables in-player subtitle search and download."
+            >
+              <SecretInput
+                value={draft.openSubtitlesApiKey}
+                onChange={(e) => patch({ openSubtitlesApiKey: e.target.value })}
+                placeholder="OpenSubtitles key"
+              />
+            </Field>
+          </section>
         )}
 
         {keyPanel === "assistant" && (
-        <section className="settings-key-card glass-rest">
-          <div className="settings-key-card-head">
-            <span className="settings-sources-title">Assistant AI</span>
-            <span className="settings-hint t-secondary">Mood discovery and chat</span>
-          </div>
+          <section className="settings-key-card glass-rest" aria-label="Assistant AI credentials">
+            <div className="settings-key-provider-grid">
+              <Field label="AI provider" hint="Provider default is selected first.">
+                <select
+                  value={draft.aiProvider}
+                  onChange={(e) =>
+                    patch({ aiProvider: e.target.value as AppSettings["aiProvider"] })
+                  }
+                >
+                  {AIProviderKind.allCases().map((k) => (
+                    <option key={k} value={k}>
+                      {AIProviderKind.displayName(k)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
 
-          <div className="settings-key-provider-grid">
-            <Field label="AI provider" hint="Provider default is selected first.">
-              <select
-                value={draft.aiProvider}
-                onChange={(e) =>
-                  patch({ aiProvider: e.target.value as AppSettings["aiProvider"] })
-                }
-              >
-                {AIProviderKind.allCases().map((k) => (
-                  <option key={k} value={k}>
-                    {AIProviderKind.displayName(k)}
-                  </option>
-                ))}
-              </select>
-            </Field>
+              <Field label="Model" hint="Recommended default stays first.">
+                <select
+                  value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
+                  onChange={(event) =>
+                    patch({
+                      aiModel:
+                        event.target.value === "__default" ? "" : event.target.value,
+                    })
+                  }
+                >
+                  <option value="__default">Provider default (recommended)</option>
+                  {modelOptions(draft.aiProvider, draft.aiModel).map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
 
-            <Field label="Model" hint="Recommended default stays first.">
-              <select
-                value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
-                onChange={(event) =>
-                  patch({
-                    aiModel:
-                      event.target.value === "__default" ? "" : event.target.value,
-                  })
-                }
-              >
-                <option value="__default">Provider default (recommended)</option>
-                {modelOptions(draft.aiProvider, draft.aiModel).map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          {draft.aiProvider === "ollama" ? (
-            <Field label="Ollama endpoint" hint="A local Ollama server URL.">
-              <input
-                type="text"
-                value={draft.ollamaEndpoint}
-                onChange={(e) => patch({ ollamaEndpoint: e.target.value })}
-                placeholder="http://localhost:11434"
-              />
-            </Field>
-          ) : (
-            <Field label={`${AIProviderKind.displayName(draft.aiProvider)} API key`}>
-              <SecretInput
-                value={draft.aiApiKey}
-                onChange={(e) => patch({ aiApiKey: e.target.value })}
-                placeholder="API key"
-              />
-            </Field>
-          )}
-        </section>
+            {draft.aiProvider === "ollama" ? (
+              <Field label="Ollama endpoint" hint="A local Ollama server URL.">
+                <input
+                  type="text"
+                  value={draft.ollamaEndpoint}
+                  onChange={(e) => patch({ ollamaEndpoint: e.target.value })}
+                  placeholder="http://localhost:11434"
+                />
+              </Field>
+            ) : (
+              <Field label={`${AIProviderKind.displayName(draft.aiProvider)} API key`}>
+                <SecretInput
+                  value={draft.aiApiKey}
+                  onChange={(e) => patch({ aiApiKey: e.target.value })}
+                  placeholder="API key"
+                />
+              </Field>
+            )}
+          </section>
         )}
       </div>
     </div>

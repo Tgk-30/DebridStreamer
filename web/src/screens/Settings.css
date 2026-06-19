@@ -327,6 +327,11 @@
   align-items: end;
 }
 
+.settings-subsection-picker.is-option-only {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
 .settings-subsection-select {
   display: flex;
   min-width: 0;
