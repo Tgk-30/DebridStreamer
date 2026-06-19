@@ -38,6 +38,7 @@ import {
   sha256,
   verifyPassword,
 } from "./crypto.js";
+import { fetchUpstreamSafely } from "./ssrf.js";
 import {
   CREDENTIAL_PROVIDERS,
   type AuthContext,
@@ -493,6 +494,15 @@ function createSession(
     .prepare("UPDATE users SET last_login_at = ? WHERE id = ?")
     .run(nowISO(), userId);
   return { sessionId, rawToken, csrfToken, expiresAt };
+}
+
+// A throwaway scrypt hash (over a random password) used to spend the same CPU on
+// a login attempt for a non-existent username as for a real one, so response
+// timing doesn't leak which usernames exist. Computed once, lazily.
+let dummyPasswordHash: string | null = null;
+async function verifyDummyPassword(password: string): Promise<void> {
+  dummyPasswordHash ??= await hashPassword(randomToken());
+  await verifyPassword(dummyPasswordHash, password);
 }
 
 function setSessionCookies(
@@ -1186,6 +1196,10 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
     const passwordHash = await hashPassword(body.password);
 
     const created = db.transaction(() => {
+      // Authoritative re-check INSIDE the write transaction (BEGIN IMMEDIATE
+      // serializes writers), so two concurrent first-run calls that both passed
+      // the pre-hash check above can't both create an owner.
+      if (userCount(db) > 0) throw httpError(409, "Owner account already exists.");
       const ids = createUserAndProfile(db, {
         username: body.username,
         displayName: body.displayName,
@@ -1216,6 +1230,9 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
 
   app.post("/api/auth/login", async (request, reply) => {
     const body = parseBody(loginSchema, request.body);
+    // Per-IP limit across ALL usernames (throttles credential spraying), in
+    // addition to the per-(username,IP) limit below for targeted brute force.
+    rateLimit(request, "auth:login-ip", 30, 15 * 60 * 1000);
     rateLimit(
       request,
       `auth:login:${body.username.toLowerCase()}`,
@@ -1238,7 +1255,13 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
         }
       | undefined;
 
-    if (row == null || !(await verifyPassword(row.password_hash, body.password))) {
+    if (row == null) {
+      // Run a dummy verify so an unknown username takes the same time as a known
+      // one — otherwise response timing reveals which usernames exist.
+      await verifyDummyPassword(body.password);
+      throw httpError(401, "Invalid username or password.");
+    }
+    if (!(await verifyPassword(row.password_hash, body.password))) {
       throw httpError(401, "Invalid username or password.");
     }
 
@@ -2052,11 +2075,19 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
       const controller = new AbortController();
       request.raw.once("close", () => controller.abort());
 
-      const upstream = await fetch(upstreamUrl, {
-        method: request.method,
-        headers,
-        signal: controller.signal,
-      });
+      // SSRF guard: validate the URL (and every redirect hop) is http(s) and
+      // resolves only to public addresses before the server fetches it. Private
+      // addresses are allowed only when the operator opted into raw/local URLs
+      // (dev default); production blocks them.
+      const upstream = await fetchUpstreamSafely(
+        upstreamUrl,
+        {
+          method: request.method,
+          headers,
+          signal: controller.signal,
+        },
+        config.allowRawStreamUrls,
+      );
 
       reply.status(upstream.status);
       for (const header of [
