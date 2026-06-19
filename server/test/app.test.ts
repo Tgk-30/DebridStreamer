@@ -1676,4 +1676,34 @@ describe("DebridStreamer server", () => {
       (await request(limited, { method: "POST", url: "/api/account/profiles", csrf: true, payload: { displayName: "Kid" } })).statusCode,
     ).toBe(403);
   });
+
+  it("never leaks or lets the client overwrite the protected sub-profile password hash", async () => {
+    const owner = await setupOwner(app);
+    // A household sub-profile created WITH a password stores a write-only hash.
+    const sub = json<{ profile: { id: string } }>(
+      await request(owner, {
+        method: "POST",
+        url: "/api/account/profiles",
+        csrf: true,
+        payload: { displayName: "Kid", password: "kid-pin-1234" },
+      }),
+    ).profile.id;
+    // Switch to it so /api/settings/profile reads that profile's settings.
+    expect(
+      (await request(owner, { method: "POST", url: "/api/profiles/switch", csrf: true, payload: { profileId: sub } })).statusCode,
+    ).toBe(200);
+    const settings = json<{ settings: Record<string, string> }>(
+      await request(owner, { method: "GET", url: "/api/settings/profile" }),
+    ).settings;
+    expect(settings.profile_password_hash).toBeUndefined(); // not leaked on read
+    // And the generic settings PUT cannot overwrite/delete the protected key.
+    expect(
+      (await request(owner, {
+        method: "PUT",
+        url: "/api/settings/profile",
+        csrf: true,
+        payload: { key: "profile_password_hash", value: "attacker" },
+      })).statusCode,
+    ).toBe(403);
+  });
 });

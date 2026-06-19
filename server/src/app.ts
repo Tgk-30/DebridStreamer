@@ -349,6 +349,14 @@ const profileSettingSchema = z.object({
   value: z.string().max(16_384).nullable(),
 });
 
+// Profile-settings keys written server-side that must never be read back by, or
+// be writable from, the generic /api/settings/profile surface (it round-trips
+// arbitrary client key/values). Currently the optional sub-profile password hash
+// is the only such key — it's write-only by design (reserved for a future PIN).
+const PROTECTED_PROFILE_SETTING_KEYS: ReadonlySet<string> = new Set([
+  "profile_password_hash",
+]);
+
 function httpError(statusCode: number, message: string): Error & { statusCode: number } {
   return Object.assign(new Error(message), { statusCode });
 }
@@ -1815,7 +1823,10 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
       )
       .all(auth.profileId) as Array<{ key: string; value: string }>;
     const settings: Record<string, string> = {};
-    for (const row of rows) settings[row.key] = row.value;
+    for (const row of rows) {
+      if (PROTECTED_PROFILE_SETTING_KEYS.has(row.key)) continue;
+      settings[row.key] = row.value;
+    }
     return { settings };
   });
 
@@ -1823,6 +1834,11 @@ function registerRoutes(app: FastifyInstance, db: AppDatabase, config: ServerCon
     const auth = requireAuth(db, request);
     requireCsrf(request);
     const body = parseBody(profileSettingSchema, request.body);
+    // Don't let the generic settings surface read OR clobber server-managed
+    // protected keys (e.g. the write-only sub-profile password hash).
+    if (PROTECTED_PROFILE_SETTING_KEYS.has(body.key)) {
+      throw httpError(403, "This setting cannot be modified.");
+    }
     if (body.value == null) {
       db.sqlite
         .prepare("DELETE FROM profile_settings WHERE profile_id = ? AND key = ?")
