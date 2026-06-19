@@ -389,7 +389,11 @@
 
 @media (max-width: 380px) and (max-height: 620px) {
   .hero {
-    height: clamp(182px, 35vh, 202px);
+    height: clamp(174px, 33vh, 194px);
+  }
+
+  .hero-content {
+    padding: 12px;
   }
 
   .hero-dots {
@@ -414,5 +418,16 @@
 
   .hero-dot::before {
     height: 5px;
+  }
+
+  .hero-title {
+    font-size: clamp(24px, 7vw, 32px);
+  }
+
+  .hero-play,
+  .hero-info {
+    min-height: 39px;
+    padding: 8px 10px;
+    font-size: 12.5px;
   }
 }

@@ -501,8 +501,8 @@
 
 @media (max-width: 380px) {
   .nav-rail {
-    --nav-mobile-label-size: 9.5px;
-    width: min(100vw - 24px, 392px);
+    --nav-mobile-label-size: 9px;
+    width: min(100vw - 18px, 392px);
     padding: 5px;
     border-radius: 20px;
   }
@@ -514,6 +514,6 @@
   }
 
   .nav-rail-label {
-    font-size: 9.5px;
+    font-size: 9px;
   }
 }

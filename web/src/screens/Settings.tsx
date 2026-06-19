@@ -14,6 +14,7 @@
 
 import {
   useEffect,
+  useMemo,
   useState,
   type ChangeEvent,
   type CSSProperties,
@@ -607,6 +608,14 @@ export function Settings() {
     draft.sources.filter((source) => source.isActive).length +
     (draft.builtInIndexersEnabled ? 1 : 0);
   const metadataState = draft.tmdbKey.trim().length > 0 ? "Live metadata" : "Sample metadata";
+  const hasUnsavedChanges = useMemo(
+    () => JSON.stringify(draft) !== JSON.stringify(settings),
+    [draft, settings],
+  );
+  const saveLabel = hasUnsavedChanges ? "Save changes" : saved ? "Saved" : "Up to date";
+  const saveNote = hasUnsavedChanges
+    ? "Unsaved changes are local until you save this profile."
+    : "Saved to this profile · desktop secrets use the OS keychain when available";
 
   return (
     <div className="settings-screen">
@@ -665,24 +674,29 @@ export function Settings() {
         {tab !== "install" && (
           <div className="settings-footer">
             <span className="settings-note t-secondary" aria-live="polite">
-              Saved to this profile · desktop secrets use the OS keychain when available
+              {saveNote}
             </span>
             <button
               type="button"
               className="btn btn-prominent"
               onClick={save}
-              aria-label={saved ? "Settings saved" : "Save changes"}
-              title={saved ? "Saved" : "Save changes"}
+              disabled={!hasUnsavedChanges}
+              aria-label={saveLabel}
+              title={saveLabel}
             >
-              <Icon name={saved ? "check" : "save"} size={16} className="settings-save-icon" />
-              <span className="settings-save-label">{saved ? "Saved" : "Save changes"}</span>
+              <Icon
+                name={hasUnsavedChanges ? "save" : "check"}
+                size={16}
+                className="settings-save-icon"
+              />
+              <span className="settings-save-label">{saveLabel}</span>
             </button>
           </div>
         )}
       </header>
 
       <label className="settings-tab-select">
-        <span className="settings-label">Category</span>
+        <span className="settings-label">Settings category</span>
         <select value={tab} onChange={(event) => setTab(event.target.value as Tab)}>
           {tabs.map((t) => (
             <option key={t.id} value={t.id}>

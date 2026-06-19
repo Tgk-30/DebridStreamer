@@ -48,7 +48,7 @@ function platformKey() {
 }
 
 function labelFor(platform) {
-  if (platform === "mobile") return "Install hosted PWA";
+  if (platform === "mobile") return "Install PWA";
   return platforms[platform]?.button ?? "View downloads";
 }
 

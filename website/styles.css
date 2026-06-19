@@ -439,15 +439,16 @@ pre {
   }
 
   .site-header {
-    align-items: center;
-    flex-direction: row;
-    gap: 10px;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
     padding: 14px 12px;
   }
 
   .brand {
     min-width: 0;
-    flex: 1 1 auto;
+    width: 100%;
+    flex: 0 0 auto;
   }
 
   .brand span {
@@ -457,27 +458,28 @@ pre {
   }
 
   nav {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     flex: 0 0 auto;
-    width: auto;
+    width: 100%;
     gap: 6px;
   }
 
   nav a:nth-child(1),
   nav a:nth-child(2) {
-    display: none;
+    display: inline-flex;
   }
 
   nav a {
     justify-content: center;
-    min-width: 70px;
+    min-width: 0;
     min-height: 44px;
-    padding: 0 10px;
+    padding: 0 6px;
     border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.035);
     color: var(--site-muted);
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 750;
   }
 
@@ -487,8 +489,8 @@ pre {
   }
 
   h1 {
-    font-size: clamp(40px, 12vw, 52px);
-    line-height: 1.08;
+    font-size: clamp(34px, 10.5vw, 46px);
+    line-height: 1.04;
   }
 
   .lede,
@@ -521,5 +523,11 @@ pre {
   .steps article,
   .status-list {
     padding: 20px;
+  }
+}
+
+@media (max-width: 360px) {
+  nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
