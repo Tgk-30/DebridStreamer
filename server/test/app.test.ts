@@ -185,6 +185,34 @@ describe("DebridStreamer server", () => {
     });
   });
 
+  it("exposes profile simpleMode (as a boolean) and lets a profile flip it", async () => {
+    const owner = await setupOwner(app);
+
+    // Owner defaults to Advanced (simpleMode false). Assert it's a real boolean
+    // so a regression that drops the int→boolean mapping (raw number leak) fails.
+    const session1 = await request(owner, { method: "GET", url: "/api/auth/session" });
+    const s1 = json<{ session: { profileId: string; simpleMode: boolean } }>(session1).session;
+    expect(typeof s1.simpleMode).toBe("boolean");
+    expect(s1.simpleMode).toBe(false);
+
+    // Bootstrap carries it too.
+    const boot = await request(owner, { method: "GET", url: "/api/bootstrap" });
+    expect(json<{ session: { simpleMode: boolean } | null }>(boot).session?.simpleMode).toBe(false);
+
+    // Self-edit: flip simpleMode on the owner's own profile.
+    const patch = await request(owner, {
+      method: "PATCH",
+      url: `/api/profiles/${s1.profileId}`,
+      csrf: true,
+      payload: { simpleMode: true },
+    });
+    expect(patch.statusCode).toBe(200);
+
+    // The next session reflects the flip.
+    const session2 = await request(owner, { method: "GET", url: "/api/auth/session" });
+    expect(json<{ session: { simpleMode: boolean } }>(session2).session.simpleMode).toBe(true);
+  });
+
   it("rate-limits repeated login attempts for the same account and IP", async () => {
     await setupOwner(app);
 

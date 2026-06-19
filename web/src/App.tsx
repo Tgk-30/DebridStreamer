@@ -53,11 +53,15 @@ const Detail = lazy(() =>
  *  of the app before the wizard. Lives inside AppStoreProvider so both branches
  *  have store access. */
 export function FirstRunHost() {
+  const { hydrated } = useAppStore();
   const [firstRun, setFirstRun] = useState<boolean | null>(null);
   useEffect(() => {
     void isFirstRun().then(setFirstRun);
   }, []);
-  if (firstRun == null) return null;
+  // Wait for BOTH the first-run check AND Store hydration before deciding. This
+  // ensures the wizard's choice (e.g. Advanced → simpleMode false) is applied
+  // AFTER hydration's setSettings, so a late hydration can't revert it.
+  if (firstRun == null || !hydrated) return null;
   if (firstRun) return <FirstRunWizard onDone={() => setFirstRun(false)} />;
   return <App />;
 }

@@ -79,6 +79,8 @@ export interface AppStore {
   /** Effective Simple/Advanced experience: Server Mode reads the profile
    * session; Local Mode reads AppSettings. Drives progressive disclosure. */
   simpleMode: boolean;
+  /** True once the durable Store has hydrated over the bootstrap defaults. */
+  hydrated: boolean;
 
   // Watchlist + History (storage-port backed)
   watchlist: MediaPreview[];
@@ -120,6 +122,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [cachedResolutions, setCachedResolutions] = useState<
     Record<string, CachedResolutionRecord>
   >({});
+  // True once the durable Store has hydrated over the synchronous bootstrap. The
+  // first-run wizard waits for this so its choice (e.g. Advanced → simpleMode
+  // false) isn't racily clobbered by a late hydration setSettings().
+  const [hydrated, setHydrated] = useState(false);
 
   // Hydrate everything from the Store once on mount.
   useEffect(() => {
@@ -140,6 +146,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       const map: Record<string, CachedResolutionRecord> = {};
       for (const r of cached) map[r.mediaId] = r;
       setCachedResolutions(map);
+      setHydrated(true);
     })();
     return () => {
       cancelled = true;
@@ -327,6 +334,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     settings,
     updateSettings,
     simpleMode,
+    hydrated,
     watchlist,
     history,
     continueWatching,
