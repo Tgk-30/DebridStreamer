@@ -64,6 +64,48 @@ interface RawExternalIds {
   tvdb_id?: number | null;
 }
 
+// /movie/{id}/release_dates — per-country release dates, each carrying a
+// certification (the US entry is what `getCertification` reads).
+interface RawReleaseDates {
+  results: Array<{
+    iso_3166_1: string;
+    release_dates: Array<{ certification?: string | null }>;
+  }>;
+}
+
+// /tv/{id}/content_ratings — per-country TV content rating (the US `rating`).
+interface RawContentRatings {
+  results: Array<{ iso_3166_1: string; rating?: string | null }>;
+}
+
+// US maturity ranking, mirroring the server's MATURITY_RANK ladder. Used only to
+// pick the MOST RESTRICTIVE certification when a movie carries several — the
+// server remains the authority for the cap comparison.
+const CERT_RANK: Readonly<Record<string, number>> = {
+  G: 0,
+  PG: 1,
+  "PG-13": 2,
+  R: 3,
+  "NC-17": 4,
+};
+
+/** The strictest certification among a title's US certs. An unrecognized cert
+ * outranks all known ones (returned as-is) so the server fail-closes on it;
+ * an empty list yields null. */
+function strictestCertification(certs: string[]): string | null {
+  if (certs.length === 0) return null;
+  let best: string | null = null;
+  let bestRank = -1;
+  for (const cert of certs) {
+    const rank = CERT_RANK[cert.toUpperCase()] ?? Number.MAX_SAFE_INTEGER;
+    if (rank > bestRank) {
+      bestRank = rank;
+      best = cert;
+    }
+  }
+  return best;
+}
+
 interface RawDetailResponse {
   id: number;
   title?: string | null;
@@ -501,6 +543,42 @@ export class TMDBService implements MetadataProvider {
       return response.results
         .map(toMediaPreview)
         .filter((p): p is MediaPreview => p !== null);
+    });
+  }
+
+  /** The US maturity certification for a title, or null when TMDB has none.
+   * Movies read `/movie/{id}/release_dates` (the first non-empty US
+   * certification); series read `/tv/{id}/content_ratings` (the US `rating`).
+   * Cached with the long TTL — certifications effectively never change. The
+   * server's kid play-block treats a null return as "unknown" → fail-closed. */
+  async getCertification(
+    tmdbId: number,
+    type: MediaType,
+  ): Promise<string | null> {
+    if (type === "movie") {
+      const path = `/movie/${tmdbId}/release_dates`;
+      return this.cached(this.cacheKey(path, {}), TMDBService.longTTL, async () => {
+        const response = await this.request<RawReleaseDates>(path, {});
+        const us = response.results.find((r) => r.iso_3166_1 === "US");
+        if (us == null) return null;
+        // A title can carry multiple US certifications (theatrical R, edited-for-TV
+        // PG-13, an NC-17 director's cut, …) across its release_dates, in no
+        // guaranteed order. Return the MOST RESTRICTIVE so the kid play-block stays
+        // fail-safe — an unrecognized cert ranks highest so it blocks rather than
+        // slips through.
+        const certs = us.release_dates
+          .map((d) => d.certification)
+          .filter((c): c is string => c != null && c.trim().length > 0)
+          .map((c) => c.trim());
+        return strictestCertification(certs);
+      });
+    }
+    const path = `/tv/${tmdbId}/content_ratings`;
+    return this.cached(this.cacheKey(path, {}), TMDBService.longTTL, async () => {
+      const response = await this.request<RawContentRatings>(path, {});
+      const us = response.results.find((r) => r.iso_3166_1 === "US");
+      const rating = us?.rating;
+      return rating != null && rating.trim().length > 0 ? rating.trim() : null;
     });
   }
 

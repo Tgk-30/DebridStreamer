@@ -7,6 +7,7 @@ import { CacheStatus } from "../../web/src/services/debrid/models.ts";
 import { IndexerManager } from "../../web/src/services/indexers/IndexerManager.ts";
 import { IndexerType, makeIndexerConfig } from "../../web/src/services/indexers/types.ts";
 import { decryptSecret } from "./crypto.js";
+import { getServerDetail } from "./metadata-runtime.js";
 
 const BUILT_IN_INDEXERS_ENABLED_KEY = "built_in_indexers_enabled";
 export const SERVER_INDEXER_CONFIGS_KEY = "server_indexer_configs";
@@ -317,4 +318,27 @@ export async function resolveServerStream(db, config, profileId, input) {
     });
   }
   return manager.resolveStream(input.infoHash, input.preferredService ?? null);
+}
+
+// Whether `infoHash` is genuinely one of the indexer sources for the title named
+// by `mediaId`. The kid play-block uses this to bind the cert-checked title to
+// the content actually resolved, so an over-cap infoHash cannot be smuggled in
+// under an in-cap mediaId. Resolves mediaId -> imdbId via TMDB detail, then
+// queries the indexers DIRECTLY and looks for the hash (case-insensitively).
+//
+// It deliberately bypasses searchServerStreams' profileStreamFilters (cachedOnly
+// / maxQuality / maxSizeGB) and the debrid cache lookup: membership is about
+// whether the hash is a real SOURCE of the title, not whether it passes the
+// profile's quality/cache preferences — filtering there would falsely block a
+// legitimate in-cap movie. Fail-closed (false) on no imdbId / no indexers / no
+// matching source.
+export async function titleHasInfoHash(db, config, profileId, mediaId, mediaType, infoHash) {
+  const target = String(infoHash).toLowerCase();
+  const detail = await getServerDetail(db, config, profileId, { id: mediaId, type: mediaType });
+  const imdbId = detail?.imdbId ?? null;
+  if (imdbId == null) return false;
+  const indexers = buildIndexerManager(db, profileId);
+  if (indexers.activeIndexers.length === 0) return false;
+  const results = await indexers.searchAll(imdbId, mediaType, null, null);
+  return results.some((r) => String(r.infoHash).toLowerCase() === target);
 }

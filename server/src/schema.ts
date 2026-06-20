@@ -220,3 +220,14 @@ CREATE UNIQUE INDEX requests_one_pending_idx
 CREATE INDEX requests_status_idx ON requests(status, requested_at DESC);
 CREATE INDEX requests_requester_idx ON requests(requester_profile_id, requested_at DESC);
 `;
+
+// Phase 4 (kids): per-profile maturity gating. `is_kid` locks the profile into
+// the curated, search-disabled kid experience; `maturity_max` is the rating
+// ceiling (a US movie cert: G/PG/PG-13/R/NC-17, NULL = no cap). Both default to
+// the unrestricted adult behavior so existing profiles are unaffected. Set by an
+// owner/admin via POST /api/account/profiles/:id/maturity. The play-block reads
+// `maturity_max`; the curated-browse/search lockdown reads `is_kid`.
+export const MIGRATION_007 = `
+ALTER TABLE profiles ADD COLUMN is_kid INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE profiles ADD COLUMN maturity_max TEXT;
+`;

@@ -67,6 +67,14 @@ export interface AuthContext {
   sessionId: string;
   /** Whether the active profile is in Simple (progressive-disclosure) mode. */
   simpleMode: boolean;
+  /** Whether the active profile is a locked-down kid profile (search disabled,
+   * curated movie-only browse). Independent of `maturityMax` in principle, but
+   * an owner sets them together. */
+  isKid: boolean;
+  /** The active profile's maturity ceiling — a US movie certification
+   * (G/PG/PG-13/R/NC-17), or null for no cap. The resolve play-block compares a
+   * title's certification against this; null means unrestricted. */
+  maturityMax: string | null;
 }
 
 export interface BuildAppOptions {

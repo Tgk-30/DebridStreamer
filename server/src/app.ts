@@ -16,6 +16,7 @@ import { loadConfig } from "./config.js";
 import {
   resolveServerStream,
   searchServerStreams,
+  titleHasInfoHash,
 } from "./media-runtime.js";
 import {
   discoverServerMedia,
@@ -25,6 +26,7 @@ import {
   getServerGenres,
   getServerUpcomingEpisodes,
   searchServerMedia,
+  titleCertification,
 } from "./metadata-runtime.js";
 import { curateServerAI, recommendServerAI } from "./ai-runtime.js";
 import {
@@ -154,6 +156,9 @@ const patchAccountProfileSchema = z
 
 const switchProfileSchema = z.object({
   profileId: z.string().trim().min(1).max(128),
+  // Parental unlock: required only when LEAVING a kid profile (verified against
+  // the account password). Optional/ignored for all other switches.
+  password: z.string().min(1).max(512).optional(),
 });
 
 const accountProfileIdParamSchema = z.string().trim().min(1).max(128);
@@ -360,6 +365,12 @@ const resolveStreamSchema = z.object({
     .transform((value) => value.toLowerCase()),
   preferredService: debridServiceSchema.nullable().optional(),
   expiresInSeconds: z.number().int().min(1).max(60 * 60 * 24).default(60 * 60 * 6),
+  // Media identity, carried so a maturity-capped (kid) profile can be checked
+  // against the title's certification before the stream is resolved. Optional
+  // for back-compat + raw sessions; their absence on a capped profile is itself
+  // a block (fail-closed) — see the resolve route.
+  mediaId: z.string().trim().min(1).max(256).optional(),
+  mediaType: z.enum(["movie", "series"]).optional(),
 });
 
 const profileSettingSchema = z.object({
@@ -428,6 +439,63 @@ function stringQueryParams(
 
 function isAdmin(role: UserRole): boolean {
   return role === "owner" || role === "admin";
+}
+
+// Maturity ladder (kid gating). The owner-set cap (`maturity_max`) is always a US
+// movie certification; a title's certification can be a US movie cert OR a US TV
+// content rating, so both vocabularies are mapped onto one ascending severity
+// rank. The cap settings the UI offers are the MOVIE_CERTS.
+const MOVIE_CERTS = ["G", "PG", "PG-13", "R", "NC-17"] as const;
+const MATURITY_RANK: Readonly<Record<string, number>> = {
+  // US movie (release_dates .certification)
+  G: 0,
+  PG: 1,
+  "PG-13": 2,
+  R: 3,
+  "NC-17": 4,
+  // US TV (content_ratings .rating), folded onto the same scale
+  "TV-Y": 0,
+  "TV-Y7": 0,
+  "TV-G": 0,
+  "TV-PG": 1,
+  "TV-14": 2,
+  "TV-MA": 4,
+};
+
+/** Whether a title's certification is allowed under a maturity cap. FAIL-CLOSED:
+ * a null/blank/unrecognized title cert returns false (blocked), as does an
+ * unrecognized cap. Only a known cert whose rank is <= the cap's rank passes. */
+function certWithinCap(cert: string | null, cap: string): boolean {
+  const capRank = MATURITY_RANK[cap];
+  if (capRank == null) return false;
+  if (cert == null) return false;
+  const certRank = MATURITY_RANK[cert.trim().toUpperCase()];
+  if (certRank == null) return false;
+  return certRank <= capRank;
+}
+
+const maturitySettingsSchema = z
+  .object({
+    isKid: z.boolean(),
+    // null clears the cap (no restriction); otherwise one of the movie certs.
+    maturityMax: z.enum(MOVIE_CERTS).nullable(),
+  })
+  // is_kid and the cap are strictly coupled: a kid MUST carry a cap (else the
+  // play-block + curated browse fail open), and a cap without is_kid would leave
+  // the search/AI/calendar lockdown (which keys off is_kid) bypassable. Forbid
+  // BOTH half-states so the only persistable rows are (kid + cap) or (neither).
+  .refine((v) => v.isKid === (v.maturityMax != null), {
+    message: "A kid profile requires a maturity cap, and a cap requires the kid flag.",
+    path: ["maturityMax"],
+  });
+
+/** The active profile's maturity context, passed to the catalog runtime so kid
+ *  browse is curated to cert-capped, movie-only results. */
+function maturityAudience(auth: AuthContext): {
+  isKid: boolean;
+  maturityMax: string | null;
+} {
+  return { isKid: auth.isKid, maturityMax: auth.maturityMax };
 }
 
 function cookieOptions(config: ServerConfig, httpOnly: boolean) {
@@ -870,6 +938,11 @@ function readAuth(db: AppDatabase, request: FastifyRequest): AuthContext | null 
          COALESCE(active.display_name, def.display_name) AS displayName,
          COALESCE(active.avatar_color, def.avatar_color) AS avatarColor,
          COALESCE(active.simple_mode, def.simple_mode) AS simpleMode,
+         -- maturity_max is NULLABLE (null = no cap), so COALESCE would wrongly
+         -- bleed the default profile's cap onto an active adult profile. Pick by
+         -- whether the active row actually joined, mirroring profileId above.
+         CASE WHEN active.id IS NOT NULL THEN active.is_kid ELSE def.is_kid END AS isKid,
+         CASE WHEN active.id IS NOT NULL THEN active.maturity_max ELSE def.maturity_max END AS maturityMax,
          sessions.id AS sessionId
        FROM sessions
        JOIN users ON users.id = sessions.user_id
@@ -887,12 +960,15 @@ function readAuth(db: AppDatabase, request: FastifyRequest): AuthContext | null 
        LIMIT 1`,
     )
     .get(cookieValue.sessionId, sha256(cookieValue.rawToken), nowISO()) as
-    | (Omit<AuthContext, "simpleMode"> & { simpleMode: number })
+    | (Omit<AuthContext, "simpleMode" | "isKid"> & {
+        simpleMode: number;
+        isKid: number;
+      })
     | undefined;
-  // simple_mode is an INTEGER column — map to a real boolean (a raw cast would
-  // leak a number, defeating `=== true` / `?? true` checks downstream).
+  // simple_mode / is_kid are INTEGER columns — map to real booleans (a raw cast
+  // would leak a number, defeating `=== true` / `?? true` checks downstream).
   if (row == null) return null;
-  return { ...row, simpleMode: row.simpleMode === 1 };
+  return { ...row, simpleMode: row.simpleMode === 1, isKid: row.isKid === 1 };
 }
 
 function requireAuth(db: AppDatabase, request: FastifyRequest): AuthContext {
@@ -902,14 +978,24 @@ function requireAuth(db: AppDatabase, request: FastifyRequest): AuthContext {
 }
 
 function requireAdmin(auth: AuthContext): void {
+  // A kid-active session is locked down regardless of the underlying ACCOUNT
+  // role: `role` comes from users.role and a household sub-profile inherits it,
+  // so without this a kid switched-into under an owner/admin account would pass
+  // requireAdmin and could (e.g.) lift its own maturity cap. The active profile,
+  // not the account role, is the privilege boundary here.
+  if (auth.isKid) throw httpError(403, "This action is not available on this profile.");
   if (!isAdmin(auth.role)) throw httpError(403, "Admin access required.");
 }
 
 // A "restricted" profile can browse + watch but is strictly less-privileged than
 // a "member": it cannot perform any management/write action (credential edits,
 // profile management, etc.). Apply this to those routes; do NOT apply it to
-// normal viewing/search/watchlist/history/streaming.
+// normal viewing/search/watchlist/history/streaming. A kid-active session is
+// likewise barred (same active-profile-is-the-boundary reasoning as requireAdmin).
 function requireNotRestricted(auth: AuthContext): void {
+  if (auth.isKid) {
+    throw httpError(403, "This action is not available on this profile.");
+  }
   if (auth.role === "restricted") {
     throw httpError(403, "This action is not available for restricted profiles.");
   }
@@ -1031,6 +1117,8 @@ interface AccountProfileRow {
   avatar_color: string | null;
   simple_mode: number;
   is_default: number;
+  is_kid: number;
+  maturity_max: string | null;
 }
 
 function mapAccountProfile(row: AccountProfileRow) {
@@ -1040,6 +1128,8 @@ function mapAccountProfile(row: AccountProfileRow) {
     avatarColor: row.avatar_color,
     simpleMode: row.simple_mode === 1,
     isDefault: row.is_default === 1,
+    isKid: row.is_kid === 1,
+    maturityMax: row.maturity_max,
   };
 }
 
@@ -1049,7 +1139,8 @@ function mapAccountProfile(row: AccountProfileRow) {
 function listAccountProfiles(db: AppDatabase, userId: string) {
   const rows = db.sqlite
     .prepare(
-      `SELECT id, display_name, avatar_color, simple_mode, is_default
+      `SELECT id, display_name, avatar_color, simple_mode, is_default,
+              is_kid, maturity_max
        FROM profiles
        WHERE user_id = ? AND disabled_at IS NULL
        ORDER BY is_default DESC, created_at ASC`,
@@ -2187,6 +2278,32 @@ function registerRoutes(
     return { ok: true, profiles: listAccountProfiles(db, auth.userId) };
   });
 
+  // Kid/maturity gating is set HERE, behind requireAdmin — deliberately NOT on
+  // the PATCH route above (which is requireNotRestricted), so a kid can never
+  // lift their own cap by editing their profile. Household-scoped via
+  // ownedLiveProfile. Setting both fields together keeps the play-block
+  // (maturity_max) and the curated-browse lockdown (is_kid) consistent.
+  app.post("/api/account/profiles/:id/maturity", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    requireAdmin(auth);
+    const id = accountProfileIdParamSchema.parse((request.params as { id: string }).id);
+    const body = parseBody(maturitySettingsSchema, request.body);
+    if (ownedLiveProfile(auth.userId, id) == null) {
+      throw httpError(404, "Profile not found.");
+    }
+    db.sqlite
+      .prepare(
+        "UPDATE profiles SET is_kid = ?, maturity_max = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(body.isKid ? 1 : 0, body.maturityMax, nowISO(), id);
+    audit(db, auth, "account.profile.maturity", "profile", id, {
+      isKid: body.isKid,
+      maturityMax: body.maturityMax,
+    });
+    return { ok: true, profiles: listAccountProfiles(db, auth.userId) };
+  });
+
   app.delete("/api/account/profiles/:id", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
@@ -2239,6 +2356,27 @@ function registerRoutes(
     // next readAuth.
     if (ownedLiveProfile(auth.userId, body.profileId) == null) {
       throw httpError(404, "Profile not found.");
+    }
+    // Parental lock: profile-switching is otherwise credential-free, so without
+    // this a kid could simply switch back to an uncapped adult profile and shed
+    // the entire maturity lockdown. LEAVING a kid profile (switching to any other
+    // profile) requires the ACCOUNT password. Entering a kid profile, and no-op
+    // re-selects of the same profile, stay free.
+    if (auth.isKid && body.profileId !== auth.profileId) {
+      const row = db.sqlite
+        .prepare("SELECT password_hash FROM users WHERE id = ?")
+        .get(auth.userId) as { password_hash: string } | undefined;
+      const ok =
+        body.password != null &&
+        row != null &&
+        (await verifyPassword(row.password_hash, body.password));
+      if (!ok) {
+        // Rate-limit only FAILED unlocks (a successful parent shouldn't be
+        // throttled for switching in/out), to slow brute force of the password.
+        rateLimit(request, `profile:unlock:${auth.userId}`, 10, 60 * 1000);
+        audit(db, auth, "account.profile.switch.locked", "profile", body.profileId);
+        throw httpError(403, "The account password is required to leave a kid profile.");
+      }
     }
     db.sqlite
       .prepare("UPDATE sessions SET active_profile_id = ? WHERE id = ?")
@@ -2869,6 +3007,9 @@ function registerRoutes(
 
   app.get("/api/search", async (request) => {
     const auth = requireAuth(db, request);
+    // Kid profiles have no free-text search — only the curated, cert-capped
+    // browse surfaces. Blocking here keeps a kid from typing past the cap.
+    if (auth.isKid) throw httpError(403, "Search is disabled on this profile.");
     const query = parseBody(mediaSearchQuerySchema, request.query);
     return searchServerMedia(db, config, auth.profileId, {
       query: query.q,
@@ -2879,13 +3020,13 @@ function registerRoutes(
 
   app.get("/api/discover/home", async (request) => {
     const auth = requireAuth(db, request);
-    return getServerDiscoverHome(db, config, auth.profileId);
+    return getServerDiscoverHome(db, config, auth.profileId, maturityAudience(auth));
   });
 
   app.get("/api/catalog/category", async (request) => {
     const auth = requireAuth(db, request);
     const query = parseBody(mediaCategoryQuerySchema, request.query);
-    return getServerCategory(db, config, auth.profileId, query);
+    return getServerCategory(db, config, auth.profileId, query, maturityAudience(auth));
   });
 
   app.get("/api/catalog/discover", async (request) => {
@@ -2899,10 +3040,13 @@ function registerRoutes(
     // only ever wants false, and a hand-crafted include_adult=true must not pull
     // adult results through the server.
     params.include_adult = "false";
-    return discoverServerMedia(db, config, auth.profileId, {
-      type: query.type,
-      params,
-    });
+    return discoverServerMedia(
+      db,
+      config,
+      auth.profileId,
+      { type: query.type, params },
+      maturityAudience(auth),
+    );
   });
 
   app.get("/api/genres", async (request) => {
@@ -2914,6 +3058,11 @@ function registerRoutes(
   app.post("/api/calendar/upcoming", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
+    // Series-only feature; kid browse is movie-only, so a kid has no business
+    // enumerating arbitrary (uncurated) series air dates here. Block outright.
+    if (auth.isKid) {
+      throw httpError(403, "Upcoming episodes are not available on this profile.");
+    }
     const body = parseBody(upcomingEpisodesBodySchema, request.body);
     return getServerUpcomingEpisodes(db, config, auth.profileId, {
       series: body.series.filter(isSeriesPreviewInput),
@@ -2925,6 +3074,9 @@ function registerRoutes(
   app.post("/api/ai/recommend", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
+    // AI discovery is a free-text recommendation surface that can name over-cap
+    // titles — the same class as /api/search. Kids get curated browse only.
+    if (auth.isKid) throw httpError(403, "AI discovery is not available on this profile.");
     const body = parseBody(aiRecommendBodySchema, request.body);
     const result = await recommendServerAI(db, config, auth.profileId, body);
     audit(db, auth, "ai.recommend", "ai", undefined, { provider: result.providerKind });
@@ -2941,6 +3093,7 @@ function registerRoutes(
   app.post("/api/ai/curate", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
+    if (auth.isKid) throw httpError(403, "AI discovery is not available on this profile.");
     const body = parseBody(aiRecommendBodySchema, request.body);
     const out = await curateServerAI(db, config, auth.profileId, body);
     audit(db, auth, "ai.curate", "ai", undefined, {
@@ -2956,6 +3109,15 @@ function registerRoutes(
     requireCsrf(request);
     rateLimit(request, `subtitles:search:${auth.profileId}`, 60, 60 * 1000);
     const body = parseBody(subtitleSearchBodySchema, request.body);
+    // Subtitle search is a discovery surface (free text + imdbId). For a kid it is
+    // limited to a cert-gated lookup of their own within-cap MOVIE titles — no
+    // free-text, no over-cap title (which would leak the film's full dialogue).
+    if (auth.isKid) {
+      if (body.imdbId == null || body.imdbId.length === 0) {
+        throw httpError(403, "Subtitle search is not available on this profile.");
+      }
+      await requireTitleWithinCap(auth, body.imdbId, "movie");
+    }
     const results = await searchServerSubtitles(db, config, auth.profileId, body);
     audit(db, auth, "subtitles.search", "subtitle", undefined, {
       imdbId: body.imdbId ?? null, // media id — safe to log
@@ -2993,9 +3155,37 @@ function registerRoutes(
     return { cues: out.cues, providerKind: out.providerKind };
   });
 
+  // Cert-gate a title for a capped/kid profile: fail-closed (403) unless the
+  // title's certification is within the cap. A kid with no cap is also blocked
+  // (defended at the schema layer, belt-and-suspenders here). No-op for
+  // uncapped profiles. Used to keep over-cap detail pages + source lists away
+  // from kids (which also denies them the infoHashes for the resolve path).
+  async function requireTitleWithinCap(
+    auth: AuthContext,
+    mediaId: string,
+    type: "movie" | "series",
+  ): Promise<void> {
+    if (!auth.isKid && auth.maturityMax == null) return;
+    // A kid's world is movie-only — TV ratings ride a different ladder and series
+    // are never curated to them, so refuse non-movie lookups outright rather than
+    // try to rank a TV rating against a movie cap.
+    if (auth.isKid && type !== "movie") {
+      throw httpError(403, "This title is outside your maturity settings.");
+    }
+    const cap = auth.maturityMax;
+    const cert =
+      cap != null
+        ? await titleCertification(db, config, auth.profileId, mediaId, type).catch(() => null)
+        : null;
+    if (cap == null || !certWithinCap(cert, cap)) {
+      throw httpError(403, "This title is outside your maturity settings.");
+    }
+  }
+
   app.get("/api/media/detail", async (request) => {
     const auth = requireAuth(db, request);
     const query = parseBody(mediaDetailQuerySchema, request.query);
+    await requireTitleWithinCap(auth, query.id, query.type);
     return getServerDetail(db, config, auth.profileId, {
       id: query.id,
       type: query.type,
@@ -3011,6 +3201,9 @@ function registerRoutes(
       .max(64)
       .parse((request.params as { imdbId: string }).imdbId);
     const query = parseBody(streamSearchQuerySchema, request.query);
+    // Over-cap source enumeration is blocked for kids — both an info leak and the
+    // supply of infoHashes the resolve path would otherwise have to defend alone.
+    await requireTitleWithinCap(auth, imdbId, query.type);
     return searchServerStreams(db, config, auth.profileId, {
       imdbId,
       type: query.type,
@@ -3024,6 +3217,55 @@ function registerRoutes(
     requireCsrf(request);
     rateLimit(request, `streams:resolve:${auth.profileId}`, 120, 60 * 1000);
     const body = parseBody(resolveStreamSchema, request.body);
+    // Kid play-block — the authoritative content gate, FAIL-CLOSED. A capped/kid
+    // profile may resolve a title only when (a) it declares its media identity,
+    // (b) the title is a MOVIE within the cap, and (c) the infoHash is genuinely a
+    // source of that title. (c) is the crucial binding: the cert is checked
+    // against the CLAIMED mediaId, so without verifying the infoHash belongs to
+    // it, a kid could pair an over-cap infoHash with an in-cap mediaId and play
+    // anything. Any missing piece, unknown cert, or metadata error blocks. (The
+    // resolveStreamSchema lowercases infoHash; titleHasInfoHash compares lower.)
+    if (auth.isKid || auth.maturityMax != null) {
+      const cap = auth.maturityMax;
+      const blocked = (reason: string, extra: Record<string, unknown> = {}) => {
+        audit(db, auth, "stream.maturity_blocked", "media", body.mediaId ?? body.infoHash, {
+          reason,
+          cap,
+          ...extra,
+        });
+        return httpError(403, "This title is outside your maturity settings.");
+      };
+      if (cap == null) throw blocked("kid_without_cap");
+      if (body.mediaId == null || body.mediaType == null) {
+        throw blocked("missing_media_identity");
+      }
+      // Kid browse is movie-only; series can't be reliably source-verified here
+      // (season/episode packs) and are never offered to a kid, so refuse them.
+      if (body.mediaType !== "movie") {
+        throw blocked("not_movie", { mediaType: body.mediaType });
+      }
+      const cert = await titleCertification(
+        db,
+        config,
+        auth.profileId,
+        body.mediaId,
+        body.mediaType,
+      ).catch(() => null);
+      if (!certWithinCap(cert, cap)) {
+        throw blocked("over_cap", { certification: cert, mediaId: body.mediaId });
+      }
+      const belongs = await titleHasInfoHash(
+        db,
+        config,
+        auth.profileId,
+        body.mediaId,
+        body.mediaType,
+        body.infoHash,
+      ).catch(() => false);
+      if (!belongs) {
+        throw blocked("infohash_unbound", { mediaId: body.mediaId, infoHash: body.infoHash });
+      }
+    }
     const directStream = await resolveServerStream(db, config, auth.profileId, {
       infoHash: body.infoHash,
       preferredService: body.preferredService ?? null,
@@ -3051,6 +3293,14 @@ function registerRoutes(
     const auth = requireAuth(db, request);
     requireCsrf(request);
     rateLimit(request, `streams:raw:${auth.profileId}`, 120, 60 * 1000);
+    // A raw session plays an arbitrary upstream URL — there is no media identity
+    // to certify, so it can never be made cap-safe. Refuse it outright for any
+    // kid/capped profile (this is checked BEFORE the allowRawStreamUrls/admin
+    // gate, which keys off the account role and would otherwise let a kid under
+    // an owner/admin account through).
+    if (auth.isKid || auth.maturityMax != null) {
+      throw httpError(403, "Raw stream sessions are not available on this profile.");
+    }
     if (!config.allowRawStreamUrls && !isAdmin(auth.role)) {
       throw httpError(403, "Raw stream sessions are disabled.");
     }

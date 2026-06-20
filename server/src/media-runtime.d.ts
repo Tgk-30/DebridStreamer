@@ -74,3 +74,15 @@ export function resolveServerStream(
     preferredService?: DebridServiceType | null;
   },
 ): Promise<StreamInfo>;
+
+/** Whether `infoHash` is one of the indexer sources for the title `mediaId`.
+ *  Used by the kid play-block to bind the cert-checked title to the resolved
+ *  content. Fail-closed (false) when the title has no imdbId or no such source. */
+export function titleHasInfoHash(
+  db: AppDatabase,
+  config: ServerConfig,
+  profileId: string,
+  mediaId: string,
+  mediaType: MediaType,
+  infoHash: string,
+): Promise<boolean>;

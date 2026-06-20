@@ -20,10 +20,18 @@ export function effectiveCredentialValue(
   provider: string,
 ): string | null;
 
+/** Maturity context for a profile. When `maturityMax` is set, catalog browse is
+ *  curated to cert-capped, movie-only results. */
+export interface MaturityAudience {
+  isKid: boolean;
+  maturityMax: string | null;
+}
+
 export function getServerDiscoverHome(
   db: AppDatabase,
   config: ServerConfig,
   profileId: string,
+  audience?: MaturityAudience,
 ): Promise<unknown>;
 
 export function searchServerMedia(
@@ -46,6 +54,7 @@ export function getServerCategory(
     category: "trending" | MediaCategory;
     page?: number;
   },
+  audience?: MaturityAudience,
 ): Promise<unknown>;
 
 export function discoverServerMedia(
@@ -56,6 +65,7 @@ export function discoverServerMedia(
     type: MediaType;
     params: Record<string, string>;
   },
+  audience?: MaturityAudience,
 ): Promise<unknown>;
 
 export function getServerGenres(
@@ -89,3 +99,13 @@ export function getServerDetail(
     type: MediaType;
   },
 ): Promise<unknown>;
+
+/** The US maturity certification for a title (kid play-block). Returns null when
+ *  the mediaId carries no derivable TMDB id; callers treat null as fail-closed. */
+export function titleCertification(
+  db: AppDatabase,
+  config: ServerConfig,
+  profileId: string,
+  mediaId: string,
+  type: MediaType,
+): Promise<string | null>;

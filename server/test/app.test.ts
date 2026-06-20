@@ -1148,6 +1148,180 @@ describe("DebridStreamer server", () => {
     ).toBe(true);
   });
 
+  it("kids maturity: hardened lockdown — admin-only, parental switch lock, fail-closed bound play-block, gated browse", async () => {
+    const BOUND_HASH = "c".repeat(40); // the within-cap title's one indexer source
+    const owner = await setupOwner(app);
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "tmdb", value: "tmdb-key", label: "TMDB" },
+    });
+
+    const ownerDefault = json<{ profiles: Array<{ id: string; isDefault: boolean }> }>(
+      await request(owner, { method: "GET", url: "/api/account/profiles" }),
+    ).profiles.find((p) => p.isDefault)!.id;
+
+    // Household sub-profile to lock down as a kid.
+    const kid = json<{ profile: { id: string } }>(
+      await request(owner, { method: "POST", url: "/api/account/profiles", csrf: true, payload: { displayName: "Kiddo" } }),
+    ).profile.id;
+
+    // FixF: is_kid and the cap are strictly coupled — neither half-state persists.
+    expect(
+      (await request(owner, { method: "POST", url: `/api/account/profiles/${kid}/maturity`, csrf: true, payload: { isKid: true, maturityMax: null } })).statusCode,
+    ).toBe(400);
+    expect(
+      (await request(owner, { method: "POST", url: `/api/account/profiles/${kid}/maturity`, csrf: true, payload: { isKid: false, maturityMax: "R" } })).statusCode,
+    ).toBe(400);
+
+    // The maturity route is admin-only: a member USER account cannot set it.
+    await createProfile(owner, "mallory", "mallory-password", "member");
+    const mallory = await login(app, "mallory", "mallory-password");
+    const malloryDefault = json<{ profiles: Array<{ id: string; isDefault: boolean }> }>(
+      await request(mallory, { method: "GET", url: "/api/account/profiles" }),
+    ).profiles.find((p) => p.isDefault)!.id;
+    expect(
+      (await request(mallory, { method: "POST", url: `/api/account/profiles/${malloryDefault}/maturity`, csrf: true, payload: { isKid: true, maturityMax: "PG" } })).statusCode,
+    ).toBe(403);
+
+    // Owner (admin) sets the kid cap to PG.
+    const setRes = await request(owner, {
+      method: "POST",
+      url: `/api/account/profiles/${kid}/maturity`,
+      csrf: true,
+      payload: { isKid: true, maturityMax: "PG" },
+    });
+    expect(setRes.statusCode).toBe(200);
+    const kidRow = json<{ profiles: Array<{ id: string; isKid: boolean; maturityMax: string | null }> }>(setRes).profiles.find((p) => p.id === kid)!;
+    expect(kidRow.isKid).toBe(true);
+    expect(kidRow.maturityMax).toBe("PG");
+
+    const j200 = (o: unknown) => new Response(JSON.stringify(o), { status: 200 });
+    const originalFetch = globalThis.fetch;
+    let lastDiscoverUrl = "";
+    globalThis.fetch = (async (url, init) => {
+      const u = String(url);
+      if (u.startsWith("https://api.themoviedb.org")) {
+        const p = new URL(u).pathname;
+        if (p.includes("/find/")) {
+          // imdb→tmdb: tt0000NNN → NNN.
+          const m = p.match(/\/find\/tt0*(\d+)/);
+          const id = m ? Number(m[1]) : 0;
+          return j200({ movie_results: id ? [{ id }] : [], tv_results: [] });
+        }
+        if (p.endsWith("/release_dates")) {
+          const id = p.match(/\/movie\/(\d+)\/release_dates/)?.[1] ?? "";
+          // 500 → R (over PG); 700 → [PG,R] (strictest R, FixG); else G (within).
+          const certs = id === "500" ? ["R"] : id === "700" ? ["PG", "R"] : ["G"];
+          return j200({ results: [{ iso_3166_1: "US", release_dates: certs.map((c) => ({ certification: c })) }] });
+        }
+        if (p.endsWith("/credits") || p.endsWith("/recommendations")) {
+          return j200({ cast: [], results: [] });
+        }
+        if (p.includes("/discover/")) {
+          lastDiscoverUrl = u;
+          return j200({ page: 1, total_pages: 1, total_results: 0, results: [] });
+        }
+        const detail = p.match(/\/(movie|tv)\/(\d+)$/);
+        if (detail) {
+          const id = Number(detail[2]);
+          return j200({ id, title: `Title ${id}`, genres: [], external_ids: { imdb_id: `tt${String(id).padStart(7, "0")}` } });
+        }
+        return j200({ page: 1, total_pages: 1, total_results: 0, results: [], genres: [] });
+      }
+      const host = new URL(u).hostname;
+      if (host === "apibay.org") {
+        // The within-cap title's single legitimate source. The binding check
+        // (titleHasInfoHash) only ever searches that title here.
+        return j200([{ id: "1", name: "Kid Movie 2026 1080p WEB", info_hash: BOUND_HASH, leechers: "1", seeders: "9", size: "1048576" }]);
+      }
+      if (host === "yts.torrentbay.st") {
+        return j200({ status: "ok", data: { movies: [] } });
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+
+    try {
+      // Switch the owner's session into the kid sub-profile ("who's watching").
+      expect((await request(owner, { method: "POST", url: "/api/profiles/switch", csrf: true, payload: { profileId: kid } })).statusCode).toBe(200);
+
+      // FixA: a kid-active session cannot lift its OWN cap (requireAdmin rejects
+      // the kid profile even though the underlying account is the owner).
+      expect(
+        (await request(owner, { method: "POST", url: `/api/account/profiles/${kid}/maturity`, csrf: true, payload: { isKid: false, maturityMax: null } })).statusCode,
+      ).toBe(403);
+
+      // Search is disabled on a kid profile.
+      expect((await request(owner, { method: "GET", url: "/api/search?q=batman" })).statusCode).toBe(403);
+
+      // AI discovery (free-text recommend/curate) is closed for kids.
+      expect((await request(owner, { method: "POST", url: "/api/ai/recommend", csrf: true, payload: { prompt: "scary movies" } })).statusCode).toBe(403);
+      expect((await request(owner, { method: "POST", url: "/api/ai/curate", csrf: true, payload: { prompt: "scary movies" } })).statusCode).toBe(403);
+
+      // Subtitle search: no free-text, and an over-cap imdb is cert-blocked.
+      expect((await request(owner, { method: "POST", url: "/api/subtitles/search", csrf: true, payload: { query: "anything" } })).statusCode).toBe(403);
+      expect((await request(owner, { method: "POST", url: "/api/subtitles/search", csrf: true, payload: { imdbId: "tt0000500" } })).statusCode).toBe(403);
+
+      // Play-block, all fail-closed (403):
+      const resolve = (payload: unknown) =>
+        request(owner, { method: "POST", url: "/api/streams/resolve", csrf: true, payload });
+      // over-cap (R) title
+      expect((await resolve({ infoHash: "a".repeat(40), mediaId: "tmdb-500", mediaType: "movie" })).statusCode).toBe(403);
+      // missing media identity
+      expect((await resolve({ infoHash: "b".repeat(40) })).statusCode).toBe(403);
+      // series (kid browse is movie-only)
+      expect((await resolve({ infoHash: BOUND_HASH, mediaId: "tmdb-600", mediaType: "series" })).statusCode).toBe(403);
+      // FixC: a within-cap mediaId paired with an UNBOUND (over-cap) infoHash is
+      // refused — the infoHash must be a real source of the certified title.
+      expect((await resolve({ infoHash: "a".repeat(40), mediaId: "tmdb-600", mediaType: "movie" })).statusCode).toBe(403);
+      // Legitimate within-cap play: cert G ✓ AND infoHash is the title's source ✓,
+      // so it clears the gate and reaches the debrid check (400, no debrid here).
+      expect((await resolve({ infoHash: BOUND_HASH, mediaId: "tmdb-600", mediaType: "movie" })).statusCode).toBe(400);
+
+      // FixD: the raw-session route is closed for kids regardless of role/flag.
+      expect(
+        (await request(owner, { method: "POST", url: "/api/streams/sessions/raw", csrf: true, payload: { upstreamUrl: "http://127.0.0.1:9/x.mp4" } })).statusCode,
+      ).toBe(403);
+
+      // FixE: detail + source-search are cert-gated. Within-cap allowed, over-cap
+      // (and a strictest-of-multiple-certs R title, FixG) blocked.
+      expect((await request(owner, { method: "GET", url: "/api/media/detail?id=tmdb-600&type=movie" })).statusCode).toBe(200);
+      expect((await request(owner, { method: "GET", url: "/api/media/detail?id=tmdb-500&type=movie" })).statusCode).toBe(403);
+      expect((await request(owner, { method: "GET", url: "/api/media/detail?id=tmdb-700&type=movie" })).statusCode).toBe(403);
+      expect((await request(owner, { method: "GET", url: "/api/streams/tt0000600?type=movie" })).statusCode).toBe(200);
+      expect((await request(owner, { method: "GET", url: "/api/streams/tt0000500?type=movie" })).statusCode).toBe(403);
+
+      // FixE: the series-only calendar is closed for kids.
+      expect(
+        (await request(owner, { method: "POST", url: "/api/calendar/upcoming", csrf: true, payload: { series: [] } })).statusCode,
+      ).toBe(403);
+
+      // Browse is forced to cert-capped movie even when the client asks for series.
+      const disc = await request(owner, { method: "GET", url: "/api/catalog/discover?type=series&sort_by=popularity.desc" });
+      expect(disc.statusCode).toBe(200);
+      expect(lastDiscoverUrl).toContain("/discover/movie");
+      expect(lastDiscoverUrl).toContain("certification.lte=PG");
+      expect(lastDiscoverUrl).toContain("certification_country=US");
+      const home = json<{ trendingTV: unknown[] }>(await request(owner, { method: "GET", url: "/api/discover/home" }));
+      expect(home.trendingTV).toEqual([]);
+
+      // FixB: leaving a kid profile requires the account password. No password and
+      // a wrong password are both refused; the gate holds (search still 403).
+      const switchTo = (payload: unknown) =>
+        request(owner, { method: "POST", url: "/api/profiles/switch", csrf: true, payload });
+      expect((await switchTo({ profileId: ownerDefault })).statusCode).toBe(403);
+      expect((await switchTo({ profileId: ownerDefault, password: "wrong" })).statusCode).toBe(403);
+      expect((await request(owner, { method: "GET", url: "/api/search?q=batman" })).statusCode).toBe(403);
+      // Correct account password unlocks the switch back to the adult profile.
+      expect((await switchTo({ profileId: ownerDefault, password: "owner-password" })).statusCode).toBe(200);
+      // Now on the uncapped adult profile, search works again.
+      expect((await request(owner, { method: "GET", url: "/api/search?q=batman" })).statusCode).toBe(200);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("uses server credentials by default and profile credentials as overrides", async () => {
     const owner = await setupOwner(app);
     await createProfile(owner, "bob", "bob-password");
