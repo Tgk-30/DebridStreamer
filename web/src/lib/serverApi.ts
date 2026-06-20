@@ -326,6 +326,74 @@ export async function switchAccountProfile(profileId: string): Promise<{
   return serverRequest("POST", "/api/profiles/switch", { profileId });
 }
 
+// ---- Title requests (Phase 4) ---------------------------------------------
+// A "request" is a member asking an admin to add a title to the household. The
+// shared `/api/library/requested` list surfaces APPROVED titles to everyone;
+// the admin queue lives behind /api/admin/requests. serverRequest already
+// attaches credentials + the CSRF header on the unsafe methods.
+
+export interface RequestRecord {
+  id: string;
+  mediaId: string;
+  preview: MediaPreview;
+  status: "pending" | "approved" | "denied";
+  decisionReason: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+  requestedByDisplayName: string | null;
+  decidedByDisplayName: string | null;
+}
+
+/** File a title request. Throws with status 409 when the title already has a
+ *  live pending request (the caller surfaces "Already requested"). */
+export async function createRequest(
+  mediaId: string,
+  preview: MediaPreview,
+): Promise<{ request: RequestRecord }> {
+  return serverRequest("POST", "/api/library/requests", { mediaId, preview });
+}
+
+/** The caller's OWN requests, optionally filtered by status. */
+export async function listOwnRequests(
+  status?: RequestRecord["status"],
+): Promise<{ requests: RequestRecord[] }> {
+  const query = status != null ? `?status=${encodeURIComponent(status)}` : "";
+  return serverRequest("GET", `/api/library/requests${query}`);
+}
+
+/** The SHARED, account-wide list of APPROVED titles. */
+export async function listRequested(): Promise<{ items: RequestRecord[] }> {
+  return serverRequest("GET", "/api/library/requested");
+}
+
+/** The admin moderation queue (defaults to pending). Admin only on the server. */
+export async function adminListRequests(
+  status?: RequestRecord["status"],
+): Promise<{ requests: RequestRecord[] }> {
+  const query = status != null ? `?status=${encodeURIComponent(status)}` : "";
+  return serverRequest("GET", `/api/admin/requests${query}`);
+}
+
+/** Approve a pending request. Admin + CSRF on the server. */
+export async function adminApproveRequest(id: string): Promise<{ ok: true }> {
+  return serverRequest(
+    "POST",
+    `/api/admin/requests/${encodeURIComponent(id)}/approve`,
+  );
+}
+
+/** Deny a pending request, optionally with a reason. Admin + CSRF on the server. */
+export async function adminDenyRequest(
+  id: string,
+  reason?: string,
+): Promise<{ ok: true }> {
+  return serverRequest(
+    "POST",
+    `/api/admin/requests/${encodeURIComponent(id)}/deny`,
+    reason != null && reason.trim().length > 0 ? { reason } : undefined,
+  );
+}
+
 export async function fetchServerDetail(input: {
   id: string;
   type: MediaType;

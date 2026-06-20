@@ -11,7 +11,7 @@
 // no-key fallback that still shows the hero. Streams need configured indexers +
 // debrid; without them the picker shows a clear empty state.
 
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { useDetail } from "../data/detail";
 import { useStreams } from "../data/streams";
@@ -24,7 +24,7 @@ import { isInWatchlist } from "../data/library";
 import { VideoCodec, type StreamInfo } from "../services/debrid/models";
 import type { TorrentResult } from "../services/indexers/models";
 import type { StreamRow } from "../data/streams";
-import { resolveServerStream } from "../lib/serverApi";
+import { createRequest, resolveServerStream } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 import { useTranscodeAvailable } from "../lib/ServerSessionContext";
 import "./Detail.css";
@@ -93,6 +93,16 @@ export function Detail() {
 
   const [player, setPlayer] = useState<ActivePlayer | null>(null);
   const [scrollToStreams, setScrollToStreams] = useState(false);
+  // Server Mode "title request" state for this detail. Detail doesn't remount
+  // between titles (openDetail just swaps detailItem), so reset on id change.
+  const [requestState, setRequestState] = useState<
+    "idle" | "requesting" | "requested" | "already"
+  >("idle");
+
+  const detailId = detailItem?.id ?? null;
+  useEffect(() => {
+    setRequestState("idle");
+  }, [detailId]);
 
   if (detailItem == null) return null;
 
@@ -156,6 +166,21 @@ export function Detail() {
     return services.debrid.resolveStream(row.result.infoHash, row.cachedOn);
   }
 
+  /** File a Server-Mode title request for the current item. The detailItem is a
+   *  MediaPreview — the same minimal shape watchlist add uses — so it's passed
+   *  straight through. A 409 means the title already has a live pending request. */
+  async function requestTitle() {
+    if (detailItem == null || requestState !== "idle") return;
+    setRequestState("requesting");
+    try {
+      await createRequest(detailItem.id, detailItem);
+      setRequestState("requested");
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      setRequestState(status === 409 ? "already" : "idle");
+    }
+  }
+
   async function handlePlay(stream: StreamInfo, source: TorrentResult) {
     const title = stream.fileName || source.title;
 
@@ -189,6 +214,8 @@ export function Detail() {
           inWatchlist={inWatchlist}
           onClose={closeDetail}
           onToggleWatchlist={() => toggleWatchlist(detailItem)}
+          onRequest={isServerMode() ? () => void requestTitle() : undefined}
+          requestState={requestState}
           onPlay={() => {
             // Instant play: if the auto-resolve job pre-cached a ready stream
             // for this title, play it immediately instead of re-walking the

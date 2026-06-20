@@ -16,6 +16,12 @@ interface DetailHeroProps {
   onPlay: () => void;
   onToggleWatchlist: () => void;
   onClose: () => void;
+  /** Server Mode only — file a title request for this item. Omitted (and the
+   *  button hidden) in Local Mode. */
+  onRequest?: () => void;
+  /** Drives the Request button label/disabled state: idle → "Request",
+   *  requesting → busy, requested → "Requested", already → "Already requested". */
+  requestState?: "idle" | "requesting" | "requested" | "already";
 }
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -26,6 +32,8 @@ export function DetailHero({
   onPlay,
   onToggleWatchlist,
   onClose,
+  onRequest,
+  requestState = "idle",
 }: DetailHeroProps) {
   const backdrop = MediaItemNS.backdropURL(item);
   const poster = MediaItemNS.posterThumbnailURL(item);
@@ -123,6 +131,41 @@ export function DetailHero({
               <Icon name="watchlist" size={16} filled={inWatchlist} />
               {inWatchlist ? "In watchlist" : "Watchlist"}
             </button>
+            {onRequest && (
+              <button
+                type="button"
+                className={`btn detail-request${
+                  requestState === "requested" || requestState === "already"
+                    ? " is-on"
+                    : ""
+                }`}
+                onClick={onRequest}
+                disabled={requestState !== "idle"}
+                title={
+                  requestState === "already"
+                    ? "Already requested"
+                    : requestState === "requested"
+                      ? "Request sent"
+                      : "Ask an admin to add this title"
+                }
+              >
+                <Icon
+                  name={
+                    requestState === "requested" || requestState === "already"
+                      ? "check"
+                      : "library"
+                  }
+                  size={16}
+                />
+                {requestState === "requesting"
+                  ? "Requesting…"
+                  : requestState === "requested"
+                    ? "Requested"
+                    : requestState === "already"
+                      ? "Already requested"
+                      : "Request"}
+              </button>
+            )}
           </div>
         </div>
       </motion.div>

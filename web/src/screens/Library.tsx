@@ -10,10 +10,13 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { MediaGrid } from "../components/MediaGrid";
+import { Rail } from "../components/Rail";
 import { EmptyState } from "../components/EmptyState";
 import { getStore } from "../storage";
 import type { LibraryEntryRecord, LibraryFolderRecord } from "../storage/models";
 import type { MediaPreview } from "../models/media";
+import { isServerMode } from "../lib/serverMode";
+import { listRequested } from "../lib/serverApi";
 import "./LibraryScreens.css";
 
 const ALL = "__all__";
@@ -25,6 +28,8 @@ export function Library() {
   const [selectedFolder, setSelectedFolder] = useState<string>(ALL);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The SHARED, account-wide list of APPROVED title requests (Server Mode only).
+  const [requested, setRequested] = useState<MediaPreview[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +57,24 @@ export function Library() {
     };
   }, []);
 
+  // The shared "Requested" rail surfaces APPROVED titles to the whole household.
+  // Server Mode only; failures degrade silently to a hidden (empty) rail.
+  useEffect(() => {
+    if (!isServerMode()) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { items } = await listRequested();
+        if (!cancelled) setRequested(items.map((r) => r.preview));
+      } catch {
+        if (!cancelled) setRequested([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const visible: MediaPreview[] =
     selectedFolder === ALL
       ? entries.map((e) => e.preview)
@@ -70,6 +93,8 @@ export function Library() {
       <p className="lib-sub t-secondary">
         Your collections and saved titles.
       </p>
+
+      <Rail title="Requested by your household" items={requested} onSelect={openDetail} />
 
       <div className="lib-folders">
         <button

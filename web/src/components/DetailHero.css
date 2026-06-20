@@ -165,20 +165,26 @@
   font-size: 15px;
   font-weight: 700;
 }
-.detail-watch {
+.detail-watch,
+.detail-request {
   padding: 12px 22px;
   font-size: 15px;
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(10px);
 }
-.detail-watch:hover {
+.detail-watch:hover,
+.detail-request:not(:disabled):hover {
   background: rgba(255, 255, 255, 0.2);
 }
-.detail-watch.is-on {
+.detail-watch.is-on,
+.detail-request.is-on {
   border-color: rgba(var(--accent-rgb), 0.6);
   color: var(--accent);
   background: rgba(var(--accent-rgb), 0.14);
+}
+.detail-request:disabled {
+  cursor: default;
 }
 
 @media (max-width: 767px) {
@@ -220,7 +226,8 @@
   }
 
   .detail-play,
-  .detail-watch {
+  .detail-watch,
+  .detail-request {
     flex: 1 1 130px;
     justify-content: center;
     padding: 12px 16px;

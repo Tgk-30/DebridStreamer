@@ -30,6 +30,7 @@ import {
   useSetServerSession,
 } from "../lib/ServerSessionContext";
 import { readCsrfToken } from "../lib/serverSession";
+import type { RequestRecord } from "../lib/serverApi";
 import type {
   AppSettings,
   AppearanceAccent,
@@ -1738,6 +1739,7 @@ function ServerTab() {
   const [usage, setUsage] = useState<ServerUsage | null>(null);
   const [health, setHealth] = useState<ServerHealth | null>(null);
   const [activeStreams, setActiveStreams] = useState<ActiveStreamSession[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<RequestRecord[]>([]);
   const [sessions, setSessions] = useState<ServerSessionEntry[]>([]);
   const [invites, setInvites] = useState<ServerInvite[]>([]);
   const [auditEvents, setAuditEvents] = useState<ServerAuditEvent[]>([]);
@@ -1798,6 +1800,7 @@ function ServerTab() {
         usageResponse,
         healthResponse,
         activeStreamsResponse,
+        requestsResponse,
         sessionsResponse,
         invitesResponse,
         credentialsResponse,
@@ -1817,6 +1820,12 @@ function ServerTab() {
               "/api/admin/streams/active",
             )
           : Promise.resolve({ streams: [] }),
+        admin
+          ? serverRequest<{ requests: RequestRecord[] }>(
+              "GET",
+              "/api/admin/requests?status=pending",
+            )
+          : Promise.resolve({ requests: [] }),
         serverRequest<{ sessions: ServerSessionEntry[] }>(
           "GET",
           "/api/auth/sessions",
@@ -1841,6 +1850,7 @@ function ServerTab() {
       setUsage(usageResponse);
       setHealth(healthResponse);
       setActiveStreams(activeStreamsResponse.streams);
+      setPendingRequests(requestsResponse.requests);
       setSessions(sessionsResponse.sessions);
       setInvites(invitesResponse.invites);
       setEffectiveCredentials(credentialsResponse.credentials);
@@ -1966,6 +1976,37 @@ function ServerTab() {
     }
   }
 
+  async function approveRequest(id: string) {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest(
+        "POST",
+        `/api/admin/requests/${encodeURIComponent(id)}/approve`,
+      );
+      setMessage("Request approved.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function denyRequest(id: string, reason?: string) {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest(
+        "POST",
+        `/api/admin/requests/${encodeURIComponent(id)}/deny`,
+        reason != null && reason.trim().length > 0 ? { reason } : undefined,
+      );
+      setMessage("Request denied.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function deleteProfileCredential(id: string) {
     setMessage(null);
     setError(null);
@@ -2074,6 +2115,14 @@ function ServerTab() {
 
       {canAdmin && (
         <ActiveStreamsPanel streams={activeStreams} onRevoke={revokeStream} />
+      )}
+
+      {canAdmin && (
+        <RequestQueuePanel
+          requests={pendingRequests}
+          onApprove={(id) => void approveRequest(id)}
+          onDeny={(id, reason) => void denyRequest(id, reason)}
+        />
       )}
 
       {usage != null && <ServerUsagePanel usage={usage} />}
@@ -2531,6 +2580,70 @@ function ActiveStreamsPanel({
                   onClick={() => onRevoke(stream.id)}
                 >
                   Terminate
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequestQueuePanel({
+  requests,
+  onApprove,
+  onDeny,
+}: {
+  requests: RequestRecord[];
+  onApprove: (id: string) => void;
+  onDeny: (id: string, reason?: string) => void;
+}) {
+  return (
+    <div className="settings-source glass-rest">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Title requests</span>
+        <span className="chip">{requests.length} pending</span>
+      </div>
+      {requests.length === 0 ? (
+        <p className="settings-hint t-secondary">No pending title requests.</p>
+      ) : (
+        <div className="settings-usage-list">
+          {requests.map((request) => (
+            <div key={request.id} className="settings-usage-row">
+              <span>
+                <strong>{request.preview.title}</strong>
+                {request.preview.year != null && (
+                  <span className="t-secondary"> ({request.preview.year})</span>
+                )}
+                <span className="t-secondary">
+                  {" "}
+                  — {request.requestedByDisplayName ?? "Someone"}
+                </span>
+              </span>
+              <span className="settings-profile-meta t-secondary">
+                <span>{formatShortDate(request.requestedAt)}</span>
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => onApprove(request.id)}
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => {
+                    const reason = window.prompt(
+                      "Reason for denying (optional):",
+                      "",
+                    );
+                    // Cancel leaves the request untouched; OK (even empty) denies.
+                    if (reason == null) return;
+                    onDeny(request.id, reason);
+                  }}
+                >
+                  Deny
                 </button>
               </span>
             </div>
