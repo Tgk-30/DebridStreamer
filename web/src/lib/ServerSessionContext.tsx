@@ -27,6 +27,9 @@ export interface ServerProfileSummary {
   avatarColor: string | null;
   simpleMode: boolean;
   isDefault: boolean;
+  /** Kid (maturity-capped) profile — drives the picker's "Kids" badge and the
+   *  parental-lock prompt when leaving it. */
+  isKid: boolean;
 }
 
 interface ServerSessionContextValue {

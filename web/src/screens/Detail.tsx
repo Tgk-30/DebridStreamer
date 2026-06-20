@@ -155,10 +155,24 @@ export function Detail() {
   async function resolveSelectedStream(row: StreamRow): Promise<StreamInfo> {
     if (isServerMode()) {
       // Request the server's 720p HLS transcode when the user opted in and the
-      // server actually supports it; otherwise the plain proxy URL.
-      return resolveServerStream(row, {
-        transcode: settings.transcode && transcodeAvailable,
-      });
+      // server actually supports it; otherwise the plain proxy URL. The title
+      // context is required for maturity gating on capped (kid) profiles.
+      const media =
+        detailItem != null ? { id: detailItem.id, type: detailItem.type } : undefined;
+      try {
+        return await resolveServerStream(row, {
+          transcode: settings.transcode && transcodeAvailable,
+          media,
+        });
+      } catch (err) {
+        // A 403 here means the title is over the active profile's maturity cap.
+        // Surface a friendly message (StreamPicker renders the thrown .message)
+        // instead of the raw server error, and don't crash the picker.
+        if ((err as { status?: number }).status === 403) {
+          throw new Error("This title is outside your profile's maturity settings.");
+        }
+        throw err;
+      }
     }
     if (services.debrid == null || !services.debrid.hasServices) {
       throw new Error("Configure a debrid service to play.");

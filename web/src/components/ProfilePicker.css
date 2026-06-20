@@ -111,6 +111,29 @@
   color: rgba(248, 250, 252, 0.6);
 }
 
+.profile-kids-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.18);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+
+.profile-unlock-copy {
+  margin: 0 0 18px;
+  color: rgba(248, 250, 252, 0.72);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.profile-unlock-copy strong {
+  color: rgba(248, 250, 252, 0.92);
+}
+
 .profile-tile-actions {
   display: flex;
   gap: 8px;

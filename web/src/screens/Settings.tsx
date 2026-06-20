@@ -30,7 +30,8 @@ import {
   useSetServerSession,
 } from "../lib/ServerSessionContext";
 import { readCsrfToken } from "../lib/serverSession";
-import type { RequestRecord } from "../lib/serverApi";
+import type { AccountProfile, RequestRecord } from "../lib/serverApi";
+import { fetchAccountProfiles, setProfileMaturity } from "../lib/serverApi";
 import type {
   AppSettings,
   AppearanceAccent,
@@ -2182,6 +2183,8 @@ function ServerTab() {
         <>
           <div className="settings-divider" />
 
+          <KidsProfilesPanel />
+
           <div className="settings-source glass-rest">
             <div className="settings-sources-head">
               <span className="settings-sources-title">Invite link</span>
@@ -2719,6 +2722,142 @@ function PasswordPanel({
           Change password
         </button>
       </div>
+    </div>
+  );
+}
+
+// US movie certs the maturity cap offers, mildest → strongest (mirrors the
+// server's MOVIE_CERTS enum). A kid profile is "watch this rating or milder".
+const MATURITY_CERTS = ["G", "PG", "PG-13", "R", "NC-17"] as const;
+const DEFAULT_MATURITY_CAP = "PG-13";
+
+/** Admin-only control over the account's "who's watching" sub-profiles' kid
+ *  mode + maturity cap. These are the household VIEWER profiles (the picker's
+ *  list, /api/account/profiles), distinct from the login accounts above. The
+ *  server strictly couples the two fields, so the UI always sends them together:
+ *  kid ON + a chosen cap, or kid OFF + a null cap. */
+function KidsProfilesPanel() {
+  const [profiles, setProfiles] = useState<AccountProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      const state = await fetchAccountProfiles();
+      setProfiles(state.profiles);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  async function save(
+    id: string,
+    body: { isKid: boolean; maturityMax: string | null },
+  ) {
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await setProfileMaturity(id, body);
+      setProfiles(res.profiles);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // The default profile can't be a kid (it's the household's primary viewer); it
+  // mirrors the picker, which never gates the default. Only non-default ones show.
+  const manageable = profiles.filter((profile) => !profile.isDefault);
+
+  return (
+    <div className="settings-source glass-rest">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Kids profiles</span>
+        <button type="button" className="chip" onClick={() => void refresh()}>
+          <Icon name="refresh" size={13} /> Refresh
+        </button>
+      </div>
+      <p className="settings-hint t-secondary">
+        Kid mode locks a viewer profile to a curated, search-free experience and
+        only allows titles at or below the chosen maturity cap. Leaving a kid
+        profile then requires the account password.
+      </p>
+
+      {loading ? (
+        <p className="settings-hint t-secondary">Loading profiles…</p>
+      ) : manageable.length === 0 ? (
+        <p className="settings-hint t-secondary">
+          Add a viewer profile from the &ldquo;Who&rsquo;s watching?&rdquo; picker
+          to set it up as a kids profile.
+        </p>
+      ) : (
+        <div className="settings-usage-list">
+          {manageable.map((profile) => {
+            const busy = busyId === profile.id;
+            // When kid mode is off there's no cap to show — default the picker to
+            // PG-13 so turning it on has a sensible starting cap.
+            const cap = profile.maturityMax ?? DEFAULT_MATURITY_CAP;
+            return (
+              <div key={profile.id} className="settings-usage-row">
+                <span>
+                  <strong>{profile.displayName}</strong>
+                  {profile.isKid && (
+                    <span className="t-secondary"> Kids · up to {profile.maturityMax}</span>
+                  )}
+                </span>
+                <span className="settings-profile-meta">
+                  <label className="settings-source-active">
+                    <input
+                      type="checkbox"
+                      checked={profile.isKid}
+                      disabled={busy}
+                      onChange={(event) => {
+                        // Enforce the server's coupling: kid ON needs a cap
+                        // (default PG-13); kid OFF clears it to null.
+                        if (event.target.checked) {
+                          void save(profile.id, { isKid: true, maturityMax: cap });
+                        } else {
+                          void save(profile.id, { isKid: false, maturityMax: null });
+                        }
+                      }}
+                    />
+                    Kid mode
+                  </label>
+                  <select
+                    value={cap}
+                    disabled={busy || !profile.isKid}
+                    aria-label={`Maturity cap for ${profile.displayName}`}
+                    onChange={(event) =>
+                      void save(profile.id, {
+                        isKid: true,
+                        maturityMax: event.target.value,
+                      })
+                    }
+                  >
+                    {MATURITY_CERTS.map((cert) => (
+                      <option key={cert} value={cert}>
+                        {cert}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {error != null && <p className="settings-status is-error">{error}</p>}
     </div>
   );
 }

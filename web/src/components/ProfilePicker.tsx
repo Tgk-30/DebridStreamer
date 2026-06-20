@@ -72,8 +72,17 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<AccountProfile | null>(null);
+  // When set, the parental-lock prompt is open for this target profile: leaving
+  // a kid profile requires the account password before the switch is allowed.
+  const [unlocking, setUnlocking] = useState<ServerProfileSummary | null>(null);
 
   const activeId = session?.profileId ?? null;
+  // Is the CURRENTLY ACTIVE profile a kid? Leaving it (switching to a different
+  // profile) needs the account password; entering one, or no-op re-selects, do not.
+  const activeIsKid = useMemo(
+    () => profiles.some((p) => p.id === activeId && p.isKid),
+    [profiles, activeId],
+  );
 
   // Refresh the list from the server on open so a profile added on another
   // device shows up. Best-effort; the in-memory list is the fallback.
@@ -91,17 +100,37 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
     };
   }, [setProfiles]);
 
-  async function selectProfile(profile: ServerProfileSummary) {
+  function selectProfile(profile: ServerProfileSummary) {
     if (busyId != null) return;
     // Already active → just close (selecting your current profile is a no-op).
     if (profile.id === activeId) {
       onClose();
       return;
     }
+    // Parental lock: leaving a kid profile for a DIFFERENT one needs the account
+    // password. Prompt for it instead of switching straight away.
+    if (activeIsKid) {
+      setError(null);
+      setUnlocking(profile);
+      return;
+    }
+    void runSwitch(profile).catch((err) => {
+      setError(err instanceof Error ? err.message : "Could not switch profile.");
+    });
+  }
+
+  /** Perform the actual profile switch. `password` is passed through only for the
+   *  parental-lock path (leaving a kid profile); a wrong/missing one 403s. The
+   *  promise rejects on failure so callers can surface the error (inline, or as
+   *  "Incorrect password" in the unlock prompt) and retry. */
+  async function runSwitch(
+    profile: ServerProfileSummary,
+    password?: string,
+  ): Promise<void> {
     setBusyId(profile.id);
     setError(null);
     try {
-      const result = await switchAccountProfile(profile.id);
+      const result = await switchAccountProfile(profile.id, password);
       if (result.session != null) {
         setSession({
           profileId: result.session.profileId,
@@ -117,12 +146,12 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
       await reloadProfileData();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not switch profile.");
       setBusyId(null);
+      throw err;
     }
   }
 
-  async function refreshAfterMutation(next: AccountProfile[]): Promise<void> {
+  async function refreshAfterMutation(next: ServerProfileSummary[]): Promise<void> {
     setProfiles(next);
   }
 
@@ -143,6 +172,7 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
               avatarColor: res.profile.avatarColor,
               simpleMode: res.profile.simpleMode,
               isDefault: res.profile.isDefault,
+              isKid: res.profile.isKid,
             },
           ]);
           setAdding(false);
@@ -171,6 +201,16 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
     );
   }
 
+  if (unlocking != null) {
+    return (
+      <UnlockPrompt
+        target={unlocking}
+        onCancel={() => setUnlocking(null)}
+        onSubmit={(password) => runSwitch(unlocking, password)}
+      />
+    );
+  }
+
   return (
     <div className="profile-picker" role="dialog" aria-modal="true" aria-label="Who's watching?">
       <div className="profile-picker-inner">
@@ -188,6 +228,7 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
               >
                 <Avatar profile={profile} />
                 <span className="profile-tile-name">{profile.displayName}</span>
+                {profile.isKid && <span className="profile-kids-badge">Kids</span>}
                 {busyId === profile.id && <span className="profile-tile-busy">Switching…</span>}
               </button>
               {editing && (
@@ -267,7 +308,90 @@ function profileToAccount(p: ServerProfileSummary): AccountProfile {
     avatarColor: p.avatarColor,
     simpleMode: p.simpleMode,
     isDefault: p.isDefault,
+    isKid: p.isKid,
+    // The picker summary doesn't carry the cap (only the kid flag); the rename
+    // form this feeds doesn't touch maturity, so null is a safe placeholder.
+    maturityMax: null,
   };
+}
+
+/** Parental-lock prompt shown when leaving a kid profile: the account password
+ *  is required before the switch. A 403 means a wrong/missing password — we show
+ *  "Incorrect password" and let the user retry without closing. */
+function UnlockPrompt({
+  target,
+  onCancel,
+  onSubmit,
+}: {
+  target: ServerProfileSummary;
+  onCancel: () => void;
+  onSubmit: (password: string) => Promise<void>;
+}) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canSubmit = password.length > 0 && !busy;
+
+  function submit() {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    void onSubmit(password)
+      .catch((err) => {
+        const status = (err as { status?: number }).status;
+        setError(
+          status === 403
+            ? "Incorrect password."
+            : err instanceof Error
+              ? err.message
+              : "Could not switch profile.",
+        );
+        setBusy(false);
+      });
+    // On success the picker closes, so no need to clear busy.
+  }
+
+  return (
+    <div className="profile-picker" role="dialog" aria-modal="true" aria-label="Enter account password">
+      <div className="profile-picker-inner profile-form">
+        <h1 className="profile-picker-title">Enter account password</h1>
+        <p className="profile-unlock-copy">
+          The account password is required to leave a kids profile and switch to{" "}
+          <strong>{target.displayName}</strong>.
+        </p>
+
+        <label className="profile-field">
+          Account password
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit();
+            }}
+            autoComplete="current-password"
+            autoFocus
+          />
+        </label>
+
+        {error != null && <p className="profile-picker-error">{error}</p>}
+
+        <div className="profile-picker-foot">
+          <button type="button" className="profile-text-btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="profile-solid-btn"
+            onClick={submit}
+            disabled={!canSubmit}
+          >
+            {busy ? "Please wait" : "Unlock"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface ProfileFormValues {

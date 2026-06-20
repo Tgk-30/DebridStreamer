@@ -103,7 +103,7 @@ export async function fetchServerStreams(input: {
 
 export async function resolveServerStream(
   row: StreamRow,
-  opts: { transcode?: boolean } = {},
+  opts: { transcode?: boolean; media?: { id: string; type: MediaType } } = {},
 ): Promise<StreamInfo> {
   const response = await serverRequest<{ stream: StreamInfo }>(
     "POST",
@@ -111,6 +111,11 @@ export async function resolveServerStream(
     {
       infoHash: row.result.infoHash,
       preferredService: row.cachedOn,
+      // The server needs the title context to enforce maturity gating on capped
+      // (kid) profiles; it's ignored for normal profiles, so always send it.
+      ...(opts.media != null
+        ? { mediaId: opts.media.id, mediaType: opts.media.type }
+        : {}),
     },
   );
   // When transcoding is requested, point the player at the session's HLS manifest
@@ -270,6 +275,11 @@ export interface AccountProfile {
   avatarColor: string | null;
   simpleMode: boolean;
   isDefault: boolean;
+  /** Kid mode locks the profile into the curated, search-disabled experience and
+   *  pairs with a `maturityMax` cap. The server strictly couples the two. */
+  isKid: boolean;
+  /** US movie cert cap ("G"|"PG"|"PG-13"|"R"|"NC-17"), or null when not a kid. */
+  maturityMax: string | null;
 }
 
 export interface AccountProfileState {
@@ -312,7 +322,23 @@ export async function deleteAccountProfile(
   return serverRequest("DELETE", `/api/account/profiles/${encodeURIComponent(id)}`);
 }
 
-export async function switchAccountProfile(profileId: string): Promise<{
+/** Owner/admin only. Sets kid mode + maturity cap together — the server rejects a
+ *  half-state (kid without a cap, or a cap without kid mode) with a 400. */
+export async function setProfileMaturity(
+  id: string,
+  body: { isKid: boolean; maturityMax: string | null },
+): Promise<{ ok: true; profiles: AccountProfile[] }> {
+  return serverRequest(
+    "POST",
+    `/api/account/profiles/${encodeURIComponent(id)}/maturity`,
+    body,
+  );
+}
+
+export async function switchAccountProfile(
+  profileId: string,
+  password?: string,
+): Promise<{
   session: {
     profileId: string;
     displayName: string;
@@ -323,7 +349,12 @@ export async function switchAccountProfile(profileId: string): Promise<{
   } | null;
   profiles: AccountProfileState | null;
 }> {
-  return serverRequest("POST", "/api/profiles/switch", { profileId });
+  // The password is only required when LEAVING a kid profile; send it when given
+  // so the server can verify it (a wrong/missing one 403s in that case).
+  return serverRequest("POST", "/api/profiles/switch", {
+    profileId,
+    ...(password != null && password.length > 0 ? { password } : {}),
+  });
 }
 
 // ---- Title requests (Phase 4) ---------------------------------------------
