@@ -102,3 +102,7 @@ node scripts/check_release_readiness.mjs
 - Docker server setup: `docs/DOCKER.md`
 - Desktop packaging: `web/PACKAGING.md`
 - Docker Compose: `deploy/compose/README.md`
+
+## License
+
+Released under the [MIT License](LICENSE).

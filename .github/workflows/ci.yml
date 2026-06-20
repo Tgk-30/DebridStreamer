@@ -43,3 +43,31 @@ jobs:
             echo "::warning::swift test exited $rc with no assertion failures — tolerating the known headless teardown crash (signal 11). Root cause (VLCKit/temp-DB teardown) tracked separately."
           fi
           echo "All test assertions passed."
+
+  # The self-hosted server + web client (the Server Mode deliverable). The server
+  # build (npm run build) runs the TypeScript typecheck then esbuild-bundles the
+  # web runtime shims, so it also exercises the web/src files the server imports.
+  server-web:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Server — install, build (typecheck + bundle), test
+        working-directory: server
+        run: |
+          npm ci
+          npm run build
+          npx vitest run
+
+      - name: Web — install, build (typecheck + vite), test
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+          npx vitest run

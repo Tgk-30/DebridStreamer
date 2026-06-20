@@ -12,11 +12,17 @@ WORKDIR /repo
 COPY server/package*.json ./server/
 RUN cd server && npm ci
 COPY server/ ./server/
-COPY web/src/models ./web/src/models
-COPY web/src/services/debrid ./web/src/services/debrid
-COPY web/src/services/indexers ./web/src/services/indexers
+# The server bundles web TypeScript via esbuild — its runtime shims import from
+# web/src/{models,services/{ai,debrid,indexers,metadata,subtitles}}. Copy the
+# whole web/src so every current (and future) cross-import resolves; this is a
+# build stage only, so it never bloats the runtime image.
+COPY web/src ./web/src
 RUN cd server && npm run build
 
+# NOTE: the optional server-side HLS transcoding feature (DS_SERVER_TRANSCODE…,
+# default OFF) shells out to `ffmpeg`. This slim image does NOT ship ffmpeg; if
+# you enable transcoding, base the runtime stage on an ffmpeg-equipped image or
+# add `RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg`.
 FROM node:24-bookworm-slim AS runtime
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
