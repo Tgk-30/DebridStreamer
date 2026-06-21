@@ -61,6 +61,13 @@ jobs:
       - name: App responsive contract
         run: node scripts/check_app_responsive_contract.mjs
 
+      # The server's esbuild bundle imports web TypeScript that pulls 3rd-party
+      # deps (e.g. subsrt-ts) which esbuild resolves from web/node_modules — so
+      # web deps must be installed BEFORE the server build.
+      - name: Web — install deps
+        working-directory: web
+        run: npm ci
+
       - name: Server — install, build (typecheck + bundle), test
         working-directory: server
         run: |
@@ -68,10 +75,9 @@ jobs:
           npm run build
           npx vitest run
 
-      - name: Web — install, build (typecheck + vite), test
+      - name: Web — build (typecheck + vite), test
         working-directory: web
         run: |
-          npm ci
           npm run build
           npx vitest run
 
