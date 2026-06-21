@@ -5,8 +5,8 @@ branch / [PR #1](https://github.com/Tgk-30/DebridStreamer/pull/1)). Goal: **opti
 and performance, clean the backend + frontend, add tests for everything, and redesign the
 navigation + Discover** to a sleek, simple, feature-packed glassmorphism that doesn't fight the app.
 
-Grounded in a 9-subsystem mapping pass (sidebar, Discover, Detail+TMDB, feedback/action-bars,
-services-perf, state+DB-perf, tests, build, VPStudio inspiration) — see the run transcript.
+Grounded in a 9-subsystem mapping pass: sidebar, Discover, Detail+TMDB, feedback/action-bars,
+services-perf, state+DB-perf, tests, build, and VPStudio inspiration.
 
 ## Design decision (locked by user)
 

@@ -30,7 +30,7 @@ let package = Package(
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-rpath",
-                    "-Xlinker", "@loader_path/../../../Vendor/VLCKit.xcframework/macos-arm64_x86_64"
+                    "-Xlinker", "@loader_path/../../../../Vendor/VLCKit.xcframework/macos-arm64_x86_64"
                 ])
             ]
         ),
@@ -45,7 +45,7 @@ let package = Package(
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-rpath",
-                    "-Xlinker", "@loader_path/../../../../../../Vendor/VLCKit.xcframework/macos-arm64_x86_64"
+                    "-Xlinker", "@loader_path/../../../../../../../Vendor/VLCKit.xcframework/macos-arm64_x86_64"
                 ])
             ]
         ),

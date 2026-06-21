@@ -36,7 +36,9 @@ TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
 
 macOS public releases also need Developer ID signing and notarization secrets as
-listed in `web/PACKAGING.md`.
+listed in `web/PACKAGING.md`. The release workflow fails early if the updater
+private key is missing, and the macOS job fails early if Developer ID /
+notarization secrets are missing.
 
 ## Cutting A Desktop Release
 
@@ -44,11 +46,27 @@ listed in `web/PACKAGING.md`.
 2. Run readiness checks:
 
    ```sh
+   node scripts/public_repo_preflight.mjs
+   node scripts/public_repo_preflight.mjs --all-refs
    node scripts/check_release_readiness.mjs
+   node scripts/check_swift_tests.mjs
+   node scripts/check_local_package_artifact.mjs --require-current
    cd server && npm run typecheck && npm run build
    cd web && npm run typecheck && npm test && npm run build
    cargo check --manifest-path web/src-tauri/Cargo.toml
    ```
+
+   The default public repo preflight scans tracked files, unignored untracked
+   files, commit messages, and reachable `HEAD` history blobs for assistant
+   notes, transcripts, `.env` files, private key blocks, and provider
+   credential literals. Use `--all-refs` before pushing multiple branches or
+   tags to a public remote so old local refs are scanned too.
+
+   `check_swift_tests.mjs` runs the native Swift test suite from a
+   `/private/tmp` SwiftPM scratch directory, links the packaged `VLCKit`
+   framework into the test bundle search path, and fails on real assertion
+   failures. It tolerates only the known SwiftPM/VLCKit process teardown signal
+   after all assertions have passed.
 
 3. Tag and push:
 
@@ -69,6 +87,26 @@ Release via the public GitHub API, and points users to the best matching asset.
 If the API fails, it falls back to the latest release page.
 
 GitHub Pages deployment is handled by `.github/workflows/site.yml`.
+
+For the public `tgk30.com/debridstreamer` path, deploy with:
+
+```sh
+CLOUDFLARE_API_TOKEN=... node scripts/deploy_website_cloudflare.mjs
+```
+
+The token must be an API token with `Account:Cloudflare Pages:Edit`,
+`Account:Workers Scripts:Edit`, `Zone:Zone:Read`, and
+`Zone:Workers Routes:Edit`.
+
+The script publishes `website/` to Cloudflare Pages, then installs a Worker
+route for `tgk30.com/debridstreamer*` so the existing root site and other paths
+remain untouched.
+
+The same Cloudflare deployment is also available as the
+`.github/workflows/cloudflare-site.yml` workflow. Add `CLOUDFLARE_API_TOKEN` as
+a repository secret before running it. If the token can see multiple accounts or
+cannot discover the zone automatically, also add `CLOUDFLARE_ACCOUNT_ID` and
+`CLOUDFLARE_ZONE_ID`.
 
 ## Public Support Files
 

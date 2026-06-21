@@ -3,21 +3,33 @@
 
 # local preview/launch config
 .claude/
+.agents
+.agents/
 
 # local assistant/workspace files
 .codex/
 .cursor/
 .windsurf/
+.continue/
+.gemini/
+.opencode/
+.aider*
 CLAUDE.md
 claude.md
 CODEX.md
 codex.md
+GEMINI.md
+gemini.md
 AGENTS.md
 agents.md
 AGENT.md
 agent.md
+transcripts/
+conversation*.md
+*transcript*.md
 
 # local secrets
 .env
 .env.local
+.env.*
 .env.*.local

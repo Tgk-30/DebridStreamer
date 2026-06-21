@@ -24,7 +24,16 @@ cp .env.example .env
 openssl rand -base64 32
 ```
 
-Paste the generated value into `DS_SERVER_SECRET_KEY` in `.env`, then start:
+Paste the generated value into `DS_SERVER_SECRET_KEY` in `.env`.
+
+If the server will be reachable from another device before you create the owner
+account, also set `DS_SERVER_SETUP_TOKEN`:
+
+```sh
+openssl rand -base64 24
+```
+
+Paste that value into `.env`, then start:
 
 ```sh
 docker compose up -d --build
@@ -36,7 +45,8 @@ Open:
 http://localhost:43110
 ```
 
-Create the owner account on first launch.
+Create the owner account on first launch. If `DS_SERVER_SETUP_TOKEN` is set,
+paste the same token into the setup form.
 
 ## Use Published Image
 

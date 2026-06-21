@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "package:local": "node ../scripts/package_tauri_local.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

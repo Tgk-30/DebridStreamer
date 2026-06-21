@@ -11,27 +11,50 @@ a Rust shell (`web/src-tauri/`).
 ```sh
 cd web
 npm install
-npm run tauri build
+npm run package:local
 ```
 
-This runs `npm run build` (the Vite frontend build) and then compiles the Rust
-shell in release mode and produces the bundles configured in
-`src-tauri/tauri.conf.json` (`bundle.targets` = `app`, `dmg` on macOS).
+This builds the server bundle, builds the Vite frontend, copies both into
+`web/src-tauri/resources/server`, downloads the matching Node 24 runtime for the
+host platform, then compiles and bundles the Tauri shell. Local packaging uses a
+temporary Tauri config override to disable updater artifact signing; CI keeps
+`bundle.createUpdaterArtifacts` enabled and signs those artifacts with repo
+secrets.
 
 Outputs land under `web/src-tauri/target/release/bundle/`:
 
-- macOS: `bundle/macos/DebridStreamer.app` and `bundle/dmg/DebridStreamer_<version>_<arch>.dmg`
+- macOS local: `bundle/macos/DebridStreamer.app` and `bundle/macos/DebridStreamer_<version>_<arch>.app.zip`
+- macOS CI release: signed/notarized `.dmg` and updater artifacts from `.github/workflows/web-release.yml`
 - Linux: `bundle/deb/`, `bundle/rpm/`, `bundle/appimage/`
 - Windows: `bundle/msi/`, `bundle/nsis/`
 
 To restrict the targets for a faster local run:
 
 ```sh
-npm run tauri build -- --bundles app dmg
+npm run tauri -- build --bundles app dmg --no-sign --config '{"bundle":{"createUpdaterArtifacts":false}}'
 ```
+
+`npm run package:local` intentionally uses `--bundles app` on macOS and creates
+the local `.app.zip` itself. That keeps local verification independent of
+Finder/DMG post-processing while CI remains responsible for public signed DMGs.
 
 `web/src-tauri/target/` is gitignored (`web/.gitignore`); build artifacts are
 never committed.
+
+Verify the local artifact after packaging:
+
+```sh
+node ../scripts/check_local_package_artifact.mjs --require-current
+```
+
+That check confirms the expected zip exists, is current against package inputs,
+and prints its SHA-256. `npm run package:local` also boots the packaged server
+bundle after creating the zip.
+
+If you run `npm run tauri build` directly with the default config, the app/dmg
+can be created locally but the command exits non-zero unless
+`TAURI_SIGNING_PRIVATE_KEY` is set, because updater artifacts require the
+private signing key.
 
 ### macOS toolchain note (this dev machine)
 
@@ -39,8 +62,19 @@ The default command-line toolchain on this machine is incomplete. Point
 `DEVELOPER_DIR` at the Xcode-beta toolchain for the Rust/macOS build:
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer npm run tauri build -- --bundles app dmg
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer npm run package:local
 ```
+
+For native Swift tests, use the repo verifier from the repository root:
+
+```sh
+node scripts/check_swift_tests.mjs
+```
+
+It uses a `/private/tmp` SwiftPM scratch path to avoid Desktop/File Provider
+extended attributes, links the built `VLCKit.framework` into SwiftPM's expected
+test rpath, and treats only the known SwiftPM/VLCKit teardown signal as
+non-fatal after assertions have passed.
 
 ---
 
@@ -65,6 +99,8 @@ blocked by Gatekeeper. For distribution you must sign + notarize in CI.
 
 The release workflow (`.github/workflows/web-release.yml`) signs and notarizes
 the macOS build and signs the updater artifacts, using repo secrets (below).
+It fails early if the updater private key is missing, and the macOS job fails
+early if any Developer ID/notarization secret is missing.
 
 ---
 
@@ -83,8 +119,8 @@ Create it in your Apple Developer account, then provide these repo secrets:
 | `APPLE_PASSWORD` | An **app-specific password** for that Apple ID (appleid.apple.com → Sign-In and Security → App-Specific Passwords). |
 | `APPLE_TEAM_ID` | Your 10-character Apple Developer Team ID. |
 
-If these are omitted the CI build still runs but the macOS artifacts are
-**unsigned and not notarized**.
+If these are omitted the CI macOS job fails before packaging so it cannot upload
+an unsigned / not-notarized public download.
 
 ---
 

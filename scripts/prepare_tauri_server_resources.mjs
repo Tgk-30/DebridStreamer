@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = process.cwd();
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const serverEntry = join(root, "server", "dist", "index.cjs");
 const webDist = join(root, "web", "dist");
 const webIndex = join(webDist, "index.html");
@@ -19,10 +20,15 @@ function requirePath(path, hint) {
 requirePath(serverEntry, "Run `cd server && npm run build` first.");
 requirePath(webIndex, "Run `cd web && npm run build` first.");
 
+rmSync(dest, { recursive: true, force: true });
 mkdirSync(dest, { recursive: true });
-rmSync(join(dest, "index.cjs"), { force: true });
-rmSync(join(dest, "web-dist"), { recursive: true, force: true });
-rmSync(join(dest, "manifest.json"), { force: true });
+writeFileSync(join(dest, ".gitignore"), "*\n!.gitignore\n!README.md\n");
+writeFileSync(
+  join(dest, "README.md"),
+  "Generated desktop-server resources are written here during release prep.\n\n" +
+    "Run `node scripts/prepare_tauri_server_resources.mjs` after building `server/`\n" +
+    "and `web/`. The generated files are ignored by git.\n",
+);
 
 cpSync(serverEntry, join(dest, "index.cjs"));
 cpSync(webDist, join(dest, "web-dist"), { recursive: true });

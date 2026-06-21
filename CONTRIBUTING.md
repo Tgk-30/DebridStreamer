@@ -40,9 +40,18 @@ Before opening a PR, run the checks that match your change:
 ```sh
 cd server && npm run typecheck && npm run build
 cd web && npm run typecheck && npm test && npm run build
+node scripts/check_swift_tests.mjs
 cargo check --manifest-path web/src-tauri/Cargo.toml
 node scripts/check_release_readiness.mjs
+node scripts/public_repo_preflight.mjs
+# Before pushing more than the current branch:
+node scripts/public_repo_preflight.mjs --all-refs
 ```
+
+Use `node scripts/check_swift_tests.mjs` for native Swift tests instead of raw
+`swift test` on this repo. The verifier builds tests into `/private/tmp`, links
+the local VLCKit framework into SwiftPM's test runtime path, and only tolerates
+the known SwiftPM/VLCKit teardown signal after assertions pass.
 
 Docker image builds require Docker/Buildx and are covered by
 `.github/workflows/docker-image.yml`.
@@ -53,6 +62,10 @@ Docker image builds require Docker/Buildx and are covered by
 - Keep server APIs profile-scoped unless they are explicitly admin-only.
 - Do not log API keys, debrid tokens, raw stream URLs, session cookies, or CSRF
   tokens.
+- Do not commit local assistant files, transcripts, `.env` files, or credential
+  values. Run `node scripts/public_repo_preflight.mjs` before pushing the
+  current branch, and `node scripts/public_repo_preflight.mjs --all-refs`
+  before pushing multiple branches or tags to a public remote.
 - Add focused tests or direct smoke coverage for auth, profile isolation,
   credentials, stream proxying, update flows, and packaging changes.
 

@@ -101,7 +101,7 @@ protocol VLCPlaybackSession: AnyObject {
 }
 
 #if canImport(VLCKit)
-import VLCKit
+@preconcurrency import VLCKit
 
 @MainActor
 final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
@@ -285,7 +285,7 @@ final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
         // hasn't completed yet we fall back to track name/index mapping below.
         if !didRequestMetadataParse {
             didRequestMetadataParse = true
-            media.parse()
+            _ = media.parse(options: VLCMediaParsingOptions(rawValue: 1))
         }
 
         guard let tracks = media.tracksInformation as? [[AnyHashable: Any]], !tracks.isEmpty else {

@@ -60,12 +60,12 @@ actor TraktCoordinator {
         else {
             return nil
         }
-        let clientSecret = (((try? await settings.getValue(forKey: SettingsKeys.traktClientSecret)) ?? nil) ?? "")
+        let clientSecret = await storedString(SettingsKeys.traktClientSecret) ?? ""
 
         // Decide whether a refresh is warranted based on stored token metadata.
-        let createdAt = Int((((try? await settings.getValue(forKey: SettingsKeys.traktTokenCreatedAt)) ?? nil) ?? "") ?? "")
-        let expiresIn = Int((((try? await settings.getValue(forKey: SettingsKeys.traktTokenExpiresIn)) ?? nil) ?? "") ?? "")
-        let refreshToken = (((try? await settings.getValue(forKey: SettingsKeys.traktRefreshToken)) ?? nil) ?? "")
+        let createdAt = await storedInt(SettingsKeys.traktTokenCreatedAt)
+        let expiresIn = await storedInt(SettingsKeys.traktTokenExpiresIn)
+        let refreshToken = await storedString(SettingsKeys.traktRefreshToken) ?? ""
 
         let shouldRefresh: Bool
         if let createdAt, let expiresIn {
@@ -93,6 +93,15 @@ actor TraktCoordinator {
         }
 
         return Credentials(clientID: clientID, clientSecret: clientSecret, accessToken: accessToken)
+    }
+
+    private func storedString(_ key: String) async -> String? {
+        ((try? await settings.getValue(forKey: key)) ?? nil)?.nonEmpty
+    }
+
+    private func storedInt(_ key: String) async -> Int? {
+        guard let value = await storedString(key) else { return nil }
+        return Int(value)
     }
 
     /// Fetches the user's Trakt movie watchlist (auto-refreshing the token first).

@@ -10,6 +10,8 @@ on:
       - "Dockerfile"
       - ".dockerignore"
       - ".github/workflows/docker-image.yml"
+      - "scripts/check_release_readiness.mjs"
+      - "scripts/public_repo_preflight.mjs"
       - "server/**"
       - "web/**"
   workflow_dispatch:
@@ -25,6 +27,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Public repo preflight
+        run: node scripts/public_repo_preflight.mjs
+
+      - name: Release readiness
+        run: node scripts/check_release_readiness.mjs
 
       - name: Resolve image name
         id: image

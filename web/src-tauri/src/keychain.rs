@@ -18,9 +18,34 @@
 
 use keyring::{Entry, Error as KeyringError};
 
+const KEYCHAIN_SERVICE: &str = "com.tgk30.debridstreamer";
+const ALLOWED_SETTING_KEYS: &[&str] = &[
+    "tmdb_api_key",
+    "omdb_api_key",
+    "ai_api_key",
+    "opensubtitles_api_key",
+];
+const ALLOWED_DEBRID_KEYS: &[&str] = &[
+    "debrid.debrid-real_debrid",
+    "debrid.debrid-all_debrid",
+    "debrid.debrid-premiumize",
+    "debrid.debrid-torbox",
+];
+
+fn validate_keychain_args(service: &str, key: &str) -> Result<(), String> {
+    if service != KEYCHAIN_SERVICE {
+        return Err("Unsupported keychain service.".to_string());
+    }
+    if ALLOWED_SETTING_KEYS.contains(&key) || ALLOWED_DEBRID_KEYS.contains(&key) {
+        return Ok(());
+    }
+    Err("Unsupported keychain key.".to_string())
+}
+
 /// Read a secret. Returns `Ok(None)` when no entry exists for (service, key).
 #[tauri::command]
 pub fn keychain_get(service: String, key: String) -> Result<Option<String>, String> {
+    validate_keychain_args(&service, &key)?;
     let entry = Entry::new(&service, &key).map_err(|e| e.to_string())?;
     match entry.get_password() {
         Ok(secret) => Ok(Some(secret)),
@@ -32,6 +57,7 @@ pub fn keychain_get(service: String, key: String) -> Result<Option<String>, Stri
 /// Store (or overwrite) a secret for (service, key).
 #[tauri::command]
 pub fn keychain_set(service: String, key: String, value: String) -> Result<(), String> {
+    validate_keychain_args(&service, &key)?;
     let entry = Entry::new(&service, &key).map_err(|e| e.to_string())?;
     entry.set_password(&value).map_err(|e| e.to_string())
 }
@@ -39,6 +65,7 @@ pub fn keychain_set(service: String, key: String, value: String) -> Result<(), S
 /// Delete a secret. "Not found" is treated as success (idempotent).
 #[tauri::command]
 pub fn keychain_delete(service: String, key: String) -> Result<(), String> {
+    validate_keychain_args(&service, &key)?;
     let entry = Entry::new(&service, &key).map_err(|e| e.to_string())?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),

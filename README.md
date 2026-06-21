@@ -57,6 +57,9 @@ cd deploy/compose
 cp .env.example .env
 openssl rand -base64 32
 # paste the value into DS_SERVER_SECRET_KEY in .env
+# optional before exposing first setup:
+# openssl rand -base64 24
+# paste the value into DS_SERVER_SETUP_TOKEN in .env
 docker compose up -d --build
 ```
 
