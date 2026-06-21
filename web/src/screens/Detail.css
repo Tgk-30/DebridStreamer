@@ -1,0 +1,43 @@
+/* Detail screen — overlay surface that scrolls over the app content. */
+
+/* Fixed over the content viewport (to the right of the 78px nav rail) so it
+ * fully covers the screen behind it regardless of the underlying scroll. */
+.detail {
+  position: fixed;
+  inset: 0 0 0 var(--nav-rail-width, 78px);
+  z-index: 20;
+  overflow-y: auto;
+  scroll-padding-top: var(--sp-xl);
+  background:
+    radial-gradient(circle at 16% 14%, rgba(var(--accent-rgb), 0.12), transparent 32%),
+    rgba(5, 7, 12, 0.72);
+  backdrop-filter: blur(24px) saturate(1.22);
+  -webkit-backdrop-filter: blur(24px) saturate(1.22);
+}
+
+/* Inner column constrains width + provides the padding/gap. */
+.detail-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xl);
+  padding: var(--sp-xl);
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.detail-streams-anchor {
+  scroll-margin-top: var(--sp-xl);
+}
+
+@media (max-width: 699px) {
+  .detail {
+    inset: 0 0 calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + var(--sp-xs)) 0;
+    padding-bottom: 0;
+  }
+
+  .detail-inner {
+    gap: var(--sp-lg);
+    padding: var(--sp-lg);
+    padding-bottom: var(--sp-xl);
+  }
+}

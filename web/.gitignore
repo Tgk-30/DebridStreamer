@@ -1,0 +1,21 @@
+node_modules
+dist
+dist-ssr
+*.local
+.vite
+coverage
+
+# tsc -b incremental artifact
+*.tsbuildinfo
+
+# Tauri Rust build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# Bundled mpv sidecar binary (Phase 3 P1). ~4.5MB+, fetched/built in CI rather
+# than committed. CI must run `brew install mpv` (or build mpv) and copy the
+# binary to src-tauri/binaries/mpv-<target-triple> (e.g.
+# mpv-aarch64-apple-darwin) before `tauri build`; see src-tauri/src/player.rs.
+# NOTE: the brew mpv links Homebrew dylibs under /opt/homebrew/opt/** — for a
+# distributable bundle those must also be relocated/bundled (e.g. dylibbundler).
+src-tauri/binaries/

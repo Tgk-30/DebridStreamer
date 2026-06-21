@@ -1,0 +1,86 @@
+/* App shell layout — slim nav rail + flexible content area. */
+
+.app {
+  --nav-rail-width: 96px;
+  --mobile-nav-height: clamp(72px, 15.5vw, 78px);
+  --mobile-nav-bottom: max(12px, env(safe-area-inset-bottom));
+  --mobile-nav-reserve: calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + 30px);
+  position: relative;
+  display: flex;
+  min-height: 100vh;
+  z-index: 1;
+}
+
+.app-content {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+/* Route transition — a brief lift + fade on each screen mount. The keyed
+   .route-frame in App.tsx remounts per navigation, restarting this animation.
+   Fill-mode `backwards` (not `both`) is deliberate: the frame's RESTING state is
+   the element's own styles (fully visible), so the screen can never be stranded
+   invisible if the animation is skipped or its clock is paused — the animation is
+   a pure enhancement that settles back to opacity 1 / no transform. */
+.route-frame {
+  animation: routeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+@keyframes routeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .route-frame {
+    animation: none;
+  }
+}
+
+@media (max-width: 699px), (max-width: 950px) and (max-height: 500px) {
+  .app {
+    --nav-rail-width: 0px;
+    display: block;
+  }
+
+  .app-content {
+    height: calc(100vh - var(--mobile-nav-reserve));
+    height: calc(100dvh - var(--mobile-nav-reserve));
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: var(--mobile-nav-reserve);
+    scroll-padding-bottom: var(--mobile-nav-reserve);
+  }
+}
+
+@media (max-width: 380px) {
+  .app {
+    --mobile-nav-height: 70px;
+    --mobile-nav-reserve: calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + 24px);
+  }
+}
+
+@media (min-width: 1200px) {
+  .app {
+    --nav-rail-width: 208px;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1199px) {
+  .app {
+    --nav-rail-width: 152px;
+  }
+}
+
+@media (min-width: 700px) {
+  :root[data-nav-labels="icons"] .app {
+    --nav-rail-width: 96px;
+  }
+}

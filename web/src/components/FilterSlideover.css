@@ -1,0 +1,229 @@
+/* FilterSlideover — right-anchored glass panel that slides in over Browse. */
+
+.fs-scrim {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: calc(-1 * var(--nav-rail-width, 96px));
+  z-index: 40;
+  background: rgba(8, 10, 20, 0.76);
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.fs-scrim.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.fs-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: min(380px, 92vw);
+  background:
+    linear-gradient(180deg, rgba(34, 36, 56, 0.9), rgba(18, 20, 34, 0.94)),
+    var(--glass-tint-raised);
+  border-radius: var(--r-lg) 0 0 var(--r-lg);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  box-shadow:
+    -28px 0 70px rgba(0, 0, 0, 0.42),
+    inset 1px 0 0 rgba(255, 255, 255, 0.1);
+  transition: transform 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.fs-panel.is-open {
+  transform: translateX(0);
+}
+
+.fs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-lg) var(--sp-lg) var(--sp-md);
+  flex-shrink: 0;
+}
+.fs-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.fs-close {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.16s, background 0.16s;
+}
+.fs-close:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.fs-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--sp-lg) var(--sp-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+}
+
+.fs-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+.fs-group-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.fs-row {
+  display: flex;
+  gap: var(--sp-sm);
+}
+.fs-wrap {
+  flex-wrap: wrap;
+}
+
+.fs-language-group .chip {
+  min-width: 68px;
+}
+
+/* Active chip — accent for selection only (matches Search/Settings chips). */
+.fs-chip-active {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.16);
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+
+.fs-range {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.fs-num {
+  width: 100%;
+  padding: var(--sp-sm) var(--sp-md);
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+.fs-num::placeholder {
+  color: var(--text-tertiary);
+}
+.fs-num:focus {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+/* Hide the number-input spinners for a cleaner glass field. */
+.fs-num::-webkit-outer-spin-button,
+.fs-num::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.fs-num {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.fs-range-dash {
+  flex-shrink: 0;
+}
+
+.fs-foot {
+  display: flex;
+  gap: var(--sp-md);
+  padding: var(--sp-md) var(--sp-lg) var(--sp-lg);
+  flex-shrink: 0;
+  border-top: 0.75px solid var(--glass-border);
+  background: rgba(18, 20, 34, 0.82);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+}
+.fs-clear {
+  flex: 0 0 auto;
+}
+.fs-clear:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.fs-apply {
+  flex: 1;
+  justify-content: center;
+}
+
+@media (max-width: 699px) {
+  .fs-scrim {
+    left: 0;
+  }
+
+  .fs-panel {
+    top: var(--sp-sm);
+    right: var(--sp-sm);
+    bottom: var(--sp-sm);
+    height: auto;
+    width: calc(100vw - var(--sp-lg));
+    border-radius: var(--r-lg);
+  }
+
+  .fs-head {
+    padding: var(--sp-md) var(--sp-md) var(--sp-sm);
+  }
+
+  .fs-title {
+    font-size: 18px;
+  }
+
+  .fs-close {
+    width: 38px;
+    height: 38px;
+  }
+
+  .fs-body {
+    gap: var(--sp-md);
+    padding-right: var(--sp-md);
+    padding-left: var(--sp-md);
+    padding-bottom: var(--sp-md);
+  }
+
+  .fs-group {
+    gap: 6px;
+  }
+
+  .fs-row {
+    gap: 6px;
+  }
+
+  .fs-language-group .chip {
+    min-width: 62px;
+    padding-inline: 10px;
+  }
+
+  .fs-foot {
+    gap: var(--sp-sm);
+    padding: var(--sp-sm) var(--sp-md);
+    padding-bottom: var(--sp-md);
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
+  }
+
+  .fs-clear,
+  .fs-apply {
+    min-height: 42px;
+  }
+}

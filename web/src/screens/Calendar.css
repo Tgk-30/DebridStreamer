@@ -1,0 +1,114 @@
+/* Calendar agenda — grouped upcoming-episode rows. */
+
+.cal-status {
+  font-size: 14px;
+  margin-top: var(--sp-md);
+}
+
+.cal-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xl);
+  margin-top: var(--sp-sm);
+}
+
+.cal-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+
+.cal-group-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.cal-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+
+.cal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-sm) var(--sp-md);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition:
+    transform 0.12s ease-out,
+    border-color 0.16s;
+}
+.cal-row:hover {
+  transform: translateY(-1px);
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+
+.cal-row-poster {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 57px;
+  border-radius: var(--r-xs);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+.cal-row-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cal-row-poster-ph {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+}
+
+.cal-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cal-row-title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-row-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  font-size: 12px;
+  min-width: 0;
+}
+.cal-code {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--accent);
+}
+.cal-eptitle {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-row-date {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}

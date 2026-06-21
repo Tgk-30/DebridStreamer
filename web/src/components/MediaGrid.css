@@ -1,0 +1,13 @@
+/* MediaGrid — responsive poster grid. */
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--poster-grid-min, 184px), 1fr));
+  gap: var(--sp-md);
+  align-items: start;
+}
+
+/* The cards are fixed-width buttons; center them in their grid cell. */
+.media-grid .media-card {
+  justify-self: center;
+}

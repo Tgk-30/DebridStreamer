@@ -1,0 +1,186 @@
+/* Debrid library manager — toolbar, bulk bar, and the torrents table. */
+
+.dl-cta {
+  align-self: flex-start;
+  margin-top: var(--sp-md);
+}
+
+.dl-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  flex-wrap: wrap;
+}
+.dl-head-actions {
+  display: flex;
+  gap: var(--sp-sm);
+  flex-shrink: 0;
+}
+
+.dl-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  flex-wrap: wrap;
+  margin-top: var(--sp-sm);
+}
+.dl-search {
+  flex: 1 1 240px;
+  max-width: 360px;
+  border-radius: var(--r-pill);
+}
+.dl-filters {
+  display: flex;
+  gap: var(--sp-sm);
+}
+/* Active filter/tab chip — accent fill, used only for the selected one. */
+.dl-chip-active,
+.hl-tab-active {
+  background: rgba(var(--accent-rgb), 0.16) !important;
+  border-color: rgba(var(--accent-rgb), 0.55) !important;
+  color: var(--text-primary);
+}
+
+.dl-bulkbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  padding: var(--sp-sm) var(--sp-md);
+  margin-top: var(--sp-sm);
+  font-size: 13px;
+}
+.dl-delete:hover {
+  border-color: rgba(250, 115, 115, 0.6);
+  color: var(--danger);
+}
+
+.dl-status {
+  font-size: 14px;
+  margin-top: var(--sp-md);
+}
+.dl-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: var(--sp-sm) 0 0;
+}
+
+/* ---- Table ---- */
+
+.dl-table {
+  margin-top: var(--sp-md);
+  padding: var(--sp-xs);
+  overflow: hidden;
+}
+
+.dl-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 76px 110px 100px 110px 40px;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+}
+.dl-row:not(.dl-row-head):hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.dl-row-head {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.dl-row-dup {
+  background: rgba(var(--warning-rgb), 0.06);
+}
+
+.dl-col-check {
+  display: grid;
+  place-items: center;
+}
+.dl-col-check input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.dl-col-name {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.dl-name-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+.dl-badges {
+  display: flex;
+  gap: 6px;
+}
+.dl-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  letter-spacing: 0;
+}
+.dl-badge-svc {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+.dl-badge-dup {
+  background: rgba(var(--warning-rgb), 0.16);
+  color: var(--warning);
+}
+
+.dl-col-size,
+.dl-col-added,
+.dl-col-host {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dl-status-pill {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.dl-status-ready {
+  background: rgba(var(--accent-secondary-rgb), 0.16);
+  color: var(--accent-secondary);
+}
+
+.dl-col-actions {
+  display: grid;
+  place-items: center;
+}
+.dl-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    color 0.16s,
+    background 0.16s;
+}
+.dl-icon-btn:hover {
+  background: rgba(250, 115, 115, 0.12);
+  color: var(--danger);
+}

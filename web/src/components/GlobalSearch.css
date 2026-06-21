@@ -1,0 +1,57 @@
+/* Floating top-right glass search pill (GlobalSearchField). */
+
+.global-search {
+  position: absolute;
+  top: var(--sp-md);
+  right: var(--sp-lg);
+  z-index: 5;
+  border-radius: var(--r-pill);
+  width: 320px;
+  min-height: 44px;
+  background: rgba(34, 36, 56, 0.76);
+}
+
+.global-search input {
+  font-size: 14px;
+}
+
+.global-search input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.global-search .t-secondary {
+  color: var(--text-secondary);
+}
+
+.global-search-clear {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 50%;
+}
+.global-search-clear:hover {
+  color: var(--text-primary);
+}
+
+@media (max-width: 699px) {
+  .global-search {
+    position: sticky;
+    top: var(--sp-sm);
+    right: auto;
+    z-index: 8;
+    width: auto;
+    margin: var(--sp-md) var(--sp-lg) 0;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1199px) {
+  .global-search {
+    width: min(520px, calc(100% - 48px));
+  }
+}

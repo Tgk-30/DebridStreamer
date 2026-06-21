@@ -1,0 +1,54 @@
+/* EmptyState — centered glass card. */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-sm);
+  align-self: center;
+  width: min(100%, 460px);
+  text-align: center;
+  padding: var(--sp-xxl) var(--sp-xl);
+  border-radius: var(--r-lg);
+  max-width: 460px;
+  margin: clamp(var(--sp-xl), 9vh, 88px) auto var(--sp-xl);
+}
+.empty-state-title {
+  margin: var(--sp-xs) 0 0;
+  font-size: 19px;
+  font-weight: 700;
+}
+.empty-state-sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 360px;
+}
+.empty-state-note {
+  margin-top: var(--sp-sm);
+  cursor: default;
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+.empty-state-note:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.empty-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-sm);
+}
+
+@media (max-width: 520px) {
+  .empty-state-actions {
+    align-self: stretch;
+    flex-direction: column;
+  }
+
+  .empty-state-actions .btn {
+    justify-content: center;
+    width: 100%;
+  }
+}

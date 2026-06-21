@@ -1,0 +1,179 @@
+/* Search screen. */
+
+.search-screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+  padding: var(--sp-xl);
+  padding-top: 64px;
+  max-width: 1280px;
+}
+
+.search-h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.search-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.search-field {
+  border-radius: var(--r-pill);
+  max-width: 520px;
+  min-height: 44px;
+  padding: 0 var(--sp-md);
+}
+.search-field input {
+  font-size: 15px;
+  min-height: 42px;
+  line-height: 42px;
+}
+.search-clear {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 50%;
+}
+.search-clear:hover {
+  color: var(--text-primary);
+}
+
+.search-filters {
+  display: flex;
+  gap: var(--sp-sm);
+}
+.search-filters .chip {
+  min-width: 44px;
+}
+.search-filters .chip.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.72), rgba(var(--accent-secondary-rgb), 0.36));
+  border-color: rgba(var(--accent-rgb), 0.7);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 8px 20px rgba(var(--accent-rgb), 0.14);
+}
+
+.search-status {
+  font-size: 14px;
+  margin: 0;
+}
+.search-error {
+  color: var(--danger);
+}
+
+.search-idle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+.search-section-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.search-screen .media-card-reveal {
+  opacity: 1 !important;
+  background: linear-gradient(
+    to top,
+    rgba(3, 4, 10, 0.88) 0%,
+    rgba(3, 4, 10, 0.48) 38%,
+    rgba(3, 4, 10, 0.02) 72%
+  );
+  pointer-events: none;
+}
+
+.search-screen .media-card-reveal-inner {
+  opacity: 1 !important;
+  transform: none !important;
+  padding: var(--sp-md);
+}
+
+.search-screen .media-card-reveal-actions,
+.search-screen .media-card-title,
+.search-screen .media-card-meta {
+  display: none;
+}
+
+/* Results header — title + "See all" → deepen into Browse. */
+.search-results-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+.search-see-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 4px 2px;
+  transition: color 0.16s;
+}
+.search-see-all:hover {
+  color: var(--accent);
+}
+.search-see-all-arrow {
+  font-size: 15px;
+  line-height: 1;
+}
+
+@media (max-width: 767px) {
+  .search-screen {
+    padding: var(--sp-lg);
+    padding-top: var(--sp-lg);
+    max-width: none;
+  }
+
+  .search-field {
+    max-width: none;
+    min-height: 48px;
+  }
+
+  .search-screen .media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
+    gap: var(--sp-sm);
+  }
+
+  .search-screen .media-card {
+    --poster-w: min(var(--poster-card-width, 168px), 148px);
+  }
+
+  .search-field input {
+    min-height: 46px;
+    line-height: 46px;
+  }
+
+  .search-filters {
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .search-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .search-filters .chip {
+    flex: 0 0 auto;
+  }
+}

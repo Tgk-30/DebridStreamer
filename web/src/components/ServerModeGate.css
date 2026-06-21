@@ -1,0 +1,88 @@
+.server-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(82, 113, 255, 0.24), transparent 32%),
+    radial-gradient(circle at 85% 20%, rgba(32, 201, 151, 0.18), transparent 28%),
+    #080b12;
+  color: #f8fafc;
+}
+
+.server-gate-card {
+  width: min(440px, 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(11, 18, 32, 0.78);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+  padding: 24px;
+  backdrop-filter: blur(18px);
+}
+
+.server-gate-title {
+  margin: 0 0 8px;
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.server-gate-copy {
+  margin: 0 0 20px;
+  color: rgba(248, 250, 252, 0.72);
+  line-height: 1.5;
+}
+
+.server-gate-form {
+  display: grid;
+  gap: 14px;
+}
+
+.server-gate-field {
+  display: grid;
+  gap: 7px;
+  color: rgba(248, 250, 252, 0.78);
+  font-size: 0.84rem;
+}
+
+.server-gate-field input {
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.server-gate-field input:focus {
+  outline: 2px solid rgba(96, 165, 250, 0.7);
+  outline-offset: 2px;
+}
+
+.server-gate-button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 8px;
+  background: #e5f0ff;
+  color: #08111f;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.server-gate-button:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.server-gate-error {
+  margin: 2px 0 0;
+  color: #fecaca;
+  font-size: 0.9rem;
+}
+
+.server-gate-meta {
+  margin-top: 18px;
+  word-break: break-all;
+  color: rgba(248, 250, 252, 0.54);
+  font-size: 0.78rem;
+}

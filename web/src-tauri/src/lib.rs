@@ -1,0 +1,101 @@
+// DebridStreamer — Tauri player POC.
+//
+// Proves the two-backend player plan from COMPETITION_AND_ARCHITECTURE.md:
+//   1. In-webview playback (hls.js / native <video>) for HLS/MP4 — the browser path.
+//   2. Desktop hand-off to a native player (VLC/mpv) for MKV/HEVC the webview can't decode.
+// This command is the desktop direct-play seam: hand a Real-Debrid direct link to a
+// native player. On macOS we try VLC, then mpv/IINA as fallbacks.
+
+use std::process::Command;
+
+// Bundled-mpv player (Phase 3 P1): spawns the mpv sidecar and drives it over
+// JSON IPC. See player.rs for the `--wid` in-window-embedding caveat (macOS).
+mod player;
+
+// OS-keychain SecretStore backend (keychain_get / keychain_set / keychain_delete).
+mod keychain;
+
+// Desktop Host Mode: supervises the bundled/self-built Server Mode process so a
+// desktop app can host the PWA/API for other devices.
+mod server_host;
+
+#[tauri::command]
+fn open_in_external_player(url: String) -> Result<String, String> {
+    // Preference order: VLC (installed here, matches the current VLCKit player), then mpv, then IINA.
+    #[cfg(target_os = "macos")]
+    {
+        let candidates = ["VLC", "mpv", "IINA"];
+        for app in candidates {
+            let status = Command::new("open")
+                .args(["-a", app, &url])
+                .status();
+            if let Ok(s) = status {
+                if s.success() {
+                    return Ok(format!("Opened in {app}"));
+                }
+            }
+        }
+        // Last resort: hand the URL to the OS default handler.
+        Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok("Opened with the system default handler".into());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Cross-platform: try mpv on PATH, else VLC.
+        for bin in ["mpv", "vlc"] {
+            if Command::new(bin).arg(&url).spawn().is_ok() {
+                return Ok(format!("Opened in {bin}"));
+            }
+        }
+        Err("No external player (mpv/vlc) found on PATH".into())
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        // Native HTTP client used by the webview (`@tauri-apps/plugin-http`) to
+        // reach indexer/debrid/addon hosts without the browser CORS policy.
+        .plugin(tauri_plugin_http::init())
+        // Shell plugin: used from Rust to spawn the bundled mpv sidecar (P1).
+        .plugin(tauri_plugin_shell::init())
+        // Process plugin: lets the webview `relaunch()` the app after the
+        // auto-updater downloads + installs a new version (see updater.ts).
+        .plugin(tauri_plugin_process::init())
+        // At-most-one mpv instance, shared across the mpv_* commands.
+        .manage(player::MpvState::default())
+        // At-most-one local DebridStreamer server process.
+        .manage(server_host::ServerState::default());
+
+    // Auto-updater is desktop-only. The JS side (web/src/lib/updater.ts) calls
+    // the plugin's `check()` once on launch; releases are signed with the
+    // updater keypair and published as `latest.json` on GitHub Releases.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
+        .invoke_handler(tauri::generate_handler![
+            open_in_external_player,
+            player::mpv_play,
+            player::mpv_pause,
+            player::mpv_resume,
+            player::mpv_seek,
+            player::mpv_get_position,
+            player::mpv_stop,
+            keychain::keychain_get,
+            keychain::keychain_set,
+            keychain::keychain_delete,
+            server_host::desktop_server_status,
+            server_host::desktop_server_start,
+            server_host::desktop_server_stop,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

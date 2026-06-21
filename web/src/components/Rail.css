@@ -1,0 +1,85 @@
+/* Rail — bold title + horizontally scrolling track with a trailing-edge fade. */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+
+.rail-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+/* "See all" — a quiet text affordance; accent only on hover. */
+.rail-see-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-width: 64px;
+  min-height: 44px;
+  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 8px 12px;
+  border-radius: var(--r-pill);
+  transition:
+    color 0.16s,
+    background 0.16s;
+}
+.rail-see-all:hover {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+.rail-see-all-arrow {
+  margin-left: 1px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.rail-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* leave room so the hover-lift glow isn't clipped */
+  padding: var(--sp-xs) 0 var(--sp-sm);
+  scroll-padding-inline: var(--sp-md);
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Trailing-fade mask (railFadeMask: opaque to 95%, fade to clear at the edge). */
+.rail-fade {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 0,
+    #000 88%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(to right, #000 0, #000 88%, transparent 100%);
+}
+
+.rail-track {
+  display: flex;
+  gap: var(--sp-lg);
+  width: max-content;
+  /* trailing breathing room so the last card isn't flush to the edge */
+  padding-right: clamp(var(--sp-xl), 8vw, 88px);
+}
+
+.rail-track .media-card {
+  scroll-snap-align: start;
+}

@@ -1,0 +1,491 @@
+/* HeroSpotlight — cinematic auto-rotating billboard. */
+
+.hero {
+  position: relative;
+  height: clamp(
+    var(--hero-min-height, 420px),
+    var(--hero-fluid-height, 52vh),
+    var(--hero-max-height, 560px)
+  );
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  isolation: isolate;
+}
+
+.hero-backdrop-layer {
+  position: absolute;
+  inset: 0;
+  will-change: transform, opacity;
+}
+.hero-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 18%;
+}
+.hero-gradient {
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.85),
+    rgba(var(--accent-secondary-rgb), 0.6),
+    rgba(var(--accent-tertiary-rgb), 0.5)
+  );
+}
+
+/* Left-weighted + bottom scrim so large title stays legible over any frame. */
+.hero-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to top, rgba(8, 9, 18, 0.96) 0%, rgba(8, 9, 18, 0.5) 34%, rgba(8, 9, 18, 0) 66%),
+    linear-gradient(to right, rgba(8, 9, 18, 0.78) 0%, rgba(8, 9, 18, 0.2) 42%, rgba(8, 9, 18, 0) 70%);
+}
+/* Subtle edge vignette for a cinematic frame. */
+.hero-vignette {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 160px 40px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.hero-content {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding: clamp(var(--sp-xl), 4vw, 56px);
+  max-width: 720px;
+  will-change: transform, opacity;
+}
+
+.hero-badges {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #fff;
+}
+.hero-featured {
+  cursor: default;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0;
+}
+.hero-meta-separator {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.36);
+}
+.hero-year {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.86);
+}
+.hero-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--r-pill);
+  background: rgba(4, 5, 12, 0.46);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.hero-title {
+  margin: 0;
+  font-size: clamp(34px, 4.4vw, 58px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: 0;
+  color: #fff;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hero-overview {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 580px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hero-actions {
+  display: flex;
+  gap: var(--sp-md);
+  margin-top: var(--sp-sm);
+}
+.hero-play {
+  padding: 12px 26px;
+  font-size: 15px;
+  font-weight: 700;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.98), rgba(var(--accent-rgb), 0.74));
+  box-shadow:
+    0 10px 26px rgba(var(--accent-rgb), 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+.hero-info {
+  padding: 12px 22px;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(10px);
+}
+.hero-info:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Bar indicators. */
+.hero-dots {
+  position: absolute;
+  top: clamp(var(--sp-xl), 4vw, 56px);
+  right: clamp(var(--sp-xl), 4vw, 56px);
+  display: flex;
+  align-items: center;
+  gap: 0;
+  z-index: 2;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.hero-dots-label {
+  min-width: 24px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+.hero-dot {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  cursor: pointer;
+  transition: width 0.3s;
+}
+.hero-dot + .hero-dot {
+  margin-left: -18px;
+}
+.hero-dot::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.42);
+  transform: translate(-50%, -50%);
+  transition:
+    background 0.3s,
+    width 0.3s,
+    box-shadow 0.3s;
+}
+.hero-dot:hover::before {
+  background: rgba(255, 255, 255, 0.55);
+}
+.hero-dot.is-active {
+  width: 44px;
+}
+.hero-dot.is-active::before {
+  width: 32px;
+  background: rgba(var(--accent-rgb), 1);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.6);
+}
+
+@media (max-width: 767px) {
+  .hero {
+    height: clamp(
+      var(--hero-mobile-min-height, 320px),
+      var(--hero-mobile-fluid-height, 46vh),
+      var(--hero-mobile-max-height, 400px)
+    );
+    min-height: 0;
+    border-radius: var(--r-lg);
+  }
+
+  .hero-backdrop {
+    object-position: center;
+  }
+
+  .hero-content {
+    gap: var(--sp-sm);
+    max-width: none;
+    padding: var(--sp-lg);
+  }
+
+  .hero-badges {
+    gap: 7px;
+  }
+
+  .hero-title {
+    font-size: clamp(30px, 9vw, 42px);
+    line-height: 1.04;
+  }
+
+  .hero-overview {
+    display: none;
+  }
+
+  .hero-actions {
+    flex-wrap: wrap;
+    gap: var(--sp-sm);
+    margin-top: var(--sp-sm);
+  }
+
+  .hero-play,
+  .hero-info {
+    flex: 1 1 130px;
+    justify-content: center;
+    padding: 12px 16px;
+  }
+
+  .hero-dots {
+    top: var(--sp-md);
+    right: var(--sp-md);
+  }
+}
+
+@media (min-width: 700px) and (max-width: 767px) {
+  .hero-backdrop {
+    filter: brightness(1.32) saturate(1.12) contrast(1.04);
+    object-position: center 18%;
+  }
+
+  .hero-dots {
+    right: var(--sp-lg);
+  }
+
+  .hero-scrim {
+    background:
+      linear-gradient(to top, rgba(8, 9, 18, 0.66) 0%, rgba(8, 9, 18, 0.18) 44%, rgba(8, 9, 18, 0) 76%),
+      linear-gradient(to right, rgba(8, 9, 18, 0.42) 0%, rgba(8, 9, 18, 0.08) 54%, rgba(8, 9, 18, 0) 84%);
+  }
+
+  .hero-vignette {
+    box-shadow: inset 0 0 88px 14px rgba(0, 0, 0, 0.18);
+  }
+
+  .hero-actions {
+    flex-wrap: nowrap;
+  }
+
+  .hero-play,
+  .hero-info {
+    flex: 0 0 auto;
+    min-width: 132px;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1199px) {
+  .hero-dots {
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(0, 0, 0, 0.52);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  }
+}
+
+@media (max-width: 767px) and (max-height: 820px) {
+  .hero {
+    height: clamp(
+      min(292px, var(--hero-mobile-min-height, 320px)),
+      40vh,
+      min(340px, var(--hero-mobile-max-height, 400px))
+    );
+  }
+
+  .hero-content {
+    padding: var(--sp-md);
+  }
+
+  .hero-dots {
+    top: var(--sp-sm);
+  }
+}
+
+@media (max-width: 767px) and (max-height: 620px) {
+  .hero {
+    height: clamp(198px, 40vh, 226px);
+  }
+
+  .hero-content {
+    gap: 8px;
+    padding: 14px;
+  }
+
+  .hero-title {
+    font-size: clamp(26px, 7vw, 34px);
+    -webkit-line-clamp: 2;
+  }
+
+  .hero-actions {
+    gap: 7px;
+    margin-top: 2px;
+  }
+
+  .hero-play,
+  .hero-info {
+    min-height: 40px;
+    padding: 9px 12px;
+    font-size: 13px;
+  }
+
+  .hero-dots {
+    right: var(--sp-sm);
+    padding: 4px 6px;
+    background: rgba(0, 0, 0, 0.52);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+
+  .hero-dots-label {
+    min-width: 22px;
+    font-size: 10.5px;
+  }
+
+  .hero-dot {
+    width: 44px;
+    height: 44px;
+  }
+
+  .hero-dot.is-active {
+    width: 44px;
+  }
+
+  .hero-dot::before {
+    height: 6px;
+  }
+}
+
+@media (max-width: 950px) and (max-height: 500px) {
+  .hero {
+    height: clamp(178px, 48vh, 220px);
+    min-height: 0;
+  }
+
+  .hero-content {
+    gap: 8px;
+    max-width: 420px;
+    padding: 12px 14px;
+  }
+
+  .hero-title {
+    font-size: clamp(26px, 5vw, 34px);
+    -webkit-line-clamp: 1;
+  }
+
+  .hero-overview {
+    display: none;
+  }
+
+  .hero-actions {
+    gap: 8px;
+    margin-top: 0;
+  }
+
+  .hero-play,
+  .hero-info {
+    min-height: 38px;
+    padding: 8px 13px;
+    font-size: 13px;
+  }
+
+  .hero-dots {
+    top: 10px;
+    right: 10px;
+    padding: 4px 6px;
+  }
+}
+
+@media (max-width: 380px) {
+  .hero {
+    height: clamp(260px, 38vh, 300px);
+  }
+
+  .hero-dots {
+    right: 12px;
+  }
+
+  .hero-title {
+    font-size: clamp(28px, 8.4vw, 36px);
+  }
+
+  .hero-actions {
+    gap: 7px;
+  }
+
+  .hero-play,
+  .hero-info {
+    padding: 10px 12px;
+  }
+}
+
+@media (max-width: 380px) and (max-height: 620px) {
+  .hero {
+    height: clamp(174px, 33vh, 194px);
+  }
+
+  .hero-content {
+    padding: 12px;
+  }
+
+  .hero-dots {
+    gap: 4px;
+    top: 10px;
+    right: 10px;
+    padding: 5px 6px;
+  }
+
+  .hero-dots-label {
+    min-width: 20px;
+    font-size: 10px;
+  }
+
+  .hero-dot {
+    width: 44px;
+    height: 44px;
+  }
+
+  .hero-dot.is-active {
+    width: 44px;
+  }
+
+  .hero-dot::before {
+    height: 5px;
+  }
+
+  .hero-title {
+    font-size: clamp(24px, 7vw, 32px);
+  }
+
+  .hero-play,
+  .hero-info {
+    min-height: 39px;
+    padding: 8px 10px;
+    font-size: 12.5px;
+  }
+}

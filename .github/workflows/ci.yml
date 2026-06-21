@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # VLCKit.xcframework is tracked via Git LFS; the build needs the real binary.
+          lfs: true
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          # Pin to whatever stable Xcode the runner image ships (16.0 was removed).
+          xcode-version: "latest-stable"
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: node scripts/check_swift_tests.mjs
+
+  # The self-hosted server + web client (the Server Mode deliverable). The server
+  # build (npm run build) runs the TypeScript typecheck then esbuild-bundles the
+  # web runtime shims, so it also exercises the web/src files the server imports.
+  server-web:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Public repo preflight
+        run: node scripts/public_repo_preflight.mjs
+
+      - name: Release readiness
+        run: node scripts/check_release_readiness.mjs
+
+      - name: Website download logic
+        run: node scripts/check_website_download_logic.mjs
+
+      - name: Website static QA
+        run: node scripts/check_website_static.mjs
+
+      - name: Website mounted-path QA
+        run: node scripts/check_website_path_mount.mjs
+
+      - name: App responsive contract
+        run: node scripts/check_app_responsive_contract.mjs
+
+      - name: Server — install, build (typecheck + bundle), test
+        working-directory: server
+        run: |
+          npm ci
+          npm run build
+          npx vitest run
+
+      - name: Web — install, build (typecheck + vite), test
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+          npx vitest run
+
+      - name: Smoke packaged desktop server resources
+        run: |
+          node scripts/prepare_tauri_server_resources.mjs
+          node scripts/download_tauri_node_runtime.mjs linux-x64
+          node scripts/smoke_tauri_server_bundle.mjs web/src-tauri/resources/server

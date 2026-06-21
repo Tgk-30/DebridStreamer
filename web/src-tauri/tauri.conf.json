@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DebridStreamer",
+  "version": "0.1.0",
+  "identifier": "com.tgk30.debridstreamer",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "DebridStreamer",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 960,
+        "minHeight": 640
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://image.tmdb.org https://*.tmdb.org; media-src 'self' blob: data: http: https:; connect-src 'self' ipc: http://ipc.localhost http://tauri.localhost tauri://localhost http://localhost:* http://127.0.0.1:* http: https:; worker-src 'self' blob:; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "category": "public.app-category.entertainment",
+    "copyright": "Copyright © 2026 tgk30. All rights reserved.",
+    "shortDescription": "Stream debrid media on your desktop.",
+    "longDescription": "DebridStreamer is a desktop client for streaming media from debrid services. Browse and search indexers, resolve direct links through your debrid provider, and play in-app or hand off MKV/HEVC to a native player (VLC/mpv/IINA).",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/server/**/*"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/Tgk-30/DebridStreamer/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU5QTU5MzhEQjRDOTAzMTAKUldRUUE4bTBqWk9sV1dXeGlqbUhGTlVWOTlKMGx1WmpnbU1LR0lPSFVuQ1ptTFNJK1B2N2JoU1AK"
+    }
+  }
+}

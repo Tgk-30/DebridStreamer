@@ -1,0 +1,841 @@
+/*
+ * Design tokens ported 1:1 from
+ * Sources/DebridStreamer/Views/Components/AppTheme.swift.
+ *
+ * The native app is adaptive (light/dark) but cinematic dark-first; this web
+ * shell ports the DARK appearance values (the ones used for screenshots /
+ * the V2 glass look). RGB triples from AppTheme's `Color(red:green:blue:)`
+ * are converted to 0-255 (× 255, rounded). Glass elevation tiers, the aurora
+ * background + restrained glow, spacing/radius scales, and the hero gradient
+ * are all reproduced here.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---- Brand + semantic colors (AppTheme dark values) ---- */
+  --accent: rgb(140, 133, 250); /* 0.55,0.52,0.98 */
+  --accent-secondary: rgb(92, 189, 250); /* 0.36,0.74,0.98 */
+  --accent-tertiary: rgb(250, 117, 189); /* 0.98,0.46,0.74 */
+  --success: rgb(92, 217, 140); /* 0.36,0.85,0.55 */
+  --warning: rgb(250, 184, 92); /* 0.98,0.72,0.36 */
+  --danger: rgb(250, 115, 115); /* 0.98,0.45,0.45 */
+  --info: var(--accent-secondary);
+
+  /* RGB channels (for rgba() composition in glows/tints) */
+  --accent-rgb: 140, 133, 250;
+  --accent-secondary-rgb: 92, 189, 250;
+  --accent-tertiary-rgb: 250, 117, 189;
+  --warning-rgb: 250, 184, 92;
+  --success-rgb: 92, 217, 140;
+  --danger-rgb: 250, 115, 115;
+
+  /* ---- Glass edges (AppTheme.glassBorder / glassHighlight, dark) ---- */
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.22);
+
+  /* ---- Text ---- */
+  --text-primary: rgba(255, 255, 255, 0.94);
+  --text-secondary: rgba(255, 255, 255, 0.72);
+  --text-tertiary: rgba(255, 255, 255, 0.58);
+
+  /* ---- Background aurora stops (AppTheme.background, dark) ---- */
+  --bg-1: rgb(13, 15, 26); /* 0.05,0.06,0.10 */
+  --bg-2: rgb(23, 23, 41); /* 0.09,0.09,0.16 */
+  --bg-3: rgb(15, 18, 31); /* 0.06,0.07,0.12 */
+
+  /* ---- Spacing scale (4pt grid, AppTheme.Spacing) ---- */
+  --sp-xxs: 2px;
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 12px;
+  --sp-lg: 16px;
+  --sp-xl: 24px;
+  --sp-xxl: 32px;
+  --sp-xxxl: 48px;
+
+  /* ---- Corner radius scale (AppTheme.Radius) ---- */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-card: 16px;
+  --r-pill: 999px;
+  --glass-blur-rest: 16px;
+  --glass-blur-raised: 28px;
+  --glass-blur-hero: 40px;
+  --text-scale: 1;
+  --poster-card-width: 168px;
+  --poster-grid-min: 184px;
+  --hero-min-height: 420px;
+  --hero-fluid-height: 52vh;
+  --hero-max-height: 560px;
+  --hero-mobile-min-height: 320px;
+  --hero-mobile-fluid-height: 46vh;
+  --hero-mobile-max-height: 400px;
+
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui,
+    "Segoe UI", Roboto, sans-serif;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-density="compact"] {
+  --sp-sm: 6px;
+  --sp-md: 10px;
+  --sp-lg: 14px;
+  --sp-xl: 20px;
+  --sp-xxl: 28px;
+}
+
+:root[data-text-size="s"] {
+  --text-scale: 0.94;
+}
+:root[data-text-size="l"] {
+  --text-scale: 1.08;
+}
+:root[data-text-size="xl"] {
+  --text-scale: 1.16;
+}
+
+:root[data-poster-size="compact"] {
+  --poster-card-width: 142px;
+  --poster-grid-min: 158px;
+}
+
+:root[data-poster-size="large"] {
+  --poster-card-width: 194px;
+  --poster-grid-min: 214px;
+}
+
+:root[data-hero-scale="compact"] {
+  --hero-min-height: 340px;
+  --hero-fluid-height: 44vh;
+  --hero-max-height: 460px;
+  --hero-mobile-min-height: 260px;
+  --hero-mobile-fluid-height: 38vh;
+  --hero-mobile-max-height: 330px;
+}
+
+:root[data-hero-scale="cinematic"] {
+  --hero-min-height: 480px;
+  --hero-fluid-height: 58vh;
+  --hero-max-height: 640px;
+  --hero-mobile-min-height: 360px;
+  --hero-mobile-fluid-height: 50vh;
+  --hero-mobile-max-height: 440px;
+}
+
+:root[data-radius="sharp"] {
+  --r-xs: 3px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 18px;
+  --r-card: 10px;
+}
+
+:root[data-radius="round"] {
+  --r-xs: 8px;
+  --r-sm: 14px;
+  --r-md: 20px;
+  --r-lg: 28px;
+  --r-xl: 36px;
+  --r-card: 22px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Selectable themes / skins.
+ *
+ * The `:root` block above is the default Aurora-glass (dark) look. Each theme
+ * below is a complete CSS-variable retune applied via a `data-theme` attribute
+ * on the root (set by applyTheme in theme/themes.ts). The default theme sets NO
+ * attribute, so it renders identically to the historical values. Each skin
+ * retunes accent + background + glass tints + text so the glass stays legible.
+ * Glass-surface tints (the white-on-glass alphas) are exposed as variables so a
+ * LIGHT theme can flip them to dark-on-glass without touching markup.
+ * ------------------------------------------------------------------------- */
+
+/* Glass tint variables — defaulted here so the dark tiers below can reference
+ * them; the Light theme overrides them to dark-on-glass. */
+:root {
+  --glass-tint-rest: rgba(255, 255, 255, 0.05);
+  --glass-tint-raised: rgba(255, 255, 255, 0.07);
+  --glass-tint-hero: rgba(255, 255, 255, 0.09);
+  --glass-tint-control: rgba(255, 255, 255, 0.06);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.1);
+  --ambient-primary-alpha: 0.13;
+  --ambient-secondary-alpha: 0.1;
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(17, 20, 34, 0.56),
+    rgba(7, 9, 17, 0.64)
+  );
+  --nav-rail-border: rgba(255, 255, 255, 0.105);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.075);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(12, 15, 24, 0.88),
+    rgba(2, 4, 9, 0.94)
+  );
+  --nav-mobile-border: rgba(255, 255, 255, 0.16);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.1);
+  --nav-mobile-icon-bg: transparent;
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.19);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.48);
+}
+
+/* Daybreak — bright frosted glass. Dark text, dark-on-glass tints, a deeper
+ * accent so it stays legible on a light field. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --accent: rgb(99, 91, 232);
+  --accent-secondary: rgb(36, 150, 214);
+  --accent-tertiary: rgb(214, 74, 150);
+  --success: rgb(34, 160, 94);
+  --warning: rgb(196, 124, 24);
+  --danger: rgb(206, 64, 64);
+
+  --accent-rgb: 99, 91, 232;
+  --accent-secondary-rgb: 36, 150, 214;
+  --accent-tertiary-rgb: 214, 74, 150;
+  --warning-rgb: 196, 124, 24;
+  --success-rgb: 34, 160, 94;
+  --danger-rgb: 206, 64, 64;
+
+  --glass-border: rgba(20, 24, 48, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.85);
+
+  --text-primary: rgba(22, 25, 42, 0.94);
+  --text-secondary: rgba(22, 25, 42, 0.72);
+  --text-tertiary: rgba(22, 25, 42, 0.56);
+
+  --bg-1: rgb(238, 241, 248);
+  --bg-2: rgb(223, 228, 242);
+  --bg-3: rgb(231, 234, 245);
+
+  --glass-tint-rest: rgba(255, 255, 255, 0.55);
+  --glass-tint-raised: rgba(255, 255, 255, 0.68);
+  --glass-tint-hero: rgba(255, 255, 255, 0.78);
+  --glass-tint-control: rgba(255, 255, 255, 0.6);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.85);
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.62),
+    rgba(238, 243, 252, 0.74)
+  );
+  --nav-rail-border: rgba(34, 40, 68, 0.16);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.92);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.86),
+    rgba(238, 243, 252, 0.96)
+  );
+  --nav-mobile-border: rgba(34, 40, 68, 0.18);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.88);
+  --nav-mobile-icon-bg: transparent;
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.14);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.38);
+}
+
+/* Midnight — near-black, low-saturation, minimal glow. */
+:root[data-theme="midnight"] {
+  --accent: rgb(120, 176, 224);
+  --accent-secondary: rgb(140, 150, 170);
+  --accent-tertiary: rgb(150, 130, 190);
+  --success: rgb(96, 190, 130);
+  --warning: rgb(214, 170, 100);
+  --danger: rgb(220, 110, 110);
+
+  --accent-rgb: 120, 176, 224;
+  --accent-secondary-rgb: 140, 150, 170;
+  --accent-tertiary-rgb: 150, 130, 190;
+  --warning-rgb: 214, 170, 100;
+  --success-rgb: 96, 190, 130;
+  --danger-rgb: 220, 110, 110;
+
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.16);
+
+  --text-primary: rgba(235, 238, 245, 0.95);
+  --text-secondary: rgba(235, 238, 245, 0.68);
+  --text-tertiary: rgba(235, 238, 245, 0.52);
+
+  --bg-1: rgb(6, 7, 10);
+  --bg-2: rgb(12, 13, 18);
+  --bg-3: rgb(8, 9, 13);
+
+  --glass-tint-rest: rgba(255, 255, 255, 0.04);
+  --glass-tint-raised: rgba(255, 255, 255, 0.06);
+  --glass-tint-hero: rgba(255, 255, 255, 0.08);
+  --glass-tint-control: rgba(255, 255, 255, 0.05);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.09);
+}
+
+/* Sunset — warm amber/rose aurora over a dark plum field. */
+:root[data-theme="sunset"] {
+  --accent: rgb(250, 138, 92);
+  --accent-secondary: rgb(250, 100, 138);
+  --accent-tertiary: rgb(250, 196, 110);
+  --success: rgb(120, 200, 130);
+  --warning: rgb(250, 196, 110);
+  --danger: rgb(245, 96, 96);
+
+  --accent-rgb: 250, 138, 92;
+  --accent-secondary-rgb: 250, 100, 138;
+  --accent-tertiary-rgb: 250, 196, 110;
+  --warning-rgb: 250, 196, 110;
+  --success-rgb: 120, 200, 130;
+  --danger-rgb: 245, 96, 96;
+
+  --glass-border: rgba(255, 235, 225, 0.16);
+  --glass-highlight: rgba(255, 240, 230, 0.28);
+
+  --text-primary: rgba(255, 246, 242, 0.95);
+  --text-secondary: rgba(255, 246, 242, 0.72);
+  --text-tertiary: rgba(255, 246, 242, 0.56);
+
+  --bg-1: rgb(28, 16, 20);
+  --bg-2: rgb(36, 20, 25);
+  --bg-3: rgb(24, 14, 18);
+
+  --glass-tint-rest: rgba(255, 235, 225, 0.06);
+  --glass-tint-raised: rgba(255, 235, 225, 0.08);
+  --glass-tint-hero: rgba(255, 235, 225, 0.1);
+  --glass-tint-control: rgba(255, 235, 225, 0.07);
+  --glass-tint-control-hover: rgba(255, 235, 225, 0.12);
+}
+
+/* Chrome depth is applied after theme skins so the Appearance control always
+ * wins while keeping light and dark glass readable. */
+:root[data-chrome="translucent"] {
+  --glass-tint-rest: rgba(255, 255, 255, 0.035);
+  --glass-tint-raised: rgba(255, 255, 255, 0.05);
+  --glass-tint-hero: rgba(255, 255, 255, 0.065);
+  --glass-tint-control: rgba(255, 255, 255, 0.04);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.08);
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(28, 33, 52, 0.42),
+    rgba(8, 11, 20, 0.56)
+  );
+  --nav-rail-border: rgba(255, 255, 255, 0.12);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.1);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(28, 34, 54, 0.76),
+    rgba(8, 11, 20, 0.9)
+  );
+  --nav-mobile-border: rgba(255, 255, 255, 0.2);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.16);
+  --nav-mobile-icon-bg: transparent;
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.15);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.44);
+}
+
+:root[data-chrome="solid"] {
+  --glass-tint-rest: rgba(255, 255, 255, 0.075);
+  --glass-tint-raised: rgba(255, 255, 255, 0.095);
+  --glass-tint-hero: rgba(255, 255, 255, 0.11);
+  --glass-tint-control: rgba(255, 255, 255, 0.085);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.13);
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(15, 18, 30, 0.88),
+    rgba(5, 7, 13, 0.94)
+  );
+  --nav-rail-border: rgba(255, 255, 255, 0.14);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.055);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(15, 18, 30, 0.98),
+    rgba(5, 7, 13, 1)
+  );
+  --nav-mobile-border: rgba(255, 255, 255, 0.2);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.09);
+  --nav-mobile-icon-bg: transparent;
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.22);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.52);
+}
+
+:root[data-theme="light"][data-chrome="translucent"] {
+  --glass-tint-rest: rgba(255, 255, 255, 0.42);
+  --glass-tint-raised: rgba(255, 255, 255, 0.52);
+  --glass-tint-hero: rgba(255, 255, 255, 0.62);
+  --glass-tint-control: rgba(255, 255, 255, 0.48);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.72);
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.46),
+    rgba(239, 244, 253, 0.58)
+  );
+  --nav-rail-border: rgba(34, 40, 68, 0.13);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.88);
+}
+
+:root[data-theme="light"][data-chrome="solid"] {
+  --glass-tint-rest: rgba(255, 255, 255, 0.72);
+  --glass-tint-raised: rgba(255, 255, 255, 0.82);
+  --glass-tint-hero: rgba(255, 255, 255, 0.88);
+  --glass-tint-control: rgba(255, 255, 255, 0.76);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.92);
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.86),
+    rgba(234, 240, 250, 0.94)
+  );
+  --nav-rail-border: rgba(34, 40, 68, 0.2);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.96);
+}
+
+:root[data-nav-tint="airy"] {
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(30, 35, 55, 0.42),
+    rgba(8, 11, 20, 0.55)
+  );
+  --nav-rail-border: rgba(255, 255, 255, 0.14);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.11);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(29, 35, 55, 0.78),
+    rgba(8, 11, 20, 0.9)
+  );
+  --nav-mobile-border: rgba(255, 255, 255, 0.22);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.18);
+  --nav-mobile-icon-bg: transparent;
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.16);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.44);
+}
+
+:root[data-nav-tint="solid"] {
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(13, 16, 28, 0.92),
+    rgba(5, 7, 13, 0.98)
+  );
+  --nav-rail-border: rgba(255, 255, 255, 0.12);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.05);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(14, 17, 29, 0.98),
+    rgba(5, 7, 13, 1)
+  );
+  --nav-mobile-border: rgba(255, 255, 255, 0.17);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.08);
+  --nav-mobile-icon-bg: transparent;
+  --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.24);
+  --nav-mobile-active-border: rgba(var(--accent-rgb), 0.58);
+}
+
+:root[data-theme="light"][data-nav-tint="airy"] {
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.58),
+    rgba(244, 248, 255, 0.72)
+  );
+  --nav-rail-border: rgba(34, 40, 68, 0.14);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.9);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.78),
+    rgba(244, 248, 255, 0.92)
+  );
+  --nav-mobile-border: rgba(34, 40, 68, 0.18);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.88);
+  --nav-mobile-icon-bg: rgba(34, 40, 68, 0.035);
+}
+
+:root[data-theme="light"][data-nav-tint="solid"] {
+  --nav-rail-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(234, 240, 250, 0.96)
+  );
+  --nav-rail-border: rgba(34, 40, 68, 0.2);
+  --nav-rail-highlight: rgba(255, 255, 255, 0.96);
+  --nav-mobile-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.94),
+    rgba(234, 240, 250, 0.98)
+  );
+  --nav-mobile-border: rgba(34, 40, 68, 0.22);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.92);
+  --nav-mobile-icon-bg: rgba(34, 40, 68, 0.045);
+}
+
+:root[data-backdrop="subtle"] {
+  --ambient-primary-alpha: 0.07;
+  --ambient-secondary-alpha: 0.055;
+}
+
+:root[data-backdrop="plain"] {
+  --ambient-primary-alpha: 0;
+  --ambient-secondary-alpha: 0;
+}
+
+:root[data-panel-contrast="soft"] {
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.16);
+  --glass-tint-rest: rgba(255, 255, 255, 0.038);
+  --glass-tint-raised: rgba(255, 255, 255, 0.055);
+  --glass-tint-hero: rgba(255, 255, 255, 0.075);
+  --glass-tint-control: rgba(255, 255, 255, 0.045);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.085);
+}
+
+:root[data-panel-contrast="high"] {
+  --glass-border: rgba(255, 255, 255, 0.22);
+  --glass-highlight: rgba(255, 255, 255, 0.32);
+  --glass-tint-rest: rgba(255, 255, 255, 0.072);
+  --glass-tint-raised: rgba(255, 255, 255, 0.095);
+  --glass-tint-hero: rgba(255, 255, 255, 0.12);
+  --glass-tint-control: rgba(255, 255, 255, 0.085);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.14);
+}
+
+:root[data-theme="light"][data-panel-contrast="soft"] {
+  --glass-border: rgba(20, 24, 48, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.72);
+  --glass-tint-rest: rgba(255, 255, 255, 0.42);
+  --glass-tint-raised: rgba(255, 255, 255, 0.52);
+  --glass-tint-hero: rgba(255, 255, 255, 0.62);
+  --glass-tint-control: rgba(255, 255, 255, 0.48);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.74);
+}
+
+:root[data-theme="light"][data-panel-contrast="high"] {
+  --glass-border: rgba(20, 24, 48, 0.24);
+  --glass-highlight: rgba(255, 255, 255, 0.92);
+  --glass-tint-rest: rgba(255, 255, 255, 0.72);
+  --glass-tint-raised: rgba(255, 255, 255, 0.84);
+  --glass-tint-hero: rgba(255, 255, 255, 0.9);
+  --glass-tint-control: rgba(255, 255, 255, 0.78);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.94);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  color: var(--text-primary);
+  font-size: calc(16px * var(--text-scale));
+  /* AppTheme.background — diagonal aurora gradient (topLeading→bottomTrailing). */
+  background: linear-gradient(
+    135deg,
+    var(--bg-1) 0%,
+    var(--bg-2) 50%,
+    var(--bg-3) 100%
+  );
+  background-attachment: fixed;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * Aurora glow — AppTheme.auroraGlow. Two restrained blurred orbs (accent +
+ * accentSecondary) for depth without overwhelming the foreground glass.
+ * ------------------------------------------------------------------------- */
+.aurora-glow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.aurora-glow::before,
+.aurora-glow::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+}
+.aurora-glow::before {
+  width: 72vw;
+  height: 72vw;
+  background: rgba(var(--accent-rgb), var(--ambient-primary-alpha));
+  filter: blur(150px);
+  left: -30vw;
+  top: -34vh;
+  animation: auroraDriftA 26s ease-in-out infinite alternate;
+}
+.aurora-glow::after {
+  width: 62vw;
+  height: 62vw;
+  background: rgba(var(--accent-secondary-rgb), var(--ambient-secondary-alpha));
+  filter: blur(160px);
+  right: -26vw;
+  bottom: -22vh;
+  animation: auroraDriftB 32s ease-in-out infinite alternate;
+}
+@keyframes auroraDriftA {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(6vw, 5vh, 0) scale(1.12); }
+}
+@keyframes auroraDriftB {
+  from { transform: translate3d(0, 0, 0) scale(1.05); }
+  to { transform: translate3d(-7vw, -4vh, 0) scale(0.95); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora-glow::before,
+  .aurora-glow::after { animation: none; }
+}
+
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * Glass surfaces — the three coordinated GlassElevation tiers from AppTheme.
+ * Each tier moves material(blur)+tint+stroke+shadow together; depth comes from
+ * the contrast BETWEEN tiers, not ad-hoc per-element opacity.
+ * ------------------------------------------------------------------------- */
+.glass-rest {
+  background: var(--glass-tint-rest);
+  backdrop-filter: blur(var(--glass-blur-rest)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-blur-rest)) saturate(1.4);
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-md);
+  box-shadow: 0 3px 7px rgba(0, 0, 0, 0.1);
+}
+.glass-raised {
+  background: var(--glass-tint-raised);
+  backdrop-filter: blur(var(--glass-blur-raised)) saturate(1.6);
+  -webkit-backdrop-filter: blur(var(--glass-blur-raised)) saturate(1.6);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  box-shadow: 0 10px 16px rgba(0, 0, 0, 0.2);
+}
+.glass-hero {
+  background: var(--glass-tint-hero);
+  backdrop-filter: blur(var(--glass-blur-hero)) saturate(1.8);
+  -webkit-backdrop-filter: blur(var(--glass-blur-hero)) saturate(1.8);
+  border: 1.25px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  box-shadow: 0 18px 28px rgba(0, 0, 0, 0.28);
+}
+
+/* The "lit glass" top-edge highlight (AppTheme's highlight→border gradient
+ * stroke). Layered as an inset top hairline on any glass tier. */
+.glass-rest,
+.glass-raised,
+.glass-hero {
+  position: relative;
+}
+.glass-lit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border-top: 1px solid var(--glass-highlight);
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000, transparent 40%);
+  mask: linear-gradient(#000, transparent 40%);
+}
+
+/* Hero brand gradient (AppTheme.heroGradient): accent→secondary→tertiary. */
+.hero-gradient {
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.85),
+    rgba(var(--accent-secondary-rgb), 0.7),
+    rgba(var(--accent-tertiary-rgb), 0.55)
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Buttons — ports of GlassButtonStyle (.glass and .glassProminent).
+ * ------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  padding: var(--sp-sm) var(--sp-lg);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  color: var(--text-primary);
+  background: var(--glass-tint-control);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  transition:
+    transform 0.12s ease-out,
+    border-color 0.16s,
+    box-shadow 0.16s;
+  white-space: nowrap;
+}
+.btn:hover {
+  border-color: rgba(var(--accent-rgb), 0.6);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+.btn:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+.btn:disabled:hover {
+  border-color: var(--glass-border);
+  transform: none;
+  box-shadow: none;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn-prominent {
+  position: relative;
+  color: #fff;
+  border: none;
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.98),
+    rgba(var(--accent-secondary-rgb), 0.88),
+    rgba(var(--accent-tertiary-rgb), 0.72)
+  );
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.btn-prominent:hover {
+  transform: translateY(-1px);
+}
+.btn-prominent:hover {
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.45);
+}
+.btn-prominent:disabled {
+  color: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+/* Chip / capsule (glassChip). */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 13px;
+  border-radius: var(--r-pill);
+  background: var(--glass-tint-control);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 0.75px solid var(--glass-border);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition:
+    border-color 0.16s,
+    background 0.16s;
+}
+.chip:hover {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+@media (max-width: 860px) {
+  .chip {
+    min-height: 36px;
+    padding: 8px 14px;
+  }
+}
+
+/* Text-field shell (used by mood strip + global search). */
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) var(--sp-md);
+}
+.field input {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  line-height: 32px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+}
+.field input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* Utility text colors. */
+.t-secondary {
+  color: var(--text-secondary);
+}
+.t-accent {
+  color: var(--accent);
+}
+.t-warning {
+  color: var(--warning);
+}
+
+/* Thin scrollbars on horizontal rails. */
+.rail-scroll {
+  scrollbar-width: none;
+}
+.rail-scroll::-webkit-scrollbar {
+  height: 0;
+  display: none;
+}
+
+/* ===========================================================================
+ * Premium polish (redesign pass 2): overlay entrances, type, scroll, focus.
+ * ========================================================================= */
+
+@keyframes overlayIn {
+  from { opacity: 0; transform: scale(0.985) translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.detail,
+.browse {
+  animation: overlayIn 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Cinematic headings: a touch tighter. */
+h1, h2, h3 { letter-spacing: 0; }
+
+/* Premium selection + focus ring. */
+::selection { background: rgba(var(--accent-rgb), 0.32); color: #fff; }
+:focus-visible { outline: 2px solid rgba(var(--accent-rgb), 0.6); outline-offset: 2px; }
+
+/* Slim glass scrollbars. */
+* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.18) transparent; }
+*::-webkit-scrollbar { width: 11px; height: 11px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+  background-clip: padding-box;
+}

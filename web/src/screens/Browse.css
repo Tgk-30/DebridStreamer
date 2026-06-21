@@ -1,0 +1,207 @@
+/* Browse screen — overlay surface (mirrors Detail) with a paginated grid. */
+
+.browse {
+  position: fixed;
+  inset: 0 0 0 var(--nav-rail-width, 96px);
+  /* Below Detail (z-index 20) so a Detail opened from Browse layers on top,
+   * above the base content + global search. */
+  z-index: 18;
+  overflow-y: auto;
+  background: linear-gradient(
+    180deg,
+    rgba(13, 15, 26, 0.62),
+    rgba(13, 15, 26, 0.88)
+  );
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+}
+.browse.has-filters-open {
+  z-index: 42;
+}
+
+.browse-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+  padding: var(--sp-xl);
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+/* ---- Header --------------------------------------------------------------- */
+
+.browse-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  flex-wrap: wrap;
+}
+
+.browse-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  min-height: 44px;
+  padding: 0 var(--sp-md) 0 var(--sp-sm);
+  border-radius: var(--r-pill);
+  border: 0.75px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.16s, border-color 0.16s;
+}
+.browse-back:hover {
+  color: var(--text-primary);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+.browse-back-arrow {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.browse-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-md);
+  flex: 1;
+  min-width: 0;
+}
+.browse-h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.browse-count {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.browse-filter-btn {
+  flex-shrink: 0;
+  min-height: 44px;
+}
+/* When filters are applied, mark the button with an accent ring. */
+.browse-filter-on {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+/* ---- Active filter chips -------------------------------------------------- */
+
+.browse-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.browse-chip {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.14);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+.browse-chip:hover {
+  background: rgba(var(--accent-rgb), 0.22);
+}
+.browse-chip-clear {
+  font-size: 12px;
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px;
+}
+.browse-chip-clear:hover {
+  color: var(--text-primary);
+}
+
+/* ---- Grid ----------------------------------------------------------------- */
+
+.browse-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(calc(var(--poster-card-width, 168px) + var(--sp-sm) * 2), 1fr)
+  );
+  gap: var(--sp-lg) var(--sp-md);
+  align-items: start;
+}
+.browse-grid .media-card {
+  justify-self: center;
+}
+
+/* Skeleton card — a redacted 2:3 poster block. */
+.browse-skel {
+  width: 158px;
+  height: 280px;
+  border-radius: var(--r-card);
+  opacity: 0.5;
+  animation: browse-pulse 1.6s ease-in-out infinite;
+  justify-self: center;
+}
+@keyframes browse-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* ---- Load more ------------------------------------------------------------ */
+
+.browse-sentinel {
+  height: 1px;
+}
+.browse-more {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-md) 0;
+}
+.browse-loading {
+  text-align: center;
+  font-size: 13px;
+  margin: 0 0 var(--sp-md);
+}
+
+@media (max-width: 699px) {
+  .browse {
+    inset: 0 0 calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + var(--sp-xs)) 0;
+  }
+
+  .browse-inner {
+    padding: var(--sp-lg);
+    padding-bottom: var(--sp-xl);
+  }
+
+  .browse-head {
+    align-items: flex-start;
+  }
+
+  .browse-title-row {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .browse-h1 {
+    font-size: 25px;
+    line-height: 1.08;
+  }
+
+  .browse-filter-btn {
+    margin-left: auto;
+  }
+
+  .browse-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-md) var(--sp-sm);
+  }
+
+  .browse-grid .media-card {
+    --poster-w: min(144px, calc((100vw - 64px) / 2));
+  }
+}

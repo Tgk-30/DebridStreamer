@@ -1,0 +1,63 @@
+[package]
+name = "debridstreamer"
+version = "0.1.0"
+description = "DebridStreamer — debrid streaming desktop app"
+authors = ["tgk30"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "debridstreamer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+# Native HTTP client exposed to the webview. The JS side calls it via
+# `@tauri-apps/plugin-http`'s `fetch` to bypass the browser CORS policy for
+# arbitrary indexer / debrid / Stremio-addon hosts the user configures.
+tauri-plugin-http = "2"
+# Spawn the bundled mpv sidecar (Phase 3 P1). Used from Rust via
+# `app.shell().sidecar("mpv")`; the binary is declared in tauri.conf.json's
+# `bundle.externalBin` and lives in `binaries/mpv-<target-triple>`.
+tauri-plugin-shell = "2"
+# Process control exposed to the webview (`@tauri-apps/plugin-process`). Used by
+# the in-app auto-updater to `relaunch()` the app after an update is downloaded
+# and installed (see web/src/lib/updater.ts + UpdateBanner).
+tauri-plugin-process = "2"
+# Native window-handle access. Tauri's `Window` implements
+# `raw_window_handle::HasWindowHandle`; on macOS we read the `AppKitWindowHandle`
+# `ns_view` pointer to attempt mpv `--wid` in-window embedding (see player.rs).
+raw-window-handle = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+getrandom = "0.2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# Desktop-only auto-updater. The JS side calls `check()` on launch (see
+# web/src/lib/updater.ts); releases are signed with the updater keypair and
+# published as `latest.json` on GitHub Releases.
+tauri-plugin-updater = "2"
+
+# OS-keychain backend for the SecretStore commands (src/keychain.rs).
+# keyring v3 ships NO default credential store — each platform MUST enable its
+# own backend feature or it silently falls back to an in-memory mock (secrets
+# would not persist). Target-gated so each OS pulls only its own backend and a
+# bad feature combo can't break another platform's release build.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+# Linux: Secret Service over D-Bus (sync), pure-Rust crypto (no OpenSSL system
+# dep), vendored libdbus (no system build dep) — headless-CI-friendly.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"] }
