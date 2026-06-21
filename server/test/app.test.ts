@@ -123,6 +123,20 @@ async function setupOwner(app: FastifyInstance): Promise<TestClient> {
   return client;
 }
 
+async function protectedTestApp(setupToken: string): Promise<FastifyInstance> {
+  return buildApp({
+    config: {
+      databasePath: ":memory:",
+      dataDir: ".test-data",
+      secretKey: randomBytes(32),
+      setupToken,
+      cookieSecure: false,
+      logger: false,
+      allowRawStreamUrls: true,
+    },
+  });
+}
+
 async function createProfile(
   owner: TestClient,
   username: string,
@@ -232,6 +246,75 @@ describe("DebridStreamer server", () => {
     expect(json<{ settings: Record<string, string> }>(settings).settings).toMatchObject({
       ui_theme: "midnight",
     });
+
+    const logoutWithoutCsrf = await request(owner, {
+      method: "POST",
+      url: "/api/auth/logout",
+    });
+    expect(logoutWithoutCsrf.statusCode).toBe(403);
+
+    const logout = await request(owner, {
+      method: "POST",
+      url: "/api/auth/logout",
+      csrf: true,
+    });
+    expect(logout.statusCode).toBe(200);
+
+    const revoked = await request(owner, {
+      method: "GET",
+      url: "/api/auth/session",
+    });
+    expect(revoked.statusCode).toBe(401);
+  });
+
+  it("requires a configured setup token before creating the first owner", async () => {
+    const protectedApp = await protectedTestApp("setup-token-for-tests");
+    try {
+      const health = await protectedApp.inject({ method: "GET", url: "/api/health" });
+      expect(json<{ setupRequired: boolean; setupTokenRequired: boolean }>(health)).toMatchObject({
+        setupRequired: true,
+        setupTokenRequired: true,
+      });
+
+      const missing = await protectedApp.inject({
+        method: "POST",
+        url: "/api/auth/setup-owner",
+        payload: {
+          username: "owner",
+          password: "owner-password",
+          displayName: "Owner",
+        },
+      });
+      expect(missing.statusCode).toBe(403);
+
+      const wrong = await protectedApp.inject({
+        method: "POST",
+        url: "/api/auth/setup-owner",
+        payload: {
+          username: "owner",
+          password: "owner-password",
+          displayName: "Owner",
+          setupToken: "wrong-token",
+        },
+      });
+      expect(wrong.statusCode).toBe(403);
+
+      const client: TestClient = { app: protectedApp, cookies: new Map() };
+      const created = await request(client, {
+        method: "POST",
+        url: "/api/auth/setup-owner",
+        payload: {
+          username: "owner",
+          password: "owner-password",
+          displayName: "Owner",
+          setupToken: "setup-token-for-tests",
+        },
+      });
+      expect(created.statusCode).toBe(200);
+      expect(client.cookies.get("ds_session")).toBeTruthy();
+    } finally {
+      await protectedApp.close();
+    }
   });
 
   it("exposes profile simpleMode (as a boolean) and lets a profile flip it", async () => {
@@ -693,6 +776,65 @@ describe("DebridStreamer server", () => {
       expect(out.items[0].title).toBe("Inception");
       expect(out.items[0].id).toBe("tmdb-27205");
       expect(out.unmatched).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("server metadata: reuses TMDB catalog reads across HTTP requests", async () => {
+    const owner = await setupOwner(app);
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "tmdb", value: "tmdb-key", label: "TMDB" },
+    });
+
+    const originalFetch = globalThis.fetch;
+    let tmdbCalls = 0;
+    globalThis.fetch = (async (url, init) => {
+      const u = String(url);
+      if (u.startsWith("https://api.themoviedb.org")) {
+        tmdbCalls += 1;
+        const parsed = new URL(u);
+        const isTV = parsed.pathname.includes("/tv/");
+        const item = isTV
+          ? {
+              id: 2000 + tmdbCalls,
+              name: "Cached Series",
+              first_air_date: "2026-01-01",
+              backdrop_path: "/series.jpg",
+              vote_average: 7.4,
+            }
+          : {
+              id: 1000 + tmdbCalls,
+              title: "Cached Movie",
+              release_date: "2026-01-01",
+              backdrop_path: "/movie.jpg",
+              vote_average: 8.1,
+            };
+        return new Response(
+          JSON.stringify({
+            page: 1,
+            total_pages: 1,
+            total_results: 1,
+            results: [item],
+          }),
+          { status: 200 },
+        );
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+
+    try {
+      const first = await request(owner, { method: "GET", url: "/api/discover/home" });
+      expect(first.statusCode).toBe(200);
+      expect(tmdbCalls).toBe(6);
+
+      const second = await request(owner, { method: "GET", url: "/api/discover/home" });
+      expect(second.statusCode).toBe(200);
+      expect(tmdbCalls).toBe(6);
+      expect(json<{ hero: { title: string } | null }>(second).hero?.title).toBe("Cached Movie");
     } finally {
       globalThis.fetch = originalFetch;
     }

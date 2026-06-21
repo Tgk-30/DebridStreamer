@@ -23,6 +23,11 @@ function sameSiteEnv(name: string, fallback: CookieSameSite): CookieSameSite {
   return fallback;
 }
 
+function stringEnv(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value != null && value.length > 0 ? value : null;
+}
+
 function loadOrCreateSecretKey(dataDir: string): Buffer {
   const envSecret = process.env.DS_SERVER_SECRET_KEY;
   if (envSecret && envSecret.trim().length > 0) {
@@ -61,6 +66,10 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
         ? resolve(process.env.DS_WEB_DIST)
         : null),
     secretKey: overrides.secretKey ?? loadOrCreateSecretKey(dataDir),
+    setupToken:
+      overrides.setupToken !== undefined
+        ? overrides.setupToken
+        : stringEnv("DS_SERVER_SETUP_TOKEN"),
     cookieSecure:
       overrides.cookieSecure ?? boolEnv("DS_SERVER_COOKIE_SECURE", process.env.NODE_ENV === "production"),
     cookieSameSite:

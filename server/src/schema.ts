@@ -231,3 +231,23 @@ export const MIGRATION_007 = `
 ALTER TABLE profiles ADD COLUMN is_kid INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE profiles ADD COLUMN maturity_max TEXT;
 `;
+
+// Shared server-side metadata cache. Keys are provider-specific hashes of
+// normalized upstream read URLs (credential query params stripped), so repeated
+// TMDB reads can be reused across profiles without storing API keys or raw
+// search strings in SQLite.
+export const MIGRATION_008 = `
+CREATE TABLE metadata_cache (
+  provider TEXT NOT NULL,
+  cache_key TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  value_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  PRIMARY KEY (provider, cache_key)
+);
+
+CREATE INDEX metadata_cache_expires_idx
+  ON metadata_cache(provider, expires_at);
+`;

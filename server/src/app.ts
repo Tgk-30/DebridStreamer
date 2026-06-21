@@ -1,4 +1,5 @@
 import { Readable, Transform } from "node:stream";
+import { timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import cookie from "@fastify/cookie";
@@ -86,6 +87,7 @@ const setupOwnerSchema = z.object({
   username: usernameSchema,
   password: passwordSchema,
   displayName: z.string().trim().min(1).max(100),
+  setupToken: z.string().trim().min(1).max(512).optional(),
 });
 
 const loginSchema = z.object({
@@ -1634,9 +1636,20 @@ function adminHealthSummary(db: AppDatabase, config: ServerConfig) {
       rawStreamUrlsEnabled: config.allowRawStreamUrls,
       webDistConfigured: config.webDistPath != null,
       sessionTtlSeconds: config.sessionTtlSeconds,
+      setupTokenRequired: userCount(db) === 0 && config.setupToken != null,
     },
     warnings,
   };
+}
+
+function setupTokenMatches(expected: string, provided: string | undefined): boolean {
+  if (provided == null) return false;
+  const expectedDigest = Buffer.from(sha256(expected), "hex");
+  const providedDigest = Buffer.from(sha256(provided), "hex");
+  return (
+    expectedDigest.length === providedDigest.length &&
+    timingSafeEqual(expectedDigest, providedDigest)
+  );
 }
 
 function streamContentType(fileName: string): string | null {
@@ -1655,12 +1668,14 @@ function registerRoutes(
   app.get("/api/health", async () => ({
     ok: true,
     setupRequired: userCount(db) === 0,
+    setupTokenRequired: userCount(db) === 0 && config.setupToken != null,
   }));
 
   app.get("/api/bootstrap", async (request) => {
     const auth = readAuth(db, request);
     return {
       setupRequired: userCount(db) === 0,
+      setupTokenRequired: userCount(db) === 0 && config.setupToken != null,
       session: auth,
       // The account's household profiles + the active one, so the client can
       // render the "who's watching" picker on load without a second request.
@@ -1686,6 +1701,9 @@ function registerRoutes(
     const body = parseBody(setupOwnerSchema, request.body);
     rateLimit(request, "auth:setup-owner", 5, 15 * 60 * 1000);
     if (userCount(db) > 0) throw httpError(409, "Owner account already exists.");
+    if (config.setupToken != null && !setupTokenMatches(config.setupToken, body.setupToken)) {
+      throw httpError(403, "Invalid setup token.");
+    }
     const passwordHash = await hashPassword(body.password);
 
     const created = db.transaction(() => {
@@ -1875,6 +1893,7 @@ function registerRoutes(
   app.post("/api/auth/logout", async (request, reply) => {
     const cookieValue = readSessionCookie(request);
     if (cookieValue != null) {
+      requireCsrf(request);
       db.sqlite
         .prepare("UPDATE sessions SET revoked_at = ? WHERE id = ? AND token_hash = ?")
         .run(nowISO(), cookieValue.sessionId, sha256(cookieValue.rawToken));

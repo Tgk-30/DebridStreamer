@@ -1,7 +1,150 @@
 import { TMDBService } from "../../web/src/services/metadata/TMDBService.ts";
+import { createHash } from "node:crypto";
 import { decryptSecret } from "./crypto.js";
 
-const serverFetch = (url, init) => fetch(url, init);
+const TMDB_CACHE_PROVIDER = "tmdb";
+const TMDB_CACHE_MAX_BODY_BYTES = 2_000_000;
+const TMDB_CACHE_TTL_MS = {
+  search: 5 * 60 * 1000,
+  catalog: 30 * 60 * 1000,
+  detail: 6 * 60 * 60 * 1000,
+  long: 24 * 60 * 60 * 1000,
+};
+const tmdbInflightByDb = new WeakMap();
+
+function isoFromEpochMs(epochMs) {
+  return new Date(epochMs).toISOString();
+}
+
+function tmdbCacheTTL(url) {
+  let parsed;
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    return 0;
+  }
+  if (parsed.hostname !== "api.themoviedb.org") return 0;
+  if (!parsed.pathname.startsWith("/3/")) return 0;
+
+  const path = parsed.pathname;
+  if (
+    /\/genre\/[^/]+\/list$/.test(path) ||
+    path.endsWith("/release_dates") ||
+    path.endsWith("/content_ratings")
+  ) {
+    return TMDB_CACHE_TTL_MS.long;
+  }
+  if (path.includes("/search/")) return TMDB_CACHE_TTL_MS.search;
+  if (
+    path.includes("/discover/") ||
+    path.includes("/trending/") ||
+    /^\/3\/(movie|tv)\/(popular|top_rated|now_playing|upcoming|airing_today|on_the_air)$/.test(path)
+  ) {
+    return TMDB_CACHE_TTL_MS.catalog;
+  }
+  return TMDB_CACHE_TTL_MS.detail;
+}
+
+function tmdbCacheKey(url) {
+  const parsed = new URL(String(url));
+  parsed.searchParams.delete("api_key");
+  parsed.searchParams.sort();
+  const query = parsed.searchParams.toString();
+  const normalized = `${parsed.origin}${parsed.pathname}${query.length > 0 ? `?${query}` : ""}`;
+  return createHash("sha256").update(normalized).digest("hex");
+}
+
+function tmdbInflightFor(db) {
+  let inflight = tmdbInflightByDb.get(db);
+  if (inflight == null) {
+    inflight = new Map();
+    tmdbInflightByDb.set(db, inflight);
+  }
+  return inflight;
+}
+
+function cachedFetchResponse(status, body) {
+  return {
+    status,
+    async text() {
+      return body;
+    },
+  };
+}
+
+function readMetadataCache(db, cacheKey) {
+  const now = new Date().toISOString();
+  const row = db.sqlite
+    .prepare(
+      `SELECT status, value_json
+       FROM metadata_cache
+       WHERE provider = ?
+         AND cache_key = ?
+         AND expires_at > ?
+       LIMIT 1`,
+    )
+    .get(TMDB_CACHE_PROVIDER, cacheKey, now);
+  if (row == null) return null;
+  return cachedFetchResponse(row.status, row.value_json);
+}
+
+function storeMetadataCache(db, cacheKey, status, body, ttlMs) {
+  if (status < 200 || status > 299) return;
+  if (Buffer.byteLength(body, "utf8") > TMDB_CACHE_MAX_BODY_BYTES) return;
+  const now = Date.now();
+  const nowIso = isoFromEpochMs(now);
+  db.sqlite
+    .prepare("DELETE FROM metadata_cache WHERE provider = ? AND expires_at <= ?")
+    .run(TMDB_CACHE_PROVIDER, nowIso);
+  db.sqlite
+    .prepare(
+      `INSERT INTO metadata_cache
+         (provider, cache_key, status, value_json, created_at, updated_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(provider, cache_key) DO UPDATE SET
+         status = excluded.status,
+         value_json = excluded.value_json,
+         updated_at = excluded.updated_at,
+         expires_at = excluded.expires_at`,
+    )
+    .run(
+      TMDB_CACHE_PROVIDER,
+      cacheKey,
+      status,
+      body,
+      nowIso,
+      nowIso,
+      isoFromEpochMs(now + ttlMs),
+    );
+}
+
+function cachedServerFetch(db) {
+  return async (url, init) => {
+    const ttlMs = tmdbCacheTTL(url);
+    if (ttlMs <= 0) return fetch(url, init);
+
+    const cacheKey = tmdbCacheKey(url);
+    const cached = readMetadataCache(db, cacheKey);
+    if (cached != null) return cached;
+
+    const inflight = tmdbInflightFor(db);
+    const existing = inflight.get(cacheKey);
+    if (existing != null) return existing;
+
+    const load = (async () => {
+      const response = await fetch(url, init);
+      const body = await response.text();
+      storeMetadataCache(db, cacheKey, response.status, body, ttlMs);
+      return cachedFetchResponse(response.status, body);
+    })();
+    inflight.set(cacheKey, load);
+    try {
+      return await load;
+    } finally {
+      inflight.delete(cacheKey);
+    }
+  };
+}
 
 function tmdbIdOf(preview) {
   if (typeof preview.tmdbId === "number" && Number.isFinite(preview.tmdbId)) {
@@ -55,7 +198,7 @@ function tmdbService(db, config, profileId) {
       statusCode: 400,
     });
   }
-  return new TMDBService(token, serverFetch);
+  return new TMDBService(token, cachedServerFetch(db));
 }
 
 // Base /discover/movie params for a maturity-capped (kid) profile: US cert

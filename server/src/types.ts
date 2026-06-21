@@ -35,6 +35,9 @@ export interface ServerConfig {
   dataDir: string;
   webDistPath: string | null;
   secretKey: Buffer;
+  /** Optional one-time owner-setup token. When configured, the first owner
+   *  account cannot be created without this out-of-band token. */
+  setupToken: string | null;
   cookieSecure: boolean;
   cookieSameSite: CookieSameSite;
   sessionTtlSeconds: number;
