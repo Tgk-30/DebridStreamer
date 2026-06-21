@@ -1,0 +1,82 @@
+# One-off / on-demand: notarize + staple the macOS .dmg of an already-published
+# release and replace the asset in place.
+#
+# Why: tauri-action notarizes + staples the .app but not the .dmg container.
+# A signed-but-unnotarized, quarantined disk image makes modern macOS refuse it
+# with "…dmg is damaged and can't be opened. You should move it to the Trash."
+# Future releases handle this in web-release.yml; this fixes existing releases.
+#
+# The .dmg is not referenced by latest.json and has no updater .sig, so replacing
+# it is self-contained (only its sha256 changes; the in-app updater is unaffected).
+#
+# Run: Actions → notarize-dmg → Run workflow → enter the tag (e.g. v0.1.0-web).
+# Uses the same Apple secrets that notarize the .app (APPLE_ID / APPLE_PASSWORD /
+# APPLE_TEAM_ID).
+
+name: notarize-dmg
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag whose universal .dmg to notarize + staple (e.g. v0.1.0-web)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  notarize:
+    runs-on: macos-latest
+    steps:
+      - name: Validate Apple notarization secrets
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=0
+          for name in APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing $name secret."; missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Download the release DMG
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*_universal.dmg' --dir .
+          ls -la ./*_universal.dmg
+
+      - name: Notarize & staple
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          dmg="$(ls ./*_universal.dmg | head -1)"
+          echo "Before:"; xcrun stapler validate "$dmg" || true
+          xcrun notarytool submit "$dmg" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_PASSWORD" --wait
+          xcrun stapler staple "$dmg"
+          echo "After:"; xcrun stapler validate "$dmg"
+
+      - name: Re-upload the stapled DMG
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          dmg="$(ls ./*_universal.dmg | head -1)"
+          gh release upload "$TAG" "$dmg" --clobber --repo "$GITHUB_REPOSITORY"
+          echo "Replaced $dmg on $TAG."
