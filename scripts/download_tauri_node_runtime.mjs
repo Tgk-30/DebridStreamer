@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, cpSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, cpSync, readdirSync, renameSync, statSync } from "node:fs";
 import { get } from "node:https";
 import { basename, dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -207,14 +207,14 @@ for (const platform of platforms) {
   const archive = join(cacheDir, file);
   const url = `https://nodejs.org/dist/v${version}/${file}`;
   if (!archiveIsUsable(archive)) {
-    unlinkSync(archive, { force: true });
+    rmSync(archive, { force: true });
     console.log(`Downloading ${basename(archive)}...`);
     await download(url, archive);
   }
   try {
     await verifyArchive(archive, file);
   } catch (error) {
-    unlinkSync(archive, { force: true });
+    rmSync(archive, { force: true });
     console.log(`Re-downloading ${basename(archive)} after failed checksum verification...`);
     await download(url, archive);
     await verifyArchive(archive, file);
