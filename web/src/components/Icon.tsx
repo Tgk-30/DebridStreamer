@@ -21,6 +21,8 @@ import {
   SlidersHorizontal,
   Sparkles,
   Star,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   WandSparkles,
   X,
@@ -53,7 +55,9 @@ export type IconName =
   | "eye"
   | "eye-off"
   | "save"
-  | "more";
+  | "more"
+  | "thumbs-up"
+  | "thumbs-down";
 
 interface IconProps {
   name: IconName;
@@ -90,11 +94,17 @@ const ICONS: Record<IconName, LucideIcon> = {
   "eye-off": EyeOff,
   save: Save,
   more: Ellipsis,
+  "thumbs-up": ThumbsUp,
+  "thumbs-down": ThumbsDown,
 };
 
 export function Icon({ name, size = 20, className, filled = false }: IconProps) {
   const Glyph = ICONS[name];
-  const shouldFill = name === "play" || name === "star" || (name === "watchlist" && filled);
+  const shouldFill =
+    name === "play" ||
+    name === "star" ||
+    ((name === "watchlist" || name === "thumbs-up" || name === "thumbs-down") &&
+      filled);
 
   return (
     <Glyph

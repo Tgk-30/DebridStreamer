@@ -12,11 +12,15 @@ import type {
   AIUsageMetrics,
 } from "./models";
 import {
+  type AIAnalyzeTitleInput,
   AIAssistantJSONParser,
   AIAssistantProviderError,
+  type AIProviderAnalysisResult,
   AIUsageCostEstimator,
   type AIAssistantProvider,
   type FetchImpl,
+  parsePersonalizedAnalysis,
+  personalizedAnalysisPrompt,
   resolveFetch,
 } from "./types";
 
@@ -135,6 +139,74 @@ export class OpenAIProvider implements AIAssistantProvider {
       recommendations,
       rawText: content,
       usage,
+    };
+  }
+
+  async analyzeTitle(
+    input: AIAnalyzeTitleInput,
+  ): Promise<AIProviderAnalysisResult> {
+    const trimmedKey = this.apiKey.trim();
+    if (trimmedKey.length === 0) {
+      throw AIAssistantProviderError.missingAPIKey();
+    }
+
+    const prompt = personalizedAnalysisPrompt(input);
+
+    const payload: OpenAIChatRequestBody = {
+      model: this.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You produce a single, strict JSON object analyzing a title for the user.",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.4,
+    };
+
+    const response = await this.fetchImpl(OPENAI_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${trimmedKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!(response.status >= 200 && response.status <= 299)) {
+      const errorText = (await response.text().catch(() => "")) || "OpenAI error";
+      throw AIAssistantProviderError.apiError(errorText);
+    }
+
+    const decoded = JSON.parse(await response.text()) as RawOpenAIChatResponse;
+    const content = decoded.choices[0]?.message.content;
+    if (content == null) {
+      throw AIAssistantProviderError.invalidResponse();
+    }
+
+    const analysis = parsePersonalizedAnalysis(content);
+
+    const resolvedModel = decoded.model ?? this.model;
+    const inputTokens = decoded.usage?.prompt_tokens ?? null;
+    const outputTokens = decoded.usage?.completion_tokens ?? null;
+    const totalTokens = decoded.usage?.total_tokens ?? null;
+
+    return {
+      model: resolvedModel,
+      analysis,
+      rawText: content,
+      usage: {
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        estimatedCostUSD: AIUsageCostEstimator.estimateUSD(
+          resolvedModel,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+        ),
+      },
     };
   }
 }

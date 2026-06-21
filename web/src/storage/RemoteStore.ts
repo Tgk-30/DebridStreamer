@@ -1,5 +1,6 @@
 import type { MediaItem, MediaPreview } from "../models/media";
 import type {
+  AIUsageRecord,
   CachedResolutionRecord,
   DebridConfigRecord,
   IndexerConfigRecord,
@@ -504,6 +505,14 @@ export class RemoteStore implements Store, SecretStore {
 
   async recentTasteEvents(_limit = 100): Promise<TasteEventRecord[]> {
     return [];
+  }
+
+  async addAIUsage(_record: AIUsageRecord): Promise<void> {
+    // AI usage is accounted server-side in Server Mode; nothing to write here.
+  }
+
+  async totalAIUsageCostUSD(): Promise<number> {
+    return 0;
   }
 
   async putMedia(_item: MediaItem): Promise<void> {

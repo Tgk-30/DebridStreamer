@@ -84,6 +84,9 @@ const SettingsKeys = {
   appearanceNavLabels: "appearance_nav_labels",
   appearanceNavTint: "appearance_nav_tint",
   appearancePosterSize: "appearance_poster_size",
+  subtitleFontScale: "subtitle_font_scale",
+  subtitleTextColor: "subtitle_text_color",
+  subtitleBgOpacity: "subtitle_bg_opacity",
   openSubtitlesApiKey: "opensubtitles_api_key",
   autoUpdateChecks: "auto_update_checks",
   simpleMode: "simple_mode",
@@ -174,6 +177,12 @@ export interface AppSettings {
   appearanceNavLabels: AppearanceNavLabels;
   appearanceNavTint: AppearanceNavTint;
   appearancePosterSize: AppearancePosterSize;
+  /** Subtitle appearance, applied to the player's `::cue` (ported from
+   * VPStudio's subtitle settings): font scale (1 = default), text color (hex),
+   * and caption-background opacity (0–0.95). */
+  subtitleFontScale: number;
+  subtitleTextColor: string;
+  subtitleBgOpacity: number;
   /** OpenSubtitles REST API key (powers in-player subtitle search). */
   openSubtitlesApiKey: string;
   /** Progressive disclosure: Simple hides advanced tabs/controls. Local-Mode
@@ -281,6 +290,34 @@ function normalizeAppearancePosterSize(value: unknown): AppearancePosterSize {
   return value === "compact" || value === "large" ? value : "default";
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  const n =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value)
+        : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeSubtitleFontScale(value: unknown): number {
+  const n = toFiniteNumber(value);
+  if (n == null) return 1;
+  return Math.min(1.8, Math.max(0.7, Math.round(n * 100) / 100));
+}
+
+function normalizeSubtitleBgOpacity(value: unknown): number {
+  const n = toFiniteNumber(value);
+  if (n == null) return 0.55;
+  return Math.min(0.95, Math.max(0, Math.round(n * 100) / 100));
+}
+
+function normalizeSubtitleTextColor(value: unknown): string {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value)
+    ? value.toLowerCase()
+    : "#ffffff";
+}
+
 /** Defaults: pull what we can from env so the app works with zero config. */
 export function defaultSettings(): AppSettings {
   return {
@@ -307,6 +344,9 @@ export function defaultSettings(): AppSettings {
     appearanceNavLabels: "auto",
     appearanceNavTint: "balanced",
     appearancePosterSize: "default",
+    subtitleFontScale: 1,
+    subtitleTextColor: "#ffffff",
+    subtitleBgOpacity: 0.55,
     openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
     simpleMode: true,
     autoUpdateChecks: true,
@@ -349,6 +389,9 @@ export function loadSettings(): AppSettings {
       appearanceNavLabels: normalizeAppearanceNavLabels(parsed.appearanceNavLabels),
       appearanceNavTint: normalizeAppearanceNavTint(parsed.appearanceNavTint),
       appearancePosterSize: normalizeAppearancePosterSize(parsed.appearancePosterSize),
+      subtitleFontScale: normalizeSubtitleFontScale(parsed.subtitleFontScale),
+      subtitleTextColor: normalizeSubtitleTextColor(parsed.subtitleTextColor),
+      subtitleBgOpacity: normalizeSubtitleBgOpacity(parsed.subtitleBgOpacity),
     };
   } catch {
     return base;
@@ -439,6 +482,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceNavLabels,
     appearanceNavTint,
     appearancePosterSize,
+    subtitleFontScale,
+    subtitleTextColor,
+    subtitleBgOpacity,
     autoUpdateChecks,
     autoInstallUpdates,
     streamCachedOnly,
@@ -466,6 +512,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.appearanceNavLabels),
     store.getSetting(SettingsKeys.appearanceNavTint),
     store.getSetting(SettingsKeys.appearancePosterSize),
+    store.getSetting(SettingsKeys.subtitleFontScale),
+    store.getSetting(SettingsKeys.subtitleTextColor),
+    store.getSetting(SettingsKeys.subtitleBgOpacity),
     store.getSetting(SettingsKeys.autoUpdateChecks),
     store.getSetting(SettingsKeys.autoInstallUpdates),
     store.getSetting(SettingsKeys.streamCachedOnly),
@@ -547,6 +596,15 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     ),
     appearancePosterSize: normalizeAppearancePosterSize(
       appearancePosterSize ?? base.appearancePosterSize,
+    ),
+    subtitleFontScale: normalizeSubtitleFontScale(
+      subtitleFontScale ?? base.subtitleFontScale,
+    ),
+    subtitleTextColor: normalizeSubtitleTextColor(
+      subtitleTextColor ?? base.subtitleTextColor,
+    ),
+    subtitleBgOpacity: normalizeSubtitleBgOpacity(
+      subtitleBgOpacity ?? base.subtitleBgOpacity,
     ),
     openSubtitlesApiKey: openSubtitlesApiKey ?? base.openSubtitlesApiKey,
     simpleMode: simpleMode == null ? base.simpleMode : simpleMode === "true",
@@ -633,6 +691,18 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     store.setSetting(
       SettingsKeys.appearancePosterSize,
       normalizeAppearancePosterSize(settings.appearancePosterSize),
+    ),
+    store.setSetting(
+      SettingsKeys.subtitleFontScale,
+      String(normalizeSubtitleFontScale(settings.subtitleFontScale)),
+    ),
+    store.setSetting(
+      SettingsKeys.subtitleTextColor,
+      normalizeSubtitleTextColor(settings.subtitleTextColor),
+    ),
+    store.setSetting(
+      SettingsKeys.subtitleBgOpacity,
+      String(normalizeSubtitleBgOpacity(settings.subtitleBgOpacity)),
     ),
     store.setSetting(
       SettingsKeys.autoUpdateChecks,

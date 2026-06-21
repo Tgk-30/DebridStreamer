@@ -187,6 +187,44 @@
   cursor: default;
 }
 
+/* Thumbs up / down — a subtle segmented glass control feeding the taste profile. */
+.detail-taste {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.detail-taste-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+  transition: transform 0.16s, background 0.2s, color 0.2s;
+}
+.detail-taste-btn:hover {
+  transform: scale(1.06);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.detail-taste-btn.is-liked {
+  background: rgba(52, 199, 120, 0.22);
+  color: rgb(120, 235, 170);
+}
+.detail-taste-btn.is-disliked {
+  background: rgba(235, 92, 92, 0.22);
+  color: rgb(255, 150, 150);
+}
+
 @media (max-width: 767px) {
   .detail-hero {
     min-height: auto;

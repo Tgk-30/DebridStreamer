@@ -13,8 +13,15 @@
 
 import { useState } from "react";
 import { Icon } from "../Icon";
+import { useAppStore } from "../../store/AppStore";
+import type { AppSettings } from "../../data/settings";
 import type { UseSubtitleTracks } from "./useSubtitleTracks";
 import type { SubtitleSearchParams } from "../../services/subtitles/OpenSubtitlesClient";
+
+/** Caption text-color presets (white + the common high-legibility tints). */
+const SUBTITLE_COLORS = ["#ffffff", "#ffe066", "#9be7ff", "#9bffb0"];
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 const SEARCH_LANGUAGES = [
   { code: "en", label: "English" },
@@ -58,6 +65,10 @@ export function CaptionsMenu({
   const [query, setQuery] = useState(seedTitle);
   const [language, setLanguage] = useState("en");
   const [translateTo, setTranslateTo] = useState("English");
+
+  const { settings, updateSettings } = useAppStore();
+  const patchSub = (patch: Partial<AppSettings>) =>
+    updateSettings({ ...settings, ...patch });
 
   const activeTrack = subs.tracks.find((t) => t.id === subs.activeTrackId) ?? null;
 
@@ -138,6 +149,92 @@ export function CaptionsMenu({
           </div>
         </div>
       )}
+
+      {/* Subtitle appearance (font size / color / background — persisted) */}
+      <div className="captions-section captions-appearance">
+        <span className="t-secondary">Appearance</span>
+        <div className="captions-appearance-row">
+          <span className="captions-appearance-label">Size</span>
+          <div className="captions-delay-controls">
+            <button
+              type="button"
+              className="chip"
+              onClick={() =>
+                patchSub({
+                  subtitleFontScale: Math.max(0.7, round2(settings.subtitleFontScale - 0.1)),
+                })
+              }
+              aria-label="Smaller subtitles"
+            >
+              A−
+            </button>
+            <span className="captions-delay-value">
+              {Math.round(settings.subtitleFontScale * 100)}%
+            </span>
+            <button
+              type="button"
+              className="chip"
+              onClick={() =>
+                patchSub({
+                  subtitleFontScale: Math.min(1.8, round2(settings.subtitleFontScale + 0.1)),
+                })
+              }
+              aria-label="Larger subtitles"
+            >
+              A+
+            </button>
+          </div>
+        </div>
+        <div className="captions-appearance-row">
+          <span className="captions-appearance-label">Color</span>
+          <div className="captions-color-swatches">
+            {SUBTITLE_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`captions-swatch${
+                  settings.subtitleTextColor === c ? " is-active" : ""
+                }`}
+                style={{ background: c }}
+                onClick={() => patchSub({ subtitleTextColor: c })}
+                aria-label={`Subtitle color ${c}`}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="captions-appearance-row">
+          <span className="captions-appearance-label">Background</span>
+          <div className="captions-delay-controls">
+            <button
+              type="button"
+              className="chip"
+              onClick={() =>
+                patchSub({
+                  subtitleBgOpacity: Math.max(0, round2(settings.subtitleBgOpacity - 0.15)),
+                })
+              }
+              aria-label="Less subtitle background"
+            >
+              −
+            </button>
+            <span className="captions-delay-value">
+              {Math.round(settings.subtitleBgOpacity * 100)}%
+            </span>
+            <button
+              type="button"
+              className="chip"
+              onClick={() =>
+                patchSub({
+                  subtitleBgOpacity: Math.min(0.95, round2(settings.subtitleBgOpacity + 0.15)),
+                })
+              }
+              aria-label="More subtitle background"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* AI translation (gated on a configured provider) */}
       {subs.canTranslate && activeTrack != null && (

@@ -13,11 +13,15 @@ import type {
   AIUsageMetrics,
 } from "./models";
 import {
+  type AIAnalyzeTitleInput,
   AIAssistantJSONParser,
   AIAssistantProviderError,
+  type AIProviderAnalysisResult,
   AIUsageCostEstimator,
   type AIAssistantProvider,
   type FetchImpl,
+  parsePersonalizedAnalysis,
+  personalizedAnalysisPrompt,
   resolveFetch,
   sumTokens,
 } from "./types";
@@ -136,6 +140,68 @@ export class AnthropicProvider implements AIAssistantProvider {
       recommendations,
       rawText: text,
       usage,
+    };
+  }
+
+  async analyzeTitle(
+    input: AIAnalyzeTitleInput,
+  ): Promise<AIProviderAnalysisResult> {
+    const trimmedKey = this.apiKey.trim();
+    if (trimmedKey.length === 0) {
+      throw AIAssistantProviderError.missingAPIKey();
+    }
+
+    const prompt = personalizedAnalysisPrompt(input);
+
+    const payload: AnthropicRequestBody = {
+      model: this.model,
+      max_tokens: 700,
+      messages: [{ role: "user", content: prompt }],
+    };
+
+    const response = await this.fetchImpl(ANTHROPIC_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": trimmedKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!(response.status >= 200 && response.status <= 299)) {
+      const errorText = (await response.text().catch(() => "")) || "Anthropic error";
+      throw AIAssistantProviderError.apiError(errorText);
+    }
+
+    const decoded = JSON.parse(await response.text()) as RawAnthropicResponse;
+    const text = decoded.content.find((part) => part.type === "text")?.text;
+    if (text == null) {
+      throw AIAssistantProviderError.invalidResponse();
+    }
+
+    const analysis = parsePersonalizedAnalysis(text);
+
+    const resolvedModel = decoded.model ?? this.model;
+    const inputTokens = decoded.usage?.input_tokens ?? null;
+    const outputTokens = decoded.usage?.output_tokens ?? null;
+    const totalTokens = sumTokens(inputTokens, outputTokens);
+
+    return {
+      model: resolvedModel,
+      analysis,
+      rawText: text,
+      usage: {
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        estimatedCostUSD: AIUsageCostEstimator.estimateUSD(
+          resolvedModel,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+        ),
+      },
     };
   }
 }

@@ -11,6 +11,7 @@ import { useAppStore } from "../store/AppStore";
 import type { MediaPreview, MediaType } from "../models/media";
 import { loadDiscoverFixtures } from "../data/fixtures";
 import { MediaGrid } from "../components/MediaGrid";
+import { GenreCatalogGrid } from "../components/GenreCatalogGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { searchServerMedia } from "../lib/serverApi";
@@ -169,7 +170,14 @@ export function Search() {
 
       {results == null ? (
         <section className="search-idle">
-          <h2 className="search-section-title">Trending now</h2>
+          <h2 className="search-section-title">Browse categories</h2>
+          <GenreCatalogGrid
+            type={filter === "series" ? "series" : "movie"}
+            onOpen={openBrowse}
+          />
+          <h2 className="search-section-title search-section-title-spaced">
+            Trending now
+          </h2>
           <MediaGrid items={starters} onSelect={openDetail} />
         </section>
       ) : (

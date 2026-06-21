@@ -42,5 +42,10 @@ export function useTheme(settings: AppSettings): void {
     root.style.setProperty("--glass-blur-rest", `${Math.max(4, blur - 4)}px`);
     root.style.setProperty("--glass-blur-raised", `${blur}px`);
     root.style.setProperty("--glass-blur-hero", `${Math.min(36, blur + 10)}px`);
+
+    // Subtitle appearance (consumed by the player's ::cue rules).
+    root.style.setProperty("--sub-font-scale", String(settings.subtitleFontScale));
+    root.style.setProperty("--sub-color", settings.subtitleTextColor);
+    root.style.setProperty("--sub-bg", String(settings.subtitleBgOpacity));
   }, [settings]);
 }

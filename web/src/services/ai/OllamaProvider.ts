@@ -12,10 +12,14 @@ import type {
   AIProviderRecommendationResult,
 } from "./models";
 import {
+  type AIAnalyzeTitleInput,
   AIAssistantJSONParser,
   AIAssistantProviderError,
+  type AIProviderAnalysisResult,
   type AIAssistantProvider,
   type FetchImpl,
+  parsePersonalizedAnalysis,
+  personalizedAnalysisPrompt,
   resolveFetch,
 } from "./types";
 
@@ -90,6 +94,53 @@ export class OllamaProvider implements AIAssistantProvider {
     return {
       model: this.model,
       recommendations,
+      rawText: content,
+      usage: {
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        estimatedCostUSD: 0,
+      },
+    };
+  }
+
+  async analyzeTitle(
+    input: AIAnalyzeTitleInput,
+  ): Promise<AIProviderAnalysisResult> {
+    const prompt = personalizedAnalysisPrompt(input);
+
+    const payload: OllamaRequestBody = {
+      model: this.model,
+      messages: [{ role: "user", content: prompt }],
+      stream: false,
+    };
+
+    const response = await this.fetchImpl(this.endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!(response.status >= 200 && response.status <= 299)) {
+      const errorText = (await response.text().catch(() => "")) || "Ollama error";
+      throw AIAssistantProviderError.apiError(errorText);
+    }
+
+    const decoded = JSON.parse(await response.text()) as RawOllamaResponse;
+    const content = decoded.message?.content;
+    if (content == null) {
+      throw AIAssistantProviderError.invalidResponse();
+    }
+
+    const analysis = parsePersonalizedAnalysis(content);
+    // Ollama returns no token usage — fill from the local heuristic counter
+    // (estimatedCostUSD is always 0 for a local model). Mirrors recommend().
+    const inputTokens = AIAssistantJSONParser.estimatedTokenCount(prompt);
+    const outputTokens = AIAssistantJSONParser.estimatedTokenCount(content);
+
+    return {
+      model: this.model,
+      analysis,
       rawText: content,
       usage: {
         inputTokens,

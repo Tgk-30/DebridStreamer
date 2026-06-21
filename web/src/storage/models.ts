@@ -315,6 +315,29 @@ export interface CachedResolutionRecord {
   infoHash: string;
 }
 
+// MARK: - AI usage (local-only cost/token ledger)
+
+/** A single AI call's token + cost usage, persisted locally so the app can show
+ * a running estimate of what AI features cost. Written on each `analyzeTitle`
+ * call (and a natural home for future AI calls). Local-only this phase — Server
+ * Mode no-ops the write (it owns its own usage accounting server-side). */
+export interface AIUsageRecord {
+  /** Primary key — a unique id per call. */
+  id: string;
+  /** The AI provider kind ("openai" | "anthropic" | "ollama"). */
+  provider: string;
+  /** The resolved model id, or null when the provider didn't report one. */
+  model: string | null;
+  /** What the call was for (e.g. "analyze" | "recommend"). */
+  feature: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  estimatedCostUSD: number | null;
+  /** ISO-8601 timestamp of the call. Indexed for recency ordering. */
+  createdAt: string;
+}
+
 // MARK: - Settings / secrets key-value
 
 /** A plain key-value app setting. Mirrors the `app_settings` table. */

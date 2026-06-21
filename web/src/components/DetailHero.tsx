@@ -10,6 +10,10 @@ import type { MediaItem } from "../models/media";
 import { Icon } from "./Icon";
 import "./DetailHero.css";
 
+/** The user's current like/dislike taste signal for this title (drives the
+ *  thumbs control's active state). */
+export type TasteSignal = "liked" | "disliked" | null;
+
 interface DetailHeroProps {
   item: MediaItem;
   inWatchlist: boolean;
@@ -22,6 +26,10 @@ interface DetailHeroProps {
   /** Drives the Request button label/disabled state: idle → "Request",
    *  requesting → busy, requested → "Requested", already → "Already requested". */
   requestState?: "idle" | "requesting" | "requested" | "already";
+  /** Current like/dislike signal for this title (null = no signal yet). */
+  tasteSignal?: TasteSignal;
+  /** Record (or toggle off) a like/dislike taste signal for this title. */
+  onTasteSignal?: (signal: "liked" | "disliked") => void;
 }
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -34,6 +42,8 @@ export function DetailHero({
   onClose,
   onRequest,
   requestState = "idle",
+  tasteSignal = null,
+  onTasteSignal,
 }: DetailHeroProps) {
   const backdrop = MediaItemNS.backdropURL(item);
   const poster = MediaItemNS.posterThumbnailURL(item);
@@ -165,6 +175,39 @@ export function DetailHero({
                       ? "Already requested"
                       : "Request"}
               </button>
+            )}
+
+            {onTasteSignal && (
+              <div
+                className="detail-taste"
+                role="group"
+                aria-label="Rate this title for your taste profile"
+              >
+                <button
+                  type="button"
+                  className={`detail-taste-btn${tasteSignal === "liked" ? " is-liked" : ""}`}
+                  onClick={() => onTasteSignal("liked")}
+                  aria-pressed={tasteSignal === "liked"}
+                  aria-label="I like this"
+                  title="I like this"
+                >
+                  <Icon name="thumbs-up" size={16} filled={tasteSignal === "liked"} />
+                </button>
+                <button
+                  type="button"
+                  className={`detail-taste-btn${tasteSignal === "disliked" ? " is-disliked" : ""}`}
+                  onClick={() => onTasteSignal("disliked")}
+                  aria-pressed={tasteSignal === "disliked"}
+                  aria-label="Not for me"
+                  title="Not for me"
+                >
+                  <Icon
+                    name="thumbs-down"
+                    size={16}
+                    filled={tasteSignal === "disliked"}
+                  />
+                </button>
+              </div>
             )}
           </div>
         </div>

@@ -15,7 +15,8 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { useDetail } from "../data/detail";
 import { useStreams } from "../data/streams";
-import { DetailHero } from "../components/DetailHero";
+import { DetailHero, type TasteSignal } from "../components/DetailHero";
+import { DetailAnalysis } from "../components/DetailAnalysis";
 import { StreamPicker } from "../components/StreamPicker";
 import { CastRail } from "../components/CastRail";
 import { Rail } from "../components/Rail";
@@ -27,6 +28,9 @@ import type { StreamRow } from "../data/streams";
 import { createRequest, resolveServerStream } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 import { useTranscodeAvailable } from "../lib/ServerSessionContext";
+import { getStore } from "../storage";
+import type { TasteEventType } from "../storage/models";
+import { rebuildTasteContext } from "../services/ai/TasteProfile";
 import "./Detail.css";
 
 // The VideoPlayer pulls in hls.js (large) and only mounts once the user starts
@@ -99,9 +103,49 @@ export function Detail() {
     "idle" | "requesting" | "requested" | "already"
   >("idle");
 
+  // The user's current like/dislike taste signal for this title, read from the
+  // newest taste event for it. Drives the DetailHero thumbs control's active
+  // state and toggles off when the same thumb is tapped again.
+  const [tasteSignal, setTasteSignal] = useState<TasteSignal>(null);
+
   const detailId = detailItem?.id ?? null;
   useEffect(() => {
     setRequestState("idle");
+  }, [detailId]);
+
+  useEffect(() => {
+    if (detailId == null) {
+      setTasteSignal(null);
+      return;
+    }
+    let cancelled = false;
+    void getStore()
+      .recentTasteEvents(200)
+      .then((events) => {
+        if (cancelled) return;
+        // The newest of (liked | disliked | not_interested) wins: a later
+        // not_interested means the user toggled their thumb back off.
+        const latest = events.find(
+          (e) =>
+            e.mediaId === detailId &&
+            (e.eventType === "liked" ||
+              e.eventType === "disliked" ||
+              e.eventType === "not_interested"),
+        );
+        setTasteSignal(
+          latest?.eventType === "liked"
+            ? "liked"
+            : latest?.eventType === "disliked"
+              ? "disliked"
+              : null,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setTasteSignal(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [detailId]);
 
   if (detailItem == null) return null;
@@ -125,6 +169,41 @@ export function Detail() {
   /** Open the player, seeking to any saved resume position. */
   function openPlayer(url: string, title: string, external: boolean): void {
     setPlayer({ url, title, external, startPositionSeconds: resumeSecondsFor() });
+  }
+
+  /** Record (or toggle off) a like/dislike taste signal for the current title.
+   * The event carries the title + genre names in metadata so the taste-profile
+   * assembler can derive liked/disliked genres without a media-cache join. The
+   * 24h taste-context cache is rebuilt so the next analysis reflects the change.
+   *
+   * Tapping the active thumb again toggles it off — recorded as a
+   * "not_interested" event so a re-read of the newest signal clears the control
+   * (the taste-context assembler ignores not_interested, so it neutralizes the
+   * prior like/dislike). */
+  function recordTasteSignal(signal: "liked" | "disliked"): void {
+    if (detailItem == null) return;
+    const next: TasteSignal = tasteSignal === signal ? null : signal;
+    setTasteSignal(next);
+    const eventType: TasteEventType = next ?? "not_interested";
+    const genres = item?.genres ?? [];
+    const metadata: Record<string, string> = { title: detailItem.title };
+    if (genres.length > 0) metadata.genres = genres.join(", ");
+    const store = getStore();
+    void store
+      .addTasteEvent({
+        id: `taste-${detailItem.id}-${Date.now()}`,
+        userId: "default",
+        mediaId: detailItem.id,
+        episodeId: null,
+        eventType,
+        signalStrength: next === "liked" ? 1 : next === "disliked" ? -1 : 0,
+        metadata,
+        createdAt: new Date().toISOString(),
+      })
+      .then(() => rebuildTasteContext(store))
+      .catch(() => {
+        // best-effort; the in-memory toggle already reflects the user's intent.
+      });
   }
 
   /** Play an already-resolved StreamInfo directly (the instant-play path for a
@@ -230,6 +309,8 @@ export function Detail() {
           onToggleWatchlist={() => toggleWatchlist(detailItem)}
           onRequest={isServerMode() ? () => void requestTitle() : undefined}
           requestState={requestState}
+          tasteSignal={tasteSignal}
+          onTasteSignal={recordTasteSignal}
           onPlay={() => {
             // Instant play: if the auto-resolve job pre-cached a ready stream
             // for this title, play it immediately instead of re-walking the
@@ -248,6 +329,12 @@ export function Detail() {
             });
           }}
         />
+      )}
+
+      {/* AI "Would I Like This?" — only when a local AI provider is configured.
+          analyzeTitle is the local-Dexie path; Server-Mode parity is out of scope. */}
+      {item && services.ai?.analyzeTitle != null && (
+        <DetailAnalysis item={item} provider={services.ai} />
       )}
 
       <div

@@ -14,6 +14,7 @@
 import Dexie, { type Table } from "dexie";
 import type { MediaItem, MediaPreview } from "../models/media";
 import {
+  type AIUsageRecord,
   type CachedResolutionRecord,
   type DebridConfigRecord,
   type FolderKind,
@@ -72,6 +73,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   private tasteEvents!: Table<TasteEventRecord, string>;
   private mediaCache!: Table<MediaCacheRecord, string>;
   private cachedResolutions!: Table<CachedResolutionRecord, string>;
+  private aiUsage!: Table<AIUsageRecord, string>;
 
   constructor(name = "debridstreamer") {
     super(name);
@@ -98,6 +100,14 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     // every v1 store forward automatically; only the new store is declared.
     this.version(2).stores({
       cachedResolutions: "mediaId, resolvedAt",
+    });
+
+    // v3: adds the local AI usage ledger (one row per AI call, indexed by
+    // createdAt for recency ordering). Local-only — the "Would I Like This?"
+    // analysis writes a record here on each call so a running cost estimate can
+    // be shown. Dexie carries the prior stores forward; only the new one is here.
+    this.version(3).stores({
+      aiUsage: "id, createdAt",
     });
   }
 
@@ -435,6 +445,17 @@ export class DexieStore extends Dexie implements Store, SecretStore {
       .reverse()
       .limit(limit)
       .toArray();
+  }
+
+  // ---- AI usage (local-only token/cost ledger) ------------------------------
+
+  async addAIUsage(record: AIUsageRecord): Promise<void> {
+    await this.aiUsage.put(record);
+  }
+
+  async totalAIUsageCostUSD(): Promise<number> {
+    const rows = await this.aiUsage.toArray();
+    return rows.reduce((sum, r) => sum + (r.estimatedCostUSD ?? 0), 0);
   }
 
   // ---- Media cache ----------------------------------------------------------

@@ -12,6 +12,7 @@
 // contract from the Swift SecretStore protocol.
 
 import type {
+  AIUsageRecord,
   CachedResolutionRecord,
   DebridConfigRecord,
   IndexerConfigRecord,
@@ -126,6 +127,13 @@ export interface Store {
   addTasteEvent(event: TasteEventRecord): Promise<void>;
   /** Recent taste events, newest first. Mirrors `fetchTasteEvents`. */
   recentTasteEvents(limit?: number): Promise<TasteEventRecord[]>;
+
+  // MARK: AI usage (local-only token/cost ledger).
+
+  /** Append an AI usage record. Local-only; Server Mode no-ops. */
+  addAIUsage(record: AIUsageRecord): Promise<void>;
+  /** The running total estimated AI cost (USD) across all recorded calls. */
+  totalAIUsageCostUSD(): Promise<number>;
 
   // MARK: Media cache (optional) — mirrors media_cache.
 

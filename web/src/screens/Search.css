@@ -83,6 +83,9 @@
   font-size: 18px;
   font-weight: 700;
 }
+.search-section-title-spaced {
+  margin-top: var(--sp-lg, 16px);
+}
 
 .search-screen .media-card-reveal {
   opacity: 1 !important;
