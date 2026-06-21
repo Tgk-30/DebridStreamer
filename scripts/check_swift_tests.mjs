@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, lstatSync, mkdirSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, symlinkSync, cpSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,16 @@ const debugProducts = join(scratch, "out", "Products", "Debug");
 const packageFrameworks = join(debugProducts, "PackageFrameworks");
 const vlcFramework = join(debugProducts, "VLCKit.framework");
 const vlcFrameworkLink = join(packageFrameworks, "VLCKit.framework");
+// The vendored macOS slice of the VLCKit xcframework — used as a fallback when
+// SwiftPM doesn't copy the binary framework into Products/Debug (its placement
+// of binary targets varies by Xcode/SwiftPM version).
+const vendorVlcFramework = join(
+  root,
+  "Vendor",
+  "VLCKit.xcframework",
+  "macos-arm64_x86_64",
+  "VLCKit.framework",
+);
 
 const env = {
   ...process.env,
@@ -51,7 +61,17 @@ if (build.status !== 0) {
 }
 
 if (!existsSync(vlcFramework)) {
-  fail(`Built VLCKit.framework missing from ${vlcFramework}`);
+  // SwiftPM didn't place the binary framework in Products/Debug — fall back to
+  // the vendored xcframework slice so the test runtime can load VLCKit.
+  if (!existsSync(vendorVlcFramework)) {
+    fail(
+      `VLCKit.framework missing from ${vlcFramework} and no vendored copy at ` +
+        `${vendorVlcFramework} (is Git LFS materialized?)`,
+    );
+  }
+  mkdirSync(debugProducts, { recursive: true });
+  cpSync(vendorVlcFramework, vlcFramework, { recursive: true, verbatimSymlinks: true });
+  console.log(`Copied VLCKit.framework from the vendored xcframework into ${debugProducts}`);
 }
 mkdirSync(packageFrameworks, { recursive: true });
 if (!existsSync(vlcFrameworkLink)) {
