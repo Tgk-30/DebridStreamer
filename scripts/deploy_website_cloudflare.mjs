@@ -227,7 +227,14 @@ async function main() {
   runNode("scripts/check_website_path_mount.mjs");
   runNode("scripts/public_repo_preflight.mjs");
 
-  await cloudflare("/user/tokens/verify");
+  // /user/tokens/verify requires a "User → API Tokens → Read" scope that the
+  // deploy itself doesn't need, so don't gate on it — the account/zone/Pages/
+  // Workers calls below will fail clearly if the token lacks deploy permissions.
+  try {
+    await cloudflare("/user/tokens/verify");
+  } catch (error) {
+    console.warn(`Token self-verify skipped: ${String(error.message).split("\n")[0]}`);
+  }
   const accountId = await resolveAccountId();
   const zoneId = await resolveZoneId();
 
