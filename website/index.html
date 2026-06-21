@@ -5,20 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="DebridStreamer documentation, releases, self-hosting guides, and desktop downloads."
+      content="DebridStreamer is a self-hosted streaming app: discover with TMDB, get AI picks, and play instantly-cached streams from your own Real-Debrid, AllDebrid, Premiumize, or TorBox account on every screen."
     />
     <meta name="theme-color" content="#050505" />
-    <meta property="og:title" content="DebridStreamer Docs & Releases" />
+    <meta property="og:title" content="DebridStreamer — your private streaming app" />
     <meta
       property="og:description"
-      content="Install the desktop app, publish signed releases, run Server Mode, and onboard every screen from one focused documentation site."
+      content="Discover with TMDB, get AI recommendations, and play cached debrid streams in a built-in player. Self-hosted, with profiles for the whole house and apps for macOS, Windows, Linux, and mobile."
     />
     <meta property="og:image" content="https://tgk30.com/debridstreamer/media/discover-desktop.png" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <title>DebridStreamer Docs & Releases</title>
+    <title>DebridStreamer — your private streaming app</title>
     <link rel="icon" href="./icons/icon-128.png" />
-    <link rel="stylesheet" href="./styles.css?v=2026-06-20" />
+    <link rel="stylesheet" href="./styles.css?v=2026-06-21" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -42,10 +42,10 @@
           <span></span>
         </button>
         <nav id="primary-nav" aria-label="Primary">
-          <a href="#docs">Docs</a>
+          <a href="#features">Features</a>
           <a href="#download">Download</a>
           <a href="#self-host">Self-host</a>
-          <a href="#publishing">Publishing</a>
+          <a href="#pwa">Devices</a>
           <a href="https://github.com/Tgk-30/DebridStreamer">GitHub</a>
         </nav>
       </div>
@@ -54,18 +54,19 @@
     <main id="main">
       <section id="top" class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">App docs and release publishing</p>
-          <h1>DebridStreamer is the publishing hub for your private streaming stack.</h1>
+          <p class="eyebrow">Self-hosted debrid streaming</p>
+          <h1>Your private streaming app, on every screen.</h1>
           <p class="lede">
-            Install the desktop app, publish signed releases, run Server Mode,
-            and onboard phones, tablets, and shared profiles from one focused
-            documentation site.
+            Discover with TMDB, get AI recommendations, and play
+            instantly-cached streams from your own Real-Debrid, AllDebrid,
+            Premiumize, or TorBox account — in a built-in player you host
+            yourself, with profiles for the whole house.
           </p>
           <div class="hero-actions" aria-label="Primary actions">
             <a id="smart-download" class="primary-action" href="#download">
               View downloads
             </a>
-            <a class="secondary-action" href="#docs">Read setup docs</a>
+            <a class="secondary-action" href="#features">See what it does</a>
           </div>
           <div class="hero-platforms" aria-label="Platform downloads">
             <a data-download="mac" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">macOS</a>
@@ -74,7 +75,7 @@
             <a data-platform="pwa" href="#pwa">Phone and tablet PWA</a>
           </div>
           <p id="download-note" class="download-note">
-            Latest desktop and PWA paths are available on
+            Latest desktop and PWA builds are available on
             <a href="https://github.com/Tgk-30/DebridStreamer/releases/latest">GitHub Releases</a>.
           </p>
         </div>
@@ -96,7 +97,7 @@
                 height="848"
                 fetchpriority="high"
                 decoding="async"
-                alt="DebridStreamer Discover screen with hero content and mood discovery"
+                alt="DebridStreamer Discover screen with a featured hero title and a mood-based recommendation row"
               />
             </picture>
           </figure>
@@ -110,44 +111,45 @@
 
       </section>
 
-      <div class="proof-strip" aria-label="DebridStreamer publishing coverage">
-        <span><strong>Desktop</strong> macOS, Windows, and Linux builds</span>
-        <span><strong>Server Mode</strong> one private host for every screen</span>
-        <span><strong>PWA</strong> phone and tablet onboarding</span>
-        <span><strong>Updates</strong> signed releases and manifests</span>
+      <div class="proof-strip" aria-label="DebridStreamer at a glance">
+        <span><strong>Self-hosted</strong> Your server, your debrid keys, your data</span>
+        <span><strong>Cached-only</strong> Instant playback from debrid caches</span>
+        <span><strong>Profiles</strong> Kids limits and per-person history</span>
+        <span><strong>Everywhere</strong> Desktop apps plus a mobile PWA</span>
       </div>
 
-      <section id="docs" class="section docs-section">
+      <section id="features" class="section docs-section">
         <div class="section-head">
-          <p class="eyebrow">Documentation</p>
-          <h2>Start with the path you are publishing.</h2>
+          <p class="eyebrow">Features</p>
+          <h2>Everything a streaming setup should have.</h2>
           <p>
-            Desktop app, private server, mobile PWA, and release operations
-            each have a clear route from this single front door.
+            Discovery, recommendations, debrid playback, and cross-device
+            sync — all in one app you run yourself, with no monthly bill
+            beyond the debrid account you already have.
           </p>
         </div>
 
         <div class="docs-grid">
-          <a class="doc-card is-featured" href="#download">
-            <span>01</span>
-            <strong>Install the app</strong>
-            <p>Choose macOS, Windows, Linux, or the PWA path for phones and tablets.</p>
-          </a>
-          <a class="doc-card" href="#self-host">
-            <span>02</span>
-            <strong>Run Server Mode</strong>
-            <p>Deploy with Docker Compose or start the desktop-hosted server.</p>
-          </a>
-          <a class="doc-card" href="#pwa">
-            <span>03</span>
-            <strong>Connect devices</strong>
-            <p>Use QR setup, home-screen installs, profiles, and shared credentials.</p>
-          </a>
-          <a class="doc-card" href="#publishing">
-            <span>04</span>
-            <strong>Publish releases</strong>
-            <p>Prepare signed assets, latest manifests, and platform installers.</p>
-          </a>
+          <article class="doc-card is-featured">
+            <span>Discover</span>
+            <strong>Browse and search with TMDB</strong>
+            <p>Trending rows, full-screen detail pages, and a release calendar — backed by The Movie Database so artwork and metadata always look right.</p>
+          </article>
+          <article class="doc-card">
+            <span>Assistant</span>
+            <strong>AI picks on demand</strong>
+            <p>Describe a mood and the built-in Assistant suggests something to watch. Bring your own Anthropic, OpenAI, or local Ollama key.</p>
+          </article>
+          <article class="doc-card">
+            <span>Playback</span>
+            <strong>Cached-only debrid streams</strong>
+            <p>Checks Real-Debrid, AllDebrid, Premiumize, and TorBox plus indexers, then plays already-cached streams in a built-in player — no waiting on downloads.</p>
+          </article>
+          <article class="doc-card">
+            <span>Continue</span>
+            <strong>Watchlist, history, and resume</strong>
+            <p>Save titles, track what you have watched, and pick up exactly where you left off on the next device you open.</p>
+          </article>
         </div>
       </section>
 
@@ -155,7 +157,7 @@
         <div class="section-head row-head">
           <div>
             <p class="eyebrow">Download</p>
-            <h2>Ship the right build to the right device.</h2>
+            <h2>Install the desktop app.</h2>
           </div>
           <a class="text-link" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
             Open releases
@@ -165,7 +167,7 @@
         <div class="download-grid">
           <article class="download-card">
             <h3>macOS</h3>
-            <p>Recommended for most Mac users. Includes the desktop shell and signed updater.</p>
+            <p>Universal build for Apple silicon and Intel Macs, signed and notarized with a built-in updater.</p>
             <a data-download="mac" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
               Download for macOS
             </a>
@@ -181,7 +183,7 @@
           </article>
           <article class="download-card">
             <h3>Linux</h3>
-            <p>Use AppImage, deb, or rpm packages from the latest release.</p>
+            <p>AppImage, deb, or rpm packages from the latest release.</p>
             <a data-download="linux" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
               Download for Linux
             </a>
@@ -189,8 +191,8 @@
           </article>
           <article class="download-card">
             <h3>iPhone, iPad, Android</h3>
-            <p>Connect to your self-hosted server, then add it to the home screen.</p>
-            <a href="#pwa">Install PWA</a>
+            <p>Connect to your self-hosted server, then add it to the home screen as an app.</p>
+            <a href="#pwa">Install the PWA</a>
             <span class="download-meta">Browser install from your server</span>
           </article>
         </div>
@@ -216,14 +218,15 @@
           <p class="eyebrow">Self-host</p>
           <h2>Run one private server for every screen.</h2>
           <p>
-            Use an always-on desktop, NAS, VPS, Raspberry Pi, or private home
-            server. Server Mode owns profile isolation, encrypted credentials,
-            stream sessions, bandwidth visibility, and the provider-facing IP.
+            Host it on an always-on desktop, NAS, VPS, Raspberry Pi, or home
+            server. The server owns logins, profile isolation, encrypted
+            credentials, stream sessions, bandwidth visibility, and the
+            provider-facing IP — so your debrid keys never leave your network.
           </p>
           <p>
-            The desktop app can start Server Mode from Settings, then expose a
-            hosted PWA for phones, tablets, and other computers with a copyable
-            setup URL and QR code.
+            The desktop app can start the server straight from Settings, then
+            hand phones, tablets, and other computers a hosted PWA with a
+            copyable setup URL and QR code.
           </p>
         </div>
         <div class="code-card">
@@ -240,35 +243,35 @@ docker compose up -d --build</code></pre>
         </div>
       </section>
 
-      <section id="hosting-model" class="section hosting-model">
+      <section id="household" class="section hosting-model">
         <div class="section-head">
-          <p class="eyebrow">Hosting model</p>
-          <h2>Lightweight by default, heavier only when you choose it.</h2>
+          <p class="eyebrow">For the household</p>
+          <h2>One server, a profile for everyone.</h2>
           <p>
-            The public site can stay mostly static. Your private server handles
-            account setup, cached metadata, and provider handoffs while users
-            bring their own debrid keys.
+            Invite the people you live with, keep their history separate, and
+            give kids a safer corner of the catalog — all from the same
+            self-hosted server.
           </p>
         </div>
         <div class="hosting-grid">
           <article>
-            <strong>Static publishing</strong>
-            <p>Docs, release pages, and platform downloads can sit behind ordinary static hosting or GitHub Pages.</p>
+            <strong>Personal profiles</strong>
+            <p>Each profile gets its own watchlist, history, resume points, and optional debrid credential overrides on top of the shared account.</p>
           </article>
           <article>
-            <strong>Cached metadata</strong>
-            <p>TMDB is hit for searches, cache misses, and stale refreshes; normal browsing reuses local metadata.</p>
+            <strong>Kids and maturity limits</strong>
+            <p>Mark a profile as a kid profile to cap maturity, hide anything above the rating, and require the parental lock to switch back out.</p>
           </article>
           <article>
-            <strong>BYOK provider traffic</strong>
-            <p>Debrid and subtitle provider access stays tied to each user's own credentials instead of a shared hosted bill.</p>
+            <strong>Title requests</strong>
+            <p>Anyone on a restricted profile can request a title; admins review requests alongside server health, sessions, and bandwidth.</p>
           </article>
         </div>
       </section>
 
       <section id="pwa" class="section">
         <div class="section-head">
-          <p class="eyebrow">Phones & tablets</p>
+          <p class="eyebrow">Phones &amp; tablets</p>
           <h2>Install your server as an app.</h2>
         </div>
         <div class="steps">
@@ -278,32 +281,11 @@ docker compose up -d --build</code></pre>
           </article>
           <article>
             <strong>Android</strong>
-            <p>Open your server URL in Chrome or Edge and use Install app from the browser menu.</p>
+            <p>Open your server URL in Chrome or Edge and choose Install app from the browser menu.</p>
           </article>
           <article>
             <strong>Desktop browser</strong>
-            <p>Use the downloadable app, or connect to your own Server Mode URL.</p>
-          </article>
-        </div>
-      </section>
-
-      <section id="publishing" class="section publishing-section">
-        <div class="section-head">
-          <p class="eyebrow">Publishing</p>
-          <h2>Release operations without hunting through the repo.</h2>
-        </div>
-        <div class="publish-grid">
-          <article>
-            <span>Readiness</span>
-            <p>Run release checks, confirm platform assets, and publish draft releases intentionally.</p>
-          </article>
-          <article>
-            <span>Signed updates</span>
-            <p>The desktop app checks GitHub Releases for a signed latest manifest.</p>
-          </article>
-          <article>
-            <span>Hosting docs</span>
-            <p>Keep Docker, Server Mode, PWA, and credential setup paths close to downloads.</p>
+            <p>Use the downloadable desktop app, or just connect any browser to your own server URL.</p>
           </article>
         </div>
       </section>
@@ -311,30 +293,30 @@ docker compose up -d --build</code></pre>
       <section id="updates" class="section split">
         <div>
           <p class="eyebrow">Updates</p>
-          <h2>Signed OTA updates for the pre-bundled app.</h2>
+          <h2>Signed updates, installed in place.</h2>
           <p>
             The desktop app checks GitHub Releases for a signed
-            <code>latest.json</code>. When a new version is available, the
-            in-app updater can download, install, and relaunch into the new
-            build. Auto-checks can be controlled from Settings.
+            <code>latest.json</code>. When a new version ships, the in-app
+            updater can download, install, and relaunch into it — and
+            auto-checks can be turned off from Settings.
           </p>
         </div>
         <div class="status-list">
           <span>Signed update manifest</span>
-          <span>macOS notarization ready</span>
-          <span>Windows and Linux release assets</span>
-          <span>Draft releases before publishing</span>
+          <span>macOS notarized builds</span>
+          <span>Windows and Linux installers</span>
+          <span>Update on your schedule</span>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
-      <span>Open-source project in progress.</span>
+      <span>Open-source project, MIT licensed.</span>
       <a href="https://github.com/Tgk-30/DebridStreamer/releases/latest">Latest release</a>
       <a href="https://github.com/Tgk-30/DebridStreamer">Source</a>
       <a href="https://github.com/Tgk-30/DebridStreamer/issues">Issues</a>
     </footer>
 
-    <script src="./app.js?v=2026-06-20" type="module"></script>
+    <script src="./app.js?v=2026-06-21" type="module"></script>
   </body>
 </html>

@@ -1,25 +1,34 @@
 :root {
   color-scheme: dark;
+  /* Deepest base; kept pitch black so the aurora glow reads against it. */
   --site-bg: #050505;
-  --site-surface: #0a0a0a;
-  --site-surface-2: #101010;
-  --site-panel: rgba(255, 255, 255, 0.035);
-  --site-panel-strong: rgba(255, 255, 255, 0.06);
-  --site-border: rgba(255, 255, 255, 0.085);
-  --site-border-strong: rgba(255, 255, 255, 0.14);
-  --site-text: rgba(255, 255, 255, 0.96);
-  --site-muted: rgba(255, 255, 255, 0.68);
-  --site-faint: rgba(255, 255, 255, 0.44);
+  /* App background aurora stops (AppTheme.background, dark). */
+  --site-navy: #0d0f1a;
+  --site-navy-2: #171829;
+  --site-surface: rgba(20, 22, 38, 0.62);
+  --site-surface-2: rgba(15, 17, 31, 0.72);
+  --site-panel: rgba(255, 255, 255, 0.05);
+  --site-panel-strong: rgba(255, 255, 255, 0.08);
+  --site-border: rgba(255, 255, 255, 0.1);
+  --site-border-strong: rgba(255, 255, 255, 0.16);
+  /* Frosted-glass surface treatment, matching the app's GlassElevation. */
+  --site-glass-border: rgba(255, 255, 255, 0.14);
+  --site-glass-highlight: rgba(255, 255, 255, 0.22);
+  --site-text: rgba(255, 255, 255, 0.94);
+  --site-muted: rgba(255, 255, 255, 0.72);
+  --site-faint: rgba(255, 255, 255, 0.5);
   --site-accent: #8c85fa;
   --site-accent-2: #5cbdfa;
-  --site-green: #62d98c;
-  --site-radius: 8px;
-  --site-radius-sm: 8px;
+  --site-accent-3: #fa75bd;
+  --site-green: #5cd98c;
+  --site-radius: 16px;
+  --site-radius-sm: 11px;
+  --site-radius-pill: 999px;
   --site-max: 1160px;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
-  background: var(--site-bg);
+  background: var(--site-navy);
   color: var(--site-text);
 }
 
@@ -34,23 +43,24 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  /* Deep navy gradient with the pitch-black base showing through at the foot. */
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 260px),
-    var(--site-bg);
+    linear-gradient(180deg, var(--site-navy-2), var(--site-navy) 46%, var(--site-bg) 100%);
 }
 
+/* Restrained aurora glow — purple, sky-blue, and pink, matching AppTheme. */
 body::before {
   content: "";
   position: fixed;
-  inset: 0;
+  inset: -10% -10% 0;
   z-index: -1;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.026) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-position: center top;
-  background-size: 72px 72px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 640px);
+    radial-gradient(46% 38% at 16% 4%, rgba(140, 133, 250, 0.28), transparent 60%),
+    radial-gradient(40% 34% at 88% 0%, rgba(92, 189, 250, 0.22), transparent 58%),
+    radial-gradient(52% 40% at 70% 30%, rgba(250, 117, 189, 0.12), transparent 62%);
+  filter: blur(8px);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 1), rgba(0, 0, 0, 0.4) 620px, transparent 1100px);
 }
 
 a {
@@ -97,10 +107,10 @@ pre {
   top: 0;
   z-index: 20;
   border-bottom: 1px solid var(--site-border);
-  background: rgba(5, 5, 5, 0.94);
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(20px) saturate(1.15);
-  -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  background: rgba(13, 15, 26, 0.72);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(26px) saturate(1.4);
+  -webkit-backdrop-filter: blur(26px) saturate(1.4);
 }
 
 .header-inner {
@@ -352,18 +362,34 @@ h3 {
   white-space: nowrap;
 }
 
-.primary-action,
-.download-card a {
-  background: #fff;
-  color: #050505;
+.primary-action {
+  background: linear-gradient(135deg, var(--site-accent), var(--site-accent-2));
+  color: #0b0d18;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 18px 46px rgba(255, 255, 255, 0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 18px 46px rgba(140, 133, 250, 0.34);
 }
 
-.primary-action:hover,
+.primary-action:hover {
+  filter: brightness(1.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    0 22px 56px rgba(140, 133, 250, 0.42);
+}
+
+.download-card a {
+  border: 1px solid rgba(140, 133, 250, 0.5);
+  background:
+    linear-gradient(135deg, rgba(140, 133, 250, 0.22), rgba(92, 189, 250, 0.12)),
+    rgba(255, 255, 255, 0.03);
+  color: #fff;
+}
+
 .download-card a:hover {
-  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(140, 133, 250, 0.8);
+  background:
+    linear-gradient(135deg, rgba(140, 133, 250, 0.32), rgba(92, 189, 250, 0.18)),
+    rgba(255, 255, 255, 0.05);
 }
 
 .secondary-action {
@@ -435,12 +461,13 @@ h3 {
 .app-window {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.105);
-  border-radius: 8px;
-  background: #080808;
+  border: 1px solid var(--site-glass-border);
+  border-radius: 16px;
+  background: var(--site-navy);
   box-shadow:
-    0 34px 92px rgba(0, 0, 0, 0.68),
-    0 0 44px rgba(92, 189, 250, 0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 34px 92px rgba(5, 6, 14, 0.7),
+    0 0 60px rgba(140, 133, 250, 0.14);
 }
 
 .app-window-main {
@@ -459,7 +486,7 @@ h3 {
   left: 0;
   height: 72px;
   pointer-events: none;
-  background: linear-gradient(180deg, transparent, rgba(8, 8, 8, 0.92));
+  background: linear-gradient(180deg, transparent, rgba(13, 15, 26, 0.92));
 }
 
 .app-window-main img {
@@ -542,12 +569,15 @@ h3 {
   min-width: 0;
   flex-direction: column;
   justify-content: center;
-  border: 1px solid var(--site-border);
+  border: 1px solid var(--site-glass-border);
   border-radius: var(--site-radius);
   padding: 16px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.046), rgba(255, 255, 255, 0.022)),
-    #080808;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    var(--site-surface-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(20px) saturate(1.25);
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
   color: var(--site-muted);
   font-size: 13px;
   line-height: 1.45;
@@ -616,12 +646,17 @@ h3 {
 .publish-grid article,
 .hosting-grid article,
 .status-list {
-  border: 1px solid var(--site-border);
+  border: 1px solid var(--site-glass-border);
   border-radius: var(--site-radius);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.026)),
+    linear-gradient(180deg, var(--site-glass-highlight), transparent 64px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.018)),
     var(--site-surface);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 70px rgba(5, 6, 14, 0.5);
+  backdrop-filter: blur(28px) saturate(1.3);
+  -webkit-backdrop-filter: blur(28px) saturate(1.3);
 }
 
 .doc-card,
@@ -968,7 +1003,7 @@ pre code {
 
   .menu-ready .site-header {
     position: sticky;
-    background: rgba(5, 5, 5, 0.985);
+    background: rgba(13, 15, 26, 0.985);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -1014,7 +1049,7 @@ pre code {
     border-radius: 0;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
-      rgba(5, 5, 5, 0.985);
+      rgba(13, 15, 26, 0.985);
     box-shadow: 0 22px 64px rgba(0, 0, 0, 0.72);
     backdrop-filter: blur(18px) saturate(1.05);
     -webkit-backdrop-filter: blur(18px) saturate(1.05);
@@ -1069,7 +1104,7 @@ pre code {
 
   .hero-actions {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 8px;
     margin-top: 18px;
   }
