@@ -91,6 +91,8 @@ export interface DesktopServerStatus {
   urls: string[];
   lan_urls: string[];
   share_url: string | null;
+  setup_url: string | null;
+  setup_token: string | null;
   port: number;
   detail: string;
   server_entry: string | null;

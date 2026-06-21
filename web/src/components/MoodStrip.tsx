@@ -57,7 +57,7 @@ export function MoodStrip({
         <Icon name="wand-search" size={16} className="t-secondary" />
         <input
           type="text"
-          placeholder="e.g. cozy fall mysteries"
+          placeholder="e.g. rainy noir movies"
           value={vibe}
           onChange={(e) => setVibe(e.target.value)}
           onKeyDown={(e) => {

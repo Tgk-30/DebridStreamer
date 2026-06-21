@@ -1389,34 +1389,50 @@
 @media (max-width: 560px) {
   .settings-screen {
     position: relative;
-    gap: var(--sp-sm);
-    padding: var(--sp-lg);
-    padding-top: var(--sp-lg);
-    padding-bottom: var(--sp-xxl);
+    gap: 10px;
+    padding: var(--sp-md);
+    padding-top: var(--sp-md);
+    padding-bottom: calc(var(--mobile-nav-reserve) + 42px);
     width: 100%;
   }
 
   .settings-header {
     align-items: flex-start;
-    gap: var(--sp-sm);
+    gap: 9px;
+  }
+
+  .settings-hero {
+    padding: 12px;
   }
 
   .settings-title-block {
     align-items: flex-start;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
+  }
+
+  .settings-kicker {
+    min-height: 24px;
+    padding-inline: 8px;
+    font-size: 10.5px;
   }
 
   .settings-h1 {
-    font-size: 30px;
+    font-size: 28px;
   }
 
   .settings-subtitle {
     font-size: 13px;
+    line-height: 1.35;
+  }
+
+  .settings-insight-grid {
+    gap: 7px;
   }
 
   .settings-insight {
-    min-height: 64px;
+    min-height: 54px;
+    padding: 8px;
   }
 
   .settings-panel {
@@ -1445,8 +1461,7 @@
   }
 
   .settings-footer.is-clean {
-    align-items: flex-end;
-    padding: 0;
+    display: none;
   }
 
   .settings-footer .btn {
@@ -1460,7 +1475,7 @@
 
   .settings-footer.is-clean .btn {
     width: auto;
-    min-height: 38px;
+    min-height: 44px;
     padding: 0 15px;
     box-shadow: none;
   }
@@ -1473,10 +1488,6 @@
     display: none;
     flex: 0 1 auto;
     text-align: left;
-  }
-
-  .settings-insight {
-    min-height: 58px;
   }
 
   .appearance-profile-head {
@@ -1662,18 +1673,27 @@
 }
 
 @media (max-width: 380px) {
+  .settings-subtitle,
+  .settings-experience-hint {
+    display: none;
+  }
+
   .settings-insight-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
 
   .settings-insight {
-    min-height: 60px;
+    min-height: 50px;
     padding: 7px;
   }
 
+  .settings-insight span {
+    font-size: 10px;
+  }
+
   .settings-insight strong {
-    font-size: 12px;
+    font-size: 11.5px;
   }
 
   .settings-control-grid {
@@ -1709,6 +1729,17 @@
   .accent-swatch span {
     width: 14px;
     height: 14px;
+  }
+}
+
+@media (max-width: 560px) {
+  .settings-experience {
+    margin-bottom: 10px;
+  }
+
+  .settings-experience-hint {
+    margin-top: 5px;
+    line-height: 1.35;
   }
 }
 

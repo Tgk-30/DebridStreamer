@@ -22,6 +22,8 @@
 
 .first-run-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   width: min(640px, 100%);
   padding: clamp(var(--sp-xl), 4vw, 44px);
   border-radius: var(--r-lg);
@@ -32,15 +34,16 @@
 }
 
 .first-run-skip {
-  position: absolute;
-  top: var(--sp-lg);
-  right: var(--sp-lg);
+  position: static;
+  align-self: flex-end;
+  min-height: 44px;
+  margin: calc(-1 * var(--sp-sm)) calc(-1 * var(--sp-sm)) var(--sp-sm) 0;
   border: none;
   background: none;
   color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
-  padding: 4px 6px;
+  padding: 8px 10px;
   border-radius: var(--r-sm);
 }
 .first-run-skip:hover {
@@ -69,6 +72,56 @@
 }
 @media (max-width: 560px) {
   .first-run-choices { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 420px) {
+  .first-run {
+    align-items: start;
+    padding: max(var(--sp-xl), env(safe-area-inset-top)) var(--sp-lg)
+      max(var(--sp-xl), env(safe-area-inset-bottom));
+  }
+
+  .first-run-card {
+    padding: var(--sp-xl);
+  }
+
+  .first-run-skip {
+    margin: calc(-1 * var(--sp-sm)) calc(-1 * var(--sp-xs)) var(--sp-sm) 0;
+  }
+}
+
+@media (max-width: 340px) {
+  .first-run {
+    padding: var(--sp-lg);
+  }
+
+  .first-run-card {
+    padding: 20px;
+  }
+
+  .first-run-sub {
+    margin-bottom: var(--sp-md);
+    font-size: 13px;
+    line-height: 1.42;
+  }
+
+  .first-run-choices {
+    gap: 10px;
+  }
+
+  .first-run-choice {
+    gap: 5px;
+    padding: 12px 14px;
+  }
+
+  .first-run-choice-title {
+    font-size: 14px;
+  }
+
+  .first-run-choice-copy {
+    font-size: 12px;
+    line-height: 1.38;
+  }
 }
 
 .first-run-choice {
@@ -167,6 +220,18 @@
   color: var(--text-primary);
 }
 
+@media (max-width: 420px) {
+  .first-run-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .first-run-primary,
+  .first-run-secondary {
+    width: 100%;
+  }
+}
+
 /* ── Server first-run setup wizard ──────────────────────────────────────────
    Reuses the .first-run shell + card; these add the multi-step progress rail,
    the API-keys field stack, the access cards, and the invite QR/result. */
@@ -228,6 +293,19 @@
   .server-setup-progress-label { display: none; }
 }
 
+@media (max-width: 420px) {
+  .server-setup-progress {
+    gap: 4px;
+    margin-bottom: var(--sp-md);
+  }
+
+  .server-setup-progress-num {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+  }
+}
+
 .server-setup-list {
   margin: 0 0 var(--sp-lg);
   padding-left: 1.1em;
@@ -255,18 +333,56 @@
   margin-bottom: 2px;
 }
 
-.server-setup-check {
+.server-setup-fields .first-run-field select {
+  margin-bottom: 2px;
+  width: 100%;
+  border-radius: var(--r-md);
+  border: 0.75px solid var(--glass-border);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary);
+  padding: 0 14px;
+  min-height: 42px;
+  font: inherit;
+  outline: none;
+}
+
+.server-setup-fields .first-run-field select:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.server-setup-provider-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.42fr) minmax(0, 1fr);
+  gap: var(--sp-md);
+}
+
+@media (max-width: 620px) {
+  .server-setup-provider-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.server-setup-preset-summary {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 13px;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  border: 0.75px solid rgba(var(--accent-rgb), 0.28);
+  background: rgba(var(--accent-rgb), 0.08);
   color: var(--text-secondary);
-  cursor: pointer;
+  font-size: 12.5px;
 }
-.server-setup-check input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
+.server-setup-preset-summary span,
+.server-setup-preset-summary strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.server-setup-preset-summary strong {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 
 .server-setup-ok,

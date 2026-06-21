@@ -177,11 +177,11 @@
   --nav-rail-highlight: rgba(255, 255, 255, 0.075);
   --nav-mobile-bg: linear-gradient(
     180deg,
-    rgba(18, 22, 34, 0.9),
-    rgba(7, 10, 17, 0.97)
+    rgba(12, 15, 24, 0.88),
+    rgba(2, 4, 9, 0.94)
   );
-  --nav-mobile-border: rgba(255, 255, 255, 0.18);
-  --nav-mobile-highlight: rgba(255, 255, 255, 0.14);
+  --nav-mobile-border: rgba(255, 255, 255, 0.16);
+  --nav-mobile-highlight: rgba(255, 255, 255, 0.1);
   --nav-mobile-icon-bg: transparent;
   --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.19);
   --nav-mobile-active-border: rgba(var(--accent-rgb), 0.48);

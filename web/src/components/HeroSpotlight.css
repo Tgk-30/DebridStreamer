@@ -161,7 +161,7 @@
   right: clamp(var(--sp-xl), 4vw, 56px);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0;
   z-index: 2;
   padding: 6px 8px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -180,35 +180,40 @@
 }
 .hero-dot {
   position: relative;
-  width: 20px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: var(--r-pill);
   background: transparent;
   cursor: pointer;
   transition: width 0.3s;
 }
+.hero-dot + .hero-dot {
+  margin-left: -18px;
+}
 .hero-dot::before {
   content: "";
   position: absolute;
-  left: 2px;
-  right: 2px;
+  left: 50%;
   top: 50%;
+  width: 18px;
   height: 6px;
   border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.42);
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
   transition:
     background 0.3s,
+    width 0.3s,
     box-shadow 0.3s;
 }
 .hero-dot:hover::before {
   background: rgba(255, 255, 255, 0.55);
 }
 .hero-dot.is-active {
-  width: 34px;
+  width: 44px;
 }
 .hero-dot.is-active::before {
+  width: 32px;
   background: rgba(var(--accent-rgb), 1);
   box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.6);
 }
@@ -363,12 +368,12 @@
   }
 
   .hero-dot {
-    width: 16px;
-    height: 26px;
+    width: 44px;
+    height: 44px;
   }
 
   .hero-dot.is-active {
-    width: 28px;
+    width: 44px;
   }
 
   .hero-dot::before {
@@ -461,12 +466,12 @@
   }
 
   .hero-dot {
-    width: 14px;
-    height: 24px;
+    width: 44px;
+    height: 44px;
   }
 
   .hero-dot.is-active {
-    width: 24px;
+    width: 44px;
   }
 
   .hero-dot::before {

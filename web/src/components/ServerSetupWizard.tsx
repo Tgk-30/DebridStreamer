@@ -22,6 +22,20 @@ import {
 import { configuredServerURL } from "../lib/serverMode";
 import { markServerSetupComplete } from "../lib/serverSetup";
 import {
+  DEBRID_PROVIDER_OPTIONS,
+  DEFAULT_DEBRID_PROVIDER,
+  SERVER_SETUP_KEY_FIELDS,
+  buildServerSetupCredentialDrafts,
+  debridProviderOption,
+  type DebridCredentialProvider,
+} from "../lib/serverSetupCredentials";
+import {
+  DEFAULT_SERVER_SETUP_INVITE_PRESET_ID,
+  SERVER_SETUP_INVITE_PRESETS,
+  serverSetupInvitePreset,
+  type ServerSetupInvitePresetId,
+} from "../lib/serverSetupInvite";
+import {
   SERVER_SETUP_STEPS,
   SERVER_SETUP_STEP_LABELS,
   isFinalStep,
@@ -31,41 +45,6 @@ import {
   type ServerSetupStep,
 } from "../lib/serverSetupSteps";
 import "./FirstRunWizard.css";
-
-// The core keys a server needs to light up its main features, in the order the
-// Server tab lists them. AI is optional but offered here so the household gets
-// the Assistant + mood-curate out of the box.
-const KEY_FIELDS: Array<{
-  provider: ServerCredentialProvider;
-  label: string;
-  hint: string;
-  placeholder: string;
-}> = [
-  {
-    provider: "tmdb",
-    label: "TMDB API key",
-    hint: "Powers Discover, Search, and posters. The one key worth adding first.",
-    placeholder: "TMDB v3 API key",
-  },
-  {
-    provider: "real_debrid",
-    label: "Debrid token",
-    hint: "Real-Debrid token for cached streams (or paste another provider's token).",
-    placeholder: "Real-Debrid API token",
-  },
-  {
-    provider: "opensubtitles",
-    label: "OpenSubtitles API key",
-    hint: "Optional — in-player subtitle search and download.",
-    placeholder: "OpenSubtitles key",
-  },
-  {
-    provider: "openai",
-    label: "AI provider key",
-    hint: "Optional — OpenAI key enables the Assistant and mood curation.",
-    placeholder: "OpenAI API key",
-  },
-];
 
 interface ServerSetupWizardProps {
   /** Called when the owner finishes or skips. The host hides the wizard. */
@@ -171,6 +150,9 @@ function KeysStep({
   onContinue: () => void;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
+  const [debridProvider, setDebridProvider] =
+    useState<DebridCredentialProvider>(DEFAULT_DEBRID_PROVIDER);
+  const [debridToken, setDebridToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState<number | null>(null);
@@ -182,11 +164,11 @@ function KeysStep({
   }
 
   async function saveAndContinue() {
-    const pending = KEY_FIELDS.map((field) => ({
-      provider: field.provider,
-      label: field.label,
-      value: (values[field.provider] ?? "").trim(),
-    })).filter((entry) => entry.value.length > 0);
+    const pending = buildServerSetupCredentialDrafts({
+      debridProvider,
+      debridToken,
+      values,
+    });
 
     if (pending.length === 0) {
       // Nothing entered — let the owner move on and add keys later.
@@ -224,10 +206,51 @@ function KeysStep({
       <h1 className="first-run-title">Add your API keys</h1>
       <p className="first-run-sub">
         These are stored as shared server credentials, so every profile uses
-        them. Add what you have now — TMDB and a debrid token are the essentials.
+        them. Add what you have now — TMDB and one debrid provider are the
+        essentials.
       </p>
       <div className="server-setup-fields">
-        {KEY_FIELDS.map((field) => (
+        <div className="server-setup-provider-row">
+          <label className="first-run-field">
+            Debrid provider
+            <select
+              value={debridProvider}
+              onChange={(event) => {
+                setDebridProvider(event.target.value as DebridCredentialProvider);
+                setError(null);
+                setSavedCount(null);
+              }}
+            >
+              {DEBRID_PROVIDER_OPTIONS.map((option) => (
+                <option key={option.provider} value={option.provider}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <span className="server-setup-field-hint">
+              Choose the provider whose token you want every profile to use.
+            </span>
+          </label>
+          <label className="first-run-field">
+            Debrid token
+            <input
+              type="password"
+              value={debridToken}
+              onChange={(event) => {
+                setDebridToken(event.target.value);
+                setError(null);
+                setSavedCount(null);
+              }}
+              placeholder={debridProviderOption(debridProvider).placeholder}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <span className="server-setup-field-hint">
+              Cached stream resolving works best after this is saved.
+            </span>
+          </label>
+        </div>
+        {SERVER_SETUP_KEY_FIELDS.map((field) => (
           <label key={field.provider} className="first-run-field">
             {field.label}
             <input
@@ -334,13 +357,15 @@ function InviteStep({
   onBack: () => void;
   onContinue: () => void;
 }) {
-  const [label, setLabel] = useState("Family");
-  const [simpleMode, setSimpleMode] = useState(true);
+  const [invitePresetId, setInvitePresetId] = useState<ServerSetupInvitePresetId>(
+    DEFAULT_SERVER_SETUP_INVITE_PRESET_ID,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inviteURL, setInviteURL] = useState<string | null>(null);
   const [qrDataURL, setQrDataURL] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const invitePreset = serverSetupInvitePreset(invitePresetId);
 
   async function create() {
     setBusy(true);
@@ -348,9 +373,9 @@ function InviteStep({
     setCopied(false);
     try {
       const result = await createServerInvite({
-        label: label.trim() || undefined,
+        label: invitePreset.inviteLabel,
         role: "member",
-        simpleMode,
+        simpleMode: invitePreset.simpleMode,
         maxUses: 5,
         expiresInSeconds: 7 * 24 * 60 * 60,
       });
@@ -395,22 +420,29 @@ function InviteStep({
       {inviteURL == null ? (
         <div className="server-setup-fields">
           <label className="first-run-field">
-            Invite label
-            <input
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder="e.g. Family"
+            Invite preset
+            <select
+              value={invitePresetId}
+              onChange={(event) => {
+                setInvitePresetId(event.target.value as ServerSetupInvitePresetId);
+                setError(null);
+              }}
               autoFocus
-            />
+            >
+              {SERVER_SETUP_INVITE_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+            <span className="server-setup-field-hint">
+              {invitePreset.description}
+            </span>
           </label>
-          <label className="server-setup-check">
-            <input
-              type="checkbox"
-              checked={simpleMode}
-              onChange={(event) => setSimpleMode(event.target.checked)}
-            />
-            Start invited profiles in Simple mode
-          </label>
+          <div className="server-setup-preset-summary" aria-live="polite">
+            <span>{invitePreset.inviteLabel}</span>
+            <strong>{invitePreset.simpleMode ? "Simple mode" : "Full interface"}</strong>
+          </div>
         </div>
       ) : (
         <div className="server-setup-invite-result">

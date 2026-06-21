@@ -10,9 +10,19 @@ import { configuredServerURL } from "./serverMode";
 
 const ONBOARDING_KEY = "onboarding_completed";
 
+function devBypassesOnboarding(): boolean {
+  if (!import.meta.env.DEV) return false;
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? "").has("qa-skip-onboarding");
+  } catch {
+    return false;
+  }
+}
+
 /** True only on a genuine first run in Local Mode (no prior onboarding, no
  *  configured server URL). */
 export async function isFirstRun(): Promise<boolean> {
+  if (devBypassesOnboarding()) return false;
   if (configuredServerURL() != null) return false;
   try {
     const done = await getStore().getSetting(ONBOARDING_KEY);

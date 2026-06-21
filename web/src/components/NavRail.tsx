@@ -151,7 +151,7 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
         <button
           type="button"
           className="nav-rail-more-scrim"
-          aria-label="Close more menu"
+          aria-label="Dismiss more menu"
           onClick={() => setMoreOpen(false)}
         />
       )}
@@ -200,6 +200,7 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
         data-mobile="true"
         data-mobile-overflow="true"
         onClick={() => setMoreOpen((open) => !open)}
+        aria-label="More navigation"
         aria-expanded={moreOpen}
         aria-controls="mobile-nav-more"
         title="More"
@@ -210,43 +211,40 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
         <span className="nav-rail-label">More</span>
       </button>
 
-      <div
-        id="mobile-nav-more"
-        className={`nav-rail-more-sheet${moreOpen ? " is-open" : ""}`}
-        aria-hidden={!moreOpen}
-      >
-        <div className="nav-rail-more-head">
-          <span>More</span>
-          <button
-            type="button"
-            className="nav-rail-more-close"
-            onClick={() => setMoreOpen(false)}
-            tabIndex={moreOpen ? 0 : -1}
-            aria-label="Close more menu"
-          >
-            <Icon name="xmark" size={19} />
-          </button>
+      {moreOpen && (
+        <div id="mobile-nav-more" className="nav-rail-more-sheet is-open">
+          <div className="nav-rail-more-head">
+            <span>More</span>
+            <button
+              type="button"
+              className="nav-rail-more-close"
+              onClick={() => setMoreOpen(false)}
+              aria-label="Close more menu"
+            >
+              <Icon name="xmark" size={19} />
+            </button>
+          </div>
+          {moreItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`nav-rail-more-action${selected === item.id ? " is-selected" : ""}`}
+              data-screen={item.id}
+              onClick={() => selectScreen(item.id)}
+              aria-label={item.label}
+            >
+              <span className="nav-rail-more-icon">
+                <Icon
+                  name={item.icon}
+                  size={18}
+                  filled={selected === item.id}
+                />
+              </span>
+              <span>{item.label}</span>
+            </button>
+          ))}
         </div>
-        {moreItems.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`nav-rail-more-action${selected === item.id ? " is-selected" : ""}`}
-            data-screen={item.id}
-            onClick={() => selectScreen(item.id)}
-            tabIndex={moreOpen ? 0 : -1}
-          >
-            <span className="nav-rail-more-icon">
-              <Icon
-                name={item.icon}
-                size={18}
-                filled={selected === item.id}
-              />
-            </span>
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </div>
+      )}
     </nav>
   );
 }

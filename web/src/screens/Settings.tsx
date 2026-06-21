@@ -1220,6 +1220,8 @@ function DesktopHostPanel() {
   const desktop = isTauri();
   const shareURL =
     status?.share_url ?? status?.lan_urls[0] ?? status?.url ?? status?.urls[0] ?? null;
+  const setupURL = status?.setup_url ?? null;
+  const primaryURL = setupURL ?? shareURL;
 
   useEffect(() => {
     if (!desktop) return;
@@ -1238,11 +1240,11 @@ function DesktopHostPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!desktop || shareURL == null) {
+    if (!desktop || primaryURL == null) {
       setQrDataURL(null);
       return;
     }
-    void QRCode.toDataURL(shareURL, {
+    void QRCode.toDataURL(primaryURL, {
       width: 180,
       margin: 1,
       color: {
@@ -1259,7 +1261,7 @@ function DesktopHostPanel() {
     return () => {
       cancelled = true;
     };
-  }, [desktop, shareURL]);
+  }, [desktop, primaryURL]);
 
   if (!desktop) return null;
 
@@ -1292,8 +1294,8 @@ function DesktopHostPanel() {
   }
 
   async function openServer() {
-    if (shareURL == null) return;
-    await openExternalURL(shareURL);
+    if (primaryURL == null) return;
+    await openExternalURL(primaryURL);
   }
 
   async function copyShareURL(url: string) {
@@ -1308,21 +1310,21 @@ function DesktopHostPanel() {
   }
 
   async function shareHostedApp() {
-    if (shareURL == null) return;
+    if (primaryURL == null) return;
     setError(null);
     setShareMessage(null);
     const nav = navigator as Navigator & {
       share?: (data: ShareData) => Promise<void>;
     };
     if (nav.share == null) {
-      await copyShareURL(shareURL);
+      await copyShareURL(primaryURL);
       return;
     }
     try {
       await nav.share({
         title: "DebridStreamer",
         text: "Open this DebridStreamer server.",
-        url: shareURL,
+        url: primaryURL,
       });
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -1361,7 +1363,7 @@ function DesktopHostPanel() {
           type="button"
           className="chip"
           onClick={() => void openServer()}
-          disabled={shareURL == null}
+          disabled={primaryURL == null}
         >
           Open hosted app
         </button>
@@ -1369,12 +1371,12 @@ function DesktopHostPanel() {
           type="button"
           className="chip"
           onClick={() => void shareHostedApp()}
-          disabled={shareURL == null}
+          disabled={primaryURL == null}
         >
           Share
         </button>
       </div>
-      {shareURL != null && (
+      {primaryURL != null && (
         <div className="settings-share-box">
           {qrDataURL != null && (
             <img
@@ -1384,13 +1386,21 @@ function DesktopHostPanel() {
             />
           )}
           <div className="settings-share-copy">
-            <span className="settings-label">Best setup URL</span>
-            <code>{shareURL}</code>
+            <span className="settings-label">
+              {setupURL != null ? "One-time owner setup URL" : "Best setup URL"}
+            </span>
+            <code>{primaryURL}</code>
+            {setupURL != null && (
+              <span className="settings-hint t-secondary">
+                Use this first-run link to create the owner account. Normal
+                sharing links are listed below.
+              </span>
+            )}
             <div className="settings-source-row">
               <button
                 type="button"
                 className="chip"
-                onClick={() => void copyShareURL(shareURL)}
+                onClick={() => void copyShareURL(primaryURL)}
               >
                 Copy
               </button>

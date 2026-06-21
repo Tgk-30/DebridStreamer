@@ -12,6 +12,10 @@ import {
 } from "../lib/ServerSessionContext";
 import "./ServerModeGate.css";
 
+declare global {
+  var __DEBRIDSTREAMER_SETUP_TOKEN__: string | null | undefined;
+}
+
 interface ProfileState {
   profiles: ServerProfileSummary[];
   activeProfileId: string;
@@ -19,6 +23,7 @@ interface ProfileState {
 
 interface BootstrapResponse {
   setupRequired: boolean;
+  setupTokenRequired?: boolean;
   session: ServerSession | null;
   profiles?: ProfileState | null;
   csrfToken?: string | null;
@@ -33,10 +38,35 @@ type GateState =
   | { kind: "local" }
   | { kind: "loading"; baseURL: string }
   | { kind: "ready"; baseURL: string }
-  | { kind: "setup"; baseURL: string }
+  | { kind: "setup"; baseURL: string; setupTokenRequired: boolean; setupToken: string | null }
   | { kind: "invite"; baseURL: string; token: string }
   | { kind: "login"; baseURL: string }
   | { kind: "error"; baseURL: string; message: string };
+
+function setupTokenFromURL(): string | null {
+  try {
+    const token = new URL(window.location.href).searchParams.get("setup")?.trim();
+    return token != null && token.length > 0 ? token : null;
+  } catch {
+    return null;
+  }
+}
+
+function setupTokenFromGlobal(): string | null {
+  const token = globalThis.__DEBRIDSTREAMER_SETUP_TOKEN__?.trim();
+  return token != null && token.length > 0 ? token : null;
+}
+
+function clearSetupTokenFromURL(): void {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("setup")) return;
+    url.searchParams.delete("setup");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    // Non-fatal; the setup token is one-time useful only before owner creation.
+  }
+}
 
 function inviteTokenFromURL(): string | null {
   try {
@@ -89,6 +119,10 @@ function jsonFetch<T>(
 export function ServerModeGate({ children }: { children: ReactNode }) {
   const baseURL = useMemo(() => configuredServerURL(), []);
   const inviteToken = useMemo(() => inviteTokenFromURL(), []);
+  const setupToken = useMemo(
+    () => setupTokenFromURL() ?? setupTokenFromGlobal(),
+    [],
+  );
   const [attempt, setAttempt] = useState(0);
   const [session, setSession] = useState<ServerSession | null>(null);
   const [profiles, setProfiles] = useState<ServerProfileSummary[]>([]);
@@ -135,7 +169,14 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         // document.cookie can't see ds_csrf).
         setCsrfToken(bootstrap.csrfToken);
         setTranscodeAvailable(bootstrap.transcodeAvailable ?? false);
-        if (bootstrap.setupRequired) setState({ kind: "setup", baseURL });
+        if (bootstrap.setupRequired) {
+          setState({
+            kind: "setup",
+            baseURL,
+            setupTokenRequired: bootstrap.setupTokenRequired ?? false,
+            setupToken,
+          });
+        }
         else if (bootstrap.session != null) {
           setSession(bootstrap.session);
           setProfiles(bootstrap.profiles?.profiles ?? []);
@@ -154,7 +195,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [baseURL, inviteToken, attempt]);
+  }, [baseURL, inviteToken, setupToken, attempt]);
 
   if (state.kind === "local" || state.kind === "ready") {
     return (
@@ -188,10 +229,13 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         baseURL={state.baseURL}
         submitLabel="Create owner"
         includeDisplayName
+        includeSetupToken={state.setupTokenRequired}
+        setupToken={state.setupToken}
         onSubmit={(payload) =>
           jsonFetch<AuthResponse>(state.baseURL, "/api/auth/setup-owner", payload).then(async (res) => {
             setCsrfToken(res.csrfToken);
             await captureSession(state.baseURL);
+            clearSetupTokenFromURL();
             setState({ kind: "ready", baseURL: state.baseURL });
           })
         }
@@ -270,6 +314,8 @@ function AuthForm({
   baseURL,
   submitLabel,
   includeDisplayName = false,
+  includeSetupToken = false,
+  setupToken: initialSetupToken = null,
   onSubmit,
 }: {
   title: string;
@@ -277,15 +323,19 @@ function AuthForm({
   baseURL: string;
   submitLabel: string;
   includeDisplayName?: boolean;
+  includeSetupToken?: boolean;
+  setupToken?: string | null;
   onSubmit: (payload: {
     username: string;
     password: string;
     displayName?: string;
+    setupToken?: string;
   }) => Promise<unknown>;
 }) {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [setupToken, setSetupToken] = useState(initialSetupToken ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -297,6 +347,9 @@ function AuthForm({
       username: username.trim(),
       password,
       displayName: includeDisplayName ? displayName.trim() || username.trim() : undefined,
+      ...(includeSetupToken || setupToken.trim().length > 0
+        ? { setupToken: setupToken.trim() }
+        : {}),
     })
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Request failed.");
@@ -341,6 +394,18 @@ function AuthForm({
               minLength={8}
             />
           </label>
+          {includeSetupToken && initialSetupToken == null && (
+            <label className="server-gate-field">
+              Setup token
+              <input
+                type="password"
+                value={setupToken}
+                onChange={(event) => setSetupToken(event.target.value)}
+                autoComplete="one-time-code"
+                required
+              />
+            </label>
+          )}
           {error != null && <p className="server-gate-error">{error}</p>}
           <button className="server-gate-button" type="submit" disabled={busy}>
             {busy ? "Please wait" : submitLabel}
