@@ -9,6 +9,7 @@ const platforms = {
     patterns: [
       { type: "DMG", score: 120, test: /\.dmg$/i },
       { type: "PKG", score: 110, test: /\.pkg$/i },
+      { type: "App zip", score: 80, test: /\.app\.zip$/i },
       { type: "App archive", score: 70, test: /\.app\.tar\.gz$/i },
       { type: "macOS", score: 20, test: /(macos|darwin|apple)/i },
     ],
@@ -29,31 +30,34 @@ const platforms = {
       { type: "AppImage", score: 130, test: /\.AppImage$/i },
       { type: "Debian package", score: 120, test: /\.deb$/i },
       { type: "RPM package", score: 110, test: /\.rpm$/i },
-      { type: "Linux archive", score: 60, test: /\.tar\.gz$/i },
+      { type: "Linux archive", score: 60, test: /^(?!.*\.app\.tar\.gz$).*\.tar\.gz$/i },
       { type: "Linux", score: 20, test: /linux/i },
     ],
   },
 };
 
-function platformKey() {
-  const ua = navigator.userAgent.toLowerCase();
-  const platform = navigator.platform.toLowerCase();
-  const narrow = window.matchMedia?.("(max-width: 640px)").matches === true;
-  const touch = navigator.maxTouchPoints > 1;
+function detectPlatform(input = {}) {
+  const ua = (input.userAgent ?? navigator.userAgent).toLowerCase();
+  const platform = (input.platform ?? navigator.platform).toLowerCase();
+  const touch = (input.maxTouchPoints ?? navigator.maxTouchPoints ?? 0) > 1;
   // iPadOS 13+ reports a desktop "Mac OS" UA, so detect an iPad as a Mac UA that
   // ALSO has a touchscreen (real Macs report maxTouchPoints 0). A bare `touch`
   // check would instead misclassify Windows touchscreen laptops / Surface /
   // 2-in-1s (wide screen, maxTouchPoints ~10) as mobile and hide their installer.
   const isIpadOS = touch && (platform.includes("mac") || ua.includes("mac os"));
-  if (/iphone|ipad|android|mobile/.test(ua) || narrow || isIpadOS) return "mobile";
+  if (/iphone|ipad|android|mobile/.test(ua) || isIpadOS) return "mobile";
   if (platform.includes("mac") || ua.includes("mac os")) return "mac";
   if (platform.includes("win") || ua.includes("windows")) return "windows";
   if (platform.includes("linux") || ua.includes("x11")) return "linux";
   return "unknown";
 }
 
+function platformKey() {
+  return detectPlatform();
+}
+
 function labelFor(platform) {
-  if (platform === "mobile") return "Install PWA";
+  if (platform === "mobile") return "View downloads";
   return platforms[platform]?.button ?? "View downloads";
 }
 
@@ -187,7 +191,7 @@ async function hydrateDownloads() {
 
   if (smart) {
     smart.textContent = labelFor(platform);
-    smart.setAttribute("href", platform === "mobile" ? "#pwa" : releaseURL);
+    smart.setAttribute("href", platform === "mobile" ? "#download" : releaseURL);
   }
 
   try {
@@ -227,7 +231,7 @@ async function hydrateDownloads() {
     renderAssets(release);
   } catch {
     if (note) {
-      setDownloadNote(note, "Latest desktop downloads are available on");
+      setDownloadNote(note, "Latest desktop and PWA paths are available on");
     }
     if (status) {
       status.textContent = "Open GitHub Releases to see the current desktop assets.";
@@ -235,4 +239,127 @@ async function hydrateDownloads() {
   }
 }
 
-hydrateDownloads();
+function initCommandCopy() {
+  document.querySelectorAll("[data-copy-target]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const target = document.querySelector(`#${button.dataset.copyTarget}`);
+      const text = target?.textContent?.trim();
+      if (!text) return;
+
+      const original = button.textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        button.textContent = "Copied";
+      } catch {
+        button.textContent = "Select text";
+      }
+      window.setTimeout(() => {
+        button.textContent = original;
+      }, 1800);
+    });
+  });
+}
+
+function initMobileMenu() {
+  const nav = document.querySelector("#primary-nav");
+  const toggle = document.querySelector(".menu-toggle");
+  if (!nav || !toggle) return;
+
+  document.body.classList.add("menu-ready");
+  toggle.hidden = false;
+
+  function setOpen(open) {
+    nav.classList.toggle("is-open", open);
+    toggle.classList.toggle("is-open", open);
+    document.body.classList.toggle("menu-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+  }
+
+  toggle.addEventListener("click", () => {
+    setOpen(!nav.classList.contains("is-open"));
+  });
+
+  nav.querySelectorAll("a").forEach((link) => {
+    link.addEventListener("click", () => {
+      if (window.matchMedia("(max-width: 640px)").matches) setOpen(false);
+    });
+  });
+
+  window.addEventListener("resize", () => {
+    if (!window.matchMedia("(max-width: 640px)").matches) setOpen(false);
+  });
+}
+
+function initSectionNav() {
+  const links = [...document.querySelectorAll('nav a[href^="#"]')];
+  const sections = links
+    .map((link) => {
+      const section = document.querySelector(link.getAttribute("href"));
+      return section ? { id: section.id, link, section } : null;
+    })
+    .filter(Boolean);
+
+  function activate(id) {
+    links.forEach((link) => {
+      const active = link.getAttribute("href") === `#${id}`;
+      link.classList.toggle("is-active", active);
+      if (active) {
+        link.setAttribute("aria-current", "page");
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
+  }
+
+  if (!sections.length) return;
+
+  let frame = 0;
+
+  function updateActiveSection() {
+    frame = 0;
+    const headerHeight = document.querySelector(".site-header")?.getBoundingClientRect().height ?? 0;
+    const probe = window.scrollY + headerHeight + Math.max(96, window.innerHeight * 0.28);
+    let current = sections[0];
+    for (const candidate of sections) {
+      if (candidate.section.offsetTop <= probe) current = candidate;
+    }
+    activate(current.id);
+  }
+
+  function requestUpdate() {
+    if (frame) return;
+    frame = window.requestAnimationFrame(updateActiveSection);
+  }
+
+  function requestSettledUpdates() {
+    requestUpdate();
+    window.setTimeout(requestUpdate, 120);
+    window.setTimeout(requestUpdate, 360);
+    window.setTimeout(requestUpdate, 900);
+  }
+
+  updateActiveSection();
+  window.addEventListener("scroll", requestUpdate, { passive: true });
+  window.addEventListener("resize", requestUpdate);
+  window.addEventListener("hashchange", requestSettledUpdates);
+  requestSettledUpdates();
+}
+
+if (typeof window !== "undefined") {
+  window.DebridStreamerWebsite = {
+    bestAsset,
+    detectPlatform,
+    isInstallerAsset,
+    labelFor,
+    platformAssets,
+    scoreAsset,
+  };
+}
+
+if (typeof window !== "undefined" && !window.__DEBRIDSTREAMER_WEBSITE_TEST__) {
+  hydrateDownloads();
+  initCommandCopy();
+  initMobileMenu();
+  initSectionNav();
+}
