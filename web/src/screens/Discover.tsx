@@ -251,9 +251,7 @@ export function Discover({ onSelect }: DiscoverProps) {
 function DiscoverSkeleton() {
   return (
     <div className="discover">
-      <div className="skel-hero glass-rest">
-        <span className="t-secondary">Loading Discover…</span>
-      </div>
+      <div className="skel-hero glass-rest" />
       {[0, 1, 2].map((r) => (
         <div className="skel-rail" key={r}>
           <div className="skel-title" />

@@ -13,7 +13,8 @@ import { EmptyState } from "../components/EmptyState";
 import { hasResumePoint } from "../storage/models";
 
 export function History() {
-  const { history, continueWatching, openDetail } = useAppStore();
+  const { history, continueWatching, openDetail, openBrowse, navigate } =
+    useAppStore();
 
   // Only surface rows with a meaningful resume point in the rail.
   const resumable = continueWatching
@@ -35,6 +36,22 @@ export function History() {
           title="Nothing here yet"
           subtitle="Open a title and it'll show up here so you can jump back in."
           note="Resume positions stay local"
+          actions={
+            <>
+              <button
+                type="button"
+                className="btn btn-prominent"
+                onClick={() =>
+                  openBrowse({ kind: "category", type: "movie", category: "trending" })
+                }
+              >
+                Browse trending
+              </button>
+              <button type="button" className="btn" onClick={() => navigate("search")}>
+                Search catalog
+              </button>
+            </>
+          }
         />
       ) : (
         <MediaGrid items={history} onSelect={openDetail} />

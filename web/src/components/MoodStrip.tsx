@@ -71,7 +71,14 @@ export function MoodStrip({
           disabled={trimmed.length === 0 || loading}
           onClick={() => curate(vibe)}
         >
-          {loading ? "Curating" : "Curate"}
+          {loading ? (
+            <>
+              <span className="mood-spinner" aria-hidden="true" />
+              Curating
+            </>
+          ) : (
+            "Curate"
+          )}
         </button>
       </div>
 

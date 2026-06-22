@@ -361,3 +361,21 @@
     text-align: center;
   }
 }
+
+/* Inline spinner shown in the Curate button while curation is in flight.
+ * Mirrors .detail-analysis-spinner geometry, tinted white to sit on the
+ * accent-filled .btn-prominent (which uses color: #fff). */
+.mood-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: mood-spin 0.7s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes mood-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

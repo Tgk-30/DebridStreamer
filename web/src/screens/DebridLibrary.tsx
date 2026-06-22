@@ -247,12 +247,75 @@ export function DebridLibrary() {
       {state.error && <p className="dl-error">{state.error}</p>}
 
       {state.loading ? (
-        <p className="t-secondary dl-status">Loading your debrid library…</p>
+        <div
+          className="dl-table glass-rest glass-lit dl-skel-table"
+          aria-busy="true"
+          aria-label="Loading your debrid library"
+        >
+          <div className="dl-row dl-row-head">
+            <span className="dl-col-check" />
+            <span className="dl-col-name">Name</span>
+            <span className="dl-col-size">Size</span>
+            <span className="dl-col-status">Status</span>
+            <span className="dl-col-added">Added</span>
+            <span className="dl-col-host">Host</span>
+            <span className="dl-col-actions" />
+          </div>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div className="dl-row dl-skel-row" key={i} aria-hidden="true">
+              <span className="dl-col-check">
+                <span className="dl-skel dl-skel-check" />
+              </span>
+              <span className="dl-col-name">
+                <span className="dl-skel dl-skel-name" />
+                <span className="dl-badges">
+                  <span className="dl-skel dl-skel-badge" />
+                </span>
+              </span>
+              <span className="dl-col-size">
+                <span className="dl-skel dl-skel-text" />
+              </span>
+              <span className="dl-col-status">
+                <span className="dl-skel dl-skel-pill" />
+              </span>
+              <span className="dl-col-added">
+                <span className="dl-skel dl-skel-text" />
+              </span>
+              <span className="dl-col-host">
+                <span className="dl-skel dl-skel-text" />
+              </span>
+              <span className="dl-col-actions">
+                <span className="dl-skel dl-skel-action" />
+              </span>
+            </div>
+          ))}
+        </div>
       ) : state.rows.length === 0 ? (
         <EmptyState
           icon="debrid"
           title="Nothing on your account yet"
           subtitle="Torrents you add (or pre-cache via auto-resolve) will show up here, ready to manage."
+          actions={
+            <>
+              <button
+                type="button"
+                className="btn btn-prominent"
+                onClick={reload}
+                disabled={state.loading || busy}
+              >
+                <Icon name="refresh" size={15} />
+                Refresh
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setDialogOpen(true)}
+              >
+                <Icon name="share" size={15} />
+                Import hash list
+              </button>
+            </>
+          }
         />
       ) : visible.length === 0 ? (
         <p className="t-secondary dl-status">No torrents match your filters.</p>

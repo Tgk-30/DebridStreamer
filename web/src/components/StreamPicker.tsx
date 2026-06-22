@@ -141,9 +141,20 @@ function StreamBody({
 }) {
   if (state.loading) {
     return (
-      <div className="streams-empty glass-rest">
-        <span className="t-secondary">Searching indexers…</span>
-      </div>
+      <ul className="streams-list streams-skeleton" aria-busy="true" aria-label="Searching indexers">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <li key={i}>
+            <div className="stream-row stream-row-skel glass-rest" aria-hidden="true">
+              <span className="stream-quality-skel skel" />
+              <div className="stream-main">
+                <span className="skel-line skel-name skel" />
+                <span className="skel-line skel-meta skel" />
+              </div>
+              <span className="stream-badge-skel skel" />
+            </div>
+          </li>
+        ))}
+      </ul>
     );
   }
 

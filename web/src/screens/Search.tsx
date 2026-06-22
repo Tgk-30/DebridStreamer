@@ -32,6 +32,26 @@ function fixtureStarters(): MediaPreview[] {
   return [...f.trendingMovies, ...f.trendingTV];
 }
 
+/**
+ * Poster-grid skeleton shown while a search is in flight. Mirrors the
+ * `.media-grid` results container (same columns/gap) with 2:3 shimmer tiles so
+ * real results swap in with no layout shift. Self-contained — not shared.
+ */
+function SearchSkeleton() {
+  return (
+    <div
+      className="search-skel-grid"
+      role="status"
+      aria-label="Searching"
+      aria-busy="true"
+    >
+      {Array.from({ length: 18 }).map((_, i) => (
+        <div key={i} className="search-skel" />
+      ))}
+    </div>
+  );
+}
+
 export function Search() {
   const {
     services,
@@ -163,12 +183,11 @@ export function Search() {
         </div>
       </div>
 
-      {loading && (
-        <p className="search-status t-secondary">Searching…</p>
-      )}
       {error && <p className="search-status search-error">{error}</p>}
 
-      {results == null ? (
+      {loading ? (
+        <SearchSkeleton />
+      ) : results == null ? (
         <section className="search-idle">
           <h2 className="search-section-title">Browse categories</h2>
           <GenreCatalogGrid

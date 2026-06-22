@@ -345,7 +345,14 @@ function GenerateTab() {
           disabled={prompt.trim().length === 0 || loading}
           onClick={() => void run()}
         >
-          {loading ? "Working…" : "Generate"}
+          {loading ? (
+            <>
+              <span className="hl-spinner" aria-hidden="true" />
+              Working…
+            </>
+          ) : (
+            "Generate"
+          )}
         </button>
       </div>
 

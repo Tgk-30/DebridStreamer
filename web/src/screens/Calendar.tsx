@@ -45,7 +45,25 @@ export function Calendar() {
       </p>
 
       {state.loading ? (
-        <p className="t-secondary cal-status">Loading upcoming episodes…</p>
+        <div className="cal-groups" aria-hidden="true">
+          {[3, 3].map((count, gi) => (
+            <section key={gi} className="cal-group">
+              <div className="cal-group-label cal-skel cal-skel-label" />
+              <div className="cal-rows">
+                {Array.from({ length: count }).map((_, ri) => (
+                  <div key={ri} className="cal-row cal-row-skel glass-rest">
+                    <div className="cal-row-poster cal-skel" />
+                    <div className="cal-row-main">
+                      <div className="cal-skel cal-skel-title" />
+                      <div className="cal-skel cal-skel-sub" />
+                    </div>
+                    <div className="cal-skel cal-skel-date" />
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
       ) : state.error ? (
         <EmptyState
           icon="calendar"

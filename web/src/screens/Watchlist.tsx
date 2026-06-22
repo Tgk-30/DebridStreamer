@@ -11,8 +11,14 @@ import { Icon } from "../components/Icon";
 import "./LibraryScreens.css";
 
 export function Watchlist() {
-  const { watchlist, openDetail, removeFromWatchlist, cachedResolutions } =
-    useAppStore();
+  const {
+    watchlist,
+    openDetail,
+    removeFromWatchlist,
+    cachedResolutions,
+    openBrowse,
+    navigate,
+  } = useAppStore();
 
   const readyCount = watchlist.filter(
     (i) => cachedResolutions[i.id] != null,
@@ -34,6 +40,22 @@ export function Watchlist() {
           subtitle="Open any title and tap Watchlist to keep it ready for later."
           note="Stored on this device"
           ambient="cinema"
+          actions={
+            <>
+              <button
+                type="button"
+                className="btn btn-prominent"
+                onClick={() =>
+                  openBrowse({ kind: "category", type: "movie", category: "trending" })
+                }
+              >
+                Browse trending
+              </button>
+              <button type="button" className="btn" onClick={() => navigate("search")}>
+                Search catalog
+              </button>
+            </>
+          }
         />
       ) : (
         <div className="lib-grid-wrap">

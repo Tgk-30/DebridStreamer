@@ -76,6 +76,58 @@
     box-shadow 0.18s,
     transform 0.14s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* Loading skeleton — shimmer rows shaped exactly like the loaded .stream-row
+   (same container, padding, gap and heights) so real results swap in with no
+   layout shift. Reuses the global @keyframes shimmer from MediaCard.css. */
+.skel {
+  background-color: rgba(255, 255, 255, 0.05);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.02) 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.02) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--r-md);
+}
+
+.stream-row-skel {
+  cursor: default;
+}
+
+/* Mirrors .stream-quality (min-width 52px, 6px 9px padding ≈ 31px tall). */
+.stream-quality-skel {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 31px;
+  border-radius: var(--r-sm);
+}
+
+.skel-line {
+  display: block;
+  border-radius: var(--r-sm);
+}
+/* Mirrors .stream-name (13px / weight 600) line height. */
+.skel-name {
+  width: 62%;
+  height: 13px;
+}
+/* Mirrors the .stream-meta row (12px, 2px margin-top). */
+.skel-meta {
+  width: 88%;
+  height: 11px;
+  margin-top: 7px;
+}
+
+/* Mirrors the resting .stream-badge footprint (min-width 92px pill). */
+.stream-badge-skel {
+  flex: 0 0 auto;
+  width: 92px;
+  height: 23px;
+  border-radius: var(--r-pill);
+}
 .stream-row:hover:not(:disabled) {
   border-color: rgba(var(--accent-rgb), 0.45);
   box-shadow: 0 8px 22px -6px rgba(var(--accent-rgb), 0.28);
@@ -147,8 +199,13 @@
 
 .stream-badge {
   flex: 0 0 auto;
+  /* Reserve width so the row's right edge doesn't reflow when a stream swaps
+     between its cached / "Will cache" / "Resolving…" states (each a different
+     width). The widest states ("Instant · RD", "Resolving…") fit within this. */
+  min-width: 92px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   font-size: 11px;
   font-weight: 600;

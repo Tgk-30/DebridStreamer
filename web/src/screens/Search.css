@@ -73,6 +73,29 @@
   color: var(--danger);
 }
 
+/* Active-search skeleton — mirrors the .media-grid results layout (same
+   columns + gap) so real posters swap in with no layout shift. */
+.search-skel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--poster-grid-min, 184px), 1fr));
+  gap: var(--sp-md);
+  align-items: start;
+}
+.search-skel {
+  aspect-ratio: 2 / 3;
+  background-color: rgba(255, 255, 255, 0.05);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.02) 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.02) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--r-md);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+}
+
 .search-idle {
   display: flex;
   flex-direction: column;
@@ -152,7 +175,8 @@
     min-height: 48px;
   }
 
-  .search-screen .media-grid {
+  .search-screen .media-grid,
+  .search-skel-grid {
     grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
     gap: var(--sp-sm);
   }

@@ -1,10 +1,5 @@
 /* Calendar agenda — grouped upcoming-episode rows. */
 
-.cal-status {
-  font-size: 14px;
-  margin-top: var(--sp-md);
-}
-
 .cal-groups {
   display: flex;
   flex-direction: column;
@@ -37,6 +32,10 @@
   display: flex;
   align-items: center;
   gap: var(--sp-md);
+  /* Min-height keeps rows uniform whether or not an episode title is present,
+     so swapping titled/untitled rows (or the loading skeleton) causes no CLS. */
+  min-height: 57px;
+  box-sizing: border-box;
   padding: var(--sp-sm) var(--sp-md);
   text-align: left;
   cursor: pointer;
@@ -52,8 +51,10 @@
 
 .cal-row-poster {
   flex: 0 0 auto;
+  /* Fixed 2:3 box so the lazy-loaded <img> never reflows the row on load. */
   width: 38px;
   height: 57px;
+  aspect-ratio: 2 / 3;
   border-radius: var(--r-xs);
   overflow: hidden;
   background: rgba(255, 255, 255, 0.05);
@@ -111,4 +112,58 @@
   font-weight: 500;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+/* --- Loading skeleton --- shimmer placeholders shaped like real cal rows.
+   Reuses the global @keyframes shimmer (components/MediaCard.css). */
+.cal-skel {
+  background-color: rgba(255, 255, 255, 0.05);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.02) 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.02) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--r-md);
+}
+
+/* Group heading placeholder — sized like .cal-group-label's line. */
+.cal-skel-label {
+  width: 96px;
+  height: 13px;
+  border-radius: var(--r-xs);
+}
+
+/* Non-interactive skeleton row: same box as .cal-row, no hover lift. */
+.cal-row-skel {
+  cursor: default;
+}
+.cal-row-skel:hover {
+  transform: none;
+  border-color: transparent;
+}
+
+/* Poster placeholder keeps the 2:3 box; override the flat fill with shimmer. */
+.cal-row-skel .cal-row-poster {
+  background: none;
+  border-radius: var(--r-xs);
+}
+
+.cal-skel-title {
+  width: 60%;
+  height: 14px;
+  border-radius: var(--r-xs);
+}
+.cal-skel-sub {
+  width: 40%;
+  height: 12px;
+  border-radius: var(--r-xs);
+}
+.cal-skel-date {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 13px;
+  border-radius: var(--r-xs);
 }

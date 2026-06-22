@@ -74,6 +74,10 @@
 .profile-avatar {
   display: grid;
   place-items: center;
+  /* Square footprint reserved up front (real tiles get exact px from inline
+     style) so the centered grid never reflows on first paint. */
+  aspect-ratio: 1;
+  min-width: 84px;
   border-radius: 14px;
   color: #fff;
   font-weight: 700;
