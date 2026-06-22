@@ -213,7 +213,7 @@
   transition: color 0.2s;
 }
 .media-card:hover .media-card-title {
-  color: #fff;
+  color: var(--text-primary);
 }
 .media-card-meta {
   display: flex;
@@ -230,9 +230,9 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: rgba(255, 255, 255, 0.86);
+  color: var(--text-secondary);
   font-weight: 650;
 }
 .media-card-rating svg {
-  color: rgb(250, 184, 92);
+  color: var(--warning);
 }

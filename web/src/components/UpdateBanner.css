@@ -82,7 +82,7 @@
 }
 .update-banner-dismiss:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--glass-tint-control-hover);
 }
 
 /* Determinate / indeterminate install progress bar. */
@@ -90,7 +90,7 @@
   margin-top: 5px;
   height: 4px;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--glass-tint-control);
   overflow: hidden;
 }
 .update-banner-progress-fill {

@@ -17,7 +17,7 @@
   /* Accent gradient over the app's translucent surface so it reads as glass. */
   background:
     linear-gradient(135deg, var(--tile-a), var(--tile-b)),
-    var(--surface, rgba(20, 22, 38, 0.6));
+    var(--glass-tint-raised, rgba(20, 22, 38, 0.6));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   color: var(--text-primary, rgba(255, 255, 255, 0.94));
   text-align: left;

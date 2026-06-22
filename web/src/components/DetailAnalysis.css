@@ -78,16 +78,16 @@
 }
 
 .detail-analysis-card.tone-yes {
-  --verdict-color: rgb(76, 214, 138);
-  --verdict-soft: rgba(76, 214, 138, 0.16);
+  --verdict-color: var(--success);
+  --verdict-soft: rgba(var(--success-rgb), 0.16);
 }
 .detail-analysis-card.tone-maybe {
-  --verdict-color: rgb(238, 191, 82);
-  --verdict-soft: rgba(238, 191, 82, 0.16);
+  --verdict-color: var(--warning);
+  --verdict-soft: rgba(var(--warning-rgb), 0.16);
 }
 .detail-analysis-card.tone-no {
-  --verdict-color: rgb(238, 110, 110);
-  --verdict-soft: rgba(238, 110, 110, 0.16);
+  --verdict-color: var(--danger);
+  --verdict-soft: rgba(var(--danger-rgb), 0.16);
 }
 
 .detail-analysis-head {

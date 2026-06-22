@@ -8,7 +8,7 @@
   border-radius: var(--r-pill);
   width: 320px;
   min-height: 44px;
-  background: rgba(34, 36, 56, 0.76);
+  background: var(--glass-tint-raised);
 }
 
 .global-search input {

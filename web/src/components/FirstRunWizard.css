@@ -27,7 +27,7 @@
   width: min(640px, 100%);
   padding: clamp(var(--sp-xl), 4vw, 44px);
   border-radius: var(--r-lg);
-  background: var(--glass-tint-panel, rgba(20, 24, 36, 0.72));
+  background: var(--glass-tint-hero);
   border: 0.75px solid var(--glass-border);
   box-shadow: 0 40px 100px -28px rgba(0, 0, 0, 0.7),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -48,7 +48,7 @@
 }
 .first-run-skip:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--glass-tint-control);
 }
 
 .first-run-title {
@@ -131,7 +131,7 @@
   text-align: left;
   padding: var(--sp-md) var(--sp-lg);
   border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--glass-tint-rest, rgba(255, 255, 255, 0.04));
   border: 0.75px solid var(--glass-border);
   color: var(--text-primary);
   cursor: pointer;
@@ -214,7 +214,7 @@
 }
 .first-run-secondary {
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
 }
 .first-run-secondary:hover {
   color: var(--text-primary);

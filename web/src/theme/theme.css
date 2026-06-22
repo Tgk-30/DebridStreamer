@@ -86,6 +86,11 @@
   --focus-ring-color: rgba(var(--accent-rgb), 0.9);
   --focus-ring: 0 0 0 2px rgba(var(--accent-rgb), 0.7);
 
+  /* ---- Scrollbar thumb (dark-theme default: a light thumb; the light theme
+     overrides to a dark thumb so it stays visible on a pale surface) ---- */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+
   /* ---- Type scale (editorial ramp) + display tracking ---- */
   --fs-display: clamp(34px, 4.4vw, 58px);
   --fs-title: clamp(28px, 3vw, 34px);
@@ -239,6 +244,10 @@
   --text-primary: rgba(22, 25, 42, 0.94);
   --text-secondary: rgba(22, 25, 42, 0.72);
   --text-tertiary: rgba(22, 25, 42, 0.56);
+
+  /* Dark thumb so the scrollbar stays visible on the pale surface. */
+  --scrollbar-thumb: rgba(22, 25, 42, 0.22);
+  --scrollbar-thumb-hover: rgba(22, 25, 42, 0.38);
 
   --bg-1: rgb(238, 241, 248);
   --bg-2: rgb(223, 228, 242);
@@ -761,9 +770,9 @@ textarea::placeholder {
   box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.45);
 }
 .btn-prominent:disabled {
-  color: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-tertiary);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-tint-control);
   box-shadow: none;
 }
 
@@ -860,20 +869,21 @@ textarea::placeholder {
 h1, h2, h3 { letter-spacing: -0.01em; }
 
 /* Premium selection + focus ring. */
-::selection { background: rgba(var(--accent-rgb), 0.32); color: #fff; }
+::selection { background: rgba(var(--accent-rgb), 0.32); color: var(--text-primary); }
 :focus-visible { outline: 2px solid var(--focus-ring-color); outline-offset: 2px; }
 
-/* Slim glass scrollbars. */
-* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.18) transparent; }
+/* Slim glass scrollbars (thumb color is theme-aware: a light thumb on the dark
+   themes, a dark thumb on light — see --scrollbar-thumb in the theme blocks). */
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
 *::-webkit-scrollbar { width: 11px; height: 11px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--scrollbar-thumb);
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--scrollbar-thumb-hover);
   background-clip: padding-box;
 }

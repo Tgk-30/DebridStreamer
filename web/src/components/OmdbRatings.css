@@ -12,7 +12,7 @@
   padding: 6px 12px;
   border-radius: var(--r-pill, 999px);
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.14));
-  background: var(--surface, rgba(20, 22, 38, 0.6));
+  background: var(--glass-tint-control);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 

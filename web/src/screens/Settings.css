@@ -81,9 +81,9 @@
   justify-content: space-between;
   gap: 6px;
   padding: var(--sp-sm);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--glass-tint-control);
   color: var(--text-primary);
   cursor: pointer;
   font: inherit;
@@ -127,11 +127,11 @@
 .settings-tabs .chip {
   flex: 0 0 auto;
   scroll-snap-align: start;
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.055);
+  border-color: var(--glass-border);
+  background: var(--glass-tint-control);
 }
 .settings-tabs .chip.is-active {
-  color: #fff;
+  color: var(--text-primary);
   background: rgba(var(--accent-rgb), 0.22);
   border-color: rgba(var(--accent-rgb), 0.58);
   box-shadow:
@@ -203,7 +203,7 @@
   font-size: 14px;
   font-family: inherit;
   color: var(--text-primary);
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--glass-tint-control);
   border: 0.75px solid var(--glass-border);
   border-radius: var(--r-sm);
   min-height: 44px;
@@ -278,9 +278,9 @@
   width: 36px;
   height: 36px;
   padding: 0;
-  border: 0.75px solid rgba(255, 255, 255, 0.1);
+  border: 0.75px solid var(--glass-border);
   border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--glass-tint-control);
   color: var(--text-secondary);
   cursor: pointer;
 }
@@ -308,7 +308,7 @@
   padding: var(--sp-sm) var(--sp-md);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--glass-tint-control);
 }
 
 .settings-key-grid {
@@ -350,7 +350,7 @@
   border: 0.75px solid var(--glass-border);
   border-radius: var(--r-sm);
   outline: none;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--glass-tint-control);
   color: var(--text-primary);
   font: inherit;
 }
@@ -371,7 +371,7 @@
   padding: var(--sp-sm);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--glass-tint-control);
   color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
@@ -449,9 +449,9 @@
   min-height: 22px;
   margin: 0;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid var(--glass-border);
   border-radius: 7px;
-  background: rgba(0, 0, 0, 0.24);
+  background: var(--glass-tint-control);
   cursor: pointer;
   transition:
     background 0.16s,
@@ -578,7 +578,7 @@
   padding: 4px;
   border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
-  background: rgba(0, 0, 0, 0.22);
+  background: var(--glass-tint-control);
 }
 
 .settings-segmented button {
@@ -602,11 +602,11 @@
 
 .settings-segmented button:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--glass-tint-control-hover);
 }
 
 .settings-segmented button.is-active {
-  color: #fff;
+  color: var(--text-primary);
   background: rgba(var(--accent-rgb), 0.36);
   box-shadow:
     inset 0 0 0 2px rgba(var(--accent-rgb), 0.78),
@@ -713,7 +713,7 @@
   padding: 0 var(--sp-sm);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--glass-tint-control);
   color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
@@ -805,7 +805,7 @@
   border: 0.75px solid var(--glass-border);
   border-radius: var(--r-sm);
   outline: none;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--glass-tint-control);
   color: var(--text-primary);
   font: inherit;
   font-size: 13px;
@@ -825,7 +825,7 @@
   flex-direction: column;
   gap: var(--sp-md);
   padding: var(--sp-md);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-md);
 }
 .settings-source-row {
@@ -854,7 +854,7 @@
   gap: var(--sp-md);
   padding: var(--sp-sm);
   border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--glass-tint-control);
 }
 .settings-share-qr {
   width: 128px;
@@ -885,7 +885,7 @@
   gap: var(--sp-sm);
   padding: var(--sp-sm);
   border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--glass-tint-control);
 }
 .settings-invite-link code {
   flex: 1 1 auto;
@@ -904,7 +904,7 @@
   gap: 2px;
   padding: var(--sp-sm);
   border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--glass-tint-control);
 }
 .settings-usage-grid strong {
   font-size: 16px;
@@ -921,7 +921,7 @@
   justify-content: space-between;
   gap: var(--sp-md);
   padding: var(--sp-sm);
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--glass-tint-control);
   font-size: 13px;
 }
 .settings-usage-row > span {
@@ -995,9 +995,9 @@
   gap: 6px;
   min-height: 32px;
   padding: 0 9px;
-  border: 0.75px solid rgba(255, 255, 255, 0.08);
+  border: 0.75px solid var(--glass-border);
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--glass-tint-control);
   font-size: 12px;
   color: var(--text-secondary);
   cursor: pointer;
@@ -1013,7 +1013,7 @@
   height: 32px;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--glass-tint-control);
   color: var(--text-secondary);
   cursor: pointer;
 }
@@ -1088,7 +1088,7 @@
 .settings-profile-meta span {
   padding: 3px 7px;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--glass-tint-control);
 }
 
 .settings-install-picker {
@@ -1101,7 +1101,7 @@
   padding: var(--sp-sm) var(--sp-md);
   border: 0.75px solid var(--glass-border);
   border-radius: var(--r-sm);
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--glass-tint-control);
   color: var(--text-primary);
   font: inherit;
   outline: none;
@@ -1123,7 +1123,7 @@
   padding: var(--sp-sm);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--glass-tint-control);
   color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
@@ -1145,7 +1145,7 @@
 }
 
 .settings-install-choice:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--glass-tint-control-hover);
 }
 
 .settings-install-choice.is-active {
@@ -1213,7 +1213,7 @@
     padding: var(--sp-sm);
     border: 1px solid var(--glass-border);
     border-radius: var(--r-md);
-    background: rgba(255, 255, 255, 0.055);
+    background: var(--glass-tint-control);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
@@ -1260,7 +1260,7 @@
     padding: var(--sp-sm) var(--sp-md);
     border: 0.75px solid var(--glass-border);
     border-radius: var(--r-sm);
-    background: rgba(0, 0, 0, 0.25);
+    background: var(--glass-tint-control);
     color: var(--text-primary);
     font: inherit;
     outline: none;
@@ -1310,7 +1310,7 @@
     padding: var(--sp-sm);
     border: 1px solid var(--glass-border);
     border-radius: var(--r-md);
-    background: rgba(255, 255, 255, 0.055);
+    background: var(--glass-tint-control);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
@@ -1351,7 +1351,7 @@
     padding: var(--sp-sm);
     border: 1px solid var(--glass-border);
     border-radius: var(--r-md);
-    background: rgba(255, 255, 255, 0.055);
+    background: var(--glass-tint-control);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 

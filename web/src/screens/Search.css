@@ -57,7 +57,7 @@
   min-width: 44px;
 }
 .search-filters .chip.is-active {
-  color: #fff;
+  color: var(--text-primary);
   background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.72), rgba(var(--accent-secondary-rgb), 0.36));
   border-color: rgba(var(--accent-rgb), 0.7);
   box-shadow:
