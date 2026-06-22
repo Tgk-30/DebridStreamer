@@ -54,6 +54,10 @@ export interface ServerConfig {
   trustProxy: boolean;
   corsOrigin: string | null;
   logger: boolean;
+  /** Distribution tier this build/deploy targets — drives the client's
+   *  onboarding flow (family = connect to your server, friends = self-host with
+   *  baked keys, public = guided BYOK). Informational; not a security control. */
+  buildProfile: "family" | "friends" | "public";
   /** "Hidden key" OMDb support: a server-held OMDb API key used to enrich
    *  titles with IMDb / Rotten Tomatoes / Metacritic ratings via the
    *  `/api/omdb/:imdbId` proxy. Lives ONLY on the server (this env value, or an

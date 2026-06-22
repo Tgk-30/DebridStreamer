@@ -28,6 +28,11 @@ function stringEnv(name: string): string | null {
   return value != null && value.length > 0 ? value : null;
 }
 
+function buildProfileEnv(): "family" | "friends" | "public" {
+  const value = process.env.DS_BUILD_PROFILE?.trim().toLowerCase();
+  return value === "family" || value === "friends" ? value : "public";
+}
+
 function loadOrCreateSecretKey(dataDir: string): Buffer {
   const envSecret = process.env.DS_SERVER_SECRET_KEY;
   if (envSecret && envSecret.trim().length > 0) {
@@ -99,5 +104,6 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       overrides.omdbApiKey !== undefined
         ? overrides.omdbApiKey
         : stringEnv("DS_SERVER_OMDB_API_KEY"),
+    buildProfile: overrides.buildProfile ?? buildProfileEnv(),
   };
 }

@@ -10,6 +10,7 @@ import {
   type ServerProfileSummary,
   type ServerSession,
 } from "../lib/ServerSessionContext";
+import { AmbientVideo } from "./AmbientVideo";
 import "./ServerModeGate.css";
 
 declare global {
@@ -298,6 +299,7 @@ function GateShell({
 }) {
   return (
     <div className="server-gate">
+      <AmbientVideo name="aurora" opacity={0.32} />
       <div className="server-gate-card">
         <h1 className="server-gate-title">{title}</h1>
         <p className="server-gate-copy">{copy}</p>
@@ -363,6 +365,7 @@ function AuthForm({
 
   return (
     <div className="server-gate">
+      <AmbientVideo name={includeSetupToken ? "secure" : "aurora"} opacity={0.3} />
       <div className="server-gate-card">
         <h1 className="server-gate-title">{title}</h1>
         <p className="server-gate-copy">{copy}</p>

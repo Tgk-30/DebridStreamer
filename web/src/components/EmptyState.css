@@ -52,3 +52,16 @@
     width: 100%;
   }
 }
+
+/* Optional ambient background loop (decorative). Lift the real content above. */
+.empty-state-ambient {
+  position: relative;
+  overflow: hidden;
+}
+.empty-state-ambient > .ambient-video {
+  z-index: 0;
+}
+.empty-state-ambient > :not(.ambient-video) {
+  position: relative;
+  z-index: 1;
+}

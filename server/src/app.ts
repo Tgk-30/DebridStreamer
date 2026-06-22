@@ -1744,6 +1744,8 @@ function registerRoutes(
       // server, or env OMDb key is configured). The key itself is never sent —
       // the client only learns that the /api/omdb proxy will return ratings.
       omdbProxy: auth != null && omdbAvailableFor(db, config, auth.profileId),
+      // Distribution tier — drives which onboarding flow the client shows.
+      buildProfile: config.buildProfile,
     };
   });
 

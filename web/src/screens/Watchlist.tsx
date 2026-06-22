@@ -33,6 +33,7 @@ export function Watchlist() {
           title="Your watchlist is empty"
           subtitle="Open any title and tap Watchlist to keep it ready for later."
           note="Stored on this device"
+          ambient="cinema"
         />
       ) : (
         <div className="lib-grid-wrap">
