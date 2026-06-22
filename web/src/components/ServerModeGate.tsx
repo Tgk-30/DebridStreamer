@@ -30,6 +30,7 @@ interface BootstrapResponse {
   csrfToken?: string | null;
   transcodeAvailable?: boolean;
   omdbProxy?: boolean;
+  buildProfile?: "family" | "friends" | "public";
 }
 
 interface AuthResponse {
@@ -130,6 +131,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<ServerProfileSummary[]>([]);
   const [transcodeAvailable, setTranscodeAvailable] = useState(false);
   const [omdbProxy, setOmdbProxy] = useState(false);
+  const [buildProfile, setBuildProfile] = useState<"family" | "friends" | "public">("public");
   const [state, setState] = useState<GateState>(() =>
     baseURL == null ? { kind: "local" } : { kind: "loading", baseURL },
   );
@@ -173,6 +175,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         setCsrfToken(bootstrap.csrfToken);
         setTranscodeAvailable(bootstrap.transcodeAvailable ?? false);
         setOmdbProxy(bootstrap.omdbProxy ?? false);
+        setBuildProfile(bootstrap.buildProfile ?? "public");
         if (bootstrap.setupRequired) {
           setState({
             kind: "setup",
@@ -208,6 +211,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         initialProfiles={profiles}
         initialTranscodeAvailable={transcodeAvailable}
         initialOmdbProxy={omdbProxy}
+        initialBuildProfile={buildProfile}
       >
         {children}
       </ServerSessionProvider>

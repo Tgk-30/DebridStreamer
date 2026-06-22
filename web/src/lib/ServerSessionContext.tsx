@@ -45,7 +45,11 @@ interface ServerSessionContextValue {
    *  server, or env OMDb key is configured server-side). The key itself never
    *  reaches the client — this only says the /api/omdb proxy will answer. */
   omdbProxy: boolean;
+  /** Distribution tier this build targets — drives the onboarding flow. */
+  buildProfile: "family" | "friends" | "public";
 }
+
+export type BuildProfile = "family" | "friends" | "public";
 
 const ServerSessionCtx = createContext<ServerSessionContextValue>({
   session: null,
@@ -54,6 +58,7 @@ const ServerSessionCtx = createContext<ServerSessionContextValue>({
   setProfiles: () => {},
   transcodeAvailable: false,
   omdbProxy: false,
+  buildProfile: "public",
 });
 
 export function ServerSessionProvider({
@@ -61,12 +66,14 @@ export function ServerSessionProvider({
   initialProfiles = [],
   initialTranscodeAvailable = false,
   initialOmdbProxy = false,
+  initialBuildProfile = "public",
   children,
 }: {
   initial: ServerSession | null;
   initialProfiles?: ServerProfileSummary[];
   initialTranscodeAvailable?: boolean;
   initialOmdbProxy?: boolean;
+  initialBuildProfile?: BuildProfile;
   children: ReactNode;
 }) {
   const [session, setSession] = useState<ServerSession | null>(initial);
@@ -85,6 +92,7 @@ export function ServerSessionProvider({
         setProfiles: setList,
         transcodeAvailable: initialTranscodeAvailable,
         omdbProxy: initialOmdbProxy,
+        buildProfile: initialBuildProfile,
       }}
     >
       {children}
@@ -100,6 +108,13 @@ export function useTranscodeAvailable(): boolean {
 /** Whether the server can supply OMDb ratings (Server Mode "hidden key" path). */
 export function useOmdbProxy(): boolean {
   return useContext(ServerSessionCtx).omdbProxy;
+}
+
+/** The distribution tier this build targets (family|friends|public). Drives the
+ *  onboarding flow. Server Mode reads it from /api/bootstrap; Local Mode falls
+ *  back to the context default ("public"). */
+export function useBuildProfile(): BuildProfile {
+  return useContext(ServerSessionCtx).buildProfile;
 }
 
 /** The current Server-Mode session, or null in Local Mode / before sign-in. */
