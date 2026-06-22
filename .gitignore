@@ -37,3 +37,7 @@ conversation*.md
 # macOS Finder metadata
 .DS_Store
 **/.DS_Store
+
+# Build-generated encrypted embedded secrets (friends tier) — never commit.
+server/embedded-secrets.json
+embedded-secrets.json

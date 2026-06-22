@@ -48,7 +48,8 @@ import {
   verifyPassword,
 } from "./crypto.js";
 import { assertSafeUpstream, fetchUpstreamSafely } from "./ssrf.js";
-import { fetchOmdbRatings } from "./omdb.js";
+import { fetchOmdbRatings, type OMDBRatings } from "./omdb.js";
+import { embeddedSecret } from "./embeddedSecrets.js";
 import { readFile } from "node:fs/promises";
 import { realTranscoder } from "./transcode.js";
 import { MANIFEST_NAME, TranscodeRegistry } from "./transcodeSession.js";
@@ -1222,7 +1223,10 @@ function resolveOmdbKey(
     }
   }
   const envKey = config.omdbApiKey?.trim();
-  return envKey != null && envKey.length > 0 ? envKey : null;
+  if (envKey != null && envKey.length > 0) return envKey;
+  // Lowest precedence: a key baked into a "friends" build (AES-256-GCM at rest,
+  // decrypted in memory). A user's own / server / env key always wins over it.
+  return embeddedSecret("omdb");
 }
 
 /** Whether the server can provide OMDb ratings for a profile (used to drive the
@@ -3264,12 +3268,18 @@ function registerRoutes(
   });
 
   // OMDb ratings proxy — the "hidden key" path. The key is resolved server-side
-  // (profile credential → server credential → env DS_SERVER_OMDB_API_KEY) and
-  // used to call OMDb here; the client receives only parsed ratings, never the
-  // key and never the OMDb request. { ratings: null } when no key is configured.
+  // (profile credential → server credential → env → embedded build key) and used
+  // to call OMDb here; the client receives only parsed ratings, never the key and
+  // never the OMDb request. { ratings: null } when no key is configured.
+  //
+  // Ratings for an IMDb id are identical regardless of which key fetched them, so
+  // they're cached server-wide (bounded TTL) to cap shared-key spend + abuse.
+  const omdbCache = new Map<string, { ratings: OMDBRatings | null; expires: number }>();
+  const OMDB_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+  const OMDB_CACHE_MAX = 5000;
   app.get("/api/omdb/:imdbId", async (request) => {
     const auth = requireAuth(db, request);
-    rateLimit(request, `omdb:${auth.profileId}`, 120, 60 * 1000);
+    rateLimit(request, `omdb:${auth.profileId}`, 60, 60 * 1000);
     const imdbId = z
       .string()
       .trim()
@@ -3277,7 +3287,18 @@ function registerRoutes(
       .parse((request.params as { imdbId: string }).imdbId);
     const key = resolveOmdbKey(db, config, auth.profileId);
     if (key == null) return { ratings: null };
-    return { ratings: await fetchOmdbRatings(key, imdbId) };
+
+    const now = Date.now();
+    const hit = omdbCache.get(imdbId);
+    if (hit != null && hit.expires > now) return { ratings: hit.ratings };
+
+    const ratings = await fetchOmdbRatings(key, imdbId);
+    if (omdbCache.size >= OMDB_CACHE_MAX) {
+      const oldest = omdbCache.keys().next().value;
+      if (oldest != null) omdbCache.delete(oldest);
+    }
+    omdbCache.set(imdbId, { ratings, expires: now + OMDB_CACHE_TTL_MS });
+    return { ratings };
   });
 
   app.get("/api/streams/:imdbId", async (request) => {
