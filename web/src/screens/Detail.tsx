@@ -17,6 +17,7 @@ import { useDetail } from "../data/detail";
 import { useStreams } from "../data/streams";
 import { DetailHero, type TasteSignal } from "../components/DetailHero";
 import { DetailAnalysis } from "../components/DetailAnalysis";
+import { OmdbRatings } from "../components/OmdbRatings";
 import { StreamPicker } from "../components/StreamPicker";
 import { CastRail } from "../components/CastRail";
 import { Rail } from "../components/Rail";
@@ -330,6 +331,11 @@ export function Detail() {
           }}
         />
       )}
+
+      {/* External ratings (IMDb / Rotten Tomatoes / Metacritic) via OMDb —
+          from the user's own key (local BYOK) or the server "hidden key" proxy.
+          Renders nothing when no key is available. */}
+      <OmdbRatings imdbId={detail.data.imdbId} />
 
       {/* AI "Would I Like This?" — only when a local AI provider is configured.
           analyzeTitle is the local-Dexie path; Server-Mode parity is out of scope. */}

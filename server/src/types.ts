@@ -54,6 +54,14 @@ export interface ServerConfig {
   trustProxy: boolean;
   corsOrigin: string | null;
   logger: boolean;
+  /** "Hidden key" OMDb support: a server-held OMDb API key used to enrich
+   *  titles with IMDb / Rotten Tomatoes / Metacritic ratings via the
+   *  `/api/omdb/:imdbId` proxy. Lives ONLY on the server (this env value, or an
+   *  encrypted server/profile credential) and is never sent to clients — so a
+   *  limited-distribution build ships ratings with an unextractable key. A
+   *  per-profile OMDb credential, when set, overrides this. Null = no
+   *  server-provided OMDb (clients fall back to their own key, if any). */
+  omdbApiKey: string | null;
 }
 
 export interface AuthContext {

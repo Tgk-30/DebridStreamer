@@ -18,6 +18,7 @@
 
 import { TMDBService } from "../services/metadata/TMDBService";
 import { OMDBService } from "../services/metadata/OMDBService";
+import { embeddedOmdbKey } from "./embeddedOmdb";
 import { DebridManager } from "../services/debrid/DebridManager";
 import type { DebridService } from "../services/debrid/types";
 import type { DebridServiceType } from "../services/debrid/models";
@@ -1007,7 +1008,13 @@ export function buildServices(settings: AppSettings): AppServices {
   // just Search/Browse — without a reload.
   const effectiveTmdbKey = tmdbKey.length > 0 ? tmdbKey : readEnvTmdbKey();
   const tmdb = effectiveTmdbKey.length > 0 ? new TMDBService(effectiveTmdbKey) : null;
-  const omdb = omdbKey.length > 0 ? new OMDBService(omdbKey) : null;
+  // OMDb key precedence: the user's own key (BYOK) → a build-time embedded key
+  // (the serverless limited-distribution path, Mode 3). In Server Mode leave
+  // services.omdb null so ratings come from the server's /api/omdb "hidden key"
+  // proxy instead of ever putting a key in the client.
+  const effectiveOmdbKey =
+    omdbKey.length > 0 ? omdbKey : isServerMode() ? "" : embeddedOmdbKey();
+  const omdb = effectiveOmdbKey.length > 0 ? new OMDBService(effectiveOmdbKey) : null;
 
   // Debrid: priority order = insertion order (entry order in settings). The
   // manager is cached by config signature so its identity is stable across

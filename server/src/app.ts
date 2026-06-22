@@ -48,6 +48,7 @@ import {
   verifyPassword,
 } from "./crypto.js";
 import { assertSafeUpstream, fetchUpstreamSafely } from "./ssrf.js";
+import { fetchOmdbRatings } from "./omdb.js";
 import { readFile } from "node:fs/promises";
 import { realTranscoder } from "./transcode.js";
 import { MANIFEST_NAME, TranscodeRegistry } from "./transcodeSession.js";
@@ -1183,6 +1184,53 @@ function effectiveCredentials(db: AppDatabase, profileId: string) {
   });
 }
 
+/**
+ * Resolve the OMDb API key to use for a profile, WITHOUT ever exposing it.
+ * Precedence: the profile's own OMDb credential (server-mode BYOK) → a
+ * server-scoped OMDb credential (operator-shared) → the env-configured server
+ * key (`DS_SERVER_OMDB_API_KEY`, the baked limited-distribution key). Returns
+ * null when none is configured. The plaintext key never leaves the server.
+ */
+function resolveOmdbKey(
+  db: AppDatabase,
+  config: ServerConfig,
+  profileId: string,
+): string | null {
+  const row = db.sqlite
+    .prepare(
+      `SELECT encrypted_value
+         FROM credential_secrets
+        WHERE provider = 'omdb'
+          AND is_active = 1
+          AND (
+            (scope = 'profile' AND profile_id = ?)
+            OR scope = 'server'
+          )
+        ORDER BY
+          CASE WHEN scope = 'profile' THEN 0 ELSE 1 END,
+          priority ASC,
+          updated_at DESC
+        LIMIT 1`,
+    )
+    .get(profileId) as { encrypted_value: string } | undefined;
+  if (row != null) {
+    try {
+      const key = decryptSecret(row.encrypted_value, config.secretKey).trim();
+      if (key.length > 0) return key;
+    } catch {
+      // Fall through to the env key on a decrypt failure.
+    }
+  }
+  const envKey = config.omdbApiKey?.trim();
+  return envKey != null && envKey.length > 0 ? envKey : null;
+}
+
+/** Whether the server can provide OMDb ratings for a profile (used to drive the
+ *  client capability flag, without revealing the key). */
+function omdbAvailableFor(db: AppDatabase, config: ServerConfig, profileId: string): boolean {
+  return resolveOmdbKey(db, config, profileId) != null;
+}
+
 function upsertCredential(
   db: AppDatabase,
   config: ServerConfig,
@@ -1688,6 +1736,10 @@ function registerRoutes(
       // Whether server-side transcoding is actually usable (operator flag on AND
       // ffmpeg present at boot), so the client only offers it when it'll work.
       transcodeAvailable: transcode.ready,
+      // Whether the server can supply OMDb ratings for this profile (a profile,
+      // server, or env OMDb key is configured). The key itself is never sent —
+      // the client only learns that the /api/omdb proxy will return ratings.
+      omdbProxy: auth != null && omdbAvailableFor(db, config, auth.profileId),
     };
   });
 
@@ -3209,6 +3261,23 @@ function registerRoutes(
       id: query.id,
       type: query.type,
     });
+  });
+
+  // OMDb ratings proxy — the "hidden key" path. The key is resolved server-side
+  // (profile credential → server credential → env DS_SERVER_OMDB_API_KEY) and
+  // used to call OMDb here; the client receives only parsed ratings, never the
+  // key and never the OMDb request. { ratings: null } when no key is configured.
+  app.get("/api/omdb/:imdbId", async (request) => {
+    const auth = requireAuth(db, request);
+    rateLimit(request, `omdb:${auth.profileId}`, 120, 60 * 1000);
+    const imdbId = z
+      .string()
+      .trim()
+      .regex(/^tt\d+$/)
+      .parse((request.params as { imdbId: string }).imdbId);
+    const key = resolveOmdbKey(db, config, auth.profileId);
+    if (key == null) return { ratings: null };
+    return { ratings: await fetchOmdbRatings(key, imdbId) };
   });
 
   app.get("/api/streams/:imdbId", async (request) => {

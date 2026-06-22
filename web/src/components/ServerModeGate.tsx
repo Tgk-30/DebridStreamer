@@ -28,6 +28,7 @@ interface BootstrapResponse {
   profiles?: ProfileState | null;
   csrfToken?: string | null;
   transcodeAvailable?: boolean;
+  omdbProxy?: boolean;
 }
 
 interface AuthResponse {
@@ -127,6 +128,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<ServerSession | null>(null);
   const [profiles, setProfiles] = useState<ServerProfileSummary[]>([]);
   const [transcodeAvailable, setTranscodeAvailable] = useState(false);
+  const [omdbProxy, setOmdbProxy] = useState(false);
   const [state, setState] = useState<GateState>(() =>
     baseURL == null ? { kind: "local" } : { kind: "loading", baseURL },
   );
@@ -169,6 +171,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         // document.cookie can't see ds_csrf).
         setCsrfToken(bootstrap.csrfToken);
         setTranscodeAvailable(bootstrap.transcodeAvailable ?? false);
+        setOmdbProxy(bootstrap.omdbProxy ?? false);
         if (bootstrap.setupRequired) {
           setState({
             kind: "setup",
@@ -203,6 +206,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         initial={session}
         initialProfiles={profiles}
         initialTranscodeAvailable={transcodeAvailable}
+        initialOmdbProxy={omdbProxy}
       >
         {children}
       </ServerSessionProvider>

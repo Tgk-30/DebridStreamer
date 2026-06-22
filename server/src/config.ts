@@ -91,5 +91,13 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     trustProxy: overrides.trustProxy ?? boolEnv("DS_SERVER_TRUST_PROXY", false),
     corsOrigin: overrides.corsOrigin ?? process.env.DS_SERVER_CORS_ORIGIN ?? null,
     logger: overrides.logger ?? boolEnv("DS_SERVER_LOGGER", process.env.NODE_ENV === "production"),
+    // Server-held OMDb key (the "hidden key" distribution path). Never exposed
+    // to clients — used only by the /api/omdb proxy. An encrypted server-scoped
+    // OMDb credential in the DB works too; this env is the convenient default
+    // for a baked limited-distribution server image.
+    omdbApiKey:
+      overrides.omdbApiKey !== undefined
+        ? overrides.omdbApiKey
+        : stringEnv("DS_SERVER_OMDB_API_KEY"),
   };
 }

@@ -8,6 +8,7 @@ import type {
 } from "../services/subtitles/OpenSubtitlesClient";
 import type { SubtitleCue } from "../services/subtitles/cues";
 import type { Genre, MediaCategory } from "../services/metadata/types";
+import type { OMDBRatings } from "../services/metadata/OMDBService";
 import type { StreamRow } from "../data/streams";
 import type { UpcomingEpisode } from "./metadata";
 import { configuredServerURL } from "./serverMode";
@@ -439,6 +440,18 @@ export async function fetchServerDetail(input: {
     type: input.type,
   });
   return serverRequest("GET", `/api/media/detail?${params.toString()}`);
+}
+
+/** Fetch OMDb ratings for an IMDb id via the server "hidden key" proxy. The
+ *  server holds the key (profile / server / env) and returns only the parsed
+ *  ratings — the key never reaches the client. Returns null when the server has
+ *  no OMDb key for this profile. */
+export async function fetchServerOmdb(imdbId: string): Promise<OMDBRatings | null> {
+  const res = await serverRequest<{ ratings: OMDBRatings | null }>(
+    "GET",
+    `/api/omdb/${encodeURIComponent(imdbId)}`,
+  );
+  return res.ratings;
 }
 
 // ── Server first-run setup helpers ───────────────────────────────────────────
