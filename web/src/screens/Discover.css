@@ -7,7 +7,21 @@
   padding: var(--sp-xl);
   /* clear the floating top-right global search field */
   padding-top: 64px;
-  max-width: 1280px;
+  max-width: 1440px;
+  /* Centered column so wide displays don't strand a one-sided gutter. */
+  margin-inline: auto;
+}
+
+/* Full-bleed cinematic billboard: the hero breaks out of the column padding and
+   reaches the top, with a flat top + gently rounded bottom that feathers into
+   the page — a window into the title, not a card on a page. Desktop only;
+   mobile keeps the inset card (it reads better in a narrow column). */
+@media (min-width: 768px) {
+  .discover > .hero {
+    margin: calc(-1 * 64px) calc(-1 * var(--sp-xl)) 0;
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
+    box-shadow: 0 24px 48px -28px rgba(0, 0, 0, 0.5);
+  }
 }
 
 /* ---- Skeleton ---- */
@@ -33,25 +47,26 @@
   gap: var(--sp-lg);
 }
 .skel-card {
-  width: 158px;
-  height: 237px;
-  border-radius: var(--r-sm);
+  width: var(--poster-card-width, 168px);
+  aspect-ratio: 2 / 3;
+  border-radius: var(--r-md);
   flex: 0 0 auto;
 }
 
-@keyframes skel-pulse {
-  0%,
-  100% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 0.85;
-  }
-}
+/* Directional shimmer sweep (shares MediaCard's global `shimmer` keyframe) so
+   the cold start matches the loaded UI instead of a dull opacity pulse. */
 .skel-hero,
 .skel-title,
 .skel-card {
-  animation: skel-pulse 1.6s ease-in-out infinite;
+  background-color: rgba(255, 255, 255, 0.05);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.02) 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.02) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
 }
 
 @media (max-width: 767px) {

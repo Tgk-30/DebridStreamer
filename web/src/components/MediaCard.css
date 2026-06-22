@@ -16,12 +16,19 @@
   text-align: left;
   cursor: pointer;
   color: var(--text-primary);
-  will-change: transform;
 }
 .media-card:hover,
 .media-card:focus-visible {
   z-index: 6;
   outline: none;
+  /* Promote to a layer only while interacting (not for every idle poster). */
+  will-change: transform;
+}
+/* A real, offset keyboard-focus ring on the poster (the grid is the most-
+   navigated surface; a 1px hairline isn't enough for remote/keyboard users). */
+.media-card:focus-visible .media-card-poster {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 3px;
 }
 
 .media-card-poster {

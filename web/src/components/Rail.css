@@ -29,9 +29,11 @@
   min-width: 64px;
   min-height: 44px;
   border: none;
-  background: rgba(255, 255, 255, 0.04);
+  /* Hidden plate at rest; revealed on row hover/focus so the column stays a
+     clean ladder of titles (Netflix/Apple-TV-style row affordance). */
+  background: transparent;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;
@@ -40,6 +42,11 @@
   transition:
     color 0.16s,
     background 0.16s;
+}
+.rail:hover .rail-see-all,
+.rail:focus-within .rail-see-all {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
 }
 .rail-see-all:hover {
   color: var(--accent);

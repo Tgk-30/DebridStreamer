@@ -42,7 +42,7 @@ export function MoodStrip({
   }
 
   return (
-    <section className="mood glass-raised glass-lit">
+    <section className="mood">
       <div className="mood-header">
         <Icon name="sparkles" size={19} className="t-accent" />
         <div className="mood-heading">

@@ -59,12 +59,18 @@
     background 0.16s ease-out,
     border-color 0.16s ease-out,
     color 0.16s ease-out,
+    transform 0.12s ease-out,
     box-shadow 0.16s ease-out;
 }
 
 .nav-rail-btn:hover {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
+}
+/* Tactile press feedback — the most-used control should match the press every
+   other button gives (.btn:active scale 0.97). */
+.nav-rail-btn:active {
+  transform: scale(0.94);
 }
 
 .nav-rail-btn svg {

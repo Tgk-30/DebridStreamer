@@ -1,11 +1,11 @@
 /* MoodStrip — the "Describe a vibe" AI discovery panel. */
 
+/* Borderless region (heading + field + chips) — the input is the only framed
+   element, so the top of Discover stays content-forward, not box-in-box. */
 .mood {
   display: flex;
   flex-direction: column;
   gap: var(--sp-md);
-  padding: var(--sp-lg);
-  border-radius: var(--r-lg);
   width: min(100%, 980px);
   max-width: none;
 }

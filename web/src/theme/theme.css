@@ -75,6 +75,33 @@
   --hero-mobile-fluid-height: 46vh;
   --hero-mobile-max-height: 400px;
 
+  /* ---- Elevation / shadow ramp (neutral depth; accent glows stay bespoke) ---- */
+  --shadow-sm: 0 3px 7px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 10px 16px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 18px 28px rgba(0, 0, 0, 0.28);
+  --shadow-xl: 0 24px 80px rgba(0, 0, 0, 0.42);
+  --shadow-overlay: 0 40px 100px -24px rgba(0, 0, 0, 0.85);
+
+  /* ---- Focus ring (one accent-derived source for the whole app) ---- */
+  --focus-ring-color: rgba(var(--accent-rgb), 0.9);
+  --focus-ring: 0 0 0 2px rgba(var(--accent-rgb), 0.7);
+
+  /* ---- Type scale (editorial ramp) + display tracking ---- */
+  --fs-display: clamp(34px, 4.4vw, 58px);
+  --fs-title: clamp(28px, 3vw, 34px);
+  --fs-section: 21px;
+  --fs-subsection: 17px;
+  --fs-body: 15px;
+  --fs-meta: 13px;
+  --fs-caption: 11.5px;
+  --tracking-display: clamp(-0.022em, -0.4vw, -0.01em);
+  --lh-heading: 1.08;
+  --lh-body: 1.5;
+
+  /* ---- Content-aware title accent — set per-title by the hero color extractor;
+     falls back to the global accent. Drives hero/detail chrome glows. ---- */
+  --title-accent-rgb: var(--accent-rgb);
+
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui,
     "Segoe UI", Roboto, sans-serif;
   font-synthesis: none;
@@ -531,6 +558,7 @@ body,
 body {
   color: var(--text-primary);
   font-size: calc(16px * var(--text-scale));
+  line-height: var(--lh-body);
   /* AppTheme.background — diagonal aurora gradient (topLeading→bottomTrailing). */
   background: linear-gradient(
     135deg,
@@ -593,6 +621,16 @@ textarea::placeholder {
 @media (prefers-reduced-motion: reduce) {
   .aurora-glow::before,
   .aurora-glow::after { animation: none; }
+  /* Honor the OS preference app-wide (CSS layer) without needing the in-app
+     toggle. The JS/motion layer is handled by <MotionConfig reducedMotion="user">. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 :root[data-motion="reduced"] *,
@@ -819,11 +857,11 @@ textarea::placeholder {
 }
 
 /* Cinematic headings: a touch tighter. */
-h1, h2, h3 { letter-spacing: 0; }
+h1, h2, h3 { letter-spacing: -0.01em; }
 
 /* Premium selection + focus ring. */
 ::selection { background: rgba(var(--accent-rgb), 0.32); color: #fff; }
-:focus-visible { outline: 2px solid rgba(var(--accent-rgb), 0.6); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--focus-ring-color); outline-offset: 2px; }
 
 /* Slim glass scrollbars. */
 * { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.18) transparent; }

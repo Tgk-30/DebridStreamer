@@ -104,10 +104,10 @@
 
 .hero-title {
   margin: 0;
-  font-size: clamp(34px, 4.4vw, 58px);
+  font-size: var(--fs-display, clamp(34px, 4.4vw, 58px));
   font-weight: 800;
   line-height: 1.02;
-  letter-spacing: 0;
+  letter-spacing: var(--tracking-display, -0.02em);
   color: #fff;
   text-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
   display: -webkit-box;
@@ -137,10 +137,16 @@
   padding: 12px 26px;
   font-size: 15px;
   font-weight: 700;
-  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.98), rgba(var(--accent-rgb), 0.74));
+  /* Recolored per title by the content-aware extractor (falls back to accent). */
+  background: linear-gradient(
+    135deg,
+    rgba(var(--title-accent-rgb, var(--accent-rgb)), 0.98),
+    rgba(var(--title-accent-rgb, var(--accent-rgb)), 0.74)
+  );
   box-shadow:
-    0 10px 26px rgba(var(--accent-rgb), 0.32),
+    0 10px 26px rgba(var(--title-accent-rgb, var(--accent-rgb)), 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  transition: box-shadow 0.5s ease, background 0.5s ease;
 }
 .hero-info {
   padding: 12px 22px;
@@ -214,8 +220,9 @@
 }
 .hero-dot.is-active::before {
   width: 32px;
-  background: rgba(var(--accent-rgb), 1);
-  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.6);
+  background: rgba(var(--title-accent-rgb, var(--accent-rgb)), 1);
+  box-shadow: 0 0 12px rgba(var(--title-accent-rgb, var(--accent-rgb)), 0.6);
+  transition: background 0.5s ease, box-shadow 0.5s ease, width 0.3s;
 }
 
 @media (max-width: 767px) {

@@ -3,7 +3,7 @@
 // large title, badges, Play/Details, and bar indicators. Pauses on hover. Falls
 // back to a single item. Motion via `motion` + AnimatePresence.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import type { MediaPreview } from "../models/media";
@@ -23,6 +23,55 @@ interface HeroSpotlightProps {
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
+/**
+ * Content-aware accent: sample the backdrop down to a tiny canvas and average
+ * the vivid (saturated, mid-luminance) pixels into one dominant RGB. Used to
+ * recolor the hero chrome per title (the Apple-TV / Disney+ signature). Returns
+ * null when the canvas is tainted (no CORS) or there isn't enough vivid color —
+ * the caller then falls back to the global accent.
+ */
+function extractDominantRGB(img: HTMLImageElement): string | null {
+  try {
+    const w = 24;
+    const h = 14;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const cr = data[i];
+      const cg = data[i + 1];
+      const cb = data[i + 2];
+      const max = Math.max(cr, cg, cb);
+      const min = Math.min(cr, cg, cb);
+      const sat = max === 0 ? 0 : (max - min) / max;
+      const lum = (cr + cg + cb) / 3;
+      // Skip near-black, near-white, and washed-out pixels — keep the vivid ones.
+      if (lum < 30 || lum > 226 || sat < 0.25) continue;
+      r += cr;
+      g += cg;
+      b += cb;
+      n += 1;
+    }
+    if (n < 6) return null;
+    r = Math.round(r / n);
+    g = Math.round(g / n);
+    b = Math.round(b / n);
+    // Lift very dark averages so the glow reads against the dark scrim.
+    const lift = Math.max(0, 96 - (r + g + b) / 3);
+    return `${Math.min(255, r + lift)}, ${Math.min(255, g + lift)}, ${Math.min(255, b + lift)}`;
+  } catch {
+    return null; // tainted canvas (no CORS) — fall back to the global accent.
+  }
+}
+
 export function HeroSpotlight({
   items,
   item,
@@ -34,7 +83,9 @@ export function HeroSpotlight({
   const list = (items && items.length > 0 ? items : item ? [item] : []).slice(0, 6);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  const heroRef = useRef<HTMLDivElement>(null);
   const active = list[Math.min(index, list.length - 1)];
+  const backdrop = active ? MediaPreviewNS.backdropURL(active) : null;
 
   useEffect(() => {
     if (list.length <= 1 || paused) return;
@@ -42,13 +93,34 @@ export function HeroSpotlight({
     return () => clearInterval(t);
   }, [list.length, paused, intervalMs]);
 
+  // Per-title accent: recolor the hero chrome from the backdrop's dominant color.
+  // Uses a separate CORS probe image so the *displayed* backdrop is never at risk
+  // (if CORS/extraction fails, the global accent stays).
+  useEffect(() => {
+    const el = heroRef.current;
+    if (el) el.style.removeProperty("--title-accent-rgb");
+    if (!backdrop || el == null) return;
+    let cancelled = false;
+    const probe = new Image();
+    probe.crossOrigin = "anonymous";
+    probe.onload = () => {
+      if (cancelled) return;
+      const rgb = extractDominantRGB(probe);
+      if (rgb && heroRef.current) heroRef.current.style.setProperty("--title-accent-rgb", rgb);
+    };
+    probe.src = backdrop;
+    return () => {
+      cancelled = true;
+    };
+  }, [backdrop]);
+
   if (!active) return null;
-  const backdrop = MediaPreviewNS.backdropURL(active);
   const rating = MediaPreviewNS.ratingString(active);
 
   return (
     <div
       className="hero"
+      ref={heroRef}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
@@ -63,7 +135,14 @@ export function HeroSpotlight({
           transition={{ opacity: { duration: 0.9, ease: "easeInOut" }, scale: { duration: intervalMs / 1000 + 1, ease: "linear" } }}
         >
           {backdrop ? (
-            <img className="hero-backdrop" src={backdrop} alt="" draggable={false} />
+            <img
+              className="hero-backdrop"
+              src={backdrop}
+              alt=""
+              draggable={false}
+              decoding="async"
+              fetchPriority="high"
+            />
           ) : (
             <div className="hero-backdrop hero-gradient" />
           )}
