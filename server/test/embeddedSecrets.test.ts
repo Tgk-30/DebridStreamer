@@ -10,6 +10,11 @@ import {
   loadEmbeddedSecrets,
 } from "../src/embeddedSecrets.js";
 
+// Cheapest VALID scrypt cost (N=2^14) so the suite doesn't saturate CPU in
+// parallel with the password-hashing tests. Production uses N=2^16; the blob
+// stores its own params, so a cheap-KDF blob still decrypts.
+const CHEAP_KDF = { N: 1 << 14, r: 8, p: 1 };
+
 afterEach(() => {
   delete process.env.DS_EMBED_SECRETS_FILE;
   delete process.env.DS_EMBED_PASSPHRASE;
@@ -18,31 +23,31 @@ afterEach(() => {
 
 describe("embedded-secrets AES-256-GCM", () => {
   it("round-trips an encrypted secret map", () => {
-    const blob = encryptSecrets({ omdb: "abc123", tmdb: "def456" }, "pass", "friends");
+    const blob = encryptSecrets({ omdb: "abc123", tmdb: "def456" }, "pass", "friends", CHEAP_KDF);
     expect(blob.v).toBe(1);
     expect(blob.profile).toBe("friends");
     expect(decryptSecrets(blob, "pass")).toEqual({ omdb: "abc123", tmdb: "def456" });
   });
 
   it("never stores the plaintext key in the blob", () => {
-    const blob = encryptSecrets({ omdb: "PLAINTEXT-SECRET-OMDB" }, "pass", "friends");
+    const blob = encryptSecrets({ omdb: "PLAINTEXT-SECRET-OMDB" }, "pass", "friends", CHEAP_KDF);
     expect(JSON.stringify(blob)).not.toContain("PLAINTEXT-SECRET-OMDB");
   });
 
   it("fails closed on a wrong passphrase (GCM auth)", () => {
-    const blob = encryptSecrets({ omdb: "abc123" }, "right", "friends");
+    const blob = encryptSecrets({ omdb: "abc123" }, "right", "friends", CHEAP_KDF);
     expect(() => decryptSecrets(blob, "wrong")).toThrow();
   });
 
   it("fails closed on tampered ciphertext", () => {
-    const blob = encryptSecrets({ omdb: "abc123" }, "pass", "friends");
+    const blob = encryptSecrets({ omdb: "abc123" }, "pass", "friends", CHEAP_KDF);
     const flipped = Buffer.from(blob.data, "base64");
     flipped[0] ^= 0xff;
     expect(() => decryptSecrets({ ...blob, data: flipped.toString("base64") }, "pass")).toThrow();
   });
 
   it("rejects out-of-range KDF params before running scrypt (anti-DoS)", () => {
-    const blob = encryptSecrets({ omdb: "x" }, "pass", "friends");
+    const blob = encryptSecrets({ omdb: "x" }, "pass", "friends", CHEAP_KDF);
     // DoS-grade N must be rejected outright (never handed to scrypt).
     expect(() => decryptSecrets({ ...blob, kdf: { N: 1 << 28, r: 8, p: 1 } }, "pass")).toThrow();
     // Too-weak N, and a non-power-of-two N, are both rejected.
@@ -53,7 +58,7 @@ describe("embedded-secrets AES-256-GCM", () => {
   it("loadEmbeddedSecrets decrypts a blob file and exposes per-provider keys", () => {
     const dir = mkdtempSync(join(tmpdir(), "ds-embed-"));
     const file = join(dir, "embedded-secrets.json");
-    const blob = encryptSecrets({ omdb: "live-omdb-key", torbox: "live-torbox" }, "pp", "friends");
+    const blob = encryptSecrets({ omdb: "live-omdb-key", torbox: "live-torbox" }, "pp", "friends", CHEAP_KDF);
     writeFileSync(file, JSON.stringify(blob));
     process.env.DS_EMBED_SECRETS_FILE = file;
     process.env.DS_EMBED_PASSPHRASE = "pp";
@@ -75,7 +80,7 @@ describe("embedded-secrets AES-256-GCM", () => {
   it("behaves as unembedded on a wrong runtime passphrase (no throw to callers)", () => {
     const dir = mkdtempSync(join(tmpdir(), "ds-embed-"));
     const file = join(dir, "embedded-secrets.json");
-    writeFileSync(file, JSON.stringify(encryptSecrets({ omdb: "x" }, "correct", "friends")));
+    writeFileSync(file, JSON.stringify(encryptSecrets({ omdb: "x" }, "correct", "friends", CHEAP_KDF)));
     process.env.DS_EMBED_SECRETS_FILE = file;
     process.env.DS_EMBED_PASSPHRASE = "incorrect";
     __resetEmbeddedSecretsCache();

@@ -24,7 +24,7 @@ key must be *truly* unrecoverable — **does not ship the key at all**.
 | Tier | Who | Hosting | Keys | Protection |
 | --- | --- | --- | --- | --- |
 | **Family** | close, trusted | **You** host one server | All keys server-side | **Strong** — keys never distributed |
-| **Friends** | semi-trusted | **They** self-host; you bake some keys in | AES-256-GCM encrypted at rest in their server | **Best-effort** — protects their users + casual inspection; a determined friend-operator can still extract |
+| **Friends** | semi-trusted | **They** self-host; you supply some keys | embed (AES-256-GCM at rest) **or** broker | **Broker = strong** (key never on their machine, revocable token); embed = best-effort (a determined operator can extract) |
 | **Public** | untrusted | They self-host | **BYOK** — they add every key | N/A — no secrets shipped |
 
 ### Tier 1 — Family (you host) — truly secure
@@ -68,10 +68,35 @@ node scripts/embed_secrets.mjs        # → server/embedded-secrets.json (gitign
 - Today **OMDb** is fully wired to the embedded mechanism; TMDB/debrid embedding
   is supported by the same blob and resolver and is wired per build as needed.
 
-> The only way to make a friend-tier key **truly** unrecoverable is not to give
-> it to them: have their server call a thin **proxy/broker you run** for those
-> providers. Then the keys live on your infra and are revocable. That's a
-> superset of Tier 1's design pointed at a key-broker.
+#### Broker mode — the *truly* unextractable friends option (implemented)
+
+If a friend's key must be impossible to extract, **don't ship the key** — ship a
+**revocable token** and have their server forward to a broker *you* run:
+
+- **You run the broker** (any DebridStreamer server) with the real key + a list
+  of accepted tokens:
+  ```
+  DS_SERVER_OMDB_API_KEY=your_real_key
+  DS_BROKER_TOKENS=friend-alice-tok,friend-bob-tok      # one per friend, revocable
+  ```
+  It exposes `GET /api/broker/omdb/:imdbId` — bearer-token auth (constant-time),
+  rate-limited, returns **only ratings**, never the key.
+- **The friend's server** holds the broker URL + their token, and **no OMDb key**:
+  ```
+  DS_OMDB_BROKER_URL=https://your-broker.example
+  DS_BROKER_AUTH_TOKEN=friend-alice-tok
+  ```
+
+Now the key lives only on your broker. The friend can extract their *token* (it
+only grants rate-limited rating lookups, and you revoke it by removing it from
+`DS_BROKER_TOKENS`) but **never the key** — it's never on their machine. A user's
+own (BYOK) key still overrides the broker. This is the strongest friends-tier
+option; the embedded blob above is the convenient, best-effort one.
+
+Reviewed by **codex** (no critical/high; constant-time token check, no auth
+bypass, imdb id validated, key never returned; hardening applied: pre-auth
+rate-limit, server-only key resolution, response whitelisting, cache not poisoned
+by BYOK).
 
 ### Tier 3 — Public (BYOK everything)
 

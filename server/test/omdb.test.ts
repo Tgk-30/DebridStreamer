@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fetchOmdbRatings, isEmptyRatings, parseOmdbRatings } from "../src/omdb.js";
+import { fetchOmdbRatings, fetchOmdbViaBroker, isEmptyRatings, parseOmdbRatings } from "../src/omdb.js";
 
 describe("parseOmdbRatings", () => {
   it("parses imdb / RT / metascore from a full response", () => {
@@ -71,5 +71,49 @@ describe("fetchOmdbRatings", () => {
       (() => Promise.resolve({ ok: false, status: 401, json: async () => ({}) } as unknown as Response)) as unknown as typeof fetch,
     );
     expect(r).toBeNull();
+  });
+});
+
+describe("fetchOmdbViaBroker (consumer holds no key, only a token)", () => {
+  it("forwards to the broker with a bearer token and returns its ratings", async () => {
+    let sawAuth = "";
+    let sawUrl = "";
+    const r = await fetchOmdbViaBroker(
+      "https://broker.example",
+      "tok-123",
+      "tt1375666",
+      ((url: string, init: { headers?: Record<string, string> }) => {
+        sawUrl = url;
+        sawAuth = init?.headers?.authorization ?? "";
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ ratings: { imdbRating: 8.8 } }),
+        } as unknown as Response);
+      }) as unknown as typeof fetch,
+    );
+    expect(r).toEqual({ imdbRating: 8.8 });
+    expect(sawUrl).toBe("https://broker.example/api/broker/omdb/tt1375666");
+    expect(sawAuth).toBe("Bearer tok-123");
+  });
+
+  it("returns null on a broker 401 and never sends the key", async () => {
+    const r = await fetchOmdbViaBroker(
+      "https://broker.example",
+      "bad",
+      "tt1375666",
+      (() => Promise.resolve({ ok: false, status: 401, json: async () => ({}) } as unknown as Response)) as unknown as typeof fetch,
+    );
+    expect(r).toBeNull();
+  });
+
+  it("rejects a malformed imdb id without a request", async () => {
+    let called = false;
+    const r = await fetchOmdbViaBroker("https://broker.example", "t", "bad", (() => {
+      called = true;
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) } as unknown as Response);
+    }) as unknown as typeof fetch);
+    expect(r).toBeNull();
+    expect(called).toBe(false);
   });
 });

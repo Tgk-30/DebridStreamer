@@ -105,5 +105,15 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
         ? overrides.omdbApiKey
         : stringEnv("DS_SERVER_OMDB_API_KEY"),
     buildProfile: overrides.buildProfile ?? buildProfileEnv(),
+    omdbBrokerUrl:
+      overrides.omdbBrokerUrl !== undefined ? overrides.omdbBrokerUrl : stringEnv("DS_OMDB_BROKER_URL"),
+    brokerAuthToken:
+      overrides.brokerAuthToken !== undefined ? overrides.brokerAuthToken : stringEnv("DS_BROKER_AUTH_TOKEN"),
+    brokerTokens:
+      overrides.brokerTokens ??
+      (stringEnv("DS_BROKER_TOKENS") ?? "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0),
   };
 }

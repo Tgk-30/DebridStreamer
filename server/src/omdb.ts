@@ -74,6 +74,25 @@ export function isEmptyRatings(r: OMDBRatings): boolean {
   return r.imdbRating === undefined && r.rtPercent === undefined && r.metascore === undefined;
 }
 
+function finiteOrUndef(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+/** Whitelist an untrusted ratings object (e.g. from a broker) down to the three
+ *  known numeric fields — never trust the broker's JSON shape verbatim. */
+export function sanitizeRatings(raw: unknown): OMDBRatings | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const out: OMDBRatings = {};
+  const imdb = finiteOrUndef(r.imdbRating);
+  if (imdb !== undefined) out.imdbRating = imdb;
+  const rt = finiteOrUndef(r.rtPercent);
+  if (rt !== undefined) out.rtPercent = rt;
+  const ms = finiteOrUndef(r.metascore);
+  if (ms !== undefined) out.metascore = ms;
+  return isEmptyRatings(out) ? null : out;
+}
+
 const OMDB_BASE = "https://www.omdbapi.com/";
 
 /**
@@ -112,4 +131,37 @@ export async function fetchOmdbRatings(
 
   const ratings = parseOmdbRatings(data);
   return isEmptyRatings(ratings) ? null : ratings;
+}
+
+/**
+ * Forward an OMDb lookup to a key broker (the "friends" unextractable path).
+ * The consumer server holds only `brokerUrl` + a revocable `token`, never the
+ * OMDb key; the broker holds the key and returns parsed ratings only. Returns
+ * null on a bad id or any failure.
+ */
+export async function fetchOmdbViaBroker(
+  brokerUrl: string,
+  token: string | null,
+  imdbId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<OMDBRatings | null> {
+  if (!/^tt\d+$/.test(imdbId)) return null;
+  let url: string;
+  try {
+    url = new URL(`/api/broker/omdb/${imdbId}`, brokerUrl).toString();
+  } catch {
+    return null;
+  }
+  try {
+    const res = await fetchImpl(url, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { ratings?: unknown };
+    // Never trust the broker's JSON shape — whitelist the numeric fields.
+    return sanitizeRatings(body?.ratings);
+  } catch {
+    return null;
+  }
 }

@@ -66,6 +66,20 @@ export interface ServerConfig {
    *  per-profile OMDb credential, when set, overrides this. Null = no
    *  server-provided OMDb (clients fall back to their own key, if any). */
   omdbApiKey: string | null;
+  // ── Key broker (the truly-unextractable "friends" path) ──────────────────
+  // Two roles; a server can be either or both:
+  //   • CONSUMER (the friend's server): set `omdbBrokerUrl` + `brokerAuthToken`.
+  //     It forwards OMDb lookups to the broker and holds NO OMDb key — only a
+  //     revocable token — so the key is never on the friend's machine.
+  //   • BROKER (the server YOU run): set `brokerTokens` (accepted tokens) and a
+  //     real OMDb key. It answers /api/broker/omdb for valid tokens and returns
+  //     only ratings, never the key.
+  /** CONSUMER: base URL of the key broker to forward OMDb lookups to. */
+  omdbBrokerUrl: string | null;
+  /** CONSUMER: bearer token presented to the broker. */
+  brokerAuthToken: string | null;
+  /** BROKER: tokens this server accepts on /api/broker/* (comma-separated env). */
+  brokerTokens: string[];
 }
 
 export interface AuthContext {

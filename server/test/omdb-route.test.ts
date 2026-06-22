@@ -92,3 +92,54 @@ describe("OMDb hidden-key proxy", () => {
     await app.close();
   });
 });
+
+describe("OMDb key broker endpoint", () => {
+  async function brokerApp(brokerTokens: string[], omdbApiKey: string | null) {
+    return buildApp({
+      config: {
+        databasePath: ":memory:",
+        dataDir: ".test-data-omdb",
+        secretKey: randomBytes(32),
+        cookieSecure: false,
+        logger: false,
+        brokerTokens,
+        omdbApiKey,
+      },
+    });
+  }
+
+  it("rejects a missing or wrong broker token with 401 (no session needed)", async () => {
+    const app = await brokerApp(["good-token"], SECRET);
+    const noTok = await app.inject({ method: "GET", url: "/api/broker/omdb/tt1375666" });
+    expect(noTok.statusCode).toBe(401);
+    const badTok = await app.inject({
+      method: "GET",
+      url: "/api/broker/omdb/tt1375666",
+      headers: { authorization: "Bearer wrong-token" },
+    });
+    expect(badTok.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("accepts a valid token but 503s when the broker itself has no key (no network)", async () => {
+    const app = await brokerApp(["good-token"], null);
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/broker/omdb/tt1375666",
+      headers: { authorization: "Bearer good-token" },
+    });
+    expect(res.statusCode).toBe(503);
+    await app.close();
+  });
+
+  it("never accepts any token when no broker tokens are configured", async () => {
+    const app = await brokerApp([], SECRET);
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/broker/omdb/tt1375666",
+      headers: { authorization: "Bearer anything" },
+    });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+});

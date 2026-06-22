@@ -1,5 +1,5 @@
 import { Readable, Transform } from "node:stream";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import cookie from "@fastify/cookie";
@@ -48,7 +48,7 @@ import {
   verifyPassword,
 } from "./crypto.js";
 import { assertSafeUpstream, fetchUpstreamSafely } from "./ssrf.js";
-import { fetchOmdbRatings, type OMDBRatings } from "./omdb.js";
+import { fetchOmdbRatings, fetchOmdbViaBroker, type OMDBRatings } from "./omdb.js";
 import { embeddedSecret } from "./embeddedSecrets.js";
 import { readFile } from "node:fs/promises";
 import { realTranscoder } from "./transcode.js";
@@ -1229,10 +1229,84 @@ function resolveOmdbKey(
   return embeddedSecret("omdb");
 }
 
-/** Whether the server can provide OMDb ratings for a profile (used to drive the
- *  client capability flag, without revealing the key). */
+/** The broker/server's OWN OMDb key — a SERVER-scoped credential → env →
+ *  embedded build key. Never a profile credential, so the broker can never use a
+ *  consumer's personal key (no sentinel-profileId convention needed). */
+function resolveServerOmdbKey(db: AppDatabase, config: ServerConfig): string | null {
+  const row = db.sqlite
+    .prepare(
+      `SELECT encrypted_value FROM credential_secrets
+        WHERE provider = 'omdb' AND scope = 'server' AND is_active = 1
+        ORDER BY priority ASC, updated_at DESC LIMIT 1`,
+    )
+    .get() as { encrypted_value: string } | undefined;
+  if (row != null) {
+    try {
+      const k = decryptSecret(row.encrypted_value, config.secretKey).trim();
+      if (k.length > 0) return k;
+    } catch {
+      // fall through
+    }
+  }
+  const envKey = config.omdbApiKey?.trim();
+  if (envKey != null && envKey.length > 0) return envKey;
+  return embeddedSecret("omdb");
+}
+
+/** Broker mode is active only when BOTH a URL and a non-empty token are set — so
+ *  a half-configured broker falls through to local key resolution instead of
+ *  silently returning nothing. */
+function brokerConfigured(config: ServerConfig): boolean {
+  return (
+    config.omdbBrokerUrl != null &&
+    config.brokerAuthToken != null &&
+    config.brokerAuthToken.length > 0
+  );
+}
+
+/** A profile's OWN OMDb key (scope='profile' only), decrypted — used so a user's
+ *  personal key (BYOK) takes precedence over a broker or shared key. Null when
+ *  the profile has none. */
+function profileScopedOmdbKey(
+  db: AppDatabase,
+  config: ServerConfig,
+  profileId: string,
+): string | null {
+  const row = db.sqlite
+    .prepare(
+      `SELECT encrypted_value FROM credential_secrets
+        WHERE provider = 'omdb' AND scope = 'profile' AND profile_id = ? AND is_active = 1
+        ORDER BY priority ASC, updated_at DESC LIMIT 1`,
+    )
+    .get(profileId) as { encrypted_value: string } | undefined;
+  if (row == null) return null;
+  try {
+    const key = decryptSecret(row.encrypted_value, config.secretKey).trim();
+    return key.length > 0 ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether the server can provide OMDb ratings for a profile (drives the client
+ *  capability flag, without revealing the key) — a resolvable key OR a broker. */
 function omdbAvailableFor(db: AppDatabase, config: ServerConfig, profileId: string): boolean {
-  return resolveOmdbKey(db, config, profileId) != null;
+  return brokerConfigured(config) || resolveOmdbKey(db, config, profileId) != null;
+}
+
+/** Constant-time check that a presented bearer token is in the broker's accepted
+ *  set (compares fixed-length SHA-256 digests to avoid length/timing leaks). */
+function isValidBrokerToken(config: ServerConfig, presented: string | null): boolean {
+  if (presented == null || presented.length === 0 || config.brokerTokens.length === 0) {
+    return false;
+  }
+  const a = createHash("sha256").update(presented).digest();
+  let ok = false;
+  for (const token of config.brokerTokens) {
+    const b = createHash("sha256").update(token).digest();
+    if (timingSafeEqual(a, b)) ok = true; // no early return — keep it constant-time
+  }
+  return ok;
 }
 
 function upsertCredential(
@@ -3278,6 +3352,7 @@ function registerRoutes(
   // they're cached server-wide (bounded TTL) to cap shared-key spend + abuse.
   const omdbCache = new Map<string, { ratings: OMDBRatings | null; expires: number }>();
   const OMDB_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+  const OMDB_NULL_TTL_MS = 10 * 60 * 1000;
   const OMDB_CACHE_MAX = 5000;
   app.get("/api/omdb/:imdbId", async (request) => {
     const auth = requireAuth(db, request);
@@ -3287,20 +3362,73 @@ function registerRoutes(
       .trim()
       .regex(/^tt\d+$/)
       .parse((request.params as { imdbId: string }).imdbId);
-    const key = resolveOmdbKey(db, config, auth.profileId);
-    if (key == null) return { ratings: null };
-
-    const now = Date.now();
-    const hit = omdbCache.get(imdbId);
-    if (hit != null && hit.expires > now) return { ratings: hit.ratings };
-
-    const ratings = await fetchOmdbRatings(key, imdbId);
-    if (omdbCache.size >= OMDB_CACHE_MAX) {
-      const oldest = omdbCache.keys().next().value;
-      if (oldest != null) omdbCache.delete(oldest);
+    // Precedence: a user's OWN key (BYOK) → the key broker (key never on this
+    // server) → a local server/env/embedded key.
+    const profileKey = profileScopedOmdbKey(db, config, auth.profileId);
+    let fetcher: (() => Promise<OMDBRatings | null>) | null = null;
+    if (profileKey != null) {
+      fetcher = () => fetchOmdbRatings(profileKey, imdbId);
+    } else if (brokerConfigured(config)) {
+      fetcher = () => fetchOmdbViaBroker(config.omdbBrokerUrl!, config.brokerAuthToken, imdbId);
+    } else {
+      const key = resolveOmdbKey(db, config, auth.profileId);
+      if (key != null) fetcher = () => fetchOmdbRatings(key, imdbId);
     }
-    omdbCache.set(imdbId, { ratings, expires: now + OMDB_CACHE_TTL_MS });
+    if (fetcher == null) return { ratings: null };
+
+    // Only the shared sources (broker / server / env / embedded) produce
+    // profile-independent ratings, so only THEY use the server-wide cache. A
+    // user's own (BYOK) key bypasses the cache so a bad personal key can't
+    // poison results for everyone else.
+    const shared = profileKey == null;
+    const now = Date.now();
+    if (shared) {
+      const hit = omdbCache.get(imdbId);
+      if (hit != null && hit.expires > now) return { ratings: hit.ratings };
+    }
+
+    const ratings = await fetcher();
+    if (shared) {
+      if (omdbCache.size >= OMDB_CACHE_MAX) {
+        const oldest = omdbCache.keys().next().value;
+        if (oldest != null) omdbCache.delete(oldest);
+      }
+      // Cache a "no ratings" result only briefly so a transient miss doesn't
+      // suppress a title for everyone for hours.
+      const ttl = ratings == null ? OMDB_NULL_TTL_MS : OMDB_CACHE_TTL_MS;
+      omdbCache.set(imdbId, { ratings, expires: now + ttl });
+    }
     return { ratings };
+  });
+
+  // Broker endpoint — answers OMDb lookups for friend ("consumer") servers that
+  // present a valid broker token. The broker holds the real key (its own
+  // server/env/embedded key) and returns ONLY ratings; the consumer never
+  // receives the key, so the key is never on the friend's machine and the token
+  // is independently revocable. Server-to-server: a broker token, not a session.
+  app.get("/api/broker/omdb/:imdbId", async (request, reply) => {
+    // Rate-limit by IP BEFORE the token check so invalid-token spraying is
+    // bounded too (then a usage limit on success).
+    rateLimit(request, `broker:omdb:${request.ip}`, 600, 60 * 1000);
+    const authz = request.headers.authorization ?? "";
+    const presented = authz.startsWith("Bearer ") ? authz.slice(7).trim() : null;
+    if (!isValidBrokerToken(config, presented)) {
+      reply.code(401);
+      return { error: "Invalid broker token." };
+    }
+    const imdbId = z
+      .string()
+      .trim()
+      .regex(/^tt\d+$/)
+      .parse((request.params as { imdbId: string }).imdbId);
+    // The broker uses its OWN key only (server-scoped credential / env / embedded
+    // — never a consumer's profile credential).
+    const key = resolveServerOmdbKey(db, config);
+    if (key == null) {
+      reply.code(503);
+      return { error: "Broker has no OMDb key configured." };
+    }
+    return { ratings: await fetchOmdbRatings(key, imdbId) };
   });
 
   app.get("/api/streams/:imdbId", async (request) => {
