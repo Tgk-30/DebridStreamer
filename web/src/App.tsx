@@ -13,6 +13,7 @@ import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { FirstRunWizard } from "./components/FirstRunWizard";
 import { ServerSetupWizard } from "./components/ServerSetupWizard";
+import { TierOnboarding } from "./components/TierOnboarding";
 import { ProfilePicker } from "./components/ProfilePicker";
 import { useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
@@ -70,6 +71,22 @@ export function FirstRunHost() {
   const [firstRun, setFirstRun] = useState<boolean | null>(null);
   // Server-Mode owner setup gate (null = undecided, false = skip/done/non-owner).
   const [serverSetup, setServerSetup] = useState<boolean | null>(null);
+  // Tier-aware welcome (shown once, before the setup wizards, on a fresh start).
+  const [welcomed, setWelcomed] = useState<boolean>(() => {
+    try {
+      return globalThis.localStorage?.getItem("ds_tier_welcomed") === "1";
+    } catch {
+      return true;
+    }
+  });
+  const markWelcomed = () => {
+    try {
+      globalThis.localStorage?.setItem("ds_tier_welcomed", "1");
+    } catch {
+      // ignore (private mode)
+    }
+    setWelcomed(true);
+  };
 
   useEffect(() => {
     void isFirstRun().then(setFirstRun);
@@ -111,6 +128,11 @@ export function FirstRunHost() {
   // ensures the wizard's choice (e.g. Advanced → simpleMode false) is applied
   // AFTER hydration's setSettings, so a late hydration can't revert it.
   if (firstRun == null || serverSetup == null || !hydrated) return null;
+  // Tier-tailored welcome first, on a genuine fresh start (then the existing
+  // mode-specific setup wizard collects the actual config).
+  if (!welcomed && (firstRun || serverSetup)) {
+    return <TierOnboarding onDone={markWelcomed} />;
+  }
   if (firstRun) return <FirstRunWizard onDone={() => setFirstRun(false)} />;
   if (serverSetup) return <ServerSetupWizard onDone={() => setServerSetup(false)} />;
   return <App />;
