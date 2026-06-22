@@ -37,7 +37,7 @@
 }
 
 .lib-screen .empty-state > svg {
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--text-secondary);
 }
 
 /* Removable watchlist cards. */

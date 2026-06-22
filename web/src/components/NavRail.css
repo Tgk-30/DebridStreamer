@@ -33,7 +33,7 @@
 .nav-rail-group-label {
   display: none;
   padding: 0 var(--sp-md);
-  color: rgba(255, 255, 255, 0.64);
+  color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0;
@@ -52,7 +52,7 @@
   border: 1px solid transparent;
   border-radius: var(--r-md);
   background: transparent;
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--text-secondary);
   cursor: pointer;
   --nav-icon-stroke: 1.8;
   transition:
@@ -253,7 +253,7 @@
   }
 
   .nav-rail-btn:not(.is-selected) {
-    color: rgba(255, 255, 255, 0.76);
+    color: var(--text-secondary);
   }
 
   .nav-rail-btn.is-selected {

@@ -296,7 +296,7 @@
   gap: 6px 10px;
   font-size: 12px;
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.56);
+  color: var(--text-tertiary);
 }
 
 .settings-secret-note strong {
@@ -620,7 +620,7 @@
 }
 
 .settings-sources-head .settings-hint {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--text-secondary);
 }
 
 .settings-range-shell {

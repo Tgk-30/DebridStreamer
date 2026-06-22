@@ -55,9 +55,9 @@
 }
 .mood-curate:disabled {
   opacity: 1;
-  color: rgba(255, 255, 255, 0.66);
-  background: rgba(255, 255, 255, 0.09);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-tertiary);
+  background: var(--glass-tint-control);
+  border: 1px solid var(--glass-border);
   cursor: not-allowed;
   box-shadow: none;
 }
@@ -83,7 +83,7 @@
 .mood-chips .chip {
   flex: 0 0 auto;
   min-height: 44px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   font-weight: 650;
   scroll-snap-align: start;
   white-space: nowrap;

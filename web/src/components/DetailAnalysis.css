@@ -115,7 +115,7 @@
 .detail-analysis-score-den {
   font-size: 11px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-tertiary);
   margin-top: 1px;
 }
 
@@ -131,7 +131,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-tertiary);
 }
 .detail-analysis-verdict {
   font-size: 19px;
@@ -147,21 +147,21 @@
   height: 30px;
   border: 0;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
+  background: var(--glass-tint-control);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.18s, color 0.18s;
 }
 .detail-analysis-close:hover {
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
+  background: var(--glass-tint-control-hover);
+  color: var(--text-primary);
 }
 
 .detail-analysis-blurb {
   margin: 0;
   font-size: 14.5px;
   line-height: 1.55;
-  color: rgba(255, 255, 255, 0.86);
+  color: var(--text-primary);
 }
 
 .detail-analysis-reasons {
@@ -177,7 +177,7 @@
   padding-left: 16px;
   font-size: 13.5px;
   line-height: 1.45;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--text-secondary);
 }
 .detail-analysis-reasons li::before {
   content: "";
