@@ -141,7 +141,10 @@ export function HeroSpotlight({
               alt=""
               draggable={false}
               decoding="async"
-              fetchPriority="high"
+              /* `fetchpriority` (lowercase) is the LCP resource hint React 18
+                 forwards to the DOM without warning; the camelCase `fetchPriority`
+                 prop is React 19-only and logs an unknown-prop warning under 18. */
+              {...({ fetchpriority: "high" } as Record<string, string>)}
             />
           ) : (
             <div className="hero-backdrop hero-gradient" />

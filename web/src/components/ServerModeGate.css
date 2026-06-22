@@ -58,8 +58,8 @@
   font: inherit;
 }
 
-.server-gate-field input:focus {
-  outline: 2px solid rgba(96, 165, 250, 0.7);
+.server-gate-field input:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 
