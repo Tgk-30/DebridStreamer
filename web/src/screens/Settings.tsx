@@ -2095,7 +2095,20 @@ function ServerTab() {
   }
 
   if (loading) {
-    return <p className="settings-hint t-secondary">Loading server settings…</p>;
+    return (
+      <div
+        className="settings-fields"
+        aria-busy="true"
+        aria-label="Loading server settings"
+      >
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div className="settings-field" key={i} aria-hidden="true">
+            <span className="settings-skel settings-skel-label" />
+            <span className="settings-skel settings-skel-input" />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -2804,7 +2817,18 @@ function KidsProfilesPanel() {
       </p>
 
       {loading ? (
-        <p className="settings-hint t-secondary">Loading profiles…</p>
+        <div
+          className="settings-usage-list"
+          aria-busy="true"
+          aria-label="Loading profiles"
+        >
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div className="settings-usage-row" key={i} aria-hidden="true">
+              <span className="settings-skel settings-skel-name" />
+              <span className="settings-skel settings-skel-pill" />
+            </div>
+          ))}
+        </div>
       ) : manageable.length === 0 ? (
         <p className="settings-hint t-secondary">
           Add a viewer profile from the &ldquo;Who&rsquo;s watching?&rdquo; picker

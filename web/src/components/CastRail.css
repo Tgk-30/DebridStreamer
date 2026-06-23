@@ -50,7 +50,16 @@
   border-radius: 50%;
   overflow: hidden;
   border: 1px solid var(--glass-border);
-  background: rgba(0, 0, 0, 0.3);
+  /* Shimmer placeholder while the headshot loads (the img covers it once painted). */
+  background-color: rgba(255, 255, 255, 0.05);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.04) 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.04) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
   transition:
     border-color 0.16s,
     box-shadow 0.16s,

@@ -300,6 +300,9 @@ export function CaptionsMenu({
               onClick={runSearch}
               disabled={subs.searching}
             >
+              {subs.searching && (
+                <span className="captions-search-spinner" aria-hidden="true" />
+              )}
               {subs.searching ? "Searching…" : "Search"}
             </button>
           </div>
