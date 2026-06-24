@@ -17,6 +17,7 @@
 // concurrency control.
 
 import type { FetchImpl } from "../../lib/http";
+import { resolveFetch } from "../ai/types";
 import type { AIProviderKind } from "../ai/models";
 import {
   applyTranslations,
@@ -157,7 +158,10 @@ export class SubtitleTranslator implements Translator {
 
   constructor(config: TranslatorConfig, fetchImpl: FetchImpl) {
     this.config = config;
-    this.fetchImpl = fetchImpl;
+    // Route through resolveFetch so an untrusted/compromised AI endpoint can't
+    // OOM the renderer: it bounds any real streamed response body to the AI cap
+    // (the providers do the same). Tiny injected test stubs pass through.
+    this.fetchImpl = resolveFetch(fetchImpl);
   }
 
   /** True when the configured provider has the credentials it needs. */
