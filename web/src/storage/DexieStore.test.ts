@@ -224,6 +224,24 @@ describe("library + folders", () => {
     expect(inFolder.map((e) => e.mediaId)).toEqual(["tt1"]);
   });
 
+  it("addToLibrary serializes concurrent adds — no duplicate rows (regression)", async () => {
+    await Promise.all([
+      db.addToLibrary({ mediaId: "ttX", listType: "watchlist", preview: preview("ttX") }),
+      db.addToLibrary({ mediaId: "ttX", listType: "watchlist", preview: preview("ttX") }),
+    ]);
+    const entries = await db.listLibrary("watchlist");
+    expect(entries.filter((e) => e.mediaId === "ttX")).toHaveLength(1);
+  });
+
+  it("deleteFolder re-parents child folders to root, not dangling (regression)", async () => {
+    const parent = await db.createFolder("Parent", "favorites", null);
+    const child = await db.createFolder("Child", "favorites", parent.id);
+    await db.deleteFolder(parent.id);
+    const reloaded = (await db.listFolders("favorites")).find((f) => f.id === child.id);
+    expect(reloaded).toBeDefined();
+    expect(reloaded?.parentId).toBeNull();
+  });
+
   it("createFolder rejects unsupported list types", async () => {
     await expect(db.createFolder("X", "watchlist", null)).rejects.toThrow();
   });

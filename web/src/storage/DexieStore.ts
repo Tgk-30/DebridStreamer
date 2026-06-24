@@ -232,36 +232,44 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   // ---- Library + folders ----------------------------------------------------
 
   async addToLibrary(entry: LibraryEntryUpsert): Promise<LibraryEntryRecord> {
-    await this.ensureSystemFolders();
+    // Serialize the reconcile-then-put in one transaction: the table is keyed by
+    // a random uuid, so this read-then-decide is the ONLY thing enforcing the
+    // one-row-per-(mediaId, folderId) invariant. Without a transaction, two
+    // overlapping adds of the same media could both observe "absent" and insert
+    // two permanent duplicate rows.
+    return this.transaction("rw", this.library, this.folders, async () => {
+      await this.ensureSystemFolders();
 
-    // Resolve the folder the way the Swift addToLibrary normalization does:
-    // non-folder list types pin to the system root; folder list types default
-    // an empty folderId to the system root.
-    const resolvedFolderId = listTypeSupportsFolders(entry.listType)
-      ? (entry.folderId?.trim() || systemFolderID(entry.listType))
-      : systemFolderID(entry.listType);
+      // Resolve the folder the way the Swift addToLibrary normalization does:
+      // non-folder list types pin to the system root; folder list types default
+      // an empty folderId to the system root.
+      const resolvedFolderId = listTypeSupportsFolders(entry.listType)
+        ? (entry.folderId?.trim() || systemFolderID(entry.listType))
+        : systemFolderID(entry.listType);
 
-    // Reconcile on (mediaId, folderId) so re-adding the same media to the same
-    // folder updates the existing row instead of creating a duplicate.
-    const existing = await this.library
-      .where("mediaId")
-      .equals(entry.mediaId)
-      .filter((r) => r.folderId === resolvedFolderId)
-      .first();
+      // Reconcile on (mediaId, folderId) so re-adding the same media to the same
+      // folder updates the existing row instead of creating a duplicate.
+      const existing = await this.library
+        .where("mediaId")
+        .equals(entry.mediaId)
+        .filter((r) => r.folderId === resolvedFolderId)
+        .first();
 
-    const record: LibraryEntryRecord = {
-      id: existing?.id ?? `lib-${uuid()}`,
-      mediaId: entry.mediaId,
-      folderId: resolvedFolderId,
-      listType: entry.listType,
-      addedAt: entry.addedAt ?? existing?.addedAt ?? nowISO(),
-      customListName: entry.customListName ?? existing?.customListName ?? null,
-      releaseDateHint: entry.releaseDateHint ?? existing?.releaseDateHint ?? null,
-      renewalStatus: entry.renewalStatus ?? existing?.renewalStatus ?? null,
-      preview: entry.preview,
-    };
-    await this.library.put(record);
-    return record;
+      const record: LibraryEntryRecord = {
+        id: existing?.id ?? `lib-${uuid()}`,
+        mediaId: entry.mediaId,
+        folderId: resolvedFolderId,
+        listType: entry.listType,
+        addedAt: entry.addedAt ?? existing?.addedAt ?? nowISO(),
+        customListName: entry.customListName ?? existing?.customListName ?? null,
+        releaseDateHint:
+          entry.releaseDateHint ?? existing?.releaseDateHint ?? null,
+        renewalStatus: entry.renewalStatus ?? existing?.renewalStatus ?? null,
+        preview: entry.preview,
+      };
+      await this.library.put(record);
+      return record;
+    });
   }
 
   async removeFromLibrary(id: string): Promise<void> {
@@ -341,6 +349,13 @@ export class DexieStore extends Dexie implements Store, SecretStore {
       } else {
         await this.library.update(entry.id, { folderId: fallback });
       }
+    }
+    // Re-parent child folders to the root (parentId: null) rather than leaving
+    // dangling parentId references — mirrors the server's ON DELETE SET NULL so
+    // a subtree stays reachable after its parent is deleted.
+    const children = await this.folders.where("parentId").equals(id).toArray();
+    for (const child of children) {
+      await this.folders.update(child.id, { parentId: null, updatedAt: nowISO() });
     }
     await this.folders.delete(id);
   }

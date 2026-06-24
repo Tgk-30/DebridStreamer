@@ -485,6 +485,21 @@ describe("parseTorznabFeed", () => {
     expect(items[0]?.infoHash).toBe("ABC");
   });
 
+  it("does not discard the whole feed on an out-of-range numeric entity (regression)", () => {
+    const xml =
+      "<rss><channel><item>" +
+      "<title>Bad &#1114112; Title</title>" + // > 0x10FFFF — must not throw
+      "<size>500</size>" +
+      "</item></channel></rss>";
+    let items: ReturnType<typeof parseTorznabFeed> = [];
+    expect(() => {
+      items = parseTorznabFeed(xml);
+    }).not.toThrow();
+    expect(items.length).toBe(1);
+    expect(items[0]?.title).toContain("Bad");
+    expect(items[0]?.size).toBe(500);
+  });
+
   it("reads the magnet URL from an enclosure url attribute", () => {
     const xml =
       "<rss><channel><item>" +

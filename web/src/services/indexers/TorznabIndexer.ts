@@ -423,6 +423,21 @@ function parseTag(raw: string): { name: string; attrs: Record<string, string> } 
   return { name, attrs };
 }
 
+/** A valid Unicode scalar value (in range, not a surrogate). String.fromCodePoint
+ *  throws a RangeError otherwise — and one bad numeric entity must NOT abort the
+ *  whole feed parse, so out-of-range references are left as literal text. */
+function fromCodePointOr(cp: number, literal: string): string {
+  if (
+    Number.isInteger(cp) &&
+    cp >= 0 &&
+    cp <= 0x10ffff &&
+    !(cp >= 0xd800 && cp <= 0xdfff)
+  ) {
+    return String.fromCodePoint(cp);
+  }
+  return literal;
+}
+
 /** Decodes the handful of XML entities that appear in feed text/attrs. */
 function decodeEntities(s: string): string {
   if (!s.includes("&")) return s;
@@ -431,9 +446,9 @@ function decodeEntities(s: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h: string) =>
-      String.fromCodePoint(Number.parseInt(h, 16)),
+    .replace(/&#(\d+);/g, (m, d: string) => fromCodePointOr(Number(d), m))
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, h: string) =>
+      fromCodePointOr(Number.parseInt(h, 16), m),
     )
     .replace(/&amp;/g, "&");
 }

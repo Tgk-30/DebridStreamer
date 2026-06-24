@@ -29,7 +29,7 @@ import {
   useTranscodeAvailable,
   useSetServerSession,
 } from "../lib/ServerSessionContext";
-import { readCsrfToken } from "../lib/serverSession";
+import { notifyUnauthorized, readCsrfToken } from "../lib/serverSession";
 import { isSmartPreloadEnabled, setSmartPreloadEnabled } from "../lib/smartPreload";
 import type { AccountProfile, RequestRecord } from "../lib/serverApi";
 import { fetchAccountProfiles, setProfileMaturity } from "../lib/serverApi";
@@ -567,14 +567,6 @@ function inferServerURL(value: string): string {
   return new URL(`${scheme}://${trimmed}`).toString().replace(/\/+$/, "");
 }
 
-function csrfToken(): string | null {
-  const match = document.cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith("ds_csrf="));
-  return match == null ? null : decodeURIComponent(match.slice("ds_csrf=".length));
-}
-
 async function serverRequest<T>(
   method: string,
   path: string,
@@ -585,7 +577,10 @@ async function serverRequest<T>(
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["content-type"] = "application/json";
   if (method !== "GET" && method !== "HEAD") {
-    const csrf = csrfToken();
+    // Canonical CSRF source: prefers the in-memory token captured at bootstrap
+    // and only falls back to document.cookie same-origin — a cross-origin
+    // (pasted remote URL) client can't read the server origin's ds_csrf cookie.
+    const csrf = readCsrfToken();
     if (csrf != null) headers["x-csrf-token"] = csrf;
   }
   const response = await fetch(`${baseURL}${path}`, {
@@ -595,8 +590,16 @@ async function serverRequest<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await response.text();
-  const parsed = text.length > 0 ? (JSON.parse(text) as Record<string, unknown>) : {};
+  let parsed: Record<string, unknown> = {};
+  if (text.length > 0) {
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      // Non-JSON body (e.g. a reverse-proxy 5xx) — fall through to a status error.
+    }
+  }
   if (!response.ok) {
+    if (response.status === 401) notifyUnauthorized();
     throw new Error(
       typeof parsed.error === "string"
         ? parsed.error
