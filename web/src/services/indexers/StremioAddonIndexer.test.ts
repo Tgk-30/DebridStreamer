@@ -230,4 +230,577 @@ describe("StremioAddonIndexer", () => {
     ]);
     expect(indexers).toHaveLength(0);
   });
+
+  // ---------------------------------------------------------------------------
+  // Error / non-OK responses
+  // ---------------------------------------------------------------------------
+
+  it("throws badServerResponse (with status) on a non-2xx response", async () => {
+    const mock = makeMockFetch(() => ({ status: 503, body: "upstream down" }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    await expect(
+      indexer.search("tt1234567", "movie", null, null),
+    ).rejects.toMatchObject({ kind: "badServerResponse", statusCode: 503 });
+    // The network was actually hit before failing.
+    expect(mock.hits()).toBe(1);
+  });
+
+  it("treats a 3xx redirect status as a bad server response (only 200-299 pass)", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 302,
+      body: JSON.stringify({ streams: [] }),
+    }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    await expect(
+      indexer.search("tt1234567", "movie", null, null),
+    ).rejects.toMatchObject({ kind: "badServerResponse", statusCode: 302 });
+  });
+
+  it("accepts a non-200 success status in the 2xx range (e.g. 204-ish 299)", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 299,
+      body: JSON.stringify({ streams: [] }),
+    }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toEqual([]);
+  });
+
+  it("throws cannotParseResponse on a malformed JSON body", async () => {
+    const mock = makeMockFetch(() => ({ status: 200, body: "<<not json>>" }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    await expect(
+      indexer.search("tt1234567", "movie", null, null),
+    ).rejects.toMatchObject({ kind: "cannotParseResponse" });
+  });
+
+  it("throws cannotParseResponse on an empty body", async () => {
+    const mock = makeMockFetch(() => ({ status: 200, body: "" }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    await expect(
+      indexer.search("tt1234567", "movie", null, null),
+    ).rejects.toMatchObject({ kind: "cannotParseResponse" });
+  });
+
+  it("decodes a valid-but-empty object body to zero results (streams omitted)", async () => {
+    const mock = makeMockFetch(() => ({ status: 200, body: "{}" }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toEqual([]);
+  });
+
+  it("decodes a null streams field to zero results", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 200,
+      body: JSON.stringify({ streams: null }),
+    }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Bad base URL
+  // ---------------------------------------------------------------------------
+
+  it("throws badURL for a whitespace-only base URL (no network call)", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 200,
+      body: JSON.stringify({ streams: [] }),
+    }));
+    const indexer = new StremioAddonIndexer("Torrentio", "   ", mock.fetchImpl);
+
+    await expect(
+      indexer.search("tt1234567", "movie", null, null),
+    ).rejects.toMatchObject({ kind: "badURL" });
+    expect(mock.hits()).toBe(0);
+  });
+
+  it("throws badURL for a base that is only a trailing /manifest.json", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 200,
+      body: JSON.stringify({ streams: [] }),
+    }));
+    // After stripping the trailing /manifest.json the base is empty → badURL.
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "/manifest.json",
+      mock.fetchImpl,
+    );
+
+    await expect(
+      indexer.search("tt1234567", "movie", null, null),
+    ).rejects.toMatchObject({ kind: "badURL" });
+    expect(mock.hits()).toBe(0);
+  });
+
+  it("throws badURL for an unparseable (space-containing) base URL", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 200,
+      body: JSON.stringify({ streams: [] }),
+    }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "not a url",
+      mock.fetchImpl,
+    );
+
+    await expect(
+      indexer.search("tt1234567", "movie", null, null),
+    ).rejects.toMatchObject({ kind: "badURL" });
+    expect(mock.hits()).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // infoHash resolution
+  // ---------------------------------------------------------------------------
+
+  it("extracts the infoHash from an xt=urn:btih: param in a non-magnet url", async () => {
+    const json = JSON.stringify({
+      streams: [
+        {
+          title: "Some.Movie.1080p",
+          url: "https://example.com/play?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    // Lowercased.
+    expect(results[0].infoHash).toBe(
+      "abcdef1234567890abcdef1234567890abcdef12",
+    );
+    // The url was not a magnet, so a synthetic magnet is built (not the url).
+    expect(results[0].magnetURI?.startsWith("magnet:?xt=urn:btih:")).toBe(true);
+  });
+
+  it("falls back to the first 40-hex run anywhere in the url when no xt param", async () => {
+    const hash = "2222222222222222222222222222222222222222";
+    const json = JSON.stringify({
+      streams: [
+        { title: "Movie", url: `https://cdn.example.com/${hash}/file.mkv` },
+      ],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0].infoHash).toBe(hash);
+  });
+
+  it("falls back from an invalid direct infoHash to the url's magnet hash", async () => {
+    const json = JSON.stringify({
+      streams: [
+        {
+          title: "Movie",
+          // Too short to be a valid btih hash → ignored.
+          infoHash: "deadbeef",
+          url: "magnet:?xt=urn:btih:3333333333333333333333333333333333333333",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0].infoHash).toBe(
+      "3333333333333333333333333333333333333333",
+    );
+  });
+
+  it("drops a stream whose direct infoHash is invalid and has no url", async () => {
+    const json = JSON.stringify({
+      streams: [{ title: "Movie", infoHash: "not-a-hash" }],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toEqual([]);
+  });
+
+  it("drops a stream whose url contains no 40-hex run", async () => {
+    const json = JSON.stringify({
+      streams: [{ title: "Movie", url: "https://example.com/stream.m3u8" }],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toEqual([]);
+  });
+
+  it("keeps a valid stream and drops an unresolvable sibling in the same response", async () => {
+    const json = JSON.stringify({
+      streams: [
+        { title: "Bad", url: "https://example.com/no-hash" },
+        {
+          title: "Good.1080p",
+          infoHash: "4444444444444444444444444444444444444444",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0].infoHash).toBe(
+      "4444444444444444444444444444444444444444",
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // Title / name fallback & size / seeders edge cases
+  // ---------------------------------------------------------------------------
+
+  it("falls back to `name` when `title` is absent", async () => {
+    const json = JSON.stringify({
+      streams: [
+        {
+          name: "Named.Only.720p\n👤 9 💾 500 MB",
+          infoHash: "5555555555555555555555555555555555555555",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0].seeders).toBe(9);
+    expect(results[0].sizeBytes).toBe(500_000_000);
+    expect(results[0].quality).toBe(VQ.hd720p);
+    // Title carries the parsed metadata blob.
+    expect(results[0].title).toContain("Named.Only.720p");
+  });
+
+  it("uses the bare info hash as the title when neither title nor name is present", async () => {
+    const hash = "6666666666666666666666666666666666666666";
+    const json = JSON.stringify({ streams: [{ infoHash: hash }] });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    // No seeders / size text → defaults to 0.
+    expect(results[0].seeders).toBe(0);
+    expect(results[0].sizeBytes).toBe(0);
+    // Title is built from the hash (primaryTitle + " " + parseSource, both = hash).
+    expect(results[0].title).toBe(`${hash} ${hash}`);
+    // No quality keyword → Unknown.
+    expect(results[0].quality).toBe(VQ.unknown);
+  });
+
+  it("treats a whitespace-only title as empty and falls back to the hash", async () => {
+    const hash = "7777777777777777777777777777777777777777";
+    const json = JSON.stringify({
+      streams: [{ title: "   ", name: "  ", infoHash: hash }],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0].title).toBe(`${hash} ${hash}`);
+  });
+
+  it("parses `Seeders:` and `Size:` style metadata", async () => {
+    const json = JSON.stringify({
+      streams: [
+        {
+          title: "Movie.1080p Seeders: 42 Size: 512 KB",
+          infoHash: "8888888888888888888888888888888888888888",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0].seeders).toBe(42);
+    expect(results[0].sizeBytes).toBe(512_000);
+  });
+
+  it("parses a TB-scale size", async () => {
+    const json = JSON.stringify({
+      streams: [
+        {
+          title: "Huge.Movie 4K 💾 1.5 TB",
+          infoHash: "9999999999999999999999999999999999999999",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0].sizeBytes).toBe(1_500_000_000_000);
+    expect(results[0].quality).toBe(VQ.uhd4k);
+  });
+
+  it("defaults seeders and size to 0 when the title has no metadata", async () => {
+    const json = JSON.stringify({
+      streams: [
+        {
+          title: "Plain.Movie.Name.1080p",
+          infoHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0].seeders).toBe(0);
+    expect(results[0].sizeBytes).toBe(0);
+  });
+
+  it("uses the first non-empty line as the primary title and collapses newlines for parsing", async () => {
+    const json = JSON.stringify({
+      streams: [
+        {
+          title: "Example.Movie.2026.1080p.x265\n👤 5 💾 1 GB",
+          infoHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    // Title starts with the first line, then the newline-collapsed full blob.
+    expect(results[0].title).toBe(
+      "Example.Movie.2026.1080p.x265 Example.Movie.2026.1080p.x265 👤 5 💾 1 GB",
+    );
+    // Codec parsed from the collapsed blob.
+    expect(results[0].codec).toBe("H.265");
+    expect(results[0].sizeBytes).toBe(1_000_000_000);
+  });
+
+  // ---------------------------------------------------------------------------
+  // magnet construction
+  // ---------------------------------------------------------------------------
+
+  it("preserves a magnet url verbatim as the magnetURI", async () => {
+    const magnet =
+      "magnet:?xt=urn:btih:cccccccccccccccccccccccccccccccccccccc03&dn=Foo";
+    const json = JSON.stringify({
+      streams: [{ title: "Movie", url: magnet }],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0].magnetURI).toBe(magnet);
+  });
+
+  it("builds a synthetic magnet (hash + url-encoded title) when no magnet url is present", async () => {
+    const hash = "dddddddddddddddddddddddddddddddddddddd04";
+    const json = JSON.stringify({
+      streams: [{ title: "My Movie Name", infoHash: hash.toUpperCase() }],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0].magnetURI).toBe(
+      `magnet:?xt=urn:btih:${hash}&dn=My%20Movie%20Name`,
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // id-shape / request building
+  // ---------------------------------------------------------------------------
+
+  it("uses the bare id (no season/episode) for a series with missing episode", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 200,
+      body: JSON.stringify({ streams: [] }),
+    }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    // season present but episode null → no ':season:episode' suffix.
+    await indexer.search("tt9999999", "series", 2, null);
+    const url = new URL(mock.lastURL()!);
+    expect(url.pathname).toBe("/stream/series/tt9999999.json");
+  });
+
+  it("maps a non-movie media type to the series stremio content path", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 200,
+      body: JSON.stringify({ streams: [] }),
+    }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    await indexer.search("tt9999999", "series", null, null);
+    const url = new URL(mock.lastURL()!);
+    expect(url.pathname).toBe("/stream/series/tt9999999.json");
+  });
+
+  it("accepts an uppercase TT-prefixed imdb id", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 200,
+      body: JSON.stringify({ streams: [] }),
+    }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("TT1234567", "movie", null, null);
+    expect(results).toEqual([]);
+    // It made a request (the tt-prefix check is case-insensitive).
+    expect(mock.hits()).toBe(1);
+    const url = new URL(mock.lastURL()!);
+    // The id is trimmed but not lowercased on the wire.
+    expect(url.pathname).toBe("/stream/movie/TT1234567.json");
+  });
+
+  it("trims surrounding whitespace from the imdb id before requesting", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 200,
+      body: JSON.stringify({ streams: [] }),
+    }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    await indexer.search("  tt1234567  ", "movie", null, null);
+    const url = new URL(mock.lastURL()!);
+    expect(url.pathname).toBe("/stream/movie/tt1234567.json");
+  });
+
+  it("collapses multiple trailing slashes on the base URL", async () => {
+    const mock = makeMockFetch(() => ({
+      status: 200,
+      body: JSON.stringify({ streams: [] }),
+    }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun///",
+      mock.fetchImpl,
+    );
+
+    await indexer.search("tt1234567", "movie", null, null);
+    const url = new URL(mock.lastURL()!);
+    expect(url.pathname).toBe("/stream/movie/tt1234567.json");
+  });
 });

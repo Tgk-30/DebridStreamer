@@ -234,3 +234,381 @@ describe("PremiumizeService serviceType", () => {
     expect(service.serviceType).toBe("premiumize");
   });
 });
+
+// MARK: - getStreamURL (edge cases)
+
+describe("PremiumizeService getStreamURL edge cases", () => {
+  it("polls until content appears, sleeping between attempts", async () => {
+    let attempts = 0;
+    const sleeps: number[] = [];
+    const mock = makeMockFetch(() => {
+      attempts += 1;
+      if (attempts < 3) {
+        // Empty content array -> keep polling.
+        return ok(JSON.stringify({ content: [] }));
+      }
+      return ok(
+        JSON.stringify({
+          content: [{ link: "https://pm.example/late.mkv", path: "late.mkv", size: 99 }],
+        }),
+      );
+    });
+    const service = new PremiumizeService("pm-token", mock.fetchImpl, async (ms) => {
+      sleeps.push(ms);
+    });
+    const stream = await service.getStreamURL("slow");
+
+    expect(attempts).toBe(3);
+    // Slept once after attempt 0 and once after attempt 1 (not after the success).
+    expect(sleeps).toEqual([1000, 1000]);
+    expect(stream.streamURL).toBe("https://pm.example/late.mkv");
+  });
+
+  it("throws noFilesAvailable after exhausting all 20 attempts with empty content", async () => {
+    let attempts = 0;
+    const sleeps: number[] = [];
+    const mock = makeMockFetch(() => {
+      attempts += 1;
+      return ok(JSON.stringify({ content: [] }));
+    });
+    const service = new PremiumizeService("pm-token", mock.fetchImpl, async (ms) => {
+      sleeps.push(ms);
+    });
+
+    await expect(service.getStreamURL("never")).rejects.toMatchObject({
+      kind: "noFilesAvailable",
+    });
+    // 20 attempts, sleeping after all but the last.
+    expect(attempts).toBe(20);
+    expect(sleeps.length).toBe(19);
+  });
+
+  it("throws noFilesAvailable when the directdl response is malformed JSON", async () => {
+    const mock = makeMockFetch(() => ok("not json at all"));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    await expect(service.getStreamURL("bad")).rejects.toMatchObject({
+      kind: "noFilesAvailable",
+    });
+  });
+
+  it("throws noFilesAvailable when content is not an array", async () => {
+    const mock = makeMockFetch(() =>
+      ok(JSON.stringify({ content: { link: "https://pm.example/x.mkv" } })),
+    );
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    await expect(service.getStreamURL("notarray")).rejects.toMatchObject({
+      kind: "noFilesAvailable",
+    });
+  });
+
+  it("skips items without a string link but still selects a valid sibling", async () => {
+    const mock = makeMockFetch(() =>
+      ok(
+        JSON.stringify({
+          content: [
+            { link: 12345, path: "broken.mkv", size: 10 },
+            { path: "noLinkField.mkv", size: 20 },
+            { link: "https://pm.example/good.mkv", path: "good.mkv", size: 30 },
+          ],
+        }),
+      ),
+    );
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const stream = await service.getStreamURL("mixed");
+    expect(stream.streamURL).toBe("https://pm.example/good.mkv");
+    expect(stream.fileName).toBe("good.mkv");
+  });
+
+  it("defaults a missing/non-string path to 'Unknown' and coerces a string size", async () => {
+    const mock = makeMockFetch(() =>
+      ok(
+        JSON.stringify({
+          content: [{ link: "https://pm.example/only.mkv", size: "7340032" }],
+        }),
+      ),
+    );
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const stream = await service.getStreamURL("nopath");
+    // path missing -> "Unknown"; lastPathComponent("Unknown") === "Unknown".
+    expect(stream.fileName).toBe("Unknown");
+    // size "7340032" coerced via int64Value.
+    expect(stream.sizeBytes).toBe(7_340_032);
+  });
+
+  it("treats an unparseable size as 0", async () => {
+    const mock = makeMockFetch(() =>
+      ok(
+        JSON.stringify({
+          content: [{ link: "https://pm.example/z.mkv", path: "z.mkv", size: {} }],
+        }),
+      ),
+    );
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const stream = await service.getStreamURL("badsize");
+    expect(stream.sizeBytes).toBe(0);
+  });
+
+  it("propagates a non-401 HTTP error from the directdl call", async () => {
+    const mock = makeMockFetch(() => ({ status: 500, body: "boom" }));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+
+    let caught: DebridError | null = null;
+    try {
+      await service.getStreamURL("err");
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    expect(caught?.equals(DebridError.httpError(500, "boom"))).toBe(true);
+  });
+});
+
+// MARK: - checkCache (edge cases)
+
+describe("PremiumizeService checkCache edge cases", () => {
+  it("produces no entries when the response is malformed JSON", async () => {
+    const mock = makeMockFetch(() => ok("<<<not json>>>"));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const result = await service.checkCache(["HASHX"]);
+    expect(Object.keys(result).length).toBe(0);
+  });
+
+  it("produces no entries when one of the parallel arrays is missing", async () => {
+    // filesize array absent -> the response/filename/filesize guard fails.
+    const mock = makeMockFetch(() =>
+      ok(JSON.stringify({ response: [true], filename: ["A.mkv"] })),
+    );
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const result = await service.checkCache(["HASHX"]);
+    expect(Object.keys(result).length).toBe(0);
+  });
+
+  it("lowercases the hash key when mapping cache results", async () => {
+    const mock = makeMockFetch(() =>
+      ok(
+        JSON.stringify({
+          response: [true],
+          filename: ["File.mkv"],
+          filesize: [42],
+        }),
+      ),
+    );
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const result = await service.checkCache(["AbCdEf"]);
+    expect(result.abcdef).toEqual({
+      kind: "cached",
+      fileId: null,
+      fileName: "File.mkv",
+      fileSize: 42,
+    });
+  });
+
+  it("uses null filename/filesize when their array entries are the wrong type", async () => {
+    const mock = makeMockFetch(() =>
+      ok(
+        JSON.stringify({
+          response: [true],
+          filename: [999], // not a string -> name null
+          filesize: ["123"], // not a number -> size null
+        }),
+      ),
+    );
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const result = await service.checkCache(["HASHX"]);
+    expect(result.hashx).toEqual({
+      kind: "cached",
+      fileId: null,
+      fileName: null,
+      fileSize: null,
+    });
+  });
+
+  it("uses null filename/filesize when the parallel arrays are shorter than response", async () => {
+    const mock = makeMockFetch(() =>
+      ok(
+        JSON.stringify({
+          response: [true],
+          filename: [], // shorter than response -> i >= length
+          filesize: [],
+        }),
+      ),
+    );
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const result = await service.checkCache(["HASHX"]);
+    expect(result.hashx).toEqual({
+      kind: "cached",
+      fileId: null,
+      fileName: null,
+      fileSize: null,
+    });
+  });
+
+  it("skips hashes whose index is beyond the response array length", async () => {
+    const mock = makeMockFetch(() =>
+      ok(
+        JSON.stringify({
+          response: [true], // only one entry for two hashes
+          filename: ["First.mkv"],
+          filesize: [100],
+        }),
+      ),
+    );
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const result = await service.checkCache(["HASHONE", "HASHTWO"]);
+    expect(result.hashone).toEqual({
+      kind: "cached",
+      fileId: null,
+      fileName: "First.mkv",
+      fileSize: 100,
+    });
+    // Second hash had no corresponding response slot -> absent.
+    expect(result.hashtwo).toBeUndefined();
+  });
+
+  it("chunks more than 100 hashes into separate requests", async () => {
+    const hashes = Array.from({ length: 150 }, (_, i) => `HASH${i}`);
+    let requestCount = 0;
+    const itemsPerRequest: number[] = [];
+    const mock = makeMockFetch((req) => {
+      requestCount += 1;
+      const items = req.url.searchParams.getAll("items[]");
+      itemsPerRequest.push(items.length);
+      return ok(
+        JSON.stringify({
+          response: items.map(() => false),
+          filename: items.map(() => null),
+          filesize: items.map(() => null),
+        }),
+      );
+    });
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const result = await service.checkCache(hashes);
+
+    expect(requestCount).toBe(2);
+    expect(itemsPerRequest).toEqual([100, 50]);
+    expect(Object.keys(result).length).toBe(150);
+    expect(result.hash0).toEqual({ kind: "notCached" });
+  });
+
+  it("does not leak the apikey into the cache/check query string", async () => {
+    let query = "";
+    const mock = makeMockFetch((req) => {
+      query = req.url.search;
+      return ok(JSON.stringify({ response: [false], filename: [null], filesize: [null] }));
+    });
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    await service.checkCache(["HASHX"]);
+    expect(query.includes("apikey=")).toBe(false);
+    expect(query).toContain("items[]=HASHX");
+  });
+});
+
+// MARK: - addMagnet
+
+describe("PremiumizeService addMagnet", () => {
+  it("returns the transfer id and sends the magnet in the body (apikey appended, not in query)", async () => {
+    let body = "";
+    let query = "";
+    const mock = makeMockFetch((req) => {
+      body = req.body;
+      query = req.url.search;
+      return ok(JSON.stringify({ id: "transfer-42" }));
+    });
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const id = await service.addMagnet("ABCDEF0123456789");
+
+    expect(id).toBe("transfer-42");
+    expect(body).toContain("src=");
+    expect(body).toContain("magnet%3A%3Fxt%3Durn%3Abtih%3AABCDEF0123456789");
+    expect(body).toContain("apikey=pm-token");
+    expect(query.includes("apikey=")).toBe(false);
+  });
+
+  it("throws downloadFailed when the response has no id", async () => {
+    const mock = makeMockFetch(() => ok(JSON.stringify({ status: "success" })));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    await expect(service.addMagnet("HASH")).rejects.toMatchObject({
+      kind: "downloadFailed",
+      detail: "Failed to add magnet to Premiumize",
+    });
+  });
+
+  it("throws downloadFailed when id is present but not a string", async () => {
+    const mock = makeMockFetch(() => ok(JSON.stringify({ id: 12345 })));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    await expect(service.addMagnet("HASH")).rejects.toMatchObject({
+      kind: "downloadFailed",
+    });
+  });
+
+  it("throws downloadFailed when the response is malformed JSON", async () => {
+    const mock = makeMockFetch(() => ok("oops"));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    await expect(service.addMagnet("HASH")).rejects.toMatchObject({
+      kind: "downloadFailed",
+    });
+  });
+});
+
+// MARK: - unrestrict (edge cases)
+
+describe("PremiumizeService unrestrict edge cases", () => {
+  it("throws downloadFailed for a non-absolute link", async () => {
+    const service = new PremiumizeService("pm-token", makeMockFetch(() => ok("{}")).fetchImpl);
+    await expect(service.unrestrict("not-a-url")).rejects.toMatchObject({
+      kind: "downloadFailed",
+      detail: "Invalid link",
+    });
+  });
+});
+
+// MARK: - getAccountInfo (edge cases)
+
+describe("PremiumizeService getAccountInfo edge cases", () => {
+  it("throws invalidToken when the body is not a JSON object", async () => {
+    const mock = makeMockFetch(() => ok("[]"));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    await expect(service.getAccountInfo()).rejects.toMatchObject({
+      kind: "invalidToken",
+    });
+  });
+
+  it("defaults username to 'Unknown' when customer_id is missing", async () => {
+    const mock = makeMockFetch(() => ok(JSON.stringify({ premium_until: 1700000000 })));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const info = await service.getAccountInfo();
+    expect(info.username).toBe("Unknown");
+    expect(info.isPremium).toBe(true);
+  });
+
+  it("sends auth headers (Bearer + X-API-Key) and no body for the GET", async () => {
+    let captured: CapturedRequest | undefined;
+    const mock = makeMockFetch((req) => {
+      captured = req;
+      return ok(JSON.stringify({ customer_id: "u" }));
+    });
+    const service = new PremiumizeService("my-token", mock.fetchImpl);
+    await service.getAccountInfo();
+
+    expect(captured?.headers.Authorization).toBe("Bearer my-token");
+    expect(captured?.headers["X-API-Key"]).toBe("my-token");
+    // GET with no body component -> no apikey in body and no Content-Type.
+    expect(captured?.body).toBe("");
+    expect(captured?.headers["Content-Type"]).toBeUndefined();
+  });
+});
+
+// MARK: - validateToken (edge cases)
+
+describe("PremiumizeService validateToken edge cases", () => {
+  it("returns false when the account body is not a JSON object", async () => {
+    const mock = makeMockFetch(() => ok("null"));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    expect(await service.validateToken()).toBe(false);
+  });
+
+  it("returns false on a 503 server error", async () => {
+    const mock = makeMockFetch(() => ({ status: 503, body: "down" }));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    expect(await service.validateToken()).toBe(false);
+  });
+});
