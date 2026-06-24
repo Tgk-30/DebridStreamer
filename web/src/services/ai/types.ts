@@ -165,8 +165,13 @@ export async function boundedReadText(
     const { done, value } = await reader.read();
     if (done) break;
     if (value) {
-      total += value.byteLength;
-      chunks.push(value);
+      // Only keep up to the remaining budget, so a single oversized chunk can't
+      // push `total` past the cap (and the merged buffer is never over-allocated).
+      const remaining = maxBytes - total;
+      const slice =
+        value.byteLength > remaining ? value.subarray(0, remaining) : value;
+      chunks.push(slice);
+      total += slice.byteLength;
       if (total >= maxBytes) {
         try {
           await reader.cancel();
@@ -186,16 +191,31 @@ export async function boundedReadText(
   return new TextDecoder().decode(merged);
 }
 
-/** Resolves a usable fetch — the injected stub or the global. The real-fetch
- * path bounds the response body to {@link MAX_AI_RESPONSE_BYTES} so an untrusted
- * provider can't OOM the renderer before parsing. (Injected stubs, used in
- * tests, return small bodies and pass through unchanged.) */
+/** Does this fetch response expose a readable body stream? Real `Response`s
+ * (global fetch, the Tauri plugin fetch, appFetch) do; the tiny `{status,text()}`
+ * stubs injected by tests do not. */
+function hasBodyStream(
+  response: unknown,
+): response is Response {
+  const body = (response as { body?: { getReader?: unknown } } | null)?.body;
+  return body != null && typeof body.getReader === "function";
+}
+
+/** Resolves a usable fetch and ALWAYS bounds the response body when it's a real
+ * streamed `Response` — whether the fetch was injected (production threads in
+ * `appFetch`) or the global default. Caps at {@link MAX_AI_RESPONSE_BYTES} so an
+ * untrusted/compromised provider can't OOM the renderer before parsing. The
+ * small non-streamed test stubs pass through unchanged. */
 export function resolveFetch(fetchImpl?: FetchImpl): FetchImpl {
-  if (fetchImpl) return fetchImpl;
+  const base: FetchImpl =
+    fetchImpl ?? ((url, init) => fetch(url, init as RequestInit));
   return async (url, init) => {
-    const response = await fetch(url, init as RequestInit);
-    const text = await boundedReadText(response, MAX_AI_RESPONSE_BYTES);
-    return { status: response.status, text: async () => text };
+    const response = await base(url, init);
+    if (hasBodyStream(response)) {
+      const text = await boundedReadText(response, MAX_AI_RESPONSE_BYTES);
+      return { status: response.status, text: async () => text };
+    }
+    return response;
   };
 }
 

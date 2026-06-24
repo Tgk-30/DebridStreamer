@@ -458,11 +458,14 @@ describe("loadSettingsFromStore — first-run migration", () => {
 
   it("does NOT replay a redacted blob over already-migrated secrets (interrupted-migration race)", async () => {
     // Race state: a prior migration redacted the localStorage cache and wrote the
-    // real secret to the Store, but crashed before setting the init flag. The
-    // next load must NOT migrate the blank blob over the real Store secret.
+    // real secret + settings to the Store, but crashed before setting the init
+    // flag. The next load must NOT migrate the blank blob over the real Store
+    // secret. (The migration always writes `theme`, so its presence is how we
+    // detect the Store was already populated by an interrupted migration.)
     stubLocalStorage({
       [KEY]: JSON.stringify({ tmdbKey: "", simpleMode: false }), // redacted
     });
+    settingsMap.set("ui_theme", "midnight"); // Store already written by prior run
     settingsMap.set("tmdb_api_key", "secret:tmdb_api_key"); // marker in Store
     secretMap.set("tmdb_api_key", "REAL_KEY"); // real secret already migrated
 
@@ -479,6 +482,20 @@ describe("loadSettingsFromStore — first-run migration", () => {
     vi.stubGlobal("localStorage", undefined); // no legacy blob at all
     const result = await loadSettingsFromStore();
     expect(result.tmdbKey).toBe("");
+    expect(settingsMap.get("storage_port_initialized")).toBe("true");
+  });
+
+  it("migrates a genuine keyless first run (non-secret settings, empty Store)", async () => {
+    // A real legacy blob with NO credentials but non-secret settings, into an
+    // empty Store. Must still migrate those settings (not be mistaken for a
+    // redacted post-migration cache).
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ theme: "aurora", simpleMode: false }),
+    });
+    const result = await loadSettingsFromStore();
+    expect(result.simpleMode).toBe(false);
+    // The non-secret settings reached the Store.
+    expect(settingsMap.get("ui_theme")).toBeDefined();
     expect(settingsMap.get("storage_port_initialized")).toBe("true");
   });
 });
