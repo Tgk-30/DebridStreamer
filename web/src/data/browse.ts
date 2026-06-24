@@ -150,6 +150,17 @@ export function browseTitle(ctx: BrowseContext): string {
  * params. Pure + exported so it can be unit-tested without the network. Mirrors
  * the subset TMDBService.discover() builds, extended with the slideover's extra
  * fields (multi-genre, year range, min votes, runtime, language). */
+/** Clamp a year to a plausible 4-digit window; anything outside → null. A 1-3
+ * digit (or absurd-future) value — e.g. the "20" a user has typed so far toward
+ * "2010" — would otherwise build a malformed "20-01-01" discover date param and
+ * silently return wrong/empty results. The input itself stays permissive
+ * (parseYear) so it's typeable; this clamp only governs whether the bound is
+ * actually applied to a query. */
+export function plausibleYear(y: number | null): number | null {
+  if (y == null) return null;
+  return y >= 1900 && y <= new Date().getFullYear() + 5 ? y : null;
+}
+
 /** Return [floor, ceiling] for a year range, swapping if the caller passed them
  * inverted (From > To). Either side may be null (open-ended). Pure + exported so
  * both the live discover params and the fixture filter agree. */
@@ -176,9 +187,13 @@ export function buildDiscoverParams(
   if (filters.genreIds.length > 0) {
     params.with_genres = filters.genreIds.join(",");
   }
-  // Swap an inverted range (From=2020, To=2000) so the floor is never above the
-  // ceiling — TMDB returns an empty set otherwise, which reads as a silent bug.
-  const [yearGTE, yearLTE] = orderYearBounds(filters.yearGTE, filters.yearLTE);
+  // Clamp implausible/partial years to null, then swap an inverted range
+  // (From=2020, To=2000) so the floor is never above the ceiling — TMDB returns
+  // an empty set otherwise, which reads as a silent bug.
+  const [yearGTE, yearLTE] = orderYearBounds(
+    plausibleYear(filters.yearGTE),
+    plausibleYear(filters.yearLTE),
+  );
   if (yearGTE != null) {
     const key =
       type === "movie" ? "primary_release_date.gte" : "first_air_date.gte";
@@ -378,10 +393,11 @@ export function fixtureBrowsePage(ctx: BrowseContext): BrowsePage {
     if (ctx.filters.minRating != null) {
       items = items.filter((i) => (i.imdbRating ?? 0) >= ctx.filters.minRating!);
     }
-    // Mirror the live discover path: order an inverted range before filtering.
+    // Mirror the live discover path: clamp implausible years, then order an
+    // inverted range before filtering.
     const [yearGTE, yearLTE] = orderYearBounds(
-      ctx.filters.yearGTE,
-      ctx.filters.yearLTE,
+      plausibleYear(ctx.filters.yearGTE),
+      plausibleYear(ctx.filters.yearLTE),
     );
     if (yearGTE != null) {
       items = items.filter((i) => (i.year ?? 0) >= yearGTE);

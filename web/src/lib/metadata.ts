@@ -62,9 +62,21 @@ export interface UpcomingEpisode {
   airDate: string;
 }
 
-/** Today's date as a UTC `YYYY-MM-DD` string (TMDB air dates are date-only). */
+/** A timestamp as a LOCAL `YYYY-MM-DD` string. TMDB air dates are bare
+ * date-only strings with no timezone, so they must be compared against the
+ * user's *local* calendar day. Using the UTC date (toISOString) misclassifies
+ * by a day for non-UTC users in evening/early-morning windows — dropping
+ * tonight's premiere as "already aired" or labeling tomorrow's as "Today". */
+export function localISODate(now: number): string {
+  const d = new Date(now);
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+/** Today's date as a local `YYYY-MM-DD` string (TMDB air dates are date-only). */
 function todayISODate(now: number): string {
-  return new Date(now).toISOString().slice(0, 10);
+  return localISODate(now);
 }
 
 /** Find a series' upcoming (today-or-later) episodes by walking TMDB seasons ->

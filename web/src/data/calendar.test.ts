@@ -42,4 +42,20 @@ describe("groupEpisodes", () => {
   it("returns [] for no episodes", () => {
     expect(groupEpisodes([], NOW)).toEqual([]);
   });
+
+  it("buckets by the user's LOCAL day, not UTC (evening / non-UTC offset)", () => {
+    // `now` is built from LOCAL components, so this is timezone-independent: the
+    // local calendar day is 2026-06-16 in any CI timezone. Under the old UTC
+    // logic a negative-offset machine would compute today=2026-06-17 at this
+    // hour and silently drop tonight's premiere; the local-day fix keeps it.
+    const localEvening = new Date(2026, 5, 16, 22, 0, 0).getTime(); // Jun 16, 22:00 local
+    const groups = groupEpisodes(
+      [ep("2026-06-16", 1), ep("2026-06-17", 2)],
+      localEvening,
+    );
+    const today = groups.find((g) => g.bucket === "today");
+    expect(today?.episodes.map((e) => e.episodeNumber)).toEqual([1]);
+    // Tomorrow's episode must NOT be mislabeled as Today.
+    expect(today?.episodes.some((e) => e.episodeNumber === 2)).toBe(false);
+  });
 });

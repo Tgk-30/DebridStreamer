@@ -165,6 +165,53 @@ describe("AIAssistantJSONParser", () => {
     expect(recs[0].reason).toBe("Recommended by AI assistant.");
     expect(recs[0].score).toBe(0.5);
   });
+
+  it("parses a bare top-level JSON array (common LLM schema deviation)", () => {
+    // The model dropped the {recommendations:...} wrapper and returned an array.
+    const text =
+      '[{"title":"A","year":2000},{"title":"B","year":2001},{"title":"C"}]';
+    const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
+    expect(recs.map((r) => r.title)).toEqual(["A", "B", "C"]);
+    expect(recs[0].year).toBe(2000);
+  });
+
+  it("parses a single bare recommendation object", () => {
+    const text = '{"title":"Solo","year":2018,"reason":"One pick","score":0.7}';
+    const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
+    expect(recs.length).toBe(1);
+    expect(recs[0].title).toBe("Solo");
+  });
+
+  it("salvages complete elements from truncated array output (no JSON junk title)", () => {
+    // max_tokens cut the model off mid-object: keep the complete ones, drop the
+    // partial tail, and never emit the raw blob as a single recommendation.
+    const text =
+      '{"recommendations":[{"title":"Inception","year":2010},{"title":"Interst';
+    const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
+    expect(recs.length).toBe(1);
+    expect(recs[0].title).toBe("Inception");
+    expect(recs[0].year).toBe(2010);
+  });
+
+  it("salvages a truncated bare array too", () => {
+    const text = '[{"title":"A","year":2000},{"title":"B","yea';
+    const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
+    expect(recs.map((r) => r.title)).toEqual(["A"]);
+  });
+
+  it("returns nothing (not junk) for unsalvageable JSON-shaped output", () => {
+    // First object never closes → no complete element to salvage. Must NOT turn
+    // the raw blob into a bogus title via the line fallback.
+    const text = '{"recommendations":[{"title":"Inc';
+    const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
+    expect(recs).toEqual([]);
+  });
+
+  it("drops entries with no usable title", () => {
+    const text = '{"recommendations":[{"title":"Keep"},{"year":2020},{}]}';
+    const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
+    expect(recs.map((r) => r.title)).toEqual(["Keep"]);
+  });
 });
 
 // MARK: - AnthropicProvider — mirrors AnthropicProviderTests.parsesRecommendations

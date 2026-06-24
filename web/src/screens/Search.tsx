@@ -97,6 +97,10 @@ export function Search() {
     const trimmed = q.trim();
     if (trimmed.length === 0) {
       runIdRef.current += 1; // cancel any in-flight result
+      // Clear loading too: an in-flight run we just superseded will skip its own
+      // setLoading(false) (its run id no longer matches), so without this the
+      // searching skeleton would stay up forever over the idle view.
+      setLoading(false);
       setResults(null);
       return;
     }
@@ -167,6 +171,7 @@ export function Search() {
               className="search-clear"
               onClick={() => {
                 runIdRef.current += 1; // cancel any in-flight result
+                setLoading(false); // see runSearch's empty-query branch
                 setQuery("");
                 setResults(null);
                 inputRef.current?.focus();

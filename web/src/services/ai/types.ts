@@ -164,35 +164,41 @@ export const AIAssistantJSONParser = {
     maxResults: number,
   ): AIMovieRecommendation[] {
     const fenceStripped = strippingCodeFences(text);
-    // Try the RAW text first: firstBalancedJSONObject already skips ```json
-    // fence lines (they carry no `{`), so stripping fences is only a fallback —
-    // and stripping would corrupt JSON whose own string values contain literal
-    // triple-backticks.
-    const json =
-      firstBalancedJSONObject(text) ?? firstBalancedJSONObject(fenceStripped);
-    if (json != null) {
-      const payload = tryDecodePayload(json);
-      if (payload != null) {
-        const recs = payload.recommendations ?? [];
-        return recs
-          .slice(0, maxResults)
-          .map((item) =>
-            makeAIMovieRecommendation({
-              title: typeof item.title === "string" ? item.title : "",
-              year: typeof item.year === "number" ? item.year : null,
-              reason:
-                typeof item.reason === "string"
-                  ? item.reason
-                  : "Recommended by AI assistant.",
-              score: typeof item.score === "number" ? item.score : 0.5,
-            }),
-          );
-      }
+
+    // Extract the recommendation objects, tolerating the common shapes a model
+    // actually emits: the requested `{recommendations:[...]}`, a bare top-level
+    // array `[{...},{...}]`, a single bare object, and output truncated mid-JSON
+    // by a max_tokens cutoff (salvage the complete elements, drop the partial
+    // tail). Raw text is tried before fence-stripping so JSON whose string
+    // values contain literal ``` is not mangled by strippingCodeFences.
+    const recs =
+      extractRecommendationObjects(text) ??
+      extractRecommendationObjects(fenceStripped);
+    if (recs != null) {
+      return recs
+        .slice(0, maxResults)
+        .map((item) =>
+          makeAIMovieRecommendation({
+            title: typeof item.title === "string" ? item.title : "",
+            year: typeof item.year === "number" ? item.year : null,
+            reason:
+              typeof item.reason === "string"
+                ? item.reason
+                : "Recommended by AI assistant.",
+            score: typeof item.score === "number" ? item.score : 0.5,
+          }),
+        )
+        .filter((r) => r.title.length > 0);
     }
 
-    // Line fallback: split on newlines, drop blanks + stray code-fence markers,
-    // strip list markers. Run over the fence-stripped text (not the raw `text`)
-    // so leftover ``` lines don't survive as junk recommendation titles.
+    // If the response was clearly JSON-shaped but unparseable (e.g. truncated
+    // with no complete element to salvage), do NOT fall through to the line
+    // parser — it would emit the raw JSON blob as a single junk "title". Return
+    // nothing instead.
+    if (/^\s*[[{]/.test(fenceStripped)) return [];
+
+    // Line fallback for genuine plain-text lists ("1. Inception\n2. ..."): split
+    // on newlines, drop blanks + stray code-fence markers, strip list markers.
     const lines = fenceStripped
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -290,8 +296,15 @@ interface RawAnalysisPayload {
  * (defaulting to "maybe"). Mirrors the Swift `parsePersonalizedAnalysis`.
  */
 export function parsePersonalizedAnalysis(raw: string): AIPersonalizedAnalysis {
+  // Try the RAW text first (mirrors parseRecommendations): firstBalancedJSONObject
+  // skips ```json fence lines on its own, so fence-stripping is only a fallback —
+  // and stripping would silently delete content from a valid, unfenced object
+  // whose own string values contain literal triple-backticks.
   const fenceStripped = strippingCodeFences(raw);
-  const json = firstBalancedJSONObject(fenceStripped) ?? fenceStripped;
+  const json =
+    firstBalancedJSONObject(raw) ??
+    firstBalancedJSONObject(fenceStripped) ??
+    fenceStripped;
 
   let payload: RawAnalysisPayload = {};
   try {
@@ -363,24 +376,76 @@ function normalizeReasons(value: unknown): string[] {
   return out;
 }
 
-/** Decodes a `{recommendations:[...]}` payload, returning null on any failure.
- * Mirrors Swift `try? JSONDecoder().decode(Payload.self, ...)`. A payload is
- * only valid when it has a `recommendations` array. */
-function tryDecodePayload(json: string): RawPayload | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    return null;
+/** Extracts the recommendation objects from a model's response text, tolerating
+ * every shape seen in practice; returns null only when nothing JSON-shaped was
+ * found (so the caller can decide between an empty result and a plain-text
+ * fallback). Handles: the requested `{recommendations:[...]}`, a bare top-level
+ * array `[...]`, a single bare `{...}`, and JSON truncated mid-stream (salvages
+ * the complete elements and discards the partial trailing one). */
+function extractRecommendationObjects(text: string): RawRecommendation[] | null {
+  // 1) Strict parse of the first complete top-level container ({...} or [...]).
+  const container = firstBalancedJSONContainer(text);
+  if (container != null) {
+    try {
+      const parsed: unknown = JSON.parse(container);
+      const recs = recommendationsFromValue(parsed);
+      if (recs != null) return recs;
+    } catch {
+      // fall through to salvage
+    }
   }
-  if (
-    parsed == null ||
-    typeof parsed !== "object" ||
-    !Array.isArray((parsed as RawPayload).recommendations)
-  ) {
-    return null;
+
+  // 2) Salvage: collect every COMPLETE `{...}` object inside the array body.
+  // Covers a truncated array (the unfinished tail object is simply skipped).
+  const salvaged = salvageRecommendationObjects(text);
+  if (salvaged.length > 0) return salvaged;
+
+  return null;
+}
+
+/** Interprets a parsed JSON value as a recommendation list: a bare array, a
+ * `{recommendations:[...]}` wrapper, or a single recommendation-shaped object.
+ * Returns null when the value is none of these. */
+function recommendationsFromValue(value: unknown): RawRecommendation[] | null {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (v): v is RawRecommendation => v != null && typeof v === "object",
+    );
   }
-  return parsed as RawPayload;
+  if (value != null && typeof value === "object") {
+    const obj = value as RawPayload & RawRecommendation;
+    if (Array.isArray(obj.recommendations)) {
+      return obj.recommendations.filter(
+        (v): v is RawRecommendation => v != null && typeof v === "object",
+      );
+    }
+    // A single bare recommendation object (the model returned one item).
+    if (typeof obj.title === "string") return [obj];
+  }
+  return null;
+}
+
+/** Pulls every complete balanced `{...}` object out of the `recommendations`
+ * array body (or a top-level array), parsing each independently so a truncated
+ * final element doesn't discard the valid ones before it. */
+function salvageRecommendationObjects(text: string): RawRecommendation[] {
+  let body = text;
+  const recKey = text.indexOf('"recommendations"');
+  const bracket = text.indexOf("[", recKey === -1 ? 0 : recKey);
+  if (bracket !== -1) body = text.slice(bracket + 1);
+
+  const out: RawRecommendation[] = [];
+  for (const objText of allBalancedJSONObjects(body)) {
+    try {
+      const parsed: unknown = JSON.parse(objText);
+      if (parsed != null && typeof parsed === "object") {
+        out.push(parsed as RawRecommendation);
+      }
+    } catch {
+      // skip an unparseable object
+    }
+  }
+  return out;
 }
 
 /** Removes surrounding markdown code fences (``` or ```json) so the JSON inside
@@ -446,6 +511,94 @@ function firstBalancedJSONObject(text: string): string | null {
   }
 
   return null;
+}
+
+/** Returns the first complete, balanced top-level JSON container — `{...}` OR
+ * `[...]`, whichever opens first — tracking depth while respecting string
+ * literals/escapes. Lets the recommendations parser accept both the requested
+ * object wrapper and a bare top-level array. Returns null if none closes. */
+function firstBalancedJSONContainer(text: string): string | null {
+  let startIndex: number | null = null;
+  let open: "{" | "[" | null = null;
+  let close: "}" | "]" | null = null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (startIndex == null) {
+      if (character === "{" || character === "[") {
+        startIndex = index;
+        open = character;
+        close = character === "{" ? "}" : "]";
+        depth = 1;
+      }
+      continue;
+    }
+
+    if (character === open) {
+      depth += 1;
+    } else if (character === close) {
+      depth -= 1;
+      if (depth === 0) return text.slice(startIndex, index + 1);
+    }
+  }
+
+  return null;
+}
+
+/** Returns every complete, balanced top-level `{...}` object in `text`, in
+ * order, resetting after each. Array brackets are ignored, so scanning the body
+ * of `[{a},{b},{trunc` yields `[{a},{b}]` — the complete objects only — which is
+ * how truncated recommendation arrays are salvaged. */
+function allBalancedJSONObjects(text: string): string[] {
+  const out: string[] = [];
+  let startIndex: number | null = null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+    } else if (character === "{") {
+      if (depth === 0) startIndex = index;
+      depth += 1;
+    } else if (character === "}") {
+      if (depth > 0) {
+        depth -= 1;
+        if (depth === 0 && startIndex != null) {
+          out.push(text.slice(startIndex, index + 1));
+          startIndex = null;
+        }
+      }
+    }
+  }
+
+  return out;
 }
 
 // MARK: - AIUsageCostEstimator

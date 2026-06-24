@@ -195,6 +195,36 @@ describe("AllDebridService checkCache", () => {
     expect(Object.keys(result).length).toBe(0);
     expect(didCallNetwork).toBe(false);
   });
+
+  it("skips hash-less/error magnet rows instead of writing an empty-string key", async () => {
+    // An invalid magnet entry has no `hash` field. The old code collapsed it to
+    // "" and wrote results[""], dropping the real hash's status.
+    const mock = makeMockFetch(() =>
+      ok(
+        JSON.stringify({
+          data: {
+            magnets: [
+              { hash: "ABCDEF", instant: true },
+              { error: { code: "MAGNET_INVALID_ID" } }, // no hash
+              { hash: 12345, instant: true }, // non-string hash
+            ],
+          },
+        }),
+      ),
+    );
+    const service = new AllDebridService("ad-token", mock.fetchImpl);
+    const result = await service.checkCache(["ABCDEF"]);
+
+    expect(result.abcdef).toEqual({
+      kind: "cached",
+      fileId: null,
+      fileName: null,
+      fileSize: null,
+    });
+    // No bogus empty-string key; only the real hash is present.
+    expect(Object.prototype.hasOwnProperty.call(result, "")).toBe(false);
+    expect(Object.keys(result)).toEqual(["abcdef"]);
+  });
 });
 
 // MARK: - getAccountInfo

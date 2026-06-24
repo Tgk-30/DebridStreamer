@@ -38,6 +38,7 @@ import { OpenAIProvider } from "../services/ai/OpenAIProvider";
 import { AnthropicProvider } from "../services/ai/AnthropicProvider";
 import { OllamaProvider } from "../services/ai/OllamaProvider";
 import { getSecretStore, getStore } from "../storage";
+import type { SecretStore } from "../storage";
 import { appFetch } from "../lib/http";
 import { isServerMode } from "../lib/serverMode";
 import { DEFAULT_THEME_ID, resolveThemeId } from "../theme/themes";
@@ -432,12 +433,41 @@ async function setStoredValue(key: string, value: string): Promise<void> {
       await secrets.setSecret(key, value);
       await store.setSetting(key, `${SECRET_MARKER}${key}`);
     } else {
-      await secrets.deleteSecret(key);
+      // Clear the KV marker FIRST so the value is unreferenced on the next load
+      // even if the keychain purge below fails CLOSED (desktop). Then best-effort
+      // delete the secret: a keychain failure here leaves an orphaned-but-
+      // unreferenced credential, which must not abort the whole settings save.
       await store.setSetting(key, null);
+      await deleteSecretBestEffort(secrets, key);
     }
     return;
   }
   await store.setSetting(key, value);
+}
+
+/** Best-effort secret deletion for the REMOVAL path. On the Tauri desktop build
+ * `deleteSecret` fails CLOSED — it rejects if the OS keychain is locked/denied
+ * (see KeychainSecretStore). But by the time we call this we have already
+ * cleared the owning KV marker / config row, so the secret is unreferenced
+ * (load only follows live markers/rows). A keychain failure therefore means at
+ * worst a harmless value lingers in the keychain — it must NOT propagate and
+ * abort the surrounding reconciliation (which would orphan the very row/marker
+ * we just removed and leave the rest of the Save half-applied). Swallow + warn;
+ * only the key NAME is logged, never a secret value. */
+async function deleteSecretBestEffort(
+  secrets: SecretStore,
+  key: string,
+): Promise<void> {
+  try {
+    await secrets.deleteSecret(key);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[settings] best-effort secret delete failed for "${key}" — the ` +
+        `credential is now unreferenced but may linger in the keychain.`,
+      err,
+    );
+  }
 }
 
 /** Load settings from the Store (KV + SecretStore + the debrid/indexer config
@@ -629,7 +659,16 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
   const store = getStore();
   const secrets = getSecretStore();
 
-  await Promise.all([
+  // Collected keychain WRITE failures (fail-closed on desktop). Unlike a removal
+  // (which we make best-effort below), a failed credential WRITE means the value
+  // genuinely wasn't persisted and the user must be told. But we persist
+  // everything we can FIRST — so one locked-keychain write never leaves the KV /
+  // debrid / indexer tables half-reconciled — then surface them at the very end.
+  const writeFailures: unknown[] = [];
+
+  // allSettled (not all): a single secret write that fails closed must not abort
+  // the remaining KV writes or the debrid/indexer reconciliation below.
+  const kvResults = await Promise.allSettled([
     setStoredValue(SettingsKeys.tmdbApiKey, settings.tmdbKey),
     setStoredValue(SettingsKeys.omdbApiKey, settings.omdbKey),
     setStoredValue(SettingsKeys.aiApiKey, settings.aiApiKey),
@@ -739,6 +778,9 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
       settings.builtInIndexersEnabled ? "true" : "false",
     ),
   ]);
+  for (const r of kvResults) {
+    if (r.status === "rejected") writeFailures.push(r.reason);
+  }
 
   // Debrid configs: reconcile the table to the current token set. Tokens go in
   // SecretStore under `debrid.<id>`; the config row carries a secret marker.
@@ -750,7 +792,18 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
     // Stable id per service so re-saving updates rather than duplicates.
     const id = `debrid-${entry.service}`;
     keptDebridIds.add(id);
-    await secrets.setSecret(debridSecretKey(id), entry.apiToken);
+    try {
+      // Write the secret BEFORE the marker'd row. If the keychain write fails
+      // closed (desktop), skip the row so we never persist a config pointing at
+      // a secret we couldn't store (load would surface an empty token). Any
+      // existing row for this id stays put — id is already in keptDebridIds, so
+      // the removal sweep below won't delete it — and we record the failure so
+      // the whole Save still completes and then reports it.
+      await secrets.setSecret(debridSecretKey(id), entry.apiToken);
+    } catch (err) {
+      writeFailures.push(err);
+      continue;
+    }
     await store.saveDebridConfig({
       id,
       service: entry.service,
@@ -761,8 +814,13 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
   }
   for (const c of existingDebrid) {
     if (!keptDebridIds.has(c.id)) {
-      await secrets.deleteSecret(debridSecretKey(c.id));
+      // Delete the config row FIRST so the removal is honored even if the
+      // keychain purge fails closed (desktop); the secret delete is best-effort
+      // cleanup. Doing it the other way round would, on a keychain failure,
+      // orphan a config row whose marker points at a (maybe still-present)
+      // keychain entry AND abort the rest of this reconciliation.
       await store.deleteDebridConfig(c.id);
+      await deleteSecretBestEffort(secrets, debridSecretKey(c.id));
     }
   }
 
@@ -807,6 +865,18 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
   // Keep the legacy localStorage blob in sync as a belt-and-suspenders cache so
   // the synchronous bootstrap render has a recent snapshot before hydration.
   saveSettings(settings);
+
+  // Everything that COULD be persisted now has been (KV + debrid + indexer tables
+  // are fully reconciled and the localStorage cache is in sync). If any credential
+  // WRITE failed closed on the keychain, surface it now so the caller can tell the
+  // user their key wasn't saved — without having lost the rest of the Save to a
+  // mid-flight abort. (Removals are best-effort and never land here.)
+  if (writeFailures.length > 0) {
+    throw new AggregateError(
+      writeFailures,
+      `saveSettingsToStore: ${writeFailures.length} secret write(s) failed to persist`,
+    );
+  }
 }
 
 /** The SecretStore key a debrid config's token is stored under (mirrors the

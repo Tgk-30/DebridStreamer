@@ -48,7 +48,10 @@ export function recencyDecay(createdAt: string, now = Date.now()): number {
   const ms = now - new Date(createdAt).getTime();
   if (!Number.isFinite(ms)) return RECENCY_FLOOR;
   const days = ms / 86_400_000;
-  return Math.max(RECENCY_FLOOR, 1 - days / RECENCY_WINDOW_DAYS);
+  // Clamp to [RECENCY_FLOOR, 1]: a future-dated createdAt (clock skew / NTP
+  // correction) makes `days` negative, which would otherwise inflate the weight
+  // above 1.0 and over-contribute to the genre tallies.
+  return Math.min(1, Math.max(RECENCY_FLOOR, 1 - days / RECENCY_WINDOW_DAYS));
 }
 
 /** Genre names stamped into a like/dislike taste event's metadata. DetailHero

@@ -695,4 +695,153 @@ describe("saveSettingsToStore", () => {
       },
     ]);
   });
+
+  // ---------------------------------------------------------------------------
+  // Desktop keychain "fail-closed" paths. On the Tauri build, getSecretStore()
+  // returns a KeychainSecretStore whose set/deleteSecret REJECT when the OS
+  // keychain is locked/denied. saveSettingsToStore must not let that abort the
+  // reconciliation mid-flight (which would orphan a config row / KV marker and
+  // lose the rest of the Save). We simulate it by rejecting the fake secrets.
+  // ---------------------------------------------------------------------------
+  describe("keychain fail-closed (desktop)", () => {
+    afterEach(() => {
+      // Restore the base in-memory secret-store behavior (clearAllMocks keeps
+      // implementations, so a persistent override here would leak otherwise).
+      fakeSecrets.getSecret.mockImplementation(
+        async (key: string) => secretMap.get(key) ?? null,
+      );
+      fakeSecrets.setSecret.mockImplementation(
+        async (key: string, value: string) => {
+          secretMap.set(key, value);
+        },
+      );
+      fakeSecrets.deleteSecret.mockImplementation(async (key: string) => {
+        secretMap.delete(key);
+      });
+    });
+
+    it("removes a stale debrid config (and continues the save) even when the keychain secret delete fails closed", async () => {
+      // Stale debrid config to be removed; its keychain purge will fail.
+      debridConfigs = [
+        {
+          id: "debrid-premiumize",
+          service: "premiumize",
+          apiToken: "secret:debrid.debrid-premiumize",
+          isActive: true,
+          priority: 0,
+        },
+      ];
+      secretMap.set("debrid.debrid-premiumize", "old");
+      // Stale indexer to prove the post-debrid reconciliation still ran.
+      indexerConfigs = [
+        {
+          id: "stale-idx",
+          type: "torznab",
+          baseURL: "http://old",
+          apiKey: null,
+          isActive: true,
+          displayName: null,
+          providerSubtype: "custom_torznab",
+          endpointPath: "/api",
+          categoryFilter: null,
+          priority: 0,
+        },
+      ];
+      fakeSecrets.deleteSecret.mockRejectedValueOnce(new Error("keychain locked"));
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      // Removal (no tokens) must NOT throw — the purge is best-effort.
+      await expect(
+        saveSettingsToStore(
+          settingsWith({
+            debridTokens: [],
+            sources: [
+              { id: "fresh-idx", type: "torznab", baseURL: "http://new", isActive: true },
+            ],
+          }),
+        ),
+      ).resolves.toBeUndefined();
+
+      // The config ROW was deleted despite the keychain failure (intent honored,
+      // no orphaned row whose marker would re-surface the service on next load).
+      expect(debridConfigs.map((c) => c.id)).not.toContain("debrid-premiumize");
+      // Reconciliation CONTINUED past the failure: indexer table fully updated.
+      const idxIds = indexerConfigs.map((c) => c.id);
+      expect(idxIds).toContain("fresh-idx");
+      expect(idxIds).not.toContain("stale-idx");
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("clears a secret KV marker and completes the save when emptying a key whose keychain delete fails closed", async () => {
+      // A previously-set OMDb key (marker + value) now being cleared.
+      settingsMap.set("omdb_api_key", "secret:omdb_api_key");
+      secretMap.set("omdb_api_key", "old-omdb");
+      fakeSecrets.deleteSecret.mockRejectedValueOnce(new Error("keychain locked"));
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      await expect(
+        saveSettingsToStore(settingsWith({ omdbKey: "" })),
+      ).resolves.toBeUndefined();
+
+      // Marker cleared first → value is unreferenced on next load even though the
+      // keychain purge failed; the rest of the KV writes still landed.
+      expect(settingsMap.has("omdb_api_key")).toBe(false);
+      expect(settingsMap.get("ai_provider")).toBe("anthropic");
+      warn.mockRestore();
+    });
+
+    it("surfaces a keychain WRITE failure but still persists everything else (no half-reconciled tables)", async () => {
+      // The real_debrid token write fails closed; all other secrets succeed.
+      fakeSecrets.setSecret.mockImplementation(
+        async (key: string, value: string) => {
+          if (key === "debrid.debrid-real_debrid") {
+            throw new Error("keychain locked");
+          }
+          secretMap.set(key, value);
+        },
+      );
+      indexerConfigs = [
+        {
+          id: "stale-idx",
+          type: "torznab",
+          baseURL: "http://old",
+          apiKey: null,
+          isActive: true,
+          displayName: null,
+          providerSubtype: "custom_torznab",
+          endpointPath: "/api",
+          categoryFilter: null,
+          priority: 0,
+        },
+      ];
+
+      const err = await saveSettingsToStore(
+        settingsWith({
+          aiProvider: "openai",
+          aiModel: "gpt-4o",
+          debridTokens: [{ service: "real_debrid", apiToken: "rd" }],
+          sources: [
+            { id: "fresh-idx", type: "torznab", baseURL: "http://new", isActive: true },
+          ],
+        }),
+      ).then(
+        () => null,
+        (e) => e as AggregateError,
+      );
+
+      // The failure is surfaced (the user must know their key wasn't saved)...
+      expect(err).toBeInstanceOf(AggregateError);
+      expect((err as AggregateError).errors).toHaveLength(1);
+      // ...but no marker'd row was written pointing at the secret we couldn't store.
+      expect(debridConfigs.find((c) => c.id === "debrid-real_debrid")).toBeUndefined();
+      expect(secretMap.has("debrid.debrid-real_debrid")).toBe(false);
+      // Everything else persisted: unrelated KV settings + full indexer reconcile.
+      expect(settingsMap.get("ai_provider")).toBe("openai");
+      expect(settingsMap.get("ai_model")).toBe("gpt-4o");
+      const idxIds = indexerConfigs.map((c) => c.id);
+      expect(idxIds).toContain("fresh-idx");
+      expect(idxIds).not.toContain("stale-idx");
+    });
+  });
 });

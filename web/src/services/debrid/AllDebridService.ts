@@ -70,10 +70,13 @@ export class AllDebridService implements DebridService {
       const magnets = dataObj && asObjectArray(dataObj.magnets);
       if (magnets) {
         for (const magnetInfo of magnets) {
-          const hash =
-            (typeof magnetInfo.hash === "string"
-              ? magnetInfo.hash.toLowerCase()
-              : "") || "";
+          // Skip rows without a real hash (error/invalid magnet entries have no
+          // `hash` field): writing results[""] would pollute the map and leave
+          // the actually-requested hash unrecorded (→ silently "not cached").
+          if (typeof magnetInfo.hash !== "string" || magnetInfo.hash.length === 0) {
+            continue;
+          }
+          const hash = magnetInfo.hash.toLowerCase();
           const instant = magnetInfo.instant === true;
           results[hash] = instant
             ? CacheStatus.cached(null, null, null)

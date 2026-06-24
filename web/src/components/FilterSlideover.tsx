@@ -349,15 +349,15 @@ function FilterGroup({
   );
 }
 
-/** Parse a plausible 4-digit year; empty/incomplete/out-of-range → null. A 1-3
- *  digit or negative entry would otherwise build a malformed discover date param
- *  like "20-01-01" and silently return wrong/empty results. */
+/** Parse a year from an input value; empty/non-numeric → null. Permissive on
+ *  purpose: these feed a *controlled* number input, so a partial entry (the "2",
+ *  "20", "201" a user types before reaching "2010") must round-trip unchanged or
+ *  the keystroke is erased and the field becomes impossible to type into. The
+ *  plausibility clamp (a 1-3 digit value would build a malformed "20-01-01" date
+ *  param) lives in buildDiscoverParams, applied only when the range is used. */
 function parseYear(value: string): number | null {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
   const n = Number.parseInt(trimmed, 10);
-  if (Number.isNaN(n) || n < 1900 || n > new Date().getFullYear() + 5) {
-    return null;
-  }
-  return n;
+  return Number.isNaN(n) ? null : n;
 }

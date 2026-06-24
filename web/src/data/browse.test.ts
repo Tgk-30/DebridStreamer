@@ -13,6 +13,7 @@ import {
   hasActiveFilters,
   loadBrowsePage,
   orderYearBounds,
+  plausibleYear,
   sortPreviews,
   toDiscoverFilters,
 } from "./browse";
@@ -75,6 +76,18 @@ describe("buildDiscoverParams", () => {
     expect(p["primary_release_date.lte"]).toBe("2020-12-31");
   });
 
+  it("ignores a partial/implausible year so a mid-typed value never queries", () => {
+    // The controlled input stays permissive (typeable); a 1-3 digit value like
+    // "20" must NOT build a malformed "20-01-01" bound.
+    const p = buildDiscoverParams(
+      "movie",
+      filters({ yearGTE: 20, yearLTE: 2010 }),
+      1,
+    );
+    expect(p["primary_release_date.gte"]).toBeUndefined();
+    expect(p["primary_release_date.lte"]).toBe("2010-12-31");
+  });
+
   it("sets a default vote floor with a rating filter, overridable by minVotes", () => {
     const a = buildDiscoverParams("movie", filters({ minRating: 7 }), 1);
     expect(a["vote_average.gte"]).toBe("7");
@@ -104,6 +117,20 @@ describe("buildDiscoverParams", () => {
     expect(p["vote_average.gte"]).toBeUndefined();
     expect(p["with_runtime.lte"]).toBeUndefined();
     expect(p.with_original_language).toBeUndefined();
+  });
+});
+
+describe("plausibleYear", () => {
+  it("accepts a real 4-digit year", () => {
+    expect(plausibleYear(2010)).toBe(2010);
+    expect(plausibleYear(1900)).toBe(1900);
+  });
+  it("rejects partial/implausible years and null", () => {
+    expect(plausibleYear(20)).toBeNull();
+    expect(plausibleYear(201)).toBeNull();
+    expect(plausibleYear(1899)).toBeNull();
+    expect(plausibleYear(9999)).toBeNull();
+    expect(plausibleYear(null)).toBeNull();
   });
 });
 

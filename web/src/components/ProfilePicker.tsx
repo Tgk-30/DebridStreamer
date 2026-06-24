@@ -254,30 +254,43 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
                         const wasActive = profile.id === activeId;
                         void deleteAccountProfile(profile.id)
                           .then(async (res) => {
+                            // The delete already succeeded server-side: refresh
+                            // the list FIRST so the deleted tile is dropped even
+                            // if the follow-up switch fails.
+                            await refreshAfterMutation(res.profiles);
                             if (wasActive) {
                               // The server fell the session back to the default
                               // profile; converge the client onto it (re-hydrate
                               // data + session) so it isn't left pointed at a
-                              // now-deleted profile showing its stale rails.
+                              // now-deleted profile showing its stale rails. Any
+                              // failure here is isolated: the delete stands, the
+                              // list is already refreshed, and the next load
+                              // reconciles the session from the server default —
+                              // so we must NOT surface "Could not delete.".
                               const fallback =
                                 res.profiles.find((p) => p.isDefault) ??
                                 res.profiles[0];
                               if (fallback != null) {
-                                const sw = await switchAccountProfile(fallback.id);
-                                await reloadProfileData();
-                                if (sw.session != null) {
-                                  setSession({
-                                    profileId: sw.session.profileId,
-                                    username: sw.session.username,
-                                    displayName: sw.session.displayName,
-                                    role: sw.session.role,
-                                    avatarColor: sw.session.avatarColor,
-                                    simpleMode: sw.session.simpleMode,
-                                  });
+                                try {
+                                  const sw = await switchAccountProfile(
+                                    fallback.id,
+                                  );
+                                  await reloadProfileData();
+                                  if (sw.session != null) {
+                                    setSession({
+                                      profileId: sw.session.profileId,
+                                      username: sw.session.username,
+                                      displayName: sw.session.displayName,
+                                      role: sw.session.role,
+                                      avatarColor: sw.session.avatarColor,
+                                      simpleMode: sw.session.simpleMode,
+                                    });
+                                  }
+                                } catch {
+                                  // Convergence-only failure; delete still stands.
                                 }
                               }
                             }
-                            await refreshAfterMutation(res.profiles);
                           })
                           .catch((err) =>
                             setError(err instanceof Error ? err.message : "Could not delete."),

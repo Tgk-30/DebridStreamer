@@ -10,7 +10,7 @@ import {
   parsePersonalizedAnalysis,
   personalizedAnalysisPrompt,
 } from "./types";
-import { buildTasteContext } from "./TasteProfile";
+import { buildTasteContext, recencyDecay } from "./TasteProfile";
 import type { Store } from "../../storage/types";
 import type {
   TasteEventRecord,
@@ -61,6 +61,22 @@ describe("parsePersonalizedAnalysis", () => {
     expect(a.personalizedDescription).toBe("Maybe.");
     expect(a.predictedRating).toBe(5);
     expect(a.verdict).toBe("maybe");
+  });
+
+  it("preserves literal triple-backticks inside a valid unfenced object", () => {
+    // Raw-first parsing: strippingCodeFences would delete the ``` and the text
+    // between them, silently mangling the description. The raw object must win.
+    const raw = JSON.stringify({
+      personalizedDescription: "Use ```code``` blocks for snippets.",
+      predictedRating: 6,
+      verdict: "maybe",
+      reasons: ["Has ```fenced``` examples"],
+    });
+    const a = parsePersonalizedAnalysis(raw);
+    expect(a.personalizedDescription).toBe(
+      "Use ```code``` blocks for snippets.",
+    );
+    expect(a.reasons).toEqual(["Has ```fenced``` examples"]);
   });
 
   it("clamps an out-of-range rating into 1..10", () => {
@@ -150,6 +166,36 @@ describe("personalizedAnalysisPrompt", () => {
       tasteContext: "",
     });
     expect(prompt).toContain("no recorded taste profile");
+  });
+});
+
+// MARK: - recencyDecay
+
+describe("recencyDecay", () => {
+  const DAY_MS = 86_400_000;
+  const now = new Date("2026-06-24T00:00:00.000Z").getTime();
+
+  it("weights a just-now event at ~1.0", () => {
+    expect(recencyDecay(new Date(now).toISOString(), now)).toBeCloseTo(1, 10);
+  });
+
+  it("decays linearly over the 90-day window", () => {
+    const fortyFiveDaysAgo = new Date(now - 45 * DAY_MS).toISOString();
+    expect(recencyDecay(fortyFiveDaysAgo, now)).toBeCloseTo(0.5, 10);
+  });
+
+  it("floors old events at the minimum weight (0.1)", () => {
+    const yearAgo = new Date(now - 365 * DAY_MS).toISOString();
+    expect(recencyDecay(yearAgo, now)).toBe(0.1);
+  });
+
+  it("clamps a future-dated createdAt to 1.0 (no over-weight from clock skew)", () => {
+    const tenDaysAhead = new Date(now + 10 * DAY_MS).toISOString();
+    expect(recencyDecay(tenDaysAhead, now)).toBe(1);
+  });
+
+  it("returns the floor for an unparseable createdAt", () => {
+    expect(recencyDecay("not-a-date", now)).toBe(0.1);
   });
 });
 

@@ -12,6 +12,7 @@ import type { TMDBService } from "../services/metadata/TMDBService";
 import { getStore } from "../storage";
 import {
   getUpcomingEpisodesForSeries,
+  localISODate,
   type UpcomingEpisode,
 } from "../lib/metadata";
 import { fetchServerUpcomingEpisodes } from "../lib/serverApi";
@@ -63,10 +64,11 @@ export function groupEpisodes(
   episodes: UpcomingEpisode[],
   now: number = Date.now(),
 ): CalendarGroup[] {
-  const today = new Date(now).toISOString().slice(0, 10);
-  const weekEnd = new Date(now + 7 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
+  // Local calendar day, not UTC: TMDB air dates are bare local-date strings, so
+  // comparing against the UTC date would drop/mis-bucket by a day for non-UTC
+  // users in evening/early-morning windows (see localISODate).
+  const today = localISODate(now);
+  const weekEnd = localISODate(now + 7 * 24 * 60 * 60 * 1000);
 
   const todayEps: UpcomingEpisode[] = [];
   const weekEps: UpcomingEpisode[] = [];
