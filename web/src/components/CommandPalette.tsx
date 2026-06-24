@@ -86,6 +86,16 @@ export function CommandPalette() {
         },
       });
     }
+    list.push({
+      id: "welcome-tour",
+      label: "Show welcome tour",
+      icon: "sparkles",
+      keywords: "tour guide welcome help onboarding intro",
+      run: () => {
+        window.dispatchEvent(new CustomEvent("ds:open-welcome-guide"));
+        close();
+      },
+    });
     return list;
   }, [navigate, search, settings, updateSettings]);
 

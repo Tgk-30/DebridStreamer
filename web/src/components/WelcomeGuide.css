@@ -1,0 +1,172 @@
+/* WelcomeGuide — first-run feature tour. A centered glass card over a dimmed,
+   accent-tinted scrim. */
+
+.welcome-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1400; /* above everything, incl. the command palette */
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(var(--accent-rgb), 0.22), transparent 38%),
+    radial-gradient(circle at 84% 88%, rgba(var(--accent-secondary-rgb), 0.16), transparent 36%),
+    rgba(4, 6, 12, 0.72);
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  animation: welcome-fade 0.2s ease-out;
+}
+
+.welcome-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(460px, 100%);
+  padding: clamp(24px, 4vw, 36px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-xl, 24px);
+  background: var(--glass-tint-hero);
+  backdrop-filter: blur(var(--glass-blur-hero, 36px)) saturate(1.3);
+  -webkit-backdrop-filter: blur(var(--glass-blur-hero, 36px)) saturate(1.3);
+  box-shadow:
+    var(--shadow-xl, 0 40px 90px -30px rgba(0, 0, 0, 0.75)),
+    inset 0 1px 0 var(--glass-highlight);
+  animation: welcome-pop 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.welcome-skip {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: color 0.16s, background 0.16s;
+}
+.welcome-skip:hover {
+  color: var(--text-secondary);
+  background: var(--glass-tint-control);
+}
+
+/* Fixed-height stage so the card doesn't jump as step copy length changes. */
+.welcome-stage {
+  position: relative;
+  min-height: 232px;
+  display: grid;
+}
+.welcome-step {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 8px;
+}
+
+.welcome-halo {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 20px;
+  border-radius: 22px;
+  color: #fff;
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.95),
+    rgba(var(--accent-secondary-rgb), 0.85)
+  );
+  box-shadow:
+    0 12px 32px rgba(var(--accent-rgb), 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.welcome-title {
+  margin: 0 0 10px;
+  font-size: clamp(21px, 3vw, 25px);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: var(--text-primary);
+}
+.welcome-body {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.welcome-keys {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+}
+.welcome-keys kbd {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--glass-tint-control);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.welcome-dots {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  margin: 22px 0;
+}
+.welcome-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--glass-border);
+  transition: width 0.24s ease, background 0.24s ease;
+}
+.welcome-dot.is-active {
+  width: 22px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
+}
+
+.welcome-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+}
+.welcome-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.welcome-back:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+@keyframes welcome-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes welcome-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}

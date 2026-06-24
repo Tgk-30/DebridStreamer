@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import type { MediaPreview } from "../models/media";
 import { Icon } from "./Icon";
+import { isSmartPreloadEnabled } from "../lib/smartPreload";
 import "./HeroSpotlight.css";
 
 interface HeroSpotlightProps {
@@ -92,6 +93,14 @@ export function HeroSpotlight({
     const t = setInterval(() => setIndex((i) => (i + 1) % list.length), intervalMs);
     return () => clearInterval(t);
   }, [list.length, paused, intervalMs]);
+
+  // Invisible polish: preload the next backdrop so the crossfade never flashes a
+  // half-loaded image. Gated by the smart-preload preference.
+  useEffect(() => {
+    if (list.length <= 1 || !isSmartPreloadEnabled()) return;
+    const url = MediaPreviewNS.backdropURL(list[(index + 1) % list.length]);
+    if (url) new Image().src = url;
+  }, [index, list]);
 
   // Per-title accent: recolor the hero chrome from the backdrop's dominant color.
   // Uses a separate CORS probe image so the *displayed* backdrop is never at risk

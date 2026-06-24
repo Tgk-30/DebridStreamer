@@ -16,6 +16,8 @@ import { ServerSetupWizard } from "./components/ServerSetupWizard";
 import { TierOnboarding } from "./components/TierOnboarding";
 import { ProfilePicker } from "./components/ProfilePicker";
 import { CommandPalette } from "./components/CommandPalette";
+import { WelcomeGuide } from "./components/WelcomeGuide";
+import { isSmartPreloadEnabled, whenIdle } from "./lib/smartPreload";
 import { useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
 import { isServerMode } from "./lib/serverMode";
@@ -146,6 +148,43 @@ export function App() {
   // "Who's watching" picker visibility (Server Mode only; opened from the rail).
   const [profilePickerOpen, setProfilePickerOpen] = useState(false);
 
+  // First-run feature tour. App only mounts past the setup wizards, so this is
+  // the moment to greet a new user. Shown once (localStorage flag); existing
+  // users see it once too, which doubles as a "what's new" for the latest
+  // features. Re-openable from Settings / ⌘K via the window event below.
+  const [welcomeGuideOpen, setWelcomeGuideOpen] = useState(false);
+  useEffect(() => {
+    try {
+      if (globalThis.localStorage?.getItem("ds_welcome_guide_seen") !== "1") {
+        setWelcomeGuideOpen(true);
+      }
+    } catch {
+      // private mode — just skip the auto-tour
+    }
+    const reopen = () => setWelcomeGuideOpen(true);
+    window.addEventListener("ds:open-welcome-guide", reopen);
+    return () => window.removeEventListener("ds:open-welcome-guide", reopen);
+  }, []);
+  const closeWelcomeGuide = () => {
+    setWelcomeGuideOpen(false);
+    try {
+      globalThis.localStorage?.setItem("ds_welcome_guide_seen", "1");
+    } catch {
+      // ignore (private mode)
+    }
+  };
+
+  // Smart preloading (invisible): while idle, warm the lazy Detail + Browse code
+  // chunks so opening a title or "See all" is instant instead of waiting on a
+  // chunk fetch. Off → metered users skip the background bytes.
+  useEffect(() => {
+    if (!isSmartPreloadEnabled()) return;
+    whenIdle(() => {
+      void import("./screens/Detail");
+      void import("./screens/Browse");
+    });
+  }, []);
+
   // Apply the persisted theme to the document root (instantly on change, and on
   // startup once the Store hydrates the saved choice).
   useTheme(settings);
@@ -222,6 +261,9 @@ export function App() {
 
       {/* ⌘K quick switcher — self-contained; hidden until invoked. */}
       <CommandPalette />
+
+      {/* First-run feature tour (and re-openable from Settings / ⌘K). */}
+      {welcomeGuideOpen && <WelcomeGuide onClose={closeWelcomeGuide} />}
 
       {/* Desktop auto-update toast. Runs the launch-time check itself and is a
           no-op in a plain browser (isTauri-gated in updater.ts). */}

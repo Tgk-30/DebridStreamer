@@ -30,6 +30,7 @@ import {
   useSetServerSession,
 } from "../lib/ServerSessionContext";
 import { readCsrfToken } from "../lib/serverSession";
+import { isSmartPreloadEnabled, setSmartPreloadEnabled } from "../lib/smartPreload";
 import type { AccountProfile, RequestRecord } from "../lib/serverApi";
 import { fetchAccountProfiles, setProfileMaturity } from "../lib/serverApi";
 import type {
@@ -3133,6 +3134,9 @@ function AppearanceTab({
   const currentTheme = THEMES.find((theme) => theme.id === draft.theme) ?? THEMES[0];
   const currentAccent =
     ACCENTS.find((accent) => accent.id === draft.appearanceAccent) ?? ACCENTS[0];
+  // Smart preloading is a per-device preference (localStorage), not a synced
+  // AppSettings field — toggled here with local mirror state.
+  const [smartPreload, setSmartPreload] = useState(isSmartPreloadEnabled());
 
   return (
     <div className="settings-fields">
@@ -3505,6 +3509,37 @@ function AppearanceTab({
             </button>
           );
         })}
+      </div>
+
+      <div className="settings-extras">
+        <span className="settings-sources-title">Extras</span>
+        <label className="settings-toggle-row">
+          <input
+            type="checkbox"
+            checked={smartPreload}
+            onChange={(e) => {
+              setSmartPreloadEnabled(e.target.checked);
+              setSmartPreload(e.target.checked);
+            }}
+          />
+          <span>
+            <strong>Smart preloading</strong>
+            <span className="settings-hint t-secondary">
+              Quietly warms upcoming screens and images so the app feels instant.
+              Turn off on a metered connection to save data.
+            </span>
+          </span>
+        </label>
+        <button
+          type="button"
+          className="btn settings-replay-tour"
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("ds:open-welcome-guide"))
+          }
+        >
+          <Icon name="sparkles" size={15} />
+          Replay welcome guide
+        </button>
       </div>
     </div>
   );
