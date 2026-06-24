@@ -502,9 +502,29 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
   const existingFlag = await store.getSetting("storage_port_initialized");
   if (existingFlag == null) {
     const legacy = loadSettings();
-    await saveSettingsToStore(legacy);
+    // Only replay the legacy blob when it actually carries secrets. This makes
+    // the migration idempotent and race-safe: saveSettingsToStore migrates the
+    // secrets to the SecretStore AND redacts the localStorage cache, but the
+    // init flag is set only afterward — so a crash in that window would leave
+    // the flag unset with the cache already redacted. Without this guard the
+    // next launch would replay the now-blank blob and wipe the real Store
+    // secrets. A redacted (or fresh-install empty) blob means the real values
+    // already live in the Store, so we skip the replay and load normally.
+    const legacyHasSecrets =
+      legacy.tmdbKey !== "" ||
+      legacy.omdbKey !== "" ||
+      legacy.aiApiKey !== "" ||
+      legacy.openSubtitlesApiKey !== "" ||
+      legacy.debridTokens.some((t) => t.apiToken !== "") ||
+      legacy.sources.some((s) => s.apiKey != null && s.apiKey !== "");
+    if (legacyHasSecrets) {
+      await saveSettingsToStore(legacy);
+      await store.setSetting("storage_port_initialized", "true");
+      return legacy;
+    }
+    // Empty/redacted legacy: mark initialized and fall through to a normal
+    // Store-backed load (which reads any already-migrated secrets).
     await store.setSetting("storage_port_initialized", "true");
-    return legacy;
   }
 
   const [tmdbKey, omdbKey, aiApiKey, openSubtitlesApiKey] = await Promise.all([

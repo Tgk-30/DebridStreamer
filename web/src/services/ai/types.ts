@@ -130,9 +130,73 @@ export type FetchImpl = (
   text(): Promise<string>;
 }>;
 
-/** Resolves a usable fetch — the injected stub or the global. */
+/** Hard ceiling on the raw bytes we will read from an AI provider response. The
+ * providers (a user-configured Ollama endpoint especially) are untrusted: a
+ * malicious/compromised one could stream a multi-MB envelope that would OOM the
+ * renderer at `response.text()` / `JSON.parse` before the 200KB content cap ever
+ * runs. A legitimate response is a few KB, so this only trips on adversarial
+ * input. Defense-in-depth with {@link MAX_AI_RESPONSE_CHARS} at the parser. */
+const MAX_AI_RESPONSE_BYTES = 2_000_000;
+
+/** Read a Response body up to `maxBytes`, then stop (cancelling the stream). A
+ * Content-Length over the cap is rejected without reading. Falls back to a
+ * sliced `.text()` when the body stream isn't exposed. Exported for testing. */
+export async function boundedReadText(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const declared = Number(response.headers?.get?.("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try {
+      await response.body?.cancel();
+    } catch {
+      // ignore
+    }
+    return "";
+  }
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    const text = await response.text();
+    return text.length > maxBytes ? text.slice(0, maxBytes) : text;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      total += value.byteLength;
+      chunks.push(value);
+      if (total >= maxBytes) {
+        try {
+          await reader.cancel();
+        } catch {
+          // ignore
+        }
+        break;
+      }
+    }
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  return new TextDecoder().decode(merged);
+}
+
+/** Resolves a usable fetch — the injected stub or the global. The real-fetch
+ * path bounds the response body to {@link MAX_AI_RESPONSE_BYTES} so an untrusted
+ * provider can't OOM the renderer before parsing. (Injected stubs, used in
+ * tests, return small bodies and pass through unchanged.) */
 export function resolveFetch(fetchImpl?: FetchImpl): FetchImpl {
-  return fetchImpl ?? ((url, init) => fetch(url, init as RequestInit));
+  if (fetchImpl) return fetchImpl;
+  return async (url, init) => {
+    const response = await fetch(url, init as RequestInit);
+    const text = await boundedReadText(response, MAX_AI_RESPONSE_BYTES);
+    return { status: response.status, text: async () => text };
+  };
 }
 
 // MARK: - AIAssistantJSONParser

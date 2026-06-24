@@ -455,6 +455,32 @@ describe("loadSettingsFromStore — first-run migration", () => {
     expect(secretMap.get("tmdb_api_key")).toBe("legacy-key");
     expect(settingsMap.get("tmdb_api_key")).toBe("secret:tmdb_api_key");
   });
+
+  it("does NOT replay a redacted blob over already-migrated secrets (interrupted-migration race)", async () => {
+    // Race state: a prior migration redacted the localStorage cache and wrote the
+    // real secret to the Store, but crashed before setting the init flag. The
+    // next load must NOT migrate the blank blob over the real Store secret.
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ tmdbKey: "", simpleMode: false }), // redacted
+    });
+    settingsMap.set("tmdb_api_key", "secret:tmdb_api_key"); // marker in Store
+    secretMap.set("tmdb_api_key", "REAL_KEY"); // real secret already migrated
+
+    const result = await loadSettingsFromStore();
+
+    // The real secret survives (was NOT overwritten with "").
+    expect(secretMap.get("tmdb_api_key")).toBe("REAL_KEY");
+    expect(result.tmdbKey).toBe("REAL_KEY");
+    // And the Store is now marked initialized so it won't re-evaluate next time.
+    expect(settingsMap.get("storage_port_initialized")).toBe("true");
+  });
+
+  it("marks initialized without replay on a fresh install (empty legacy blob)", async () => {
+    vi.stubGlobal("localStorage", undefined); // no legacy blob at all
+    const result = await loadSettingsFromStore();
+    expect(result.tmdbKey).toBe("");
+    expect(settingsMap.get("storage_port_initialized")).toBe("true");
+  });
 });
 
 describe("loadSettingsFromStore — established store", () => {
