@@ -1,0 +1,698 @@
+// Tests for the pure parse/normalize/merge/default logic in settings.ts plus
+// the localStorage load/save and the Store-backed loadSettingsFromStore /
+// saveSettingsToStore (with getStore/getSecretStore mocked). The UI-coupled
+// service construction (buildServices) is intentionally skipped.
+
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+// ---- Mock the storage port (getStore / getSecretStore) ----------------------
+//
+// An in-memory fake Store + SecretStore so loadSettingsFromStore /
+// saveSettingsToStore exercise their real merge/reconcile logic without Dexie.
+
+interface DebridConfigRow {
+  id: string;
+  service: string;
+  apiToken: string;
+  isActive: boolean;
+  priority: number;
+}
+interface IndexerConfigRow {
+  id: string;
+  type: string;
+  baseURL: string;
+  apiKey: string | null;
+  isActive: boolean;
+  displayName: string | null;
+  providerSubtype: string;
+  endpointPath: string;
+  categoryFilter: string | null;
+  priority: number;
+}
+
+const settingsMap = new Map<string, string>();
+const secretMap = new Map<string, string>();
+let debridConfigs: DebridConfigRow[] = [];
+let indexerConfigs: IndexerConfigRow[] = [];
+
+const fakeStore = {
+  getSetting: vi.fn(async (key: string) => settingsMap.get(key) ?? null),
+  setSetting: vi.fn(async (key: string, value: string | null) => {
+    if (value == null) settingsMap.delete(key);
+    else settingsMap.set(key, value);
+  }),
+  listDebridConfigs: vi.fn(async () => debridConfigs.map((c) => ({ ...c }))),
+  saveDebridConfig: vi.fn(async (c: DebridConfigRow) => {
+    const i = debridConfigs.findIndex((x) => x.id === c.id);
+    if (i >= 0) debridConfigs[i] = { ...c };
+    else debridConfigs.push({ ...c });
+  }),
+  deleteDebridConfig: vi.fn(async (id: string) => {
+    debridConfigs = debridConfigs.filter((c) => c.id !== id);
+  }),
+  listIndexerConfigs: vi.fn(async () => indexerConfigs.map((c) => ({ ...c }))),
+  saveIndexerConfig: vi.fn(async (c: IndexerConfigRow) => {
+    const i = indexerConfigs.findIndex((x) => x.id === c.id);
+    if (i >= 0) indexerConfigs[i] = { ...c };
+    else indexerConfigs.push({ ...c });
+  }),
+  deleteIndexerConfig: vi.fn(async (id: string) => {
+    indexerConfigs = indexerConfigs.filter((c) => c.id !== id);
+  }),
+};
+
+const fakeSecrets = {
+  getSecret: vi.fn(async (key: string) => secretMap.get(key) ?? null),
+  setSecret: vi.fn(async (key: string, value: string) => {
+    secretMap.set(key, value);
+  }),
+  deleteSecret: vi.fn(async (key: string) => {
+    secretMap.delete(key);
+  }),
+};
+
+vi.mock("../storage", () => ({
+  getStore: () => fakeStore,
+  getSecretStore: () => fakeSecrets,
+}));
+
+// ---- Import under test (after the mock is registered) -----------------------
+
+import {
+  normalizeStreamMaxQuality,
+  normalizeStreamMaxSizeGB,
+  defaultSettings,
+  loadSettings,
+  saveSettings,
+  loadSettingsFromStore,
+  saveSettingsToStore,
+  type AppSettings,
+} from "./settings";
+import { DEFAULT_THEME_ID } from "../theme/themes";
+
+function resetStorageState(): void {
+  settingsMap.clear();
+  secretMap.clear();
+  debridConfigs = [];
+  indexerConfigs = [];
+}
+
+beforeEach(() => {
+  resetStorageState();
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+// =============================================================================
+// Pure normalizers
+// =============================================================================
+
+describe("normalizeStreamMaxQuality", () => {
+  it("passes through the valid enum values", () => {
+    for (const v of ["4K", "1080p", "720p", "480p", "SD"] as const) {
+      expect(normalizeStreamMaxQuality(v)).toBe(v);
+    }
+  });
+
+  it('defaults unknown / null / numeric values to "any"', () => {
+    expect(normalizeStreamMaxQuality("any")).toBe("any");
+    expect(normalizeStreamMaxQuality("8K")).toBe("any");
+    expect(normalizeStreamMaxQuality(null)).toBe("any");
+    expect(normalizeStreamMaxQuality(undefined)).toBe("any");
+    expect(normalizeStreamMaxQuality(1080)).toBe("any");
+    expect(normalizeStreamMaxQuality("1080P")).toBe("any"); // case-sensitive
+  });
+});
+
+describe("normalizeStreamMaxSizeGB", () => {
+  it("returns 0 for non-positive / non-finite / invalid input", () => {
+    expect(normalizeStreamMaxSizeGB(0)).toBe(0);
+    expect(normalizeStreamMaxSizeGB(-5)).toBe(0);
+    expect(normalizeStreamMaxSizeGB(NaN)).toBe(0);
+    expect(normalizeStreamMaxSizeGB(Infinity)).toBe(0);
+    expect(normalizeStreamMaxSizeGB("not-a-number")).toBe(0);
+    expect(normalizeStreamMaxSizeGB(null)).toBe(0);
+    expect(normalizeStreamMaxSizeGB(undefined)).toBe(0);
+  });
+
+  it("rounds to one decimal place", () => {
+    expect(normalizeStreamMaxSizeGB(12.34)).toBe(12.3);
+    expect(normalizeStreamMaxSizeGB(12.36)).toBe(12.4);
+  });
+
+  it("parses numeric strings", () => {
+    expect(normalizeStreamMaxSizeGB("25")).toBe(25);
+    expect(normalizeStreamMaxSizeGB("7.55")).toBe(7.6);
+  });
+
+  it("clamps at the 500 GB ceiling", () => {
+    expect(normalizeStreamMaxSizeGB(9999)).toBe(500);
+    expect(normalizeStreamMaxSizeGB(500)).toBe(500);
+    expect(normalizeStreamMaxSizeGB(500.9)).toBe(500);
+  });
+});
+
+// =============================================================================
+// defaultSettings
+// =============================================================================
+
+describe("defaultSettings", () => {
+  it("returns sane defaults with empty arrays and the default theme", () => {
+    const d = defaultSettings();
+    expect(d.debridTokens).toEqual([]);
+    expect(d.sources).toEqual([]);
+    expect(d.builtInIndexersEnabled).toBe(true);
+    expect(d.aiProvider).toBe("anthropic");
+    expect(d.ollamaEndpoint).toBe("http://localhost:11434");
+    expect(d.theme).toBe(DEFAULT_THEME_ID);
+    expect(d.appearanceAccent).toBe("theme");
+    expect(d.appearanceBlur).toBe(18);
+    expect(d.subtitleFontScale).toBe(1);
+    expect(d.subtitleTextColor).toBe("#ffffff");
+    expect(d.subtitleBgOpacity).toBe(0.55);
+    expect(d.simpleMode).toBe(true);
+    expect(d.autoUpdateChecks).toBe(true);
+    expect(d.autoInstallUpdates).toBe(false);
+    expect(d.streamCachedOnly).toBe(false);
+    expect(d.streamMaxQuality).toBe("any");
+    expect(d.streamMaxSizeGB).toBe(0);
+    expect(d.dataSaver).toBe(false);
+    expect(d.transcode).toBe(false);
+  });
+
+  it("returns a fresh object each call (no shared array identity)", () => {
+    const a = defaultSettings();
+    const b = defaultSettings();
+    expect(a.debridTokens).not.toBe(b.debridTokens);
+    a.sources.push({
+      id: "x",
+      type: "torznab",
+      baseURL: "u",
+      isActive: true,
+    });
+    expect(b.sources).toEqual([]);
+  });
+});
+
+// =============================================================================
+// loadSettings / saveSettings (localStorage)
+// =============================================================================
+
+/** A minimal in-memory localStorage stub. */
+function stubLocalStorage(initial: Record<string, string> = {}) {
+  const map = new Map<string, string>(Object.entries(initial));
+  const ls = {
+    getItem: vi.fn((k: string) => (map.has(k) ? map.get(k)! : null)),
+    setItem: vi.fn((k: string, v: string) => {
+      map.set(k, v);
+    }),
+    removeItem: vi.fn((k: string) => {
+      map.delete(k);
+    }),
+    clear: vi.fn(() => map.clear()),
+    key: vi.fn(),
+    length: 0,
+  };
+  vi.stubGlobal("localStorage", ls);
+  return { ls, map };
+}
+
+const KEY = "debridstreamer.settings.v1";
+
+describe("loadSettings", () => {
+  it("returns defaults when localStorage is absent", () => {
+    vi.stubGlobal("localStorage", undefined);
+    expect(loadSettings()).toEqual(defaultSettings());
+  });
+
+  it("returns defaults when no blob is stored", () => {
+    stubLocalStorage();
+    expect(loadSettings()).toEqual(defaultSettings());
+  });
+
+  it("merges a stored partial blob over defaults", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ tmdbKey: "abc", simpleMode: false }),
+    });
+    const s = loadSettings();
+    expect(s.tmdbKey).toBe("abc");
+    expect(s.simpleMode).toBe(false);
+    // Untouched fields keep their defaults.
+    expect(s.aiProvider).toBe("anthropic");
+  });
+
+  it("normalizes legacy / invalid stored values to safe defaults", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({
+        streamMaxQuality: "8K",
+        streamMaxSizeGB: -3,
+        appearanceAccent: "neon",
+        appearanceDensity: "ultra",
+        appearanceTextSize: "huge",
+        appearanceMotion: "wiggle",
+        appearanceRadius: "blobby",
+        appearanceBlur: 999,
+        appearanceChrome: "frosted",
+        appearanceBackdrop: "loud",
+        appearanceHeroScale: "giant",
+        appearancePanelContrast: "extreme",
+        appearanceNavLabels: "maybe",
+        appearanceNavTint: "neon",
+        appearancePosterSize: "tiny",
+        subtitleFontScale: 99,
+        subtitleTextColor: "red",
+        subtitleBgOpacity: 5,
+      }),
+    });
+    const s = loadSettings();
+    expect(s.streamMaxQuality).toBe("any");
+    expect(s.streamMaxSizeGB).toBe(0);
+    expect(s.appearanceAccent).toBe("theme");
+    expect(s.appearanceDensity).toBe("comfortable");
+    expect(s.appearanceTextSize).toBe("m");
+    expect(s.appearanceMotion).toBe("system");
+    expect(s.appearanceRadius).toBe("default");
+    expect(s.appearanceBlur).toBe(28); // clamped to max
+    expect(s.appearanceChrome).toBe("balanced");
+    expect(s.appearanceBackdrop).toBe("ambient");
+    expect(s.appearanceHeroScale).toBe("standard");
+    expect(s.appearancePanelContrast).toBe("standard");
+    expect(s.appearanceNavLabels).toBe("auto");
+    expect(s.appearanceNavTint).toBe("balanced");
+    expect(s.appearancePosterSize).toBe("default");
+    expect(s.subtitleFontScale).toBe(1.8); // clamped to max
+    expect(s.subtitleTextColor).toBe("#ffffff");
+    expect(s.subtitleBgOpacity).toBe(0.95); // clamped to max
+  });
+
+  it("keeps valid appearance / subtitle values verbatim (lowercasing hex)", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({
+        appearanceAccent: "cyan",
+        appearanceBlur: 12,
+        subtitleFontScale: 1.25,
+        subtitleTextColor: "#AABBCC",
+        subtitleBgOpacity: 0.3,
+      }),
+    });
+    const s = loadSettings();
+    expect(s.appearanceAccent).toBe("cyan");
+    expect(s.appearanceBlur).toBe(12);
+    expect(s.subtitleFontScale).toBe(1.25);
+    expect(s.subtitleTextColor).toBe("#aabbcc");
+    expect(s.subtitleBgOpacity).toBe(0.3);
+  });
+
+  it("does not let a missing array clobber the [] defaults", () => {
+    stubLocalStorage({ [KEY]: JSON.stringify({ tmdbKey: "x" }) });
+    const s = loadSettings();
+    expect(s.debridTokens).toEqual([]);
+    expect(s.sources).toEqual([]);
+  });
+
+  it("preserves stored arrays when present", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({
+        debridTokens: [{ service: "real_debrid", apiToken: "tok" }],
+        sources: [{ id: "s1", type: "torznab", baseURL: "u", isActive: true }],
+      }),
+    });
+    const s = loadSettings();
+    expect(s.debridTokens).toHaveLength(1);
+    expect(s.sources[0].id).toBe("s1");
+  });
+
+  it("returns defaults on malformed JSON (parse throws)", () => {
+    stubLocalStorage({ [KEY]: "{not valid json" });
+    expect(loadSettings()).toEqual(defaultSettings());
+  });
+
+  it("returns defaults when getItem itself throws", () => {
+    const ls = {
+      getItem: vi.fn(() => {
+        throw new Error("blocked");
+      }),
+      setItem: vi.fn(),
+    };
+    vi.stubGlobal("localStorage", ls);
+    expect(loadSettings()).toEqual(defaultSettings());
+  });
+});
+
+describe("saveSettings", () => {
+  it("writes a JSON blob to localStorage under the v1 key", () => {
+    const { ls, map } = stubLocalStorage();
+    const s = defaultSettings();
+    s.tmdbKey = "mykey";
+    saveSettings(s);
+    expect(ls.setItem).toHaveBeenCalledWith(KEY, JSON.stringify(s));
+    expect(JSON.parse(map.get(KEY)!).tmdbKey).toBe("mykey");
+  });
+
+  it("no-ops without localStorage", () => {
+    vi.stubGlobal("localStorage", undefined);
+    expect(() => saveSettings(defaultSettings())).not.toThrow();
+  });
+
+  it("swallows setItem errors (private mode / quota)", () => {
+    const ls = {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(() => {
+        throw new Error("QuotaExceeded");
+      }),
+    };
+    vi.stubGlobal("localStorage", ls);
+    expect(() => saveSettings(defaultSettings())).not.toThrow();
+  });
+});
+
+// =============================================================================
+// loadSettingsFromStore (Store-backed)
+// =============================================================================
+
+describe("loadSettingsFromStore — first-run migration", () => {
+  it("seeds the Store from the legacy localStorage blob on first run", async () => {
+    // No storage_port_initialized flag -> migration path.
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ tmdbKey: "legacy-key", simpleMode: false }),
+    });
+    const result = await loadSettingsFromStore();
+    // Returns the legacy settings verbatim.
+    expect(result.tmdbKey).toBe("legacy-key");
+    expect(result.simpleMode).toBe(false);
+    // And marks the Store as initialized so the next load won't re-migrate.
+    expect(settingsMap.get("storage_port_initialized")).toBe("true");
+    // The migration routed the TMDB key through the SecretStore (it's a secret).
+    expect(secretMap.get("tmdb_api_key")).toBe("legacy-key");
+    expect(settingsMap.get("tmdb_api_key")).toBe("secret:tmdb_api_key");
+  });
+});
+
+describe("loadSettingsFromStore — established store", () => {
+  beforeEach(() => {
+    // Mark initialized so we take the normal (non-migration) read path.
+    settingsMap.set("storage_port_initialized", "true");
+    vi.stubGlobal("localStorage", undefined);
+  });
+
+  it("returns merged defaults when the store is otherwise empty", async () => {
+    const s = await loadSettingsFromStore();
+    expect(s.tmdbKey).toBe("");
+    expect(s.builtInIndexersEnabled).toBe(true); // null -> base default
+    expect(s.simpleMode).toBe(true);
+    expect(s.theme).toBe(DEFAULT_THEME_ID);
+    expect(s.streamMaxQuality).toBe("any");
+    expect(s.debridTokens).toEqual([]);
+    expect(s.sources).toEqual([]);
+  });
+
+  it("resolves secret-marked values from the SecretStore", async () => {
+    settingsMap.set("tmdb_api_key", "secret:tmdb_api_key");
+    secretMap.set("tmdb_api_key", "resolved-tmdb");
+    settingsMap.set("omdb_api_key", "plain-omdb"); // non-marker passthrough
+    const s = await loadSettingsFromStore();
+    expect(s.tmdbKey).toBe("resolved-tmdb");
+    expect(s.omdbKey).toBe("plain-omdb");
+  });
+
+  it("parses boolean string flags correctly", async () => {
+    settingsMap.set("built_in_indexers_enabled", "false");
+    settingsMap.set("simple_mode", "false");
+    settingsMap.set("auto_update_checks", "false");
+    settingsMap.set("auto_install_updates", "true");
+    settingsMap.set("stream_cached_only", "true");
+    settingsMap.set("data_saver", "true");
+    settingsMap.set("transcode", "true");
+    const s = await loadSettingsFromStore();
+    expect(s.builtInIndexersEnabled).toBe(false);
+    expect(s.simpleMode).toBe(false);
+    expect(s.autoUpdateChecks).toBe(false);
+    expect(s.autoInstallUpdates).toBe(true);
+    expect(s.streamCachedOnly).toBe(true);
+    expect(s.dataSaver).toBe(true);
+    expect(s.transcode).toBe(true);
+  });
+
+  it("treats any non-'true' boolean string as false", async () => {
+    settingsMap.set("simple_mode", "yes"); // not exactly "true"
+    const s = await loadSettingsFromStore();
+    expect(s.simpleMode).toBe(false);
+  });
+
+  it("normalizes invalid stored appearance / subtitle values", async () => {
+    settingsMap.set("appearance_accent", "neon");
+    settingsMap.set("appearance_blur", "999");
+    settingsMap.set("subtitle_bg_opacity", "9");
+    settingsMap.set("stream_max_quality", "8K");
+    settingsMap.set("stream_max_size_gb", "-1");
+    const s = await loadSettingsFromStore();
+    expect(s.appearanceAccent).toBe("theme");
+    expect(s.appearanceBlur).toBe(28);
+    expect(s.subtitleBgOpacity).toBe(0.95);
+    expect(s.streamMaxQuality).toBe("any");
+    expect(s.streamMaxSizeGB).toBe(0);
+  });
+
+  it("resolves an invalid stored theme id to the default", async () => {
+    settingsMap.set("ui_theme", "not-a-real-theme");
+    const s = await loadSettingsFromStore();
+    expect(s.theme).toBe(DEFAULT_THEME_ID);
+  });
+
+  it("loads debrid tokens from configs + SecretStore, skipping empty tokens", async () => {
+    debridConfigs = [
+      { id: "debrid-real_debrid", service: "real_debrid", apiToken: "secret:debrid.debrid-real_debrid", isActive: true, priority: 0 },
+      { id: "debrid-torbox", service: "torbox", apiToken: "secret:debrid.debrid-torbox", isActive: true, priority: 1 },
+    ];
+    secretMap.set("debrid.debrid-real_debrid", "rd-token");
+    // torbox has no secret -> "" -> skipped.
+    const s = await loadSettingsFromStore();
+    expect(s.debridTokens).toEqual([
+      { service: "real_debrid", apiToken: "rd-token" },
+    ]);
+  });
+
+  it("maps non-built_in indexer configs to sources and drops built_in", async () => {
+    indexerConfigs = [
+      {
+        id: "i1",
+        type: "torznab",
+        baseURL: "http://idx",
+        apiKey: "k",
+        isActive: true,
+        displayName: "My Idx",
+        providerSubtype: "custom_torznab",
+        endpointPath: "/api",
+        categoryFilter: null,
+        priority: 3,
+      },
+      {
+        id: "built-in",
+        type: "built_in",
+        baseURL: "",
+        apiKey: null,
+        isActive: false,
+        displayName: null,
+        providerSubtype: "built_in",
+        endpointPath: "",
+        categoryFilter: null,
+        priority: 0,
+      },
+    ];
+    const s = await loadSettingsFromStore();
+    expect(s.sources).toEqual([
+      {
+        id: "i1",
+        type: "torznab",
+        baseURL: "http://idx",
+        apiKey: "k",
+        isActive: true,
+        displayName: "My Idx",
+        priority: 3,
+      },
+    ]);
+  });
+});
+
+// =============================================================================
+// saveSettingsToStore (Store-backed)
+// =============================================================================
+
+describe("saveSettingsToStore", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", undefined);
+  });
+
+  function settingsWith(overrides: Partial<AppSettings>): AppSettings {
+    return { ...defaultSettings(), ...overrides };
+  }
+
+  it("routes secret keys through SecretStore and leaves a marker in the KV table", async () => {
+    await saveSettingsToStore(
+      settingsWith({ tmdbKey: "tmdb123", omdbKey: "" }),
+    );
+    // tmdb key set -> secret stored + marker written.
+    expect(secretMap.get("tmdb_api_key")).toBe("tmdb123");
+    expect(settingsMap.get("tmdb_api_key")).toBe("secret:tmdb_api_key");
+    // empty omdb key -> secret deleted + KV null (deleted).
+    expect(secretMap.has("omdb_api_key")).toBe(false);
+    expect(settingsMap.has("omdb_api_key")).toBe(false);
+  });
+
+  it("persists scalar + boolean settings as their string forms", async () => {
+    await saveSettingsToStore(
+      settingsWith({
+        aiProvider: "openai",
+        aiModel: "gpt-4o",
+        simpleMode: false,
+        autoUpdateChecks: false,
+        transcode: true,
+        streamMaxSizeGB: 12.34,
+        appearanceBlur: 999, // normalized on write
+      }),
+    );
+    expect(settingsMap.get("ai_provider")).toBe("openai");
+    expect(settingsMap.get("ai_model")).toBe("gpt-4o");
+    expect(settingsMap.get("simple_mode")).toBe("false");
+    expect(settingsMap.get("auto_update_checks")).toBe("false");
+    expect(settingsMap.get("transcode")).toBe("true");
+    expect(settingsMap.get("stream_max_size_gb")).toBe("12.3");
+    expect(settingsMap.get("appearance_blur")).toBe("28"); // clamped
+  });
+
+  it("writes debrid tokens to SecretStore + a marker'd config row, skipping blank tokens", async () => {
+    await saveSettingsToStore(
+      settingsWith({
+        debridTokens: [
+          { service: "real_debrid", apiToken: "rd" },
+          { service: "torbox", apiToken: "   " }, // blank -> skipped
+        ],
+      }),
+    );
+    expect(debridConfigs).toHaveLength(1);
+    const row = debridConfigs[0];
+    expect(row.id).toBe("debrid-real_debrid");
+    expect(row.apiToken).toBe("secret:debrid.debrid-real_debrid");
+    expect(secretMap.get("debrid.debrid-real_debrid")).toBe("rd");
+  });
+
+  it("reconciles debrid configs — removes stale entries no longer in settings", async () => {
+    // Pre-existing stale config.
+    debridConfigs = [
+      { id: "debrid-premiumize", service: "premiumize", apiToken: "secret:debrid.debrid-premiumize", isActive: true, priority: 0 },
+    ];
+    secretMap.set("debrid.debrid-premiumize", "old");
+    await saveSettingsToStore(
+      settingsWith({ debridTokens: [{ service: "real_debrid", apiToken: "rd" }] }),
+    );
+    const ids = debridConfigs.map((c) => c.id);
+    expect(ids).toContain("debrid-real_debrid");
+    expect(ids).not.toContain("debrid-premiumize");
+    expect(secretMap.has("debrid.debrid-premiumize")).toBe(false);
+  });
+
+  it("persists indexer sources as config records with priority from index", async () => {
+    await saveSettingsToStore(
+      settingsWith({
+        sources: [
+          { id: "a", type: "jackett", baseURL: "http://j", isActive: true },
+          { id: "b", type: "prowlarr", baseURL: "http://p", isActive: true, priority: 7 },
+        ],
+      }),
+    );
+    const a = indexerConfigs.find((c) => c.id === "a")!;
+    const b = indexerConfigs.find((c) => c.id === "b")!;
+    expect(a.priority).toBe(0); // fell back to index
+    expect(a.providerSubtype).toBe("jackett");
+    expect(b.priority).toBe(7); // explicit priority preserved
+    expect(b.providerSubtype).toBe("prowlarr");
+  });
+
+  it("writes a disabled built-in row only when built-in indexers are disabled", async () => {
+    await saveSettingsToStore(settingsWith({ builtInIndexersEnabled: false }));
+    const builtIn = indexerConfigs.find((c) => c.id === "built-in");
+    expect(builtIn).toBeDefined();
+    expect(builtIn!.type).toBe("built_in");
+    expect(builtIn!.isActive).toBe(false);
+  });
+
+  it("does not write a built-in row when built-in indexers are enabled", async () => {
+    await saveSettingsToStore(settingsWith({ builtInIndexersEnabled: true }));
+    expect(indexerConfigs.find((c) => c.id === "built-in")).toBeUndefined();
+  });
+
+  it("removes indexer configs that are no longer in the sources list", async () => {
+    indexerConfigs = [
+      {
+        id: "stale",
+        type: "torznab",
+        baseURL: "http://old",
+        apiKey: null,
+        isActive: true,
+        displayName: null,
+        providerSubtype: "custom_torznab",
+        endpointPath: "/api",
+        categoryFilter: null,
+        priority: 0,
+      },
+    ];
+    await saveSettingsToStore(
+      settingsWith({
+        sources: [{ id: "fresh", type: "torznab", baseURL: "http://new", isActive: true }],
+      }),
+    );
+    const ids = indexerConfigs.map((c) => c.id);
+    expect(ids).toContain("fresh");
+    expect(ids).not.toContain("stale");
+  });
+
+  it("round-trips through save then load", async () => {
+    settingsMap.set("storage_port_initialized", "true");
+    const original = settingsWith({
+      tmdbKey: "T",
+      omdbKey: "O",
+      aiProvider: "openai",
+      aiModel: "m1",
+      simpleMode: false,
+      streamMaxQuality: "1080p",
+      streamMaxSizeGB: 20,
+      appearanceAccent: "rose",
+      subtitleTextColor: "#123456",
+      debridTokens: [{ service: "real_debrid", apiToken: "rd-tok" }],
+      sources: [{ id: "src1", type: "jackett", baseURL: "http://j", isActive: true, apiKey: "ak", displayName: "J", priority: 0 }],
+    });
+    await saveSettingsToStore(original);
+    const loaded = await loadSettingsFromStore();
+    expect(loaded.tmdbKey).toBe("T");
+    expect(loaded.omdbKey).toBe("O");
+    expect(loaded.aiProvider).toBe("openai");
+    expect(loaded.aiModel).toBe("m1");
+    expect(loaded.simpleMode).toBe(false);
+    expect(loaded.streamMaxQuality).toBe("1080p");
+    expect(loaded.streamMaxSizeGB).toBe(20);
+    expect(loaded.appearanceAccent).toBe("rose");
+    expect(loaded.subtitleTextColor).toBe("#123456");
+    expect(loaded.debridTokens).toEqual([{ service: "real_debrid", apiToken: "rd-tok" }]);
+    expect(loaded.sources).toEqual([
+      {
+        id: "src1",
+        type: "jackett",
+        baseURL: "http://j",
+        apiKey: "ak",
+        isActive: true,
+        displayName: "J",
+        priority: 0,
+      },
+    ]);
+  });
+});
