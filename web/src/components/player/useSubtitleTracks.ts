@@ -86,6 +86,10 @@ export function useSubtitleTracks(
     total: number;
   } | null>(null);
 
+  // The imdb id of the last search — forwarded to download() so a Server-Mode
+  // client can enforce a kid's maturity cap on the fetched dialogue.
+  const lastSearchImdbIdRef = useRef<string | null>(null);
+
   // Track all created object URLs so we can revoke on unmount.
   const urlsRef = useRef<Set<string>>(new Set());
   const register = useCallback((url: string) => {
@@ -105,6 +109,7 @@ export function useSubtitleTracks(
 
   const search = useCallback(
     async (params: SubtitleSearchParams) => {
+      lastSearchImdbIdRef.current = params.imdbId ?? null;
       if (client == null || !client.hasKey) {
         setSearchError("Add an OpenSubtitles API key in Settings.");
         return;
@@ -145,7 +150,7 @@ export function useSubtitleTracks(
       if (client == null) return;
       setLoadingFileId(result.fileId);
       try {
-        const raw = await client.download(result.fileId);
+        const raw = await client.download(result.fileId, lastSearchImdbIdRef.current);
         const cues = parseSubtitles(raw);
         if (cues.length === 0) {
           setSearchError("Subtitle file was empty or unreadable.");

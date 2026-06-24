@@ -245,8 +245,11 @@ export async function searchServerSubtitles(
   return serverRequest("POST", "/api/subtitles/search", params);
 }
 
-export async function fetchServerSubtitle(fileId: string): Promise<{ vtt: string }> {
-  return serverRequest("POST", "/api/subtitles/fetch", { fileId });
+export async function fetchServerSubtitle(
+  fileId: string,
+  imdbId?: string | null,
+): Promise<{ vtt: string }> {
+  return serverRequest("POST", "/api/subtitles/fetch", { fileId, imdbId });
 }
 
 export async function translateServerSubtitles(input: {

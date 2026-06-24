@@ -131,6 +131,12 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
     setError(null);
     try {
       const result = await switchAccountProfile(profile.id, password);
+      // Load the new profile's data BEFORE flipping the UI session. If the
+      // refetch fails we stay on the old profile (the catch re-throws), instead
+      // of leaving the new — possibly kid — session over the old profile's
+      // already-rendered (possibly over-cap) rails. The server has already
+      // switched the session cookie, so these loaders return the new profile's data.
+      await reloadProfileData();
       if (result.session != null) {
         setSession({
           profileId: result.session.profileId,
@@ -142,8 +148,6 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
         });
       }
       if (result.profiles != null) setProfiles(result.profiles.profiles);
-      // Swap in the new profile's data, then close.
-      await reloadProfileData();
       onClose();
     } catch (err) {
       setBusyId(null);

@@ -63,7 +63,10 @@ export function useScrubThumbnails(
     video.src = sourceUrl;
     video.muted = true;
     video.preload = "auto";
-    video.crossOrigin = "anonymous"; // best-effort untainted capture
+    // No crossOrigin: debrid hosts send no CORS headers, so requesting CORS
+    // would abort the load entirely and break thumbnails (loadedmetadata/seeked
+    // never fire). Load no-CORS like the main player; if the canvas is then
+    // tainted, the draw try/catch below falls back to a time-only label.
     video.playsInline = true;
     const canvas = document.createElement("canvas");
     videoRef.current = video;

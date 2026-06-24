@@ -18,6 +18,7 @@ import {
   type CachedResolutionRecord,
   type DebridConfigRecord,
   type FolderKind,
+  hasResumePoint,
   type IndexerConfigRecord,
   type LibraryEntryRecord,
   type LibraryFolderRecord,
@@ -216,11 +217,14 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async continueWatching(limit = 20): Promise<WatchHistoryRecord[]> {
-    // Incomplete rows, newest first — mirrors fetchRecentWatchHistory.
+    // Rows with a real resume point, newest first — mirrors fetchRecentWatchHistory.
+    // Filter to resumable BEFORE slicing: zero-progress "viewed" rows (written
+    // when a Detail opens) would otherwise fill the limit and crowd genuinely
+    // resumable titles out of Continue Watching.
     const rows = await this.watchHistory
       .orderBy("lastWatched")
       .reverse()
-      .filter((r) => !r.completed)
+      .filter((r) => hasResumePoint(r))
       .toArray();
     return rows.slice(0, limit);
   }

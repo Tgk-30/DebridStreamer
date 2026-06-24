@@ -864,6 +864,8 @@ export interface AppServices {
  * actually changes do we rebuild. */
 let debridManagerCache: { signature: string; manager: DebridManager } | null =
   null;
+let indexerManagerCache: { signature: string; manager: IndexerManager } | null =
+  null;
 
 /** A stable signature for the debrid config: the (service, token) pairs in
  * order. Identical config → identical signature → cached manager reused. */
@@ -893,6 +895,27 @@ function getOrBuildDebridManager(settings: AppSettings): DebridManager | null {
   const manager = new DebridManager();
   for (const s of services) manager.addService(s);
   debridManagerCache = { signature, manager };
+  return manager;
+}
+
+/** Build (or reuse the cached) IndexerManager for the current settings. Keeps a
+ * stable identity while the indexer config is unchanged — so an unrelated
+ * settings save (e.g. a theme change) does NOT churn the manager's identity and
+ * make the stream picker re-run a full indexer search + cache-check. Mirrors
+ * getOrBuildDebridManager. */
+function getOrBuildIndexerManager(settings: AppSettings): IndexerManager {
+  const indexerConfigs = buildIndexerConfigs(settings);
+  const signature = JSON.stringify(indexerConfigs);
+  if (
+    indexerManagerCache != null &&
+    indexerManagerCache.signature === signature
+  ) {
+    return indexerManagerCache.manager;
+  }
+  // `appFetch` is CORS-free under Tauri (routes indexer/addon hosts through
+  // Rust) and degrades to the global fetch in a plain browser.
+  const manager = new IndexerManager(indexerConfigs, appFetch);
+  indexerManagerCache = { signature, manager };
   return manager;
 }
 
@@ -1022,11 +1045,9 @@ export function buildServices(settings: AppSettings): AppServices {
   // theme save) — only rebuilt when the debrid config actually changes.
   const debrid = getOrBuildDebridManager(settings);
 
-  const indexerConfigs = buildIndexerConfigs(settings);
-  // `appFetch` is CORS-free under Tauri (routes indexer/addon hosts through Rust)
-  // and degrades to the global fetch in a plain browser. The new Stremio addon
-  // indexer is built by the factory like the rest, so it inherits this too.
-  const indexers = new IndexerManager(indexerConfigs, appFetch);
+  // Cached by indexer-config signature so its identity stays stable across
+  // unrelated settings saves (a theme change must not re-run the stream search).
+  const indexers = getOrBuildIndexerManager(settings);
 
   const ai = buildAIProvider(settings);
 

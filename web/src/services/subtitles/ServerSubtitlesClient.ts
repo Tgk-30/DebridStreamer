@@ -22,8 +22,9 @@ export class ServerSubtitlesClient implements SubtitleClient {
     return (await searchServerSubtitles(params)).results;
   }
 
-  async download(fileId: string): Promise<string> {
+  async download(fileId: string, imdbId?: string | null): Promise<string> {
     // The server returns a decoded WebVTT string; parseSubtitles auto-detects it.
-    return (await fetchServerSubtitle(fileId)).vtt;
+    // imdbId is forwarded so the server can enforce a kid's maturity cap.
+    return (await fetchServerSubtitle(fileId, imdbId)).vtt;
   }
 }

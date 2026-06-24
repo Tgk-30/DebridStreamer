@@ -13,6 +13,7 @@ import type {
   WatchHistoryRecord,
   WatchlistRecord,
 } from "./models";
+import { hasResumePoint } from "./models";
 import type {
   LibraryEntryUpsert,
   SecretStore,
@@ -350,21 +351,26 @@ export class RemoteStore implements Store, SecretStore {
     mediaId: string,
     episodeId?: string | null,
   ): Promise<WatchHistoryRecord | null> {
-    const rows = await this.listHistory(500);
-    return (
-      rows.find(
-        (row) => row.mediaId === mediaId && row.episodeId === (episodeId ?? null),
-      ) ?? null
-    );
+    // Exact keyed lookup — NOT a windowed list scan — so the viewed-only merge
+    // (data/library.ts) reads the real resume position for any history size
+    // (scanning only the newest 500 could miss it and zero the row).
+    const query =
+      episodeId != null && episodeId.length > 0
+        ? `?episodeId=${encodeURIComponent(episodeId)}`
+        : "";
+    const { item } = await this.api.get<{
+      item: ServerHistoryResponse["items"][number] | null;
+    }>(`/api/history/${encodeURIComponent(mediaId)}${query}`);
+    return item ? mapHistory(item) : null;
   }
 
   async continueWatching(limit = 20): Promise<WatchHistoryRecord[]> {
-    // Widen the fetch window (the server caps at 500) before filtering to
-    // incomplete rows — otherwise a long run of recent *completed* titles could
-    // push genuinely-resumable older ones out of a 100-row window and silently
-    // drop them from Continue Watching, diverging from DexieStore.
+    // Widen the fetch window (the server caps at 500), then filter to resumable
+    // rows BEFORE slicing — both so completed titles don't push older resumables
+    // out of the window, AND so zero-progress "viewed" rows don't fill the limit
+    // and crowd genuinely resumable titles out (parity with DexieStore).
     const rows = await this.listHistory(Math.max(limit, 500));
-    return rows.filter((row) => !row.completed).slice(0, limit);
+    return rows.filter((row) => hasResumePoint(row)).slice(0, limit);
   }
 
   async addToLibrary(entry: LibraryEntryUpsert): Promise<LibraryEntryRecord> {

@@ -138,25 +138,37 @@ describe("watch history", () => {
     expect(await db.getResume("tt1", "s1e1")).toBeNull();
   });
 
-  it("continueWatching orders newest-first and excludes completed", async () => {
+  it("continueWatching is newest-first and only resumable rows (not completed, not zero-progress)", async () => {
     await db.recordHistory({
       mediaId: "tt1",
       preview: preview("tt1"),
-      progressSeconds: 10,
+      progressSeconds: 100,
+      durationSeconds: 1000, // 10% → resumable
       lastWatched: "2024-01-01T00:00:00.000Z",
     });
     await db.recordHistory({
       mediaId: "tt2",
       preview: preview("tt2"),
-      progressSeconds: 20,
+      progressSeconds: 200,
+      durationSeconds: 1000, // 20% → resumable
       lastWatched: "2024-02-01T00:00:00.000Z",
     });
     await db.recordHistory({
       mediaId: "tt3",
       preview: preview("tt3"),
-      progressSeconds: 30,
-      completed: true,
+      progressSeconds: 990,
+      durationSeconds: 1000,
+      completed: true, // finished → excluded
       lastWatched: "2024-03-01T00:00:00.000Z",
+    });
+    // A plain "viewed" row (opening Detail): zero progress → must NOT crowd out
+    // the resumable rows above (regression for round-2 bug #2).
+    await db.recordHistory({
+      mediaId: "tt4",
+      preview: preview("tt4"),
+      progressSeconds: 0,
+      durationSeconds: null,
+      lastWatched: "2024-04-01T00:00:00.000Z",
     });
     const cw = await db.continueWatching();
     expect(cw.map((r) => r.mediaId)).toEqual(["tt2", "tt1"]);

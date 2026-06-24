@@ -55,8 +55,10 @@ export interface SubtitleClient {
   /** Whether searches can run (a key is configured, here or server-side). */
   readonly hasKey: boolean;
   search(params: SubtitleSearchParams): Promise<SubtitleSearchResult[]>;
-  /** Resolve a file id to raw subtitle text (SRT/VTT — parseSubtitles handles both). */
-  download(fileId: string): Promise<string>;
+  /** Resolve a file id to raw subtitle text (SRT/VTT — parseSubtitles handles both).
+   *  `imdbId` (the title being watched) lets a Server-Mode client enforce the
+   *  maturity cap on the fetched dialogue; the local client ignores it. */
+  download(fileId: string, imdbId?: string | null): Promise<string>;
 }
 
 export class OpenSubtitlesError extends Error {
@@ -179,7 +181,8 @@ export class OpenSubtitlesClient implements SubtitleClient {
   /** Resolve a file id to a temporary download link via `POST /download`, then
    * fetch and return the raw subtitle text. Two requests: the API gates the
    * direct file behind a per-key download quota. Throws on failure. */
-  async download(fileId: string): Promise<string> {
+  // imdbId is unused locally (no server-side maturity cap on a direct key).
+  async download(fileId: string, _imdbId?: string | null): Promise<string> {
     if (!this.hasKey) {
       throw new OpenSubtitlesError(0, "Missing OpenSubtitles API key.");
     }

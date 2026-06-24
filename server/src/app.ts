@@ -265,6 +265,9 @@ const subtitleSearchBodySchema = z
 
 const subtitleFetchBodySchema = z.object({
   fileId: z.string().trim().min(1).max(64),
+  // The title being watched — required for a kid so the maturity cap can be
+  // enforced on the fetched dialogue (search is gated the same way).
+  imdbId: z.string().trim().max(32).nullish(),
 });
 
 const subtitleTranslateBodySchema = z.object({
@@ -2870,6 +2873,30 @@ function registerRoutes(
     return { items: rows.map(mapWatchHistoryRow) };
   });
 
+  // Exact-key resume lookup. The list endpoint is windowed (≤500), so a client
+  // merge that reads the existing resume position must not depend on scanning it
+  // — otherwise an older title (beyond the window) would read back as absent and
+  // a viewed-only write would zero its progress. This is an O(1) keyed lookup.
+  app.get("/api/history/:mediaId", async (request) => {
+    const auth = requireAuth(db, request);
+    const mediaId = mediaIdParamSchema.parse(
+      (request.params as { mediaId: string }).mediaId,
+    );
+    const { episodeId } = request.query as { episodeId?: string };
+    const episodeKey = episodeId ?? "";
+    const row = db.sqlite
+      .prepare(
+        `SELECT media_id, episode_id, progress_seconds, duration_seconds,
+                completed, last_watched, stream_quality, preview_json
+         FROM watch_history
+         WHERE profile_id = ? AND media_id = ? AND episode_key = ?`,
+      )
+      .get(auth.profileId, mediaId, episodeKey) as
+      | Parameters<typeof mapWatchHistoryRow>[0]
+      | undefined;
+    return { item: row ? mapWatchHistoryRow(row) : null };
+  });
+
   app.put("/api/history/:mediaId", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
@@ -3307,6 +3334,15 @@ function registerRoutes(
     requireCsrf(request);
     rateLimit(request, `subtitles:fetch:${auth.profileId}`, 60, 60 * 1000);
     const body = parseBody(subtitleFetchBodySchema, request.body);
+    // Maturity gate: a kid may only fetch dialogue for a within-cap movie, so
+    // require the title id and cert-check it (mirrors /api/subtitles/search).
+    // Fail-closed: no id → 403, so an out-of-band fileId can't leak over-cap text.
+    if (auth.isKid) {
+      if (body.imdbId == null || body.imdbId.length === 0) {
+        throw httpError(403, "Subtitles are not available on this profile.");
+      }
+      await requireTitleWithinCap(auth, body.imdbId, "movie");
+    }
     const vtt = await fetchServerSubtitle(db, config, auth.profileId, body.fileId);
     audit(db, auth, "subtitles.fetch", "subtitle", body.fileId);
     return { vtt };
