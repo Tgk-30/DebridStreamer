@@ -228,6 +228,22 @@ describe("AIAssistantJSONParser", () => {
     const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
     expect(recs).toEqual([]);
   });
+
+  it("bounds a huge untrusted response without hanging (resource-exhaustion guard)", () => {
+    // A malicious/compromised provider returns a multi-MB array. The parser caps
+    // the input before scanning, so this completes fast and never OOMs.
+    const huge =
+      '[{"title":"First","year":2001},' +
+      '{"title":"Filler"},'.repeat(60_000) + // ~1.2 MB, far past the 200KB cap
+      '{"title":"Last"}]';
+    const started = performance.now();
+    const recs = AIAssistantJSONParser.parseRecommendations(huge, 5);
+    const elapsedMs = performance.now() - started;
+    // Capped + sliced to maxResults; the leading complete object survives.
+    expect(recs.length).toBeLessThanOrEqual(5);
+    expect(recs[0]?.title).toBe("First");
+    expect(elapsedMs).toBeLessThan(1000); // bounded work, not a freeze
+  });
 });
 
 // MARK: - AnthropicProvider — mirrors AnthropicProviderTests.parsesRecommendations

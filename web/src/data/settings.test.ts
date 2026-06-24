@@ -91,6 +91,7 @@ import {
   defaultSettings,
   loadSettings,
   saveSettings,
+  redactSecrets,
   loadSettingsFromStore,
   saveSettingsToStore,
   type AppSettings,
@@ -373,6 +374,64 @@ describe("saveSettings", () => {
     };
     vi.stubGlobal("localStorage", ls);
     expect(() => saveSettings(defaultSettings())).not.toThrow();
+  });
+});
+
+describe("redactSecrets", () => {
+  it("blanks every credential field but keeps non-secret settings", () => {
+    const s: AppSettings = {
+      ...defaultSettings(),
+      tmdbKey: "tk",
+      omdbKey: "ok",
+      aiApiKey: "ak",
+      openSubtitlesApiKey: "osk",
+      debridTokens: [{ service: "real_debrid", apiToken: "rdt" }],
+      sources: [
+        { id: "x", type: "torznab", baseURL: "http://h", apiKey: "ik", isActive: true },
+      ],
+      theme: "midnight",
+    };
+    const r = redactSecrets(s);
+    expect(r.tmdbKey).toBe("");
+    expect(r.omdbKey).toBe("");
+    expect(r.aiApiKey).toBe("");
+    expect(r.openSubtitlesApiKey).toBe("");
+    expect(r.debridTokens[0].apiToken).toBe("");
+    expect(r.debridTokens[0].service).toBe("real_debrid"); // non-secret kept
+    expect(r.sources[0].apiKey).toBeNull();
+    expect(r.sources[0].baseURL).toBe("http://h"); // non-secret kept
+    expect(r.theme).toBe("midnight");
+    // Does not mutate the original.
+    expect(s.tmdbKey).toBe("tk");
+    expect(s.debridTokens[0].apiToken).toBe("rdt");
+  });
+});
+
+describe("saveSettingsToStore — no plaintext secrets in the localStorage cache", () => {
+  it("redacts every credential before writing the bootstrap blob", async () => {
+    const { map } = stubLocalStorage();
+    await saveSettingsToStore({
+      ...defaultSettings(),
+      tmdbKey: "SECRET_TMDB",
+      omdbKey: "SECRET_OMDB",
+      aiApiKey: "SECRET_AI",
+      openSubtitlesApiKey: "SECRET_OS",
+      debridTokens: [{ service: "real_debrid", apiToken: "SECRET_RD" }],
+      sources: [
+        { id: "s1", type: "torznab", baseURL: "http://idx", apiKey: "SECRET_IDX", isActive: true },
+      ],
+    });
+    const blob = map.get(KEY) ?? "";
+    expect(blob).not.toContain("SECRET_TMDB");
+    expect(blob).not.toContain("SECRET_OMDB");
+    expect(blob).not.toContain("SECRET_AI");
+    expect(blob).not.toContain("SECRET_OS");
+    expect(blob).not.toContain("SECRET_RD");
+    expect(blob).not.toContain("SECRET_IDX");
+    // Non-secret settings are still cached for the bootstrap render.
+    expect(JSON.parse(blob).theme).toBeDefined();
+    // The real secrets DID reach the SecretStore (not lost, just not in plaintext).
+    expect(secretMap.get("tmdb_api_key")).toBe("SECRET_TMDB");
   });
 });
 

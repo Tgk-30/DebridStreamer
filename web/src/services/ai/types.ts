@@ -150,6 +150,21 @@ interface RawRecommendation {
   score?: unknown;
 }
 
+/** Hard cap on the model-response text we will parse. AI providers (notably a
+ * user-configured Ollama endpoint) are untrusted: a malicious or compromised one
+ * could return a multi-megabyte body, and JSON.parsing / brace-scanning the whole
+ * thing would freeze or OOM the renderer. A legitimate recommendation/analysis
+ * response is a few KB, so truncating at this cap only affects adversarial input
+ * — and the parser already tolerates a truncated tail (salvage). */
+const MAX_AI_RESPONSE_CHARS = 200_000;
+
+/** Bound an untrusted model response to {@link MAX_AI_RESPONSE_CHARS} before parsing. */
+function capResponse(text: string): string {
+  return text.length > MAX_AI_RESPONSE_CHARS
+    ? text.slice(0, MAX_AI_RESPONSE_CHARS)
+    : text;
+}
+
 /**
  * Pure (no-network) parser that turns an AI provider's text response into
  * recommendations. Mirrors Swift `AIAssistantJSONParser`:
@@ -160,9 +175,10 @@ interface RawRecommendation {
  */
 export const AIAssistantJSONParser = {
   parseRecommendations(
-    text: string,
+    rawText: string,
     maxResults: number,
   ): AIMovieRecommendation[] {
+    const text = capResponse(rawText);
     const fenceStripped = strippingCodeFences(text);
 
     // Extract the recommendation objects, tolerating the common shapes a model
@@ -295,7 +311,8 @@ interface RawAnalysisPayload {
  * `predictedRating` to 1..10, and normalizes `verdict` to the allowed set
  * (defaulting to "maybe"). Mirrors the Swift `parsePersonalizedAnalysis`.
  */
-export function parsePersonalizedAnalysis(raw: string): AIPersonalizedAnalysis {
+export function parsePersonalizedAnalysis(rawInput: string): AIPersonalizedAnalysis {
+  const raw = capResponse(rawInput);
   const fenceStripped = strippingCodeFences(raw);
   const payload = extractAnalysisPayload(raw, fenceStripped);
 

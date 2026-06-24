@@ -409,6 +409,25 @@ export function saveSettings(settings: AppSettings): void {
   }
 }
 
+/** A copy of settings with every credential field blanked. The localStorage
+ * bootstrap cache must NEVER hold plaintext secrets — those live only in the
+ * SecretStore / OS keychain. localStorage is readable by any same-origin script
+ * (XSS) and sits in plaintext on disk, so caching raw keys there would defeat
+ * the SecretStore indirection. The synchronous bootstrap render only needs the
+ * non-secret settings (theme, flags, …); the real keys arrive a tick later from
+ * the async Store hydration, which rebuilds the services. */
+export function redactSecrets(settings: AppSettings): AppSettings {
+  return {
+    ...settings,
+    tmdbKey: "",
+    omdbKey: "",
+    aiApiKey: "",
+    openSubtitlesApiKey: "",
+    debridTokens: settings.debridTokens.map((t) => ({ ...t, apiToken: "" })),
+    sources: settings.sources.map((s) => ({ ...s, apiKey: null })),
+  };
+}
+
 // ---- Store-backed settings (the storage port) -------------------------------
 
 /** Read a setting value, transparently resolving the secret indirection: a
@@ -580,7 +599,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
       priority: c.priority,
     }));
 
-  return {
+  const loaded: AppSettings = {
     tmdbKey: tmdbKey ?? base.tmdbKey,
     omdbKey: omdbKey ?? base.omdbKey,
     debridTokens,
@@ -650,6 +669,13 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     dataSaver: dataSaver == null ? base.dataSaver : dataSaver === "true",
     transcode: transcode == null ? base.transcode : transcode === "true",
   };
+
+  // Proactively scrub any pre-existing plaintext-secret blob a prior build wrote
+  // to localStorage: overwrite the bootstrap cache with a redacted snapshot now
+  // that the Store/SecretStore is the source of truth.
+  saveSettings(redactSecrets(loaded));
+
+  return loaded;
 }
 
 /** Persist settings to the Store: scalar/secret keys to KV + SecretStore, and
@@ -866,8 +892,10 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
   }
 
   // Keep the legacy localStorage blob in sync as a belt-and-suspenders cache so
-  // the synchronous bootstrap render has a recent snapshot before hydration.
-  saveSettings(settings);
+  // the synchronous bootstrap render has a recent snapshot before hydration —
+  // but REDACTED: secrets live only in the SecretStore/keychain, never plaintext
+  // in localStorage (see redactSecrets).
+  saveSettings(redactSecrets(settings));
 
   // Everything that COULD be persisted now has been (KV + debrid + indexer tables
   // are fully reconciled and the localStorage cache is in sync). If any write
