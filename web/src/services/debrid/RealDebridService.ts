@@ -27,7 +27,7 @@ import {
   DebridError,
   type FetchImpl,
   defaultFetchImpl,
-  urlQueryEncode,
+  formValueEncode,
 } from "./types";
 
 /** Async delay used by retry/poll loops; default is a no-op so tests don't sleep. */
@@ -74,7 +74,7 @@ export class RealDebridService implements DebridService {
 
   async addMagnet(hash: string): Promise<string> {
     const magnet = `magnet:?xt=urn:btih:${hash}`;
-    const body = `magnet=${urlQueryEncode(magnet)}`;
+    const body = `magnet=${formValueEncode(magnet)}`;
 
     const maxRetries = 5;
     let lastError: unknown;
@@ -234,7 +234,7 @@ export class RealDebridService implements DebridService {
   async unrestrictDetailed(
     link: string,
   ): Promise<{ download: string; id: string | null }> {
-    const body = `link=${urlQueryEncode(link)}`;
+    const body = `link=${formValueEncode(link)}`;
 
     const maxRetries = 5;
     let lastError: unknown;
@@ -312,31 +312,42 @@ export class RealDebridService implements DebridService {
   /** Returns the torrent ID if a matching hash is found (downloaded/in-progress),
    * deletes error-state matches, and returns null otherwise. */
   async findExistingTorrent(hash: string): Promise<string | null> {
-    const data = await this.requestRaw("/torrents?limit=100&page=1", "GET");
-    const torrents = parseJSONArray(data);
-    if (torrents == null) return null;
-
     const lowerHash = hash.toLowerCase();
-    for (const torrent of torrents) {
-      const torrentHash = torrent.hash;
-      const id = torrent.id;
-      if (
-        typeof torrentHash === "string" &&
-        torrentHash.toLowerCase() === lowerHash &&
-        typeof id === "string"
-      ) {
-        const status = typeof torrent.status === "string" ? torrent.status : "";
-        if (status === "downloaded") return id;
-        if (status === "error" || status === "dead" || status === "magnet_error") {
-          try {
-            await this.deleteTorrent(id);
-          } catch {
-            // best-effort delete (mirrors Swift `try?`)
+    const pageSize = 100;
+    const maxPages = 20;
+    // Paginate like listTorrents — a single page=1 fetch silently misses an
+    // already-downloaded torrent on accounts with >100 torrents, forcing a
+    // duplicate re-add instead of instantly reusing the cached one.
+    for (let page = 1; page <= maxPages; page += 1) {
+      const data = await this.requestRaw(
+        `/torrents?limit=${pageSize}&page=${page}`,
+        "GET",
+      );
+      const torrents = parseJSONArray(data);
+      if (torrents == null) return null;
+
+      for (const torrent of torrents) {
+        const torrentHash = torrent.hash;
+        const id = torrent.id;
+        if (
+          typeof torrentHash === "string" &&
+          torrentHash.toLowerCase() === lowerHash &&
+          typeof id === "string"
+        ) {
+          const status = typeof torrent.status === "string" ? torrent.status : "";
+          if (status === "downloaded") return id;
+          if (status === "error" || status === "dead" || status === "magnet_error") {
+            try {
+              await this.deleteTorrent(id);
+            } catch {
+              // best-effort delete (mirrors Swift `try?`)
+            }
+            return null;
           }
-          return null;
+          return id;
         }
-        return id;
       }
+      if (torrents.length < pageSize) break; // last (short/empty) page
     }
     return null;
   }

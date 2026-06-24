@@ -66,10 +66,65 @@ function isPrivateOrReservedV4(ip: string): boolean {
   );
 }
 
+/** Expand a (net.isIP-validated) IPv6 string into its 8 hextet numbers, handling
+ *  "::" compression and an embedded dotted-IPv4 tail. Returns null if it can't be
+ *  parsed structurally (caller then falls back to the prefix checks). */
+function expandV6Hextets(ip: string): number[] | null {
+  let s = ip.split("%")[0] ?? ip; // drop any zone id (fe80::1%eth0)
+  // Fold an embedded dotted-IPv4 tail (::ffff:1.2.3.4) into two hextets.
+  const dotted = s.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (dotted) {
+    const v4 = ipv4ToInt(dotted[1] as string);
+    if (v4 == null) return null;
+    s =
+      s.slice(0, dotted.index) +
+      ((v4 >>> 16) & 0xffff).toString(16) +
+      ":" +
+      (v4 & 0xffff).toString(16);
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const parse = (part: string): number[] | null => {
+    if (part === "") return [];
+    const out: number[] = [];
+    for (const g of part.split(":")) {
+      if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+      out.push(parseInt(g, 16));
+    }
+    return out;
+  };
+  const head = parse(halves[0] as string);
+  const tail = halves.length === 2 ? parse(halves[1] as string) : [];
+  if (head == null || tail == null) return null;
+  if (halves.length === 2) {
+    const fill = 8 - head.length - tail.length;
+    if (fill < 0) return null;
+    return [...head, ...new Array<number>(fill).fill(0), ...tail];
+  }
+  return head.length === 8 ? head : null;
+}
+
 function isPrivateOrReservedV6(ip: string): boolean {
   const lower = ip.toLowerCase();
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateOrReservedV4(mapped[1] as string);
+  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) addresses embed
+  // an IPv4 in the low 32 bits when the high 80 bits are zero. Validate that
+  // embedded IPv4 with the v4 rules — this closes the hex-grouped bypass:
+  // ::ffff:7f00:1 (127.0.0.1), ::ffff:a9fe:a9fe (169.254.169.254 metadata),
+  // the fully-expanded 0:0:0:0:0:ffff:127.0.0.1, and ::a.b.c.d.
+  const h = expandV6Hextets(lower);
+  if (
+    h &&
+    h[0] === 0 &&
+    h[1] === 0 &&
+    h[2] === 0 &&
+    h[3] === 0 &&
+    h[4] === 0 &&
+    (h[5] === 0xffff || h[5] === 0)
+  ) {
+    const v = (((h[6] as number) << 16) | (h[7] as number)) >>> 0;
+    const dotted = `${(v >>> 24) & 255}.${(v >>> 16) & 255}.${(v >>> 8) & 255}.${v & 255}`;
+    return isPrivateOrReservedV4(dotted);
+  }
   if (lower === "::1" || lower === "::") return true; // loopback / unspecified
   // link-local fe80::/10 → first hextet fe80..febf
   if (/^fe[89ab]/.test(lower)) return true;

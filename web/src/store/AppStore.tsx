@@ -289,33 +289,47 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Coalesce concurrent watchlist mutations of the SAME item: each
+  // toggle/remove is an independent read-modify-write against the store, so a
+  // fast double-tap could interleave (both read "absent", both add) and corrupt
+  // the persisted list or commit a stale in-memory array out of order.
+  const watchlistMutating = useRef<Set<string>>(new Set());
+
   const toggleWatchlist = useCallback(
     (item: MediaPreview) => {
-      void toggleWatchlistStore(item).then((next) => {
-        setWatchlist(next);
-        // If the item is now ON the watchlist, kick a pre-resolve pass so a
-        // ready resolution is cached soon (Tauri-only; no-op in browser).
-        if (next.some((i) => i.id === item.id)) {
-          void schedulerRef.current?.kick().then(() => void refreshCachedResolutions());
-        } else {
-          // Removed → drop any cached resolution for it.
-          void getStore()
-            .deleteCachedResolution(item.id)
-            .then(() => void refreshCachedResolutions());
-        }
-      });
+      if (watchlistMutating.current.has(item.id)) return;
+      watchlistMutating.current.add(item.id);
+      void toggleWatchlistStore(item)
+        .then((next) => {
+          setWatchlist(next);
+          // If the item is now ON the watchlist, kick a pre-resolve pass so a
+          // ready resolution is cached soon (Tauri-only; no-op in browser).
+          if (next.some((i) => i.id === item.id)) {
+            void schedulerRef.current?.kick().then(() => void refreshCachedResolutions());
+          } else {
+            // Removed → drop any cached resolution for it.
+            void getStore()
+              .deleteCachedResolution(item.id)
+              .then(() => void refreshCachedResolutions());
+          }
+        })
+        .finally(() => watchlistMutating.current.delete(item.id));
     },
     [refreshCachedResolutions],
   );
 
   const removeFromWatchlist = useCallback(
     (id: string) => {
-      void removeFromWatchlistStore(id).then((next) => {
-        setWatchlist(next);
-        void getStore()
-          .deleteCachedResolution(id)
-          .then(() => void refreshCachedResolutions());
-      });
+      if (watchlistMutating.current.has(id)) return;
+      watchlistMutating.current.add(id);
+      void removeFromWatchlistStore(id)
+        .then((next) => {
+          setWatchlist(next);
+          void getStore()
+            .deleteCachedResolution(id)
+            .then(() => void refreshCachedResolutions());
+        })
+        .finally(() => watchlistMutating.current.delete(id));
     },
     [refreshCachedResolutions],
   );

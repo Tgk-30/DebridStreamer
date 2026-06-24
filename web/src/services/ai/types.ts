@@ -185,11 +185,13 @@ export const AIAssistantJSONParser = {
       }
     }
 
-    // Line fallback: split on newlines, drop blanks, strip list markers.
-    const lines = text
+    // Line fallback: split on newlines, drop blanks + stray code-fence markers,
+    // strip list markers. Run over the fence-stripped text (not the raw `text`)
+    // so leftover ``` lines don't survive as junk recommendation titles.
+    const lines = fenceStripped
       .split(/\r?\n/)
       .map((line) => line.trim())
-      .filter((line) => line.length > 0);
+      .filter((line) => line.length > 0 && !/^```/.test(line));
 
     return lines.slice(0, maxResults).map((line, index) => {
       const title = line

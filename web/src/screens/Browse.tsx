@@ -166,6 +166,13 @@ function BrowseInner({
           </button>
         </header>
 
+        {state.source === "fixtures" && ctx.kind === "genre" && (
+          <p className="browse-fixture-note t-secondary">
+            Showing sample titles — genre filtering needs a TMDB key (Settings →
+            API keys).
+          </p>
+        )}
+
         {activeChips.length > 0 && (
           <div className="browse-chips" aria-label="Active filters">
             {activeChips.map((chip) => (

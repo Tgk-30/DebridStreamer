@@ -359,7 +359,11 @@ export class RemoteStore implements Store, SecretStore {
   }
 
   async continueWatching(limit = 20): Promise<WatchHistoryRecord[]> {
-    const rows = await this.listHistory(Math.max(limit, 100));
+    // Widen the fetch window (the server caps at 500) before filtering to
+    // incomplete rows — otherwise a long run of recent *completed* titles could
+    // push genuinely-resumable older ones out of a 100-row window and silently
+    // drop them from Continue Watching, diverging from DexieStore.
+    const rows = await this.listHistory(Math.max(limit, 500));
     return rows.filter((row) => !row.completed).slice(0, limit);
   }
 

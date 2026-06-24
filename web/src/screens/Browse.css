@@ -37,6 +37,13 @@
   flex-wrap: wrap;
 }
 
+/* Clarifier shown when a keyless fallback can't actually filter by genre. */
+.browse-fixture-note {
+  margin: calc(-1 * var(--sp-sm)) 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .browse-back {
   display: inline-flex;
   align-items: center;

@@ -25,7 +25,7 @@ import {
   DebridError,
   type FetchImpl,
   defaultFetchImpl,
-  urlQueryEncode,
+  formValueEncode,
 } from "./types";
 import {
   asObject,
@@ -87,7 +87,7 @@ export class AllDebridService implements DebridService {
 
   async addMagnet(hash: string): Promise<string> {
     const magnet = `magnet:?xt=urn:btih:${hash}`;
-    const body = `magnets[]=${urlQueryEncode(magnet)}`;
+    const body = `magnets[]=${formValueEncode(magnet)}`;
     const data = await this.requestRaw("/magnet/upload", "POST", undefined, body);
 
     const json = parseJSONObject(data);
@@ -162,7 +162,7 @@ export class AllDebridService implements DebridService {
   }
 
   async unrestrict(link: string): Promise<string> {
-    const body = `link=${urlQueryEncode(link)}`;
+    const body = `link=${formValueEncode(link)}`;
     const data = await this.requestRaw("/link/unlock", "POST", undefined, body);
 
     const json = parseJSONObject(data);
@@ -240,7 +240,7 @@ export class AllDebridService implements DebridService {
 
     let composedBody: string | undefined;
     if (body != null) {
-      const authBodyComponent = `apikey=${urlQueryEncode(this.apiToken)}`;
+      const authBodyComponent = `apikey=${formValueEncode(this.apiToken)}`;
       composedBody = body.length === 0 ? authBodyComponent : `${body}&${authBodyComponent}`;
       headers["Content-Type"] = "application/x-www-form-urlencoded";
     }

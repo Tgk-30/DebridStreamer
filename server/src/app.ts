@@ -400,6 +400,7 @@ function parseBody<T>(schema: ZodType<T>, body: unknown): T {
 
 function createRateLimiter() {
   const buckets = new Map<string, { count: number; resetAt: number }>();
+  let lastSweep = 0;
   return (
     request: FastifyRequest,
     bucket: string,
@@ -407,6 +408,16 @@ function createRateLimiter() {
     windowMs: number,
   ): void => {
     const now = Date.now();
+    // Opportunistically evict expired buckets (at most once a minute, driven by
+    // request activity — no dangling timer). Without this the map grows
+    // unbounded from high-cardinality pre-auth keys (per-username login,
+    // per-invite-token, per-IP), since entries were only ever inserted.
+    if (now - lastSweep > 60_000) {
+      lastSweep = now;
+      for (const [k, b] of buckets) {
+        if (b.resetAt <= now) buckets.delete(k);
+      }
+    }
     const key = `${bucket}:${request.ip}`;
     const current = buckets.get(key);
     if (current == null || current.resetAt <= now) {
@@ -1072,7 +1083,15 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 function safeStaticPath(root: string, urlPath: string): string | null {
-  const decoded = decodeURIComponent(urlPath.split("?", 1)[0] ?? "/");
+  // Fastify already decoded the wildcard param; this second decode can throw a
+  // URIError on a malformed escape (e.g. "/%25" → "/%"). Catch it and fall back
+  // to the SPA index (return null) instead of bubbling a 500 from the public route.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(urlPath.split("?", 1)[0] ?? "/");
+  } catch {
+    return null;
+  }
   const clean = normalize(decoded).replace(/^(\.\.(\/|\\|$))+/, "");
   const candidate = resolve(join(root, clean === "/" ? "index.html" : clean));
   const rootWithSep = root.endsWith(sep) ? root : `${root}${sep}`;
@@ -1938,6 +1957,9 @@ function registerRoutes(
 
   app.post("/api/auth/invite", async (request, reply) => {
     const body = parseBody(acceptInviteSchema, request.body);
+    // IP-wide throttle (mirrors auth:login-ip) so rotating invite tokens can't
+    // spray this pre-auth endpoint or balloon the per-token bucket map.
+    rateLimit(request, "auth:invite-ip", 30, 15 * 60 * 1000);
     rateLimit(request, `auth:invite:${sha256(body.token)}`, 8, 15 * 60 * 1000);
     if (userCount(db) === 0) throw httpError(409, "Create the owner account first.");
     const tokenHash = sha256(body.token);

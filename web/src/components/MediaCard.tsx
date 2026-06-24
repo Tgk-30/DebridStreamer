@@ -53,6 +53,13 @@ export function MediaCard({
       <div className="media-card-poster">
         {poster ? (
           <motion.img
+            ref={(el) => {
+              // Already-cached posters can be `complete` before React attaches
+              // onLoad (which it never replays for a cached image), leaving the
+              // poster stuck at opacity 0 under a permanent shimmer. Reconcile
+              // synchronously on mount/commit.
+              if (el?.complete && el.naturalWidth > 0) setLoaded(true);
+            }}
             src={poster}
             alt={item.title}
             loading="lazy"
@@ -61,6 +68,7 @@ export function MediaCard({
             animate={loaded ? { opacity: 1, scale: 1 } : { opacity: 0 }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
             onLoad={() => setLoaded(true)}
+            onError={() => setLoaded(true)}
           />
         ) : (
           <div className="media-card-placeholder">

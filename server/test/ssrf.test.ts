@@ -30,6 +30,24 @@ describe("isPrivateOrReserved", () => {
     }
   });
 
+  it("closes the hex-grouped IPv4-mapped/compat v6 bypass (regression)", () => {
+    for (const ip of [
+      "::ffff:7f00:1", // 127.0.0.1
+      "::ffff:a00:1", // 10.0.0.1
+      "::ffff:c0a8:1", // 192.168.0.1
+      "::ffff:a9fe:a9fe", // 169.254.169.254 cloud metadata
+      "0:0:0:0:0:ffff:127.0.0.1", // fully-expanded mapped loopback
+      "::ffff:6440:1", // 100.64.0.1 CGNAT
+    ]) {
+      expect(isPrivateOrReserved(ip), ip).toBe(true);
+    }
+  });
+
+  it("does not over-block a public IPv4-mapped v6 address", () => {
+    expect(isPrivateOrReserved("::ffff:808:808")).toBe(false); // 8.8.8.8
+    expect(isPrivateOrReserved("::ffff:8.8.8.8")).toBe(false);
+  });
+
   it("treats non-IP input as unsafe", () => {
     expect(isPrivateOrReserved("not-an-ip")).toBe(true);
   });
@@ -50,6 +68,10 @@ describe("assertSafeUpstream", () => {
       /private or reserved/i,
     );
     await expect(assertSafeUpstream("http://[::1]/x", false)).rejects.toThrow(/private or reserved/i);
+    // Regression: a redirect to a hex IPv4-mapped metadata literal must be blocked.
+    await expect(
+      assertSafeUpstream("http://[::ffff:a9fe:a9fe]/latest/meta-data/", false),
+    ).rejects.toThrow(/private or reserved/i);
   });
 
   it("allows private hosts when allowPrivate is true (operator opted in)", async () => {

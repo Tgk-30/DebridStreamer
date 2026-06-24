@@ -190,3 +190,12 @@ export function urlQueryEncode(value: string): string {
     (_, hex) => String.fromCharCode(parseInt(hex, 16)),
   );
 }
+
+/** Percent-encode a value for an application/x-www-form-urlencoded BODY field.
+ * Unlike urlQueryEncode (which un-escapes URL-query-allowed chars for byte parity
+ * with the Swift services), this keeps `&`, `=`, `+` percent-encoded so a value
+ * containing them is never misread as a field delimiter / key-value separator /
+ * space inside a form body. */
+export function formValueEncode(value: string): string {
+  return encodeURIComponent(value);
+}

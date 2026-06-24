@@ -72,6 +72,10 @@ export function groupEpisodes(
   const weekEps: UpcomingEpisode[] = [];
   const laterEps: UpcomingEpisode[] = [];
   for (const ep of episodes) {
+    // Defensive lower bound: a stale/past air date (already aired) is not
+    // "upcoming" — drop it rather than mis-bucketing it as "This week". ISO
+    // YYYY-MM-DD strings compare lexicographically.
+    if (ep.airDate < today) continue;
     if (ep.airDate === today) todayEps.push(ep);
     else if (ep.airDate <= weekEnd) weekEps.push(ep);
     else laterEps.push(ep);

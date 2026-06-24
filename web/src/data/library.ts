@@ -70,13 +70,27 @@ export async function recordHistory(
   },
 ): Promise<MediaPreview[]> {
   const store = getStore();
+  const episodeId = opts?.episodeId ?? null;
+
+  // A plain "viewed" event (opening Detail) carries no progress fields. Because
+  // the store does a full-record REPLACE keyed by (mediaId, episodeId) — not a
+  // merge — writing zeros here would wipe an existing resume position. So for a
+  // viewed-only event, preserve the existing row's progress and only bump
+  // recency (lastWatched defaults to now in the store). Real playback events
+  // (recordResume) pass progress fields and overwrite as before.
+  const isViewedOnly =
+    opts?.progressSeconds === undefined &&
+    opts?.durationSeconds === undefined &&
+    opts?.completed === undefined;
+  const existing = isViewedOnly ? await store.getResume(item.id, episodeId) : null;
+
   await store.recordHistory({
     mediaId: item.id,
-    episodeId: opts?.episodeId ?? null,
-    progressSeconds: opts?.progressSeconds ?? 0,
-    durationSeconds: opts?.durationSeconds ?? null,
-    completed: opts?.completed ?? false,
-    streamQuality: opts?.streamQuality ?? null,
+    episodeId,
+    progressSeconds: opts?.progressSeconds ?? existing?.progressSeconds ?? 0,
+    durationSeconds: opts?.durationSeconds ?? existing?.durationSeconds ?? null,
+    completed: opts?.completed ?? existing?.completed ?? false,
+    streamQuality: opts?.streamQuality ?? existing?.streamQuality ?? null,
     preview: item,
   });
   return loadHistory();

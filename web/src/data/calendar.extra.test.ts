@@ -147,11 +147,10 @@ describe("groupEpisodes (additional edge cases)", () => {
     expect(groups[0].bucket).toBe("later");
   });
 
-  it("classifies a past air date that is not today as 'week' (<= weekEnd)", () => {
-    // The module compares airDate <= weekEnd lexicographically, so a stale past
-    // date that isn't exactly today falls into the 'week' bucket.
+  it("drops a stale/past air date instead of mis-bucketing it as 'week' (regression)", () => {
+    // A date before 'today' has already aired — it must not show as upcoming.
     const groups = groupEpisodes([ep("2026-06-10", 1)], NOW);
-    expect(groups[0].bucket).toBe("week");
+    expect(groups).toEqual([]);
   });
 
   it("produces only the today bucket when all episodes air today", () => {
