@@ -372,6 +372,8 @@ function WebviewPlayer({
             className={`chip${captionsOpen || subs.activeTrackId != null ? " is-active" : ""}`}
             onClick={() => setCaptionsOpen((o) => !o)}
             aria-label="Subtitles"
+            aria-haspopup="dialog"
+            aria-expanded={captionsOpen}
             title="Subtitles"
           >
             <Icon name="captions" size={14} />

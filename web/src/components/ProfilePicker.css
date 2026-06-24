@@ -162,6 +162,17 @@
   border-color: rgba(248, 113, 113, 0.4);
 }
 
+.profile-mini-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Inline two-step delete confirmation (Confirm / Cancel). */
+.profile-confirm-delete {
+  display: inline-flex;
+  gap: 8px;
+}
+
 .profile-picker-error {
   margin: 20px auto 0;
   max-width: 420px;

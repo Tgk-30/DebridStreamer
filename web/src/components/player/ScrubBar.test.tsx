@@ -1,0 +1,80 @@
+// @vitest-environment jsdom
+//
+// A11y regression: the role="slider" scrub bar must support keyboard seeking.
+
+import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { ScrubBar, formatTime } from "./ScrubBar";
+
+function setup(currentTime = 100, duration = 600) {
+  const onSeek = vi.fn();
+  render(
+    <ScrubBar
+      currentTime={currentTime}
+      duration={duration}
+      preview={null}
+      onHover={() => {}}
+      onLeave={() => {}}
+      onSeek={onSeek}
+    />,
+  );
+  return { slider: screen.getByRole("slider", { name: "Seek" }), onSeek };
+}
+
+function key(el: Element, k: string) {
+  el.dispatchEvent(
+    new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }),
+  );
+}
+
+describe("ScrubBar keyboard seeking", () => {
+  it("nudges ±5s with arrow keys", () => {
+    const { slider, onSeek } = setup(100, 600);
+    key(slider, "ArrowRight");
+    expect(onSeek).toHaveBeenLastCalledWith(105);
+    key(slider, "ArrowLeft");
+    expect(onSeek).toHaveBeenLastCalledWith(95);
+  });
+
+  it("jumps ±60s with PageUp/PageDown", () => {
+    const { slider, onSeek } = setup(100, 600);
+    key(slider, "PageUp");
+    expect(onSeek).toHaveBeenLastCalledWith(160);
+    key(slider, "PageDown");
+    expect(onSeek).toHaveBeenLastCalledWith(40);
+  });
+
+  it("Home/End jump to the bounds and clamp", () => {
+    const { slider, onSeek } = setup(100, 600);
+    key(slider, "Home");
+    expect(onSeek).toHaveBeenLastCalledWith(0);
+    key(slider, "End");
+    expect(onSeek).toHaveBeenLastCalledWith(600);
+  });
+
+  it("clamps at the ends (never seeks below 0 or past duration)", () => {
+    const { slider, onSeek } = setup(2, 600);
+    key(slider, "ArrowLeft"); // 2 - 5 = -3 → 0
+    expect(onSeek).toHaveBeenLastCalledWith(0);
+  });
+
+  it("exposes a human-readable time via aria-valuetext", () => {
+    const { slider } = setup(125, 600);
+    expect(slider).toHaveAttribute("aria-valuetext", "2:05");
+  });
+
+  it("ignores keys with no live duration", () => {
+    const { slider, onSeek } = setup(0, 0);
+    key(slider, "ArrowRight");
+    expect(onSeek).not.toHaveBeenCalled();
+  });
+});
+
+describe("formatTime", () => {
+  it("formats M:SS and H:MM:SS, guards invalid", () => {
+    expect(formatTime(65)).toBe("1:05");
+    expect(formatTime(3661)).toBe("1:01:01");
+    expect(formatTime(-1)).toBe("0:00");
+    expect(formatTime(NaN)).toBe("0:00");
+  });
+});

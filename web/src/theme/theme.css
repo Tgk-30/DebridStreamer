@@ -872,6 +872,24 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 ::selection { background: rgba(var(--accent-rgb), 0.32); color: var(--text-primary); }
 :focus-visible { outline: 2px solid var(--focus-ring-color); outline-offset: 2px; }
 
+/* Glass controls need a stronger focus ring: the plain outline above has too
+   little contrast against the translucent, accent-tinted control fill (and can
+   be clipped by a rounded ancestor), so keyboard focus was effectively
+   invisible. A high-contrast DOUBLE box-shadow ring — a 2px separator in the
+   page background plus a 2px accent ring — reads unmistakably on every theme. */
+.btn:focus-visible,
+.chip:focus-visible,
+.dl-icon-btn:focus-visible,
+.dl-chip:focus-visible,
+.profile-mini-btn:focus-visible,
+.search-clear:focus-visible,
+.search-see-all:focus-visible,
+.hero-dot:focus-visible,
+.fs-num:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 4px var(--focus-ring-color);
+}
+
 /* Slim glass scrollbars (thumb color is theme-aware: a light thumb on the dark
    themes, a dark thumb on light — see --scrollbar-thumb in the theme blocks). */
 * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }

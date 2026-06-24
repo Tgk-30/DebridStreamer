@@ -95,11 +95,18 @@ export function HeroSpotlight({
   }, [list.length, paused, intervalMs]);
 
   // Invisible polish: preload the next backdrop so the crossfade never flashes a
-  // half-loaded image. Gated by the smart-preload preference.
+  // half-loaded image. Gated by the smart-preload preference. The Image is held
+  // and detached on cleanup so an in-flight preload doesn't keep loading (and
+  // pinning memory) after the hero unmounts or advances.
   useEffect(() => {
     if (list.length <= 1 || !isSmartPreloadEnabled()) return;
     const url = MediaPreviewNS.backdropURL(list[(index + 1) % list.length]);
-    if (url) new Image().src = url;
+    if (!url) return;
+    const img = new Image();
+    img.src = url;
+    return () => {
+      img.src = "";
+    };
   }, [index, list]);
 
   // Per-title accent: recolor the hero chrome from the backdrop's dominant color.

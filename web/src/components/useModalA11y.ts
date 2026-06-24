@@ -1,0 +1,52 @@
+// Shared modal/popover accessibility hook.
+//
+// Attach the returned ref to a dialog's root element (give the root
+// `tabIndex={-1}` so it can receive focus). On open it moves focus into the
+// dialog so screen readers announce it and keyboard Tab stays within the new
+// context; while open, Escape closes it; on close it restores focus to whatever
+// was focused before the dialog opened. Keeps every dialog's keyboard behavior
+// consistent without each one re-implementing the boilerplate.
+
+import { useEffect, useRef } from "react";
+
+export function useModalA11y<T extends HTMLElement>(
+  onClose: () => void,
+  // `active` lets a persistently-mounted dialog (visibility toggled by a prop,
+  // e.g. FilterSlideover's `open`) drive focus/Escape on each open/close.
+  // Mount-based dialogs leave it at the default (active the whole time mounted).
+  active = true,
+) {
+  const ref = useRef<T | null>(null);
+  // Keep the latest onClose without re-running the effect (and thus re-stealing
+  // focus) every render when the caller passes an inline handler.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!active) return;
+    const previouslyFocused =
+      typeof document !== "undefined"
+        ? (document.activeElement as HTMLElement | null)
+        : null;
+
+    // Focus the dialog container itself (rather than auto-focusing the first
+    // control, which could be a destructive button): the dialog is announced,
+    // and the next Tab enters its controls.
+    ref.current?.focus?.();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onCloseRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      // Restore focus to the trigger so keyboard users aren't dumped at the top.
+      previouslyFocused?.focus?.();
+    };
+  }, [active]);
+
+  return ref;
+}

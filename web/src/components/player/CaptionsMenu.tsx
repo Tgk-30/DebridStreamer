@@ -13,6 +13,7 @@
 
 import { useState } from "react";
 import { Icon } from "../Icon";
+import { useModalA11y } from "../useModalA11y";
 import { useAppStore } from "../../store/AppStore";
 import type { AppSettings } from "../../data/settings";
 import type { UseSubtitleTracks } from "./useSubtitleTracks";
@@ -71,6 +72,7 @@ export function CaptionsMenu({
     updateSettings({ ...settings, ...patch });
 
   const activeTrack = subs.tracks.find((t) => t.id === subs.activeTrackId) ?? null;
+  const menuRef = useModalA11y<HTMLDivElement>(onClose);
 
   function runSearch() {
     const params: SubtitleSearchParams = {
@@ -85,7 +87,14 @@ export function CaptionsMenu({
   }
 
   return (
-    <div className="captions-menu glass-raised glass-lit" role="dialog" aria-label="Subtitles">
+    <div
+      ref={menuRef}
+      className="captions-menu glass-raised glass-lit"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Subtitles"
+      tabIndex={-1}
+    >
       <div className="captions-head">
         <span className="captions-title">Subtitles</span>
         <button
@@ -103,6 +112,7 @@ export function CaptionsMenu({
         <button
           type="button"
           className={`captions-track${subs.activeTrackId == null ? " is-active" : ""}`}
+          aria-pressed={subs.activeTrackId == null}
           onClick={() => subs.setActiveTrack(null)}
         >
           <Icon name={subs.activeTrackId == null ? "check" : "xmark"} size={13} />
@@ -113,6 +123,7 @@ export function CaptionsMenu({
             key={t.id}
             type="button"
             className={`captions-track${t.id === subs.activeTrackId ? " is-active" : ""}`}
+            aria-pressed={t.id === subs.activeTrackId}
             onClick={() => subs.setActiveTrack(t.id)}
           >
             {t.id === subs.activeTrackId && <Icon name="check" size={13} />}

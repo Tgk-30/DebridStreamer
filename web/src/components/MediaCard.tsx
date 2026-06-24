@@ -42,6 +42,7 @@ export function MediaCard({
       className="media-card"
       onClick={() => onSelect?.(item)}
       title={item.title}
+      aria-label={item.title}
       initial={false}
       whileHover="hover"
       whileFocus="hover"
@@ -105,12 +106,13 @@ export function MediaCard({
                 </span>
               )}
             </div>
-            <div className="media-card-reveal-actions">
+            {/* Decorative hover affordances. The whole card is already a
+                keyboard-accessible button (opens Detail); these duplicate that
+                action visually for mouse users, so they're aria-hidden rather
+                than exposed as separate (and un-nestable) interactive controls. */}
+            <div className="media-card-reveal-actions" aria-hidden="true">
               <span
                 className="media-card-play"
-                role="button"
-                tabIndex={-1}
-                title="Play"
                 onClick={(e) => {
                   e.stopPropagation();
                   (onPlay ?? onSelect)?.(item);
@@ -118,7 +120,7 @@ export function MediaCard({
               >
                 <Icon name="play" size={13} />
               </span>
-              <span className="media-card-more" title="More info">
+              <span className="media-card-more">
                 <Icon name="info" size={13} />
               </span>
             </div>

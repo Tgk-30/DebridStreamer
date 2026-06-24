@@ -79,6 +79,44 @@ export function ScrubBar({
     [timeAtX, onSeek],
   );
 
+  // Keyboard seeking — a role="slider" must respond to arrows/Home/End (WCAG
+  // 2.1). Arrows nudge ±5s, PageUp/Down ±60s, Home/End jump to the ends.
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!Number.isFinite(duration) || duration <= 0) return;
+      const STEP = 5;
+      const BIG = 60;
+      let next: number | null = null;
+      switch (e.key) {
+        case "ArrowRight":
+        case "ArrowUp":
+          next = currentTime + STEP;
+          break;
+        case "ArrowLeft":
+        case "ArrowDown":
+          next = currentTime - STEP;
+          break;
+        case "PageUp":
+          next = currentTime + BIG;
+          break;
+        case "PageDown":
+          next = currentTime - BIG;
+          break;
+        case "Home":
+          next = 0;
+          break;
+        case "End":
+          next = duration;
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+      onSeek(Math.max(0, Math.min(duration, next)));
+    },
+    [currentTime, duration, onSeek],
+  );
+
   const progress =
     Number.isFinite(duration) && duration > 0
       ? Math.max(0, Math.min(1, currentTime / duration))
@@ -112,11 +150,13 @@ export function ScrubBar({
         onPointerMove={handleMove}
         onPointerLeave={handleLeave}
         onPointerDown={handleClick}
+        onKeyDown={handleKeyDown}
         role="slider"
         aria-label="Seek"
         aria-valuemin={0}
         aria-valuemax={Number.isFinite(duration) ? Math.floor(duration) : 0}
         aria-valuenow={Math.floor(currentTime)}
+        aria-valuetext={formatTime(currentTime)}
         tabIndex={0}
       >
         <div className="scrubbar-track">

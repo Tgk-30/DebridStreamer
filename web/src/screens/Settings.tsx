@@ -1789,6 +1789,9 @@ function ServerTab() {
     label: "Shared",
     value: "",
   });
+  // Which async save is in flight, so its submit button can disable + show
+  // progress (prevents duplicate submissions / unclear final state).
+  const [saving, setSaving] = useState<"password" | "credential" | null>(null);
 
   const canAdmin = role === "owner" || role === "admin";
   // A restricted profile can browse + watch but cannot perform management
@@ -1926,8 +1929,10 @@ function ServerTab() {
   }
 
   async function saveProfileCredential() {
+    if (saving != null) return;
     setMessage(null);
     setError(null);
+    setSaving("credential");
     try {
       await serverRequest("PUT", "/api/profile/credentials", {
         provider: profileCredential.provider,
@@ -1939,16 +1944,22 @@ function ServerTab() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(null);
     }
   }
 
   async function changePassword() {
+    if (saving != null) return;
     setMessage(null);
     setError(null);
+    // Validate before flipping the saving flag so a mismatch shows instantly.
+    if (passwordDraft.newPassword !== passwordDraft.confirmPassword) {
+      setError("New passwords do not match.");
+      return;
+    }
+    setSaving("password");
     try {
-      if (passwordDraft.newPassword !== passwordDraft.confirmPassword) {
-        throw new Error("New passwords do not match.");
-      }
       await serverRequest("POST", "/api/auth/change-password", {
         currentPassword: passwordDraft.currentPassword,
         newPassword: passwordDraft.newPassword,
@@ -1961,6 +1972,8 @@ function ServerTab() {
       setMessage("Password changed. Other sessions were signed out.");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(null);
     }
   }
 
@@ -2164,6 +2177,7 @@ function ServerTab() {
         draft={passwordDraft}
         onDraftChange={setPasswordDraft}
         onSave={() => void changePassword()}
+        saving={saving === "password"}
       />
 
       <SessionsPanel
@@ -2178,6 +2192,7 @@ function ServerTab() {
           onDraftChange={setProfileCredential}
           onSave={() => void saveProfileCredential()}
           onDelete={(id) => void deleteProfileCredential(id)}
+          saving={saving === "credential"}
         />
       )}
 
@@ -2691,6 +2706,7 @@ function PasswordPanel({
   draft,
   onDraftChange,
   onSave,
+  saving,
 }: {
   draft: {
     currentPassword: string;
@@ -2705,6 +2721,7 @@ function PasswordPanel({
     }>
   >;
   onSave: () => void;
+  saving: boolean;
 }) {
   return (
     <div className="settings-source glass-rest">
@@ -2748,8 +2765,13 @@ function PasswordPanel({
           }
           placeholder="Confirm new password"
         />
-        <button type="button" className="btn" onClick={onSave}>
-          Change password
+        <button
+          type="button"
+          className="btn"
+          onClick={onSave}
+          disabled={saving}
+        >
+          {saving ? "Changing…" : "Change password"}
         </button>
       </div>
     </div>
@@ -2962,6 +2984,7 @@ function ProfileCredentialPanel({
   onDraftChange,
   onSave,
   onDelete,
+  saving,
 }: {
   credentials: EffectiveCredential[];
   draft: {
@@ -2978,6 +3001,7 @@ function ProfileCredentialPanel({
   >;
   onSave: () => void;
   onDelete: (id: string) => void;
+  saving: boolean;
 }) {
   return (
     <div className="settings-source glass-rest">
@@ -3030,8 +3054,13 @@ function ProfileCredentialPanel({
           }
           placeholder="Token or API key"
         />
-        <button type="button" className="btn" onClick={onSave}>
-          Save profile override
+        <button
+          type="button"
+          className="btn"
+          onClick={onSave}
+          disabled={saving}
+        >
+          {saving ? "Saving…" : "Save profile override"}
         </button>
       </div>
 

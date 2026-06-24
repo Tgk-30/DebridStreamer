@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "../store/AppStore";
+import { useModalA11y } from "./useModalA11y";
 import { Icon } from "../components/Icon";
 import type { DebridTorrent } from "../services/debrid/models";
 import { parseHashListInput, type HashListEntry } from "../lib/hashlist";
@@ -42,14 +43,18 @@ export function HashListDialog({
 }: HashListDialogProps) {
   const { services } = useAppStore();
   const [tab, setTab] = useState<Tab>("import");
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose);
 
   return (
     <div className="hl-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="hl-dialog glass-hero glass-lit"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="Hash list"
+        tabIndex={-1}
       >
         <div className="hl-head">
           <h2 className="hl-title">Hash list</h2>

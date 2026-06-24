@@ -27,6 +27,7 @@ import {
   type ServerProfileSummary,
 } from "../lib/ServerSessionContext";
 import { useAppStore } from "../store/AppStore";
+import { useModalA11y } from "./useModalA11y";
 import "./ProfilePicker.css";
 
 // A small palette the "add profile" form offers; any saved hex/keyword renders.
@@ -66,12 +67,15 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
   const setSession = useSetServerSession();
   const setProfiles = useSetServerProfiles();
   const { reloadProfileData } = useAppStore();
+  const pickerRef = useModalA11y<HTMLDivElement>(onClose);
 
   const [editing, setEditing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<AccountProfile | null>(null);
+  // The profile id awaiting delete confirmation (two-step: Delete → Confirm).
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   // When set, the parental-lock prompt is open for this target profile: leaving
   // a kid profile requires the account password before the switch is allowed.
   const [unlocking, setUnlocking] = useState<ServerProfileSummary | null>(null);
@@ -83,6 +87,50 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
     () => profiles.some((p) => p.id === activeId && p.isKid),
     [profiles, activeId],
   );
+
+  /** Permanently delete a profile (after the inline two-step confirm). */
+  function performDelete(profileId: string) {
+    setConfirmDeleteId(null);
+    setError(null);
+    setBusyId(profileId);
+    const wasActive = profileId === activeId;
+    void deleteAccountProfile(profileId)
+      .then(async (res) => {
+        // The delete already succeeded server-side: refresh the list FIRST so
+        // the deleted tile is dropped even if the follow-up switch fails.
+        await refreshAfterMutation(res.profiles);
+        if (wasActive) {
+          // Converge the client onto the server's fallback (default) profile so
+          // it isn't left pointed at a now-deleted one. Any failure here is
+          // isolated: the delete stands and the next load reconciles the
+          // session, so we must NOT surface "Could not delete.".
+          const fallback =
+            res.profiles.find((p) => p.isDefault) ?? res.profiles[0];
+          if (fallback != null) {
+            try {
+              const sw = await switchAccountProfile(fallback.id);
+              await reloadProfileData();
+              if (sw.session != null) {
+                setSession({
+                  profileId: sw.session.profileId,
+                  username: sw.session.username,
+                  displayName: sw.session.displayName,
+                  role: sw.session.role,
+                  avatarColor: sw.session.avatarColor,
+                  simpleMode: sw.session.simpleMode,
+                });
+              }
+            } catch {
+              // Convergence-only failure; delete still stands.
+            }
+          }
+        }
+      })
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : "Could not delete."),
+      )
+      .finally(() => setBusyId(null));
+  }
 
   // Refresh the list from the server on open so a profile added on another
   // device shows up. Best-effort; the in-memory list is the fallback.
@@ -216,7 +264,14 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="profile-picker" role="dialog" aria-modal="true" aria-label="Who's watching?">
+    <div
+      ref={pickerRef}
+      className="profile-picker"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Who's watching?"
+      tabIndex={-1}
+    >
       <div className="profile-picker-inner">
         <h1 className="profile-picker-title">Who&rsquo;s watching?</h1>
 
@@ -244,63 +299,35 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
                   >
                     Edit
                   </button>
-                  {!profile.isDefault && (
-                    <button
-                      type="button"
-                      className="profile-mini-btn is-danger"
-                      onClick={() => {
-                        setError(null);
-                        setBusyId(profile.id);
-                        const wasActive = profile.id === activeId;
-                        void deleteAccountProfile(profile.id)
-                          .then(async (res) => {
-                            // The delete already succeeded server-side: refresh
-                            // the list FIRST so the deleted tile is dropped even
-                            // if the follow-up switch fails.
-                            await refreshAfterMutation(res.profiles);
-                            if (wasActive) {
-                              // The server fell the session back to the default
-                              // profile; converge the client onto it (re-hydrate
-                              // data + session) so it isn't left pointed at a
-                              // now-deleted profile showing its stale rails. Any
-                              // failure here is isolated: the delete stands, the
-                              // list is already refreshed, and the next load
-                              // reconciles the session from the server default —
-                              // so we must NOT surface "Could not delete.".
-                              const fallback =
-                                res.profiles.find((p) => p.isDefault) ??
-                                res.profiles[0];
-                              if (fallback != null) {
-                                try {
-                                  const sw = await switchAccountProfile(
-                                    fallback.id,
-                                  );
-                                  await reloadProfileData();
-                                  if (sw.session != null) {
-                                    setSession({
-                                      profileId: sw.session.profileId,
-                                      username: sw.session.username,
-                                      displayName: sw.session.displayName,
-                                      role: sw.session.role,
-                                      avatarColor: sw.session.avatarColor,
-                                      simpleMode: sw.session.simpleMode,
-                                    });
-                                  }
-                                } catch {
-                                  // Convergence-only failure; delete still stands.
-                                }
-                              }
-                            }
-                          })
-                          .catch((err) =>
-                            setError(err instanceof Error ? err.message : "Could not delete."),
-                          )
-                          .finally(() => setBusyId(null));
-                      }}
-                    >
-                      Delete
-                    </button>
-                  )}
+                  {!profile.isDefault &&
+                    (confirmDeleteId === profile.id ? (
+                      <span className="profile-confirm-delete" role="group" aria-label={`Delete ${profile.displayName}?`}>
+                        <button
+                          type="button"
+                          className="profile-mini-btn is-danger"
+                          onClick={() => performDelete(profile.id)}
+                          disabled={busyId != null}
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          className="profile-mini-btn"
+                          onClick={() => setConfirmDeleteId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="profile-mini-btn is-danger"
+                        onClick={() => setConfirmDeleteId(profile.id)}
+                        aria-label={`Delete ${profile.displayName}`}
+                      >
+                        Delete
+                      </button>
+                    ))}
                 </div>
               )}
             </li>
@@ -331,7 +358,10 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             className="profile-text-btn"
-            onClick={() => setEditing((value) => !value)}
+            onClick={() => {
+              setEditing((value) => !value);
+              setConfirmDeleteId(null); // drop any pending confirm when toggling
+            }}
           >
             {editing ? "Done" : "Manage profiles"}
           </button>
@@ -373,6 +403,7 @@ function UnlockPrompt({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const promptRef = useModalA11y<HTMLDivElement>(onCancel);
   const canSubmit = password.length > 0 && !busy;
 
   function submit() {
@@ -395,7 +426,14 @@ function UnlockPrompt({
   }
 
   return (
-    <div className="profile-picker" role="dialog" aria-modal="true" aria-label="Enter account password">
+    <div
+      ref={promptRef}
+      className="profile-picker"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Enter account password"
+      tabIndex={-1}
+    >
       <div className="profile-picker-inner profile-form">
         <h1 className="profile-picker-title">Enter account password</h1>
         <p className="profile-unlock-copy">
@@ -466,6 +504,7 @@ function ProfileForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canSubmit = useMemo(() => displayName.trim().length > 0, [displayName]);
+  const formRef = useModalA11y<HTMLDivElement>(onCancel);
 
   function submit() {
     if (!canSubmit || busy) return;
@@ -481,7 +520,14 @@ function ProfileForm({
   }
 
   return (
-    <div className="profile-picker" role="dialog" aria-modal="true" aria-label={title}>
+    <div
+      ref={formRef}
+      className="profile-picker"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      tabIndex={-1}
+    >
       <div className="profile-picker-inner profile-form">
         <h1 className="profile-picker-title">{title}</h1>
 

@@ -20,6 +20,7 @@ import {
   plausibleYear,
 } from "../data/browse";
 import { SortOption } from "../services/metadata/types";
+import { useModalA11y } from "./useModalA11y";
 import { Icon } from "./Icon";
 import "./FilterSlideover.css";
 
@@ -114,6 +115,7 @@ export function FilterSlideover({
   }
 
   const dirty = draftType !== type || hasActiveFilters(draft);
+  const panelRef = useModalA11y<HTMLElement>(onClose, open);
 
   return (
     <div
@@ -122,11 +124,13 @@ export function FilterSlideover({
       aria-hidden={!open}
     >
       <aside
+        ref={panelRef}
         className={`fs-panel glass-raised glass-lit${open ? " is-open" : ""}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Filters"
         aria-modal="true"
+        tabIndex={-1}
       >
         <header className="fs-head">
           <h2 className="fs-title">Filters</h2>
