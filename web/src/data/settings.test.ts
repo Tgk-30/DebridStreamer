@@ -48,6 +48,7 @@ const fakeStore = {
     if (value == null) settingsMap.delete(key);
     else settingsMap.set(key, value);
   }),
+  allSettings: vi.fn(async () => Object.fromEntries(settingsMap)),
   listDebridConfigs: vi.fn(async () => debridConfigs.map((c) => ({ ...c }))),
   saveDebridConfig: vi.fn(async (c: DebridConfigRow) => {
     const i = debridConfigs.findIndex((x) => x.id === c.id);
@@ -519,6 +520,41 @@ describe("loadSettingsFromStore — first-run migration", () => {
     stubLocalStorage({
       [KEY]: JSON.stringify({ tmdbKey: "", simpleMode: false }), // redacted
     });
+    settingsMap.set("omdb_api_key", "secret:omdb_api_key");
+    secretMap.set("omdb_api_key", "REAL_OMDB");
+    const result = await loadSettingsFromStore();
+    expect(secretMap.get("omdb_api_key")).toBe("REAL_OMDB"); // not wiped
+    expect(result.omdbKey).toBe("REAL_OMDB");
+    expect(settingsMap.get("storage_port_initialized")).toBe("true");
+  });
+
+  it("keeps the legacy plaintext intact + unflagged when a migration secret write fails", async () => {
+    // Keychain locked mid-migration: the secret write rejects. The legacy cache
+    // must NOT be redacted and the init flag must stay unset, so the next launch
+    // retries from the still-authoritative legacy blob (no data loss).
+    const { map } = stubLocalStorage({
+      [KEY]: JSON.stringify({ tmdbKey: "LEGACY_TMDB", simpleMode: false }),
+    });
+    fakeSecrets.setSecret.mockRejectedValueOnce(new Error("keychain locked"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await loadSettingsFromStore();
+
+    expect(result.tmdbKey).toBe("LEGACY_TMDB"); // session still works
+    // Durable state is left retryable: flag unset, cache NOT redacted.
+    expect(settingsMap.get("storage_port_initialized")).toBeUndefined();
+    expect(JSON.parse(map.get(KEY)!).tmdbKey).toBe("LEGACY_TMDB"); // still plaintext
+    warn.mockRestore();
+    fakeSecrets.setSecret.mockImplementation(async (key: string, value: string) => {
+      secretMap.set(key, value);
+    });
+  });
+
+  it("never replays (so can't wipe) when there is no legacy blob but the Store has data", async () => {
+    // No legacy blob at all + a Store that already holds a secret. Even if the
+    // build has env-default keys, the absence of a RAW legacy blob means no
+    // replay — so the real Store secret can't be wiped.
+    vi.stubGlobal("localStorage", undefined);
     settingsMap.set("omdb_api_key", "secret:omdb_api_key");
     secretMap.set("omdb_api_key", "REAL_OMDB");
     const result = await loadSettingsFromStore();
