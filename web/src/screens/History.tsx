@@ -10,16 +10,19 @@ import { useAppStore } from "../store/AppStore";
 import { MediaGrid } from "../components/MediaGrid";
 import { Rail } from "../components/Rail";
 import { EmptyState } from "../components/EmptyState";
-import { hasResumePoint } from "../storage/models";
+import { hasResumePoint, watchProgressPercent } from "../storage/models";
 
 export function History() {
   const { history, continueWatching, openDetail, openBrowse, navigate } =
     useAppStore();
 
   // Only surface rows with a meaningful resume point in the rail.
-  const resumable = continueWatching
-    .filter(hasResumePoint)
-    .map((r) => r.preview);
+  const resumableRecords = continueWatching.filter(hasResumePoint);
+  const resumable = resumableRecords.map((r) => r.preview);
+  const resumableProgress: Record<string | number, number> = {};
+  for (const r of resumableRecords) {
+    resumableProgress[r.preview.id] = watchProgressPercent(r);
+  }
 
   return (
     <div className="lib-screen">
@@ -27,7 +30,12 @@ export function History() {
       <p className="lib-sub t-secondary">Titles you've recently opened.</p>
 
       {resumable.length > 0 && (
-        <Rail title="Continue Watching" items={resumable} onSelect={openDetail} />
+        <Rail
+          title="Continue Watching"
+          items={resumable}
+          progressById={resumableProgress}
+          onSelect={openDetail}
+        />
       )}
 
       {history.length === 0 ? (

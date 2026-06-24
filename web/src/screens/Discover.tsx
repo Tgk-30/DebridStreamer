@@ -9,6 +9,7 @@ import { useState } from "react";
 import type { MediaPreview } from "../models/media";
 import { useDiscover } from "../data/discover";
 import { useAppStore } from "../store/AppStore";
+import { hasResumePoint, watchProgressPercent } from "../storage/models";
 import { isServerMode } from "../lib/serverMode";
 import { curateServerAI } from "../lib/serverApi";
 import {
@@ -59,8 +60,18 @@ function moodBrowseFilters(vibe: string): BrowseFilters {
 }
 
 export function Discover({ onSelect }: DiscoverProps) {
-  const { services, openBrowse } = useAppStore();
+  const { services, openBrowse, continueWatching } = useAppStore();
   const { data, loading } = useDiscover(services.tmdb);
+
+  // Continue Watching — resumable history (>2% and <95%) surfaced at the top of
+  // the home, with per-card progress bars. Only renders when there's something
+  // to resume, so it never clutters a fresh install.
+  const resumable = continueWatching.filter(hasResumePoint);
+  const continueItems = resumable.map((r) => r.preview);
+  const continueProgress: Record<string | number, number> = {};
+  for (const r of resumable) {
+    continueProgress[r.preview.id] = watchProgressPercent(r);
+  }
   const [moodLoading, setMoodLoading] = useState(false);
   const [moodError, setMoodError] = useState<string | null>(null);
   const [moodStatus, setMoodStatus] = useState<string | null>(null);
@@ -187,6 +198,13 @@ export function Discover({ onSelect }: DiscoverProps) {
           onDetails={onSelect}
         />
       )}
+
+      <Rail
+        title="Continue Watching"
+        items={continueItems}
+        progressById={continueProgress}
+        onSelect={onSelect}
+      />
 
       <MoodStrip
         onCurate={curateMood}

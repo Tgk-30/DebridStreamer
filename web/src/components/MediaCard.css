@@ -58,6 +58,25 @@
   display: block;
 }
 
+/* Continue Watching progress bar — pinned to the poster's bottom edge, above the
+   hover reveal so it stays visible while scanning the row. */
+.media-card-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.media-card-progress-fill {
+  height: 100%;
+  min-width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6);
+}
+
 /* Shimmer placeholder while the poster loads. */
 .media-card-shimmer {
   position: absolute;

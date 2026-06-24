@@ -13,9 +13,12 @@ interface RailProps {
   /** When provided, render a "See all" affordance in the header that opens the
    * full paginated Browse for this rail's exact category/genre. */
   onSeeAll?: () => void;
+  /** Resume progress (0..1) keyed by item id — renders a Continue Watching
+   * progress bar on the matching cards. */
+  progressById?: Record<string | number, number>;
 }
 
-export function Rail({ title, items, onSelect, onSeeAll }: RailProps) {
+export function Rail({ title, items, onSelect, onSeeAll, progressById }: RailProps) {
   if (items.length === 0) return null;
 
   return (
@@ -34,7 +37,12 @@ export function Rail({ title, items, onSelect, onSeeAll }: RailProps) {
       <div className="rail-scroll rail-fade">
         <div className="rail-track">
           {items.map((item) => (
-            <MediaCard key={item.id} item={item} onSelect={onSelect} />
+            <MediaCard
+              key={item.id}
+              item={item}
+              onSelect={onSelect}
+              progress={progressById?.[item.id]}
+            />
           ))}
         </div>
       </div>

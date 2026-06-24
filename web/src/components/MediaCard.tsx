@@ -18,11 +18,20 @@ interface MediaCardProps {
   onPlay?: (item: MediaPreview) => void;
   /** Green "Ready to play" badge (a cached resolution exists). */
   ready?: boolean;
+  /** Resume progress as a fraction 0..1 — renders a bottom "Continue Watching"
+   * progress bar on the poster. Omit (or 0) to hide it. */
+  progress?: number;
 }
 
 const SPRING = { type: "spring", stiffness: 380, damping: 30, mass: 0.7 } as const;
 
-export function MediaCard({ item, onSelect, onPlay, ready = false }: MediaCardProps) {
+export function MediaCard({
+  item,
+  onSelect,
+  onPlay,
+  ready = false,
+  progress,
+}: MediaCardProps) {
   const poster = MediaPreviewNS.posterURL(item);
   const rating = MediaPreviewNS.ratingString(item);
   const [loaded, setLoaded] = useState(false);
@@ -107,6 +116,15 @@ export function MediaCard({ item, onSelect, onPlay, ready = false }: MediaCardPr
             </div>
           </motion.div>
         </motion.div>
+
+        {progress != null && progress > 0 && (
+          <div className="media-card-progress" aria-hidden>
+            <div
+              className="media-card-progress-fill"
+              style={{ width: `${Math.min(Math.max(progress, 0), 1) * 100}%` }}
+            />
+          </div>
+        )}
       </div>
 
       <div className="media-card-title">{item.title}</div>
