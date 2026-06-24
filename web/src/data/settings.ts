@@ -414,21 +414,6 @@ function readRawLegacyBlob(): Partial<AppSettings> | null {
   }
 }
 
-/** Does the RAW legacy blob still carry a real credential? Computed from the raw
- * blob ONLY — never from env defaults (which would falsely look authoritative). */
-function rawBlobHasSecrets(raw: Partial<AppSettings>): boolean {
-  const ne = (v: unknown) => typeof v === "string" && v !== "";
-  return (
-    ne(raw.tmdbKey) ||
-    ne(raw.omdbKey) ||
-    ne(raw.aiApiKey) ||
-    ne(raw.openSubtitlesApiKey) ||
-    (Array.isArray(raw.debridTokens) &&
-      raw.debridTokens.some((t) => ne(t?.apiToken))) ||
-    (Array.isArray(raw.sources) && raw.sources.some((s) => ne(s?.apiKey)))
-  );
-}
-
 /** Has the Store already been written by a prior (possibly interrupted)
  * migration? ANY persisted KV key (other than the init flag) or ANY debrid/
  * indexer config row counts — so a partial Store of any shape isn't misread as
@@ -556,26 +541,26 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
   // legacy blob, seed the Store from it so the upgrade is seamless.
   const store = getStore();
   const existingFlag = await store.getSetting("storage_port_initialized");
+  // True when we took the migration SKIP branch (flag was unset but the Store
+  // already held data). In that case the legacy cache may still hold un-migrated
+  // plaintext, so the scrub at the end must NOT run this load (it would destroy
+  // it); the next steady-state load redacts it.
+  let skippedMigration = false;
   if (existingFlag == null) {
-    // Decide from the RAW blob (not loadSettings(), whose env defaults would look
-    // like real legacy secrets) and a comprehensive Store-populated check.
     const rawLegacy = readRawLegacyBlob();
-    const hasRawSecrets = rawLegacy != null && rawBlobHasSecrets(rawLegacy);
     const storeHasData = await storeHasAnyData();
 
-    // Replay when the legacy blob is AUTHORITATIVE — it still holds real secrets
-    // (re-migrating real values can't wipe) — OR a real legacy blob exists and the
-    // Store is genuinely empty (a true first run; migrate everything). Otherwise
-    // (no blob, or a redacted blob over an already-populated Store) skip and load
-    // the real Store values.
-    if (hasRawSecrets || (rawLegacy != null && !storeHasData)) {
+    // Replay ONLY into a genuinely empty Store. Once the Store holds ANY data —
+    // an interrupted migration's own writes, OR the user's later changes — the
+    // migration must NOT replay: a stale/partial legacy blob (or its env-default
+    // gaps) would overwrite newer Store credentials with old/blank values. The
+    // decision uses the RAW blob's mere presence, never env-merged secrets.
+    if (rawLegacy != null && !storeHasData) {
       const legacy = loadSettings();
       try {
-        // Migrate ADDITIVELY (mergeOnly): seed the legacy's non-empty secrets +
-        // configs without removing anything the Store already holds, so replaying
-        // a stale/partial legacy can never wipe a secret the user added after an
-        // interrupted migration. And WITHOUT redacting the cache, so a failed
-        // write leaves the legacy plaintext intact for a retry.
+        // Additive (mergeOnly) + don't redact the cache: a failed write leaves
+        // the legacy plaintext intact for a retry. (Into an empty Store there's
+        // nothing to overwrite anyway; mergeOnly is belt-and-suspenders.)
         await saveSettingsToStore(legacy, {
           redactCache: false,
           mergeOnly: true,
@@ -590,7 +575,12 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
       saveSettings(redactSecrets(legacy));
       return legacy;
     }
+    // Store already populated (interrupted migration or the user's own data):
+    // don't replay (no overwrite/wipe), mark initialized, and load the real
+    // Store. Leave the legacy cache un-scrubbed this load (it may hold
+    // un-migrated plaintext; the next steady-state load redacts it).
     await store.setSetting("storage_port_initialized", "true");
+    skippedMigration = true;
   }
 
   const [tmdbKey, omdbKey, aiApiKey, openSubtitlesApiKey] = await Promise.all([
@@ -758,8 +748,12 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
 
   // Proactively scrub any pre-existing plaintext-secret blob a prior build wrote
   // to localStorage: overwrite the bootstrap cache with a redacted snapshot now
-  // that the Store/SecretStore is the source of truth.
-  saveSettings(redactSecrets(loaded));
+  // that the Store/SecretStore is the source of truth. Suppressed when we just
+  // skipped a migration (the cache may still hold un-migrated plaintext to be
+  // recovered/redacted on the next, steady-state load).
+  if (!skippedMigration) {
+    saveSettings(redactSecrets(loaded));
+  }
 
   return loaded;
 }

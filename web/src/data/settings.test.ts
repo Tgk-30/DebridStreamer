@@ -500,17 +500,18 @@ describe("loadSettingsFromStore — first-run migration", () => {
     expect(settingsMap.get("storage_port_initialized")).toBe("true");
   });
 
-  it("re-migrates a still-unredacted legacy blob even when a partial Store signal exists", async () => {
-    // Interrupted migration: a store signal (theme) was written, but the legacy
-    // cache still holds real secrets (the redact step hadn't run). The legacy is
-    // authoritative — replay it rather than skipping and losing the secret.
-    stubLocalStorage({
+  it("does NOT replay over a populated Store, and preserves the legacy cache for recovery", async () => {
+    // Interrupted migration: the legacy still holds a secret, but the Store
+    // already has data (a partial signal). Replaying could overwrite newer Store
+    // values, so we SKIP — and must NOT scrub the legacy cache (it holds the
+    // still-unmigrated secret, recoverable on the next steady-state load).
+    const { map } = stubLocalStorage({
       [KEY]: JSON.stringify({ tmdbKey: "REAL_FROM_LEGACY", simpleMode: false }),
     });
     settingsMap.set("ui_theme", "midnight"); // a partial store signal
-    const result = await loadSettingsFromStore();
-    expect(result.tmdbKey).toBe("REAL_FROM_LEGACY");
-    expect(secretMap.get("tmdb_api_key")).toBe("REAL_FROM_LEGACY"); // migrated
+    await loadSettingsFromStore();
+    expect(settingsMap.get("ui_theme")).toBe("midnight"); // untouched
+    expect(JSON.parse(map.get(KEY)!).tmdbKey).toBe("REAL_FROM_LEGACY"); // not scrubbed
     expect(settingsMap.get("storage_port_initialized")).toBe("true");
   });
 
@@ -550,22 +551,24 @@ describe("loadSettingsFromStore — first-run migration", () => {
     });
   });
 
-  it("additive migration adds the legacy secret without wiping a later-added Store secret", async () => {
-    // R7 interleaving: an interrupted migration left the flag unset with the
-    // legacy blob still holding ONLY tmdb. The user then added an OMDB key (now in
-    // the Store). Replaying the stale legacy must ADD tmdb (mergeOnly) WITHOUT
-    // removing the OMDB secret the blob doesn't know about.
+  it("skips replay over a populated Store: a stale legacy neither overwrites nor wipes Store secrets", async () => {
+    // codex-8 findings 1+2: legacy is stale (tmdb=T_OLD only); the Store holds a
+    // NEWER tmdb (T_NEW) plus a later-added OMDB. Skipping replay (Store has data)
+    // means the stale value can't overwrite T_NEW and the empty omdb can't wipe it.
     stubLocalStorage({
-      [KEY]: JSON.stringify({ tmdbKey: "T", simpleMode: false }), // stale: tmdb only
+      [KEY]: JSON.stringify({ tmdbKey: "T_OLD", simpleMode: false }),
     });
+    settingsMap.set("tmdb_api_key", "secret:tmdb_api_key");
+    secretMap.set("tmdb_api_key", "T_NEW");
     settingsMap.set("omdb_api_key", "secret:omdb_api_key");
     secretMap.set("omdb_api_key", "REAL_OMDB");
 
-    await loadSettingsFromStore();
+    const result = await loadSettingsFromStore();
 
-    expect(secretMap.get("tmdb_api_key")).toBe("T"); // legacy tmdb migrated
+    expect(secretMap.get("tmdb_api_key")).toBe("T_NEW"); // stale T_OLD did NOT overwrite
     expect(secretMap.get("omdb_api_key")).toBe("REAL_OMDB"); // NOT wiped
-    expect(settingsMap.get("omdb_api_key")).toBe("secret:omdb_api_key"); // marker intact
+    expect(result.tmdbKey).toBe("T_NEW");
+    expect(result.omdbKey).toBe("REAL_OMDB");
   });
 
   it("never replays (so can't wipe) when there is no legacy blob but the Store has data", async () => {
