@@ -25,7 +25,10 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    // Default env stays node (fast; Node's experimental localStorage). Component
+    // tests opt into jsdom per-file with a `// @vitest-environment jsdom` header.
     environment: "node",
+    setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },
 });
