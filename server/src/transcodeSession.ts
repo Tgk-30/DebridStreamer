@@ -81,6 +81,10 @@ interface Job {
 
 export class TranscodeRegistry {
   private readonly jobs = new Map<string, Job>();
+  // In-flight job creations keyed by session, so concurrent ensureJob() calls
+  // for the same session share ONE creation instead of racing (which would
+  // orphan an ffmpeg + temp dir and bypass the maxTranscodes cap).
+  private readonly pending = new Map<string, Promise<string>>();
   private reaper: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -172,6 +176,17 @@ export class TranscodeRegistry {
       existing.lastAccess = Date.now();
       return existing.dir;
     }
+    // Coalesce concurrent creations for the same session into one promise.
+    const inflight = this.pending.get(sessionId);
+    if (inflight != null) return inflight;
+    const created = this.createJob(sessionId, upstreamUrl).finally(() =>
+      this.pending.delete(sessionId),
+    );
+    this.pending.set(sessionId, created);
+    return created;
+  }
+
+  private async createJob(sessionId: string, upstreamUrl: string): Promise<string> {
     if (this.jobs.size >= this.config.maxTranscodes) {
       throw Object.assign(new Error("The transcoder is busy. Try again shortly."), { statusCode: 503 });
     }

@@ -11,7 +11,7 @@
 // runs in both the browser and the desktop webview. base64url (RFC 4648 §5) is
 // used so the string is URL/clipboard-safe without padding.
 
-import { deflate, inflate } from "pako";
+import { deflate, Inflate } from "pako";
 
 /** One entry in a hash-list: an infoHash plus an optional display name. */
 export interface HashListEntry {
@@ -21,6 +21,37 @@ export interface HashListEntry {
 
 /** The current wire-format version tag prefix. */
 const PREFIX = "dshl1:";
+
+// Decompression-bomb guards: the encoded string is fully attacker-controlled
+// (a pasted/shared list), so cap the compressed input, the inflated output, and
+// the item count before doing any real work.
+const MAX_COMPRESSED_CHARS = 256 * 1024; // base64url of the gzip payload
+const MAX_INFLATED_BYTES = 4 * 1024 * 1024;
+const MAX_ITEMS = 10_000;
+
+/** Inflate with a hard output cap so a tiny payload can't expand to GBs and
+ *  freeze/OOM the tab. Throws once the cap is exceeded (aborts mid-stream). */
+function boundedInflate(gz: Uint8Array): Uint8Array {
+  const inflator = new Inflate();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  inflator.onData = (chunk: Uint8Array) => {
+    total += chunk.length;
+    if (total > MAX_INFLATED_BYTES) {
+      throw new Error("Hash list payload is too large.");
+    }
+    chunks.push(chunk);
+  };
+  inflator.push(gz, true);
+  if (inflator.err) throw new Error("Hash list is corrupted.");
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
 
 /** Raw JSON payload shape (compact field names to keep the encoded string small). */
 interface RawPayload {
@@ -77,10 +108,13 @@ export function decodeHashList(encoded: string): HashListEntry[] {
     throw new Error("Not a DebridStreamer hash list.");
   }
   const b64 = trimmed.slice(PREFIX.length);
+  if (b64.length > MAX_COMPRESSED_CHARS) {
+    throw new Error("Hash list is too large.");
+  }
   let json: string;
   try {
     const gz = base64UrlToBytes(b64);
-    json = bytesToText(inflate(gz));
+    json = bytesToText(boundedInflate(gz));
   } catch {
     throw new Error("Hash list is corrupted or not decodable.");
   }
@@ -93,6 +127,9 @@ export function decodeHashList(encoded: string): HashListEntry[] {
   const items = (parsed as RawPayload | null)?.items;
   if (!Array.isArray(items)) {
     throw new Error("Hash list payload has no items.");
+  }
+  if (items.length > MAX_ITEMS) {
+    throw new Error("Hash list has too many entries.");
   }
   const entries = normalizeEntries(
     items

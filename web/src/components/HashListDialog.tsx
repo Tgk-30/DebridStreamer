@@ -149,6 +149,9 @@ function ImportTab({
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={5}
+        // Bound the input so the parse (run on every keystroke) can't be fed a
+        // huge paste; decodeHashList also caps the compressed/inflated payload.
+        maxLength={300 * 1024}
       />
       <div className="hl-row">
         <span className="t-secondary hl-count">

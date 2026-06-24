@@ -105,3 +105,18 @@ describe("parseHashListInput", () => {
     expect(parseHashListInput("dshl1:garbage")).toEqual([]);
   });
 });
+
+describe("decodeHashList decompression-bomb guards (regression)", () => {
+  it("still round-trips a normal list (bounded inflate doesn't break decode)", () => {
+    const encoded = encodeHashList([
+      { infoHash: HASH_A, name: "A" },
+      { infoHash: HASH_B, name: "B" },
+    ]);
+    expect(decodeHashList(encoded).map((e) => e.infoHash)).toEqual([HASH_A, HASH_B]);
+  });
+
+  it("rejects an oversize compressed payload before inflating", () => {
+    const huge = "dshl1:" + "A".repeat(300 * 1024);
+    expect(() => decodeHashList(huge)).toThrow(/too large/i);
+  });
+});

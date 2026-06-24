@@ -223,6 +223,13 @@ function WebviewPlayer({
   // render (onProgress identity changes every render → re-subscribe loop).
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
+  // Stable ref for the HLS-unsupported callback so the source-attach effect does
+  // NOT list a fresh inline arrow in its deps. Detail re-renders every ~5s (the
+  // progress → recordResume → refreshHistory loop), and a changing callback
+  // identity would otherwise re-run that effect and reload video.src — restarting
+  // playback from 0 every few seconds.
+  const onHlsUnsupportedRef = useRef(onHlsUnsupported);
+  onHlsUnsupportedRef.current = onHlsUnsupported;
   // Resume position is captured in a ref + a one-shot guard so we seek exactly
   // once, when metadata first loads, without re-subscribing the effect.
   const startPositionRef = useRef(startPositionSeconds);
@@ -286,11 +293,13 @@ function WebviewPlayer({
     if (video == null) return;
 
     if (!isHls) {
-      video.src = url;
+      // Only (re)assign on an actual URL change — reassigning the same src
+      // invokes the media load algorithm and restarts playback from 0.
+      if (video.src !== url) video.src = url;
       return;
     }
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = url;
+      if (video.src !== url) video.src = url;
       return;
     }
     if (Hls.isSupported()) {
@@ -299,8 +308,8 @@ function WebviewPlayer({
       hls.attachMedia(video);
       return () => hls.destroy();
     }
-    onHlsUnsupported();
-  }, [url, isHls, onHlsUnsupported]);
+    onHlsUnsupportedRef.current();
+  }, [url, isHls]);
 
   // Reflect the active subtitle track onto the <video>'s text tracks: show only
   // the active one, hide the rest. Match by label (our <track> elements carry

@@ -1917,6 +1917,9 @@ function ServerTab() {
       });
       setSharedCredential((current) => ({ ...current, value: "" }));
       setMessage("Shared credential saved.");
+      // Refresh so the credential-overrides list + health counts reflect the
+      // new provider immediately (mirrors saveProfileCredential et al.).
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }

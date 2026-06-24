@@ -109,7 +109,7 @@ export class AnthropicProvider implements AIAssistantProvider {
     }
 
     const decoded = JSON.parse(await response.text()) as RawAnthropicResponse;
-    const text = decoded.content.find((part) => part.type === "text")?.text;
+    const text = decoded.content?.find((part) => part.type === "text")?.text;
     if (text == null) {
       throw AIAssistantProviderError.invalidResponse();
     }
@@ -175,7 +175,7 @@ export class AnthropicProvider implements AIAssistantProvider {
     }
 
     const decoded = JSON.parse(await response.text()) as RawAnthropicResponse;
-    const text = decoded.content.find((part) => part.type === "text")?.text;
+    const text = decoded.content?.find((part) => part.type === "text")?.text;
     if (text == null) {
       throw AIAssistantProviderError.invalidResponse();
     }

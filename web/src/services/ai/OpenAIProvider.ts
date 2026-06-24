@@ -108,7 +108,7 @@ export class OpenAIProvider implements AIAssistantProvider {
     }
 
     const decoded = JSON.parse(await response.text()) as RawOpenAIChatResponse;
-    const content = decoded.choices[0]?.message?.content;
+    const content = decoded.choices?.[0]?.message?.content;
     if (content == null) {
       throw AIAssistantProviderError.invalidResponse();
     }
@@ -180,7 +180,7 @@ export class OpenAIProvider implements AIAssistantProvider {
     }
 
     const decoded = JSON.parse(await response.text()) as RawOpenAIChatResponse;
-    const content = decoded.choices[0]?.message?.content;
+    const content = decoded.choices?.[0]?.message?.content;
     if (content == null) {
       throw AIAssistantProviderError.invalidResponse();
     }

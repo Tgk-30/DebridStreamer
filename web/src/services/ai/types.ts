@@ -164,7 +164,12 @@ export const AIAssistantJSONParser = {
     maxResults: number,
   ): AIMovieRecommendation[] {
     const fenceStripped = strippingCodeFences(text);
-    const json = firstBalancedJSONObject(fenceStripped);
+    // Try the RAW text first: firstBalancedJSONObject already skips ```json
+    // fence lines (they carry no `{`), so stripping fences is only a fallback —
+    // and stripping would corrupt JSON whose own string values contain literal
+    // triple-backticks.
+    const json =
+      firstBalancedJSONObject(text) ?? firstBalancedJSONObject(fenceStripped);
     if (json != null) {
       const payload = tryDecodePayload(json);
       if (payload != null) {
