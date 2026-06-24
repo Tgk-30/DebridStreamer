@@ -150,6 +150,17 @@ export function browseTitle(ctx: BrowseContext): string {
  * params. Pure + exported so it can be unit-tested without the network. Mirrors
  * the subset TMDBService.discover() builds, extended with the slideover's extra
  * fields (multi-genre, year range, min votes, runtime, language). */
+/** Return [floor, ceiling] for a year range, swapping if the caller passed them
+ * inverted (From > To). Either side may be null (open-ended). Pure + exported so
+ * both the live discover params and the fixture filter agree. */
+export function orderYearBounds(
+  gte: number | null,
+  lte: number | null,
+): [number | null, number | null] {
+  if (gte != null && lte != null && gte > lte) return [lte, gte];
+  return [gte, lte];
+}
+
 export function buildDiscoverParams(
   type: MediaType,
   filters: BrowseFilters,
@@ -165,15 +176,18 @@ export function buildDiscoverParams(
   if (filters.genreIds.length > 0) {
     params.with_genres = filters.genreIds.join(",");
   }
-  if (filters.yearGTE != null) {
+  // Swap an inverted range (From=2020, To=2000) so the floor is never above the
+  // ceiling — TMDB returns an empty set otherwise, which reads as a silent bug.
+  const [yearGTE, yearLTE] = orderYearBounds(filters.yearGTE, filters.yearLTE);
+  if (yearGTE != null) {
     const key =
       type === "movie" ? "primary_release_date.gte" : "first_air_date.gte";
-    params[key] = `${filters.yearGTE}-01-01`;
+    params[key] = `${yearGTE}-01-01`;
   }
-  if (filters.yearLTE != null) {
+  if (yearLTE != null) {
     const key =
       type === "movie" ? "primary_release_date.lte" : "first_air_date.lte";
-    params[key] = `${filters.yearLTE}-12-31`;
+    params[key] = `${yearLTE}-12-31`;
   }
   if (filters.minRating != null) {
     params["vote_average.gte"] = String(filters.minRating);
@@ -364,11 +378,16 @@ export function fixtureBrowsePage(ctx: BrowseContext): BrowsePage {
     if (ctx.filters.minRating != null) {
       items = items.filter((i) => (i.imdbRating ?? 0) >= ctx.filters.minRating!);
     }
-    if (ctx.filters.yearGTE != null) {
-      items = items.filter((i) => (i.year ?? 0) >= ctx.filters.yearGTE!);
+    // Mirror the live discover path: order an inverted range before filtering.
+    const [yearGTE, yearLTE] = orderYearBounds(
+      ctx.filters.yearGTE,
+      ctx.filters.yearLTE,
+    );
+    if (yearGTE != null) {
+      items = items.filter((i) => (i.year ?? 0) >= yearGTE);
     }
-    if (ctx.filters.yearLTE != null) {
-      items = items.filter((i) => (i.year ?? 9999) <= ctx.filters.yearLTE!);
+    if (yearLTE != null) {
+      items = items.filter((i) => (i.year ?? 9999) <= yearLTE);
     }
   }
 

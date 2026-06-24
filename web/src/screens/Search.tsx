@@ -81,6 +81,10 @@ export function Search() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSearch]);
 
+  // Monotonic run id so only the most recent search commits state (stale-
+  // response guard; mirrors useBrowse).
+  const runIdRef = useRef(0);
+
   // Re-run when the type filter changes (if there's an active query).
   useEffect(() => {
     if (query.trim().length > 0 && results != null) {
@@ -92,10 +96,12 @@ export function Search() {
   async function runSearch(q: string, type: TypeFilter) {
     const trimmed = q.trim();
     if (trimmed.length === 0) {
+      runIdRef.current += 1; // cancel any in-flight result
       setResults(null);
       return;
     }
 
+    const myRun = ++runIdRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -106,6 +112,7 @@ export function Search() {
           ? await services.tmdb.search(trimmed, tmdbType)
           : null;
 
+      if (myRun !== runIdRef.current) return; // superseded by a newer search
       if (result != null) {
         const filtered =
           type === "all"
@@ -115,15 +122,16 @@ export function Search() {
         return;
       }
     } catch (err) {
+      if (myRun !== runIdRef.current) return;
       setError(err instanceof Error ? err.message : String(err));
       setResults([]);
       return;
     } finally {
-      setLoading(false);
+      if (myRun === runIdRef.current) setLoading(false);
     }
 
     // No key / no server → filter the fixtures locally so the screen still works.
-    if (services.tmdb == null && !serverMode) {
+    if (myRun === runIdRef.current && services.tmdb == null && !serverMode) {
       const matches = starters.filter(
         (s) =>
           s.title.toLowerCase().includes(trimmed.toLowerCase()) &&
@@ -158,6 +166,7 @@ export function Search() {
               type="button"
               className="search-clear"
               onClick={() => {
+                runIdRef.current += 1; // cancel any in-flight result
                 setQuery("");
                 setResults(null);
                 inputRef.current?.focus();
@@ -201,7 +210,7 @@ export function Search() {
         </section>
       ) : (
         <>
-          {results.length > 0 && services.tmdb != null && (
+          {results.length > 0 && (services.tmdb != null || serverMode) && (
             <div className="search-results-head">
               <h2 className="search-section-title">
                 Results for “{query.trim()}”

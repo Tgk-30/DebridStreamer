@@ -139,7 +139,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
   // Auth forms reach "ready" without a session object in hand; fetch it once so
   // consumers (simpleMode/role + the "who's watching" picker) have the value
   // without waiting for a reload.
-  async function captureSession(url: string): Promise<void> {
+  async function captureSession(url: string): Promise<boolean> {
     try {
       const res = await jsonFetch<{
         session: ServerSession | null;
@@ -147,9 +147,15 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
       }>(url, "/api/auth/session");
       setSession(res.session);
       setProfiles(res.profiles?.profiles ?? []);
+      // Report whether we actually have a session in hand. A null session (or a
+      // failed fetch below) must NOT flip the gate to "ready", or the app would
+      // mount authenticated-but-session-less (no setup wizard, no profile
+      // switcher) until a manual reload.
+      return res.session != null;
     } catch {
       setSession(null);
       setProfiles([]);
+      return false;
     }
   }
 
@@ -243,9 +249,13 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         onSubmit={(payload) =>
           jsonFetch<AuthResponse>(state.baseURL, "/api/auth/setup-owner", payload).then(async (res) => {
             setCsrfToken(res.csrfToken);
-            await captureSession(state.baseURL);
+            const ok = await captureSession(state.baseURL);
             clearSetupTokenFromURL();
-            setState({ kind: "ready", baseURL: state.baseURL });
+            // Only mount the app once we actually hold the session. If the
+            // session fetch failed/raced, re-run bootstrap (the auth cookie is
+            // now set) instead of mounting authenticated-but-session-less.
+            if (ok) setState({ kind: "ready", baseURL: state.baseURL });
+            else setAttempt((n) => n + 1);
           })
         }
       />
@@ -265,9 +275,10 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
             token: state.token,
           }).then(async (res) => {
             setCsrfToken(res.csrfToken);
-            await captureSession(state.baseURL);
+            const ok = await captureSession(state.baseURL);
             clearInviteFromURL();
-            setState({ kind: "ready", baseURL: state.baseURL });
+            if (ok) setState({ kind: "ready", baseURL: state.baseURL });
+            else setAttempt((n) => n + 1);
           })
         }
       />
@@ -282,8 +293,9 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
       onSubmit={(payload) =>
         jsonFetch<AuthResponse>(state.baseURL, "/api/auth/login", payload).then(async (res) => {
           setCsrfToken(res.csrfToken);
-          await captureSession(state.baseURL);
-          setState({ kind: "ready", baseURL: state.baseURL });
+          const ok = await captureSession(state.baseURL);
+          if (ok) setState({ kind: "ready", baseURL: state.baseURL });
+          else setAttempt((n) => n + 1);
         })
       }
     />

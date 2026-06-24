@@ -12,6 +12,7 @@ import {
   fixtureBrowsePage,
   hasActiveFilters,
   loadBrowsePage,
+  orderYearBounds,
   sortPreviews,
   toDiscoverFilters,
 } from "./browse";
@@ -63,6 +64,17 @@ describe("buildDiscoverParams", () => {
     expect(p["primary_release_date.gte"]).toBeUndefined();
   });
 
+  it("swaps an inverted year range so the floor never exceeds the ceiling", () => {
+    // From=2020, To=2000 — TMDB would return nothing for gte>lte; we normalize.
+    const p = buildDiscoverParams(
+      "movie",
+      filters({ yearGTE: 2020, yearLTE: 2000 }),
+      1,
+    );
+    expect(p["primary_release_date.gte"]).toBe("2000-01-01");
+    expect(p["primary_release_date.lte"]).toBe("2020-12-31");
+  });
+
   it("sets a default vote floor with a rating filter, overridable by minVotes", () => {
     const a = buildDiscoverParams("movie", filters({ minRating: 7 }), 1);
     expect(a["vote_average.gte"]).toBe("7");
@@ -92,6 +104,23 @@ describe("buildDiscoverParams", () => {
     expect(p["vote_average.gte"]).toBeUndefined();
     expect(p["with_runtime.lte"]).toBeUndefined();
     expect(p.with_original_language).toBeUndefined();
+  });
+});
+
+describe("orderYearBounds", () => {
+  it("leaves an in-order range untouched", () => {
+    expect(orderYearBounds(2000, 2010)).toEqual([2000, 2010]);
+  });
+  it("swaps an inverted range", () => {
+    expect(orderYearBounds(2010, 2000)).toEqual([2000, 2010]);
+  });
+  it("passes through open-ended bounds unchanged", () => {
+    expect(orderYearBounds(2010, null)).toEqual([2010, null]);
+    expect(orderYearBounds(null, 2000)).toEqual([null, 2000]);
+    expect(orderYearBounds(null, null)).toEqual([null, null]);
+  });
+  it("keeps an equal range as-is", () => {
+    expect(orderYearBounds(2005, 2005)).toEqual([2005, 2005]);
   });
 });
 

@@ -866,6 +866,24 @@ let debridManagerCache: { signature: string; manager: DebridManager } | null =
   null;
 let indexerManagerCache: { signature: string; manager: IndexerManager } | null =
   null;
+let tmdbServiceCache: { key: string; service: TMDBService } | null = null;
+
+/** Build (or reuse the cached) TMDBService for the effective key. Keeps a stable
+ * identity while the key is unchanged so an unrelated settings save (theme,
+ * data-saver, debrid edit…) doesn't churn services.tmdb and force
+ * useDiscover/useDetail to drop to a skeleton and refetch. Null for no key. */
+function getOrBuildTmdb(effectiveTmdbKey: string): TMDBService | null {
+  if (effectiveTmdbKey.length === 0) {
+    tmdbServiceCache = null;
+    return null;
+  }
+  if (tmdbServiceCache != null && tmdbServiceCache.key === effectiveTmdbKey) {
+    return tmdbServiceCache.service;
+  }
+  const service = new TMDBService(effectiveTmdbKey);
+  tmdbServiceCache = { key: effectiveTmdbKey, service };
+  return service;
+}
 
 /** A stable signature for the debrid config: the (service, token) pairs in
  * order. Identical config → identical signature → cached manager reused. */
@@ -1030,7 +1048,7 @@ export function buildServices(settings: AppSettings): AppServices {
   // single source means saving a key in Settings lights up every screen — not
   // just Search/Browse — without a reload.
   const effectiveTmdbKey = tmdbKey.length > 0 ? tmdbKey : readEnvTmdbKey();
-  const tmdb = effectiveTmdbKey.length > 0 ? new TMDBService(effectiveTmdbKey) : null;
+  const tmdb = getOrBuildTmdb(effectiveTmdbKey);
   // OMDb key precedence: the user's own key (BYOK) → a build-time embedded key
   // (the serverless limited-distribution path, Mode 3). In Server Mode leave
   // services.omdb null so ratings come from the server's /api/omdb "hidden key"

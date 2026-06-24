@@ -349,10 +349,15 @@ function FilterGroup({
   );
 }
 
-/** Parse a 4-digit year from an input value; empty/invalid → null. */
+/** Parse a plausible 4-digit year; empty/incomplete/out-of-range → null. A 1-3
+ *  digit or negative entry would otherwise build a malformed discover date param
+ *  like "20-01-01" and silently return wrong/empty results. */
 function parseYear(value: string): number | null {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
   const n = Number.parseInt(trimmed, 10);
-  return Number.isNaN(n) ? null : n;
+  if (Number.isNaN(n) || n < 1900 || n > new Date().getFullYear() + 5) {
+    return null;
+  }
+  return n;
 }

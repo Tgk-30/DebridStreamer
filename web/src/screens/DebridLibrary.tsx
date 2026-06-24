@@ -83,11 +83,15 @@ export function DebridLibrary() {
   }
 
   function toggleSelectAll() {
-    setSelected((prev) =>
-      prev.size === visible.length
+    setSelected((prev) => {
+      // Decide by actual membership, not count: a stale cross-filter selection
+      // of equal size would otherwise invert the toggle.
+      const allVisibleSelected =
+        visible.length > 0 && visible.every((r) => prev.has(r.torrent.id));
+      return allVisibleSelected
         ? new Set()
-        : new Set(visible.map((r) => r.torrent.id)),
-    );
+        : new Set(visible.map((r) => r.torrent.id));
+    });
   }
 
   async function deleteRows(rows: DebridRow[]) {
@@ -325,7 +329,10 @@ export function DebridLibrary() {
             <span className="dl-col-check">
               <input
                 type="checkbox"
-                checked={selected.size === visible.length && visible.length > 0}
+                checked={
+                  visible.length > 0 &&
+                  visible.every((r) => selected.has(r.torrent.id))
+                }
                 onChange={toggleSelectAll}
                 aria-label="Select all"
               />
