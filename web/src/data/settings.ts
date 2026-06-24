@@ -501,25 +501,43 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
   const store = getStore();
   const existingFlag = await store.getSetting("storage_port_initialized");
   if (existingFlag == null) {
+    const legacy = loadSettings();
+    // Does the legacy blob STILL carry real secrets? (saveSettingsToStore redacts
+    // the localStorage cache only after migrating them to the SecretStore.) If so
+    // the legacy blob is authoritative — replaying it re-migrates real values and
+    // can never wipe anything.
+    const legacyHasSecrets =
+      legacy.tmdbKey !== "" ||
+      legacy.omdbKey !== "" ||
+      legacy.aiApiKey !== "" ||
+      legacy.openSubtitlesApiKey !== "" ||
+      legacy.debridTokens.some((t) => t.apiToken !== "") ||
+      legacy.sources.some((s) => s.apiKey != null && s.apiKey !== "");
     // Has a prior (possibly interrupted) migration already written the Store?
-    // Check MULTIPLE durable signals — not just `theme` — so a partial Store
-    // holding secrets/configs but no theme isn't misread as empty (which would
-    // let a redacted legacy replay clear real Store secrets).
+    // Check ALL credential markers + structural signals — not just `theme` — so a
+    // partial Store (e.g. only an omdb/opensubtitles key) isn't misread as empty
+    // (which would let a redacted replay clear those real secrets).
+    const kvSignals = await Promise.all([
+      store.getSetting(SettingsKeys.theme),
+      store.getSetting(SettingsKeys.aiProvider),
+      store.getSetting(SettingsKeys.tmdbApiKey),
+      store.getSetting(SettingsKeys.omdbApiKey),
+      store.getSetting(SettingsKeys.aiApiKey),
+      store.getSetting(SettingsKeys.openSubtitlesApiKey),
+    ]);
     const storeHasData =
-      (await store.getSetting(SettingsKeys.theme)) != null ||
-      (await store.getSetting(SettingsKeys.tmdbApiKey)) != null ||
-      (await store.getSetting(SettingsKeys.aiApiKey)) != null ||
-      (await store.getSetting(SettingsKeys.aiProvider)) != null ||
+      kvSignals.some((v) => v != null) ||
       (await store.listDebridConfigs()).length > 0 ||
       (await store.listIndexerConfigs()).length > 0;
 
-    if (!storeHasData) {
-      // Genuine first run: replay the legacy blob, then mark initialized LAST.
-      // saveSettingsToStore writes secrets to the SecretStore BEFORE it redacts
-      // the localStorage cache, and the flag is set only after a clean replay —
-      // so a crash mid-migration leaves the flag unset, and the next launch sees
-      // storeHasData and takes the skip branch (no re-replay over real secrets).
-      const legacy = loadSettings();
+    // Replay when the legacy blob still has real secrets (authoritative — never
+    // wipes), OR the Store is genuinely empty (a true first run, migrating
+    // non-secret settings too). Mark initialized LAST so a crash mid-migration
+    // leaves the flag unset and the next launch retries from the still-intact
+    // (unredacted) legacy blob. Skip only when the legacy is redacted/empty AND
+    // the Store already holds data — an interrupted migration whose real secrets
+    // live in the Store — then fall through to load those real secrets.
+    if (legacyHasSecrets || !storeHasData) {
       try {
         await saveSettingsToStore(legacy);
       } catch {
@@ -529,10 +547,6 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
       await store.setSetting("storage_port_initialized", "true");
       return legacy;
     }
-
-    // Store already populated (interrupted migration or an old build): mark
-    // initialized and fall through to the normal Store-backed load below, which
-    // returns the REAL Store secrets — never replaying a redacted legacy blob.
     await store.setSetting("storage_port_initialized", "true");
   }
 

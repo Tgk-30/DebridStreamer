@@ -498,6 +498,34 @@ describe("loadSettingsFromStore — first-run migration", () => {
     expect(settingsMap.get("ui_theme")).toBeDefined();
     expect(settingsMap.get("storage_port_initialized")).toBe("true");
   });
+
+  it("re-migrates a still-unredacted legacy blob even when a partial Store signal exists", async () => {
+    // Interrupted migration: a store signal (theme) was written, but the legacy
+    // cache still holds real secrets (the redact step hadn't run). The legacy is
+    // authoritative — replay it rather than skipping and losing the secret.
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ tmdbKey: "REAL_FROM_LEGACY", simpleMode: false }),
+    });
+    settingsMap.set("ui_theme", "midnight"); // a partial store signal
+    const result = await loadSettingsFromStore();
+    expect(result.tmdbKey).toBe("REAL_FROM_LEGACY");
+    expect(secretMap.get("tmdb_api_key")).toBe("REAL_FROM_LEGACY"); // migrated
+    expect(settingsMap.get("storage_port_initialized")).toBe("true");
+  });
+
+  it("detects a partial Store via omdb/opensubtitles markers, not just theme", async () => {
+    // Redacted legacy + a Store holding ONLY an omdb secret marker (no theme).
+    // storeHasData must see the omdb marker so the redacted replay can't wipe it.
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ tmdbKey: "", simpleMode: false }), // redacted
+    });
+    settingsMap.set("omdb_api_key", "secret:omdb_api_key");
+    secretMap.set("omdb_api_key", "REAL_OMDB");
+    const result = await loadSettingsFromStore();
+    expect(secretMap.get("omdb_api_key")).toBe("REAL_OMDB"); // not wiped
+    expect(result.omdbKey).toBe("REAL_OMDB");
+    expect(settingsMap.get("storage_port_initialized")).toBe("true");
+  });
 });
 
 describe("loadSettingsFromStore — established store", () => {
