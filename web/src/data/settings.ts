@@ -489,13 +489,24 @@ async function getStoredValue(key: string): Promise<string | null> {
 
 /** Write a setting, routing credential-valued keys through SecretStore and
  * leaving a `secret:<key>` marker in the KV table. Mirrors SettingsManager. */
-async function setStoredValue(key: string, value: string): Promise<void> {
+async function setStoredValue(
+  key: string,
+  value: string,
+  // `mergeOnly` (used by the first-run migration) makes an EMPTY secret a no-op
+  // instead of a removal: a stale/partial legacy blob must never clear a Store
+  // secret it simply doesn't know about (it would otherwise wipe a credential the
+  // user added after an interrupted migration).
+  mergeOnly = false,
+): Promise<void> {
   const store = getStore();
   if (SECRET_KEYS.has(key)) {
     const secrets = getSecretStore();
     if (value.trim().length > 0) {
       await secrets.setSecret(key, value);
       await store.setSetting(key, `${SECRET_MARKER}${key}`);
+    } else if (mergeOnly) {
+      // Additive migration: don't remove a Store secret the legacy lacks.
+      return;
     } else {
       // Clear the KV marker FIRST so the value is unreferenced on the next load
       // even if the keychain purge below fails CLOSED (desktop). Then best-effort
@@ -560,9 +571,15 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     if (hasRawSecrets || (rawLegacy != null && !storeHasData)) {
       const legacy = loadSettings();
       try {
-        // Migrate to the Store/SecretStore WITHOUT redacting the cache, so a
-        // failed write leaves the legacy plaintext intact for a retry.
-        await saveSettingsToStore(legacy, { redactCache: false });
+        // Migrate ADDITIVELY (mergeOnly): seed the legacy's non-empty secrets +
+        // configs without removing anything the Store already holds, so replaying
+        // a stale/partial legacy can never wipe a secret the user added after an
+        // interrupted migration. And WITHOUT redacting the cache, so a failed
+        // write leaves the legacy plaintext intact for a retry.
+        await saveSettingsToStore(legacy, {
+          redactCache: false,
+          mergeOnly: true,
+        });
       } catch {
         // Partial/failed migration: flag stays unset + cache intact → the next
         // launch retries from the still-authoritative legacy blob (no loss).
@@ -758,9 +775,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
  * the plaintext legacy intact for a retry. */
 export async function saveSettingsToStore(
   settings: AppSettings,
-  options: { redactCache?: boolean } = {},
+  options: { redactCache?: boolean; mergeOnly?: boolean } = {},
 ): Promise<void> {
-  const { redactCache = true } = options;
+  const { redactCache = true, mergeOnly = false } = options;
   const store = getStore();
   const secrets = getSecretStore();
 
@@ -777,12 +794,13 @@ export async function saveSettingsToStore(
   // error) must not abort the remaining KV writes or the debrid/indexer
   // reconciliation below.
   const kvResults = await Promise.allSettled([
-    setStoredValue(SettingsKeys.tmdbApiKey, settings.tmdbKey),
-    setStoredValue(SettingsKeys.omdbApiKey, settings.omdbKey),
-    setStoredValue(SettingsKeys.aiApiKey, settings.aiApiKey),
+    setStoredValue(SettingsKeys.tmdbApiKey, settings.tmdbKey, mergeOnly),
+    setStoredValue(SettingsKeys.omdbApiKey, settings.omdbKey, mergeOnly),
+    setStoredValue(SettingsKeys.aiApiKey, settings.aiApiKey, mergeOnly),
     setStoredValue(
       SettingsKeys.openSubtitlesApiKey,
       settings.openSubtitlesApiKey,
+      mergeOnly,
     ),
     store.setSetting(SettingsKeys.aiProvider, settings.aiProvider),
     store.setSetting(SettingsKeys.aiModel, settings.aiModel),
@@ -920,15 +938,19 @@ export async function saveSettingsToStore(
       priority: priority++,
     });
   }
-  for (const c of existingDebrid) {
-    if (!keptDebridIds.has(c.id)) {
-      // Delete the config row FIRST so the removal is honored even if the
-      // keychain purge fails closed (desktop); the secret delete is best-effort
-      // cleanup. Doing it the other way round would, on a keychain failure,
-      // orphan a config row whose marker points at a (maybe still-present)
-      // keychain entry AND abort the rest of this reconciliation.
-      await store.deleteDebridConfig(c.id);
-      await deleteSecretBestEffort(secrets, debridSecretKey(c.id));
+  // Skip removals under mergeOnly (first-run migration): a stale/partial legacy
+  // blob must not delete debrid rows the Store gained after an interrupted run.
+  if (!mergeOnly) {
+    for (const c of existingDebrid) {
+      if (!keptDebridIds.has(c.id)) {
+        // Delete the config row FIRST so the removal is honored even if the
+        // keychain purge fails closed (desktop); the secret delete is best-effort
+        // cleanup. Doing it the other way round would, on a keychain failure,
+        // orphan a config row whose marker points at a (maybe still-present)
+        // keychain entry AND abort the rest of this reconciliation.
+        await store.deleteDebridConfig(c.id);
+        await deleteSecretBestEffort(secrets, debridSecretKey(c.id));
+      }
     }
   }
 
@@ -964,9 +986,11 @@ export async function saveSettingsToStore(
       }),
     );
   }
-  for (const c of existingIndexers) {
-    if (!keptIndexerIds.has(c.id)) {
-      await store.deleteIndexerConfig(c.id);
+  if (!mergeOnly) {
+    for (const c of existingIndexers) {
+      if (!keptIndexerIds.has(c.id)) {
+        await store.deleteIndexerConfig(c.id);
+      }
     }
   }
 

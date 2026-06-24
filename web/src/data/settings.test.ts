@@ -550,6 +550,24 @@ describe("loadSettingsFromStore — first-run migration", () => {
     });
   });
 
+  it("additive migration adds the legacy secret without wiping a later-added Store secret", async () => {
+    // R7 interleaving: an interrupted migration left the flag unset with the
+    // legacy blob still holding ONLY tmdb. The user then added an OMDB key (now in
+    // the Store). Replaying the stale legacy must ADD tmdb (mergeOnly) WITHOUT
+    // removing the OMDB secret the blob doesn't know about.
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ tmdbKey: "T", simpleMode: false }), // stale: tmdb only
+    });
+    settingsMap.set("omdb_api_key", "secret:omdb_api_key");
+    secretMap.set("omdb_api_key", "REAL_OMDB");
+
+    await loadSettingsFromStore();
+
+    expect(secretMap.get("tmdb_api_key")).toBe("T"); // legacy tmdb migrated
+    expect(secretMap.get("omdb_api_key")).toBe("REAL_OMDB"); // NOT wiped
+    expect(settingsMap.get("omdb_api_key")).toBe("secret:omdb_api_key"); // marker intact
+  });
+
   it("never replays (so can't wipe) when there is no legacy blob but the Store has data", async () => {
     // No legacy blob at all + a Store that already holds a secret. Even if the
     // build has env-default keys, the absence of a RAW legacy blob means no
