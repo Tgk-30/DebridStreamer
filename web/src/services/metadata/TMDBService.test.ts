@@ -50,6 +50,24 @@ function makeMockFetch(handler: (url: URL) => MockResponse): MockFetch {
 const ok = (body: string): MockResponse => ({ status: 200, body });
 const serverError = (body: string): MockResponse => ({ status: 500, body });
 
+/** A fetch stub that dispatches per-path so a single service can answer the
+ * multi-request flows (getDetail-via-find, etc.). Routes on URL.pathname. */
+function makeRoutedFetch(routes: Record<string, MockResponse>): MockFetch {
+  let count = 0;
+  let captured: URL | null = null;
+  const fetchImpl: FetchImpl = async (url) => {
+    count += 1;
+    const parsed = new URL(url);
+    captured = parsed;
+    const route = routes[parsed.pathname];
+    if (route == null) {
+      throw new Error(`no route for ${parsed.pathname}`);
+    }
+    return { status: route.status, text: async () => route.body };
+  };
+  return { fetchImpl, lastURL: () => captured, hits: () => count };
+}
+
 // MARK: - Canned JSON (same shapes as the Swift tests)
 
 const searchBody = JSON.stringify({
@@ -439,5 +457,571 @@ describe("TMDBService TTL response cache", () => {
     const second = await service.getGenres("movie");
     expect(second).toEqual(first);
     expect(mock.hits()).toBe(1);
+  });
+});
+
+// MARK: - search with type=null (multi path) + preview mapping edge cases
+
+describe("TMDBService search type=null (multi)", () => {
+  it("uses /search/multi and adds the language param when type is null", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await service.search("anything", null, 1);
+
+    const url = mock.lastURL()!;
+    expect(url.pathname).toBe("/3/search/multi");
+    expect(url.searchParams.get("language")).toBe("en-US");
+    expect(url.searchParams.get("include_adult")).toBe("false");
+  });
+
+  it("omits the language param for a typed search", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await service.search("anything", "series", 1);
+
+    const url = mock.lastURL()!;
+    expect(url.pathname).toBe("/3/search/tv");
+    expect(url.searchParams.get("language")).toBeNull();
+  });
+
+  it("drops person results and entries with no title, and infers type from title/name", async () => {
+    const body = JSON.stringify({
+      page: 1,
+      results: [
+        // person -> dropped
+        { id: 1, name: "Some Actor", media_type: "person" },
+        // empty title -> dropped
+        { id: 2, title: "", media_type: "movie" },
+        // no media_type, has title -> movie
+        { id: 3, title: "Inferred Movie", release_date: "2001-05-01" },
+        // no media_type, only name -> series
+        { id: 4, name: "Inferred Show", first_air_date: "2010-01-01" },
+      ],
+      total_pages: 5,
+      total_results: 97,
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const result = await service.search("mixed", null, 1);
+
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0].id).toBe("tmdb-3");
+    expect(result.items[0].type).toBe("movie");
+    expect(result.items[0].year).toBe(2001);
+    expect(result.items[1].id).toBe("tmdb-4");
+    expect(result.items[1].type).toBe("series");
+    expect(result.items[1].year).toBe(2010);
+    // pagination is carried through verbatim
+    expect(result.page).toBe(1);
+    expect(result.totalPages).toBe(5);
+    expect(result.totalResults).toBe(97);
+  });
+
+  it("treats a too-short date string (<4 chars) and a non-numeric year as null", async () => {
+    const body = JSON.stringify({
+      page: 1,
+      results: [
+        { id: 9, title: "Short Date", media_type: "movie", release_date: "99" },
+        { id: 10, title: "Junk Date", media_type: "movie", release_date: "abcd-01-01" },
+      ],
+      total_pages: 1,
+      total_results: 2,
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const result = await service.search("dates", "movie", 1);
+    expect(result.items[0].year).toBeNull();
+    expect(result.items[1].year).toBeNull();
+  });
+
+  it("maps missing optional fields to null (poster/backdrop/rating)", async () => {
+    const body = JSON.stringify({
+      page: 1,
+      results: [{ id: 11, title: "Bare", media_type: "movie" }],
+      total_pages: 1,
+      total_results: 1,
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const result = await service.search("bare", "movie", 1);
+    const item = result.items[0];
+    expect(item.posterPath).toBeNull();
+    expect(item.backdropPath).toBeNull();
+    expect(item.imdbRating).toBeNull();
+    expect(item.year).toBeNull();
+  });
+});
+
+// MARK: - HTTP error mapping (404 / 429 / generic httpError + malformed JSON)
+
+describe("TMDBService HTTP error mapping", () => {
+  it("maps 404 to a notFound error carrying the request path", async () => {
+    const mock = makeMockFetch(() => ({ status: 404, body: "{}" }));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await expect(service.getCast(550, "movie")).rejects.toMatchObject({
+      kind: "notFound",
+    });
+  });
+
+  it("maps 429 to a rateLimited error", async () => {
+    const mock = makeMockFetch(() => ({ status: 429, body: "{}" }));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await expect(service.getTrending("movie", "week", 1)).rejects.toMatchObject(
+      { kind: "rateLimited" },
+    );
+  });
+
+  it("maps an unhandled non-2xx status to httpError with the status code and body", async () => {
+    const mock = makeMockFetch(() => ({ status: 503, body: "service down" }));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await expect(
+      service.getCategory("popular", "movie", 1),
+    ).rejects.toMatchObject({
+      kind: "httpError",
+      statusCode: 503,
+      message: "TMDB HTTP 503: service down",
+    });
+  });
+
+  it("propagates a JSON parse failure for a 2xx body that is not valid JSON", async () => {
+    const mock = makeMockFetch(() => ok("not json at all"));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await expect(service.getCast(1, "movie")).rejects.toThrow();
+  });
+
+  it("does not cache a failed read — a later success is fetched and served", async () => {
+    // First call 500s (not cached), second call returns valid genres.
+    const genresBody = JSON.stringify({ genres: [{ id: 1, name: "Action" }] });
+    const mock = makeMockFetch(() =>
+      mock.hits() === 1 ? serverError("boom") : ok(genresBody),
+    );
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await expect(service.getGenres("movie")).rejects.toMatchObject({
+      kind: "httpError",
+    });
+    const second = await service.getGenres("movie");
+    expect(second).toEqual([{ id: 1, name: "Action" }]);
+    expect(mock.hits()).toBe(2);
+  });
+});
+
+// MARK: - getDetail IMDB-id resolution + runtime fallbacks
+
+describe("TMDBService getDetail id resolution", () => {
+  it("resolves an IMDB id via /find first, then fetches the detail", async () => {
+    const findBody = JSON.stringify({
+      movie_results: [{ id: 777 }],
+      tv_results: [],
+    });
+    const detailBody = JSON.stringify({
+      id: 777,
+      title: "Found Movie",
+      release_date: "2018-02-02",
+      external_ids: { imdb_id: "tt0099999", tvdb_id: null },
+    });
+    const mock = makeRoutedFetch({
+      "/3/find/tt0099999": ok(findBody),
+      "/3/movie/777": ok(detailBody),
+    });
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const item = await service.getDetail("tt0099999", "movie");
+    expect(item.id).toBe("tt0099999");
+    expect(item.tmdbId).toBe(777);
+    expect(item.title).toBe("Found Movie");
+    expect(mock.hits()).toBe(2);
+    expect(mock.lastURL()!.pathname).toBe("/3/movie/777");
+  });
+
+  it("throws notFound when /find returns no matching result for the type", async () => {
+    const findBody = JSON.stringify({ movie_results: [], tv_results: [] });
+    const mock = makeRoutedFetch({ "/3/find/tt0000000": ok(findBody) });
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await expect(service.getDetail("tt0000000", "movie")).rejects.toMatchObject(
+      { kind: "notFound" },
+    );
+  });
+
+  it("maps runtime=0 to null (no positive runtime nor episode_run_time)", async () => {
+    const detailBody = JSON.stringify({
+      id: 5,
+      title: "Zero Runtime",
+      runtime: 0,
+      episode_run_time: [0],
+      external_ids: { imdb_id: "", tvdb_id: null },
+    });
+    const mock = makeMockFetch(() => ok(detailBody));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const item = await service.getDetail("tmdb-5", "movie");
+    // empty imdb_id falls through to tmdb-{id}
+    expect(item.id).toBe("tmdb-5");
+    expect(item.runtime).toBeNull();
+    expect(item.genres).toEqual([]);
+    expect(item.overview).toBeNull();
+    expect(item.year).toBeNull();
+  });
+
+  it("uses 'Unknown' title and null backdrop when the detail has neither title nor name", async () => {
+    const detailBody = JSON.stringify({ id: 6 });
+    const mock = makeMockFetch(() => ok(detailBody));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const item = await service.getDetail("6", "movie");
+    expect(item.title).toBe("Unknown");
+    expect(item.backdropPath).toBeNull();
+    expect(item.imdbRating).toBeNull();
+    expect(item.status).toBeNull();
+  });
+});
+
+// MARK: - findByImdbId branches
+
+describe("TMDBService findByImdbId", () => {
+  it("returns the first movie result id for a movie lookup", async () => {
+    const body = JSON.stringify({
+      movie_results: [{ id: 42 }, { id: 99 }],
+      tv_results: [{ id: 7 }],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const id = await service.findByImdbId("tt1", "movie");
+    expect(id).toBe(42);
+    expect(mock.lastURL()!.pathname).toBe("/3/find/tt1");
+    expect(mock.lastURL()!.searchParams.get("external_source")).toBe("imdb_id");
+  });
+
+  it("returns the first tv result id for a series lookup", async () => {
+    const body = JSON.stringify({
+      movie_results: [{ id: 42 }],
+      tv_results: [{ id: 7 }],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    expect(await service.findByImdbId("tt1", "series")).toBe(7);
+  });
+
+  it("returns null when there are no results of the requested type", async () => {
+    const body = JSON.stringify({ movie_results: [], tv_results: [] });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    expect(await service.findByImdbId("tt1", "movie")).toBeNull();
+  });
+});
+
+// MARK: - getSeasons / getEpisodes mapping
+
+describe("TMDBService getSeasons", () => {
+  it("maps raw seasons into Season objects and tolerates missing optionals", async () => {
+    const body = JSON.stringify({
+      id: 100,
+      seasons: [
+        {
+          id: 1,
+          season_number: 0,
+          name: "Specials",
+          overview: "Extras",
+          poster_path: "/sp.jpg",
+          episode_count: 3,
+          air_date: "2019-12-01",
+        },
+        {
+          id: 2,
+          season_number: 1,
+          name: "Season 1",
+          episode_count: 10,
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const seasons = await service.getSeasons(100);
+    expect(mock.lastURL()!.pathname).toBe("/3/tv/100");
+    expect(seasons).toHaveLength(2);
+    expect(seasons[0]).toEqual({
+      id: 1,
+      seasonNumber: 0,
+      name: "Specials",
+      overview: "Extras",
+      posterPath: "/sp.jpg",
+      episodeCount: 3,
+      airDate: "2019-12-01",
+    });
+    expect(seasons[1].overview).toBeNull();
+    expect(seasons[1].posterPath).toBeNull();
+    expect(seasons[1].airDate).toBeNull();
+  });
+
+  it("returns an empty list when seasons is absent", async () => {
+    const mock = makeMockFetch(() => ok(JSON.stringify({ id: 100 })));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    expect(await service.getSeasons(100)).toEqual([]);
+  });
+});
+
+describe("TMDBService getEpisodes", () => {
+  it("maps episodes with synthesized ids and mediaId, tolerating missing optionals", async () => {
+    const body = JSON.stringify({
+      episodes: [
+        {
+          id: 11,
+          episode_number: 1,
+          name: "Pilot",
+          overview: "It begins",
+          air_date: "2020-01-01",
+          still_path: "/still.jpg",
+          runtime: 48,
+        },
+        { id: 12, episode_number: 2 },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const eps = await service.getEpisodes(555, 2);
+    expect(mock.lastURL()!.pathname).toBe("/3/tv/555/season/2");
+    expect(eps[0].id).toBe("555-s2e1");
+    expect(eps[0].mediaId).toBe("tmdb-555");
+    expect(eps[0].seasonNumber).toBe(2);
+    expect(eps[0].episodeNumber).toBe(1);
+    expect(eps[0].title).toBe("Pilot");
+    expect(eps[0].stillPath).toBe("/still.jpg");
+    expect(eps[0].runtime).toBe(48);
+
+    expect(eps[1].id).toBe("555-s2e2");
+    expect(eps[1].title).toBeNull();
+    expect(eps[1].overview).toBeNull();
+    expect(eps[1].airDate).toBeNull();
+    expect(eps[1].stillPath).toBeNull();
+    expect(eps[1].runtime).toBeNull();
+  });
+});
+
+// MARK: - getExternalIds (uncached request)
+
+describe("TMDBService getExternalIds", () => {
+  it("maps imdb_id/tvdb_id and hits the external_ids path", async () => {
+    const body = JSON.stringify({ imdb_id: "tt555", tvdb_id: 9000 });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const ids = await service.getExternalIds(321, "series");
+    expect(ids).toEqual({ imdbId: "tt555", tvdbId: 9000 });
+    expect(mock.lastURL()!.pathname).toBe("/3/tv/321/external_ids");
+  });
+
+  it("maps missing ids to null and is NOT memoized (each call hits the network)", async () => {
+    const mock = makeMockFetch(() => ok(JSON.stringify({})));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const ids = await service.getExternalIds(321, "movie");
+    expect(ids).toEqual({ imdbId: null, tvdbId: null });
+
+    await service.getExternalIds(321, "movie");
+    expect(mock.hits()).toBe(2); // uncached path
+  });
+});
+
+// MARK: - getCertification (movie release_dates / tv content_ratings)
+
+describe("TMDBService getCertification movie", () => {
+  it("returns the strictest US certification across release_dates", async () => {
+    const body = JSON.stringify({
+      results: [
+        {
+          iso_3166_1: "GB",
+          release_dates: [{ certification: "15" }],
+        },
+        {
+          iso_3166_1: "US",
+          release_dates: [
+            { certification: "PG-13" },
+            { certification: "R" },
+            { certification: "" }, // blank skipped
+            { certification: null }, // null skipped
+          ],
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const cert = await service.getCertification(123, "movie");
+    expect(cert).toBe("R");
+    expect(mock.lastURL()!.pathname).toBe("/3/movie/123/release_dates");
+  });
+
+  it("ranks an unrecognized certification highest (fail-closed)", async () => {
+    const body = JSON.stringify({
+      results: [
+        {
+          iso_3166_1: "US",
+          release_dates: [{ certification: "R" }, { certification: "X-WEIRD" }],
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    expect(await service.getCertification(123, "movie")).toBe("X-WEIRD");
+  });
+
+  it("trims whitespace from the chosen certification", async () => {
+    const body = JSON.stringify({
+      results: [
+        { iso_3166_1: "US", release_dates: [{ certification: "  PG  " }] },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    expect(await service.getCertification(123, "movie")).toBe("PG");
+  });
+
+  it("returns null when there is no US entry", async () => {
+    const body = JSON.stringify({
+      results: [{ iso_3166_1: "FR", release_dates: [{ certification: "12" }] }],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    expect(await service.getCertification(123, "movie")).toBeNull();
+  });
+
+  it("returns null when the US entry has only blank certifications", async () => {
+    const body = JSON.stringify({
+      results: [
+        {
+          iso_3166_1: "US",
+          release_dates: [{ certification: "   " }, { certification: "" }],
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    expect(await service.getCertification(123, "movie")).toBeNull();
+  });
+});
+
+describe("TMDBService getCertification tv", () => {
+  it("returns the trimmed US content rating", async () => {
+    const body = JSON.stringify({
+      results: [
+        { iso_3166_1: "GB", rating: "15" },
+        { iso_3166_1: "US", rating: " TV-MA " },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const cert = await service.getCertification(456, "series");
+    expect(cert).toBe("TV-MA");
+    expect(mock.lastURL()!.pathname).toBe("/3/tv/456/content_ratings");
+  });
+
+  it("returns null when the US rating is blank or missing", async () => {
+    const body = JSON.stringify({
+      results: [{ iso_3166_1: "US", rating: "   " }],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    expect(await service.getCertification(456, "series")).toBeNull();
+  });
+
+  it("memoizes certification with the long TTL (second read served from cache)", async () => {
+    const body = JSON.stringify({
+      results: [{ iso_3166_1: "US", rating: "TV-14" }],
+    });
+    const mock = makeMockFetch(() =>
+      mock.hits() === 1 ? ok(body) : serverError("{}"),
+    );
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    expect(await service.getCertification(456, "series")).toBe("TV-14");
+    expect(await service.getCertification(456, "series")).toBe("TV-14");
+    expect(mock.hits()).toBe(1);
+  });
+});
+
+// MARK: - discover optional-filter branches
+
+describe("TMDBService discover filter branches", () => {
+  it("omits genre/year/rating params when they are null", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await service.discover("movie", {
+      genreId: null,
+      year: null,
+      minRating: null,
+      sortBy: "popularity.desc",
+      page: 1,
+    });
+
+    const url = mock.lastURL()!;
+    expect(url.searchParams.get("with_genres")).toBeNull();
+    expect(url.searchParams.get("primary_release_year")).toBeNull();
+    expect(url.searchParams.get("vote_average.gte")).toBeNull();
+    expect(url.searchParams.get("vote_count.gte")).toBeNull();
+    expect(url.searchParams.get("include_adult")).toBe("false");
+  });
+
+  it("uses first_air_date_year for series rather than primary_release_year", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await service.discover("series", {
+      year: 2012,
+      sortBy: "popularity.desc",
+      page: 1,
+    });
+
+    const url = mock.lastURL()!;
+    expect(url.pathname).toBe("/3/discover/tv");
+    expect(url.searchParams.get("first_air_date_year")).toBe("2012");
+    expect(url.searchParams.get("primary_release_year")).toBeNull();
+  });
+});
+
+// MARK: - cache key independence + eviction
+
+describe("TMDBService cache key behavior", () => {
+  it("keys search results per query+page (different pages each hit the network)", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await service.search("q", "movie", 1);
+    await service.search("q", "movie", 2);
+    expect(mock.hits()).toBe(2);
+
+    await service.search("q", "movie", 1); // repeat -> cached
+    expect(mock.hits()).toBe(2);
+  });
+
+  it("does not cross-serve between movie and series for the same query", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    await service.search("q", "movie", 1);
+    await service.search("q", "series", 1);
+    expect(mock.hits()).toBe(2);
   });
 });

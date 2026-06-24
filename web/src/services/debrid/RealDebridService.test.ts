@@ -553,4 +553,641 @@ describe("RealDebridService checkCache", () => {
     expect(result.ABCD).toBeUndefined();
     expect(mock.hits()).toBe(0);
   });
+
+  it("collapses duplicate hashes (last wins, keyed by lowercase)", async () => {
+    const mock = makeMockFetch(() => {
+      throw new Error("checkCache must not perform any network request");
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const result = await rd.checkCache(["DEAD", "dead", "Beef"]);
+    // "DEAD" and "dead" collapse to the single key "dead".
+    expect(Object.keys(result).sort()).toEqual(["beef", "dead"]);
+    expect(result.dead).toEqual({ kind: "unknown" });
+    expect(result.beef).toEqual({ kind: "unknown" });
+  });
+});
+
+// MARK: - addMagnet (retry-on-5xx, parse failure, non-5xx surface)
+
+describe("RealDebridService addMagnet", () => {
+  it("posts the magnet form body and returns the parsed id", async () => {
+    let addBody: string | null = null;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents/addMagnet") {
+        addBody = req.body;
+        return ok(JSON.stringify({ id: "NEWID", uri: "magnet:?..." }));
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const id = await rd.addMagnet("deadbeef");
+    expect(id).toBe("NEWID");
+
+    expect(addBody).not.toBeNull();
+    // The body carries the urlencoded magnet (colons are percent-encoded by formValueEncode).
+    expect(addBody!.startsWith("magnet=")).toBe(true);
+    expect(addBody!).toContain("deadbeef");
+    expect(addBody!).toContain("urn%3Abtih%3Adeadbeef");
+
+    // Token is a Bearer header, content-type is form-urlencoded.
+    const req = mock.byPath("/rest/1.0/torrents/addMagnet")!;
+    expect(req.headers.Authorization).toBe("Bearer rd-token");
+    expect(req.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
+  });
+
+  it("retries on a 5xx and eventually succeeds", async () => {
+    let attempts = 0;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents/addMagnet") {
+        attempts += 1;
+        if (attempts < 3) return { status: 503, body: "service unavailable" };
+        return ok(JSON.stringify({ id: "AFTER_RETRY" }));
+      }
+      return { status: 404, body: "{}" };
+    });
+    let sleeps = 0;
+    const rd = new RealDebridService("rd-token", mock.fetchImpl, async () => {
+      sleeps += 1;
+    });
+    const id = await rd.addMagnet("abc");
+    expect(id).toBe("AFTER_RETRY");
+    expect(attempts).toBe(3);
+    expect(sleeps).toBe(2); // slept before each of the two retries
+  });
+
+  it("exhausts retries on persistent 5xx and throws the last httpError", async () => {
+    let attempts = 0;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents/addMagnet") {
+        attempts += 1;
+        return { status: 500, body: "boom" };
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    let caught: DebridError | null = null;
+    try {
+      await rd.addMagnet("abc");
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    expect(attempts).toBe(5); // maxRetries
+    expect(caught?.kind).toBe("httpError");
+    expect(caught?.statusCode).toBe(500);
+  });
+
+  it("does NOT retry a non-5xx error and surfaces it immediately", async () => {
+    let attempts = 0;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents/addMagnet") {
+        attempts += 1;
+        return { status: 401, body: "{}" };
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    let caught: DebridError | null = null;
+    try {
+      await rd.addMagnet("abc");
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    expect(attempts).toBe(1);
+    expect(caught?.kind).toBe("invalidToken");
+  });
+
+  it("throws downloadFailed when the response omits a string id", async () => {
+    let attempts = 0;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents/addMagnet") {
+        attempts += 1;
+        return ok(JSON.stringify({ id: 12345 })); // numeric id is not accepted
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    let caught: DebridError | null = null;
+    try {
+      await rd.addMagnet("abc");
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    // A parse failure is not a 5xx, so it is not retried.
+    expect(attempts).toBe(1);
+    expect(caught?.kind).toBe("downloadFailed");
+    expect(caught?.detail).toContain("parse magnet response");
+  });
+});
+
+// MARK: - selectFiles (body formatting + non-2xx surface)
+
+describe("RealDebridService selectFiles", () => {
+  it("sends files=all when the id list is empty", async () => {
+    let body: string | null = null;
+    let path: string | null = null;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname.startsWith("/rest/1.0/torrents/selectFiles/")) {
+        body = req.body;
+        path = req.url.pathname;
+        return { status: 204, body: "" };
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    await rd.selectFiles("TID", []);
+    expect(path).toBe("/rest/1.0/torrents/selectFiles/TID");
+    expect(body).toBe("files=all");
+  });
+
+  it("sends a comma-joined id list when ids are provided", async () => {
+    let body: string | null = null;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname.startsWith("/rest/1.0/torrents/selectFiles/")) {
+        body = req.body;
+        return { status: 204, body: "" };
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    await rd.selectFiles("TID", [3, 7, 9]);
+    expect(body).toBe("files=3,7,9");
+  });
+
+  it("surfaces a non-2xx response as a DebridError", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname.startsWith("/rest/1.0/torrents/selectFiles/")) {
+        return { status: 422, body: "bad file id" };
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    let caught: DebridError | null = null;
+    try {
+      await rd.selectFiles("TID", [99]);
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    expect(caught?.kind).toBe("httpError");
+    expect(caught?.statusCode).toBe(422);
+  });
+});
+
+// MARK: - unrestrictDetailed retry / validation paths
+
+describe("RealDebridService unrestrictDetailed retry + validation", () => {
+  it("retries on a 5xx and eventually returns the download URL", async () => {
+    let attempts = 0;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/unrestrict/link") {
+        attempts += 1;
+        if (attempts < 2) return { status: 502, body: "bad gateway" };
+        return ok(JSON.stringify({ id: "U", download: "https://rd.example/d.mkv" }));
+      }
+      return { status: 404, body: "{}" };
+    });
+    let sleeps = 0;
+    const rd = new RealDebridService("rd-token", mock.fetchImpl, async () => {
+      sleeps += 1;
+    });
+    const res = await rd.unrestrictDetailed("https://host.example/r/x");
+    expect(res.download).toBe("https://rd.example/d.mkv");
+    expect(attempts).toBe(2);
+    expect(sleeps).toBe(1);
+  });
+
+  it("exhausts retries on persistent 5xx and throws the last httpError", async () => {
+    let attempts = 0;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/unrestrict/link") {
+        attempts += 1;
+        return { status: 500, body: "down" };
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    let caught: DebridError | null = null;
+    try {
+      await rd.unrestrictDetailed("https://host.example/r/x");
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    expect(attempts).toBe(5);
+    expect(caught?.kind).toBe("httpError");
+    expect(caught?.statusCode).toBe(500);
+  });
+
+  it("throws downloadFailed when the download URL is missing", async () => {
+    let attempts = 0;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/unrestrict/link") {
+        attempts += 1;
+        return ok(JSON.stringify({ id: "U" })); // no download field
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    let caught: DebridError | null = null;
+    try {
+      await rd.unrestrictDetailed("https://host.example/r/x");
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    expect(attempts).toBe(1); // not a 5xx -> no retry
+    expect(caught?.kind).toBe("downloadFailed");
+    expect(caught?.detail).toContain("parse unrestrict response");
+  });
+
+  it("throws downloadFailed when the download value is not a valid absolute URL", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/unrestrict/link") {
+        return ok(JSON.stringify({ download: "not a url" }));
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    let caught: DebridError | null = null;
+    try {
+      await rd.unrestrictDetailed("https://host.example/r/x");
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    expect(caught?.kind).toBe("downloadFailed");
+  });
+
+  it("does not retry a non-5xx (e.g. 403 expired) during unrestrict", async () => {
+    let attempts = 0;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/unrestrict/link") {
+        attempts += 1;
+        return { status: 403, body: "{}" };
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    let caught: DebridError | null = null;
+    try {
+      await rd.unrestrict("https://host.example/r/x");
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    expect(attempts).toBe(1);
+    expect(caught?.kind).toBe("expired");
+  });
+});
+
+// MARK: - getStreamURL poll loop + fileCandidates edge cases
+
+describe("RealDebridService getStreamURL poll loop", () => {
+  it("selects all files on waiting_files_selection, polls, then resolves once downloaded", async () => {
+    let infoCalls = 0;
+    let selectBody: string | null = null;
+    const mock = makeMockFetch((req) => {
+      const path = req.url.pathname;
+      if (path.startsWith("/rest/1.0/torrents/info/")) {
+        infoCalls += 1;
+        if (infoCalls === 1) {
+          return ok(JSON.stringify({ id: "TP", status: "waiting_files_selection" }));
+        }
+        if (infoCalls === 2) {
+          return ok(JSON.stringify({ id: "TP", status: "downloading" }));
+        }
+        return ok(
+          JSON.stringify({
+            id: "TP",
+            status: "downloaded",
+            filename: "Poll.2026.1080p.mp4",
+            bytes: 1000,
+            links: ["https://rd.example/poll-link"],
+          }),
+        );
+      }
+      if (path.startsWith("/rest/1.0/torrents/selectFiles/")) {
+        selectBody = req.body;
+        return { status: 204, body: "" };
+      }
+      if (path === "/rest/1.0/unrestrict/link") {
+        return ok(JSON.stringify({ download: "https://rd.example/direct/poll.mp4" }));
+      }
+      return { status: 404, body: "{}" };
+    });
+    let sleeps = 0;
+    const rd = new RealDebridService("rd-token", mock.fetchImpl, async () => {
+      sleeps += 1;
+    });
+    const stream = await rd.getStreamURL("TP");
+    expect(stream.streamURL).toBe("https://rd.example/direct/poll.mp4");
+    expect(infoCalls).toBe(3);
+    expect(selectBody).toBe("files=all"); // triggered by waiting_files_selection
+    expect(sleeps).toBe(2); // slept after attempt 0 and attempt 1 (not after the downloaded one)
+  });
+
+  it("throws torrentNotFound when the info body cannot be parsed as an object", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname.startsWith("/rest/1.0/torrents/info/")) {
+        return ok(""); // empty body -> parseJSON returns null
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    let caught: DebridError | null = null;
+    try {
+      await rd.getStreamURL("TX");
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    expect(caught?.kind).toBe("torrentNotFound");
+    expect(caught?.torrentId).toBe("TX");
+  });
+
+  it("throws downloadFailed when it never reaches 'downloaded' within maxAttempts", async () => {
+    let infoCalls = 0;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname.startsWith("/rest/1.0/torrents/info/")) {
+        infoCalls += 1;
+        return ok(JSON.stringify({ id: "TS", status: "downloading" }));
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    let caught: DebridError | null = null;
+    try {
+      await rd.getStreamURL("TS");
+    } catch (e) {
+      caught = e as DebridError;
+    }
+    expect(infoCalls).toBe(20); // maxAttempts
+    expect(caught?.kind).toBe("downloadFailed");
+    expect(caught?.detail).toContain("not ready");
+    expect(caught?.detail).toContain("downloading");
+  });
+
+  it("uses the fallback name/size when a files array exists but none are selected", async () => {
+    const mock = makeMockFetch((req) => {
+      const path = req.url.pathname;
+      if (path.startsWith("/rest/1.0/torrents/info/")) {
+        return ok(
+          JSON.stringify({
+            id: "TF",
+            status: "downloaded",
+            filename: "Fallback.2026.720p.mkv",
+            bytes: 777,
+            links: ["https://rd.example/fb-link"],
+            // files present but every entry selected != 1 -> no paired candidates
+            files: [
+              { id: 1, path: "/a.mkv", bytes: 10, selected: 0 },
+              { id: 2, path: "/b.nfo", bytes: 5, selected: 0 },
+            ],
+          }),
+        );
+      }
+      if (path === "/rest/1.0/unrestrict/link") {
+        return ok(JSON.stringify({ download: "https://rd.example/direct/fb.mkv" }));
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const stream = await rd.getStreamURL("TF");
+    // Falls back to top-level filename/bytes since no candidate was built from files.
+    expect(stream.fileName).toBe("Fallback.2026.720p.mkv");
+    expect(stream.sizeBytes).toBe(777);
+    expect(stream.quality).toBe("720p");
+    expect(stream.codec).toBe("Unknown"); // no codec token in the name
+  });
+
+  it("uses a file's filename when path is absent, and coerces string size/selected", async () => {
+    let unrestrictBody: string | null = null;
+    const mock = makeMockFetch((req) => {
+      const path = req.url.pathname;
+      if (path.startsWith("/rest/1.0/torrents/info/")) {
+        return ok(
+          JSON.stringify({
+            id: "TC",
+            status: "downloaded",
+            filename: "ignored-top.mp4",
+            links: ["https://rd.example/only-link"],
+            files: [
+              // selected and bytes given as numeric STRINGS (int64Value coerces them);
+              // no `path`, so `filename` is used for the name.
+              { id: "4", filename: "Real.2026.2160p.mkv", bytes: "9000", selected: "1" },
+            ],
+          }),
+        );
+      }
+      if (path === "/rest/1.0/unrestrict/link") {
+        unrestrictBody = req.body;
+        return ok(JSON.stringify({ download: "https://rd.example/direct/real.mkv" }));
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const stream = await rd.getStreamURL("TC");
+    expect(stream.fileName).toBe("Real.2026.2160p.mkv");
+    expect(stream.sizeBytes).toBe(9000);
+    expect(stream.quality).toBe("4K"); // 2160p maps to the 4K label
+    expect(unrestrictBody!).toContain("only-link");
+  });
+});
+
+// MARK: - listTorrents pagination + normalization
+
+describe("RealDebridService listTorrents", () => {
+  it("walks pages until a short page and normalizes rows", async () => {
+    const pageSize = 2;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents") {
+        const page = req.url.searchParams.get("page");
+        if (page === "1") {
+          return ok(
+            JSON.stringify([
+              {
+                id: "ID1",
+                filename: "A.mkv",
+                hash: "ABCDEF",
+                status: "downloaded",
+                host: "real-debrid.com",
+                added: "2026-06-01T00:00:00Z",
+                bytes: 100,
+                progress: 100,
+              },
+              { id: "ID2", filename: "B.mkv", hash: "FF00", status: "downloading" },
+            ]),
+          );
+        }
+        if (page === "2") {
+          // short page (length < pageSize) -> stops after this
+          return ok(JSON.stringify([{ id: "ID3", filename: "C.mkv" }]));
+        }
+        return ok("[]");
+      }
+      return { status: 404, body: "[]" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const list = await rd.listTorrents(20, pageSize);
+    expect(list.length).toBe(3);
+
+    const first = list[0];
+    expect(first.id).toBe("ID1");
+    expect(first.name).toBe("A.mkv");
+    expect(first.infoHash).toBe("abcdef"); // lowercased
+    expect(first.status).toBe("downloaded");
+    expect(first.host).toBe("real-debrid.com");
+    expect(first.addedAt).toBe("2026-06-01T00:00:00Z");
+    expect(first.sizeBytes).toBe(100);
+    expect(first.progress).toBe(100);
+    expect(first.debridService).toBe("RD");
+
+    // Defensive defaults on the minimal row.
+    const third = list[2];
+    expect(third.name).toBe("C.mkv");
+    expect(third.infoHash).toBeNull();
+    expect(third.status).toBe("unknown");
+    expect(third.sizeBytes).toBe(0);
+    expect(third.progress).toBeNull();
+
+    // Only two pages were requested (stopped at the short page).
+    const pages = mock.requests
+      .filter((r) => r.url.pathname === "/rest/1.0/torrents")
+      .map((r) => r.url.searchParams.get("page"));
+    expect(pages).toEqual(["1", "2"]);
+  });
+
+  it("stops pagination on an unparseable page rather than throwing", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents") {
+        const page = req.url.searchParams.get("page");
+        if (page === "1") {
+          // full page (length === pageSize default 100 not reached, but >0) -> continue
+          return ok(JSON.stringify(Array.from({ length: 100 }, (_, i) => ({ id: `X${i}` }))));
+        }
+        // page 2: garbage / non-array body -> parseJSONArray returns null -> break
+        return ok("not json");
+      }
+      return { status: 404, body: "[]" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const list = await rd.listTorrents();
+    expect(list.length).toBe(100); // partial list survives
+  });
+
+  it("returns an empty list when the first page is empty", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents") return ok("[]");
+      return { status: 404, body: "[]" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    expect(await rd.listTorrents()).toEqual([]);
+  });
+});
+
+// MARK: - findExistingTorrent pagination + parse-null short-circuit
+
+describe("RealDebridService findExistingTorrent pagination", () => {
+  it("walks to a later page to find a match on >100-torrent accounts", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents") {
+        const page = req.url.searchParams.get("page");
+        if (page === "1") {
+          // a full page of 100 non-matching rows -> keep paginating
+          return ok(
+            JSON.stringify(
+              Array.from({ length: 100 }, (_, i) => ({
+                id: `N${i}`,
+                hash: `0000${i}`,
+                status: "downloaded",
+              })),
+            ),
+          );
+        }
+        if (page === "2") {
+          return ok(
+            JSON.stringify([{ id: "FOUND", hash: "deadbeef", status: "downloaded" }]),
+          );
+        }
+        return ok("[]");
+      }
+      return { status: 404, body: "[]" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const id = await rd.findExistingTorrent("DEADBEEF");
+    expect(id).toBe("FOUND");
+  });
+
+  it("returns null immediately when a page fails to parse as an array", async () => {
+    let calls = 0;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents") {
+        calls += 1;
+        return ok("{}"); // an object, not an array -> parseJSONArray null
+      }
+      return { status: 404, body: "[]" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    expect(await rd.findExistingTorrent("abc")).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  it("swallows a failed delete of an error-state match and still returns null", async () => {
+    let deleteCalled = false;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname === "/rest/1.0/torrents") {
+        return ok(JSON.stringify([{ id: "ERRX", hash: "abcd", status: "magnet_error" }]));
+      }
+      if (req.url.pathname.startsWith("/rest/1.0/torrents/delete/")) {
+        deleteCalled = true;
+        return { status: 500, body: "delete failed" }; // raises, but is caught
+      }
+      return { status: 404, body: "[]" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    expect(await rd.findExistingTorrent("ABCD")).toBeNull();
+    expect(deleteCalled).toBe(true);
+  });
+});
+
+// MARK: - deleteTorrent + getMediaInfos
+
+describe("RealDebridService deleteTorrent", () => {
+  it("issues a DELETE to the torrent path and treats 204 as success", async () => {
+    let method: string | null = null;
+    let path: string | null = null;
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname.startsWith("/rest/1.0/torrents/delete/")) {
+        method = req.method;
+        path = req.url.pathname;
+        return { status: 204, body: "" };
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    await rd.deleteTorrent("DELME");
+    expect(method).toBe("DELETE");
+    expect(path).toBe("/rest/1.0/torrents/delete/DELME");
+  });
+});
+
+describe("RealDebridService getMediaInfos", () => {
+  it("returns the parsed object on success", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname.startsWith("/rest/1.0/streaming/mediaInfos/")) {
+        return ok(JSON.stringify({ filename: "x.mkv", details: { video: {} } }));
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    const info = await rd.getMediaInfos("UID");
+    expect(info).not.toBeNull();
+    expect(info!.filename).toBe("x.mkv");
+    expect(mock.byPath("/rest/1.0/streaming/mediaInfos/UID")).toBeTruthy();
+  });
+
+  it("returns null on an empty/garbage body", async () => {
+    const mock = makeMockFetch((req) => {
+      if (req.url.pathname.startsWith("/rest/1.0/streaming/mediaInfos/")) {
+        return { status: 200, body: "" };
+      }
+      return { status: 404, body: "{}" };
+    });
+    const rd = new RealDebridService("rd-token", mock.fetchImpl);
+    expect(await rd.getMediaInfos("UID")).toBeNull();
+  });
 });
