@@ -63,6 +63,19 @@ describe("parsePersonalizedAnalysis", () => {
     expect(a.verdict).toBe("maybe");
   });
 
+  it("skips an example brace in prose and picks the analysis object", () => {
+    // A stray {...} earlier in the prose must not be mistaken for the analysis;
+    // the first object carrying an analysis key wins.
+    const raw =
+      'For example a movie object looks like {"title":"Dune","year":2021}. ' +
+      'Here is your analysis: {"personalizedDescription":"A strong match.",' +
+      '"predictedRating":9,"verdict":"strong_yes","reasons":["Epic scale"]}';
+    const a = parsePersonalizedAnalysis(raw);
+    expect(a.personalizedDescription).toBe("A strong match.");
+    expect(a.predictedRating).toBe(9);
+    expect(a.verdict).toBe("strong_yes");
+  });
+
   it("preserves literal triple-backticks inside a valid unfenced object", () => {
     // Raw-first parsing: strippingCodeFences would delete the ``` and the text
     // between them, silently mangling the description. The raw object must win.

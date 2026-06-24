@@ -17,6 +17,7 @@ import {
   type BrowseFilters,
   emptyBrowseFilters,
   hasActiveFilters,
+  plausibleYear,
 } from "../data/browse";
 import { SortOption } from "../services/metadata/types";
 import { Icon } from "./Icon";
@@ -322,7 +323,9 @@ export function FilterSlideover({
           <button
             type="button"
             className="btn btn-prominent fs-apply"
-            onClick={() => (dirty ? onApply(draftType, draft) : onClose())}
+            onClick={() =>
+              dirty ? onApply(draftType, sanitizeFilters(draft)) : onClose()
+            }
           >
             {dirty ? "Apply filters" : "Done"}
           </button>
@@ -347,6 +350,18 @@ function FilterGroup({
       {children}
     </section>
   );
+}
+
+/** Sanitize a draft before it's committed as the live filters: drop an
+ * implausible/partial year (the permissive input may hold "20" mid-type) so the
+ * applied filters never carry a year that buildDiscoverParams would clamp away —
+ * which would otherwise show a "From 20" chip that doesn't actually filter. */
+export function sanitizeFilters(draft: BrowseFilters): BrowseFilters {
+  return {
+    ...draft,
+    yearGTE: plausibleYear(draft.yearGTE),
+    yearLTE: plausibleYear(draft.yearLTE),
+  };
 }
 
 /** Parse a year from an input value; empty/non-numeric → null. Permissive on

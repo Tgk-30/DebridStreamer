@@ -212,6 +212,22 @@ describe("AIAssistantJSONParser", () => {
     const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
     expect(recs.map((r) => r.title)).toEqual(["Keep"]);
   });
+
+  it("skips a nested array inside a top-level array (no silent drop)", () => {
+    // typeof [] === "object" — a nested-array element must be filtered, not
+    // passed through as a title-less recommendation.
+    const text = '[[{"title":"Nested"}],{"title":"Real","year":2001}]';
+    const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
+    expect(recs.map((r) => r.title)).toEqual(["Real"]);
+  });
+
+  it("does not salvage objects from an unrelated array (no recommendations key)", () => {
+    // JSON-shaped, but the array is `meta`, not `recommendations`. Salvage must
+    // NOT grab those objects; with no real recommendations the result is [].
+    const text = '{"meta":[{"title":"WrongA"},{"title":"WrongB"}]}';
+    const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
+    expect(recs).toEqual([]);
+  });
 });
 
 // MARK: - AnthropicProvider — mirrors AnthropicProviderTests.parsesRecommendations

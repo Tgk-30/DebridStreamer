@@ -296,25 +296,8 @@ interface RawAnalysisPayload {
  * (defaulting to "maybe"). Mirrors the Swift `parsePersonalizedAnalysis`.
  */
 export function parsePersonalizedAnalysis(raw: string): AIPersonalizedAnalysis {
-  // Try the RAW text first (mirrors parseRecommendations): firstBalancedJSONObject
-  // skips ```json fence lines on its own, so fence-stripping is only a fallback —
-  // and stripping would silently delete content from a valid, unfenced object
-  // whose own string values contain literal triple-backticks.
   const fenceStripped = strippingCodeFences(raw);
-  const json =
-    firstBalancedJSONObject(raw) ??
-    firstBalancedJSONObject(fenceStripped) ??
-    fenceStripped;
-
-  let payload: RawAnalysisPayload = {};
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    if (parsed != null && typeof parsed === "object") {
-      payload = parsed as RawAnalysisPayload;
-    }
-  } catch {
-    // Leave payload empty → the defaults below produce a safe "maybe".
-  }
+  const payload = extractAnalysisPayload(raw, fenceStripped);
 
   const personalizedDescription =
     typeof payload.personalizedDescription === "string"
@@ -326,6 +309,54 @@ export function parsePersonalizedAnalysis(raw: string): AIPersonalizedAnalysis {
   const reasons = normalizeReasons(payload.reasons);
 
   return { personalizedDescription, predictedRating, verdict, reasons };
+}
+
+const ANALYSIS_KEYS = [
+  "personalizedDescription",
+  "predictedRating",
+  "verdict",
+  "reasons",
+] as const;
+
+/** Pick the analysis payload out of a model response. Scans the RAW text first
+ * (so literal ``` inside string values survive — strippingCodeFences would
+ * delete them), then the fence-stripped text, and returns the FIRST balanced
+ * object that actually decodes to an analysis-shaped payload (has an expected
+ * key). Requiring a key prevents a stray example brace in surrounding prose
+ * ("e.g. {\"title\":...}") from being mistaken for the analysis object. Falls
+ * back to the first parseable object, then the stripped text, then {} → the
+ * caller's defaults produce a safe "maybe". */
+function extractAnalysisPayload(
+  raw: string,
+  fenceStripped: string,
+): RawAnalysisPayload {
+  let firstParseable: RawAnalysisPayload | null = null;
+  for (const source of [raw, fenceStripped]) {
+    for (const objText of allBalancedJSONObjects(source)) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(objText);
+      } catch {
+        continue;
+      }
+      if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        continue;
+      }
+      const obj = parsed as RawAnalysisPayload & Record<string, unknown>;
+      if (ANALYSIS_KEYS.some((k) => k in obj)) return obj;
+      firstParseable ??= obj;
+    }
+  }
+  if (firstParseable != null) return firstParseable;
+  try {
+    const parsed = JSON.parse(fenceStripped) as unknown;
+    if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as RawAnalysisPayload;
+    }
+  } catch {
+    // fall through to the empty payload
+  }
+  return {};
 }
 
 /** Coerce a model's rating (number or numeric string) to an integer 1..10,
@@ -407,17 +438,17 @@ function extractRecommendationObjects(text: string): RawRecommendation[] | null 
  * `{recommendations:[...]}` wrapper, or a single recommendation-shaped object.
  * Returns null when the value is none of these. */
 function recommendationsFromValue(value: unknown): RawRecommendation[] | null {
+  // `typeof x === "object"` is true for arrays AND null, so each element guard
+  // must also exclude arrays — otherwise a nested array element (e.g. the model
+  // returned `[[{...}],{...}]`) would slip through as a "recommendation", lose
+  // its (absent) title, and be silently dropped instead of skipped here.
   if (Array.isArray(value)) {
-    return value.filter(
-      (v): v is RawRecommendation => v != null && typeof v === "object",
-    );
+    return value.filter(isRecommendationObject);
   }
   if (value != null && typeof value === "object") {
     const obj = value as RawPayload & RawRecommendation;
     if (Array.isArray(obj.recommendations)) {
-      return obj.recommendations.filter(
-        (v): v is RawRecommendation => v != null && typeof v === "object",
-      );
+      return obj.recommendations.filter(isRecommendationObject);
     }
     // A single bare recommendation object (the model returned one item).
     if (typeof obj.title === "string") return [obj];
@@ -425,12 +456,22 @@ function recommendationsFromValue(value: unknown): RawRecommendation[] | null {
   return null;
 }
 
+/** A non-null, non-array object — the only shape a recommendation can take. */
+function isRecommendationObject(v: unknown): v is RawRecommendation {
+  return v != null && typeof v === "object" && !Array.isArray(v);
+}
+
 /** Pulls every complete balanced `{...}` object out of the `recommendations`
  * array body (or a top-level array), parsing each independently so a truncated
- * final element doesn't discard the valid ones before it. */
+ * final element doesn't discard the valid ones before it. Only runs in a genuine
+ * recommendations context — a `"recommendations"` key is present, or the whole
+ * payload is a bare array — so a stray `[` in unrelated content can't feed us
+ * objects from the wrong array. */
 function salvageRecommendationObjects(text: string): RawRecommendation[] {
-  let body = text;
   const recKey = text.indexOf('"recommendations"');
+  if (recKey === -1 && !text.trimStart().startsWith("[")) return [];
+
+  let body = text;
   const bracket = text.indexOf("[", recKey === -1 ? 0 : recKey);
   if (bracket !== -1) body = text.slice(bracket + 1);
 
@@ -438,8 +479,8 @@ function salvageRecommendationObjects(text: string): RawRecommendation[] {
   for (const objText of allBalancedJSONObjects(body)) {
     try {
       const parsed: unknown = JSON.parse(objText);
-      if (parsed != null && typeof parsed === "object") {
-        out.push(parsed as RawRecommendation);
+      if (isRecommendationObject(parsed)) {
+        out.push(parsed);
       }
     } catch {
       // skip an unparseable object
@@ -462,55 +503,6 @@ function strippingCodeFences(text: string): string {
     result = result.slice(0, closeIndex) + result.slice(closeIndex + 3);
   }
   return result;
-}
-
-/** Returns the first complete, balanced `{...}` JSON object found in `text`,
- * tracking brace depth while respecting string literals and escapes so braces
- * inside string values do not throw off the count. Mirrors Swift
- * `firstBalancedJSONObject`. */
-function firstBalancedJSONObject(text: string): string | null {
-  let startIndex: number | null = null;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (character === "\\") {
-        escaped = true;
-      } else if (character === '"') {
-        inString = false;
-      }
-    } else {
-      switch (character) {
-        case '"':
-          inString = true;
-          break;
-        case "{":
-          if (depth === 0) {
-            startIndex = index;
-          }
-          depth += 1;
-          break;
-        case "}":
-          if (depth > 0) {
-            depth -= 1;
-            if (depth === 0 && startIndex != null) {
-              return text.slice(startIndex, index + 1);
-            }
-          }
-          break;
-        default:
-          break;
-      }
-    }
-  }
-
-  return null;
 }
 
 /** Returns the first complete, balanced top-level JSON container — `{...}` OR

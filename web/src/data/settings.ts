@@ -659,15 +659,18 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
   const store = getStore();
   const secrets = getSecretStore();
 
-  // Collected keychain WRITE failures (fail-closed on desktop). Unlike a removal
-  // (which we make best-effort below), a failed credential WRITE means the value
-  // genuinely wasn't persisted and the user must be told. But we persist
-  // everything we can FIRST — so one locked-keychain write never leaves the KV /
-  // debrid / indexer tables half-reconciled — then surface them at the very end.
+  // Collected WRITE failures — a fail-closed keychain credential write OR a
+  // genuine KV/DB write error (quota, corruption, aborted txn). Either way the
+  // value wasn't persisted and the user must be told. We persist everything we
+  // can FIRST — so one failure never leaves the KV / debrid / indexer tables
+  // half-reconciled — then surface them at the very end. (Kept deliberately
+  // generic: this bucket mixes secret writes and plain setSetting writes, so the
+  // surfaced error must not claim every failure was a "secret" write.)
   const writeFailures: unknown[] = [];
 
-  // allSettled (not all): a single secret write that fails closed must not abort
-  // the remaining KV writes or the debrid/indexer reconciliation below.
+  // allSettled (not all): a single write that fails (keychain locked, or a DB
+  // error) must not abort the remaining KV writes or the debrid/indexer
+  // reconciliation below.
   const kvResults = await Promise.allSettled([
     setStoredValue(SettingsKeys.tmdbApiKey, settings.tmdbKey),
     setStoredValue(SettingsKeys.omdbApiKey, settings.omdbKey),
@@ -867,14 +870,17 @@ export async function saveSettingsToStore(settings: AppSettings): Promise<void> 
   saveSettings(settings);
 
   // Everything that COULD be persisted now has been (KV + debrid + indexer tables
-  // are fully reconciled and the localStorage cache is in sync). If any credential
-  // WRITE failed closed on the keychain, surface it now so the caller can tell the
-  // user their key wasn't saved — without having lost the rest of the Save to a
-  // mid-flight abort. (Removals are best-effort and never land here.)
+  // are fully reconciled and the localStorage cache is in sync). If any write
+  // failed (a fail-closed keychain credential write, or a KV/DB error), surface
+  // it now so the caller can tell the user their change wasn't fully saved —
+  // without having lost the rest of the Save to a mid-flight abort. The message
+  // stays generic because the bucket mixes secret and plain settings writes; the
+  // wrapped `errors` carry each underlying cause for real diagnostics.
+  // (Removals are best-effort and never land here.)
   if (writeFailures.length > 0) {
     throw new AggregateError(
       writeFailures,
-      `saveSettingsToStore: ${writeFailures.length} secret write(s) failed to persist`,
+      `saveSettingsToStore: ${writeFailures.length} settings write(s) failed to persist`,
     );
   }
 }
