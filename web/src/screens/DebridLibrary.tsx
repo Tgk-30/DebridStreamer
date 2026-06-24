@@ -333,6 +333,17 @@ export function DebridLibrary() {
                   visible.length > 0 &&
                   visible.every((r) => selected.has(r.torrent.id))
                 }
+                // Show the partial (indeterminate) state when some — but not
+                // all — visible rows are selected. `indeterminate` is a DOM
+                // property, not an attribute, so it must be set via a ref.
+                ref={(el) => {
+                  if (el) {
+                    const sel = visible.filter((r) =>
+                      selected.has(r.torrent.id),
+                    ).length;
+                    el.indeterminate = sel > 0 && sel < visible.length;
+                  }
+                }}
                 onChange={toggleSelectAll}
                 aria-label="Select all"
               />

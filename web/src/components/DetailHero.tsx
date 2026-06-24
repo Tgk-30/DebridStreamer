@@ -4,6 +4,7 @@
 // poster + large title, a dotted meta row, genre chips, the overview, and the
 // primary actions (Play prominent + Watchlist). Content settles in with motion.
 
+import { useState } from "react";
 import { motion } from "motion/react";
 import { MediaItem as MediaItemNS } from "../models/media";
 import type { MediaItem } from "../models/media";
@@ -46,6 +47,7 @@ export function DetailHero({
   onTasteSignal,
 }: DetailHeroProps) {
   const backdrop = MediaItemNS.backdropURL(item);
+  const [backdropFailed, setBackdropFailed] = useState(false);
   const poster = MediaItemNS.posterThumbnailURL(item);
   const rating = MediaItemNS.ratingString(item);
   const runtime = MediaItemNS.runtimeString(item);
@@ -64,9 +66,17 @@ export function DetailHero({
         animate={{ scale: 1.04 }}
         transition={{ duration: 18, ease: "easeOut" }}
       >
-        {backdrop ? (
-          <img className="detail-hero-backdrop" src={backdrop} alt="" draggable={false} />
+        {backdrop && !backdropFailed ? (
+          <img
+            className="detail-hero-backdrop"
+            src={backdrop}
+            alt=""
+            draggable={false}
+            onError={() => setBackdropFailed(true)}
+          />
         ) : (
+          // No backdrop, or it failed to load → the on-brand gradient instead of
+          // a broken-image frame.
           <div className="detail-hero-backdrop hero-gradient" />
         )}
       </motion.div>
