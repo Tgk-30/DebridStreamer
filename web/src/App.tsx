@@ -15,6 +15,7 @@ import { FirstRunWizard } from "./components/FirstRunWizard";
 import { ServerSetupWizard } from "./components/ServerSetupWizard";
 import { TierOnboarding } from "./components/TierOnboarding";
 import { ProfilePicker } from "./components/ProfilePicker";
+import { CommandPalette } from "./components/CommandPalette";
 import { useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
 import { isServerMode } from "./lib/serverMode";
@@ -218,6 +219,9 @@ export function App() {
       {profilePickerOpen && (
         <ProfilePicker onClose={() => setProfilePickerOpen(false)} />
       )}
+
+      {/* ⌘K quick switcher — self-contained; hidden until invoked. */}
+      <CommandPalette />
 
       {/* Desktop auto-update toast. Runs the launch-time check itself and is a
           no-op in a plain browser (isTauri-gated in updater.ts). */}
