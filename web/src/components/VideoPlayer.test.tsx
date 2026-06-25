@@ -6,7 +6,7 @@
 // the HLS source-attach / onHlsUnsupported path, and the mpv lifecycle effect.
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { act, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // ---- Mocks for heavy / environment-bound deps -----------------------------
@@ -419,6 +419,27 @@ describe("WebviewPlayer", () => {
         new KeyboardEvent("keydown", { key: "k", metaKey: true, cancelable: true }),
       );
       expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    });
+
+    it("? toggles the shortcuts overlay, and its close button + the ? button work", async () => {
+      const user = userEvent.setup();
+      setup(true);
+      expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+      // "?" opens it (state update → wrap in act so React flushes).
+      act(() => {
+        press("?");
+      });
+      expect(
+        screen.getByRole("dialog", { name: "Keyboard shortcuts" }),
+      ).toBeInTheDocument();
+      // Its close button dismisses it.
+      await user.click(screen.getByRole("button", { name: "Close" }));
+      expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+      // The OSD "?" button also opens it.
+      await user.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
+      expect(
+        screen.getByRole("dialog", { name: "Keyboard shortcuts" }),
+      ).toBeInTheDocument();
     });
   });
 

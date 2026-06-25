@@ -238,6 +238,7 @@ function WebviewPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [captionsOpen, setCaptionsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const subs = useSubtitleTracks(subtitleClient, translator);
   // Thumbnails only work on a progressive source the browser can re-open and
@@ -444,6 +445,10 @@ function WebviewPlayer({
           e.preventDefault();
           if (dur > 0) seekTo(dur);
           break;
+        case "?":
+          e.preventDefault();
+          setShortcutsOpen((o) => !o);
+          break;
         default:
           if (/^[0-9]$/.test(e.key) && dur > 0) {
             e.preventDefault();
@@ -503,8 +508,23 @@ function WebviewPlayer({
               <span className="captions-active-dot" />
             )}
           </button>
+          <button
+            type="button"
+            className={`chip player-help-btn${shortcutsOpen ? " is-active" : ""}`}
+            onClick={() => setShortcutsOpen((o) => !o)}
+            aria-label="Keyboard shortcuts"
+            aria-haspopup="dialog"
+            aria-expanded={shortcutsOpen}
+            title="Keyboard shortcuts (?)"
+          >
+            ?
+          </button>
         </div>
       </div>
+
+      {shortcutsOpen && (
+        <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />
+      )}
 
       {captionsOpen && (
         <CaptionsMenu
@@ -516,6 +536,58 @@ function WebviewPlayer({
           onClose={() => setCaptionsOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+/** A small, dismissible reference for the player keyboard shortcuts. Surfaced
+ * by the "?" key or the "?" OSD button — invisible otherwise. */
+const SHORTCUTS: Array<[string, string]> = [
+  ["Space / K", "Play / pause"],
+  ["← / →", "Back / forward 5s"],
+  ["J / L", "Back / forward 10s"],
+  ["↑ / ↓", "Volume up / down"],
+  ["M", "Mute"],
+  ["F", "Fullscreen"],
+  ["0 – 9", "Jump to 0–90%"],
+  ["Home / End", "Start / end"],
+  ["?", "Toggle this help"],
+];
+
+function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="player-shortcuts-scrim"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="player-shortcuts glass-raised"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Keyboard shortcuts"
+      >
+        <div className="player-shortcuts-head">
+          <span className="player-shortcuts-title">Keyboard shortcuts</span>
+          <button
+            type="button"
+            className="player-shortcuts-close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <Icon name="xmark" size={16} />
+          </button>
+        </div>
+        <ul className="player-shortcuts-list">
+          {SHORTCUTS.map(([keys, label]) => (
+            <li key={keys}>
+              <kbd>{keys}</kbd>
+              <span>{label}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
