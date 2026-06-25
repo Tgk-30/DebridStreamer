@@ -218,8 +218,9 @@ describe("useScrubThumbnails", () => {
     act(() => result.current.onHover(30));
     act(() => v.__fire("seeked"));
 
-    // Wait out the throttle window so a fresh hover isn't merely throttled.
-    await new Promise((r) => setTimeout(r, 130));
+    // Wait out the throttle window (THROTTLE_MS=120) with a comfortable margin
+    // so the assertion isn't flaky under load / timer imprecision.
+    await new Promise((r) => setTimeout(r, 250));
 
     // Hover at 31 -> same bucket 6 -> the cached image is shown IMMEDIATELY
     // (synchronously, before any new 'seeked'), with the live hovered time.
@@ -277,7 +278,7 @@ describe("useScrubThumbnails", () => {
         act(() => v.__fire("seeked"));
         expect(v.__currentTimeSets).toEqual([100, 300]);
         resolve();
-      }, 130);
+      }, 250); // > THROTTLE_MS (120) with margin — de-flake under load
     });
   });
 
