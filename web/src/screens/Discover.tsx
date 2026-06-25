@@ -191,7 +191,12 @@ export function Discover({ onSelect }: DiscoverProps) {
             .filter(
               (it, i, arr) =>
                 it.backdropPath != null &&
-                arr.findIndex((x) => x.id === it.id) === i
+                // Keep the first BACKDROP-having occurrence of each id. Deduping
+                // on the first occurrence overall would drop a backdrop version
+                // when a backdrop-less duplicate of the same id appeared earlier.
+                arr.findIndex(
+                  (x) => x.id === it.id && x.backdropPath != null,
+                ) === i
             )
             .slice(0, 5)}
           onPlay={onSelect}

@@ -185,6 +185,19 @@ describe("AIAssistantJSONParser.parseRecommendations edge paths", () => {
     expect(AIAssistantJSONParser.parseRecommendations('{"recommendations":[{', 5)).toEqual([]);
   });
 
+  it("drops empty-title entries BEFORE capping, so it still returns maxResults", () => {
+    // The empty-title item sits within the first maxResults — a slice-then-filter
+    // design would return 2; filter-then-slice keeps the count at 3.
+    const raw = JSON.stringify([
+      { title: "A", score: 0.9 },
+      { title: "", score: 0.8 },
+      { title: "B", score: 0.7 },
+      { title: "C", score: 0.6 },
+    ]);
+    const recs = AIAssistantJSONParser.parseRecommendations(raw, 3);
+    expect(recs.map((r) => r.title)).toEqual(["A", "B", "C"]);
+  });
+
   it("estimatedTokenCount floors at 1 for non-empty text and 0 for blank", () => {
     expect(AIAssistantJSONParser.estimatedTokenCount("")).toBe(0);
     expect(AIAssistantJSONParser.estimatedTokenCount("   ")).toBe(0);

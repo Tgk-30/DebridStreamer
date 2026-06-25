@@ -187,6 +187,21 @@ describe("Discover loaded", () => {
     expect(screen.queryByTestId("hero")).toBeNull();
   });
 
+  it("keeps a backdrop-having duplicate in the hero even when a backdrop-less twin sorts first", () => {
+    // hero1 has no backdrop, but a trending twin (same id) does. Deduping on the
+    // first occurrence overall would drop BOTH; the backdrop version must survive.
+    const data = fullData();
+    data.hero = preview("hero1", { backdropPath: null, type: "movie" });
+    data.trendingMovies = [
+      preview("hero1", { backdropPath: "/dup.jpg" }),
+      preview("tm9", { backdropPath: "/x.jpg" }),
+    ];
+    mockDiscover = { data, loading: false };
+    render(<Discover />);
+    // hero1 (with backdrop) + tm9 = 2 spotlight items.
+    expect(screen.getByTestId("hero-count").textContent).toBe("2");
+  });
+
   it("filters the hero item out of the trending rails (withoutHero)", () => {
     const data = fullData();
     // hero1 is also injected into trendingMovies to prove dedupe.

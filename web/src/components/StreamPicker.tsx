@@ -9,7 +9,7 @@
 // (local DebridManager in Local Mode, self-hosted API in Server Mode) and hands
 // the URL up for playback.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DebridServiceType, type StreamInfo } from "../services/debrid/models";
 import {
   TorrentResult,
@@ -54,6 +54,16 @@ export function StreamPicker({
   const [resolvingHash, setResolvingHash] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const { settings } = useAppStore();
+
+  // Clear the resolution/codec chips whenever the underlying results change
+  // (a new title is opened). A stale value is already ignored if it no longer
+  // appears, but if the next title HAPPENS to share that resolution/codec the
+  // old chip would silently pre-filter it — surprising the user. Resetting on
+  // the rows identity keeps the picker unfiltered for each newly opened title.
+  useEffect(() => {
+    setResFilter(null);
+    setCodecFilter(null);
+  }, [state.rows]);
 
   // The data-saver-eligible rows are the basis for both the chips and the list.
   const baseRows = useMemo(

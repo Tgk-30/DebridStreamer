@@ -448,6 +448,29 @@ describe("RemoteStore", () => {
       expect(getCalls).toHaveLength(1);
     });
 
+    it("a setSetting landing during an in-flight allSettings is not clobbered by the fetch", async () => {
+      // GET resolves only when we say so, simulating a slow allSettings fetch.
+      let releaseGet: (r: Response) => void = () => {};
+      const getPending = new Promise<Response>((res) => {
+        releaseGet = res;
+      });
+      fetchMock.mockImplementation((_url: string, init?: { method?: string }) =>
+        init?.method === "GET" || init?.method === undefined
+          ? getPending
+          : Promise.resolve(jsonResponse({ ok: true })),
+      );
+      const s = store();
+
+      const allP = s.allSettings(); // fetch starts, cache still null
+      await s.setSetting("b", "2"); // PUT lands mid-flight, bumps the generation
+      releaseGet(jsonResponse({ settings: { a: "1" } })); // server snapshot lacks "b"
+      await allP;
+
+      // The stale snapshot must NOT have been cached. A fresh read reflects "b".
+      fetchMock.mockResolvedValue(jsonResponse({ settings: { a: "1", b: "2" } }));
+      expect(await s.getSetting("b")).toBe("2");
+    });
+
     it("setSetting with no populated cache PUTs without touching the cache", async () => {
       fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
       const s = store();

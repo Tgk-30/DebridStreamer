@@ -89,6 +89,34 @@ describe("StremioAddonIndexer", () => {
     expect(second!.magnetURI?.startsWith("magnet:?")).toBe(true);
   });
 
+  it("does not mistake a longer hex blob in a URL for a 40-char info hash", async () => {
+    // A stream with no infoHash / no btih param, whose URL embeds a 64-char
+    // sha256. The first-40-hex fallback must NOT slice the first 40 chars of it
+    // (a wrong hash); with no isolated 40-hex token the stream is dropped. A
+    // sibling stream with a real isolated 40-hex run in its path is still kept.
+    const sha256 = "a".repeat(64);
+    const isolated = "b".repeat(40);
+    const json = JSON.stringify({
+      streams: [
+        { name: "x", title: "No Hash 1080p", url: `https://cdn.example.com/${sha256}/v.mkv` },
+        { name: "y", title: "Has Hash 1080p", url: `https://cdn.example.com/${isolated}/v.mkv` },
+      ],
+    });
+    const mock = makeMockFetch(() => ({ status: 200, body: json }));
+    const indexer = new StremioAddonIndexer(
+      "Torrentio",
+      "https://torrentio.strem.fun",
+      mock.fetchImpl,
+    );
+
+    const results = await indexer.search("tt1234567", "movie", null, null);
+
+    // The 64-hex blob yields no result; the wrong "first 40" hash never appears.
+    expect(results.some((r) => r.infoHash === "a".repeat(40))).toBe(false);
+    // The isolated 40-hex run is extracted as a valid hash.
+    expect(results.some((r) => r.infoHash === isolated)).toBe(true);
+  });
+
   it("series search builds tt:season:episode stream id", async () => {
     const mock = makeMockFetch(() => ({
       status: 200,

@@ -44,7 +44,9 @@ interface StremioStreamResponse {
 }
 
 const INFO_HASH_RE = /^[A-Fa-f0-9]{40}$/;
-const FIRST_HEX_40_RE = /[A-Fa-f0-9]{40}/;
+// A 40-hex run that is a complete token (not flanked by more hex) — so a longer
+// hex blob in the URL (e.g. a 64-char sha256) isn't truncated to a wrong "hash".
+const FIRST_HEX_40_RE = /(?<![A-Fa-f0-9])[A-Fa-f0-9]{40}(?![A-Fa-f0-9])/;
 
 export class StremioAddonIndexer implements TorrentIndexer {
   readonly name: string;

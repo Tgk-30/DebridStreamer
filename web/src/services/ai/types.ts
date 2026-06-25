@@ -276,6 +276,12 @@ export const AIAssistantJSONParser = {
       extractRecommendationObjects(fenceStripped);
     if (recs != null) {
       return recs
+        // Drop title-less entries BEFORE capping to maxResults — slicing first
+        // then filtering would return fewer than maxResults whenever an empty
+        // title fell within the first maxResults items.
+        .filter(
+          (item) => typeof item.title === "string" && item.title.length > 0,
+        )
         .slice(0, maxResults)
         .map((item) =>
           makeAIMovieRecommendation({

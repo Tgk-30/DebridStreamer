@@ -426,6 +426,38 @@ describe("StreamPicker", () => {
     expect(screen.queryByRole("group", { name: "Filter streams" })).not.toBeInTheDocument();
   });
 
+  it("clears active chips when a new title's results arrive (no stale pre-filtering)", () => {
+    const rowsA = [
+      makeRow({ hash: "A", title: "Title A 2160p x265", cachedOn: null }),
+      makeRow({ hash: "B", title: "Title A 1080p x264", cachedOn: null }),
+    ];
+    const { rerender } = render(
+      <StreamPicker state={baseState({ rows: rowsA })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+    const chip4k = within(
+      screen.getByRole("group", { name: "Filter streams" }),
+    ).getByRole("button", { name: "4K" });
+    fireEvent.click(chip4k);
+    expect(chip4k).toHaveAttribute("aria-pressed", "true");
+
+    // A different title resolves (new rows identity) that also has a 4K option —
+    // the old 4K chip must NOT carry over and silently pre-filter it.
+    const rowsB = [
+      makeRow({ hash: "C", title: "Title B 2160p x265", cachedOn: null }),
+      makeRow({ hash: "D", title: "Title B 1080p x264", cachedOn: null }),
+    ];
+    rerender(
+      <StreamPicker state={baseState({ rows: rowsB })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+    expect(
+      within(screen.getByRole("group", { name: "Filter streams" })).getByRole("button", {
+        name: "4K",
+      }),
+    ).toHaveAttribute("aria-pressed", "false");
+    // Both of Title B's rows are shown (unfiltered).
+    expect(screen.getAllByText(/^Title B /)).toHaveLength(2);
+  });
+
   it("shows the chip-empty state with a Clear filters button when a resolution+codec combo matches nothing", () => {
     // 4K is only H.265, 1080p is only H.264 → selecting 4K + H.264 is empty.
     const rows = [

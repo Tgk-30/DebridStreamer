@@ -201,6 +201,11 @@ function unsupportedRemoteWrite(name: string): Error {
 export class RemoteStore implements Store, SecretStore {
   private readonly api: ServerAPI;
   private settingsCache: Record<string, string> | null = null;
+  // Bumped on every settings mutation. allSettings() captures it before its
+  // fetch and only caches the response if it hasn't changed since — so a
+  // setSetting() that lands while a fetch is in flight can't be silently
+  // clobbered by the fetch caching a pre-mutation snapshot (lost update).
+  private settingsGen = 0;
   private pendingSecrets = new Map<string, string>();
 
   constructor(baseURL: string) {
@@ -212,6 +217,9 @@ export class RemoteStore implements Store, SecretStore {
    *  settings instead of serving the previous profile's cached copy. */
   resetProfileCache(): void {
     this.settingsCache = null;
+    // Bump so any allSettings() fetch already in flight (for the OLD profile)
+    // won't cache its response into the NEW profile after the switch.
+    this.settingsGen += 1;
     this.pendingSecrets.clear();
   }
 
@@ -222,6 +230,7 @@ export class RemoteStore implements Store, SecretStore {
 
   async setSetting(key: string, value: string | null): Promise<void> {
     await this.api.put("/api/settings/profile", { key, value });
+    this.settingsGen += 1;
     if (this.settingsCache != null) {
       if (value == null) delete this.settingsCache[key];
       else this.settingsCache[key] = value;
@@ -230,11 +239,16 @@ export class RemoteStore implements Store, SecretStore {
 
   async allSettings(): Promise<Record<string, string>> {
     if (this.settingsCache != null) return { ...this.settingsCache };
+    const gen = this.settingsGen;
     const response = await this.api.get<{ settings: Record<string, string> }>(
       "/api/settings/profile",
     );
-    this.settingsCache = response.settings;
-    return { ...response.settings };
+    // Only adopt this snapshot if no setSetting()/reset landed mid-flight; a
+    // concurrent mutation may have updated the server past this response.
+    if (this.settingsCache == null && this.settingsGen === gen) {
+      this.settingsCache = response.settings;
+    }
+    return { ...(this.settingsCache ?? response.settings) };
   }
 
   async getSecret(_key: string): Promise<string | null> {

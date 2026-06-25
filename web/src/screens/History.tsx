@@ -10,19 +10,17 @@ import { useAppStore } from "../store/AppStore";
 import { MediaGrid } from "../components/MediaGrid";
 import { Rail } from "../components/Rail";
 import { EmptyState } from "../components/EmptyState";
-import { hasResumePoint, watchProgressPercent } from "../storage/models";
+import { hasResumePoint, watchProgressMap } from "../storage/models";
 
 export function History() {
   const { history, continueWatching, openDetail, openBrowse, navigate } =
     useAppStore();
 
   // Only surface rows with a meaningful resume point in the rail.
-  const resumableRecords = continueWatching.filter(hasResumePoint);
-  const resumable = resumableRecords.map((r) => r.preview);
-  const resumableProgress: Record<string | number, number> = {};
-  for (const r of resumableRecords) {
-    resumableProgress[r.preview.id] = watchProgressPercent(r);
-  }
+  const resumable = continueWatching.filter(hasResumePoint).map((r) => r.preview);
+  // Shared progress map (same helper the Watchlist uses) so the rail, the rail's
+  // bars, and the full grid below stay in lockstep instead of diverging.
+  const resumableProgress = watchProgressMap(continueWatching);
 
   return (
     <div className="lib-screen">
