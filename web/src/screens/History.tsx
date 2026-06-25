@@ -62,7 +62,11 @@ export function History() {
           }
         />
       ) : (
-        <MediaGrid items={history} onSelect={openDetail} />
+        <MediaGrid
+          items={history}
+          onSelect={openDetail}
+          progress={resumableProgress}
+        />
       )}
     </div>
   );

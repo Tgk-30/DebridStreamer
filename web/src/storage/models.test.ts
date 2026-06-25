@@ -10,6 +10,7 @@ import {
   makeIndexerConfigRecord,
   systemFolderID,
   systemFolderName,
+  watchProgressMap,
   watchProgressPercent,
   type WatchHistoryRecord,
 } from "./models";
@@ -17,17 +18,20 @@ import {
 function hist(
   progressSeconds: number,
   durationSeconds: number | null,
+  over: Partial<WatchHistoryRecord> = {},
 ): WatchHistoryRecord {
+  const mediaId = over.mediaId ?? "tt1";
   return {
-    id: "tt1:",
-    mediaId: "tt1",
+    id: `${mediaId}:`,
+    mediaId,
     episodeId: null,
     progressSeconds,
     durationSeconds,
     completed: false,
     lastWatched: "2020-01-01T00:00:00Z",
     streamQuality: null,
-    preview: { id: "tt1", type: "movie", title: "X" },
+    preview: { id: mediaId, type: "movie", title: "X" },
+    ...over,
   };
 }
 
@@ -59,6 +63,25 @@ describe("hasResumePoint", () => {
     expect(hasResumePoint(hist(0, 100))).toBe(false);
     expect(hasResumePoint(hist(100, 100))).toBe(false);
     expect(hasResumePoint(hist(50, null))).toBe(false); // 0% via guard
+  });
+});
+
+describe("watchProgressMap", () => {
+  it("maps mediaId -> fraction for incomplete records with a resume point", () => {
+    const map = watchProgressMap([
+      hist(50, 100, { mediaId: "a" }),
+      hist(30, 100, { mediaId: "b" }),
+    ]);
+    expect(map).toEqual({ a: 0.5, b: 0.3 });
+  });
+  it("omits finished, completed, and not-yet-started records", () => {
+    const map = watchProgressMap([
+      hist(50, 100, { mediaId: "resumable" }),
+      hist(50, 100, { mediaId: "done", completed: true }),
+      hist(98, 100, { mediaId: "basically-over" }), // > 95%
+      hist(0, 100, { mediaId: "fresh" }), // 0%
+    ]);
+    expect(map).toEqual({ resumable: 0.5 });
   });
 });
 

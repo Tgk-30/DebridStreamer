@@ -8,6 +8,7 @@ import { useAppStore } from "../store/AppStore";
 import { MediaCard } from "../components/MediaCard";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { watchProgressMap } from "../storage/models";
 import "./LibraryScreens.css";
 
 export function Watchlist() {
@@ -16,6 +17,7 @@ export function Watchlist() {
     openDetail,
     removeFromWatchlist,
     cachedResolutions,
+    continueWatching,
     openBrowse,
     navigate,
   } = useAppStore();
@@ -23,6 +25,8 @@ export function Watchlist() {
   const readyCount = watchlist.filter(
     (i) => cachedResolutions[i.id] != null,
   ).length;
+  // Show a resume bar on any watchlisted title that's already in progress.
+  const progress = watchProgressMap(continueWatching);
 
   return (
     <div className="lib-screen">
@@ -65,6 +69,7 @@ export function Watchlist() {
                 item={item}
                 onSelect={openDetail}
                 ready={cachedResolutions[item.id] != null}
+                progress={progress[item.id]}
               />
               <button
                 type="button"

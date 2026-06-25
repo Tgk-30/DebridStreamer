@@ -52,6 +52,20 @@ export function hasResumePoint(r: WatchHistoryRecord): boolean {
   return p > 0.02 && p < 0.95;
 }
 
+/** A { mediaId: fraction } map of resume progress, for "Continue Watching" bars
+ * on cards. Includes only incomplete records with a real resume point so a
+ * finished or barely-started title shows no bar. */
+export function watchProgressMap(
+  records: WatchHistoryRecord[],
+): Record<string, number> {
+  const map: Record<string, number> = {};
+  for (const r of records) {
+    if (r.completed) continue;
+    if (hasResumePoint(r)) map[r.preview.id] = watchProgressPercent(r);
+  }
+  return map;
+}
+
 // MARK: - Watchlist
 
 /** A watchlist entry. The native app models the watchlist as the `watchlist`

@@ -7,11 +7,15 @@ vi.mock("./MediaCard", () => ({
   MediaCard: ({
     item,
     onSelect,
+    progress,
   }: {
     item: { id: string; title: string };
     onSelect?: (i: { id: string; title: string }) => void;
+    progress?: number;
   }) => (
-    <button onClick={() => onSelect?.(item)}>{item.title}</button>
+    <button data-progress={progress ?? ""} onClick={() => onSelect?.(item)}>
+      {item.title}
+    </button>
   ),
 }));
 
@@ -36,6 +40,12 @@ describe("MediaGrid", () => {
     render(<MediaGrid items={items} onSelect={onSelect} />);
     await userEvent.click(screen.getByText("Beta"));
     expect(onSelect).toHaveBeenCalledWith(items[1]);
+  });
+
+  it("forwards per-item progress to the matching card only", () => {
+    render(<MediaGrid items={items} progress={{ a: 0.5 }} />);
+    expect(screen.getByText("Alpha")).toHaveAttribute("data-progress", "0.5");
+    expect(screen.getByText("Beta")).toHaveAttribute("data-progress", "");
   });
 
   it("renders the empty node when there are no items", () => {

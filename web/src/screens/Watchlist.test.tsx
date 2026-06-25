@@ -13,7 +13,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MediaPreview } from "../models/media";
-import type { CachedResolutionRecord } from "../storage/models";
+import type {
+  CachedResolutionRecord,
+  WatchHistoryRecord,
+} from "../storage/models";
 
 // --- mutable mock state -----------------------------------------------------
 
@@ -23,6 +26,7 @@ const navigate = vi.fn();
 const removeFromWatchlist = vi.fn();
 let mockWatchlist: MediaPreview[] = [];
 let mockCachedResolutions: Record<string, CachedResolutionRecord> = {};
+let mockContinueWatching: WatchHistoryRecord[] = [];
 
 vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({
@@ -30,6 +34,7 @@ vi.mock("../store/AppStore", () => ({
     openDetail,
     removeFromWatchlist,
     cachedResolutions: mockCachedResolutions,
+    continueWatching: mockContinueWatching,
     openBrowse,
     navigate,
   }),
@@ -40,10 +45,12 @@ vi.mock("../components/MediaCard", () => ({
     item: MediaPreview;
     onSelect?: (i: MediaPreview) => void;
     ready?: boolean;
+    progress?: number;
   }) => (
     <button
       type="button"
       data-ready={props.ready ? "yes" : "no"}
+      data-progress={props.progress ?? ""}
       onClick={() => props.onSelect?.(props.item)}
     >
       card:{props.item.title}
@@ -70,6 +77,7 @@ beforeEach(() => {
   removeFromWatchlist.mockClear();
   mockWatchlist = [];
   mockCachedResolutions = {};
+  mockContinueWatching = [];
 });
 
 afterEach(() => {
@@ -131,5 +139,25 @@ describe("Watchlist — populated", () => {
     });
     await userEvent.click(removeBtn);
     expect(removeFromWatchlist).toHaveBeenCalledWith("m1");
+  });
+
+  it("shows a resume bar on an in-progress watchlisted title", () => {
+    mockWatchlist = [preview("m1", "Tenet"), preview("m2", "Dune")];
+    mockContinueWatching = [
+      {
+        id: "m1:",
+        mediaId: "m1",
+        episodeId: null,
+        progressSeconds: 50,
+        durationSeconds: 100,
+        completed: false,
+        lastWatched: "2020-01-01T00:00:00Z",
+        streamQuality: null,
+        preview: preview("m1", "Tenet"),
+      },
+    ];
+    render(<Watchlist />);
+    expect(screen.getByText("card:Tenet")).toHaveAttribute("data-progress", "0.5");
+    expect(screen.getByText("card:Dune")).toHaveAttribute("data-progress", "");
   });
 });
