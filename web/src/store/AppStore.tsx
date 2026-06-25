@@ -136,11 +136,15 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      // Hydrate each slice independently: a single failing Store read (IndexedDB
+      // blocked/corrupt, or a transient RemoteStore network error in Server Mode)
+      // must degrade that one slice to a safe default — never reject the whole
+      // Promise.all and leave `hydrated` false forever (a permanent blank screen).
       const [loadedSettings, wl, hist, cw, cached] = await Promise.all([
-        loadSettingsFromStore(),
-        loadWatchlist(),
-        loadHistory(),
-        loadContinueWatching(),
+        loadSettingsFromStore().catch(() => loadSettings()),
+        loadWatchlist().catch(() => []),
+        loadHistory().catch(() => []),
+        loadContinueWatching().catch(() => []),
         getStore().listCachedResolutions().catch(() => []),
       ]);
       if (cancelled) return;

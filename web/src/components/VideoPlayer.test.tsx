@@ -251,6 +251,84 @@ describe("WebviewPlayer", () => {
     expect(hlsInstances).toHaveLength(0);
   });
 
+  // Cross-device resume seeking. The interesting case is HLS, where `duration`
+  // is NaN at loadedmetadata and only becomes known on a later durationchange —
+  // the seek must be retried then rather than silently dropped.
+  function instrumentVideo(video: HTMLVideoElement, duration: number) {
+    let dur = duration;
+    let current = 0;
+    Object.defineProperty(video, "duration", {
+      configurable: true,
+      get: () => dur,
+      set: (v: number) => {
+        dur = v;
+      },
+    });
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => current,
+      set: (v: number) => {
+        current = v;
+      },
+    });
+    return {
+      setDuration: (v: number) => {
+        dur = v;
+      },
+      currentTime: () => current,
+    };
+  }
+
+  it("resumes to the saved position immediately when duration is known (progressive)", () => {
+    const { container } = render(
+      <VideoPlayer
+        url="https://x/test.mp4"
+        title="T"
+        onClose={() => {}}
+        startPositionSeconds={120}
+      />,
+    );
+    const video = container.querySelector("video.player-video") as HTMLVideoElement;
+    const probe = instrumentVideo(video, 3600);
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(probe.currentTime()).toBe(120);
+  });
+
+  it("defers the resume seek until duration arrives, then applies it (HLS)", () => {
+    const { container } = render(
+      <VideoPlayer
+        url="https://x/stream.m3u8"
+        title="T"
+        onClose={() => {}}
+        startPositionSeconds={120}
+      />,
+    );
+    const video = container.querySelector("video.player-video") as HTMLVideoElement;
+    const probe = instrumentVideo(video, Number.NaN); // duration unknown at first
+    // loadedmetadata with NaN duration must NOT seek (would clamp to 0 + stick).
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(probe.currentTime()).toBe(0);
+    // Duration becomes known → durationchange retries and the seek lands.
+    probe.setDuration(3600);
+    video.dispatchEvent(new Event("durationchange"));
+    expect(probe.currentTime()).toBe(120);
+  });
+
+  it("does not resume a basically-finished item (start within 10s of the end)", () => {
+    const { container } = render(
+      <VideoPlayer
+        url="https://x/test.mp4"
+        title="T"
+        onClose={() => {}}
+        startPositionSeconds={3595}
+      />,
+    );
+    const video = container.querySelector("video.player-video") as HTMLVideoElement;
+    const probe = instrumentVideo(video, 3600);
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(probe.currentTime()).toBe(0);
+  });
+
   it("renders <track> elements for loaded subtitle tracks", () => {
     subsState.tracks = [
       { id: "t1", label: "EN", language: "en", vttUrl: "blob:vtt1" },

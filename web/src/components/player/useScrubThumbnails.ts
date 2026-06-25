@@ -106,7 +106,12 @@ export function useScrubThumbnails(
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (video == null || canvas == null) return;
-    const ratio = video.videoHeight > 0 ? video.videoHeight / video.videoWidth : 9 / 16;
+    // Guard videoWidth too: a corrupt stream can report height>0 with width 0,
+    // which would make the ratio Infinity and canvas.height Infinity.
+    const ratio =
+      video.videoHeight > 0 && video.videoWidth > 0
+        ? video.videoHeight / video.videoWidth
+        : 9 / 16;
     canvas.width = THUMB_WIDTH;
     canvas.height = Math.round(THUMB_WIDTH * ratio);
     const ctx = canvas.getContext("2d");

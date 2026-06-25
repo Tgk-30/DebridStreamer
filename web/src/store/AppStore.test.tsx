@@ -270,6 +270,25 @@ describe("initial load / hydration", () => {
     expect(result.current.cachedResolutions).toEqual({});
   });
 
+  it("still hydrates (never bricks) when a core Store read rejects on mount", async () => {
+    // A blocked/corrupt IndexedDB, or a transient RemoteStore network error in
+    // Server Mode, must not leave `hydrated` false forever (a blank screen). Each
+    // slice degrades to a safe default; settings fall back to the sync bootstrap.
+    loadSettingsFromStore.mockRejectedValue(new Error("idb blocked"));
+    loadWatchlist.mockRejectedValue(new Error("idb blocked"));
+    loadHistory.mockRejectedValue(new Error("idb blocked"));
+    loadContinueWatching.mockRejectedValue(new Error("idb blocked"));
+    loadSettings.mockReturnValue(settings({ theme: "aurora" }));
+
+    const { result } = await renderStore();
+
+    expect(result.current.hydrated).toBe(true);
+    expect(result.current.settings.theme).toBe("aurora"); // bootstrap fallback
+    expect(result.current.watchlist).toEqual([]);
+    expect(result.current.history).toEqual([]);
+    expect(result.current.continueWatching).toEqual([]);
+  });
+
   it("builds services from the bootstrap settings", async () => {
     await renderStore();
     expect(buildServices).toHaveBeenCalled();

@@ -252,17 +252,22 @@ function WebviewPlayer({
         report();
       }
     };
-    const onLoadedMeta = () => {
-      if (Number.isFinite(video.duration)) setDuration(video.duration);
-      // Cross-device resume: seek to the saved position once, but only if it's a
-      // meaningful offset and not basically at the end (so a finished item still
-      // starts fresh). Re-applied via durationchange for HLS where duration may
-      // arrive slightly later.
+    // Cross-device resume: seek to the saved position once, but only if it's a
+    // meaningful offset and not basically at the end (so a finished item still
+    // starts fresh). HLS reports `duration` AFTER loadedmetadata, so when the
+    // duration isn't known yet we wait and let the durationchange handler retry
+    // — seeking into an unknown/zero seekable range just gets clamped to 0 and,
+    // since we'd have marked it done, would never resume.
+    const applyResume = () => {
       if (didSeekRef.current) return;
       const start = startPositionRef.current ?? 0;
-      if (start <= 5) return;
+      if (start <= 5) {
+        didSeekRef.current = true; // nothing meaningful to resume to
+        return;
+      }
       const d = Number.isFinite(video.duration) ? video.duration : 0;
-      if (d > 0 && start >= d - 10) {
+      if (d <= 0) return; // duration unknown yet (HLS) — retry on durationchange
+      if (start >= d - 10) {
         didSeekRef.current = true; // basically finished — don't resume
         return;
       }
@@ -273,8 +278,13 @@ function WebviewPlayer({
         // Some sources reject an early seek; the timeupdate path will catch up.
       }
     };
+    const onLoadedMeta = () => {
+      if (Number.isFinite(video.duration)) setDuration(video.duration);
+      applyResume();
+    };
     const onDurationChange = () => {
       if (Number.isFinite(video.duration)) setDuration(video.duration);
+      applyResume();
     };
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMeta);
