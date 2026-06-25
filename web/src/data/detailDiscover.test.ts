@@ -264,6 +264,36 @@ describe("useDetail", () => {
     expect(result.current.error).toBe("server 500");
     expect(result.current.data.item?.title).toBe("Predator");
   });
+
+  it("server mode failure stringifies a non-Error rejection", async () => {
+    // Hits the `err instanceof Error ? ... : String(err)` else-branch on the
+    // server-mode catch.
+    isServerMode.mockReturnValue(true);
+    // eslint-disable-next-line @typescript-eslint/no-throw-literal
+    fetchServerDetail.mockRejectedValue("server string boom");
+    // Stable preview ref: useDetail lists `preview` in its effect deps, so a
+    // fresh object per render would re-run the effect forever.
+    const p = preview();
+    const { result } = renderHook(() => useDetail(p, null));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.source).toBe("fixtures");
+    expect(result.current.error).toBe("server string boom");
+  });
+
+  it("previewToItem nulls every optional field when the preview omits them", async () => {
+    // A bare preview (no year/poster/backdrop/rating/tmdbId) exercises each
+    // `?? null` fallback in previewToItem on the no-key fixtures path.
+    const bare: MediaPreview = { id: "tt1", type: "movie", title: "Bare" };
+    const { result } = renderHook(() => useDetail(bare, null));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const item = result.current.data.item;
+    expect(item?.title).toBe("Bare");
+    expect(item?.year).toBeNull();
+    expect(item?.posterPath).toBeNull();
+    expect(item?.backdropPath).toBeNull();
+    expect(item?.imdbRating).toBeNull();
+    expect(item?.tmdbId).toBeNull();
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -403,5 +433,32 @@ describe("useDiscover", () => {
     expect(result.current.source).toBe("fixtures");
     expect(result.current.error).toBe("server gone");
     expect(result.current.data?.trendingMovies[0]?.id).toBe("tmdb-100");
+  });
+
+  it("server mode failure stringifies a non-Error rejection", async () => {
+    // else-branch of `err instanceof Error ? ... : String(err)` (server path).
+    isServerMode.mockReturnValue(true);
+    // eslint-disable-next-line @typescript-eslint/no-throw-literal
+    fetchServerDiscoverHome.mockRejectedValue("srv string");
+    // Stable service ref (useDiscover lists `tmdb` in its effect deps).
+    const svc = fakeTMDB();
+    const { result } = renderHook(() => useDiscover(svc));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.source).toBe("fixtures");
+    expect(result.current.error).toBe("srv string");
+  });
+
+  it("a live failure stringifies a non-Error rejection", async () => {
+    // else-branch of the live-path catch's `err instanceof Error` ternary.
+    const svc = fakeTMDB({
+      getTrending: vi.fn(async () => {
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw "live string";
+      }),
+    });
+    const { result } = renderHook(() => useDiscover(svc));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.source).toBe("fixtures");
+    expect(result.current.error).toBe("live string");
   });
 });

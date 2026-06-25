@@ -56,4 +56,22 @@ describe("serverSetupSteps", () => {
     expect(stepIndex("welcome")).toBe(0);
     expect(stepIndex("done")).toBe(SERVER_SETUP_STEPS.length - 1);
   });
+
+  describe("unknown / out-of-flow step (defensive branches)", () => {
+    // A value not in SERVER_SETUP_STEPS yields index -1; the guards must treat it
+    // as terminal-ish (no next, no previous) rather than indexing off the array.
+    const bogus = "bogus" as unknown as Parameters<typeof nextStep>[0];
+
+    it("stepIndex returns -1 for an unknown step", () => {
+      expect(stepIndex(bogus)).toBe(-1);
+    });
+
+    it("nextStep returns null when the step is unknown (index < 0 guard)", () => {
+      expect(nextStep(bogus)).toBeNull();
+    });
+
+    it("previousStep returns null when the step is unknown (index <= 0 guard)", () => {
+      expect(previousStep(bogus)).toBeNull();
+    });
+  });
 });

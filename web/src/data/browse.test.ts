@@ -181,6 +181,20 @@ describe("toDiscoverFilters", () => {
     expect(df.sortBy).toBe(SortOption.ratingDesc);
     expect(df.page).toBe(2);
   });
+
+  it("falls back to null genre/year when the draft constrains neither", () => {
+    // genreIds empty -> `genreIds[0] ?? null` right side; both year bounds null
+    // -> `yearGTE ?? yearLTE ?? null` rightmost null.
+    const df = toDiscoverFilters(emptyBrowseFilters(), 1);
+    expect(df.genreId).toBeNull();
+    expect(df.year).toBeNull();
+  });
+
+  it("uses yearLTE as the discover year when only the upper bound is set", () => {
+    // yearGTE null -> `yearGTE ?? yearLTE` takes the middle operand.
+    const df = toDiscoverFilters(filters({ yearGTE: null, yearLTE: 2012 }), 1);
+    expect(df.year).toBe(2012);
+  });
 });
 
 describe("browseTitle", () => {
@@ -209,6 +223,18 @@ describe("browseTitle", () => {
         filters: emptyBrowseFilters(),
       }),
     ).toBe("Discover movies");
+  });
+
+  it("falls back to 'Browse' for an unknown category key", () => {
+    // An out-of-table category -> `CATEGORY_TITLES[...] ?? "Browse"` right side.
+    expect(
+      browseTitle({
+        kind: "category",
+        type: "movie",
+        // deliberately a category not in CATEGORY_TITLES
+        category: "made_up" as never,
+      }),
+    ).toBe("Browse movies");
   });
 });
 
@@ -247,6 +273,45 @@ describe("sortPreviews", () => {
       original,
     );
     expect(items.map((i) => i.id)).toEqual(original);
+  });
+
+  it("sorts by release date ascending (oldest first)", () => {
+    expect(
+      sortPreviews(items, SortOption.releaseDateAsc).map((i) => i.id),
+    ).toEqual(["c", "a", "b"]);
+  });
+
+  it("treats a missing year as 0 when sorting by release date", () => {
+    // year is absent on `noYear` -> the `?? 0` fallback fires, sinking it to the
+    // bottom for desc and the top for asc.
+    const noYear = { id: "x", type: "movie" as const, title: "NoYear" };
+    const list = [
+      preview({ id: "y2000", year: 2000 }),
+      noYear,
+      preview({ id: "y2020", year: 2020 }),
+    ];
+    expect(
+      sortPreviews(list, SortOption.releaseDateDesc).map((i) => i.id),
+    ).toEqual(["y2020", "y2000", "x"]);
+    expect(
+      sortPreviews(list, SortOption.releaseDateAsc).map((i) => i.id),
+    ).toEqual(["x", "y2000", "y2020"]);
+  });
+
+  it("treats a missing rating as 0 when sorting by rating", () => {
+    // imdbRating absent on `noRating` -> the `?? 0` fallback fires.
+    const noRating = { id: "nr", type: "movie" as const, title: "NoRating" };
+    const list = [
+      preview({ id: "r6", imdbRating: 6 }),
+      noRating,
+      preview({ id: "r9", imdbRating: 9 }),
+    ];
+    expect(
+      sortPreviews(list, SortOption.ratingDesc).map((i) => i.id),
+    ).toEqual(["r9", "r6", "nr"]);
+    expect(
+      sortPreviews(list, SortOption.ratingAsc).map((i) => i.id),
+    ).toEqual(["nr", "r6", "r9"]);
   });
 });
 
@@ -296,6 +361,52 @@ describe("fixtureBrowsePage", () => {
     });
     const ids = page.items.map((i) => i.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("applies a discover lower year bound to the fixture corpus", () => {
+    // yearGTE set -> the `(i.year ?? 0) >= yearGTE` filter fires; every survivor
+    // is at/after the floor.
+    const page = fixtureBrowsePage({
+      kind: "discover",
+      type: "movie",
+      filters: filters({ yearGTE: 2000 }),
+    });
+    expect(page.items.length).toBeGreaterThan(0);
+    expect(page.items.every((i) => (i.year ?? 0) >= 2000)).toBe(true);
+  });
+
+  it("applies a discover upper year bound to the fixture corpus", () => {
+    // yearLTE set -> the `(i.year ?? 9999) <= yearLTE` filter fires.
+    const page = fixtureBrowsePage({
+      kind: "discover",
+      type: "movie",
+      filters: filters({ yearLTE: 2005 }),
+    });
+    expect(page.items.every((i) => (i.year ?? 9999) <= 2005)).toBe(true);
+  });
+
+  it("applies both year bounds together (closed range)", () => {
+    const page = fixtureBrowsePage({
+      kind: "discover",
+      type: "movie",
+      filters: filters({ yearGTE: 1990, yearLTE: 2010 }),
+    });
+    expect(
+      page.items.every(
+        (i) => (i.year ?? 0) >= 1990 && (i.year ?? 9999) <= 2010,
+      ),
+    ).toBe(true);
+  });
+
+  it("type-filters a typed search against the fixture corpus", () => {
+    // type non-null -> the `ctx.type == null` short-circuit is false, so the
+    // type predicate is evaluated.
+    const page = fixtureBrowsePage({
+      kind: "search",
+      type: "movie",
+      query: "a",
+    });
+    expect(page.items.every((i) => i.type === "movie")).toBe(true);
   });
 });
 

@@ -1,3 +1,8 @@
+// @vitest-environment jsdom
+//
+// jsdom env so `window` exists — the defaultEnabled/isTauriSafe gate inspects
+// window globals (__TAURI_INTERNALS__ / __TAURI__). The rest of these tests are
+// pure logic that runs identically under jsdom.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   resolveOne,
@@ -469,5 +474,48 @@ describe("AutoResolveScheduler — gate, throttle, re-entrancy", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(deps.store.listWatchlist).toHaveBeenCalled();
     sched.stop();
+  });
+});
+
+describe("AutoResolveScheduler — defaultEnabled gate (real Tauri check)", () => {
+  const W = window as unknown as Record<string, unknown>;
+
+  afterEach(() => {
+    delete W.__TAURI_INTERNALS__;
+    delete W.__TAURI__;
+  });
+
+  function schedulerDeps() {
+    const base = makeDeps();
+    (base.indexers as unknown as { activeIndexers: string[] }).activeIndexers = ["ix"];
+    base.store = {
+      getCachedResolution: vi.fn(async () => null),
+      putCachedResolution: vi.fn(async () => {}),
+      listWatchlist: vi.fn(async () => [{ preview: previewOf("tt1") }]),
+    } as unknown as Store;
+    return base;
+  }
+
+  it("default gate is disabled outside Tauri (no window globals) → kick() no-ops", async () => {
+    // Neither __TAURI_INTERNALS__ nor __TAURI__ present in jsdom's window.
+    const deps = schedulerDeps();
+    const sched = new AutoResolveScheduler(() => deps); // uses defaultEnabled
+    expect(await sched.kick()).toBeNull();
+    expect(deps.store.listWatchlist).not.toHaveBeenCalled();
+  });
+
+  it("default gate is enabled when __TAURI_INTERNALS__ is present → kick() runs", async () => {
+    W.__TAURI_INTERNALS__ = {};
+    const deps = schedulerDeps();
+    const sched = new AutoResolveScheduler(() => deps);
+    expect(await sched.kick()).toEqual({ attempted: 1, resolved: 1, skipped: 0 });
+    expect(deps.store.listWatchlist).toHaveBeenCalledTimes(1);
+  });
+
+  it("default gate is enabled when the legacy __TAURI__ global is present", async () => {
+    W.__TAURI__ = {};
+    const deps = schedulerDeps();
+    const sched = new AutoResolveScheduler(() => deps);
+    expect(await sched.kick()).toEqual({ attempted: 1, resolved: 1, skipped: 0 });
   });
 });

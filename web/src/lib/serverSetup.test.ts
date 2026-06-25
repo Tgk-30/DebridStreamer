@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DexieStore } from "../storage/DexieStore";
 import { __setStoreForTesting } from "../storage";
 import {
@@ -61,6 +61,21 @@ describe("serverSetup", () => {
       await expect(
         shouldShowServerSetup({ role: "member", credentialCount: 0 }),
       ).resolves.toBe(false);
+    });
+
+    it("hides (fails safe) when reading the persisted flag throws", async () => {
+      // Inject a store whose getSetting rejects, exercising the catch that must
+      // NOT trap the owner behind setup when the store can't be read.
+      const throwingStore = {
+        getSetting: vi.fn(async () => {
+          throw new Error("store read failed");
+        }),
+      } as unknown as DexieStore;
+      __setStoreForTesting(throwingStore);
+      await expect(
+        shouldShowServerSetup({ role: "owner", credentialCount: 0 }),
+      ).resolves.toBe(false);
+      expect(throwingStore.getSetting).toHaveBeenCalled();
     });
   });
 });

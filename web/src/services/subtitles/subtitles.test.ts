@@ -137,6 +137,120 @@ describe("OpenSubtitlesClient", () => {
     expect(calls[0].method).toBe("POST");
     expect(calls[1].url).toBe("https://dl.example/sub.srt");
   });
+
+  it("search throws OpenSubtitlesError with the status + body on a non-2xx response", async () => {
+    const { fetchImpl } = makeFetch([
+      { match: "/subtitles", status: 429, body: "rate limited" },
+    ]);
+    const client = new OpenSubtitlesClient("k", fetchImpl);
+    await expect(client.search({ imdbId: "tt1" })).rejects.toMatchObject({
+      name: "OpenSubtitlesError",
+      status: 429,
+      message: "rate limited",
+    });
+  });
+
+  it("search falls back to a default message when the error body is empty", async () => {
+    const { fetchImpl } = makeFetch([
+      { match: "/subtitles", status: 500, body: "" },
+    ]);
+    const client = new OpenSubtitlesClient("k", fetchImpl);
+    await expect(client.search({ imdbId: "tt1" })).rejects.toMatchObject({
+      status: 500,
+      message: "OpenSubtitles search failed",
+    });
+  });
+
+  it("download throws when no key is configured", async () => {
+    const { fetchImpl } = makeFetch([]);
+    const client = new OpenSubtitlesClient("", fetchImpl);
+    await expect(client.download("99")).rejects.toMatchObject({
+      name: "OpenSubtitlesError",
+      status: 0,
+    });
+  });
+
+  it("download throws on a non-2xx POST /download response", async () => {
+    const { fetchImpl } = makeFetch([
+      { match: "/download", status: 406, body: "no quota" },
+    ]);
+    const client = new OpenSubtitlesClient("k", fetchImpl);
+    await expect(client.download("99")).rejects.toMatchObject({
+      status: 406,
+      message: "no quota",
+    });
+  });
+
+  it("download falls back to a default message when the download error body is empty", async () => {
+    const { fetchImpl } = makeFetch([
+      { match: "/download", status: 403, body: "" },
+    ]);
+    const client = new OpenSubtitlesClient("k", fetchImpl);
+    await expect(client.download("99")).rejects.toMatchObject({
+      status: 403,
+      message: "OpenSubtitles download failed",
+    });
+  });
+
+  it("download throws 502 when the API returns no download link", async () => {
+    const { fetchImpl } = makeFetch([
+      { match: "/download", body: JSON.stringify({ link: "" }) },
+    ]);
+    const client = new OpenSubtitlesClient("k", fetchImpl);
+    await expect(client.download("99")).rejects.toMatchObject({
+      status: 502,
+      message: "OpenSubtitles returned no download link.",
+    });
+  });
+
+  it("download throws 502 when the link field is absent entirely", async () => {
+    const { fetchImpl } = makeFetch([
+      { match: "/download", body: JSON.stringify({}) },
+    ]);
+    const client = new OpenSubtitlesClient("k", fetchImpl);
+    await expect(client.download("99")).rejects.toMatchObject({ status: 502 });
+  });
+
+  it("download throws when the resolved file link fetch is non-2xx", async () => {
+    const { fetchImpl } = makeFetch([
+      { match: "/download", body: JSON.stringify({ link: "https://dl.example/sub.srt" }) },
+      { match: "dl.example", status: 404, body: "" },
+    ]);
+    const client = new OpenSubtitlesClient("k", fetchImpl);
+    await expect(client.download("99")).rejects.toMatchObject({
+      status: 404,
+      message: "Failed to fetch the subtitle file.",
+    });
+  });
+
+  it("search uses the default message when reading the error body itself rejects", async () => {
+    // The `.catch(() => "")` guard around res.text() on the error path.
+    const fetchImpl: FetchImpl = async () => ({
+      status: 500,
+      text: async () => {
+        throw new Error("body stream errored");
+      },
+    });
+    const client = new OpenSubtitlesClient("k", fetchImpl);
+    await expect(client.search({ imdbId: "tt1" })).rejects.toMatchObject({
+      status: 500,
+      message: "OpenSubtitles search failed",
+    });
+  });
+
+  it("download uses the default message when reading the error body itself rejects", async () => {
+    const fetchImpl: FetchImpl = async () => ({
+      status: 502,
+      text: async () => {
+        throw new Error("body stream errored");
+      },
+    });
+    const client = new OpenSubtitlesClient("k", fetchImpl);
+    await expect(client.download("99")).rejects.toMatchObject({
+      status: 502,
+      message: "OpenSubtitles download failed",
+    });
+  });
 });
 
 describe("buildTranslationPrompt", () => {

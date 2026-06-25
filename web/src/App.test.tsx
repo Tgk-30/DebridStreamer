@@ -33,6 +33,7 @@ type StoreSlice = {
   search: typeof search;
   settings: { autoUpdateChecks: boolean; autoInstallUpdates: boolean };
   simpleMode: boolean;
+  hydrated: boolean;
 };
 
 let store: StoreSlice;
@@ -188,26 +189,50 @@ vi.mock("./components/UpdateBanner", () => ({
 // FirstRunHost-only children (imported by App.tsx module). Stub so the module
 // graph resolves without pulling their real (heavy) implementations.
 vi.mock("./components/FirstRunWizard", () => ({
-  FirstRunWizard: () => <div>first-run</div>,
+  FirstRunWizard: ({ onDone }: { onDone: () => void }) => (
+    <button data-testid="first-run" onClick={onDone}>
+      first-run
+    </button>
+  ),
 }));
 vi.mock("./components/ServerSetupWizard", () => ({
-  ServerSetupWizard: () => <div>server-setup</div>,
+  ServerSetupWizard: ({ onDone }: { onDone: () => void }) => (
+    <button data-testid="server-setup" onClick={onDone}>
+      server-setup
+    </button>
+  ),
 }));
 vi.mock("./components/TierOnboarding", () => ({
-  TierOnboarding: () => <div>tier-onboarding</div>,
-}));
-vi.mock("./lib/ServerSessionContext", () => ({
-  useServerSession: () => null,
-}));
-vi.mock("./lib/firstRun", () => ({ isFirstRun: () => Promise.resolve(false) }));
-vi.mock("./lib/serverSetup", () => ({
-  shouldShowServerSetup: () => Promise.resolve(false),
-}));
-vi.mock("./lib/serverApi", () => ({
-  fetchServerAdminHealth: () => Promise.resolve({ counts: { credentials: 0 } }),
+  TierOnboarding: ({ onDone }: { onDone: () => void }) => (
+    <button data-testid="tier-onboarding" onClick={onDone}>
+      tier-onboarding
+    </button>
+  ),
 }));
 
-import { App } from "./App";
+// FirstRunHost-controllable async gates (mutable so each test drives them).
+let sessionValue: { role: string } | null = null;
+vi.mock("./lib/ServerSessionContext", () => ({
+  useServerSession: () => sessionValue,
+}));
+
+let firstRunValue = false;
+vi.mock("./lib/firstRun", () => ({
+  isFirstRun: () => Promise.resolve(firstRunValue),
+}));
+
+let serverSetupValue = false;
+vi.mock("./lib/serverSetup", () => ({
+  shouldShowServerSetup: () => Promise.resolve(serverSetupValue),
+}));
+
+let adminHealthCredentials = 0;
+vi.mock("./lib/serverApi", () => ({
+  fetchServerAdminHealth: () =>
+    Promise.resolve({ counts: { credentials: adminHealthCredentials } }),
+}));
+
+import { App, FirstRunHost } from "./App";
 
 // jsdom here exposes localStorage only on an opaque origin (no working
 // setItem/clear), so install a tiny in-memory shim App can read/write.
@@ -241,6 +266,7 @@ function makeStore(over: Partial<StoreSlice> = {}): StoreSlice {
     search,
     settings: { autoUpdateChecks: true, autoInstallUpdates: false },
     simpleMode: false,
+    hydrated: true,
     ...over,
   };
 }
@@ -252,6 +278,10 @@ beforeEach(() => {
   whenIdle.mockClear();
   serverModeValue = false;
   smartPreloadEnabled = false;
+  sessionValue = null;
+  firstRunValue = false;
+  serverSetupValue = false;
+  adminHealthCredentials = 0;
   store = makeStore();
   installLocalStorage();
   // Default: the welcome-guide seen flag is set so the auto-tour is OFF unless
@@ -465,5 +495,119 @@ describe("smart preload effect", () => {
     smartPreloadEnabled = true;
     render(<App />);
     expect(whenIdle).toHaveBeenCalledTimes(1);
+  });
+});
+
+// -----------------------------------------------------------------------
+// FirstRunHost — the async wizard gate that decides between TierOnboarding,
+// FirstRunWizard, ServerSetupWizard, and the App itself. It returns null until
+// BOTH the relevant async gate AND store hydration resolve, so most assertions
+// use findBy* / waitFor to let the effects settle.
+// -----------------------------------------------------------------------
+
+describe("FirstRunHost gating", () => {
+  it("renders nothing until the store has hydrated", async () => {
+    store = makeStore({ hydrated: false });
+    const { container } = render(<FirstRunHost />);
+    // firstRun resolves to false, but hydrated=false keeps it null-rendering.
+    await waitFor(() => {
+      // nothing meaningful mounted (no app, no wizard markers).
+      expect(screen.queryByTestId("nav-rail")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("first-run")).not.toBeInTheDocument();
+    });
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the App once hydrated with no first-run and no server setup", async () => {
+    // welcomed flag set so TierOnboarding never shows; not first-run.
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
+  });
+
+  it("shows TierOnboarding first on a genuine local first-run, then the FirstRunWizard", async () => {
+    firstRunValue = true;
+    globalThis.localStorage.removeItem("ds_tier_welcomed");
+    render(<FirstRunHost />);
+
+    // Tier welcome precedes the persona wizard on a fresh start.
+    const tier = await screen.findByTestId("tier-onboarding");
+    expect(tier).toBeInTheDocument();
+    expect(screen.queryByTestId("first-run")).not.toBeInTheDocument();
+
+    // Acknowledging the welcome persists the flag and reveals the FirstRunWizard.
+    fireEvent.click(tier);
+    expect(await screen.findByTestId("first-run")).toBeInTheDocument();
+    expect(globalThis.localStorage.getItem("ds_tier_welcomed")).toBe("1");
+  });
+
+  it("skips TierOnboarding when already welcomed and goes straight to the FirstRunWizard", async () => {
+    firstRunValue = true;
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    expect(await screen.findByTestId("first-run")).toBeInTheDocument();
+    expect(screen.queryByTestId("tier-onboarding")).not.toBeInTheDocument();
+  });
+
+  it("completing the FirstRunWizard reveals the App", async () => {
+    firstRunValue = true;
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    fireEvent.click(await screen.findByTestId("first-run"));
+    expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
+  });
+
+  it("shows the ServerSetupWizard for a fresh server when the owner has no credentials", async () => {
+    serverModeValue = true;
+    sessionValue = { role: "owner" };
+    serverSetupValue = true; // shouldShowServerSetup → true
+    adminHealthCredentials = 0;
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    expect(await screen.findByTestId("server-setup")).toBeInTheDocument();
+  });
+
+  it("completing the ServerSetupWizard reveals the App", async () => {
+    serverModeValue = true;
+    sessionValue = { role: "owner" };
+    serverSetupValue = true;
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    fireEvent.click(await screen.findByTestId("server-setup"));
+    expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
+  });
+
+  it("skips server setup for a non-owner session (resolves straight to App)", async () => {
+    serverModeValue = true;
+    sessionValue = { role: "member" };
+    serverSetupValue = true; // would show, but non-owner short-circuits to false
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
+    expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the tier-welcome safely when localStorage throws", async () => {
+    // Private-mode style: getItem throws → welcomed defaults to true, so no
+    // TierOnboarding even on a first-run; the FirstRunWizard shows directly.
+    firstRunValue = true;
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: () => {
+          throw new Error("blocked");
+        },
+        setItem: () => {
+          throw new Error("blocked");
+        },
+        removeItem: () => {},
+        clear: () => {},
+        key: () => null,
+        length: 0,
+      },
+    });
+    render(<FirstRunHost />);
+    expect(await screen.findByTestId("first-run")).toBeInTheDocument();
+    expect(screen.queryByTestId("tier-onboarding")).not.toBeInTheDocument();
   });
 });

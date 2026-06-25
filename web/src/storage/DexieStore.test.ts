@@ -7,11 +7,13 @@
 // library + folder CRUD; indexer/debrid config CRUD + ordering; secrets.
 
 import "fake-indexeddb/auto";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DexieStore } from "./DexieStore";
 import {
   makeIndexerConfigRecord,
   systemFolderID,
+  type AIUsageRecord,
+  type CachedResolutionRecord,
   type DebridConfigRecord,
   type TasteEventRecord,
 } from "./models";
@@ -246,6 +248,20 @@ describe("library + folders", () => {
     await expect(db.createFolder("X", "watchlist", null)).rejects.toThrow();
   });
 
+  it("createFolder falls back to a timestamp-random id when crypto.randomUUID is absent", async () => {
+    // Exercise the uuid() fallback used in environments without crypto.randomUUID.
+    const original = (globalThis as { crypto?: Crypto }).crypto;
+    vi.stubGlobal("crypto", {}); // no randomUUID
+    try {
+      const folder = await db.createFolder("Fallback", "favorites", null);
+      // Fallback shape: "folder-<base36ts>-<base36rand>" (no UUID hyphen-groups).
+      expect(folder.id).toMatch(/^folder-[0-9a-z]+-[0-9a-z]+$/);
+    } finally {
+      vi.stubGlobal("crypto", original);
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("createFolder uniquifies duplicate names", async () => {
     const a = await db.createFolder("Dupe", "favorites", null);
     const b = await db.createFolder("Dupe", "favorites", null);
@@ -269,9 +285,70 @@ describe("library + folders", () => {
     );
   });
 
+  it("deleteFolder drops an entry that already lives in the system root (collision)", async () => {
+    // Same media in BOTH a manual folder and the system root → on delete the
+    // manual-folder row is dropped (not reassigned) to avoid a duplicate.
+    const folder = await db.createFolder("Temp", "favorites", null);
+    await db.addToLibrary({
+      mediaId: "tt1",
+      listType: "favorites",
+      folderId: folder.id,
+      preview: preview("tt1"),
+    });
+    await db.addToLibrary({
+      mediaId: "tt1",
+      listType: "favorites",
+      folderId: systemFolderID("favorites"),
+      preview: preview("tt1"),
+    });
+    await db.deleteFolder(folder.id);
+    const root = await db.listLibraryByFolder(systemFolderID("favorites"));
+    // Exactly one row remains for tt1 in the root (no duplicate created).
+    expect(root.filter((e) => e.mediaId === "tt1")).toHaveLength(1);
+  });
+
+  it("deleteFolder on a missing id is a silent no-op", async () => {
+    await expect(db.deleteFolder("does-not-exist")).resolves.toBeUndefined();
+  });
+
   it("deleteFolder refuses system folders", async () => {
     await db.ensureSystemFolders();
     await expect(db.deleteFolder(systemFolderID("favorites"))).rejects.toThrow();
+  });
+
+  it("saveFolder upserts an arbitrary folder record", async () => {
+    const rec = {
+      id: "f-custom",
+      name: "Manual Save",
+      parentId: null,
+      listType: "favorites" as const,
+      folderKind: "manual" as const,
+      isSystem: false,
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    };
+    await db.saveFolder(rec);
+    expect(await db.listFolders("favorites")).toContainEqual(
+      expect.objectContaining({ id: "f-custom", name: "Manual Save" }),
+    );
+  });
+
+  it("listLibrary with no listType returns every entry, newest-first", async () => {
+    await db.addToLibrary({
+      mediaId: "tt1",
+      listType: "favorites",
+      addedAt: "2024-01-01T00:00:00.000Z",
+      preview: preview("tt1"),
+    });
+    await db.addToLibrary({
+      mediaId: "tt2",
+      listType: "watchlist",
+      addedAt: "2024-02-02T00:00:00.000Z",
+      preview: preview("tt2"),
+    });
+    const all = await db.listLibrary();
+    // Both list types present, ordered newest addedAt first.
+    expect(all.map((e) => e.mediaId)).toEqual(["tt2", "tt1"]);
   });
 
   it("removeFromLibrary removes an entry by id", async () => {
@@ -289,6 +366,18 @@ describe("library + folders", () => {
     await db.createFolder("AAA Manual", "favorites", null);
     const folders = await db.listFolders("favorites");
     expect(folders[0].isSystem).toBe(true);
+  });
+
+  it("listFolders orders same-tier (non-system) folders by name", async () => {
+    await db.createFolder("Zeta", "favorites", null);
+    await db.createFolder("Alpha", "favorites", null);
+    const manual = (await db.listFolders("favorites")).filter((f) => !f.isSystem);
+    expect(manual.map((f) => f.name)).toEqual(["Alpha", "Zeta"]);
+  });
+
+  it("createFolder with a blank name defaults to 'New Folder'", async () => {
+    const folder = await db.createFolder("   ", "favorites", null);
+    expect(folder.name).toBe("New Folder");
   });
 });
 
@@ -419,5 +508,92 @@ describe("secrets", () => {
     expect(await db.getSecret("k")).toBe("rotated");
     await db.deleteSecret("k");
     expect(await db.getSecret("k")).toBeNull();
+  });
+});
+
+// ---- AI usage (local-only cost/token ledger) --------------------------------
+
+describe("AI usage ledger", () => {
+  function usage(id: string, cost: number | null): AIUsageRecord {
+    return {
+      id,
+      provider: "openai",
+      model: "gpt-4o-mini",
+      feature: "analyze",
+      inputTokens: 10,
+      outputTokens: 20,
+      totalTokens: 30,
+      estimatedCostUSD: cost,
+      createdAt: "2024-01-01T00:00:00.000Z",
+    };
+  }
+
+  it("starts at zero cost with no records", async () => {
+    expect(await db.totalAIUsageCostUSD()).toBe(0);
+  });
+
+  it("sums estimatedCostUSD across records, treating null as zero", async () => {
+    await db.addAIUsage(usage("u1", 0.01));
+    await db.addAIUsage(usage("u2", 0.25));
+    await db.addAIUsage(usage("u3", null)); // null contributes 0
+    expect(await db.totalAIUsageCostUSD()).toBeCloseTo(0.26, 10);
+  });
+
+  it("addAIUsage upserts by id (newest wins)", async () => {
+    await db.addAIUsage(usage("u1", 0.1));
+    await db.addAIUsage(usage("u1", 0.5));
+    expect(await db.totalAIUsageCostUSD()).toBeCloseTo(0.5, 10);
+  });
+});
+
+// ---- Cached resolutions (watchlist auto-resolve) ----------------------------
+
+describe("cached resolutions", () => {
+  function resolution(mediaId: string, resolvedAt: string): CachedResolutionRecord {
+    return {
+      mediaId,
+      stream: {
+        streamURL: `https://cdn.example/${mediaId}.mkv`,
+        quality: "1080p",
+        codec: "H.265",
+        audio: "AAC",
+        source: "WEB-DL",
+        sizeBytes: 1_000_000,
+        fileName: `${mediaId}.mkv`,
+        debridService: "RD",
+      },
+      resolvedAt,
+      debridService: "RD",
+      infoHash: `hash-${mediaId}`,
+    };
+  }
+
+  it("put + get round-trips and returns null for a missing id", async () => {
+    expect(await db.getCachedResolution("tt1")).toBeNull();
+    await db.putCachedResolution(resolution("tt1", "2024-01-01T00:00:00.000Z"));
+    const got = await db.getCachedResolution("tt1");
+    expect(got?.mediaId).toBe("tt1");
+    expect(got?.stream.streamURL).toBe("https://cdn.example/tt1.mkv");
+    expect(got?.infoHash).toBe("hash-tt1");
+  });
+
+  it("put is an upsert keyed by mediaId (newest wins)", async () => {
+    await db.putCachedResolution(resolution("tt1", "2024-01-01T00:00:00.000Z"));
+    await db.putCachedResolution(resolution("tt1", "2024-02-02T00:00:00.000Z"));
+    const got = await db.getCachedResolution("tt1");
+    expect(got?.resolvedAt).toBe("2024-02-02T00:00:00.000Z");
+    expect(await db.listCachedResolutions()).toHaveLength(1);
+  });
+
+  it("list returns all rows and delete removes one", async () => {
+    await db.putCachedResolution(resolution("tt1", "2024-01-01T00:00:00.000Z"));
+    await db.putCachedResolution(resolution("tt2", "2024-01-02T00:00:00.000Z"));
+    expect(await db.listCachedResolutions()).toHaveLength(2);
+    await db.deleteCachedResolution("tt1");
+    const remaining = await db.listCachedResolutions();
+    expect(remaining.map((r) => r.mediaId)).toEqual(["tt2"]);
+    // Deleting a missing id is a no-op.
+    await db.deleteCachedResolution("nope");
+    expect(await db.listCachedResolutions()).toHaveLength(1);
   });
 });

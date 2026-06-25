@@ -395,6 +395,22 @@ describe("RemoteStore", () => {
       await store().setSecret("some_other_key", "val");
       expect(fetchMock).not.toHaveBeenCalled();
     });
+
+    it("deleteSecret only clears the in-memory pending buffer (no fetch, no provider delete)", async () => {
+      const s = store();
+      // Buffer a non-provider secret, then a saveDebridConfig that consumes it.
+      await s.setSecret("rd_token_key", "buffered");
+      await s.deleteSecret("rd_token_key");
+      // The buffered value is gone, so a secret-marker debrid save now skips.
+      await s.saveDebridConfig({
+        id: "rd-1",
+        service: "realdebrid",
+        apiToken: "secret:rd_token_key",
+        priority: 0,
+        isActive: true,
+      } as never);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   describe("settings cache", () => {
@@ -432,6 +448,17 @@ describe("RemoteStore", () => {
       expect(getCalls).toHaveLength(1);
     });
 
+    it("setSetting with no populated cache PUTs without touching the cache", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+      const s = store();
+      // No prior allSettings() → settingsCache is null; the cache-patch branch is skipped.
+      await s.setSetting("k", "v");
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe("http://srv/api/settings/profile");
+      expect(init.method).toBe("PUT");
+      expect(JSON.parse(init.body)).toEqual({ key: "k", value: "v" });
+    });
+
     it("resetProfileCache forces the next allSettings to re-fetch", async () => {
       fetchMock
         .mockResolvedValueOnce(jsonResponse({ settings: { a: "1" } }))
@@ -441,6 +468,247 @@ describe("RemoteStore", () => {
       s.resetProfileCache();
       expect((await s.allSettings()).a).toBe("2");
       expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("library entries", () => {
+    const serverEntry = {
+      id: "lib-1",
+      mediaId: "tt1",
+      folderId: "f1",
+      listType: "favorites" as const,
+      addedAt: "2024-01-01T00:00:00.000Z",
+      customListName: null,
+      releaseDateHint: null,
+      renewalStatus: null,
+      preview: { id: "tt1", type: "movie" as const, title: "X" },
+    };
+
+    it("addToLibrary PUTs the upsert body and maps the response entry", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ entry: serverEntry }));
+      const r = await store().addToLibrary({
+        mediaId: "tt1",
+        listType: "favorites",
+        folderId: "f1",
+        addedAt: "2024-01-01T00:00:00.000Z",
+        preview: { id: "tt1", type: "movie", title: "X" },
+      });
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe("http://srv/api/library/tt1");
+      expect(init.method).toBe("PUT");
+      const body = JSON.parse(init.body);
+      expect(body.listType).toBe("favorites");
+      expect(body.folderId).toBe("f1");
+      // Optional fields default to null in the request body.
+      expect(body.customListName).toBeNull();
+      expect(body.releaseDateHint).toBeNull();
+      expect(body.renewalStatus).toBeNull();
+      expect(r).toEqual(serverEntry);
+    });
+
+    it("addToLibrary defaults absent optional fields to null", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ entry: serverEntry }));
+      await store().addToLibrary({
+        mediaId: "tt1",
+        listType: "favorites",
+        preview: { id: "tt1", type: "movie", title: "X" },
+      });
+      const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
+      expect(body.folderId).toBeNull();
+      expect(body.customListName).toBeNull();
+      expect(body.releaseDateHint).toBeNull();
+      expect(body.renewalStatus).toBeNull();
+    });
+
+    it("removeFromLibrary DELETEs the encoded entry id", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+      await store().removeFromLibrary("lib/9");
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe("http://srv/api/library/entry/lib%2F9");
+      expect(init.method).toBe("DELETE");
+    });
+
+    it("listLibrary maps rows and omits the query when no listType", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ items: [serverEntry] }));
+      const r = await store().listLibrary();
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://srv/api/library",
+        expect.anything(),
+      );
+      expect(r).toEqual([serverEntry]);
+    });
+
+    it("listLibrary adds an encoded listType query when provided", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ items: [] }));
+      await store().listLibrary("favorites");
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://srv/api/library?listType=favorites",
+        expect.anything(),
+      );
+    });
+
+    it("listLibraryByFolder GETs the encoded folder id and maps rows", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ items: [serverEntry] }));
+      const r = await store().listLibraryByFolder("f/1");
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://srv/api/library/folder/f%2F1",
+        expect.anything(),
+      );
+      expect(r).toEqual([serverEntry]);
+    });
+  });
+
+  describe("indexer configs — stored in profile settings JSON", () => {
+    function cfg(id: string, priority: number) {
+      return {
+        id,
+        type: "torznab",
+        name: id,
+        baseURL: "http://i",
+        apiKey: "k",
+        priority,
+        isActive: true,
+      } as never;
+    }
+
+    it("saveIndexerConfig merges, sorts by priority, and writes the settings key", async () => {
+      // First GET (allSettings) returns one existing config; the PUT saves the merged list.
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            settings: { server_indexer_configs: JSON.stringify([cfg("b", 5)]) },
+          }),
+        )
+        .mockResolvedValue(jsonResponse({ ok: true }));
+      await store().saveIndexerConfig(cfg("a", 1));
+      // The PUT call carries the sorted, merged JSON under the settings key.
+      const putCall = fetchMock.mock.calls.find((c) => c[1]?.method === "PUT")!;
+      expect(putCall[0]).toBe("http://srv/api/settings/profile");
+      const body = JSON.parse(putCall[1].body);
+      expect(body.key).toBe("server_indexer_configs");
+      const saved = JSON.parse(body.value);
+      expect(saved.map((r: { id: string }) => r.id)).toEqual(["a", "b"]); // priority 1 before 5
+    });
+
+    it("saveIndexerConfig replaces an existing config with the same id", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            settings: { server_indexer_configs: JSON.stringify([cfg("a", 9)]) },
+          }),
+        )
+        .mockResolvedValue(jsonResponse({ ok: true }));
+      await store().saveIndexerConfig(cfg("a", 2));
+      const putCall = fetchMock.mock.calls.find((c) => c[1]?.method === "PUT")!;
+      const saved = JSON.parse(JSON.parse(putCall[1].body).value);
+      expect(saved).toHaveLength(1);
+      expect(saved[0].priority).toBe(2);
+    });
+
+    it("listIndexerConfigs parses the settings JSON array", async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({
+          settings: { server_indexer_configs: JSON.stringify([cfg("a", 1)]) },
+        }),
+      );
+      const r = await store().listIndexerConfigs();
+      expect(r.map((x) => x.id)).toEqual(["a"]);
+    });
+
+    it("listIndexerConfigs returns [] when the key is absent or blank", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ settings: {} }));
+      expect(await store().listIndexerConfigs()).toEqual([]);
+    });
+
+    it("listIndexerConfigs returns [] on malformed (non-JSON) stored value", async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({ settings: { server_indexer_configs: "{not json" } }),
+      );
+      expect(await store().listIndexerConfigs()).toEqual([]);
+    });
+
+    it("listIndexerConfigs returns [] when stored JSON is not an array", async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({ settings: { server_indexer_configs: '{"a":1}' } }),
+      );
+      expect(await store().listIndexerConfigs()).toEqual([]);
+    });
+
+    it("deleteIndexerConfig drops the id and re-saves the remaining list", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            settings: {
+              server_indexer_configs: JSON.stringify([cfg("a", 1), cfg("b", 2)]),
+            },
+          }),
+        )
+        .mockResolvedValue(jsonResponse({ ok: true }));
+      await store().deleteIndexerConfig("a");
+      const putCall = fetchMock.mock.calls.find((c) => c[1]?.method === "PUT")!;
+      const saved = JSON.parse(JSON.parse(putCall[1].body).value);
+      expect(saved.map((r: { id: string }) => r.id)).toEqual(["b"]);
+    });
+  });
+
+  describe("saveDebridConfig — credential bridge", () => {
+    function debridConfig(over: Record<string, unknown> = {}) {
+      return {
+        id: "rd-1",
+        service: "realdebrid",
+        apiToken: "raw-token",
+        priority: 3,
+        isActive: true,
+        ...over,
+      } as never;
+    }
+
+    it("PUTs a credential with the raw token from the config", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+      await store().saveDebridConfig(debridConfig());
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe("http://srv/api/profile/credentials");
+      expect(init.method).toBe("PUT");
+      expect(JSON.parse(init.body)).toEqual({
+        id: "rd-1",
+        provider: "realdebrid",
+        label: "realdebrid",
+        value: "raw-token",
+        priority: 3,
+        isActive: true,
+      });
+    });
+
+    it("resolves a secret:<key> marker from the pending-secrets buffer", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+      const s = store();
+      // Buffer the real value via the write-only setSecret bridge (non-provider key).
+      await s.setSecret("rd_token_key", "buffered-token");
+      await s.saveDebridConfig(debridConfig({ apiToken: "secret:rd_token_key" }));
+      const putCall = fetchMock.mock.calls.find(
+        (c) => c[0] === "http://srv/api/profile/credentials",
+      )!;
+      expect(JSON.parse(putCall[1].body).value).toBe("buffered-token");
+    });
+
+    it("skips the write when the resolved token is empty/blank", async () => {
+      await store().saveDebridConfig(debridConfig({ apiToken: "   " }));
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("skips the write when a secret marker has no buffered value", async () => {
+      await store().saveDebridConfig(debridConfig({ apiToken: "secret:absent" }));
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("further no-op Server-Mode stubs", () => {
+    it("putMedia / putCachedResolution / deleteCachedResolution do nothing", async () => {
+      const s = store();
+      await s.putMedia({ id: "x" } as never);
+      await s.putCachedResolution({ mediaId: "x" } as never);
+      await s.deleteCachedResolution("x");
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 
@@ -471,6 +739,17 @@ describe("RemoteStore", () => {
         message: "Server request failed (502).",
         status: 502,
       });
+    });
+
+    it("accepts an empty (zero-length) 200 body without parsing", async () => {
+      // A 204-style empty body must not throw — request() skips JSON.parse when
+      // the text is empty and resolves to {}.
+      fetchMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => "",
+      } as Response);
+      await expect(store().removeFromWatchlist("tt1")).resolves.toBeUndefined();
     });
 
     it("notifies unauthorized on a 401", async () => {
