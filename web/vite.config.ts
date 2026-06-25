@@ -30,5 +30,19 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    coverage: {
+      provider: "v8",
+      // Count the WHOLE source tree (not just files an import-graph happens to
+      // pull in), so the reported % reflects real codebase coverage.
+      all: true,
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.{test,spec}.{ts,tsx}",
+        "src/**/*.d.ts",
+        "src/test/**",
+        "src/main.tsx", // app entry / bootstrap (not unit-testable)
+        "src/vite-env.d.ts",
+      ],
+    },
   },
 });
