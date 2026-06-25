@@ -176,22 +176,24 @@ describe("TorBoxService addMagnet", () => {
     expect(decodeURIComponent(req.body)).toContain("magnet:?xt=urn:btih:DEADBEEF");
   });
 
-  it("throws downloadFailed when torrent_id is a numeric string (not a number)", async () => {
-    // The Swift impl requires torrent_id to be an Int specifically; a string
-    // coerces via int64Value but fails the `typeof === number` guard.
+  it("accepts a numeric-STRING torrent_id (TorBox returns it either way)", async () => {
+    // Regression: the old `typeof === "number"` guard rejected a valid numeric
+    // string. int64Value coerces "4242" → 4242, so it must be accepted.
     const mock = makeMockFetch(() =>
       ok(JSON.stringify({ data: { torrent_id: "4242" } })),
     );
     const service = new TorBoxService("tb-token", mock.fetchImpl);
+    expect(await service.addMagnet("DEADBEEF")).toBe("4242");
+  });
 
-    let caught: DebridError | null = null;
-    try {
-      await service.addMagnet("DEADBEEF");
-    } catch (e) {
-      caught = e as DebridError;
-    }
-    expect(caught?.kind).toBe("downloadFailed");
-    expect(caught?.equals(DebridError.downloadFailed("Failed to add magnet to TorBox"))).toBe(true);
+  it("throws downloadFailed when torrent_id is non-numeric / uncoercible", async () => {
+    const mock = makeMockFetch(() =>
+      ok(JSON.stringify({ data: { torrent_id: "not-a-number" } })),
+    );
+    const service = new TorBoxService("tb-token", mock.fetchImpl);
+    await expect(service.addMagnet("DEADBEEF")).rejects.toMatchObject({
+      kind: "downloadFailed",
+    });
   });
 
   it("throws downloadFailed when torrent_id is missing", async () => {

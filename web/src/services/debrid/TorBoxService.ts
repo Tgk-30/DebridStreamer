@@ -101,9 +101,11 @@ export class TorBoxService implements DebridService {
 
     const json = parseJSONObject(data);
     const dataObj = json && asObject(json.data);
+    // TorBox returns torrent_id as a number OR a numeric string; int64Value
+    // coerces both (and null-guards), so accept any value it can parse. (The old
+    // `typeof !== "number"` check rejected the valid numeric-string responses.)
     const id = dataObj ? int64Value(dataObj.torrent_id) : null;
-    // The Swift impl requires torrent_id to be an Int specifically.
-    if (id == null || typeof dataObj?.torrent_id !== "number") {
+    if (id == null) {
       throw DebridError.downloadFailed("Failed to add magnet to TorBox");
     }
     return String(id);
