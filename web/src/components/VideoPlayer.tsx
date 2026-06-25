@@ -55,6 +55,36 @@ interface VideoPlayerProps {
   episode?: number | null;
 }
 
+/** Toggle fullscreen on an element, defensively (the APIs are absent in jsdom
+ * and on some webviews — the optional calls then no-op rather than throw). */
+function toggleFullscreen(el: HTMLElement): void {
+  const d = document as Document & { webkitFullscreenElement?: Element | null };
+  const active = document.fullscreenElement ?? d.webkitFullscreenElement ?? null;
+  if (active != null) {
+    void document.exitFullscreen?.();
+  } else {
+    void el.requestFullscreen?.();
+  }
+}
+
+/** True when a keystroke should be left to the focused control: a text field, or
+ * the <video> itself whose native controls already handle the key. */
+function shouldIgnoreShortcut(
+  target: EventTarget | null,
+  video: HTMLVideoElement,
+): boolean {
+  if (target === video) return true;
+  const el = target as HTMLElement | null;
+  if (el == null) return false;
+  const tag = el.tagName;
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    el.isContentEditable
+  );
+}
+
 /** Decide whether the webview can plausibly play this URL or whether it needs a
  * native player. MKV / HEVC / AVI etc. are handed off; HLS / MP4 / WebM play
  * in-webview. */
@@ -343,6 +373,87 @@ function WebviewPlayer({
     const video = videoRef.current;
     if (video != null && Number.isFinite(t)) video.currentTime = t;
   };
+
+  // Keyboard shortcuts (invisible power-user nicety). Active only while this
+  // in-app player is mounted. Ignored when typing in a field (the CaptionsMenu
+  // search, the ⌘K palette) or when a modifier is held (so ⌘K still toggles the
+  // palette), and yields to the native <video> controls when the video itself is
+  // focused. space/k: play-pause · ←/→: ∓5s · j/l: ∓10s · ↑/↓: volume · m: mute
+  // · f: fullscreen · 0-9: seek to N0% · Home/End: start/end.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const video = videoRef.current;
+      if (video == null) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (shouldIgnoreShortcut(e.target, video)) return;
+      const dur = Number.isFinite(video.duration) ? video.duration : 0;
+      const seekTo = (t: number) => {
+        video.currentTime = dur > 0 ? Math.min(Math.max(t, 0), dur) : Math.max(t, 0);
+      };
+      switch (e.key) {
+        case " ":
+        case "k":
+        case "K":
+          e.preventDefault();
+          if (video.paused) void video.play();
+          else video.pause();
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          seekTo(video.currentTime - 5);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          seekTo(video.currentTime + 5);
+          break;
+        case "j":
+        case "J":
+          e.preventDefault();
+          seekTo(video.currentTime - 10);
+          break;
+        case "l":
+        case "L":
+          e.preventDefault();
+          seekTo(video.currentTime + 10);
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          video.volume = Math.min(1, Math.round((video.volume + 0.1) * 100) / 100);
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          video.volume = Math.max(0, Math.round((video.volume - 0.1) * 100) / 100);
+          break;
+        case "m":
+        case "M":
+          e.preventDefault();
+          video.muted = !video.muted;
+          break;
+        case "f":
+        case "F": {
+          e.preventDefault();
+          const stage = video.closest(".player-stage");
+          toggleFullscreen(stage instanceof HTMLElement ? stage : video);
+          break;
+        }
+        case "Home":
+          e.preventDefault();
+          seekTo(0);
+          break;
+        case "End":
+          e.preventDefault();
+          if (dur > 0) seekTo(dur);
+          break;
+        default:
+          if (/^[0-9]$/.test(e.key) && dur > 0) {
+            e.preventDefault();
+            seekTo((Number(e.key) / 10) * dur);
+          }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="webview-player">

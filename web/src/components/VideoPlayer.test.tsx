@@ -329,6 +329,99 @@ describe("WebviewPlayer", () => {
     expect(probe.currentTime()).toBe(0);
   });
 
+  // Keyboard shortcuts (invisible power-user nicety).
+  describe("keyboard shortcuts", () => {
+    function setup(startPaused = true) {
+      const { container } = render(
+        <VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />,
+      );
+      const video = container.querySelector("video.player-video") as HTMLVideoElement;
+      let current = 0;
+      let paused = startPaused;
+      Object.defineProperty(video, "duration", { configurable: true, get: () => 100 });
+      Object.defineProperty(video, "currentTime", {
+        configurable: true,
+        get: () => current,
+        set: (v: number) => {
+          current = v;
+        },
+      });
+      Object.defineProperty(video, "paused", {
+        configurable: true,
+        get: () => paused,
+      });
+      video.volume = 0.5;
+      video.muted = false;
+      return { video, currentTime: () => current };
+    }
+    const press = (key: string, target?: EventTarget) =>
+      (target ?? window).dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
+
+    it("space plays when paused", () => {
+      setup(true);
+      press(" ");
+      expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+    });
+
+    it("space pauses when playing", () => {
+      const { video } = setup(false);
+      press(" ");
+      expect(video.pause).toHaveBeenCalled();
+    });
+
+    it("ArrowRight seeks +5s and ArrowLeft seeks -5s (clamped at 0)", () => {
+      const probe = setup();
+      press("ArrowRight");
+      expect(probe.currentTime()).toBe(5);
+      press("ArrowLeft");
+      press("ArrowLeft");
+      expect(probe.currentTime()).toBe(0); // clamped, never negative
+    });
+
+    it("l/j seek ±10s", () => {
+      const probe = setup();
+      press("l");
+      expect(probe.currentTime()).toBe(10);
+      press("j");
+      expect(probe.currentTime()).toBe(0);
+    });
+
+    it("m toggles mute and arrows adjust volume", () => {
+      const { video } = setup();
+      press("m");
+      expect(video.muted).toBe(true);
+      press("ArrowDown");
+      expect(video.volume).toBeCloseTo(0.4);
+      press("ArrowUp");
+      expect(video.volume).toBeCloseTo(0.5);
+    });
+
+    it("a number key seeks to that decile of the duration", () => {
+      const probe = setup();
+      press("5");
+      expect(probe.currentTime()).toBe(50); // 50% of 100s
+    });
+
+    it("ignores shortcuts while a text field is focused", () => {
+      setup(true);
+      const input = document.createElement("input");
+      document.body.appendChild(input);
+      press(" ", input);
+      expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+      input.remove();
+    });
+
+    it("ignores shortcuts when a modifier is held (so ⌘K still works)", () => {
+      setup(true);
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "k", metaKey: true, cancelable: true }),
+      );
+      expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    });
+  });
+
   it("renders <track> elements for loaded subtitle tracks", () => {
     subsState.tracks = [
       { id: "t1", label: "EN", language: "en", vttUrl: "blob:vtt1" },
