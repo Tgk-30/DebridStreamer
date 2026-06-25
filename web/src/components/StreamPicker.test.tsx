@@ -381,4 +381,67 @@ describe("StreamPicker", () => {
     );
     expect(screen.getByText("Playback filters hid every stream")).toBeInTheDocument();
   });
+
+  // --- Resolution / codec filter chips (opt-in) -------------------------
+
+  it("renders resolution + codec chips only when >1 value is present, and filters by resolution", () => {
+    const rows = [
+      makeRow({ hash: "A", title: "Movie 2160p x265", cachedOn: null }),
+      makeRow({ hash: "B", title: "Movie 1080p x264", cachedOn: null }),
+      makeRow({ hash: "C", title: "Movie 720p x264", cachedOn: null }),
+    ];
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+
+    const group = screen.getByRole("group", { name: "Filter streams" });
+    expect(group).toBeInTheDocument();
+    // A chip per present resolution (4K/1080p/720p) and codec (H.265/H.264).
+    const chip4k = within(group).getByRole("button", { name: "4K" });
+    expect(chip4k).toHaveAttribute("aria-pressed", "false");
+    // All three rows are listed before filtering.
+    expect(screen.getAllByText(/^Movie /)).toHaveLength(3);
+
+    // Click the 4K chip → only the 2160p row remains, chip is pressed.
+    fireEvent.click(chip4k);
+    expect(chip4k).toHaveAttribute("aria-pressed", "true");
+    const list = document.querySelector(".streams-list")!;
+    expect(within(list as HTMLElement).getAllByText(/^Movie /)).toHaveLength(1);
+    expect(within(list as HTMLElement).getByText("Movie 2160p x265")).toBeInTheDocument();
+
+    // Clicking it again clears the filter (all three return).
+    fireEvent.click(chip4k);
+    expect(chip4k).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getAllByText(/^Movie /)).toHaveLength(3);
+  });
+
+  it("does not render the chip row when only one resolution and one codec are present", () => {
+    const rows = [
+      makeRow({ hash: "A", title: "Movie 1080p x264 one", cachedOn: null }),
+      makeRow({ hash: "B", title: "Movie 1080p x264 two", cachedOn: null }),
+    ];
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+    expect(screen.queryByRole("group", { name: "Filter streams" })).not.toBeInTheDocument();
+  });
+
+  it("shows the chip-empty state with a Clear filters button when a resolution+codec combo matches nothing", () => {
+    // 4K is only H.265, 1080p is only H.264 → selecting 4K + H.264 is empty.
+    const rows = [
+      makeRow({ hash: "A", title: "Movie 2160p x265", cachedOn: null }),
+      makeRow({ hash: "B", title: "Movie 1080p x264", cachedOn: null }),
+    ];
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+    const group = screen.getByRole("group", { name: "Filter streams" });
+    fireEvent.click(within(group).getByRole("button", { name: "4K" }));
+    fireEvent.click(within(group).getByRole("button", { name: "H.264" }));
+
+    expect(screen.getByText("No streams match those filters")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Clear filters/ }));
+    // Both rows return after clearing.
+    expect(screen.getAllByText(/^Movie /)).toHaveLength(2);
+  });
 });

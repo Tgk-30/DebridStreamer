@@ -11,7 +11,11 @@
 
 import { useMemo, useState } from "react";
 import { DebridServiceType, type StreamInfo } from "../services/debrid/models";
-import { TorrentResult } from "../services/indexers/models";
+import {
+  TorrentResult,
+  VideoCodec,
+  VideoQuality,
+} from "../services/indexers/models";
 import { filterStreamRows, type StreamRow, type StreamsState } from "../data/streams";
 import { useAppStore } from "../store/AppStore";
 import { Icon } from "./Icon";
@@ -45,22 +49,55 @@ export function StreamPicker({
   onOpenSettings,
 }: StreamPickerProps) {
   const [cachedOnly, setCachedOnly] = useState(false);
+  const [resFilter, setResFilter] = useState<VideoQuality | null>(null);
+  const [codecFilter, setCodecFilter] = useState<VideoCodec | null>(null);
   const [resolvingHash, setResolvingHash] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const { settings } = useAppStore();
 
+  // The data-saver-eligible rows are the basis for both the chips and the list.
+  const baseRows = useMemo(
+    () => filterStreamRows(state.rows, settings),
+    [state.rows, settings],
+  );
+
+  // Resolution + codec chips, shown ONLY for the values that actually appear in
+  // this title's results (so we never offer a "4K" chip that filters to nothing).
+  const availableQualities = useMemo(() => {
+    const present = new Set(baseRows.map((r) => r.result.quality));
+    return ([
+      VideoQuality.uhd4k,
+      VideoQuality.hd1080p,
+      VideoQuality.hd720p,
+      VideoQuality.sd480p,
+    ] as const).filter((q) => present.has(q));
+  }, [baseRows]);
+  const availableCodecs = useMemo(() => {
+    const present = new Set(baseRows.map((r) => r.result.codec));
+    return ([VideoCodec.h265, VideoCodec.h264, VideoCodec.av1] as const).filter(
+      (c) => present.has(c),
+    );
+  }, [baseRows]);
+
+  // A stale chip (selected, then the title changed and no longer has it) is
+  // ignored rather than filtering to an empty list.
+  const effRes = resFilter != null && availableQualities.includes(resFilter) ? resFilter : null;
+  const effCodec = codecFilter != null && availableCodecs.includes(codecFilter) ? codecFilter : null;
+
   // Cached-first sort (the underlying list is already quality/seeder sorted).
   const rows = useMemo(() => {
-    const dataSaverRows = filterStreamRows(state.rows, settings);
-    const filtered = cachedOnly
-      ? dataSaverRows.filter((r) => r.cachedOn != null)
-      : dataSaverRows;
+    const filtered = baseRows.filter(
+      (r) =>
+        (!cachedOnly || r.cachedOn != null) &&
+        (effRes == null || r.result.quality === effRes) &&
+        (effCodec == null || r.result.codec === effCodec),
+    );
     return [...filtered].sort((a, b) => {
       const aCached = a.cachedOn != null ? 1 : 0;
       const bCached = b.cachedOn != null ? 1 : 0;
       return bCached - aCached;
     });
-  }, [state.rows, settings, cachedOnly]);
+  }, [baseRows, cachedOnly, effRes, effCodec]);
 
   async function select(row: StreamRow) {
     if (!state.hasDebrid) {
@@ -79,8 +116,10 @@ export function StreamPicker({
     }
   }
 
-  const filteredCount = filterStreamRows(state.rows, settings).length;
-  const cachedCount = filterStreamRows(state.rows, settings).filter((r) => r.cachedOn != null).length;
+  const filteredCount = baseRows.length;
+  const cachedCount = baseRows.filter((r) => r.cachedOn != null).length;
+  const hasQualityChips =
+    availableQualities.length > 1 || availableCodecs.length > 1;
 
   return (
     <section className="streams">
@@ -90,7 +129,7 @@ export function StreamPicker({
           <div className="streams-controls">
             <span className="streams-count t-secondary">
               {cachedCount} instant · {state.rows.length} total
-              {filteredCount < state.rows.length ? ` · ${filteredCount} shown` : ""}
+              {rows.length < state.rows.length ? ` · ${rows.length} shown` : ""}
             </span>
             <label className="streams-toggle">
               <input
@@ -104,6 +143,35 @@ export function StreamPicker({
         )}
       </div>
 
+      {state.hasIndexers && state.rows.length > 0 && hasQualityChips && (
+        <div className="streams-filters" role="group" aria-label="Filter streams">
+          {availableQualities.length > 1 &&
+            availableQualities.map((q) => (
+              <button
+                key={q}
+                type="button"
+                className={`chip stream-filter-chip${effRes === q ? " is-active" : ""}`}
+                aria-pressed={effRes === q}
+                onClick={() => setResFilter((cur) => (cur === q ? null : q))}
+              >
+                {q}
+              </button>
+            ))}
+          {availableCodecs.length > 1 &&
+            availableCodecs.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`chip stream-filter-chip${effCodec === c ? " is-active" : ""}`}
+                aria-pressed={effCodec === c}
+                onClick={() => setCodecFilter((cur) => (cur === c ? null : c))}
+              >
+                {c}
+              </button>
+            ))}
+        </div>
+      )}
+
       {resolveError && <div className="streams-error">{resolveError}</div>}
 
       <StreamBody
@@ -111,9 +179,14 @@ export function StreamPicker({
         rows={rows}
         cachedOnly={cachedOnly}
         filteredCount={filteredCount}
+        chipFiltersActive={effRes != null || effCodec != null}
         resolvingHash={resolvingHash}
         onSelect={select}
         onShowAll={() => setCachedOnly(false)}
+        onClearChips={() => {
+          setResFilter(null);
+          setCodecFilter(null);
+        }}
         onOpenSettings={onOpenSettings}
       />
     </section>
@@ -125,18 +198,22 @@ function StreamBody({
   rows,
   cachedOnly,
   filteredCount,
+  chipFiltersActive,
   resolvingHash,
   onSelect,
   onShowAll,
+  onClearChips,
   onOpenSettings,
 }: {
   state: StreamsState;
   rows: StreamRow[];
   cachedOnly: boolean;
   filteredCount: number;
+  chipFiltersActive: boolean;
   resolvingHash: string | null;
   onSelect: (row: StreamRow) => void;
   onShowAll: () => void;
+  onClearChips: () => void;
   onOpenSettings?: () => void;
 }) {
   if (state.loading) {
@@ -193,26 +270,38 @@ function StreamBody({
   }
 
   if (rows.length === 0) {
-    const cachedOnlyEmpty = cachedOnly && filteredCount > 0;
-    const filtersEmpty = state.rows.length > 0 && filteredCount === 0;
+    // Quality/codec chips combined to nothing (each chip alone always matches,
+    // but a resolution+codec combination can be empty).
+    const chipsEmpty = chipFiltersActive && filteredCount > 0;
+    const cachedOnlyEmpty = !chipsEmpty && cachedOnly && filteredCount > 0;
+    const filtersEmpty = !chipsEmpty && state.rows.length > 0 && filteredCount === 0;
 
     return (
       <div className="streams-empty glass-rest">
         <p className="streams-empty-title">
-          {cachedOnlyEmpty
-            ? "No instant streams shown"
-            : filtersEmpty
-              ? "Playback filters hid every stream"
-              : "No streams found"}
+          {chipsEmpty
+            ? "No streams match those filters"
+            : cachedOnlyEmpty
+              ? "No instant streams shown"
+              : filtersEmpty
+                ? "Playback filters hid every stream"
+                : "No streams found"}
         </p>
         <p className="t-secondary streams-empty-sub">
-          {cachedOnlyEmpty
-            ? "Switch off Cached only to show sources that can be cached first."
-            : filtersEmpty
-              ? "Your quality or file-size limits removed the available results for this title."
-              : "The configured sources did not return a match for this title yet. Add another indexer or try a different release."}
+          {chipsEmpty
+            ? "No release matches that resolution + codec combination. Clear a filter to see more."
+            : cachedOnlyEmpty
+              ? "Switch off Cached only to show sources that can be cached first."
+              : filtersEmpty
+                ? "Your quality or file-size limits removed the available results for this title."
+                : "The configured sources did not return a match for this title yet. Add another indexer or try a different release."}
         </p>
         <div className="streams-empty-actions">
+          {chipsEmpty && (
+            <button type="button" className="btn" onClick={onClearChips}>
+              Clear filters
+            </button>
+          )}
           {cachedOnlyEmpty && (
             <button type="button" className="btn" onClick={onShowAll}>
               Show all streams

@@ -104,6 +104,36 @@ export function filterStreamRows(rows: StreamRow[], settings: AppSettings): Stre
   return rows.filter((row) => streamMatchesDataSaver(row, settings));
 }
 
+/** Collapse cross-indexer duplicates: the SAME torrent (infoHash) is often
+ * returned by several indexers, swamping the stream list with identical entries.
+ * Keep one row per infoHash — the most useful variant (prefer a cached copy,
+ * then more seeders) — preserving each release's first-seen slot. Pure +
+ * automatic (no information is lost: it's the same torrent). */
+export function dedupeStreamRows(rows: StreamRow[]): StreamRow[] {
+  const byHash = new Map<string, StreamRow>();
+  const order: string[] = [];
+  for (const row of rows) {
+    const key = row.result.infoHash.toLowerCase();
+    const existing = byHash.get(key);
+    if (existing == null) {
+      byHash.set(key, row);
+      order.push(key);
+    } else {
+      byHash.set(key, betterDuplicate(existing, row));
+    }
+  }
+  return order.map((k) => byHash.get(k)!);
+}
+
+/** Pick the more useful of two rows for the same torrent: a cached copy beats an
+ * uncached one; otherwise the one with more seeders. */
+function betterDuplicate(a: StreamRow, b: StreamRow): StreamRow {
+  if ((a.cachedOn != null) !== (b.cachedOn != null)) {
+    return a.cachedOn != null ? a : b;
+  }
+  return b.result.seeders > a.result.seeders ? b : a;
+}
+
 async function resolveStreams(
   imdbId: string,
   type: MediaType,
@@ -129,10 +159,12 @@ async function resolveStreams(
     }
   }
 
-  return results.map((result) => ({
-    result,
-    cachedOn: cacheByHash[result.infoHash] ?? null,
-  }));
+  return dedupeStreamRows(
+    results.map((result) => ({
+      result,
+      cachedOn: cacheByHash[result.infoHash] ?? null,
+    })),
+  );
 }
 
 /** Resolve stream rows for a title. Returns an empty/idle state until both an
@@ -167,7 +199,7 @@ export function useStreams(
           const remote = await fetchServerStreams({ imdbId, type });
           if (!signal.cancelled) {
             setState({
-              rows: remote.rows,
+              rows: dedupeStreamRows(remote.rows),
               loading: false,
               error: null,
               hasIndexers: remote.hasIndexers,

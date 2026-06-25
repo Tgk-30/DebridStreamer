@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DATA_SAVER_MAX_SIZE_GB,
+  dedupeStreamRows,
   effectiveDataSaver,
   filterStreamRows,
   streamMatchesDataSaver,
@@ -59,6 +60,67 @@ function row(
     cachedOn: cached ? DebridServiceType.realDebrid : null,
   };
 }
+
+describe("dedupeStreamRows", () => {
+  function rowWith(o: Partial<TorrentResultModel> & { cachedOn?: DebridServiceType | null }): StreamRow {
+    return {
+      result: torrent(o),
+      cachedOn: o.cachedOn ?? null,
+    };
+  }
+
+  it("leaves distinct torrents untouched, preserving order", () => {
+    const rows = [
+      rowWith({ infoHash: "a", seeders: 5 }),
+      rowWith({ infoHash: "b", seeders: 9 }),
+      rowWith({ infoHash: "c", seeders: 1 }),
+    ];
+    expect(dedupeStreamRows(rows).map((r) => r.result.infoHash)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  it("collapses the same infoHash (case-insensitive) into one row", () => {
+    const rows = [
+      rowWith({ infoHash: "ABCD", indexerName: "eztv", seeders: 5 }),
+      rowWith({ infoHash: "abcd", indexerName: "yts", seeders: 8 }),
+    ];
+    const out = dedupeStreamRows(rows);
+    expect(out).toHaveLength(1);
+  });
+
+  it("keeps a cached copy over an uncached duplicate", () => {
+    const rows = [
+      rowWith({ infoHash: "h", seeders: 100, cachedOn: null }),
+      rowWith({ infoHash: "h", seeders: 1, cachedOn: DebridServiceType.realDebrid }),
+    ];
+    const out = dedupeStreamRows(rows);
+    expect(out).toHaveLength(1);
+    expect(out[0].cachedOn).toBe(DebridServiceType.realDebrid); // cached wins over more seeders
+  });
+
+  it("breaks an all-uncached (or all-cached) tie by seeders", () => {
+    const rows = [
+      rowWith({ infoHash: "h", seeders: 3, cachedOn: null }),
+      rowWith({ infoHash: "h", seeders: 42, cachedOn: null }),
+    ];
+    expect(dedupeStreamRows(rows)[0].result.seeders).toBe(42);
+  });
+
+  it("keeps the duplicate in its FIRST-seen slot", () => {
+    const rows = [
+      rowWith({ infoHash: "a", seeders: 1 }),
+      rowWith({ infoHash: "dup", seeders: 1 }),
+      rowWith({ infoHash: "b", seeders: 1 }),
+      rowWith({ infoHash: "dup", seeders: 99 }), // better, but slot stays at index 1
+    ];
+    const out = dedupeStreamRows(rows);
+    expect(out.map((r) => r.result.infoHash)).toEqual(["a", "dup", "b"]);
+    expect(out[1].result.seeders).toBe(99); // the better variant occupies the slot
+  });
+});
 
 describe("filterStreamRows", () => {
   it("keeps all rows when data-saver filters are disabled", () => {

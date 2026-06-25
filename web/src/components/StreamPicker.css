@@ -41,6 +41,18 @@
   cursor: pointer;
 }
 
+/* Opt-in resolution/codec filter chips (rendered only when >1 value is present). */
+.streams-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--sp-sm) 0 var(--sp-md);
+}
+.stream-filter-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
 .streams-error {
   font-size: 13px;
   color: var(--danger);
