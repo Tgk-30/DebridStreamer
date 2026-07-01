@@ -108,7 +108,7 @@ jobs:
           fi
 
       - name: Validate macOS signing secrets
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-15'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -131,7 +131,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           # Both arches for the macOS universal build; no-op elsewhere.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-15' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Cache Rust build
         uses: swatinem/rust-cache@v2
@@ -178,7 +178,7 @@ jobs:
         run: node scripts/prepare_tauri_server_resources.mjs
 
       - name: Bundle Node runtime for macOS
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-15'
         run: node scripts/download_tauri_node_runtime.mjs darwin-arm64 darwin-x64
 
       - name: Bundle Node runtime for Linux
@@ -228,7 +228,7 @@ jobs:
       # already uploaded to the draft release. (The .dmg is not referenced by
       # latest.json and has no updater .sig, so re-uploading it is self-contained.)
       - name: Notarize & staple the macOS DMG
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-15'
         shell: bash
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
