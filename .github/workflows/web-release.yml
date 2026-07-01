@@ -55,7 +55,11 @@ jobs:
       matrix:
         include:
           # Apple silicon + Intel from a single universal mac build.
-          - platform: macos-latest
+          # PIN to a stable macOS (NOT `macos-latest`): GitHub moved
+          # `macos-latest` to macOS 26, whose SDK/codesign (sdk 26.x) produces
+          # bundles that Gatekeeper rejects as "damaged" on older macOS. A
+          # macOS-15 build (SDK 15) runs from macOS 15 down through older releases.
+          - platform: macos-15
             args: "--target universal-apple-darwin"
           - platform: ubuntu-22.04
             args: ""
