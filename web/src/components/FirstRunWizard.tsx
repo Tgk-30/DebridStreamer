@@ -19,7 +19,7 @@ const PERSONAS: Persona[] = [
   {
     id: "device",
     title: "Just watch on this device",
-    copy: "Start watching right now. Everything stays on this device — no account, no setup. You can connect a server later.",
+    copy: "Everything stays on this device — no account needed. A quick one-time setup (a debrid service + a source) and you're streaming; we'll show you how. Connect a server anytime.",
   },
   {
     id: "connect",
