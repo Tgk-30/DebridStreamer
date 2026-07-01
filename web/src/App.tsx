@@ -18,6 +18,7 @@ import { ProfilePicker } from "./components/ProfilePicker";
 import { CommandPalette } from "./components/CommandPalette";
 import { WelcomeGuide } from "./components/WelcomeGuide";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
+import { SetupNudge } from "./components/SetupNudge";
 import { isSmartPreloadEnabled, whenIdle } from "./lib/smartPreload";
 import { useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
@@ -143,7 +144,7 @@ export function FirstRunHost() {
 }
 
 export function App() {
-  const { route, navigate, detailItem, browseContext, openDetail, search, settings, simpleMode } =
+  const { route, navigate, detailItem, browseContext, openDetail, search, settings, simpleMode, services } =
     useAppStore();
 
   // "Who's watching" picker visibility (Server Mode only; opened from the rail).
@@ -183,6 +184,46 @@ export function App() {
     window.addEventListener("ds:open-shortcuts", open);
     return () => window.removeEventListener("ds:open-shortcuts", open);
   }, []);
+
+  // Re-openable build-profile welcome (the first-run TierOnboarding), so a user
+  // can revisit the "getting started" guidance from Settings after dismissing it.
+  const [tierWelcomeOpen, setTierWelcomeOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setTierWelcomeOpen(true);
+    window.addEventListener("ds:open-tier-welcome", open);
+    return () => window.removeEventListener("ds:open-tier-welcome", open);
+  }, []);
+
+  // Contextual "finish setup" nudge (Local Mode only): a dismissible bar shown
+  // while the app can't stream yet — no debrid service, or no active source. It
+  // auto-hides once setup is complete; dismissal is remembered so it never nags.
+  const [nudgeDismissed, setNudgeDismissed] = useState(() => {
+    try {
+      return globalThis.localStorage?.getItem("ds_setup_nudge_dismissed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismissNudge = () => {
+    setNudgeDismissed(true);
+    try {
+      globalThis.localStorage?.setItem("ds_setup_nudge_dismissed", "1");
+    } catch {
+      // ignore (private mode)
+    }
+  };
+  const needsSetup =
+    !isServerMode() &&
+    (!services.debrid?.hasServices ||
+      (services.indexers?.activeIndexers?.length ?? 0) === 0);
+  const showSetupNudge =
+    needsSetup &&
+    !nudgeDismissed &&
+    route !== "settings" &&
+    detailItem == null &&
+    !welcomeGuideOpen &&
+    !tierWelcomeOpen &&
+    !shortcutsOpen;
 
   // Smart preloading (invisible): while idle, warm the lazy Detail + Browse code
   // chunks so opening a title or "See all" is instant instead of waiting on a
@@ -282,6 +323,17 @@ export function App() {
 
       {shortcutsOpen && (
         <KeyboardShortcuts onClose={() => setShortcutsOpen(false)} />
+      )}
+
+      {tierWelcomeOpen && (
+        <TierOnboarding onDone={() => setTierWelcomeOpen(false)} />
+      )}
+
+      {showSetupNudge && (
+        <SetupNudge
+          onOpenSettings={() => navigate("settings")}
+          onDismiss={dismissNudge}
+        />
       )}
 
       {/* Desktop auto-update toast. Runs the launch-time check itself and is a

@@ -1,0 +1,64 @@
+/* SetupNudge — dismissible "finish setup" bar, fixed to the bottom so it never
+   shifts page layout. */
+.setup-nudge {
+  position: fixed;
+  left: 50%;
+  bottom: var(--sp-lg);
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  width: min(560px, calc(100% - var(--sp-xl)));
+  padding: var(--sp-sm) var(--sp-md);
+  border-radius: var(--r-pill, 999px);
+}
+.setup-nudge-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--glass-tint-control);
+  color: var(--accent);
+}
+.setup-nudge-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.setup-nudge-text strong {
+  font-size: 13.5px;
+}
+.setup-nudge-text span {
+  font-size: 12px;
+}
+.setup-nudge-cta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.setup-nudge-dismiss {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.setup-nudge-dismiss:hover {
+  background: var(--glass-tint-control);
+  color: var(--text-primary);
+}
+
+@media (max-width: 560px) {
+  .setup-nudge-text span {
+    display: none;
+  }
+}

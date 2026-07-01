@@ -3590,6 +3590,16 @@ function AppearanceTab({
           <Icon name="sparkles" size={15} />
           Replay welcome guide
         </button>
+        <button
+          type="button"
+          className="btn settings-replay-tour"
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("ds:open-tier-welcome"))
+          }
+        >
+          <Icon name="discover" size={15} />
+          Replay getting-started
+        </button>
       </div>
     </div>
   );

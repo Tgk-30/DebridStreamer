@@ -34,6 +34,10 @@ type StoreSlice = {
   settings: { autoUpdateChecks: boolean; autoInstallUpdates: boolean };
   simpleMode: boolean;
   hydrated: boolean;
+  services: {
+    debrid: { hasServices: boolean } | null;
+    indexers: { activeIndexers: unknown[] } | null;
+  };
 };
 
 let store: StoreSlice;
@@ -267,6 +271,11 @@ function makeStore(over: Partial<StoreSlice> = {}): StoreSlice {
     settings: { autoUpdateChecks: true, autoInstallUpdates: false },
     simpleMode: false,
     hydrated: true,
+    // Configured by default so the "finish setup" nudge stays hidden here.
+    services: {
+      debrid: { hasServices: true },
+      indexers: { activeIndexers: [{}] },
+    },
     ...over,
   };
 }
@@ -333,6 +342,39 @@ describe("App routing", () => {
     render(<App />);
     fireEvent.click(screen.getByTestId("screen-discover"));
     expect(openDetail).toHaveBeenCalledWith({ id: "x" });
+  });
+});
+
+describe("Setup nudge", () => {
+  it("shows the finish-setup nudge when Local Mode has no debrid", () => {
+    store = makeStore({
+      services: { debrid: null, indexers: { activeIndexers: [{}] } },
+    });
+    render(<App />);
+    expect(screen.getByText("Finish setup to start streaming")).toBeInTheDocument();
+  });
+
+  it("shows the nudge when there is no active source", () => {
+    store = makeStore({
+      services: { debrid: { hasServices: true }, indexers: { activeIndexers: [] } },
+    });
+    render(<App />);
+    expect(screen.getByText("Finish setup to start streaming")).toBeInTheDocument();
+  });
+
+  it("hides the nudge once a debrid + source are configured", () => {
+    store = makeStore(); // configured by default
+    render(<App />);
+    expect(screen.queryByText("Finish setup to start streaming")).toBeNull();
+  });
+
+  it("hides the nudge on the Settings screen", () => {
+    store = makeStore({
+      route: "settings",
+      services: { debrid: null, indexers: { activeIndexers: [] } },
+    });
+    render(<App />);
+    expect(screen.queryByText("Finish setup to start streaming")).toBeNull();
   });
 });
 

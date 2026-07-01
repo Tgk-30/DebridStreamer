@@ -332,9 +332,10 @@ function AccessStep({
       <h1 className="first-run-title">Make it reachable</h1>
       <p className="first-run-sub">
         Right now the server is on{" "}
-        {baseURL != null ? <code>{baseURL}</code> : "your local network"}. To use
-        it from phones and tablets away from home, expose it with a tunnel — no
-        ports to open, traffic stays encrypted.
+        {baseURL != null ? <code>{baseURL}</code> : "your local network"}.{" "}
+        <strong>Only watching on your home Wi-Fi? You can skip this.</strong> To
+        also use it from phones and tablets <em>away</em> from home, expose it
+        with a tunnel — no ports to open, traffic stays encrypted.
       </p>
       <div className="server-setup-access">
         <a

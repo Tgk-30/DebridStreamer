@@ -17,21 +17,24 @@ export const SERVER_SETUP_INVITE_PRESETS: ServerSetupInvitePreset[] = [
     label: "Family - Simple mode",
     inviteLabel: "Family",
     simpleMode: true,
-    description: "Best default for shared TVs, phones, and people who just want playback.",
+    description:
+      "Best for shared TVs, phones, and anyone who just wants to browse and play. Advanced screens (sources, the assistant, the debrid library) stay hidden.",
   },
   {
     id: "household_simple",
     label: "Household - Simple mode",
     inviteLabel: "Household",
     simpleMode: true,
-    description: "A neutral invite for roommates or mixed household profiles.",
+    description:
+      "Playback-first for roommates or mixed households; advanced screens stay hidden. You can promote anyone to the full interface later in Settings → Server.",
   },
   {
     id: "power_user",
     label: "Power user",
     inviteLabel: "Power user",
     simpleMode: false,
-    description: "Starts with the fuller interface for someone managing sources and settings.",
+    description:
+      "The full interface — can manage sources, indexers, and settings. For whoever helps you run the server.",
   },
 ];
 
