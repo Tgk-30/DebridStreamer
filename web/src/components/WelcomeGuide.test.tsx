@@ -31,7 +31,7 @@ describe("WelcomeGuide", () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText(`2 / ${TOTAL}`)).toBeInTheDocument();
     // Step content swaps after the AnimatePresence exit/enter completes.
-    expect(await screen.findByText("A cinematic home")).toBeInTheDocument();
+    expect(await screen.findByText("How it works")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back" })).toBeEnabled();
   });
 
@@ -53,9 +53,7 @@ describe("WelcomeGuide", () => {
       await user.click(screen.getByRole("button", { name: "Next" }));
     }
     expect(screen.getByText(`5 / ${TOTAL}`)).toBeInTheDocument();
-    expect(
-      await screen.findByText("Jump anywhere, instantly"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Move fast")).toBeInTheDocument();
     expect(screen.getByText("⌘")).toBeInTheDocument();
     expect(screen.getByText("K")).toBeInTheDocument();
   });
@@ -71,6 +69,26 @@ describe("WelcomeGuide", () => {
     const finish = screen.getByRole("button", { name: "Get started" });
     expect(finish).toBeInTheDocument();
     await user.click(finish);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers an 'Open Settings' path on the last step when onOpenSettings is given", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onOpenSettings = vi.fn();
+    render(<WelcomeGuide onClose={onClose} onOpenSettings={onOpenSettings} />);
+    // No setup CTA on earlier steps.
+    expect(
+      screen.queryByRole("button", { name: /Set up streaming in Settings/i }),
+    ).not.toBeInTheDocument();
+    for (let i = 0; i < TOTAL - 1; i++) {
+      await user.click(screen.getByRole("button", { name: "Next" }));
+    }
+    const cta = await screen.findByRole("button", {
+      name: /Set up streaming in Settings/i,
+    });
+    await user.click(cta);
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

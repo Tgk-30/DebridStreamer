@@ -111,7 +111,9 @@ export function StreamPicker({
 
   async function select(row: StreamRow) {
     if (!state.hasDebrid) {
-      setResolveError("Configure a debrid service to play.");
+      setResolveError(
+        "Add a debrid service in Settings to play — it turns a match into an instant stream.",
+      );
       return;
     }
     setResolveError(null);
@@ -249,10 +251,11 @@ function StreamBody({
     return (
       <div className="streams-empty glass-rest">
         <Icon name="search" size={22} className="t-secondary" />
-        <p className="streams-empty-title">No sources configured</p>
+        <p className="streams-empty-title">No sources yet</p>
         <p className="t-secondary streams-empty-sub">
-          Add an indexer (or enable the built-in scrapers) in Settings to find
-          streams.
+          A source is where the app looks for releases. Turn on the built-in
+          scrapers, or add one (Torrentio, Jackett, Prowlarr…), in Settings —
+          then pair it with a debrid service to stream instantly.
         </p>
         {onOpenSettings && (
           <div className="streams-empty-actions">

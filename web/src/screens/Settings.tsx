@@ -55,6 +55,7 @@ import { AIProviderKind } from "../services/ai/models";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import { AdvancedOnly } from "../components/AdvancedOnly";
+import { CONCEPTS, signupUrl } from "../data/onboardingHelp";
 import { ACCENTS, THEMES } from "../theme/themes";
 import {
   configuredServerURL,
@@ -3705,7 +3706,12 @@ function KeysTab({ draft, patch }: TabProps) {
       <div className="settings-key-grid is-single">
         {keyPanel === "catalog" && (
           <section className="settings-key-card glass-rest" aria-label="Catalog metadata credentials">
-            <Field label="TMDB API key" hint="Powers Discover, Search, and Detail metadata.">
+            <Field
+              label="TMDB API key"
+              hint="Powers Discover, Search, and Detail metadata. Free to sign up."
+              helpUrl={signupUrl("tmdb") ?? undefined}
+              helpLabel="Get a free TMDB key"
+            >
               <SecretInput
                 value={draft.tmdbKey}
                 onChange={(e) => patch({ tmdbKey: e.target.value })}
@@ -3727,6 +3733,8 @@ function KeysTab({ draft, patch }: TabProps) {
             <Field
               label="OpenSubtitles API key"
               hint="Enables in-player subtitle search and download."
+              helpUrl={signupUrl("openSubtitles") ?? undefined}
+              helpLabel="Create an OpenSubtitles account"
             >
               <SecretInput
                 value={draft.openSubtitlesApiKey}
@@ -3887,6 +3895,14 @@ function SecretInput({
   );
 }
 
+// Maps a debrid service value to its onboardingHelp signup-link id.
+const DEBRID_SIGNUP_ID: Record<string, string> = {
+  real_debrid: "realDebrid",
+  all_debrid: "allDebrid",
+  premiumize: "premiumize",
+  torbox: "torbox",
+};
+
 function DebridTab({ draft, patch }: TabProps) {
   const serviceOptions = DebridServiceType.allCases();
   const [selectedService, setSelectedService] = useState<
@@ -3921,6 +3937,9 @@ function DebridTab({ draft, patch }: TabProps) {
   return (
     <div className="settings-fields">
       <p className="settings-hint t-secondary">
+        <strong>{CONCEPTS.debrid.term}:</strong> {CONCEPTS.debrid.blurb}
+      </p>
+      <p className="settings-hint t-secondary">
         Choose one provider at a time. Saved providers are tried in priority
         order; the first that has a cached result wins. Tokens stay in this
         profile, with secure device storage in desktop builds when available.
@@ -3946,6 +3965,8 @@ function DebridTab({ draft, patch }: TabProps) {
       <Field
         label={`${DebridServiceType.displayName(selectedService)} token`}
         hint="Paste the API token for this provider."
+        helpUrl={signupUrl(DEBRID_SIGNUP_ID[selectedService]) ?? undefined}
+        helpLabel={`Find your ${DebridServiceType.displayName(selectedService)} token`}
       >
         <SecretInput
           value={tokenFor(selectedService)}
@@ -4020,6 +4041,10 @@ function SourcesTab({ draft, patch }: TabProps) {
 
   return (
     <div className="settings-fields">
+      <p className="settings-hint t-secondary">
+        <strong>{CONCEPTS.source.term}:</strong> {CONCEPTS.source.blurb} Pair a
+        source with a debrid service to stream instantly.
+      </p>
       <label className="settings-toggle-row">
         <input
           type="checkbox"
@@ -4212,10 +4237,15 @@ function SourcesTab({ draft, patch }: TabProps) {
 function Field({
   label,
   hint,
+  helpUrl,
+  helpLabel,
   children,
 }: {
   label: string;
   hint?: string;
+  /** Optional "where do I get this?" external link, rendered under the field. */
+  helpUrl?: string;
+  helpLabel?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -4223,6 +4253,16 @@ function Field({
       <span className="settings-label">{label}</span>
       {hint && <span className="settings-field-hint t-secondary">{hint}</span>}
       {children}
+      {helpUrl && (
+        <a
+          className="settings-field-help"
+          href={helpUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {helpLabel ?? "Get a key"} ↗
+        </a>
+      )}
     </label>
   );
 }

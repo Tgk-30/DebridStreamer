@@ -24,42 +24,50 @@ const STEPS: Step[] = [
   {
     icon: "sparkles",
     title: "Welcome to DebridStreamer",
-    body: "Your whole library, beautifully in one place. Here's a 30-second tour of what makes it shine.",
+    body: "Your movies and shows, from every source, in one beautiful place. Here's the 60-second tour — including how to get your first stream playing.",
   },
   {
-    icon: "discover",
-    title: "A cinematic home",
-    body: "Discover opens on a full-bleed spotlight of what's worth watching, with rows of trending, popular, and top-rated titles.",
-  },
-  {
-    icon: "wand-search",
-    title: "Describe a vibe",
-    body: "Tell the AI a mood — “cozy fall mysteries”, “mind-bending sci-fi” — and it curates a lineup made for the moment.",
-  },
-  {
-    icon: "history",
-    title: "Pick up where you left off",
-    body: "Continue Watching keeps your in-progress titles at the top of the home, with a resume bar on every poster.",
-  },
-  {
-    icon: "sliders",
-    title: "Jump anywhere, instantly",
-    body: "Press the shortcut any time to search, switch screens, or change themes — no hunting through menus.",
-    keys: ["⌘", "K"],
+    icon: "play",
+    title: "How it works",
+    body: "Open any title and pick a stream marked green “Instant”. It plays in seconds — streamed straight from your debrid service, with no downloading or seeding.",
   },
   {
     icon: "settings",
-    title: "Make it yours",
-    body: "Four themes, multiple profiles, kid-safe modes, and fine-grained appearance controls all live in Settings.",
+    title: "A one-time setup",
+    body: "To find those streams you'll add a debrid service (Real-Debrid, TorBox…) and a source in Settings — or just sign in to a server someone already set up. It takes about two minutes.",
+  },
+  {
+    icon: "wand-search",
+    title: "Find something to watch",
+    body: "Browse the Discover spotlight, search any title, or describe a vibe — “cozy fall mysteries” — and let the AI build a lineup for the moment.",
+  },
+  {
+    icon: "sliders",
+    title: "Move fast",
+    body: "Press ⌘K any time to jump to a screen, search, or switch themes. In the player, press ? to see the playback shortcuts.",
+    keys: ["⌘", "K"],
+  },
+  {
+    icon: "history",
+    title: "Keep your place",
+    body: "Continue Watching and resume bars pick up where you left off. Turn on watch stats, or import your list from IMDb or Letterboxd, from Settings.",
   },
   {
     icon: "check",
     title: "You're all set",
-    body: "That's the tour. Dive in — everything is a click (or ⌘K) away.",
+    body: "Dive in from Discover — anything here is one click (or ⌘K) away. If a title shows “No sources yet”, finish setup in Settings.",
   },
 ];
 
-export function WelcomeGuide({ onClose }: { onClose: () => void }) {
+export function WelcomeGuide({
+  onClose,
+  onOpenSettings,
+}: {
+  onClose: () => void;
+  /** When provided, the final step offers a direct path into Settings so a new
+   *  user can finish setup instead of landing on an unconfigured app. */
+  onOpenSettings?: () => void;
+}) {
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
   const last = step === STEPS.length - 1;
@@ -133,6 +141,19 @@ export function WelcomeGuide({ onClose }: { onClose: () => void }) {
                     <kbd key={k}>{k}</kbd>
                   ))}
                 </div>
+              )}
+              {last && onOpenSettings && (
+                <button
+                  type="button"
+                  className="btn welcome-cta"
+                  onClick={() => {
+                    onOpenSettings();
+                    onClose();
+                  }}
+                >
+                  <Icon name="settings" size={15} />
+                  Set up streaming in Settings
+                </button>
               )}
             </motion.div>
           </AnimatePresence>

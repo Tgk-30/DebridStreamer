@@ -263,7 +263,12 @@ export function App() {
       <CommandPalette />
 
       {/* First-run feature tour (and re-openable from Settings / ⌘K). */}
-      {welcomeGuideOpen && <WelcomeGuide onClose={closeWelcomeGuide} />}
+      {welcomeGuideOpen && (
+        <WelcomeGuide
+          onClose={closeWelcomeGuide}
+          onOpenSettings={() => navigate("settings")}
+        />
+      )}
 
       {/* Desktop auto-update toast. Runs the launch-time check itself and is a
           no-op in a plain browser (isTauri-gated in updater.ts). */}

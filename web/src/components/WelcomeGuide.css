@@ -103,6 +103,13 @@
   color: var(--text-secondary);
 }
 
+.welcome-cta {
+  margin-top: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .welcome-keys {
   display: flex;
   gap: 6px;

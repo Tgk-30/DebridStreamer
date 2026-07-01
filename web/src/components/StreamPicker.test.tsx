@@ -124,7 +124,7 @@ describe("StreamPicker", () => {
         onOpenSettings={onOpenSettings}
       />,
     );
-    expect(screen.getByText("No sources configured")).toBeInTheDocument();
+    expect(screen.getByText("No sources yet")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Open settings/ }));
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
@@ -137,7 +137,7 @@ describe("StreamPicker", () => {
         onPlay={noop}
       />,
     );
-    expect(screen.getByText("No sources configured")).toBeInTheDocument();
+    expect(screen.getByText("No sources yet")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Open settings/ })).toBeNull();
   });
 
@@ -362,7 +362,7 @@ describe("StreamPicker", () => {
 
     fireEvent.click(screen.getByText("No Debrid 1080p").closest("button")!);
 
-    expect(await screen.findByText("Configure a debrid service to play.")).toBeInTheDocument();
+    expect(await screen.findByText(/Add a debrid service in Settings to play/)).toBeInTheDocument();
     expect(resolveStream).not.toHaveBeenCalled();
   });
 
