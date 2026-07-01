@@ -202,6 +202,20 @@ describe("Discover loaded", () => {
     expect(screen.getByTestId("hero-count").textContent).toBe("2");
   });
 
+  it("keeps a movie and a TV title that share a numeric id (dedupe by type+id)", () => {
+    const data = fullData();
+    data.hero = preview("hero1", { backdropPath: "/h.jpg", type: "movie" });
+    // A TV title with the SAME id as the hero movie — must not be deduped away.
+    data.trendingTV = [
+      preview("hero1", { backdropPath: "/tv.jpg", type: "series" }),
+    ];
+    data.trendingMovies = [];
+    mockDiscover = { data, loading: false };
+    render(<Discover />);
+    // Both the movie and the series survive → 2 spotlight items.
+    expect(screen.getByTestId("hero-count").textContent).toBe("2");
+  });
+
   it("filters the hero item out of the trending rails (withoutHero)", () => {
     const data = fullData();
     // hero1 is also injected into trendingMovies to prove dedupe.

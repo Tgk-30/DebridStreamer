@@ -191,11 +191,15 @@ export function Discover({ onSelect }: DiscoverProps) {
             .filter(
               (it, i, arr) =>
                 it.backdropPath != null &&
-                // Keep the first BACKDROP-having occurrence of each id. Deduping
-                // on the first occurrence overall would drop a backdrop version
-                // when a backdrop-less duplicate of the same id appeared earlier.
+                // Keep the first BACKDROP-having occurrence of each title. Key on
+                // type+id (a movie and a TV show can share a numeric TMDB id) and
+                // on backdrop presence, so a backdrop-less duplicate appearing
+                // earlier doesn't drop the backdrop version.
                 arr.findIndex(
-                  (x) => x.id === it.id && x.backdropPath != null,
+                  (x) =>
+                    x.type === it.type &&
+                    x.id === it.id &&
+                    x.backdropPath != null,
                 ) === i
             )
             .slice(0, 5)}

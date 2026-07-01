@@ -48,6 +48,48 @@ const INFO_HASH_RE = /^[A-Fa-f0-9]{40}$/;
 // hex blob in the URL (e.g. a 64-char sha256) isn't truncated to a wrong "hash".
 const FIRST_HEX_40_RE = /(?<![A-Fa-f0-9])[A-Fa-f0-9]{40}(?![A-Fa-f0-9])/;
 
+// A configured add-on is user-supplied but only semi-trusted; cap how much of its
+// response we buffer so a hostile or broken add-on can't return a huge/endless
+// body and exhaust memory. 8 MB is far above any real stream-list JSON.
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+
+/** Read a fetch response's body as text, refusing to buffer past `maxBytes`. The
+ * FetchImpl type only promises `text()`, but the real Response also exposes a
+ * byte stream — prefer it so we can stop early; fall back to `text()` (capped)
+ * for test stubs / non-standard fetches that don't provide one. */
+async function readCappedText(
+  response: { text(): Promise<string> },
+  maxBytes: number,
+): Promise<string> {
+  const body = (response as { body?: ReadableStream<Uint8Array> | null }).body;
+  const reader = body?.getReader?.();
+  if (reader == null) {
+    const text = await response.text();
+    return text.length > maxBytes ? text.slice(0, maxBytes) : text;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value == null) continue;
+      total += value.byteLength;
+      if (total > maxBytes) throw IndexerError.cannotParseResponse();
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(merged);
+}
+
 export class StremioAddonIndexer implements TorrentIndexer {
   readonly name: string;
   private readonly baseURL: string;
@@ -86,7 +128,9 @@ export class StremioAddonIndexer implements TorrentIndexer {
 
     let payload: StremioStreamResponse;
     try {
-      payload = JSON.parse(await response.text()) as StremioStreamResponse;
+      payload = JSON.parse(
+        await readCappedText(response, MAX_RESPONSE_BYTES),
+      ) as StremioStreamResponse;
     } catch {
       throw IndexerError.cannotParseResponse();
     }

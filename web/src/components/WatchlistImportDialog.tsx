@@ -58,10 +58,17 @@ export function WatchlistImportDialog({ onClose }: { onClose: () => void }) {
 
   async function readFile(file: File) {
     try {
-      const content = await file.text();
-      setText(content.slice(0, MAX_TEXT));
+      // Read at most MAX_TEXT bytes so a hostile multi-GB file can't be pulled
+      // into memory — slice the Blob BEFORE reading rather than after.
+      const oversize = file.size > MAX_TEXT;
+      const content = await (oversize ? file.slice(0, MAX_TEXT) : file).text();
+      setText(content);
       setSummary(null);
-      setError(null);
+      setError(
+        oversize
+          ? "That file was large — only the first part was imported."
+          : null,
+      );
     } catch {
       setError("Could not read that file.");
     }

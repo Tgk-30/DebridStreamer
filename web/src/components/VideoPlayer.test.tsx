@@ -413,6 +413,15 @@ describe("WebviewPlayer", () => {
       input.remove();
     });
 
+    it("yields Space/Enter to a focused button (doesn't hijack play/pause)", () => {
+      setup(true);
+      const button = document.createElement("button");
+      document.body.appendChild(button);
+      press(" ", button);
+      expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+      button.remove();
+    });
+
     it("ignores shortcuts when a modifier is held (so ⌘K still works)", () => {
       setup(true);
       window.dispatchEvent(

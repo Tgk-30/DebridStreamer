@@ -77,11 +77,25 @@ function shouldIgnoreShortcut(
   const el = target as HTMLElement | null;
   if (el == null) return false;
   const tag = el.tagName;
-  return (
+  if (
     tag === "INPUT" ||
     tag === "TEXTAREA" ||
     tag === "SELECT" ||
+    // A focused button/link owns Space/Enter — don't hijack it for play/pause.
+    tag === "BUTTON" ||
+    tag === "A" ||
     el.isContentEditable
+  ) {
+    return true;
+  }
+  const role = el.getAttribute?.("role");
+  return (
+    role === "button" ||
+    role === "link" ||
+    role === "menuitem" ||
+    role === "checkbox" ||
+    role === "switch" ||
+    role === "tab"
   );
 }
 
@@ -302,11 +316,14 @@ function WebviewPlayer({
         didSeekRef.current = true; // basically finished — don't resume
         return;
       }
-      didSeekRef.current = true;
       try {
         video.currentTime = start;
+        // Only mark the resume done once the seek was accepted — if the element
+        // rejects an early seek we leave the guard unset so a later canplay /
+        // durationchange retries instead of silently dropping the resume.
+        didSeekRef.current = true;
       } catch {
-        // Some sources reject an early seek; the timeupdate path will catch up.
+        // Not seekable yet; a subsequent canplay/durationchange will retry.
       }
     };
     const onLoadedMeta = () => {
@@ -320,10 +337,12 @@ function WebviewPlayer({
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMeta);
     video.addEventListener("durationchange", onDurationChange);
+    video.addEventListener("canplay", applyResume);
     return () => {
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMeta);
       video.removeEventListener("durationchange", onDurationChange);
+      video.removeEventListener("canplay", applyResume);
       if (onProgressRef.current != null && video.currentTime > 0) report();
     };
   }, [url]);

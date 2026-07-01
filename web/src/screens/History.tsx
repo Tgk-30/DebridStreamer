@@ -19,9 +19,13 @@ export function History() {
   const { history, continueWatching, openDetail, openBrowse, navigate, settings } =
     useAppStore();
 
-  // Opt-in insights card (off by default). Re-aggregates when the history size
-  // changes so it stays current after a watch is recorded.
-  const stats = useWatchStats(settings.showWatchStats, history.length);
+  // Opt-in insights card (off by default). Keyed on the history + continue-
+  // watching identities (not just length) so it re-aggregates after progress
+  // changes to an already-recorded title, not only when a new row appears.
+  const stats = useWatchStats(settings.showWatchStats, [
+    history,
+    continueWatching,
+  ]);
 
   // Only surface rows with a meaningful resume point in the rail.
   const resumable = continueWatching.filter(hasResumePoint).map((r) => r.preview);

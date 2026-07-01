@@ -3,8 +3,9 @@
 //
 // The AppStore only keeps history as display previews (no durations/timestamps),
 // so this reads the complete records straight from the Store. Disabled → no work
-// and no snapshot. `refreshKey` lets the caller re-aggregate when history changes
-// (e.g. pass history.length) without re-subscribing to the Store.
+// and no snapshot. `deps` re-aggregates when they change — pass the STABLE store
+// slices (e.g. [history, continueWatching]) whose identity changes on any refresh,
+// so progress to an already-recorded title also re-aggregates, not just new rows.
 
 import { useEffect, useState } from "react";
 import { getStore } from "../storage";
@@ -12,7 +13,7 @@ import { computeWatchStats, type WatchStats } from "./watchStats";
 
 export function useWatchStats(
   enabled: boolean,
-  refreshKey?: unknown,
+  deps: readonly unknown[] = [],
 ): WatchStats | null {
   const [stats, setStats] = useState<WatchStats | null>(null);
 
@@ -38,7 +39,10 @@ export function useWatchStats(
     return () => {
       cancelled = true;
     };
-  }, [enabled, refreshKey]);
+    // Spread the caller's stable deps so identity changes (not just length) drive
+    // a refresh. Their count is fixed per call site.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, ...deps]);
 
   return stats;
 }
