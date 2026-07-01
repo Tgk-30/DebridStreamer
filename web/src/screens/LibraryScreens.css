@@ -19,6 +19,15 @@
   margin: 0 0 var(--sp-sm);
   font-size: 14px;
 }
+.lib-head-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+.lib-import-btn {
+  flex: 0 0 auto;
+}
 
 .lib-folders {
   display: flex;

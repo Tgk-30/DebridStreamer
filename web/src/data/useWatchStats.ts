@@ -1,0 +1,44 @@
+// Loads the full watch history + taste events from the durable Store and
+// aggregates them into a WatchStats snapshot for the opt-in insights card.
+//
+// The AppStore only keeps history as display previews (no durations/timestamps),
+// so this reads the complete records straight from the Store. Disabled → no work
+// and no snapshot. `refreshKey` lets the caller re-aggregate when history changes
+// (e.g. pass history.length) without re-subscribing to the Store.
+
+import { useEffect, useState } from "react";
+import { getStore } from "../storage";
+import { computeWatchStats, type WatchStats } from "./watchStats";
+
+export function useWatchStats(
+  enabled: boolean,
+  refreshKey?: unknown,
+): WatchStats | null {
+  const [stats, setStats] = useState<WatchStats | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setStats(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const store = getStore();
+        const [records, events] = await Promise.all([
+          store.listHistory(500),
+          // Server Mode returns no taste events; favorite genres just stay empty.
+          store.recentTasteEvents(500).catch(() => []),
+        ]);
+        if (!cancelled) setStats(computeWatchStats(records, events));
+      } catch {
+        if (!cancelled) setStats(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, refreshKey]);
+
+  return stats;
+}

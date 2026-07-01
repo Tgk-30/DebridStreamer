@@ -15,6 +15,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MediaPreview } from "../models/media";
 import type { WatchHistoryRecord } from "../storage/models";
+import type { WatchStats } from "../data/watchStats";
 
 // --- mutable mock state -----------------------------------------------------
 
@@ -23,15 +24,24 @@ const openBrowse = vi.fn();
 const navigate = vi.fn();
 let mockHistory: MediaPreview[] = [];
 let mockContinueWatching: WatchHistoryRecord[] = [];
+let mockSettings: { showWatchStats: boolean } = { showWatchStats: false };
+let mockStats: WatchStats | null = null;
 
 vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({
     history: mockHistory,
     continueWatching: mockContinueWatching,
+    settings: mockSettings,
     openDetail,
     openBrowse,
     navigate,
   }),
+}));
+
+// The stats hook reads the durable Store directly; stub it so the screen test
+// stays store-free and we control the snapshot.
+vi.mock("../data/useWatchStats", () => ({
+  useWatchStats: () => mockStats,
 }));
 
 vi.mock("../components/MediaGrid", () => ({
@@ -102,10 +112,51 @@ beforeEach(() => {
   navigate.mockClear();
   mockHistory = [];
   mockContinueWatching = [];
+  mockSettings = { showWatchStats: false };
+  mockStats = null;
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+function statsFixture(over: Partial<WatchStats> = {}): WatchStats {
+  return {
+    totalSeconds: 3600,
+    titles: 3,
+    completed: 2,
+    completionRate: 2 / 3,
+    streakDays: 2,
+    streakOngoing: true,
+    activeDays: 2,
+    favoriteGenres: [{ genre: "Action", count: 2 }],
+    ...over,
+  };
+}
+
+describe("History — watch stats card", () => {
+  it("is hidden when the setting is off", () => {
+    mockSettings = { showWatchStats: false };
+    mockStats = statsFixture();
+    mockHistory = [preview("m1", "Tenet")];
+    render(<History />);
+    expect(screen.queryByText("Your watching")).not.toBeInTheDocument();
+  });
+
+  it("renders when enabled and there is history", () => {
+    mockSettings = { showWatchStats: true };
+    mockStats = statsFixture();
+    mockHistory = [preview("m1", "Tenet")];
+    render(<History />);
+    expect(screen.getByText("Your watching")).toBeInTheDocument();
+  });
+
+  it("stays hidden when enabled but there is no watch data yet", () => {
+    mockSettings = { showWatchStats: true };
+    mockStats = statsFixture({ titles: 0 }); // hasWatchStats -> false
+    render(<History />);
+    expect(screen.queryByText("Your watching")).not.toBeInTheDocument();
+  });
 });
 
 describe("History — empty", () => {

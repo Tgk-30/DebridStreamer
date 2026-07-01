@@ -3565,6 +3565,20 @@ function AppearanceTab({
             </span>
           </span>
         </label>
+        <label className="settings-toggle-row">
+          <input
+            type="checkbox"
+            checked={draft.showWatchStats}
+            onChange={(e) => applyAppearance({ showWatchStats: e.target.checked })}
+          />
+          <span>
+            <strong>Show watch stats</strong>
+            <span className="settings-hint t-secondary">
+              Adds a personal insights card (time watched, completion, streak,
+              favourite genres) to the top of the History screen.
+            </span>
+          </span>
+        </label>
         <button
           type="button"
           className="btn settings-replay-tour"

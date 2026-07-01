@@ -97,6 +97,7 @@ const SettingsKeys = {
   streamMaxQuality: "stream_max_quality",
   streamMaxSizeGB: "stream_max_size_gb",
   dataSaver: "data_saver",
+  showWatchStats: "show_watch_stats",
   transcode: "transcode",
 } as const;
 
@@ -203,6 +204,9 @@ export interface AppSettings {
   /** Master Data Saver — clamps the stream list AND automatic (watchlist)
    *  playback to a bandwidth-friendly tier (≤720p, ≤5 GB) without transcoding. */
   dataSaver: boolean;
+  /** Opt-in: show a personal watch-stats card on the History screen (off by
+   *  default so the screen stays uncluttered for users who don't want it). */
+  showWatchStats: boolean;
   /** Server-Mode only: request the server's transcoded 720p HLS variant for
    *  playback (lower bitrate, re-encoded). Only effective when the server
    *  advertises transcodeAvailable. */
@@ -357,6 +361,7 @@ export function defaultSettings(): AppSettings {
     streamMaxQuality: "any",
     streamMaxSizeGB: 0,
     dataSaver: false,
+    showWatchStats: false,
     transcode: false,
   };
 }
@@ -617,6 +622,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     streamMaxQuality,
     streamMaxSizeGB,
     dataSaver,
+    showWatchStats,
     transcode,
     simpleMode,
   ] = await Promise.all([
@@ -647,6 +653,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.streamMaxQuality),
     store.getSetting(SettingsKeys.streamMaxSizeGB),
     store.getSetting(SettingsKeys.dataSaver),
+    store.getSetting(SettingsKeys.showWatchStats),
     store.getSetting(SettingsKeys.transcode),
     store.getSetting(SettingsKeys.simpleMode),
   ]);
@@ -743,6 +750,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     streamMaxQuality: normalizeStreamMaxQuality(streamMaxQuality ?? base.streamMaxQuality),
     streamMaxSizeGB: normalizeStreamMaxSizeGB(streamMaxSizeGB ?? base.streamMaxSizeGB),
     dataSaver: dataSaver == null ? base.dataSaver : dataSaver === "true",
+    showWatchStats:
+      showWatchStats == null ? base.showWatchStats : showWatchStats === "true",
     transcode: transcode == null ? base.transcode : transcode === "true",
   };
 
@@ -888,6 +897,10 @@ export async function saveSettingsToStore(
     store.setSetting(
       SettingsKeys.dataSaver,
       settings.dataSaver ? "true" : "false",
+    ),
+    store.setSetting(
+      SettingsKeys.showWatchStats,
+      settings.showWatchStats ? "true" : "false",
     ),
     store.setSetting(
       SettingsKeys.transcode,

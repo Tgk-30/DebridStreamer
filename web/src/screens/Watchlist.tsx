@@ -4,10 +4,12 @@
 // removed from the watchlist. Persistence is the durable Store (works in browser
 // + Tauri webview); Trakt/IMDb sync is the documented follow-up.
 
+import { useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { MediaCard } from "../components/MediaCard";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { WatchlistImportDialog } from "../components/WatchlistImportDialog";
 import { watchProgressMap } from "../storage/models";
 import "./LibraryScreens.css";
 
@@ -21,6 +23,7 @@ export function Watchlist() {
     openBrowse,
     navigate,
   } = useAppStore();
+  const [importing, setImporting] = useState(false);
 
   const readyCount = watchlist.filter(
     (i) => cachedResolutions[i.id] != null,
@@ -30,12 +33,29 @@ export function Watchlist() {
 
   return (
     <div className="lib-screen">
-      <h1 className="lib-h1">Watchlist</h1>
-      <p className="lib-sub t-secondary">
-        Titles you've saved to watch later.
-        {readyCount > 0 &&
-          ` ${readyCount} ready to play instantly.`}
-      </p>
+      <div className="lib-head-row">
+        <div>
+          <h1 className="lib-h1">Watchlist</h1>
+          <p className="lib-sub t-secondary">
+            Titles you've saved to watch later.
+            {readyCount > 0 && ` ${readyCount} ready to play instantly.`}
+          </p>
+        </div>
+        {watchlist.length > 0 && (
+          <button
+            type="button"
+            className="btn lib-import-btn"
+            onClick={() => setImporting(true)}
+          >
+            <Icon name="upload" size={15} />
+            Import
+          </button>
+        )}
+      </div>
+
+      {importing && (
+        <WatchlistImportDialog onClose={() => setImporting(false)} />
+      )}
 
       {watchlist.length === 0 ? (
         <EmptyState
@@ -57,6 +77,10 @@ export function Watchlist() {
               </button>
               <button type="button" className="btn" onClick={() => navigate("search")}>
                 Search catalog
+              </button>
+              <button type="button" className="btn" onClick={() => setImporting(true)}>
+                <Icon name="upload" size={15} />
+                Import list
               </button>
             </>
           }

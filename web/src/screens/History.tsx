@@ -10,11 +10,18 @@ import { useAppStore } from "../store/AppStore";
 import { MediaGrid } from "../components/MediaGrid";
 import { Rail } from "../components/Rail";
 import { EmptyState } from "../components/EmptyState";
+import { WatchStatsCard } from "../components/WatchStatsCard";
 import { hasResumePoint, watchProgressMap } from "../storage/models";
+import { useWatchStats } from "../data/useWatchStats";
+import { hasWatchStats } from "../data/watchStats";
 
 export function History() {
-  const { history, continueWatching, openDetail, openBrowse, navigate } =
+  const { history, continueWatching, openDetail, openBrowse, navigate, settings } =
     useAppStore();
+
+  // Opt-in insights card (off by default). Re-aggregates when the history size
+  // changes so it stays current after a watch is recorded.
+  const stats = useWatchStats(settings.showWatchStats, history.length);
 
   // Only surface rows with a meaningful resume point in the rail.
   const resumable = continueWatching.filter(hasResumePoint).map((r) => r.preview);
@@ -26,6 +33,10 @@ export function History() {
     <div className="lib-screen">
       <h1 className="lib-h1">History</h1>
       <p className="lib-sub t-secondary">Titles you've recently opened.</p>
+
+      {settings.showWatchStats && stats != null && hasWatchStats(stats) && (
+        <WatchStatsCard stats={stats} />
+      )}
 
       {resumable.length > 0 && (
         <Rail

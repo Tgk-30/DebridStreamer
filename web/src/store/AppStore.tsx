@@ -96,6 +96,12 @@ export interface AppStore {
   refreshCachedResolutions: () => void;
   toggleWatchlist: (item: MediaPreview) => void;
   removeFromWatchlist: (id: string) => void;
+  /** Bulk-add already-resolved previews to the watchlist (used by import),
+   * skipping any already present. Refreshes state + kicks a pre-resolve pass
+   * once at the end. Resolves to how many were added vs skipped. */
+  importToWatchlist: (
+    previews: MediaPreview[],
+  ) => Promise<{ added: number; skipped: number }>;
   /** Re-hydrate all per-profile data from the Store (watchlist / history /
    * continue-watching / settings). Called after a Server-Mode "who's watching"
    * profile switch so the UI reflects the newly-active profile's data. */
@@ -338,6 +344,29 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [refreshCachedResolutions],
   );
 
+  const importToWatchlist = useCallback(
+    async (previews: MediaPreview[]) => {
+      const store = getStore();
+      let added = 0;
+      let skipped = 0;
+      for (const preview of previews) {
+        if (await store.isInWatchlist(preview.id)) {
+          skipped += 1;
+          continue;
+        }
+        await store.addToWatchlist(preview);
+        added += 1;
+      }
+      if (added > 0) {
+        // One state refresh + one pre-resolve kick for the whole batch.
+        setWatchlist(await loadWatchlist());
+        void schedulerRef.current?.kick().then(() => void refreshCachedResolutions());
+      }
+      return { added, skipped };
+    },
+    [refreshCachedResolutions],
+  );
+
   const recordResume = useCallback(
     (
       item: MediaPreview,
@@ -389,6 +418,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     refreshCachedResolutions,
     toggleWatchlist,
     removeFromWatchlist,
+    importToWatchlist,
     reloadProfileData,
     recordResume,
   };

@@ -1,0 +1,121 @@
+/* WatchlistImportDialog — modal for bulk-importing titles into the watchlist. */
+
+.wli-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-xl);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.wli-dialog {
+  width: min(560px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: var(--sp-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.wli-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.wli-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+.wli-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--glass-tint-control);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.16s, background 0.16s;
+}
+.wli-close:hover {
+  background: var(--glass-tint-control-hover);
+  color: var(--text-primary);
+}
+
+.wli-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+.wli-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.wli-textarea {
+  width: 100%;
+  resize: vertical;
+  padding: var(--sp-md);
+  border-radius: var(--r-md);
+  border: 0.75px solid var(--glass-border);
+  background: var(--glass-tint-control);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+.wli-textarea:focus {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+
+/* The native file input is hidden; the "Upload CSV" button proxies to it. */
+.wli-file-input {
+  display: none;
+}
+
+.wli-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  flex-wrap: wrap;
+}
+.wli-count {
+  font-size: 12px;
+}
+.wli-actions {
+  display: flex;
+  gap: var(--sp-sm);
+}
+
+.wli-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 0;
+}
+
+.wli-summary {
+  padding: var(--sp-md);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wli-summary p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.wli-summary-sub {
+  font-size: 12px;
+}

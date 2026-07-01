@@ -24,6 +24,7 @@ import {
   ThumbsDown,
   ThumbsUp,
   Trash2,
+  Upload,
   WandSparkles,
   X,
   type LucideIcon,
@@ -47,6 +48,7 @@ export type IconName =
   | "calendar"
   | "debrid"
   | "trash"
+  | "upload"
   | "refresh"
   | "share"
   | "captions"
@@ -85,6 +87,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   calendar: CalendarDays,
   debrid: HardDriveDownload,
   trash: Trash2,
+  upload: Upload,
   refresh: RefreshCw,
   share: Share2,
   captions: Captions,

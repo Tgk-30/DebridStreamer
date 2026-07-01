@@ -72,9 +72,13 @@ vi.mock("../data/library", () => ({
 
 const listCachedResolutions = vi.fn<() => Promise<Array<{ mediaId: string }>>>();
 const deleteCachedResolution = vi.fn<(id: string) => Promise<void>>();
+const isInWatchlist = vi.fn<(id: string) => Promise<boolean>>();
+const addToWatchlist = vi.fn<(preview: MediaPreview) => Promise<void>>();
 const fakeStore = {
   listCachedResolutions: () => listCachedResolutions(),
   deleteCachedResolution: (id: string) => deleteCachedResolution(id),
+  isInWatchlist: (id: string) => isInWatchlist(id),
+  addToWatchlist: (preview: MediaPreview) => addToWatchlist(preview),
   resetProfileCache: vi.fn(),
 };
 const getStore = vi.fn(() => fakeStore);
@@ -165,6 +169,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     streamMaxQuality: "any",
     streamMaxSizeGB: 0,
     dataSaver: false,
+    showWatchStats: false,
     transcode: false,
     ...overrides,
   };
@@ -211,6 +216,8 @@ beforeEach(() => {
   removeFromWatchlistStore.mockResolvedValue([]);
   listCachedResolutions.mockResolvedValue([]);
   deleteCachedResolution.mockResolvedValue(undefined);
+  isInWatchlist.mockResolvedValue(false);
+  addToWatchlist.mockResolvedValue(undefined);
   schedulerKick.mockResolvedValue(null);
   getStore.mockReturnValue(fakeStore);
   isServerMode.mockReturnValue(false);
@@ -491,6 +498,47 @@ describe("removeFromWatchlist", () => {
       resolveRemove([]);
       await Promise.resolve();
     });
+  });
+});
+
+describe("importToWatchlist", () => {
+  it("adds titles that aren't present, skips those that are, and returns counts", async () => {
+    // "have" is already on the watchlist; "new1"/"new2" are not.
+    isInWatchlist.mockImplementation(async (id: string) => id === "have");
+    loadWatchlist.mockResolvedValue([media("new1"), media("new2")]);
+    const { result } = await renderStore();
+
+    let outcome: { added: number; skipped: number } | undefined;
+    await act(async () => {
+      outcome = await result.current.importToWatchlist([
+        media("new1"),
+        media("have"),
+        media("new2"),
+      ]);
+    });
+
+    expect(outcome).toEqual({ added: 2, skipped: 1 });
+    expect(addToWatchlist).toHaveBeenCalledTimes(2);
+    expect(addToWatchlist).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: "have" }),
+    );
+    // The in-memory list is refreshed once at the end.
+    expect(result.current.watchlist).toEqual([media("new1"), media("new2")]);
+  });
+
+  it("does nothing (and skips the refresh) when every title is already present", async () => {
+    isInWatchlist.mockResolvedValue(true);
+    const { result } = await renderStore();
+    loadWatchlist.mockClear();
+
+    let outcome: { added: number; skipped: number } | undefined;
+    await act(async () => {
+      outcome = await result.current.importToWatchlist([media("a"), media("b")]);
+    });
+
+    expect(outcome).toEqual({ added: 0, skipped: 2 });
+    expect(addToWatchlist).not.toHaveBeenCalled();
+    expect(loadWatchlist).not.toHaveBeenCalled(); // no refresh when nothing added
   });
 });
 
