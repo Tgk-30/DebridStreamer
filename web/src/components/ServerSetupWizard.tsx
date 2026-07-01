@@ -21,6 +21,7 @@ import {
 } from "../lib/serverApi";
 import { configuredServerURL } from "../lib/serverMode";
 import { markServerSetupComplete } from "../lib/serverSetup";
+import { signupUrl } from "../data/onboardingHelp";
 import {
   DEBRID_PROVIDER_OPTIONS,
   DEFAULT_DEBRID_PROVIDER,
@@ -45,6 +46,34 @@ import {
   type ServerSetupStep,
 } from "../lib/serverSetupSteps";
 import "./FirstRunWizard.css";
+
+// Maps a credential-provider value (from serverSetupCredentials) to its
+// onboardingHelp signup-link id, so each key field can point at where to get it.
+const CREDENTIAL_SIGNUP_ID: Record<string, string> = {
+  tmdb: "tmdb",
+  opensubtitles: "openSubtitles",
+  real_debrid: "realDebrid",
+  torbox: "torbox",
+  premiumize: "premiumize",
+  all_debrid: "allDebrid",
+};
+
+/** A small "where do I get this?" external link for a credential field, or null
+ * when we don't have a signup page for that provider (e.g. OpenAI). */
+function SignupLink({ provider }: { provider: string }) {
+  const url = signupUrl(CREDENTIAL_SIGNUP_ID[provider] ?? "");
+  if (url == null) return null;
+  return (
+    <a
+      className="server-setup-signup"
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      Where do I get this? ↗
+    </a>
+  );
+}
 
 interface ServerSetupWizardProps {
   /** Called when the owner finishes or skips. The host hides the wizard. */
@@ -248,6 +277,7 @@ function KeysStep({
             <span className="server-setup-field-hint">
               Cached stream resolving works best after this is saved.
             </span>
+            <SignupLink provider={debridProvider} />
           </label>
         </div>
         {SERVER_SETUP_KEY_FIELDS.map((field) => (
@@ -262,6 +292,7 @@ function KeysStep({
               spellCheck={false}
             />
             <span className="server-setup-field-hint">{field.hint}</span>
+            <SignupLink provider={field.provider} />
           </label>
         ))}
       </div>

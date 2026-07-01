@@ -329,6 +329,17 @@
   color: var(--text-secondary);
   opacity: 0.85;
 }
+.server-setup-signup {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  width: fit-content;
+}
+.server-setup-signup:hover {
+  text-decoration: underline;
+}
 .server-setup-fields .first-run-field input {
   margin-bottom: 2px;
 }

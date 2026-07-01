@@ -90,9 +90,19 @@ export function CommandPalette() {
       id: "welcome-tour",
       label: "Show welcome tour",
       icon: "sparkles",
-      keywords: "tour guide welcome help onboarding intro",
+      keywords: "tour guide welcome help onboarding intro getting started",
       run: () => {
         window.dispatchEvent(new CustomEvent("ds:open-welcome-guide"));
+        close();
+      },
+    });
+    list.push({
+      id: "keyboard-shortcuts",
+      label: "Keyboard shortcuts",
+      icon: "sliders",
+      keywords: "keyboard shortcuts keys hotkeys help reference",
+      run: () => {
+        window.dispatchEvent(new CustomEvent("ds:open-shortcuts"));
         close();
       },
     });

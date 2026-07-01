@@ -17,6 +17,7 @@ import { TierOnboarding } from "./components/TierOnboarding";
 import { ProfilePicker } from "./components/ProfilePicker";
 import { CommandPalette } from "./components/CommandPalette";
 import { WelcomeGuide } from "./components/WelcomeGuide";
+import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { isSmartPreloadEnabled, whenIdle } from "./lib/smartPreload";
 import { useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
@@ -174,6 +175,15 @@ export function App() {
     }
   };
 
+  // App-wide keyboard-shortcuts reference, opened from ⌘K (no persistence — it's
+  // a reference, not a one-time greeting).
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setShortcutsOpen(true);
+    window.addEventListener("ds:open-shortcuts", open);
+    return () => window.removeEventListener("ds:open-shortcuts", open);
+  }, []);
+
   // Smart preloading (invisible): while idle, warm the lazy Detail + Browse code
   // chunks so opening a title or "See all" is instant instead of waiting on a
   // chunk fetch. Off → metered users skip the background bytes.
@@ -268,6 +278,10 @@ export function App() {
           onClose={closeWelcomeGuide}
           onOpenSettings={() => navigate("settings")}
         />
+      )}
+
+      {shortcutsOpen && (
+        <KeyboardShortcuts onClose={() => setShortcutsOpen(false)} />
       )}
 
       {/* Desktop auto-update toast. Runs the launch-time check itself and is a

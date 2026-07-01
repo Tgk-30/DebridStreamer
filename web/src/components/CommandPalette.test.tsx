@@ -188,6 +188,20 @@ describe("CommandPalette", () => {
     }
   });
 
+  it("fires the keyboard-shortcuts custom event and closes", () => {
+    const handler = vi.fn();
+    window.addEventListener("ds:open-shortcuts", handler);
+    try {
+      render(<CommandPalette />);
+      openPalette();
+      fireEvent.mouseDown(screen.getByText("Keyboard shortcuts"));
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      window.removeEventListener("ds:open-shortcuts", handler);
+    }
+  });
+
   it("runs a catalog search when the search row is selected", async () => {
     const user = userEvent.setup();
     render(<CommandPalette />);
