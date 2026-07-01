@@ -1,0 +1,38 @@
+[Unit]
+Description=DebridStreamer self-host server
+Documentation=https://github.com/Tgk-30/DebridStreamer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Created by the installer (see deploy/ubuntu/README.md); owns only its data dir.
+User=debridstreamer
+Group=debridstreamer
+
+# Where `npm run build` output + the web dist were installed.
+WorkingDirectory=/opt/debridstreamer
+ExecStart=/usr/bin/node /opt/debridstreamer/server/dist/index.cjs
+
+# Runtime configuration. The env file holds the secret key / setup token; the
+# fixed paths below match the install layout.
+EnvironmentFile=/etc/debridstreamer/debridstreamer.env
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=DS_WEB_DIST=/opt/debridstreamer/web-dist
+Environment=DS_SERVER_DATA_DIR=/var/lib/debridstreamer
+Environment=DS_SERVER_DB_PATH=/var/lib/debridstreamer/debridstreamer.sqlite
+
+Restart=on-failure
+RestartSec=3
+
+# Hardening — the service only needs to read its install dir and write its data.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/debridstreamer
+StateDirectory=debridstreamer
+
+[Install]
+WantedBy=multi-user.target

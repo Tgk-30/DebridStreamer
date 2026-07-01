@@ -1,0 +1,73 @@
+# Builds the DebridStreamer self-host server as a Debian/Ubuntu package and
+# attaches it to the release. Runs on the same `v*-web` release tag as the
+# desktop build; also uploadable as a workflow-dispatch artifact for testing.
+#
+# The package is Architecture: all (a Node bundle + static web assets, no native
+# code), so a single .deb installs on amd64 and arm64. It Depends on nodejs; see
+# deploy/ubuntu/README.md (Option C) for install steps.
+name: deb-release
+
+on:
+  push:
+    tags:
+      - "v*-web"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build web app
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      - name: Build server
+        run: |
+          cd server
+          npm ci
+          npm run build
+
+      - name: Resolve version from the tag
+        id: v
+        shell: bash
+        run: |
+          V="${GITHUB_REF_NAME#v}"   # v0.2.0-web -> 0.2.0-web
+          V="${V%-web}"              # 0.2.0-web  -> 0.2.0
+          echo "version=${V}" >> "$GITHUB_OUTPUT"
+
+      - name: Build .deb
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: bash scripts/build_deb.sh "$VERSION"
+
+      - name: Add a stable-named alias
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: cp "dist-deb/debridstreamer-server_${VERSION}_all.deb" "dist-deb/debridstreamer-server_all.deb"
+
+      - name: Upload as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debridstreamer-server-deb
+          path: dist-deb/*.deb
+
+      - name: Attach to the release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: dist-deb/*.deb

@@ -1,0 +1,29 @@
+# Zero-build deploy — pulls the prebuilt multi-arch image (linux/amd64 +
+# linux/arm64) from GitHub Container Registry instead of building from source.
+# Ideal for an Ubuntu VPS / home server:
+#
+#   1. Put this file and a `.env` (copy .env.example) in an empty directory.
+#   2. docker compose -f docker-compose.ghcr.yml up -d
+#
+# Update to the latest published build with:
+#   docker compose -f docker-compose.ghcr.yml pull && \
+#     docker compose -f docker-compose.ghcr.yml up -d
+services:
+  debridstreamer:
+    image: ghcr.io/tgk-30/debridstreamer:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: ${PORT:-43110}
+      HOST: 0.0.0.0
+      DS_SERVER_DATA_DIR: /data
+      DS_SERVER_DB_PATH: /data/debridstreamer.sqlite
+      DS_WEB_DIST: /app/web-dist
+    ports:
+      - "${PORT:-43110}:43110"
+    volumes:
+      - debridstreamer-data:/data
+
+volumes:
+  debridstreamer-data:

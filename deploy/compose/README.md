@@ -4,6 +4,29 @@ This runs Server Mode and serves the built PWA from the same container.
 
 ## Quick Start
 
+### Recommended — prebuilt image (no source build)
+
+Pulls the published multi-arch image (linux/amd64 + linux/arm64) from GHCR, so
+an Ubuntu VPS / home server just needs Docker. Uses `docker-compose.ghcr.yml`.
+
+```sh
+cp .env.example .env
+openssl rand -base64 32
+# paste that value into DS_SERVER_SECRET_KEY in .env
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+Update later with:
+
+```sh
+docker compose -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+### Alternative — build from source
+
+Uses `docker-compose.yml` to build the image locally from this checkout.
+
 ```sh
 cp .env.example .env
 openssl rand -base64 32
@@ -17,12 +40,8 @@ Open:
 http://localhost:43110
 ```
 
-For a published image instead of a local build, replace the service `build:`
-block with:
-
-```yaml
-image: ghcr.io/tgk-30/debridstreamer:latest
-```
+For non-Docker Ubuntu installs (native Node + systemd, or the `.deb` package),
+see [`../ubuntu/README.md`](../ubuntu/README.md).
 
 First launch creates the owner account. Phone and tablet users can open the same
 URL and install it to their home screen.

@@ -148,7 +148,7 @@
           <article class="doc-card">
             <span>Continue</span>
             <strong>Watchlist, history, and resume</strong>
-            <p>Save titles, track what you have watched, and pick up exactly where you left off on the next device you open.</p>
+            <p>Save titles or import your list from IMDb or Letterboxd, see your watch stats, and pick up exactly where you left off — with resume bars on every device you open.</p>
           </article>
         </div>
       </section>
@@ -228,18 +228,27 @@
             hand phones, tablets, and other computers a hosted PWA with a
             copyable setup URL and QR code.
           </p>
+          <p>
+            On an Ubuntu server it is one command against the prebuilt,
+            multi-arch (amd64 + arm64) image. Prefer no Docker? There is a native
+            Node&nbsp;+&nbsp;systemd path and a <code>.deb</code> package too —
+            see the
+            <a href="https://github.com/Tgk-30/DebridStreamer/blob/main/deploy/ubuntu/README.md">Ubuntu server guide</a>.
+          </p>
         </div>
         <div class="code-card">
           <div class="code-card-head">
-            <span>Docker Compose</span>
+            <span>Ubuntu — prebuilt image</span>
             <button class="copy-command" type="button" data-copy-target="compose-command">
               Copy
             </button>
           </div>
-          <pre id="compose-command"><code>git clone https://github.com/\
-Tgk-30/DebridStreamer
-cd DebridStreamer/deploy/compose
-docker compose up -d --build</code></pre>
+          <pre id="compose-command"><code>mkdir debridstreamer &amp;&amp; cd debridstreamer
+curl -fsSLO https://raw.githubusercontent.com/Tgk-30/\
+DebridStreamer/main/deploy/compose/docker-compose.ghcr.yml
+curl -fsSL https://raw.githubusercontent.com/Tgk-30/\
+DebridStreamer/main/deploy/compose/.env.example -o .env
+docker compose -f docker-compose.ghcr.yml up -d</code></pre>
         </div>
       </section>
 

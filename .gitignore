@@ -41,3 +41,6 @@ conversation*.md
 # Build-generated encrypted embedded secrets (friends tier) — never commit.
 server/embedded-secrets.json
 embedded-secrets.json
+
+# Local output of scripts/build_deb.sh
+dist-deb/
