@@ -608,7 +608,6 @@ textarea::placeholder {
   filter: blur(150px);
   left: -30vw;
   top: -34vh;
-  animation: auroraDriftA 26s ease-in-out infinite alternate;
 }
 .aurora-glow::after {
   width: 62vw;
@@ -617,19 +616,22 @@ textarea::placeholder {
   filter: blur(160px);
   right: -26vw;
   bottom: -22vh;
-  animation: auroraDriftB 32s ease-in-out infinite alternate;
 }
-@keyframes auroraDriftA {
-  from { transform: translate3d(0, 0, 0) scale(1); }
-  to { transform: translate3d(6vw, 5vh, 0) scale(1.12); }
-}
-@keyframes auroraDriftB {
-  from { transform: translate3d(0, 0, 0) scale(1.05); }
-  to { transform: translate3d(-7vw, -4vh, 0) scale(0.95); }
+/* PERF: the orbs used to drift via a 26s/32s infinite `transform: translate+scale`
+   animation. The scale() forced WebKit to re-rasterize these giant 150-160px-blurred
+   layers and re-run full-tree compositing analysis EVERY FRAME, forever — measured
+   at 14-16% renderer CPU with the app fully idle. The drift was imperceptible at
+   those cycle times, so the orbs are now static: identical look, ~zero idle cost. */
+
+/* Freeze all CSS animation work while the window is hidden/minimized/covered
+   (suspendOnHidden.ts sets data-suspended from `visibilitychange`). Transitions
+   and JS-driven motion are unaffected; this only parks looping keyframes. */
+:root[data-suspended] *,
+:root[data-suspended] *::before,
+:root[data-suspended] *::after {
+  animation-play-state: paused !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  .aurora-glow::before,
-  .aurora-glow::after { animation: none; }
   /* Honor the OS preference app-wide (CSS layer) without needing the in-app
      toggle. The JS/motion layer is handled by <MotionConfig reducedMotion="user">. */
   *,

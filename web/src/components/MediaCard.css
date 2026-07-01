@@ -88,7 +88,11 @@
     rgba(255, 255, 255, 0.03) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  /* PERF: bounded, not `infinite` — lazy posters below the fold never fire
+     onLoad, so their shimmers used to animate forever offscreen. 12 cycles
+     (~17s) covers any realistic load; afterwards the gradient's first stop
+     reads as a normal static placeholder. */
+  animation: shimmer 1.4s ease-in-out 12;
 }
 @keyframes shimmer {
   from { background-position: 200% 0; }

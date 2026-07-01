@@ -257,11 +257,20 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }
     scheduler.start();
     // Poll the cached-resolution table so the watchlist badges reflect new
-    // resolutions produced by background passes.
-    const refresh = setInterval(() => void refreshCachedResolutions(), 30_000);
+    // resolutions produced by background passes. PERF: skip ticks while the
+    // window is hidden (nobody can see the badges) and catch up once when it
+    // becomes visible again.
+    const refresh = setInterval(() => {
+      if (!document.hidden) void refreshCachedResolutions();
+    }, 30_000);
+    const onVisible = () => {
+      if (!document.hidden) void refreshCachedResolutions();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     void refreshCachedResolutions();
     return () => {
       clearInterval(refresh);
+      document.removeEventListener("visibilitychange", onVisible);
       scheduler.stop();
     };
   }, [services.hasDebrid, refreshCachedResolutions]);
@@ -394,34 +403,68 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     ? (serverSession?.simpleMode ?? true)
     : settings.simpleMode;
 
-  const value: AppStore = {
-    route,
-    navigate,
-    detailItem,
-    openDetail,
-    closeDetail,
-    browseContext,
-    openBrowse,
-    closeBrowse,
-    pendingSearch,
-    search,
-    consumePendingSearch,
-    services,
-    settings,
-    updateSettings,
-    simpleMode,
-    hydrated,
-    watchlist,
-    history,
-    continueWatching,
-    cachedResolutions,
-    refreshCachedResolutions,
-    toggleWatchlist,
-    removeFromWatchlist,
-    importToWatchlist,
-    reloadProfileData,
-    recordResume,
-  };
+  // PERF: memoize the context value. Every member below is already referentially
+  // stable between unrelated updates (useCallback/useState); without useMemo the
+  // provider handed out a FRESH object on every render — so each 30s badge poll
+  // re-rendered every `useAppStore()` consumer in the app.
+  const value: AppStore = useMemo(
+    () => ({
+      route,
+      navigate,
+      detailItem,
+      openDetail,
+      closeDetail,
+      browseContext,
+      openBrowse,
+      closeBrowse,
+      pendingSearch,
+      search,
+      consumePendingSearch,
+      services,
+      settings,
+      updateSettings,
+      simpleMode,
+      hydrated,
+      watchlist,
+      history,
+      continueWatching,
+      cachedResolutions,
+      refreshCachedResolutions,
+      toggleWatchlist,
+      removeFromWatchlist,
+      importToWatchlist,
+      reloadProfileData,
+      recordResume,
+    }),
+    [
+      route,
+      navigate,
+      detailItem,
+      openDetail,
+      closeDetail,
+      browseContext,
+      openBrowse,
+      closeBrowse,
+      pendingSearch,
+      search,
+      consumePendingSearch,
+      services,
+      settings,
+      updateSettings,
+      simpleMode,
+      hydrated,
+      watchlist,
+      history,
+      continueWatching,
+      cachedResolutions,
+      refreshCachedResolutions,
+      toggleWatchlist,
+      removeFromWatchlist,
+      importToWatchlist,
+      reloadProfileData,
+      recordResume,
+    ],
+  );
 
   return (
     <AppStoreContext.Provider value={value}>

@@ -73,6 +73,13 @@ function extractDominantRGB(img: HTMLImageElement): string | null {
   }
 }
 
+// Accent extraction is pure per-URL — cache results so rotating back to a title
+// (every ~42s on a 6-item carousel) doesn't re-download and re-scan the full
+// bitmap each pass. Failed extractions are cached too (null) so hopeless
+// backdrops aren't re-probed. Small FIFO cap keeps it bounded across screens.
+const accentCache = new Map<string, string | null>();
+const ACCENT_CACHE_MAX = 64;
+
 export function HeroSpotlight({
   items,
   item,
@@ -84,30 +91,42 @@ export function HeroSpotlight({
   const list = (items && items.length > 0 ? items : item ? [item] : []).slice(0, 6);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  // PERF: park the carousel entirely while the window is hidden — otherwise it
+  // keeps rotating (and preloading + probing backdrops) forever in a window
+  // nobody can see.
+  const [hidden, setHidden] = useState(() => document.hidden);
   const heroRef = useRef<HTMLDivElement>(null);
   const active = list[Math.min(index, list.length - 1)];
   const backdrop = active ? MediaPreviewNS.backdropURL(active) : null;
 
   useEffect(() => {
-    if (list.length <= 1 || paused) return;
+    const onVis = () => setHidden(document.hidden);
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
+  useEffect(() => {
+    if (list.length <= 1 || paused || hidden) return;
     const t = setInterval(() => setIndex((i) => (i + 1) % list.length), intervalMs);
     return () => clearInterval(t);
-  }, [list.length, paused, intervalMs]);
+  }, [list.length, paused, hidden, intervalMs]);
 
   // Invisible polish: preload the next backdrop so the crossfade never flashes a
   // half-loaded image. Gated by the smart-preload preference. The Image is held
   // and detached on cleanup so an in-flight preload doesn't keep loading (and
-  // pinning memory) after the hero unmounts or advances.
+  // pinning memory) after the hero unmounts or advances. Keyed on the URL string
+  // (`list` is a fresh slice every render — using it as a dep re-ran this effect,
+  // and re-issued the preload, on every single render).
+  const nextBackdrop =
+    list.length > 1 ? MediaPreviewNS.backdropURL(list[(index + 1) % list.length]) : null;
   useEffect(() => {
-    if (list.length <= 1 || !isSmartPreloadEnabled()) return;
-    const url = MediaPreviewNS.backdropURL(list[(index + 1) % list.length]);
-    if (!url) return;
+    if (!nextBackdrop || !isSmartPreloadEnabled()) return;
     const img = new Image();
-    img.src = url;
+    img.src = nextBackdrop;
     return () => {
       img.src = "";
     };
-  }, [index, list]);
+  }, [nextBackdrop]);
 
   // Per-title accent: recolor the hero chrome from the backdrop's dominant color.
   // Uses a separate CORS probe image so the *displayed* backdrop is never at risk
@@ -116,17 +135,32 @@ export function HeroSpotlight({
     const el = heroRef.current;
     if (el) el.style.removeProperty("--title-accent-rgb");
     if (!backdrop || el == null) return;
+    // Cache hit: no network fetch, no bitmap scan — just set the property.
+    if (accentCache.has(backdrop)) {
+      const cached = accentCache.get(backdrop);
+      if (cached != null) el.style.setProperty("--title-accent-rgb", cached);
+      return;
+    }
     let cancelled = false;
     const probe = new Image();
     probe.crossOrigin = "anonymous";
     probe.onload = () => {
       if (cancelled) return;
       const rgb = extractDominantRGB(probe);
+      if (accentCache.size >= ACCENT_CACHE_MAX) {
+        const oldest = accentCache.keys().next().value;
+        if (oldest != null) accentCache.delete(oldest);
+      }
+      accentCache.set(backdrop, rgb);
       if (rgb && heroRef.current) heroRef.current.style.setProperty("--title-accent-rgb", rgb);
     };
     probe.src = backdrop;
     return () => {
       cancelled = true;
+      // Fully detach so an in-flight download/decode can't complete (and pin the
+      // bitmap) after rotation — mirrors the preload cleanup above.
+      probe.onload = null;
+      probe.src = "";
     };
   }, [backdrop]);
 
@@ -140,7 +174,11 @@ export function HeroSpotlight({
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      {/* Backdrop crossfade + Ken Burns */}
+      {/* Backdrop crossfade + Ken Burns.
+          PERF: the Ken Burns scale used to run `intervalMs/1000 + 1` = 8s —
+          longer than the 7s rotation, so motion's rAF loop NEVER went idle
+          (each new slide started a zoom that outlived the slide). A fixed 4s
+          zoom completes with ~3s of genuine idle per cycle. */}
       <AnimatePresence mode="popLayout">
         <motion.div
           key={active.id}
@@ -148,7 +186,7 @@ export function HeroSpotlight({
           initial={{ opacity: 0, scale: 1.08 }}
           animate={{ opacity: 1, scale: 1.0 }}
           exit={{ opacity: 0 }}
-          transition={{ opacity: { duration: 0.9, ease: "easeInOut" }, scale: { duration: intervalMs / 1000 + 1, ease: "linear" } }}
+          transition={{ opacity: { duration: 0.9, ease: "easeInOut" }, scale: { duration: 4, ease: "linear" } }}
         >
           {backdrop ? (
             <img

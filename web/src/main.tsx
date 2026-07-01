@@ -4,6 +4,10 @@ import { MotionConfig } from "motion/react";
 import { FirstRunHost } from "./App";
 import { ServerModeGate } from "./components/ServerModeGate";
 import { AppStoreProvider } from "./store/AppStore";
+import { installSuspendOnHidden } from "./lib/suspendOnHidden";
+
+// Park all CSS animations whenever the window is hidden/minimized/covered.
+installSuspendOnHidden();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
