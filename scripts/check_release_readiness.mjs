@@ -66,7 +66,9 @@ check(
 );
 check(
   "Release workflow builds macOS, Linux, and Windows",
-  /platform:\s*macos-latest/.test(releaseWorkflow) &&
+  // A pinned stable macOS (macos-15/14/13) is REQUIRED — `macos-latest` moved to
+  // the macOS 26 beta, whose SDK/codesign makes bundles "damaged" on older macOS.
+  /platform:\s*macos-\d+/.test(releaseWorkflow) &&
     /platform:\s*ubuntu-22\.04/.test(releaseWorkflow) &&
     /platform:\s*windows-latest/.test(releaseWorkflow) &&
     /runs-on:\s*\$\{\{\s*matrix\.platform\s*\}\}/.test(releaseWorkflow),
