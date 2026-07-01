@@ -63,7 +63,12 @@ function labelFor(platform) {
 
 function isInstallerAsset(asset) {
   return !/\.(sig|sha256|sha512|blockmap)$/i.test(asset.name) &&
-    !/latest\.json$/i.test(asset.name);
+    !/latest\.json$/i.test(asset.name) &&
+    // The headless self-host server package (debridstreamer-server_*.deb) is not
+    // a desktop-app download — keep it out of the platform pickers so a Linux
+    // visitor can't grab the server by mistake. It's fetched from the Ubuntu
+    // guide instead.
+    !/^debridstreamer-server[_-]/i.test(asset.name);
 }
 
 function scoreAsset(asset, platform) {
