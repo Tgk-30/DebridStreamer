@@ -391,6 +391,11 @@ const resolveStreamSchema = z.object({
   // a block (fail-closed) — see the resolve route.
   mediaId: z.string().trim().min(1).max(256).optional(),
   mediaType: z.enum(["movie", "series"]).optional(),
+  // Episode context (series only) — steers multi-file season-pack torrents to
+  // the exact episode's file. Optional for back-compat; omitted → the default
+  // largest-file pick, exactly today's behavior.
+  season: z.number().int().min(1).max(200).nullable().optional(),
+  episode: z.number().int().min(1).max(10_000).nullable().optional(),
 });
 
 const profileSettingSchema = z.object({
@@ -3618,6 +3623,10 @@ function registerRoutes(
     const directStream = await resolveServerStream(db, config, auth.profileId, {
       infoHash: body.infoHash,
       preferredService: body.preferredService ?? null,
+      fileHint:
+        body.season != null && body.episode != null
+          ? { season: body.season, episode: body.episode }
+          : null,
     });
     const session = createStreamSession(db, config, auth, {
       upstreamUrl: directStream.streamURL,

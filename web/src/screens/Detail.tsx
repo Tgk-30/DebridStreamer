@@ -15,7 +15,14 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { useDetail } from "../data/detail";
 import { useStreams } from "../data/streams";
-import { defaultSelectionFor, episodeIdFor, episodeLabel } from "../data/episodes";
+import {
+  defaultSelectionFor,
+  episodeIdFor,
+  episodeLabel,
+  nextEpisodeFor,
+  useSeasons,
+} from "../data/episodes";
+import { filterStreamRows } from "../data/streams";
 import { EpisodePicker } from "../components/EpisodePicker";
 import { DetailHero, type TasteSignal } from "../components/DetailHero";
 import { DetailAnalysis } from "../components/DetailAnalysis";
@@ -46,6 +53,35 @@ import "./Detail.css";
 const VideoPlayer = lazy(() =>
   import("../components/VideoPlayer").then((m) => ({ default: m.VideoPlayer })),
 );
+
+// Persisted per-title episode selection (see selectEpisode below).
+const EPISODE_OVERRIDES_KEY = "ds_episode_overrides";
+function loadEpisodeOverrides(): Record<string, { season: number; episode: number }> {
+  try {
+    const raw = globalThis.localStorage?.getItem(EPISODE_OVERRIDES_KEY);
+    if (raw == null) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed == null || typeof parsed !== "object") return {};
+    // Keep only well-formed entries so poisoned storage can't crash Detail.
+    const out: Record<string, { season: number; episode: number }> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      const sel = v as { season?: unknown; episode?: unknown };
+      if (
+        typeof sel?.season === "number" &&
+        Number.isInteger(sel.season) &&
+        sel.season >= 1 &&
+        typeof sel?.episode === "number" &&
+        Number.isInteger(sel.episode) &&
+        sel.episode >= 1
+      ) {
+        out[k] = { season: sel.season, episode: sel.episode };
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
 
 interface ActivePlayer {
   url: string;
@@ -102,12 +138,35 @@ export function Detail() {
 
   const detail = useDetail(detailItem, services.tmdb);
 
-  // Series episode selection: a user's explicit pick (session-only, per title)
-  // wins; otherwise default to the most recently watched episode, else S1E1.
-  // Movies stay null throughout — zero behavior change.
+  // Series episode selection: a user's explicit pick (persisted per title so
+  // "I was browsing S3" survives a restart) wins; otherwise default to the
+  // most recently watched episode, else S1E1. Movies stay null throughout —
+  // zero behavior change.
   const [episodeOverrides, setEpisodeOverrides] = useState<
     Record<string, { season: number; episode: number }>
-  >({});
+  >(() => loadEpisodeOverrides());
+  const selectEpisode = (id: string, next: { season: number; episode: number }) => {
+    setEpisodeOverrides((m) => {
+      const merged = { ...m, [id]: next };
+      // Bound the map so storage never balloons. String-key insertion order is
+      // spec-guaranteed (media ids are "tmdb-…"/"tt…", never integer-like, so
+      // no numeric reordering) — slice(-80) keeps the most recent entries.
+      const keys = Object.keys(merged);
+      const bounded =
+        keys.length > 80
+          ? Object.fromEntries(keys.slice(-80).map((k) => [k, merged[k]]))
+          : merged;
+      try {
+        globalThis.localStorage?.setItem(
+          EPISODE_OVERRIDES_KEY,
+          JSON.stringify(bounded),
+        );
+      } catch {
+        // private mode — session-only is fine
+      }
+      return bounded;
+    });
+  };
   const selected = useMemo(
     () =>
       detailItem?.type === "series"
@@ -126,7 +185,8 @@ export function Detail() {
     services.debrid,
   );
 
-  // Per-episode resume bars for the picker rows (this series only).
+  // Per-episode resume bars + watched checks for the picker rows (this series
+  // only). `continueWatching` holds ALL history records incl. completed ones.
   const progressByEpisodeId = useMemo(() => {
     if (detailItem?.type !== "series") return {};
     const map: Record<string, number> = {};
@@ -138,9 +198,98 @@ export function Detail() {
     }
     return map;
   }, [detailItem, continueWatching]);
+  const watchedEpisodeIds = useMemo(() => {
+    if (detailItem?.type !== "series") return new Set<string>();
+    return new Set(
+      continueWatching
+        .filter((r) => r.mediaId === detailItem.id && r.episodeId != null && r.completed)
+        .map((r) => r.episodeId as string),
+    );
+  }, [detailItem, continueWatching]);
 
   const [player, setPlayer] = useState<ActivePlayer | null>(null);
   const [scrollToStreams, setScrollToStreams] = useState(false);
+
+  // ── Next-episode auto-advance ─────────────────────────────────────────────
+  // The up-next target is computed from the PLAYER SNAPSHOT (never the live
+  // picker selection) using TMDB season metadata for season boundaries; a
+  // guide-less series falls back to a blind within-season increment inside
+  // nextEpisodeFor (harmless: auto-play still requires a cached row).
+  const seasonsState = useSeasons(
+    detail.data.item?.tmdbId ?? detailItem?.tmdbId ?? null,
+    detailItem?.type === "series",
+    services.tmdb,
+  );
+  const upNextTarget = useMemo(
+    () =>
+      player?.episodeId != null &&
+      player.season != null &&
+      player.episode != null &&
+      settings.autoAdvanceEpisodes
+        ? nextEpisodeFor(
+            { season: player.season, episode: player.episode },
+            seasonsState.seasons,
+          )
+        : null,
+    [player, settings.autoAdvanceEpisodes, seasonsState.seasons],
+  );
+  // Pending auto-play for the just-advanced episode. Guards (per the design
+  // review): busy ref blocks double-fire from rows-identity churn; the
+  // selected-matches-pending gate ensures the stream list is already re-scoped
+  // to the new episode; the selectedRef uniqueness check bails if the user
+  // manually retargeted mid-resolve.
+  const [autoPlayPending, setAutoPlayPending] = useState<{
+    season: number;
+    episode: number;
+  } | null>(null);
+  const autoPlayBusy = useRef(false);
+  const selectedRef = useRef(selected);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+  const streamsAnchorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (autoPlayPending == null || streams.loading || autoPlayBusy.current) return;
+    if (
+      selected == null ||
+      selected.season !== autoPlayPending.season ||
+      selected.episode !== autoPlayPending.episode
+    ) {
+      // The user retargeted before the advanced episode's rows landed — the
+      // auto-play intent is stale; cancel it instead of leaving it armed.
+      setAutoPlayPending(null);
+      return;
+    }
+    const target = autoPlayPending;
+    const row = filterStreamRows(streams.rows, settings).find(
+      (r) => r.cachedOn != null,
+    );
+    setAutoPlayPending(null);
+    if (row == null) {
+      // Nothing instant for the next episode — land the user on the honest,
+      // episode-scoped stream list instead of auto-playing something uncached.
+      streamsAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+    autoPlayBusy.current = true;
+    // Pass the target EXPLICITLY as the file hint — no reliance on which
+    // render's `selected` the resolver closure captured.
+    resolveSelectedStream(row, target)
+      .then((s) => {
+        if (
+          selectedRef.current?.season !== target.season ||
+          selectedRef.current?.episode !== target.episode
+        ) {
+          return;
+        }
+        return handlePlay(s, row.result);
+      })
+      .catch(() => streamsAnchorRef.current?.scrollIntoView({ behavior: "smooth" }))
+      .finally(() => {
+        autoPlayBusy.current = false;
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPlayPending, streams.loading, streams.rows, selected, settings]);
 
   // A11y: move focus into the overlay on open (so keyboard/screen-reader users
   // land in context) and hand it back to whatever opened the Detail on close.
@@ -303,7 +452,20 @@ export function Detail() {
     openPlayer(stream.streamURL, title, true);
   }
 
-  async function resolveSelectedStream(row: StreamRow): Promise<StreamInfo> {
+  async function resolveSelectedStream(
+    row: StreamRow,
+    hintOverride?: { season: number; episode: number } | null,
+  ): Promise<StreamInfo> {
+    // Episode context (series only): steers season-pack torrents to the exact
+    // episode's file. Exact single-episode torrents either match (same pick)
+    // or carry no tag (fallback to the default pick) — always safe to pass.
+    // The auto-advance effect passes its target explicitly (hintOverride) so
+    // the hint can never depend on which render's `selected` was captured.
+    const fileHint =
+      hintOverride ??
+      (detailItem?.type === "series" && selected != null
+        ? { season: selected.season, episode: selected.episode }
+        : null);
     if (isServerMode()) {
       // Request the server's 720p HLS transcode when the user opted in and the
       // server actually supports it; otherwise the plain proxy URL. The title
@@ -314,6 +476,7 @@ export function Detail() {
         return await resolveServerStream(row, {
           transcode: settings.transcode && transcodeAvailable,
           media,
+          fileHint,
         });
       } catch (err) {
         // A 403 here means the title is over the active profile's maturity cap.
@@ -328,7 +491,7 @@ export function Detail() {
     if (services.debrid == null || !services.debrid.hasServices) {
       throw new Error("Configure a debrid service to play.");
     }
-    return services.debrid.resolveStream(row.result.infoHash, row.cachedOn);
+    return services.debrid.resolveStream(row.result.infoHash, row.cachedOn, fileHint);
   }
 
   /** File a Server-Mode title request for the current item. The detailItem is a
@@ -344,6 +507,16 @@ export function Detail() {
       const status = (err as { status?: number }).status;
       setRequestState(status === 409 ? "already" : "idle");
     }
+  }
+
+  /** Advance to the next episode (the Up-next card's action). Closes the
+   * player, moves the (persisted) selection — which re-drives the stream
+   * search — and queues the auto-play attempt for when the new rows land. */
+  function handlePlayNext() {
+    if (upNextTarget == null || detailItem == null) return;
+    setPlayer(null);
+    selectEpisode(detailItem.id, upNextTarget);
+    setAutoPlayPending(upNextTarget);
   }
 
   async function handlePlay(stream: StreamInfo, source: TorrentResult) {
@@ -408,6 +581,26 @@ export function Detail() {
         />
       )}
 
+      {/* No-metadata-key hint: the hero renders from the catalog preview alone
+          (no overview/genres) — say why, and where to fix it, instead of just
+          looking sparse. Local Mode only; Server Mode proxies the server key. */}
+      {item && detail.source === "fixtures" && !detail.loading && !isServerMode() && (
+        <p className="detail-nokey-hint t-secondary">
+          Showing basic info — add a free TMDB key for the full details:
+          overview, genres, and the episode guide.
+          <button
+            type="button"
+            className="detail-nokey-link"
+            onClick={() => {
+              closeDetail();
+              navigate("settings");
+            }}
+          >
+            Add a key in Settings
+          </button>
+        </p>
+      )}
+
       {/* External ratings (IMDb / Rotten Tomatoes / Metacritic) via OMDb —
           from the user's own key (local BYOK) or the server "hidden key" proxy.
           Renders nothing when no key is available. */}
@@ -426,15 +619,26 @@ export function Detail() {
           tmdbId={item?.tmdbId ?? detailItem.tmdbId ?? null}
           tmdb={services.tmdb}
           selected={selected}
-          onSelect={(next) =>
-            setEpisodeOverrides((m) => ({ ...m, [detailItem.id]: next }))
-          }
+          onSelect={(next) => selectEpisode(detailItem.id, next)}
           progressByEpisodeId={progressByEpisodeId}
+          watchedEpisodeIds={watchedEpisodeIds}
+          onToggleWatched={(ep, watched) => {
+            // Watched → a completed 1/1 record (no resume bar); unwatched → a
+            // zeroed incomplete record. Both flow through recordResume so the
+            // history + continue-watching state refresh automatically.
+            const epId = episodeIdFor(ep.season, ep.episode);
+            if (watched) {
+              recordResume(detailItem, 1, 1, epId);
+            } else {
+              recordResume(detailItem, 0, null, epId);
+            }
+          }}
         />
       )}
 
       <div
         id="detail-streams"
+        ref={streamsAnchorRef}
         className={scrollToStreams ? "detail-streams-anchor" : undefined}
       >
         <StreamPicker
@@ -483,6 +687,13 @@ export function Detail() {
             imdbId={detail.data.imdbId}
             season={player.season}
             episode={player.episode}
+            upNext={
+              upNextTarget != null
+                ? { label: episodeLabel(upNextTarget.season, upNextTarget.episode) }
+                : null
+            }
+            onPlayNext={handlePlayNext}
+            autoCountdown={!settings.dataSaver}
           />
         </Suspense>
       )}

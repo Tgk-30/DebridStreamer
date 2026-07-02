@@ -8,7 +8,7 @@
 // path is intentionally not ported here (no DB/keychain in the web layer);
 // services are registered directly via addService, as the Swift tests do.
 
-import { CacheStatus, type DebridServiceType, DebridServiceType as DebridServiceTypeNS, type DebridTorrent, type StreamInfo } from "./models";
+import { CacheStatus, type DebridServiceType, DebridServiceType as DebridServiceTypeNS, type DebridTorrent, type EpisodeFileHint, type StreamInfo } from "./models";
 import { type DebridService, DebridError } from "./types";
 import { RealDebridService } from "./RealDebridService";
 
@@ -103,18 +103,19 @@ export class DebridManager {
   async resolveStream(
     hash: string,
     preferredService: DebridServiceType | null = null,
+    fileHint: EpisodeFileHint | null = null,
   ): Promise<StreamInfo> {
     const service = this.pickService(preferredService);
 
     // For Real-Debrid, use the smart resolve flow.
     if (service instanceof RealDebridService) {
-      return this.resolveWithRealDebrid(service, hash);
+      return this.resolveWithRealDebrid(service, hash, fileHint);
     }
 
     // Generic flow for other services.
     const torrentId = await service.addMagnet(hash);
     await service.selectFiles(torrentId, []);
-    return service.getStreamURL(torrentId);
+    return service.getStreamURL(torrentId, fileHint);
   }
 
   /** Smart Real-Debrid resolve flow: reuse an existing torrent if present, else
@@ -122,6 +123,7 @@ export class DebridManager {
   private async resolveWithRealDebrid(
     service: RealDebridService,
     hash: string,
+    fileHint: EpisodeFileHint | null = null,
   ): Promise<StreamInfo> {
     let torrentId: string;
 
@@ -138,7 +140,7 @@ export class DebridManager {
       torrentId = await service.addMagnet(hash);
     }
 
-    return service.getStreamURL(torrentId);
+    return service.getStreamURL(torrentId, fileHint);
   }
 
   /** Get a Real-Debrid transcoded HLS (`.m3u8`) URL for an already-resolved

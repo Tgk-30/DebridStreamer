@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { MediaType } from "../models/media";
 import type { DebridManager } from "../services/debrid/DebridManager";
 import type { DebridServiceType } from "../services/debrid/models";
-import { CacheStatus } from "../services/debrid/models";
+import { CacheStatus, matchEpisodeTag } from "../services/debrid/models";
 import type { IndexerManager } from "../services/indexers/IndexerManager";
 import { VideoQuality, type TorrentResult } from "../services/indexers/models";
 import type { AppSettings, StreamMaxQuality } from "./settings";
@@ -154,17 +154,11 @@ export function classifyRowForEpisode(
   episode: number,
 ): EpisodeMatch {
   const title = row.result.title.toUpperCase();
-  const se = title.match(/S(\d{1,2})[ ._-]?E(\d{1,3})/);
-  if (se != null) {
-    return parseInt(se[1], 10) === season && parseInt(se[2], 10) === episode
-      ? "exact"
-      : "mismatch";
-  }
-  const x = title.match(/\b(\d{1,2})X(\d{2,3})\b/);
-  if (x != null) {
-    return parseInt(x[1], 10) === season && parseInt(x[2], 10) === episode
-      ? "exact"
-      : "mismatch";
+  // The exact-tag patterns live in services/debrid/models.ts (matchEpisodeTag)
+  // so release ranking here and pack FILE-picking there can never diverge.
+  const tag = matchEpisodeTag(title);
+  if (tag != null) {
+    return tag.season === season && tag.episode === episode ? "exact" : "mismatch";
   }
   const seasonOnly =
     title.match(/\bS(\d{1,2})\b/) ?? title.match(/\bSEASON[ ._-]?(\d{1,2})\b/);

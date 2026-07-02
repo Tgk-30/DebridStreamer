@@ -53,6 +53,14 @@ interface VideoPlayerProps {
   imdbId?: string | null;
   season?: number | null;
   episode?: number | null;
+  /** Next-episode context: when set, an "Up next" card appears at video end.
+   *  Null/omitted (movies, finale, setting off) renders nothing. */
+  upNext?: { label: string } | null;
+  /** Play the next episode (the card's action + the countdown target). */
+  onPlayNext?: () => void;
+  /** Whether the card auto-plays after a countdown (false under Data Saver —
+   *  nothing plays without a click). */
+  autoCountdown?: boolean;
 }
 
 /** Toggle fullscreen on an element, defensively (the APIs are absent in jsdom
@@ -126,6 +134,9 @@ export function VideoPlayer({
   imdbId,
   season,
   episode,
+  upNext = null,
+  onPlayNext,
+  autoCountdown = true,
 }: VideoPlayerProps) {
   const mode = kind ?? classify(url);
   const [externalStatus, setExternalStatus] = useState<string | null>(null);
@@ -208,6 +219,9 @@ export function VideoPlayer({
             imdbId={imdbId ?? null}
             season={season ?? null}
             episode={episode ?? null}
+            upNext={upNext}
+            onPlayNext={onPlayNext}
+            autoCountdown={autoCountdown}
           />
         ) : (
           <ExternalPanel
@@ -236,6 +250,9 @@ function WebviewPlayer({
   imdbId,
   season,
   episode,
+  upNext = null,
+  onPlayNext,
+  autoCountdown = true,
 }: {
   url: string;
   title: string;
@@ -247,12 +264,17 @@ function WebviewPlayer({
   imdbId: string | null;
   season: number | null;
   episode: number | null;
+  upNext?: { label: string } | null;
+  onPlayNext?: () => void;
+  autoCountdown?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Set when the video reaches its natural end — drives the Up-next card.
+  const [ended, setEnded] = useState(false);
 
   const subs = useSubtitleTracks(subtitleClient, translator);
   // Thumbnails only work on a progressive source the browser can re-open and
@@ -334,15 +356,19 @@ function WebviewPlayer({
       if (Number.isFinite(video.duration)) setDuration(video.duration);
       applyResume();
     };
+    const onEnded = () => setEnded(true);
+    setEnded(false); // a new URL is a new playback — clear any stale end state
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMeta);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("canplay", applyResume);
+    video.addEventListener("ended", onEnded);
     return () => {
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMeta);
       video.removeEventListener("durationchange", onDurationChange);
       video.removeEventListener("canplay", applyResume);
+      video.removeEventListener("ended", onEnded);
       if (onProgressRef.current != null && video.currentTime > 0) report();
     };
   }, [url]);
@@ -545,6 +571,14 @@ function WebviewPlayer({
         <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />
       )}
 
+      {ended && upNext != null && onPlayNext != null && (
+        <UpNextOverlay
+          label={upNext.label}
+          auto={autoCountdown}
+          onPlayNext={onPlayNext}
+        />
+      )}
+
       {captionsOpen && (
         <CaptionsMenu
           subs={subs}
@@ -572,6 +606,71 @@ const SHORTCUTS: Array<[string, string]> = [
   ["Home / End", "Start / end"],
   ["?", "Toggle this help"],
 ];
+
+/** "Up next" card at the end of a series episode: shows the next episode's
+ * label with Play now / Dismiss. With `auto` (the auto-advance setting, minus
+ * Data Saver) it counts down 10s and plays; without, it waits for a click. */
+function UpNextOverlay({
+  label,
+  auto,
+  onPlayNext,
+}: {
+  label: string;
+  auto: boolean;
+  onPlayNext: () => void;
+}) {
+  const [dismissed, setDismissed] = useState(false);
+  const [remaining, setRemaining] = useState(10);
+  // The countdown fires through a ref so re-renders during the countdown
+  // (polls, seasons landing) always reach the LATEST handler — an interval
+  // closure would capture a stale one.
+  const onPlayNextRef = useRef(onPlayNext);
+  onPlayNextRef.current = onPlayNext;
+  useEffect(() => {
+    if (!auto || dismissed) return;
+    const timer = setInterval(() => {
+      setRemaining((r) => {
+        if (r <= 1) {
+          clearInterval(timer);
+          onPlayNextRef.current();
+          return 0;
+        }
+        return r - 1;
+      });
+    }, 1000);
+    // Cleared on unmount AND on the dismiss re-run — no timer leak, and a
+    // dismissed card can never fire.
+    return () => clearInterval(timer);
+  }, [auto, dismissed]);
+  if (dismissed) return null;
+  return (
+    <div className="player-shortcuts-scrim">
+      <div
+        className="player-upnext glass-raised"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Next episode: ${label}`}
+      >
+        <span className="player-upnext-title t-secondary">Up next</span>
+        <span className="player-upnext-label">{label}</span>
+        {auto && (
+          <span className="player-upnext-count t-secondary" aria-live="polite">
+            Playing in {remaining}s
+          </span>
+        )}
+        <div className="player-upnext-actions">
+          <button type="button" className="btn btn-prominent" onClick={onPlayNext}>
+            <Icon name="play" size={14} />
+            Play now
+          </button>
+          <button type="button" className="btn" onClick={() => setDismissed(true)}>
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   return (

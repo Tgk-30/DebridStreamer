@@ -317,7 +317,11 @@ export async function resolveServerStream(db, config, profileId, input) {
       statusCode: 400,
     });
   }
-  return manager.resolveStream(input.infoHash, input.preferredService ?? null);
+  return manager.resolveStream(
+    input.infoHash,
+    input.preferredService ?? null,
+    input.fileHint ?? null,
+  );
 }
 
 // Whether `infoHash` is genuinely one of the indexer sources for the title named

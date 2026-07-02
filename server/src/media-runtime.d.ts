@@ -72,6 +72,9 @@ export function resolveServerStream(
   input: {
     infoHash: string;
     preferredService?: DebridServiceType | null;
+    /** Episode context for season-pack file selection; null/omitted → the
+     *  default (largest-file) pick. */
+    fileHint?: { season: number; episode: number } | null;
   },
 ): Promise<StreamInfo>;
 

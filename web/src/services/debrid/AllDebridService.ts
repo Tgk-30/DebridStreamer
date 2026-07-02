@@ -11,6 +11,7 @@ import {
   type DebridAccountInfo,
   type DebridFileCandidate,
   DebridFileSelector,
+  type EpisodeFileHint,
   type DebridServiceType,
   DebridServiceType as DebridServiceTypeNS,
   type DebridTorrent,
@@ -108,7 +109,10 @@ export class AllDebridService implements DebridService {
     // AllDebrid auto-selects files; this is a no-op for most cases.
   }
 
-  async getStreamURL(torrentId: string): Promise<StreamInfo> {
+  async getStreamURL(
+    torrentId: string,
+    fileHint: EpisodeFileHint | null = null,
+  ): Promise<StreamInfo> {
     const maxAttempts = 20;
     let magnets: Record<string, unknown> = {};
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -145,7 +149,7 @@ export class AllDebridService implements DebridService {
       const size = int64Value(item.size) ?? 0;
       candidates.push({ link: item.link, fileName: filename, sizeBytes: size });
     }
-    const selected = DebridFileSelector.selectBest(candidates);
+    const selected = DebridFileSelector.selectBest(candidates, fileHint);
     if (selected == null) throw DebridError.noFilesAvailable();
 
     const streamURL = await this.unrestrict(selected.link);

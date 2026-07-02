@@ -595,19 +595,73 @@ function compareCandidates(
   return lhs.fileName > rhs.fileName ? 1 : -1;
 }
 
+/** A requested episode, used to steer multi-file (season-pack) selection. */
+export interface EpisodeFileHint {
+  season: number;
+  episode: number;
+}
+
+/** Extract an exact episode tag (S02E05 / S2 E5 / 2x05 …) from UPPERCASED
+ * text. These two regexes are THE canonical patterns — classifyRowForEpisode
+ * in data/streams.ts consumes this same function for its exact-match branch,
+ * so release ranking and pack file-picking can never diverge. */
+export function matchEpisodeTag(
+  text: string,
+): { season: number; episode: number } | null {
+  const se = text.match(/S(\d{1,2})[ ._-]?E(\d{1,3})/);
+  if (se != null) {
+    return { season: parseInt(se[1], 10), episode: parseInt(se[2], 10) };
+  }
+  // NxNN format. The negative lookahead blocks the ubiquitous audio+codec
+  // adjacency in release names — "DD5.1.x264" uppercases to "1X264", which
+  // would otherwise parse as season 1 episode 264 and get right-season packs
+  // dropped as mismatches. A genuine episode 264 of a season is expressed as
+  // SxxExxx by every real indexer, so nothing of value is lost.
+  const x = text.match(/\b(\d{1,2})X(?!26[45]\b)(\d{2,3})\b/);
+  if (x != null) {
+    return { season: parseInt(x[1], 10), episode: parseInt(x[2], 10) };
+  }
+  return null;
+}
+
+/** True when a file name (or its full path, for folder-per-episode packs)
+ * carries the exact episode tag. Basename is tested first so a per-episode
+ * file inside a season folder matches on its own name. */
+export function fileMatchesEpisode(
+  fileName: string,
+  hint: EpisodeFileHint,
+): boolean {
+  const upper = fileName.toUpperCase();
+  const base = upper.slice(upper.lastIndexOf("/") + 1);
+  const m = matchEpisodeTag(base) ?? matchEpisodeTag(upper);
+  return m != null && m.season === hint.season && m.episode === hint.episode;
+}
+
 /** Picks the best streamable file out of a debrid response. Mirrors Swift
  * `DebridFileSelector`. The Swift impl uses `candidates.max { compare($0,$1) < 0 }`
- * which returns the maximal element under `compareCandidates`. */
+ * which returns the maximal element under `compareCandidates`.
+ *
+ * With an episode hint (season packs), the ranking runs over the files whose
+ * names carry that exact episode tag; when nothing matches (single-file
+ * torrents, odd naming), it falls back to the full set — today's behavior. */
 export const DebridFileSelector = {
-  selectBest(candidates: DebridFileCandidate[]): DebridFileCandidate | null {
+  selectBest(
+    candidates: DebridFileCandidate[],
+    hint: EpisodeFileHint | null = null,
+  ): DebridFileCandidate | null {
     if (candidates.length === 0) return null;
+    let pool = candidates;
+    if (hint != null) {
+      const matching = candidates.filter((c) => fileMatchesEpisode(c.fileName, hint));
+      if (matching.length > 0) pool = matching;
+    }
     // Reduce to the maximum under compareCandidates. Swift `max(by:)` keeps the
     // first element among equals when the comparator reports them not-less-than;
     // a strict ">0" keeps that same first-wins behavior on ties.
-    let best = candidates[0];
-    for (let i = 1; i < candidates.length; i++) {
-      if (compareCandidates(candidates[i], best) > 0) {
-        best = candidates[i];
+    let best = pool[0];
+    for (let i = 1; i < pool.length; i++) {
+      if (compareCandidates(pool[i], best) > 0) {
+        best = pool[i];
       }
     }
     return best;

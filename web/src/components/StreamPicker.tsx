@@ -253,7 +253,7 @@ function StreamBody({
 }) {
   if (state.loading) {
     return (
-      <ul className="streams-list streams-skeleton" aria-busy="true" aria-label="Searching indexers">
+      <ul className="streams-list streams-skeleton" aria-busy="true" aria-label="Searching sources">
         {Array.from({ length: 4 }).map((_, i) => (
           <li key={i}>
             <div className="stream-row stream-row-skel glass-rest" aria-hidden="true">
@@ -335,12 +335,12 @@ function StreamBody({
             : chipsEmpty
               ? "No release matches that resolution + codec combination. Clear a filter to see more."
               : cachedOnlyEmpty
-                ? "Switch off Cached only to show sources that can be cached first."
+                ? "Switch off Cached only to show streams that can be cached first."
                 : filtersEmpty
                   ? "Your quality or file-size limits removed the available results for this title."
                   : episodeLabel != null
-                    ? `The configured sources have no match for ${episodeLabel} yet — try another episode or add an indexer.`
-                    : "The configured sources did not return a match for this title yet. Add another indexer or try a different release."}
+                    ? `The configured sources have no match for ${episodeLabel} yet — try another episode or add another source.`
+                    : "The configured sources did not return a match for this title yet. Add another source or try a different release."}
         </p>
         <div className="streams-empty-actions">
           {noDebrid && (

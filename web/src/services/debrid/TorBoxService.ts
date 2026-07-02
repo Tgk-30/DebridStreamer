@@ -12,6 +12,7 @@ import {
   type DebridAccountInfo,
   type DebridFileCandidate,
   DebridFileSelector,
+  type EpisodeFileHint,
   type DebridServiceType,
   DebridServiceType as DebridServiceTypeNS,
   type StreamInfo,
@@ -115,7 +116,10 @@ export class TorBoxService implements DebridService {
     // TorBox handles file selection during creation.
   }
 
-  async getStreamURL(torrentId: string): Promise<StreamInfo> {
+  async getStreamURL(
+    torrentId: string,
+    fileHint: EpisodeFileHint | null = null,
+  ): Promise<StreamInfo> {
     const maxAttempts = 20;
     const terminalReadyStates = new Set(["cached", "completed", "uploading"]);
     let selectedFile: TorrentFileEntry | null = null;
@@ -124,7 +128,7 @@ export class TorBoxService implements DebridService {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const snapshot = await this.getTorrentSnapshot(torrentId);
       lastState = snapshot.state.toLowerCase();
-      const best = this.bestFile(snapshot.files);
+      const best = this.bestFile(snapshot.files, fileHint);
       if (best != null) {
         selectedFile = best;
         break;
@@ -303,7 +307,10 @@ export class TorBoxService implements DebridService {
     return out;
   }
 
-  private bestFile(files: TorrentFileEntry[]): TorrentFileEntry | null {
+  private bestFile(
+    files: TorrentFileEntry[],
+    fileHint: EpisodeFileHint | null = null,
+  ): TorrentFileEntry | null {
     if (files.length === 0) return null;
 
     const candidates: DebridFileCandidate[] = files.map((file) => ({
@@ -312,7 +319,7 @@ export class TorBoxService implements DebridService {
       sizeBytes: file.sizeBytes,
     }));
 
-    const selected = DebridFileSelector.selectBest(candidates);
+    const selected = DebridFileSelector.selectBest(candidates, fileHint);
     if (selected == null) return null;
     const selectedId = Number.parseInt(selected.link, 10);
     if (Number.isNaN(selectedId)) return null;

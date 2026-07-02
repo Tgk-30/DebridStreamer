@@ -12,6 +12,7 @@ import {
   type DebridAccountInfo,
   type DebridFileCandidate,
   DebridFileSelector,
+  type EpisodeFileHint,
   type DebridServiceType,
   DebridServiceType as DebridServiceTypeNS,
   type StreamInfo,
@@ -109,7 +110,10 @@ export class PremiumizeService implements DebridService {
     // Premiumize doesn't require file selection.
   }
 
-  async getStreamURL(torrentId: string): Promise<StreamInfo> {
+  async getStreamURL(
+    torrentId: string,
+    fileHint: EpisodeFileHint | null = null,
+  ): Promise<StreamInfo> {
     const encodedId = urlQueryEncode(torrentId);
 
     const maxAttempts = 20;
@@ -144,7 +148,7 @@ export class PremiumizeService implements DebridService {
       const size = int64Value(item.size) ?? 0;
       candidates.push({ link: item.link, fileName: path, sizeBytes: size });
     }
-    const selected = DebridFileSelector.selectBest(candidates);
+    const selected = DebridFileSelector.selectBest(candidates, fileHint);
     if (selected == null) throw DebridError.noFilesAvailable();
 
     const filename = lastPathComponent(selected.fileName);

@@ -38,6 +38,32 @@ export function episodeLabel(season: number, episode: number): string {
   return `S${season} E${episode}`;
 }
 
+/** The episode after `current`, from TMDB season metadata.
+ *  - Within a season: episode + 1.
+ *  - At a season boundary: the lowest seasonNumber > current.season with
+ *    seasonNumber !== 0 (never advance INTO specials) and episodeCount > 0 → E1.
+ *  - After the finale: null.
+ *  - seasons.length === 0 (no TMDB key / source "none"): blind within-season
+ *    increment, NEVER crosses seasons — a past-the-finale target is harmless
+ *    because auto-play requires a cached row and the picker's episode-scoped
+ *    empty state is honest. */
+export function nextEpisodeFor(
+  current: { season: number; episode: number },
+  seasons: Season[],
+): { season: number; episode: number } | null {
+  if (seasons.length === 0) {
+    return { season: current.season, episode: current.episode + 1 };
+  }
+  const here = seasons.find((s) => s.seasonNumber === current.season);
+  if (here != null && current.episode < here.episodeCount) {
+    return { season: current.season, episode: current.episode + 1 };
+  }
+  const next = seasons
+    .filter((s) => s.seasonNumber > current.season && s.seasonNumber !== 0 && s.episodeCount > 0)
+    .sort((a, b) => a.seasonNumber - b.seasonNumber)[0];
+  return next != null ? { season: next.seasonNumber, episode: 1 } : null;
+}
+
 /** The episode Detail should preselect for a series: the most recently
  * watched episode with a parseable episode id, else S1E1. Sorts by
  * `lastWatched` itself — never trusts the caller's array order. */

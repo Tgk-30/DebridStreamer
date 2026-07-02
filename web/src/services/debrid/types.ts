@@ -6,6 +6,7 @@ import type {
   DebridAccountInfo,
   DebridServiceType,
   DebridTorrent,
+  EpisodeFileHint,
   StreamInfo,
 } from "./models";
 
@@ -130,8 +131,10 @@ export interface DebridService {
   /** Select specific files from a torrent for download. */
   selectFiles(torrentId: string, fileIds: number[]): Promise<void>;
 
-  /** Get a direct streaming URL for a torrent. */
-  getStreamURL(torrentId: string): Promise<StreamInfo>;
+  /** Get a direct streaming URL for a torrent. With an episode hint (season
+   *  packs), implementations steer the file pick to that exact episode and
+   *  fall back to the default pick when no file matches. */
+  getStreamURL(torrentId: string, fileHint?: EpisodeFileHint | null): Promise<StreamInfo>;
 
   /** Unrestrict a hosted link to a direct download URL (returned as a string). */
   unrestrict(link: string): Promise<string>;

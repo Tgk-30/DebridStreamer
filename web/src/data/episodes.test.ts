@@ -24,6 +24,7 @@ import {
   defaultSelectionFor,
   episodeIdFor,
   episodeLabel,
+  nextEpisodeFor,
   parseEpisodeId,
   useEpisodes,
   useSeasons,
@@ -165,5 +166,48 @@ describe("useSeasons / useEpisodes", () => {
     rerender({ season: 2 });
     await waitFor(() => expect(result.current.episodes[0]?.title).toBe("S2 opener"));
     expect(getEpisodes).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("nextEpisodeFor", () => {
+  const seasons = [
+    { id: 0, seasonNumber: 0, name: "Specials", episodeCount: 4 },
+    { id: 1, seasonNumber: 1, name: "Season 1", episodeCount: 3 },
+    { id: 2, seasonNumber: 2, name: "Season 2", episodeCount: 2 },
+    { id: 3, seasonNumber: 3, name: "Season 3", episodeCount: 0 },
+    { id: 4, seasonNumber: 4, name: "Season 4", episodeCount: 5 },
+  ];
+
+  it("increments within a season", () => {
+    expect(nextEpisodeFor({ season: 1, episode: 1 }, seasons)).toEqual({
+      season: 1,
+      episode: 2,
+    });
+  });
+
+  it("crosses to the next non-empty season at the boundary (skipping empties)", () => {
+    expect(nextEpisodeFor({ season: 2, episode: 2 }, seasons)).toEqual({
+      season: 4,
+      episode: 1,
+    });
+  });
+
+  it("returns null after the finale", () => {
+    expect(nextEpisodeFor({ season: 4, episode: 5 }, seasons)).toBeNull();
+  });
+
+  it("never advances into specials (season 0)", () => {
+    // From S1's finale the next is S2 — not S0.
+    expect(nextEpisodeFor({ season: 1, episode: 3 }, seasons)).toEqual({
+      season: 2,
+      episode: 1,
+    });
+  });
+
+  it("blind within-season increment with no season metadata", () => {
+    expect(nextEpisodeFor({ season: 3, episode: 7 }, [])).toEqual({
+      season: 3,
+      episode: 8,
+    });
   });
 });

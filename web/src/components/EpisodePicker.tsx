@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import type { TMDBService } from "../services/metadata/TMDBService";
 import type { Episode } from "../models/media";
 import { episodeIdFor, useEpisodes, useSeasons } from "../data/episodes";
+import { Icon } from "./Icon";
 import "./EpisodePicker.css";
 
 const TMDB_STILL_BASE = "https://image.tmdb.org/t/p/w300";
@@ -24,6 +25,13 @@ interface EpisodePickerProps {
   onSelect: (next: { season: number; episode: number }) => void;
   /** `s2e5` → 0..1 resume fraction for this series' episodes. */
   progressByEpisodeId?: Record<string, number>;
+  /** Episode ids the user has finished (drives the row check state). */
+  watchedEpisodeIds?: Set<string>;
+  /** Toggle an episode's watched state; `watched` is the DESIRED new state. */
+  onToggleWatched?: (
+    ep: { season: number; episode: number },
+    watched: boolean,
+  ) => void;
 }
 
 function airDateLabel(airDate: string | null | undefined): string | null {
@@ -48,6 +56,8 @@ export function EpisodePicker({
   selected,
   onSelect,
   progressByEpisodeId = {},
+  watchedEpisodeIds,
+  onToggleWatched,
 }: EpisodePickerProps) {
   const seasons = useSeasons(tmdbId, true, tmdb);
   const rich = seasons.source === "live";
@@ -181,9 +191,36 @@ export function EpisodePicker({
               ep.seasonNumber === selected.season &&
               ep.episodeNumber === selected.episode;
             const progress = progressByEpisodeId[id];
+            const watched = watchedEpisodeIds?.has(id) ?? false;
             const meta = metaLabel(ep);
             return (
-              <li key={id} className="episode-row-item">
+              <li
+                key={id}
+                className={"episode-row-item" + (watched ? " is-watched" : "")}
+              >
+                {onToggleWatched != null && (
+                  <button
+                    type="button"
+                    className={
+                      "episode-watched-btn" + (watched ? " is-watched" : "")
+                    }
+                    aria-pressed={watched}
+                    aria-label={
+                      watched
+                        ? `Mark E${ep.episodeNumber} unwatched`
+                        : `Mark E${ep.episodeNumber} watched`
+                    }
+                    title={watched ? "Watched — click to unmark" : "Mark watched"}
+                    onClick={() =>
+                      onToggleWatched(
+                        { season: ep.seasonNumber, episode: ep.episodeNumber },
+                        !watched,
+                      )
+                    }
+                  >
+                    <Icon name="check" size={13} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className={"episode-row" + (isSelected ? " is-selected" : "")}

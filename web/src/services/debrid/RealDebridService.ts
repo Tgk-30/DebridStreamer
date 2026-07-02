@@ -12,6 +12,7 @@ import {
   type DebridAccountInfo,
   type DebridFileCandidate,
   DebridFileSelector,
+  type EpisodeFileHint,
   type DebridServiceType,
   DebridServiceType as DebridServiceTypeNS,
   type DebridTorrent,
@@ -112,7 +113,10 @@ export class RealDebridService implements DebridService {
     await this.requestRaw(`/torrents/selectFiles/${torrentId}`, "POST", body);
   }
 
-  async getStreamURL(torrentId: string): Promise<StreamInfo> {
+  async getStreamURL(
+    torrentId: string,
+    fileHint: EpisodeFileHint | null = null,
+  ): Promise<StreamInfo> {
     let status = "";
     let json: Record<string, unknown> = {};
     const backoffSchedule = [0.4, 0.8, 1.5, 3.0];
@@ -158,7 +162,7 @@ export class RealDebridService implements DebridService {
     if (stringLinks.length === 0) throw DebridError.noFilesAvailable();
 
     const candidates = this.fileCandidates(json, stringLinks);
-    const selected = DebridFileSelector.selectBest(candidates);
+    const selected = DebridFileSelector.selectBest(candidates, fileHint);
     if (selected == null) throw DebridError.noFilesAvailable();
 
     const unrestricted = await this.unrestrictDetailed(selected.link);

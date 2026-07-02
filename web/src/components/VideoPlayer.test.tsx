@@ -6,7 +6,7 @@
 // the HLS source-attach / onHlsUnsupported path, and the mpv lifecycle effect.
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, within, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // ---- Mocks for heavy / environment-bound deps -----------------------------
@@ -654,5 +654,95 @@ describe("ExternalPanel (Tauri)", () => {
     await waitFor(() => expect(playWithMpvMock).toHaveBeenCalled());
     unmount();
     await waitFor(() => expect(mpvStopMock).toHaveBeenCalled());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Up next (auto-advance) overlay
+// ---------------------------------------------------------------------------
+
+describe("Up next overlay", () => {
+  function renderEnded(over: Partial<Parameters<typeof VideoPlayer>[0]> = {}) {
+    const onPlayNext = vi.fn();
+    const utils = render(
+      <VideoPlayer
+        url="https://x/ep.mp4"
+        title="T"
+        onClose={() => {}}
+        upNext={{ label: "S2 E6" }}
+        onPlayNext={onPlayNext}
+        {...over}
+      />,
+    );
+    const video = utils.container.querySelector(
+      "video.player-video",
+    ) as HTMLVideoElement;
+    return { ...utils, video, onPlayNext };
+  }
+
+  it("renders nothing before the video ends, and the card after", () => {
+    const { video } = renderEnded();
+    expect(screen.queryByText("Up next")).toBeNull();
+    fireEvent(video, new Event("ended"));
+    expect(screen.getByText("Up next")).toBeInTheDocument();
+    expect(screen.getByText("S2 E6")).toBeInTheDocument();
+  });
+
+  it("renders no card when upNext is null (movies / finale / setting off)", () => {
+    const { video } = renderEnded({ upNext: null });
+    fireEvent(video, new Event("ended"));
+    expect(screen.queryByText("Up next")).toBeNull();
+  });
+
+  it("counts down and fires onPlayNext exactly once", () => {
+    vi.useFakeTimers();
+    try {
+      const { video, onPlayNext } = renderEnded();
+      fireEvent(video, new Event("ended"));
+      expect(screen.getByText("Playing in 10s")).toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(onPlayNext).toHaveBeenCalledTimes(1);
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+      });
+      expect(onPlayNext).toHaveBeenCalledTimes(1); // interval cleared after firing
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("Play now fires immediately; Dismiss stops the countdown for good", () => {
+    vi.useFakeTimers();
+    try {
+      const { video, onPlayNext } = renderEnded();
+      fireEvent(video, new Event("ended"));
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(screen.queryByText("Up next")).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(20_000);
+      });
+      expect(onPlayNext).not.toHaveBeenCalled(); // dismissed card never fires
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("suppresses the countdown under Data Saver (autoCountdown=false) but keeps Play now", () => {
+    vi.useFakeTimers();
+    try {
+      const { video, onPlayNext } = renderEnded({ autoCountdown: false });
+      fireEvent(video, new Event("ended"));
+      expect(screen.queryByText(/Playing in/)).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(30_000);
+      });
+      expect(onPlayNext).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: /Play now/ }));
+      expect(onPlayNext).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -130,6 +130,51 @@ describe("EpisodePicker — rich mode", () => {
     renderPicker();
     expect(document.querySelector(".episode-row-skel")).not.toBeNull();
   });
+
+  it("marks episodes watched/unwatched with the desired new state", async () => {
+    const user = userEvent.setup();
+    mockUseSeasons.mockReturnValue({
+      seasons: [season(1)],
+      loading: false,
+      source: "live",
+    });
+    mockUseEpisodes.mockReturnValue({
+      episodes: [episode(1, 1), episode(1, 2)],
+      loading: false,
+      source: "live",
+    });
+    const onToggleWatched = vi.fn();
+    renderPicker({
+      watchedEpisodeIds: new Set(["s1e1"]),
+      onToggleWatched,
+    });
+
+    // E1 is watched → button offers to unmark, row is dimmed.
+    const unmark = screen.getByRole("button", { name: "Mark E1 unwatched" });
+    expect(unmark).toHaveAttribute("aria-pressed", "true");
+    expect(document.querySelector(".episode-row-item.is-watched")).not.toBeNull();
+    await user.click(unmark);
+    expect(onToggleWatched).toHaveBeenCalledWith({ season: 1, episode: 1 }, false);
+
+    // E2 is unwatched → button offers to mark.
+    await user.click(screen.getByRole("button", { name: "Mark E2 watched" }));
+    expect(onToggleWatched).toHaveBeenCalledWith({ season: 1, episode: 2 }, true);
+  });
+
+  it("hides the watched toggle when no handler is provided", () => {
+    mockUseSeasons.mockReturnValue({
+      seasons: [season(1)],
+      loading: false,
+      source: "live",
+    });
+    mockUseEpisodes.mockReturnValue({
+      episodes: [episode(1, 1)],
+      loading: false,
+      source: "live",
+    });
+    renderPicker();
+    expect(document.querySelector(".episode-watched-btn")).toBeNull();
+  });
 });
 
 describe("EpisodePicker — degraded stepper", () => {

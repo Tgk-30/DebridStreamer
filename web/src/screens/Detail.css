@@ -20,6 +20,25 @@
   outline: none;
 }
 
+/* No-TMDB-key hint under the hero: why the page looks sparse + the fix. */
+.detail-nokey-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.detail-nokey-link {
+  margin-left: 6px;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.detail-nokey-link:hover {
+  text-decoration: underline;
+}
+
 /* Inner column constrains width + provides the padding/gap. */
 .detail-inner {
   display: flex;

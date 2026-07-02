@@ -147,3 +147,83 @@ describe("DebridFileSelector.selectBest", () => {
     expect(best?.link).toBe("first.mkv");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Episode-tag matching + pack-aware selection (season-pack file pick)
+// ---------------------------------------------------------------------------
+
+import { fileMatchesEpisode, matchEpisodeTag } from "./models";
+
+describe("matchEpisodeTag / fileMatchesEpisode", () => {
+  it("recognizes the canonical tag formats (uppercased input)", () => {
+    expect(matchEpisodeTag("SHOW.S02E05.1080P")).toEqual({ season: 2, episode: 5 });
+    expect(matchEpisodeTag("SHOW S2 E5")).toEqual({ season: 2, episode: 5 });
+    expect(matchEpisodeTag("SHOW.S02.E05")).toEqual({ season: 2, episode: 5 });
+    expect(matchEpisodeTag("SHOW.2X05.HDTV")).toEqual({ season: 2, episode: 5 });
+    expect(matchEpisodeTag("SHOW.1080P.WEB")).toBeNull();
+  });
+
+  it("does not false-positive on resolution strings like 1920X1080", () => {
+    expect(matchEpisodeTag("SHOW.S02.1920X1080.COMPLETE")).toBeNull();
+    expect(fileMatchesEpisode("Show.1920x1080.mkv", { season: 19, episode: 20 })).toBe(false);
+  });
+
+  it("matches case-insensitively on file names, basename first", () => {
+    expect(fileMatchesEpisode("show.s02e05.mkv", { season: 2, episode: 5 })).toBe(true);
+    expect(
+      fileMatchesEpisode("Show.Season.2/Show.2x05.mkv", { season: 2, episode: 5 }),
+    ).toBe(true);
+    expect(fileMatchesEpisode("show.s02e06.mkv", { season: 2, episode: 5 })).toBe(false);
+  });
+});
+
+describe("DebridFileSelector.selectBest with an episode hint", () => {
+  const pack = [
+    { link: "1", fileName: "Show.S02E04.1080p.mkv", sizeBytes: 4_000_000_000 },
+    { link: "2", fileName: "Show.S02E05.1080p.mkv", sizeBytes: 3_000_000_000 },
+    { link: "3", fileName: "Show.S02E05.SAMPLE.mkv", sizeBytes: 50_000_000 },
+    { link: "4", fileName: "Show.S02E06.2160p.mkv", sizeBytes: 8_000_000_000 },
+  ];
+
+  it("picks the hinted episode's file over larger non-matching files", () => {
+    const best = DebridFileSelector.selectBest(pack, { season: 2, episode: 5 });
+    expect(best?.link).toBe("2"); // real E05 file, not the bigger E06 / not the sample
+  });
+
+  it("still rejects sample files within the matching subset", () => {
+    const best = DebridFileSelector.selectBest(
+      pack.filter((c) => c.link === "2" || c.link === "3"),
+      { season: 2, episode: 5 },
+    );
+    expect(best?.link).toBe("2");
+  });
+
+  it("falls back to the default pick when no file matches the hint", () => {
+    const best = DebridFileSelector.selectBest(pack, { season: 9, episode: 9 });
+    expect(best?.link).toBe("4"); // largest video — exactly the unhinted behavior
+  });
+
+  it("behaves identically to the unhinted call for null hints", () => {
+    expect(DebridFileSelector.selectBest(pack, null)).toEqual(
+      DebridFileSelector.selectBest(pack),
+    );
+  });
+});
+
+describe("matchEpisodeTag — codec-adjacency guard", () => {
+  it("does not parse DD5.1.x264 / 7.1.x265 audio+codec strings as episode tags", () => {
+    expect(matchEpisodeTag("SHOW.S02.COMPLETE.DD5.1.X264-GROUP")).toBeNull();
+    expect(matchEpisodeTag("SHOW.SEASON.2.DDP7.1.X265")).toBeNull();
+    expect(matchEpisodeTag("MOVIE.2160P.DD5.1.X265")).toBeNull();
+  });
+
+  it("keeps genuine NxNN tags working next to codec strings", () => {
+    expect(matchEpisodeTag("SHOW.2X05.DD5.1.X264")).toEqual({ season: 2, episode: 5 });
+  });
+
+  it("keeps right-season packs classified as packs, not mismatches", () => {
+    // The regression this guard exists for: a right-season pack whose name
+    // carries DD5.1.x264 must NOT be dropped from an episode-scoped list.
+    expect(fileMatchesEpisode("Show.S02.COMPLETE.DD5.1.x264.mkv", { season: 1, episode: 264 })).toBe(false);
+  });
+});

@@ -759,7 +759,7 @@ export function Settings() {
             >
               <span>Sources</span>
               <strong>
-                {activeSourceCount} catalog source{activeSourceCount === 1 ? "" : "s"}
+                {activeSourceCount} source{activeSourceCount === 1 ? "" : "s"}
               </strong>
             </button>
           </div>
@@ -945,7 +945,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
         />
         <span>
           <strong>Data Saver</strong>
-          <span className="t-secondary"> — prefer smaller, lower-resolution sources (≤720p, ≤5&nbsp;GB) to use less bandwidth, including for instant/watchlist playback. No re-encoding.</span>
+          <span className="t-secondary"> — prefer smaller, lower-resolution streams (≤720p, ≤5&nbsp;GB) to use less bandwidth, including for instant/watchlist playback. No re-encoding.</span>
         </span>
       </label>
 
@@ -972,6 +972,18 @@ function PlaybackTab({ draft, patch }: TabProps) {
         <span>
           <strong>Show cached streams only</strong>
           <span className="t-secondary"> — avoids streams that need to be cached first.</span>
+        </span>
+      </label>
+
+      <label className="settings-toggle-row">
+        <input
+          type="checkbox"
+          checked={draft.autoAdvanceEpisodes}
+          onChange={(event) => patch({ autoAdvanceEpisodes: event.target.checked })}
+        />
+        <span>
+          <strong>Auto-play next episode</strong>
+          <span className="t-secondary"> — when a series episode ends, play the next one automatically if an instant (cached) stream is available. Otherwise you're taken to the stream list.</span>
         </span>
       </label>
 
@@ -4095,7 +4107,7 @@ function SourcesTab({ draft, patch }: TabProps) {
       <div className="settings-divider" />
 
       <div className="settings-sources-head">
-        <span className="settings-sources-title">External indexers</span>
+        <span className="settings-sources-title">External sources</span>
         <div className="settings-add-source">
           <select
             value={selectedPresetId}
@@ -4120,7 +4132,7 @@ function SourcesTab({ draft, patch }: TabProps) {
 
       {draft.sources.length === 0 ? (
         <p className="settings-hint t-secondary">
-          No external indexers. The built-in scrapers cover most titles.
+          No external sources. The built-in scrapers cover most titles.
         </p>
       ) : (
         draft.sources.map((s, i) => {
@@ -4152,7 +4164,7 @@ function SourcesTab({ draft, patch }: TabProps) {
                     </select>
                   </label>
                   <label className="settings-source-control settings-source-name-control">
-                    <span>Indexer name</span>
+                    <span>Source name</span>
                     <input
                       type="text"
                       className="settings-source-name"
@@ -4256,7 +4268,7 @@ function SourcesTab({ draft, patch }: TabProps) {
                 onChange={(e) => updateSource(s.id, { apiKey: e.target.value })}
                 label="API key"
                 placeholder="API key (if required)"
-                note="Saved only for this external indexer source."
+                note="Saved only for this source."
               />
             </div>
           );

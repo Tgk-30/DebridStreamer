@@ -480,3 +480,37 @@
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Up next (auto-advance) ──────────────────────────────────────────────────
+   End-of-episode card on the shortcuts scrim: next-episode label, an optional
+   numeric countdown (suppressed under Data Saver), Play now / Dismiss. Static
+   by design — no looping animation (idle-CPU discipline). */
+.player-upnext {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 260px;
+  max-width: min(360px, 86vw);
+  padding: var(--sp-lg);
+  border-radius: var(--r-lg);
+}
+.player-upnext-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.player-upnext-label {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.player-upnext-count {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.player-upnext-actions {
+  display: flex;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-sm);
+}

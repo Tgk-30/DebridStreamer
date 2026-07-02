@@ -169,6 +169,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     streamMaxQuality: "any",
     streamMaxSizeGB: 0,
     dataSaver: false,
+    autoAdvanceEpisodes: true,
     showWatchStats: false,
     transcode: false,
     ...overrides,

@@ -53,6 +53,43 @@
 
 .episode-row-item {
   display: block;
+  position: relative;
+}
+/* Watched episodes read as "done": dimmed row, accent check. */
+.episode-row-item.is-watched .episode-row {
+  opacity: 0.72;
+}
+
+/* Mark-watched toggle — floats over the row's top-right corner. */
+.episode-watched-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0.75px solid var(--glass-border);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s, border-color 0.16s;
+}
+.episode-watched-btn:hover {
+  color: var(--text-primary);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+.episode-watched-btn.is-watched {
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  border-color: transparent;
+  color: #fff;
+  opacity: 1;
+}
+.episode-watched-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .episode-row {

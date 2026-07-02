@@ -104,7 +104,13 @@ export async function fetchServerStreams(input: {
 
 export async function resolveServerStream(
   row: StreamRow,
-  opts: { transcode?: boolean; media?: { id: string; type: MediaType } } = {},
+  opts: {
+    transcode?: boolean;
+    media?: { id: string; type: MediaType };
+    /** Episode context (series) — steers season-pack file selection on the
+     *  server. Omitted for movies / older servers (unknown fields ignored). */
+    fileHint?: { season: number; episode: number } | null;
+  } = {},
 ): Promise<StreamInfo> {
   const response = await serverRequest<{ stream: StreamInfo }>(
     "POST",
@@ -116,6 +122,9 @@ export async function resolveServerStream(
       // (kid) profiles; it's ignored for normal profiles, so always send it.
       ...(opts.media != null
         ? { mediaId: opts.media.id, mediaType: opts.media.type }
+        : {}),
+      ...(opts.fileHint != null
+        ? { season: opts.fileHint.season, episode: opts.fileHint.episode }
         : {}),
     },
   );

@@ -356,7 +356,7 @@ describe("Settings · Sources", () => {
   it("shows the empty-state hint when there are no external indexers", () => {
     renderAt("sources");
     expect(
-      screen.getByText(/No external indexers. The built-in scrapers cover most titles\./),
+      screen.getByText(/No external sources. The built-in scrapers cover most titles\./),
     ).toBeInTheDocument();
   });
 
@@ -367,7 +367,7 @@ describe("Settings · Sources", () => {
     // The first preset is "Jackett local" → a Jackett source card appears, with
     // the preset's display name pre-filled in the indexer-name input.
     expect(screen.getByPlaceholderText("Display name")).toHaveValue("Jackett");
-    expect(screen.queryByText(/No external indexers/)).toBeNull();
+    expect(screen.queryByText(/No external sources/)).toBeNull();
   });
 
   it("renders an existing source with its protocol, name, enabled state, and removes it", async () => {
@@ -390,7 +390,7 @@ describe("Settings · Sources", () => {
     expect(enabled).toBeChecked();
     await user.click(screen.getByRole("button", { name: "Remove source" }));
     expect(screen.queryByDisplayValue("My Prowlarr")).toBeNull();
-    expect(screen.getByText(/No external indexers/)).toBeInTheDocument();
+    expect(screen.getByText(/No external sources/)).toBeInTheDocument();
   });
 
   it("disables move-up on the first source and move-down on the last", () => {
@@ -575,7 +575,7 @@ describe("Settings · Playback (local caps)", () => {
     // "Data Saver" appears in both the intro hint and the toggle label; scope to
     // the toggle row via its unique helper copy.
     const ds = screen
-      .getByText(/prefer smaller, lower-resolution sources/)
+      .getByText(/prefer smaller, lower-resolution streams/)
       .closest("label")!
       .querySelector('input[type="checkbox"]') as HTMLInputElement;
     expect(ds.checked).toBe(false);
