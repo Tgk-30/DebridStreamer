@@ -18,7 +18,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <title>DebridStreamer — your private streaming app</title>
     <link rel="icon" href="./icons/icon-128.png" />
-    <link rel="stylesheet" href="./styles.css?v=2026-06-21" />
+    <link rel="stylesheet" href="./styles.css?v=2026-07-03" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -52,15 +52,22 @@
     </header>
 
     <main id="main">
+      <!-- The hero is the app's own Discover spotlight — with the app itself
+           as the featured title, headlined in its own voice. -->
       <section id="top" class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Self-hosted debrid streaming</p>
-          <h1>Your private streaming app, on every screen.</h1>
+          <div class="hero-chips">
+            <span class="chip chip-featured">Featured</span>
+            <span class="chip">Self-hosted</span>
+            <span class="chip chip-mono">MIT · open source</span>
+          </div>
+          <h1>Let&rsquo;s get you <em>streaming</em>.</h1>
           <p class="lede">
-            Discover with TMDB, get AI recommendations, and play
-            instantly-cached streams from your own Real-Debrid, AllDebrid,
-            Premiumize, or TorBox account — in a built-in player you host
-            yourself, with profiles for the whole house.
+            DebridStreamer turns your Real-Debrid, AllDebrid, Premiumize, or
+            TorBox account into a private streaming service: browse with TMDB
+            artwork, get AI picks, and play instantly-cached streams in a
+            built-in player — on a server you run, with profiles for the whole
+            house.
           </p>
           <div class="hero-actions" aria-label="Primary actions">
             <a id="smart-download" class="primary-action" href="#download">
@@ -108,107 +115,141 @@
             <img src="./media/settings-mobile.png" width="390" height="792" alt="" loading="lazy" />
           </figure>
         </div>
-
       </section>
 
       <div class="proof-strip" aria-label="DebridStreamer at a glance">
         <span><strong>Self-hosted</strong> Your server, your debrid keys, your data</span>
-        <span><strong>Cached-only</strong> Instant playback from debrid caches</span>
+        <span><strong>Instant</strong> Plays already-cached streams — no waiting</span>
         <span><strong>Profiles</strong> Kids limits and per-person history</span>
         <span><strong>Everywhere</strong> Desktop apps plus a mobile PWA</span>
       </div>
 
-      <section id="features" class="section docs-section">
-        <div class="section-head">
-          <p class="eyebrow">Features</p>
-          <h2>Everything a streaming setup should have.</h2>
-          <p>
-            Discovery, recommendations, debrid playback, and cross-device
-            sync — all in one app you run yourself, with no monthly bill
-            beyond the debrid account you already have.
-          </p>
+      <!-- Features as a poster rail — the same horizontal rows the app uses
+           on Discover. Scroll sideways, like you already do in the app. -->
+      <section id="features" class="section">
+        <div class="section-head row-head">
+          <div>
+            <p class="eyebrow">Features</p>
+            <h2>Everything a streaming setup should have.</h2>
+            <p>
+              Discovery, recommendations, instant playback, and cross-device
+              sync — in one app you run yourself, with no bill beyond the
+              debrid account you already have.
+            </p>
+          </div>
+          <a class="text-link" href="https://github.com/Tgk-30/DebridStreamer">Read the docs</a>
         </div>
 
-        <div class="docs-grid">
-          <article class="doc-card is-featured">
+        <div class="rail-track" role="list" aria-label="Feature highlights">
+          <article class="rail-card" role="listitem">
             <span>Discover</span>
             <strong>Browse and search with TMDB</strong>
-            <p>Trending rows, full-screen detail pages, and a release calendar — backed by The Movie Database so artwork and metadata always look right.</p>
+            <p>Trending rows, cinematic detail pages, and a release calendar — artwork and metadata that always look right.</p>
           </article>
-          <article class="doc-card">
+          <article class="rail-card" role="listitem">
             <span>Assistant</span>
             <strong>AI picks on demand</strong>
-            <p>Describe a mood and the built-in Assistant suggests something to watch. Bring your own Anthropic, OpenAI, or local Ollama key.</p>
+            <p>Describe a mood and get a curated lineup. Bring your own Anthropic, OpenAI, or local Ollama key.</p>
           </article>
-          <article class="doc-card">
+          <article class="rail-card" role="listitem">
             <span>Playback</span>
-            <strong>Cached-only debrid streams</strong>
-            <p>Checks Real-Debrid, AllDebrid, Premiumize, and TorBox plus indexers, then plays already-cached streams in a built-in player — no waiting on downloads.</p>
+            <strong>Instant cached streams</strong>
+            <p>Checks your debrid caches across four providers plus your sources, then plays what's already there — no waiting on downloads.</p>
           </article>
-          <article class="doc-card">
+          <article class="rail-card" role="listitem">
+            <span>Series</span>
+            <strong>Episode picker and auto-play</strong>
+            <p>Browse seasons with stills and resume bars, mark episodes watched, and roll straight into the next one when the credits hit.</p>
+          </article>
+          <article class="rail-card" role="listitem">
+            <span>Subtitles</span>
+            <strong>Search, style, translate</strong>
+            <p>Pull subtitles from OpenSubtitles, tune their look, and translate them with your AI key — right in the player.</p>
+          </article>
+          <article class="rail-card" role="listitem">
             <span>Continue</span>
-            <strong>Watchlist, history, and resume</strong>
-            <p>Save titles or import your list from IMDb or Letterboxd, see your watch stats, and pick up exactly where you left off — with resume bars on every device you open.</p>
+            <strong>Watchlist, history, resume</strong>
+            <p>Import your list from IMDb or Letterboxd, see watch stats, and pick up exactly where you left off on any device.</p>
           </article>
         </div>
       </section>
 
+      <!-- The signature: downloads presented as the app's stream picker. -->
       <section id="download" class="section">
         <div class="section-head row-head">
           <div>
             <p class="eyebrow">Download</p>
-            <h2>Install the desktop app.</h2>
+            <h2>Pick your platform. It's instant.</h2>
+            <p>
+              Signed desktop builds with an in-app updater, and a PWA for
+              everything with a browser.
+            </p>
           </div>
           <a class="text-link" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
             Open releases
           </a>
         </div>
 
-        <div class="download-grid">
-          <article class="download-card">
-            <h3>macOS</h3>
-            <p>Universal build for Apple silicon and Intel Macs, signed and notarized with a built-in updater.</p>
-            <a data-download="mac" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
-              Download for macOS
-            </a>
-            <span class="download-meta" data-download-meta="mac">Latest release page</span>
-          </article>
-          <article class="download-card">
-            <h3>Windows</h3>
-            <p>Installer build for Windows desktops and home theater PCs.</p>
-            <a data-download="windows" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
-              Download for Windows
-            </a>
-            <span class="download-meta" data-download-meta="windows">Latest release page</span>
-          </article>
-          <article class="download-card">
-            <h3>Linux</h3>
-            <p>AppImage, deb, or rpm packages from the latest release.</p>
-            <a data-download="linux" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
-              Download for Linux
-            </a>
-            <span class="download-meta" data-download-meta="linux">Latest release page</span>
-          </article>
-          <article class="download-card">
-            <h3>iPhone, iPad, Android</h3>
-            <p>Connect to your self-hosted server, then add it to the home screen as an app.</p>
-            <a href="#pwa">Install the PWA</a>
-            <span class="download-meta">Browser install from your server</span>
-          </article>
-        </div>
-
-        <div class="release-panel" aria-live="polite">
-          <div>
-            <p class="eyebrow">Release downloader</p>
-            <h3>Latest desktop assets</h3>
+        <div class="picker" aria-live="polite">
+          <div class="picker-head">
+            <h3>Available downloads</h3>
             <p id="release-status" class="release-status">
               Loading release metadata from GitHub Releases.
             </p>
           </div>
-          <div id="release-assets" class="asset-list">
-            <a href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
-              Open all release assets
-            </a>
+
+          <ul class="stream-list">
+            <li>
+              <a class="stream-row" data-download="mac" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
+                <span class="stream-os" aria-hidden="true">MAC</span>
+                <span class="stream-main">
+                  <span class="stream-name">macOS — universal</span>
+                  <span class="stream-meta" data-download-meta="mac">Latest release page</span>
+                </span>
+                <span class="stream-badge">Instant · notarized</span>
+              </a>
+            </li>
+            <li>
+              <a class="stream-row" data-download="windows" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
+                <span class="stream-os" aria-hidden="true">WIN</span>
+                <span class="stream-main">
+                  <span class="stream-name">Windows — installer</span>
+                  <span class="stream-meta" data-download-meta="windows">Latest release page</span>
+                </span>
+                <span class="stream-badge">Instant · signed updater</span>
+              </a>
+            </li>
+            <li>
+              <a class="stream-row" data-download="linux" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
+                <span class="stream-os" aria-hidden="true">LINUX</span>
+                <span class="stream-main">
+                  <span class="stream-name">Linux — AppImage, deb, rpm</span>
+                  <span class="stream-meta" data-download-meta="linux">Latest release page</span>
+                </span>
+                <span class="stream-badge">Instant · signed updater</span>
+              </a>
+            </li>
+            <li>
+              <a class="stream-row" href="#pwa">
+                <span class="stream-os" aria-hidden="true">PWA</span>
+                <span class="stream-main">
+                  <span class="stream-name">iPhone, iPad, Android</span>
+                  <span class="stream-meta">Install from your self-hosted server — no app store needed</span>
+                </span>
+                <span class="stream-badge is-neutral">Browser install</span>
+              </a>
+            </li>
+          </ul>
+
+          <div class="picker-foot">
+            <details>
+              <summary>All release assets</summary>
+              <div id="release-assets" class="asset-list">
+                <a href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
+                  Open all release assets
+                </a>
+              </div>
+            </details>
           </div>
         </div>
       </section>
@@ -216,21 +257,21 @@
       <section id="self-host" class="section split">
         <div>
           <p class="eyebrow">Self-host</p>
-          <h2>Run one private server for every screen.</h2>
+          <h2>One private server for every screen.</h2>
           <p>
             Host it on an always-on desktop, NAS, VPS, Raspberry Pi, or home
             server. The server owns logins, profile isolation, encrypted
-            credentials, stream sessions, bandwidth visibility, and the
-            provider-facing IP — so your debrid keys never leave your network.
+            credentials, stream sessions, and the provider-facing IP — your
+            debrid keys never leave your network.
           </p>
           <p>
             The desktop app can start the server straight from Settings, then
-            hand phones, tablets, and other computers a hosted PWA with a
-            copyable setup URL and QR code.
+            hand phones and tablets a hosted PWA with a copyable setup URL and
+            QR code.
           </p>
           <p>
-            On an Ubuntu server it is one command against the prebuilt,
-            multi-arch (amd64 + arm64) image. Prefer no Docker? There is a native
+            On an Ubuntu server it's one command against the prebuilt,
+            multi-arch (amd64 + arm64) image. Prefer no Docker? There's a native
             Node&nbsp;+&nbsp;systemd path and a <code>.deb</code> package too —
             see the
             <a href="https://github.com/Tgk-30/DebridStreamer/blob/main/deploy/ubuntu/README.md">Ubuntu server guide</a>.
@@ -238,8 +279,13 @@
         </div>
         <div class="code-card">
           <div class="code-card-head">
-            <span>Ubuntu — prebuilt image</span>
-            <button class="copy-command" type="button" data-copy-target="compose-command">
+            <span>ubuntu — prebuilt image</span>
+            <button
+              class="copy-command"
+              type="button"
+              data-copy-target="compose-command"
+              aria-label="Copy the setup command"
+            >
               Copy
             </button>
           </div>
@@ -252,7 +298,7 @@ docker compose -f docker-compose.ghcr.yml up -d</code></pre>
         </div>
       </section>
 
-      <section id="household" class="section hosting-model">
+      <section id="household" class="section">
         <div class="section-head">
           <p class="eyebrow">For the household</p>
           <h2>One server, a profile for everyone.</h2>
@@ -263,15 +309,15 @@ docker compose -f docker-compose.ghcr.yml up -d</code></pre>
           </p>
         </div>
         <div class="hosting-grid">
-          <article>
+          <article data-initial="P">
             <strong>Personal profiles</strong>
             <p>Each profile gets its own watchlist, history, resume points, and optional debrid credential overrides on top of the shared account.</p>
           </article>
-          <article>
+          <article data-initial="K">
             <strong>Kids and maturity limits</strong>
             <p>Mark a profile as a kid profile to cap maturity, hide anything above the rating, and require the parental lock to switch back out.</p>
           </article>
-          <article>
+          <article data-initial="R">
             <strong>Title requests</strong>
             <p>Anyone on a restricted profile can request a title; admins review requests alongside server health, sessions, and bandwidth.</p>
           </article>
@@ -310,12 +356,12 @@ docker compose -f docker-compose.ghcr.yml up -d</code></pre>
             auto-checks can be turned off from Settings.
           </p>
         </div>
-        <div class="status-list">
-          <span>Signed update manifest</span>
-          <span>macOS notarized builds</span>
-          <span>Windows and Linux installers</span>
-          <span>Update on your schedule</span>
-        </div>
+        <ul class="status-list">
+          <li>Signed update manifest</li>
+          <li>macOS notarized builds</li>
+          <li>Windows and Linux installers</li>
+          <li>Update on your schedule</li>
+        </ul>
       </section>
     </main>
 
@@ -326,6 +372,6 @@ docker compose -f docker-compose.ghcr.yml up -d</code></pre>
       <a href="https://github.com/Tgk-30/DebridStreamer/issues">Issues</a>
     </footer>
 
-    <script src="./app.js?v=2026-06-21" type="module"></script>
+    <script src="./app.js?v=2026-07-03" type="module"></script>
   </body>
 </html>
