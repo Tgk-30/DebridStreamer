@@ -29,7 +29,9 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  flex: 1 1 auto;
+  /* basis 0 so long copy never drives a wrap — the text column shrinks and
+     wraps internally instead of pushing the icon/dismiss onto their own rows */
+  flex: 1 1 0;
   font-size: 13px;
   line-height: 1.45;
 }

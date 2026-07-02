@@ -31,7 +31,7 @@ const PERSONAS: Persona[] = [
   {
     id: "device",
     title: "Just watch on this device",
-    copy: "A quick one-time setup — a debrid service and a source — and you're streaming. No account needed.",
+    copy: "A quick two-step setup — a catalog key and your debrid service — and you're streaming. No account needed.",
     icon: "play",
     badge: "Most popular",
   },
@@ -125,7 +125,7 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
   if (step === "catalog") {
     return (
       <CatalogStep
-        initialKey={settings.tmdbKey}
+        initialKey={collectedTmdb ?? settings.tmdbKey}
         onBack={() => setStep("choose")}
         onNext={(key) => {
           setCollectedTmdb(key);
@@ -235,6 +235,7 @@ function CatalogStep({
   const [key, setKey] = useState(initialKey);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const tmdbSignup = signupUrl("tmdb");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -276,15 +277,21 @@ function CatalogStep({
               autoFocus
             />
           </label>
-          <a
-            className="server-setup-signup"
-            href={signupUrl("tmdb")!}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Get a free key ↗
-          </a>
-          {error != null && <p className="first-run-error">{error}</p>}
+          {tmdbSignup != null && (
+            <a
+              className="server-setup-signup"
+              href={tmdbSignup}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Get a free key ↗
+            </a>
+          )}
+          {error != null && (
+            <p className="first-run-error" role="alert">
+              {error}
+            </p>
+          )}
           <div className="first-run-actions">
             <button type="button" className="first-run-secondary" onClick={onBack}>
               Back
@@ -335,6 +342,19 @@ function StreamingStep({
 
   const signup = signupUrl(DEBRID_SIGNUP_ID[service] ?? "");
 
+  // A failed check only vouches for the exact service+token it ran against —
+  // any edit hides the save-without-testing hatch until the user tests again.
+  function changeService(next: DebridServiceType) {
+    setService(next);
+    setToken(existing.find((t) => t.service === next)?.apiToken ?? "");
+    setUnverifiedOk(false);
+    setError(null);
+  }
+  function changeToken(next: string) {
+    setToken(next);
+    setUnverifiedOk(false);
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     const trimmed = token.trim();
@@ -351,7 +371,9 @@ function StreamingStep({
     }
     // Hedged on purpose: validateToken() can't distinguish a bad token from
     // an offline/CORS-blocked check.
-    setError("Couldn't verify that token — check it and your connection.");
+    setError(
+      "Couldn't verify that token — it may be mistyped, or your browser may be blocked from reaching the provider.",
+    );
     setUnverifiedOk(true);
     setBusy(false);
   }
@@ -368,7 +390,7 @@ function StreamingStep({
               Provider
               <select
                 value={service}
-                onChange={(e) => setService(e.target.value as DebridServiceType)}
+                onChange={(e) => changeService(e.target.value as DebridServiceType)}
               >
                 {DebridServiceType.allCases().map((s) => (
                   <option key={s} value={s}>
@@ -381,10 +403,11 @@ function StreamingStep({
               API token
               <input
                 value={token}
-                onChange={(e) => setToken(e.target.value)}
+                onChange={(e) => changeToken(e.target.value)}
                 placeholder="API token"
                 autoComplete="off"
                 spellCheck={false}
+                autoFocus
               />
             </label>
             {signup != null && (
@@ -398,7 +421,11 @@ function StreamingStep({
               </a>
             )}
           </div>
-          {error != null && <p className="first-run-error">{error}</p>}
+          {error != null && (
+            <p className="first-run-error" role="alert">
+              {error}
+            </p>
+          )}
           <div className="first-run-actions">
             <button type="button" className="first-run-secondary" onClick={onBack}>
               Back
@@ -511,7 +538,11 @@ function ConnectStep({ onBack }: { onBack: () => void }) {
               autoFocus
             />
           </label>
-          {error != null && <p className="first-run-error">{error}</p>}
+          {error != null && (
+            <p className="first-run-error" role="alert">
+              {error}
+            </p>
+          )}
           <div className="first-run-actions">
             <button type="button" className="first-run-secondary" onClick={onBack}>
               Back

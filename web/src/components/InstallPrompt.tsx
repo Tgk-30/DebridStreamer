@@ -5,7 +5,7 @@
 // unmet PWA criteria, dev builds) the card still renders platform-specific
 // manual steps — that copy is the only guidance those environments get.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { deviceKind, isMobileBrowser, isStandaloneDisplay } from "../lib/platform";
 import { isTauri } from "../lib/tauri";
 import {
@@ -24,17 +24,38 @@ export function isInstallPromptEligible(): boolean {
 export function InstallPrompt({ onDismiss }: { onDismiss: () => void }) {
   const kind = deviceKind(); // "ios" | "android" behind the eligibility gate
   const [prompt, setPrompt] = useState(getInstallPrompt);
-  useEffect(() => subscribeInstallPrompt(setPrompt), []);
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+  useEffect(() => {
+    const unsubscribe = subscribeInstallPrompt(setPrompt);
+    // Re-read after subscribing: the event can land between first render and
+    // this effect, and it would otherwise be missed.
+    setPrompt(getInstallPrompt());
+    // Installed through the browser's own menu → the card has done its job.
+    const onInstalled = () => onDismissRef.current();
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
 
   async function install() {
     if (prompt == null) return;
-    await prompt.prompt();
-    const choice = await prompt.userChoice.catch(() => null);
-    consumeInstallPrompt();
-    setPrompt(null);
+    let outcome: string | null = null;
+    try {
+      await prompt.prompt();
+      outcome = (await prompt.userChoice).outcome;
+    } catch {
+      // Event already used or invalidated — consume it and fall back to the
+      // menu copy rather than leaving a dead Install button.
+    } finally {
+      consumeInstallPrompt();
+      setPrompt(null);
+    }
     // Accepted → the appinstalled/standalone state takes over; retire the card.
     // Dismissed → keep the card; the user can still X it away themselves.
-    if (choice?.outcome === "accepted") onDismiss();
+    if (outcome === "accepted") onDismiss();
   }
 
   return (

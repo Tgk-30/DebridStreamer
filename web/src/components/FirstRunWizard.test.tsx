@@ -240,6 +240,48 @@ describe("FirstRunWizard", () => {
     );
   });
 
+  it("editing the token or switching service hides save-without-testing until retested", async () => {
+    const user = userEvent.setup();
+    settings.debridTokens = [{ service: "torbox", apiToken: "tb-token" }];
+    testDebridTokenMock.mockResolvedValue(false);
+    render(<FirstRunWizard onDone={() => {}} />);
+    await reachStreamingStep(user);
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    expect(
+      await screen.findByRole("button", { name: /Save without testing/ }),
+    ).toBeInTheDocument();
+    // Switching provider invalidates the failed check — the hatch must hide —
+    // and swaps the token field to that service's stored token (or empty).
+    await user.selectOptions(screen.getByLabelText("Provider"), "real_debrid");
+    expect(
+      screen.queryByRole("button", { name: /Save without testing/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("API token")).toHaveValue("");
+    await user.selectOptions(screen.getByLabelText("Provider"), "torbox");
+    expect(screen.getByLabelText("API token")).toHaveValue("tb-token");
+    // Same for editing the token itself after a failed check.
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    expect(
+      await screen.findByRole("button", { name: /Save without testing/ }),
+    ).toBeInTheDocument();
+    await user.type(screen.getByLabelText("API token"), "x");
+    expect(
+      screen.queryByRole("button", { name: /Save without testing/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("validated TMDB key persists when the user picks Add later for debrid", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(<FirstRunWizard onDone={onDone} />);
+    await reachStreamingStep(user);
+    await user.click(screen.getByRole("button", { name: /Add later/ }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ tmdbKey: "tmdb-key-1", debridTokens: [] }),
+    );
+  });
+
   it("streaming step hedges on a failed check and offers save-without-testing", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
@@ -250,7 +292,7 @@ describe("FirstRunWizard", () => {
     await user.click(screen.getByRole("button", { name: "Test token & finish" }));
     expect(
       await screen.findByText(
-        "Couldn't verify that token — check it and your connection.",
+        "Couldn't verify that token — it may be mistyped, or your browser may be blocked from reaching the provider.",
       ),
     ).toBeInTheDocument();
     expect(onDone).not.toHaveBeenCalled();
