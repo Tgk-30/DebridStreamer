@@ -7,34 +7,43 @@ import { useAppStore } from "../store/AppStore";
 import { markOnboardingComplete } from "../lib/firstRun";
 import { saveServerURL } from "../lib/serverMode";
 import { isTauri } from "../lib/tauri";
+import { Icon, type IconName } from "./Icon";
 import "./FirstRunWizard.css";
 
 interface Persona {
   id: "device" | "connect" | "host" | "advanced";
   title: string;
   copy: string;
+  icon: IconName;
+  /** Optional highlight chip; also marks the card as the recommended path. */
+  badge?: string;
 }
 
 const PERSONAS: Persona[] = [
   {
     id: "device",
     title: "Just watch on this device",
-    copy: "Everything stays on this device — no account needed. A quick one-time setup (a debrid service + a source) and you're streaming; we'll show you how. Connect a server anytime.",
+    copy: "A quick one-time setup — a debrid service and a source — and you're streaming. No account needed.",
+    icon: "play",
+    badge: "Most popular",
   },
   {
     id: "connect",
     title: "Connect to a server",
-    copy: "Already have a DebridStreamer server, or got an invite link from someone? Paste the address and sign in.",
+    copy: "Already have a server or an invite link? Paste the address and sign in.",
+    icon: "share",
   },
   {
     id: "host",
     title: "Host for my family",
-    copy: "Run DebridStreamer on this computer and let your household sign in from their own devices, with one link to share.",
+    copy: "Run the server on this computer; your household signs in from their own devices.",
+    icon: "debrid",
   },
   {
     id: "advanced",
     title: "Advanced setup",
-    copy: "Jump straight into full settings — every provider, source, indexer, and appearance control. For people who want the dials.",
+    copy: "Skip the wizard and open full settings — every provider, source, and dial.",
+    icon: "sliders",
   },
 ];
 
@@ -84,9 +93,10 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
   return (
     <div className="first-run">
       <div className="first-run-card">
-        <button type="button" className="first-run-skip" onClick={() => void skip()}>
-          Skip for now
-        </button>
+        <p className="first-run-eyebrow">
+          <Icon name="sparkles" size={13} />
+          Welcome to DebridStreamer
+        </p>
         <h1 className="first-run-title">How do you want to use DebridStreamer?</h1>
         <p className="first-run-sub">
           Pick one to get started — you can change anything later in Settings.
@@ -96,14 +106,29 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
             <button
               key={p.id}
               type="button"
-              className="first-run-choice"
+              className={
+                "first-run-choice" + (p.badge != null ? " is-recommended" : "")
+              }
               onClick={() => void choose(p.id)}
             >
-              <span className="first-run-choice-title">{p.title}</span>
-              <span className="first-run-choice-copy">{p.copy}</span>
+              <span className="first-run-choice-icon" aria-hidden>
+                <Icon name={p.icon} size={17} />
+              </span>
+              <span className="first-run-choice-body">
+                <span className="first-run-choice-head">
+                  <span className="first-run-choice-title">{p.title}</span>
+                  {p.badge != null && (
+                    <span className="first-run-choice-badge">{p.badge}</span>
+                  )}
+                </span>
+                <span className="first-run-choice-copy">{p.copy}</span>
+              </span>
             </button>
           ))}
         </div>
+        <button type="button" className="first-run-skip" onClick={() => void skip()}>
+          Skip for now
+        </button>
       </div>
     </div>
   );

@@ -33,22 +33,35 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+/* Quiet escape hatch, centered under the choices (no longer a floating
+   top-right button that pushed the heading down a whole row). */
 .first-run-skip {
-  position: static;
-  align-self: flex-end;
+  align-self: center;
   min-height: 44px;
-  margin: calc(-1 * var(--sp-sm)) calc(-1 * var(--sp-sm)) var(--sp-sm) 0;
+  margin: var(--sp-md) 0 calc(-1 * var(--sp-sm));
   border: none;
   background: none;
   color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
-  padding: 8px 10px;
-  border-radius: var(--r-sm);
+  padding: 8px 14px;
+  border-radius: var(--r-pill);
 }
 .first-run-skip:hover {
   color: var(--text-primary);
   background: var(--glass-tint-control);
+}
+
+.first-run-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 
 .first-run-title {
@@ -83,10 +96,6 @@
 
   .first-run-card {
     padding: var(--sp-xl);
-  }
-
-  .first-run-skip {
-    margin: calc(-1 * var(--sp-sm)) calc(-1 * var(--sp-xs)) var(--sp-sm) 0;
   }
 }
 
@@ -126,10 +135,11 @@
 
 .first-run-choice {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--sp-md);
   text-align: left;
-  padding: var(--sp-md) var(--sp-lg);
+  padding: var(--sp-md) var(--sp-lg) var(--sp-md) var(--sp-md);
   border-radius: var(--r-md);
   background: var(--glass-tint-rest, rgba(255, 255, 255, 0.04));
   border: 0.75px solid var(--glass-border);
@@ -143,6 +153,50 @@
   border-color: rgba(var(--accent-rgb), 0.55);
   background: rgba(var(--accent-rgb), 0.08);
   box-shadow: 0 10px 26px -10px rgba(var(--accent-rgb), 0.4);
+}
+.first-run-choice:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+/* The default path gets a standing accent so the screen has a clear answer to
+   "which one do most people pick?" instead of four equal gray boxes. */
+.first-run-choice.is-recommended {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.07);
+  box-shadow: 0 14px 34px -20px rgba(var(--accent-rgb), 0.5);
+}
+.first-run-choice-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  background: rgba(var(--accent-rgb), 0.14);
+  border: 0.75px solid rgba(var(--accent-rgb), 0.25);
+  color: var(--accent);
+}
+.first-run-choice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.first-run-choice-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.first-run-choice-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
 }
 .first-run-choice-title {
   font-size: 15px;
