@@ -11,7 +11,8 @@ import { MediaGrid } from "../components/MediaGrid";
 import { Rail } from "../components/Rail";
 import { EmptyState } from "../components/EmptyState";
 import { WatchStatsCard } from "../components/WatchStatsCard";
-import { hasResumePoint, watchProgressMap } from "../storage/models";
+import { latestResumeByMedia, watchProgressMap } from "../storage/models";
+import { episodeLabel, parseEpisodeId } from "../data/episodes";
 import { useWatchStats } from "../data/useWatchStats";
 import { hasWatchStats } from "../data/watchStats";
 
@@ -27,8 +28,21 @@ export function History() {
     continueWatching,
   ]);
 
-  // Only surface rows with a meaningful resume point in the rail.
-  const resumable = continueWatching.filter(hasResumePoint).map((r) => r.preview);
+  // ONE card per show in the rail — the newest incomplete episode/movie record
+  // wins (per-episode records used to produce duplicate cards + duplicate React
+  // keys for the same series). Newest-first ordering.
+  const latestRecords = Object.values(latestResumeByMedia(continueWatching)).sort(
+    (a, b) => b.lastWatched.localeCompare(a.lastWatched),
+  );
+  const resumable = latestRecords.map((r) => r.preview);
+  // "S2 E5" corner labels for series cards (movies have no episodeId → no label).
+  const resumableLabels: Record<string, string> = {};
+  for (const r of latestRecords) {
+    const parsed = parseEpisodeId(r.episodeId);
+    if (parsed != null) {
+      resumableLabels[r.preview.id] = episodeLabel(parsed.season, parsed.episode);
+    }
+  }
   // Shared progress map (same helper the Watchlist uses) so the rail, the rail's
   // bars, and the full grid below stay in lockstep instead of diverging.
   const resumableProgress = watchProgressMap(continueWatching);
@@ -47,6 +61,7 @@ export function History() {
           title="Continue Watching"
           items={resumable}
           progressById={resumableProgress}
+          labelById={resumableLabels}
           onSelect={openDetail}
         />
       )}

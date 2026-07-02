@@ -552,6 +552,20 @@ describe("recordResume", () => {
       progressSeconds: 95,
       durationSeconds: 100,
       completed: true,
+      episodeId: null,
+    });
+  });
+
+  it("forwards a series episode id (and defaults to null when omitted)", async () => {
+    const { result } = await renderStore();
+    const item = media("r5");
+
+    act(() => result.current.recordResume(item, 42, 100, "s2e5"));
+    expect(recordHistory).toHaveBeenCalledWith(item, {
+      progressSeconds: 42,
+      durationSeconds: 100,
+      completed: false,
+      episodeId: "s2e5",
     });
   });
 
@@ -563,6 +577,7 @@ describe("recordResume", () => {
       progressSeconds: 40,
       durationSeconds: 100,
       completed: false,
+      episodeId: null,
     });
 
     recordHistory.mockClear();
@@ -571,6 +586,7 @@ describe("recordResume", () => {
       progressSeconds: 10,
       durationSeconds: null,
       completed: false,
+      episodeId: null,
     });
 
     recordHistory.mockClear();
@@ -579,6 +595,7 @@ describe("recordResume", () => {
       progressSeconds: 10,
       durationSeconds: 0,
       completed: false,
+      episodeId: null,
     });
   });
 });

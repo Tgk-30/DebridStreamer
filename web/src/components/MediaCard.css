@@ -188,6 +188,24 @@
 }
 
 /* "Ready to play" badge — a cached resolution exists (auto-resolve). */
+/* Corner label ("S2 E5") — a quiet glass chip opposite the ready badge. */
+.media-card-corner-label {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-1) 62%, transparent);
+  border: 0.75px solid var(--glass-border);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
 .media-card-ready {
   position: absolute;
   top: 7px;

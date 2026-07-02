@@ -16,9 +16,11 @@ interface RailProps {
   /** Resume progress (0..1) keyed by item id — renders a Continue Watching
    * progress bar on the matching cards. */
   progressById?: Record<string | number, number>;
+  /** Optional corner label per item id (e.g. "S2 E5" on a series card). */
+  labelById?: Record<string, string>;
 }
 
-export function Rail({ title, items, onSelect, onSeeAll, progressById }: RailProps) {
+export function Rail({ title, items, onSelect, onSeeAll, progressById, labelById }: RailProps) {
   if (items.length === 0) return null;
 
   return (
@@ -42,6 +44,7 @@ export function Rail({ title, items, onSelect, onSeeAll, progressById }: RailPro
               item={item}
               onSelect={onSelect}
               progress={progressById?.[item.id]}
+              cornerLabel={labelById?.[item.id]}
             />
           ))}
         </div>

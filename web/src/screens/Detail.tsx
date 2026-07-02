@@ -11,10 +11,12 @@
 // no-key fallback that still shows the hero. Streams need configured indexers +
 // debrid; without them the picker shows a clear empty state.
 
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { useDetail } from "../data/detail";
 import { useStreams } from "../data/streams";
+import { defaultSelectionFor, episodeIdFor, episodeLabel } from "../data/episodes";
+import { EpisodePicker } from "../components/EpisodePicker";
 import { DetailHero, type TasteSignal } from "../components/DetailHero";
 import { DetailAnalysis } from "../components/DetailAnalysis";
 import { OmdbRatings } from "../components/OmdbRatings";
@@ -30,7 +32,11 @@ import { createRequest, resolveServerStream } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 import { useTranscodeAvailable } from "../lib/ServerSessionContext";
 import { getStore } from "../storage";
-import type { TasteEventType } from "../storage/models";
+import {
+  hasResumePoint,
+  watchProgressPercent,
+  type TasteEventType,
+} from "../storage/models";
 import { rebuildTasteContext } from "../services/ai/TasteProfile";
 import "./Detail.css";
 
@@ -48,6 +54,12 @@ interface ActivePlayer {
   external: boolean;
   /** Saved resume position (seconds) to seek to on load; 0 starts fresh. */
   startPositionSeconds: number;
+  /** Episode context SNAPSHOTTED at play time (never the live picker
+   *  selection) so progress writes + subtitle search track the episode that
+   *  is actually playing. All null for movies. */
+  episodeId: string | null;
+  season: number | null;
+  episode: number | null;
 }
 
 /** True when the resolved file is a container/codec the webview can't decode
@@ -89,15 +101,58 @@ export function Detail() {
   const transcodeAvailable = useTranscodeAvailable();
 
   const detail = useDetail(detailItem, services.tmdb);
+
+  // Series episode selection: a user's explicit pick (session-only, per title)
+  // wins; otherwise default to the most recently watched episode, else S1E1.
+  // Movies stay null throughout — zero behavior change.
+  const [episodeOverrides, setEpisodeOverrides] = useState<
+    Record<string, { season: number; episode: number }>
+  >({});
+  const selected = useMemo(
+    () =>
+      detailItem?.type === "series"
+        ? episodeOverrides[detailItem.id] ??
+          defaultSelectionFor(detailItem.id, continueWatching)
+        : null,
+    [detailItem, episodeOverrides, continueWatching],
+  );
+
   const streams = useStreams(
     detail.data.imdbId,
     detailItem?.type ?? "movie",
+    selected?.season ?? null,
+    selected?.episode ?? null,
     services.indexers,
     services.debrid,
   );
 
+  // Per-episode resume bars for the picker rows (this series only).
+  const progressByEpisodeId = useMemo(() => {
+    if (detailItem?.type !== "series") return {};
+    const map: Record<string, number> = {};
+    for (const r of continueWatching) {
+      if (r.mediaId !== detailItem.id || r.episodeId == null) continue;
+      if (!r.completed && hasResumePoint(r)) {
+        map[r.episodeId] = watchProgressPercent(r);
+      }
+    }
+    return map;
+  }, [detailItem, continueWatching]);
+
   const [player, setPlayer] = useState<ActivePlayer | null>(null);
   const [scrollToStreams, setScrollToStreams] = useState(false);
+
+  // A11y: move focus into the overlay on open (so keyboard/screen-reader users
+  // land in context) and hand it back to whatever opened the Detail on close.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const opener =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    rootRef.current?.focus({ preventScroll: true });
+    return () => opener?.focus({ preventScroll: true });
+  }, []);
   // Server Mode "title request" state for this detail. Detail doesn't remount
   // between titles (openDetail just swaps detailItem), so reset on id change.
   const [requestState, setRequestState] = useState<
@@ -154,22 +209,38 @@ export function Detail() {
   const item = detail.data.item;
   const inWatchlist = isInWatchlist(watchlist, detailItem.id);
   // A pre-resolved, ready-to-play stream from the watchlist auto-resolve job.
-  const cached = cachedResolutions[detailItem.id] ?? null;
+  // Movie-only: the cache is keyed per TITLE, so instant-playing it for a
+  // series could play the wrong episode. Series always go through the picker.
+  const cached =
+    detailItem.type === "movie" ? cachedResolutions[detailItem.id] ?? null : null;
 
-  /** Resume position (seconds) for this title, read from the already-loaded
-   * Continue Watching list (cross-device synced in Server Mode) — 0 when there's
-   * no in-progress record or it's completed. */
+  /** Resume position (seconds) for the title (movies) or the SELECTED episode
+   * (series), read from the already-loaded Continue Watching list
+   * (cross-device synced in Server Mode) — 0 when there's no in-progress
+   * record or it's completed. */
   function resumeSecondsFor(): number {
     if (detailItem == null) return 0;
+    const wantedEpisodeId =
+      selected != null ? episodeIdFor(selected.season, selected.episode) : null;
     const record = continueWatching.find(
-      (h) => h.mediaId === detailItem.id && h.episodeId == null,
+      (h) => h.mediaId === detailItem.id && h.episodeId === wantedEpisodeId,
     );
     return record != null && !record.completed ? record.progressSeconds : 0;
   }
 
-  /** Open the player, seeking to any saved resume position. */
+  /** Open the player, seeking to any saved resume position. Snapshots the
+   * episode context so a picker change mid-playback can't retarget progress. */
   function openPlayer(url: string, title: string, external: boolean): void {
-    setPlayer({ url, title, external, startPositionSeconds: resumeSecondsFor() });
+    setPlayer({
+      url,
+      title,
+      external,
+      startPositionSeconds: resumeSecondsFor(),
+      episodeId:
+        selected != null ? episodeIdFor(selected.season, selected.episode) : null,
+      season: selected?.season ?? null,
+      episode: selected?.episode ?? null,
+    });
   }
 
   /** Record (or toggle off) a like/dislike taste signal for the current title.
@@ -300,7 +371,7 @@ export function Detail() {
   }
 
   return (
-    <div className="detail">
+    <div className="detail" ref={rootRef} tabIndex={-1}>
       <div className="detail-inner">
       {item && (
         <DetailHero
@@ -348,6 +419,20 @@ export function Detail() {
         <DetailAnalysis item={item} provider={services.ai} />
       )}
 
+      {/* Season/episode picker (series only). Selecting an episode re-drives
+          the stream search below; falls back to a plain stepper without TMDB. */}
+      {detailItem.type === "series" && selected != null && (
+        <EpisodePicker
+          tmdbId={item?.tmdbId ?? detailItem.tmdbId ?? null}
+          tmdb={services.tmdb}
+          selected={selected}
+          onSelect={(next) =>
+            setEpisodeOverrides((m) => ({ ...m, [detailItem.id]: next }))
+          }
+          progressByEpisodeId={progressByEpisodeId}
+        />
+      )}
+
       <div
         id="detail-streams"
         className={scrollToStreams ? "detail-streams-anchor" : undefined}
@@ -356,6 +441,10 @@ export function Detail() {
           state={streams}
           resolveStream={resolveSelectedStream}
           onPlay={handlePlay}
+          episodeLabel={
+            selected != null ? episodeLabel(selected.season, selected.episode) : null
+          }
+          episodeContext={selected}
           onOpenSettings={() => {
             closeDetail();
             navigate("settings");
@@ -381,9 +470,10 @@ export function Detail() {
             startPositionSeconds={player.startPositionSeconds}
             onClose={() => setPlayer(null)}
             onProgress={(current, duration) => {
-              // Persist a resume position against the title being viewed so the
-              // History "Continue Watching" rail can pick it back up.
-              recordResume(detailItem, current, duration);
+              // Persist a resume position against the title (movies) or the
+              // SNAPSHOTTED episode (series) so Continue Watching resumes the
+              // right thing even if the picker changed mid-playback.
+              recordResume(detailItem, current, duration, player.episodeId);
             }}
             // Subtitle search/translate context. The client/config are null when
             // the OpenSubtitles key / AI provider aren't configured, so the
@@ -391,6 +481,8 @@ export function Detail() {
             subtitleClient={services.subtitles}
             translator={services.translator}
             imdbId={detail.data.imdbId}
+            season={player.season}
+            episode={player.episode}
           />
         </Suspense>
       )}

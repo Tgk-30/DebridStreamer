@@ -100,6 +100,29 @@ export function getServerDetail(
   },
 ): Promise<unknown>;
 
+/** Throws on TMDB/key failures — the /api/media/seasons route converts any
+ *  rejection into a 503 ("Episode guide is unavailable right now."). */
+export function getServerSeasons(
+  db: AppDatabase,
+  config: ServerConfig,
+  profileId: string,
+  input: {
+    tmdbId: number;
+  },
+): Promise<unknown>;
+
+/** Throws on TMDB/key failures — the /api/media/episodes route converts any
+ *  rejection into a 503 ("Episode guide is unavailable right now."). */
+export function getServerEpisodes(
+  db: AppDatabase,
+  config: ServerConfig,
+  profileId: string,
+  input: {
+    tmdbId: number;
+    season: number;
+  },
+): Promise<unknown>;
+
 /** The US maturity certification for a title (kid play-block). Returns null when
  *  the mediaId carries no derivable TMDB id; callers treat null as fail-closed. */
 export function titleCertification(

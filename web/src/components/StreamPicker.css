@@ -53,6 +53,27 @@
   padding: 4px 10px;
 }
 
+/* "· S2 E5" scope suffix in the header — quieter than the title itself. */
+.streams-episode-label {
+  font-weight: 500;
+}
+
+/* Whole-season-pack tag on a release row (the file isn't episode-exact). */
+.stream-pack-chip {
+  display: inline-block;
+  margin-left: 8px;
+  vertical-align: 1px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  color: var(--text-secondary);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
+  border: 0.75px solid var(--glass-border);
+}
+
 .streams-error {
   font-size: 13px;
   color: var(--danger);

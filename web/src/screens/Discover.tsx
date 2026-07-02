@@ -220,6 +220,7 @@ export function Discover({ onSelect }: DiscoverProps) {
         loading={moodLoading}
         status={moodStatus}
         error={moodError}
+        aiAvailable={isServerMode() || services.ai != null}
       />
 
       <Rail

@@ -1,5 +1,5 @@
 import type { MediaType } from "../models/media";
-import type { CastMember, MediaItem, MediaPreview } from "../models/media";
+import type { CastMember, Episode, MediaItem, MediaPreview, Season } from "../models/media";
 import type { AIMovieRecommendation, AIUsageMetrics } from "../services/ai/models";
 import type { StreamInfo } from "../services/debrid/models";
 import type {
@@ -443,6 +443,27 @@ export async function fetchServerDetail(input: {
     type: input.type,
   });
   return serverRequest("GET", `/api/media/detail?${params.toString()}`);
+}
+
+/** Fetch a series' seasons via the server metadata proxy (the TMDB key lives
+ *  on the server). Callers treat any failure as "no episode guide". */
+export async function fetchServerSeasons(input: {
+  tmdbId: number;
+}): Promise<{ seasons: Season[] }> {
+  const params = new URLSearchParams({ tmdbId: String(input.tmdbId) });
+  return serverRequest("GET", `/api/media/seasons?${params.toString()}`);
+}
+
+/** Fetch one season's episode list via the server metadata proxy. */
+export async function fetchServerEpisodes(input: {
+  tmdbId: number;
+  season: number;
+}): Promise<{ episodes: Episode[] }> {
+  const params = new URLSearchParams({
+    tmdbId: String(input.tmdbId),
+    season: String(input.season),
+  });
+  return serverRequest("GET", `/api/media/episodes?${params.toString()}`);
 }
 
 /** Fetch OMDb ratings for an IMDb id via the server "hidden key" proxy. The

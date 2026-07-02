@@ -23,6 +23,11 @@ interface MoodStripProps {
   loading?: boolean;
   status?: string | null;
   error?: string | null;
+  /** Whether real AI curation is available (an AI provider is configured, or
+   *  Server Mode curates server-side). When false the strip is honest up
+   *  front — vibes open a filtered browse — instead of promising AI and
+   *  quietly doing something else. */
+  aiAvailable?: boolean;
 }
 
 export function MoodStrip({
@@ -30,6 +35,7 @@ export function MoodStrip({
   loading = false,
   status = null,
   error = null,
+  aiAvailable = true,
 }: MoodStripProps) {
   const [vibe, setVibe] = useState("");
 
@@ -48,7 +54,9 @@ export function MoodStrip({
         <div className="mood-heading">
           <div className="mood-title">Describe a vibe</div>
           <div className="mood-subtitle t-secondary">
-            AI turns your mood into a curated lineup
+            {aiAvailable
+              ? "AI turns your mood into a curated lineup"
+              : "Opens a filtered browse — add an AI key in Settings for real AI picks"}
           </div>
         </div>
       </div>

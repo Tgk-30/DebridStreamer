@@ -24,7 +24,9 @@ import {
   getServerCategory,
   getServerDetail,
   getServerDiscoverHome,
+  getServerEpisodes,
   getServerGenres,
+  getServerSeasons,
   getServerUpcomingEpisodes,
   searchServerMedia,
   titleCertification,
@@ -340,6 +342,17 @@ const mediaDiscoverBaseQuerySchema = z.object({
 const mediaDetailQuerySchema = z.object({
   id: z.string().trim().min(1).max(128),
   type: mediaTypeSchema,
+});
+
+const mediaSeasonsQuerySchema = z.object({
+  tmdbId: z.coerce.number().int().min(1),
+});
+
+const mediaEpisodesQuerySchema = z.object({
+  tmdbId: z.coerce.number().int().min(1),
+  // Realistic ceiling — the longest-running shows are well under 100 seasons;
+  // anything bigger is abuse probing and is rejected before TMDB is contacted.
+  season: z.coerce.number().int().min(0).max(200),
 });
 
 const mediaPreviewSchema = z.object({
@@ -3399,6 +3412,45 @@ function registerRoutes(
       id: query.id,
       type: query.type,
     });
+  });
+
+  // Episode-picker metadata (series only). Kid browse is movie-only, so a kid
+  // has no business enumerating arbitrary series seasons/episodes — block
+  // outright (mirrors /api/calendar/upcoming); the client degrades to its
+  // stepper fallback. Rate-limited per profile (mirrors /api/omdb) so an
+  // authed user can't hammer TMDB through these proxies, and TMDB failures
+  // surface as a clean 503 (the client treats any failure as "no guide").
+  app.get("/api/media/seasons", async (request) => {
+    const auth = requireAuth(db, request);
+    if (auth.isKid) {
+      throw httpError(403, "Episode guides are not available on this profile.");
+    }
+    rateLimit(request, `media:seasons:${auth.profileId}`, 60, 60 * 1000);
+    const query = parseBody(mediaSeasonsQuerySchema, request.query);
+    try {
+      return await getServerSeasons(db, config, auth.profileId, {
+        tmdbId: query.tmdbId,
+      });
+    } catch {
+      throw httpError(503, "Episode guide is unavailable right now.");
+    }
+  });
+
+  app.get("/api/media/episodes", async (request) => {
+    const auth = requireAuth(db, request);
+    if (auth.isKid) {
+      throw httpError(403, "Episode guides are not available on this profile.");
+    }
+    rateLimit(request, `media:episodes:${auth.profileId}`, 120, 60 * 1000);
+    const query = parseBody(mediaEpisodesQuerySchema, request.query);
+    try {
+      return await getServerEpisodes(db, config, auth.profileId, {
+        tmdbId: query.tmdbId,
+        season: query.season,
+      });
+    } catch {
+      throw httpError(503, "Episode guide is unavailable right now.");
+    }
   });
 
   // OMDb ratings proxy — the "hidden key" path. The key is resolved server-side

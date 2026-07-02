@@ -54,14 +54,37 @@ export function hasResumePoint(r: WatchHistoryRecord): boolean {
 
 /** A { mediaId: fraction } map of resume progress, for "Continue Watching" bars
  * on cards. Includes only incomplete records with a real resume point so a
- * finished or barely-started title shows no bar. */
+ * finished or barely-started title shows no bar. With per-episode records the
+ * NEWEST one wins per title (was last-iteration-wins, i.e. array-order luck). */
 export function watchProgressMap(
   records: WatchHistoryRecord[],
 ): Record<string, number> {
   const map: Record<string, number> = {};
+  const newest: Record<string, string> = {};
   for (const r of records) {
-    if (r.completed) continue;
-    if (hasResumePoint(r)) map[r.preview.id] = watchProgressPercent(r);
+    if (r.completed || !hasResumePoint(r)) continue;
+    const prev = newest[r.preview.id];
+    if (prev != null && prev.localeCompare(r.lastWatched) >= 0) continue;
+    newest[r.preview.id] = r.lastWatched;
+    map[r.preview.id] = watchProgressPercent(r);
+  }
+  return map;
+}
+
+/** The newest incomplete record (with a real resume point) per media id. The
+ * Continue Watching rail shows ONE card per show — resuming its most recent
+ * episode — while the older per-episode records stay in storage and drive the
+ * per-episode bars in the episode picker. */
+export function latestResumeByMedia(
+  records: WatchHistoryRecord[],
+): Record<string, WatchHistoryRecord> {
+  const map: Record<string, WatchHistoryRecord> = {};
+  for (const r of records) {
+    if (r.completed || !hasResumePoint(r)) continue;
+    const cur = map[r.mediaId];
+    if (cur == null || cur.lastWatched.localeCompare(r.lastWatched) < 0) {
+      map[r.mediaId] = r;
+    }
   }
   return map;
 }

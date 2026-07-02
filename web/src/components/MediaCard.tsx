@@ -21,6 +21,9 @@ interface MediaCardProps {
   /** Resume progress as a fraction 0..1 — renders a bottom "Continue Watching"
    * progress bar on the poster. Omit (or 0) to hide it. */
   progress?: number;
+  /** Small glass chip in the poster corner (e.g. "S2 E5" on a series' Continue
+   * Watching card). Rendered only when present. */
+  cornerLabel?: string;
 }
 
 const SPRING = { type: "spring", stiffness: 380, damping: 30, mass: 0.7 } as const;
@@ -31,6 +34,7 @@ export function MediaCard({
   onPlay,
   ready = false,
   progress,
+  cornerLabel,
 }: MediaCardProps) {
   const poster = MediaPreviewNS.posterURL(item);
   const rating = MediaPreviewNS.ratingString(item);
@@ -83,6 +87,10 @@ export function MediaCard({
             <Icon name="play" size={10} />
             Ready
           </span>
+        )}
+
+        {cornerLabel != null && (
+          <span className="media-card-corner-label">{cornerLabel}</span>
         )}
 
         {/* Cinematic reveal layer — fades/slides in on hover. */}

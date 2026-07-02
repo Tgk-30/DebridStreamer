@@ -1803,7 +1803,9 @@ function ServerTab() {
   });
   // Which async save is in flight, so its submit button can disable + show
   // progress (prevents duplicate submissions / unclear final state).
-  const [saving, setSaving] = useState<"password" | "credential" | null>(null);
+  const [saving, setSaving] = useState<
+    "password" | "credential" | "shared-credential" | null
+  >(null);
 
   const canAdmin = role === "owner" || role === "admin";
   // A restricted profile can browse + watch but cannot perform management
@@ -1922,8 +1924,12 @@ function ServerTab() {
   }
 
   async function saveSharedCredential() {
+    // Same double-submit guard + busy state as its siblings below — this one
+    // was missing it, so a double-click could double-PUT with no feedback.
+    if (saving != null) return;
     setMessage(null);
     setError(null);
+    setSaving("shared-credential");
     try {
       await serverRequest("PUT", "/api/admin/credentials", {
         provider: sharedCredential.provider,
@@ -1937,6 +1943,8 @@ function ServerTab() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(null);
     }
   }
 
@@ -2480,8 +2488,11 @@ function ServerTab() {
                 type="button"
                 className="btn"
                 onClick={() => void saveSharedCredential()}
+                disabled={saving != null}
               >
-                Save shared credential
+                {saving === "shared-credential"
+                  ? "Saving…"
+                  : "Save shared credential"}
               </button>
             </div>
           </div>

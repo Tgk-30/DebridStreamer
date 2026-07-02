@@ -1439,6 +1439,15 @@ describe("DebridStreamer server", () => {
         (await request(owner, { method: "POST", url: "/api/calendar/upcoming", csrf: true, payload: { series: [] } })).statusCode,
       ).toBe(403);
 
+      // The series-only episode-guide routes are closed for kids too (the
+      // client degrades to its stepper fallback).
+      expect(
+        (await request(owner, { method: "GET", url: "/api/media/seasons?tmdbId=1399" })).statusCode,
+      ).toBe(403);
+      expect(
+        (await request(owner, { method: "GET", url: "/api/media/episodes?tmdbId=1399&season=1" })).statusCode,
+      ).toBe(403);
+
       // Browse is forced to cert-capped movie even when the client asks for series.
       const disc = await request(owner, { method: "GET", url: "/api/catalog/discover?type=series&sort_by=popularity.desc" });
       expect(disc.statusCode).toBe(200);
@@ -1457,6 +1466,15 @@ describe("DebridStreamer server", () => {
       expect((await request(owner, { method: "GET", url: "/api/search?q=batman" })).statusCode).toBe(403);
       // Correct account password unlocks the switch back to the adult profile.
       expect((await switchTo({ profileId: ownerDefault, password: "owner-password" })).statusCode).toBe(200);
+
+      // Episode-guide routes: back on the adult profile, malformed params are
+      // rejected by validation (not silently coerced).
+      expect(
+        (await request(owner, { method: "GET", url: "/api/media/seasons?tmdbId=abc" })).statusCode,
+      ).toBe(400);
+      expect(
+        (await request(owner, { method: "GET", url: "/api/media/episodes?tmdbId=1399" })).statusCode,
+      ).toBe(400);
       // Now on the uncapped adult profile, search works again.
       expect((await request(owner, { method: "GET", url: "/api/search?q=batman" })).statusCode).toBe(200);
     } finally {

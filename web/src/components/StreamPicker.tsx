@@ -16,7 +16,12 @@ import {
   VideoCodec,
   VideoQuality,
 } from "../services/indexers/models";
-import { filterStreamRows, type StreamRow, type StreamsState } from "../data/streams";
+import {
+  classifyRowForEpisode,
+  filterStreamRows,
+  type StreamRow,
+  type StreamsState,
+} from "../data/streams";
 import { useAppStore } from "../store/AppStore";
 import { Icon } from "./Icon";
 import "./StreamPicker.css";
@@ -27,6 +32,11 @@ interface StreamPickerProps {
   /** Called with the resolved stream + the torrent (for codec/container info). */
   onPlay: (stream: StreamInfo, source: TorrentResult) => void;
   onOpenSettings?: () => void;
+  /** "S2 E5" when a series episode is selected — shown in the header so the
+   *  user can see WHY the list is episode-scoped. Null for movies. */
+  episodeLabel?: string | null;
+  /** The selected episode, for tagging season-pack releases. Null for movies. */
+  episodeContext?: { season: number; episode: number } | null;
 }
 
 /** Bytes → "1.4 GB" style. */
@@ -47,6 +57,8 @@ export function StreamPicker({
   resolveStream,
   onPlay,
   onOpenSettings,
+  episodeLabel = null,
+  episodeContext = null,
 }: StreamPickerProps) {
   const [cachedOnly, setCachedOnly] = useState(false);
   const [resFilter, setResFilter] = useState<VideoQuality | null>(null);
@@ -136,7 +148,12 @@ export function StreamPicker({
   return (
     <section className="streams">
       <div className="streams-head">
-        <h2 className="streams-title">Available streams</h2>
+        <h2 className="streams-title">
+          Available streams
+          {episodeLabel != null && (
+            <span className="streams-episode-label t-secondary"> · {episodeLabel}</span>
+          )}
+        </h2>
         {state.hasIndexers && state.rows.length > 0 && (
           <div className="streams-controls">
             <span className="streams-count t-secondary">
@@ -200,6 +217,8 @@ export function StreamPicker({
           setCodecFilter(null);
         }}
         onOpenSettings={onOpenSettings}
+        episodeLabel={episodeLabel}
+        episodeContext={episodeContext}
       />
     </section>
   );
@@ -216,6 +235,8 @@ function StreamBody({
   onShowAll,
   onClearChips,
   onOpenSettings,
+  episodeLabel = null,
+  episodeContext = null,
 }: {
   state: StreamsState;
   rows: StreamRow[];
@@ -227,6 +248,8 @@ function StreamBody({
   onShowAll: () => void;
   onClearChips: () => void;
   onOpenSettings?: () => void;
+  episodeLabel?: string | null;
+  episodeContext?: { season: number; episode: number } | null;
 }) {
   if (state.loading) {
     return (
@@ -315,7 +338,9 @@ function StreamBody({
                 ? "Switch off Cached only to show sources that can be cached first."
                 : filtersEmpty
                   ? "Your quality or file-size limits removed the available results for this title."
-                  : "The configured sources did not return a match for this title yet. Add another indexer or try a different release."}
+                  : episodeLabel != null
+                    ? `The configured sources have no match for ${episodeLabel} yet — try another episode or add an indexer.`
+                    : "The configured sources did not return a match for this title yet. Add another indexer or try a different release."}
         </p>
         <div className="streams-empty-actions">
           {noDebrid && (
@@ -361,6 +386,11 @@ function StreamBody({
           row={row}
           resolving={resolvingHash === row.result.infoHash}
           onSelect={() => onSelect(row)}
+          pack={
+            episodeContext != null &&
+            classifyRowForEpisode(row, episodeContext.season, episodeContext.episode) ===
+              "pack"
+          }
         />
       ))}
     </ul>
@@ -371,10 +401,13 @@ function StreamRowItem({
   row,
   resolving,
   onSelect,
+  pack = false,
 }: {
   row: StreamRow;
   resolving: boolean;
   onSelect: () => void;
+  /** The release is a whole-season pack (not an exact episode file). */
+  pack?: boolean;
 }) {
   const { result, cachedOn } = row;
   const cached = cachedOn != null;
@@ -391,7 +424,10 @@ function StreamRowItem({
         <span className="stream-quality">{result.quality}</span>
 
         <div className="stream-main">
-          <div className="stream-name">{result.title}</div>
+          <div className="stream-name">
+            {result.title}
+            {pack && <span className="stream-pack-chip">Season pack</span>}
+          </div>
           <div className="stream-meta t-secondary">
             <span>{TorrentResult.qualityLabel(result)}</span>
             <span>·</span>

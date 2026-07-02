@@ -134,13 +134,75 @@ function betterDuplicate(a: StreamRow, b: StreamRow): StreamRow {
   return b.result.seeders > a.result.seeders ? b : a;
 }
 
+// MARK: - Episode matching
+
+/** How a release title relates to a specific requested episode. */
+export type EpisodeMatch = "exact" | "pack" | "unknown" | "mismatch";
+
+/** Classify a release title against a requested season/episode.
+ *
+ * Rules (uppercased title):
+ * - `S02E05` / `S2 E5` / `S02.E05` / `2x05` → exact when both numbers match,
+ *   otherwise mismatch.
+ * - Season-only tags (`S02`, `SEASON 2`) → a season pack: right season keeps
+ *   it as "pack", wrong season is a mismatch. A bare `COMPLETE` is a pack too.
+ * - No recognizable tag → "unknown" (kept — some indexers strip tags).
+ */
+export function classifyRowForEpisode(
+  row: StreamRow,
+  season: number,
+  episode: number,
+): EpisodeMatch {
+  const title = row.result.title.toUpperCase();
+  const se = title.match(/S(\d{1,2})[ ._-]?E(\d{1,3})/);
+  if (se != null) {
+    return parseInt(se[1], 10) === season && parseInt(se[2], 10) === episode
+      ? "exact"
+      : "mismatch";
+  }
+  const x = title.match(/\b(\d{1,2})X(\d{2,3})\b/);
+  if (x != null) {
+    return parseInt(x[1], 10) === season && parseInt(x[2], 10) === episode
+      ? "exact"
+      : "mismatch";
+  }
+  const seasonOnly =
+    title.match(/\bS(\d{1,2})\b/) ?? title.match(/\bSEASON[ ._-]?(\d{1,2})\b/);
+  if (seasonOnly != null) {
+    return parseInt(seasonOnly[1], 10) === season ? "pack" : "mismatch";
+  }
+  if (/\bCOMPLETE\b/.test(title)) return "pack";
+  return "unknown";
+}
+
+/** Drop wrong-episode releases and stable-sort exact episode matches above
+ * packs/untagged rows. No-op when no episode is requested (movies). */
+export function filterAndRankForEpisode(
+  rows: StreamRow[],
+  season: number | null,
+  episode: number | null,
+): StreamRow[] {
+  if (season == null || episode == null) return rows;
+  return rows
+    .map((row, index) => ({ row, index, match: classifyRowForEpisode(row, season, episode) }))
+    .filter((entry) => entry.match !== "mismatch")
+    .sort((a, b) => {
+      const ka = a.match === "exact" ? 0 : 1;
+      const kb = b.match === "exact" ? 0 : 1;
+      return ka - kb || a.index - b.index;
+    })
+    .map((entry) => entry.row);
+}
+
 async function resolveStreams(
   imdbId: string,
   type: MediaType,
+  season: number | null,
+  episode: number | null,
   indexers: IndexerManager,
   debrid: DebridManager | null,
 ): Promise<StreamRow[]> {
-  const results = await indexers.searchAll(imdbId, type);
+  const results = await indexers.searchAll(imdbId, type, season, episode);
   if (results.length === 0) return [];
 
   // Check cache across all configured debrid services for every infoHash.
@@ -159,19 +221,27 @@ async function resolveStreams(
     }
   }
 
-  return dedupeStreamRows(
-    results.map((result) => ({
-      result,
-      cachedOn: cacheByHash[result.infoHash] ?? null,
-    })),
+  return filterAndRankForEpisode(
+    dedupeStreamRows(
+      results.map((result) => ({
+        result,
+        cachedOn: cacheByHash[result.infoHash] ?? null,
+      })),
+    ),
+    season,
+    episode,
   );
 }
 
 /** Resolve stream rows for a title. Returns an empty/idle state until both an
- * imdb id and at least one indexer are available. */
+ * imdb id and at least one indexer are available. For series, pass the selected
+ * season/episode so the search and ranking are episode-specific; movies pass
+ * null/null. */
 export function useStreams(
   imdbId: string | null,
   type: MediaType,
+  season: number | null,
+  episode: number | null,
   indexers: IndexerManager,
   debrid: DebridManager | null,
 ): StreamsState {
@@ -196,10 +266,14 @@ export function useStreams(
       setState((s) => ({ ...s, loading: true, error: null, hasIndexers, hasDebrid }));
       try {
         if (serverMode) {
-          const remote = await fetchServerStreams({ imdbId, type });
+          const remote = await fetchServerStreams({ imdbId, type, season, episode });
           if (!signal.cancelled) {
             setState({
-              rows: dedupeStreamRows(remote.rows),
+              rows: filterAndRankForEpisode(
+                dedupeStreamRows(remote.rows),
+                season,
+                episode,
+              ),
               loading: false,
               error: null,
               hasIndexers: remote.hasIndexers,
@@ -208,7 +282,7 @@ export function useStreams(
           }
           return;
         }
-        const rows = await resolveStreams(imdbId, type, indexers, debrid);
+        const rows = await resolveStreams(imdbId, type, season, episode, indexers, debrid);
         if (!signal.cancelled) {
           setState({ rows, loading: false, error: null, hasIndexers, hasDebrid });
         }
@@ -219,7 +293,7 @@ export function useStreams(
         }
       }
     },
-    [imdbId, type, indexers, debrid, hasIndexers, hasDebrid, serverMode],
+    [imdbId, type, season, episode, indexers, debrid, hasIndexers, hasDebrid, serverMode],
   );
 
   useEffect(() => {

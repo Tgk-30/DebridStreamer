@@ -106,11 +106,13 @@ export interface AppStore {
    * continue-watching / settings). Called after a Server-Mode "who's watching"
    * profile switch so the UI reflects the newly-active profile's data. */
   reloadProfileData: () => Promise<void>;
-  /** Record a real resume position (called from the player). */
+  /** Record a real resume position (called from the player). For series pass
+   *  the playing episode's id (`s2e5`); movies omit it / pass null. */
   recordResume: (
     item: MediaPreview,
     progressSeconds: number,
     durationSeconds: number | null,
+    episodeId?: string | null,
   ) => void;
 }
 
@@ -381,6 +383,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       item: MediaPreview,
       progressSeconds: number,
       durationSeconds: number | null,
+      episodeId?: string | null,
     ) => {
       const completed =
         durationSeconds != null &&
@@ -390,6 +393,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         progressSeconds,
         durationSeconds,
         completed,
+        episodeId: episodeId ?? null,
       }).then(() => void refreshHistory());
     },
     [refreshHistory],

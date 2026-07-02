@@ -69,7 +69,13 @@ vi.mock("../lib/serverApi", () => ({
   fetchServerStreams: vi.fn(),
 }));
 
-import { useStreams, type StreamsState } from "./streams";
+import {
+  classifyRowForEpisode,
+  filterAndRankForEpisode,
+  useStreams,
+  type StreamRow,
+  type StreamsState,
+} from "./streams";
 import { configuredServerURL } from "../lib/serverMode";
 import { fetchServerStreams } from "../lib/serverApi";
 
@@ -103,7 +109,12 @@ function torrent(overrides: Partial<TorrentResult>): TorrentResult {
 /** Minimal IndexerManager stand-in: only activeIndexers + searchAll are read. */
 function fakeIndexers(opts: {
   active?: string[];
-  searchAll?: (imdbId: string, type: MediaType) => Promise<TorrentResult[]>;
+  searchAll?: (
+    imdbId: string,
+    type: MediaType,
+    season?: number | null,
+    episode?: number | null,
+  ) => Promise<TorrentResult[]>;
 }): IndexerManager {
   return {
     get activeIndexers() {
@@ -135,10 +146,12 @@ async function renderStreams(
   type: MediaType,
   indexers: IndexerManager,
   debrid: DebridManager | null,
+  season: number | null = null,
+  episode: number | null = null,
 ): Promise<{ state: StreamsState; cleanup: () => void }> {
   // First synchronous render: the hook returns the initial state and registers
   // its effect.
-  const initial = useStreams(imdbId, type, indexers, debrid);
+  const initial = useStreams(imdbId, type, season, episode, indexers, debrid);
   // Run the registered effect (kicks off the async run + returns teardown).
   const teardown = cell.effect ? cell.effect() : undefined;
   // Flush the microtask queue so the async `run` settles into setState.
@@ -317,7 +330,7 @@ describe("useStreams — cancellation", () => {
         }),
     });
     // Render and immediately tear down BEFORE the search resolves.
-    const initial = useStreams("tt1", "movie", indexers, null);
+    const initial = useStreams("tt1", "movie", null, null, indexers, null);
     expect(initial.loading).toBe(true); // imdb + indexers ⇒ starts loading
     const teardown = cell.effect ? cell.effect() : undefined;
     if (typeof teardown === "function") teardown(); // mark cancelled
@@ -347,7 +360,12 @@ describe("useStreams — Server mode", () => {
     const indexers = fakeIndexers({ active: [] });
     const { state } = await renderStreams("tt5", "movie", indexers, null);
 
-    expect(mockFetchServerStreams).toHaveBeenCalledWith({ imdbId: "tt5", type: "movie" });
+    expect(mockFetchServerStreams).toHaveBeenCalledWith({
+      imdbId: "tt5",
+      type: "movie",
+      season: null,
+      episode: null,
+    });
     expect(state.rows.map((r) => r.result.infoHash)).toEqual(["s1"]);
     expect(state.rows[0].cachedOn).toBe(DebridServiceType.torBox);
     // server response drives the final hasIndexers/hasDebrid flags.
@@ -372,5 +390,62 @@ describe("useStreams — Server mode", () => {
     await renderStreams("tt5", "movie", indexers, null);
     expect(search).not.toHaveBeenCalled();
     expect(mockFetchServerStreams).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Episode classification + ranking (pure)
+// ---------------------------------------------------------------------------
+
+function rowTitled(title: string): StreamRow {
+  return { result: torrent({ infoHash: title, title }), cachedOn: null };
+}
+
+describe("classifyRowForEpisode", () => {
+  it("recognizes exact episode tags in common formats", () => {
+    for (const t of [
+      "Show.S02E05.1080p.WEB",
+      "Show s02.e05 x265",
+      "Show S2 E5 WEBRip",
+      "Show.2x05.HDTV",
+    ]) {
+      expect(classifyRowForEpisode(rowTitled(t), 2, 5)).toBe("exact");
+    }
+  });
+
+  it("drops wrong-episode and wrong-season releases as mismatches", () => {
+    expect(classifyRowForEpisode(rowTitled("Show.S02E06.1080p"), 2, 5)).toBe("mismatch");
+    expect(classifyRowForEpisode(rowTitled("Show.S03E05.1080p"), 2, 5)).toBe("mismatch");
+    expect(classifyRowForEpisode(rowTitled("Show.S03.Complete"), 2, 5)).toBe("mismatch");
+    expect(classifyRowForEpisode(rowTitled("Show 3x05"), 2, 5)).toBe("mismatch");
+  });
+
+  it("keeps right-season packs and untagged releases", () => {
+    expect(classifyRowForEpisode(rowTitled("Show.S02.COMPLETE.1080p"), 2, 5)).toBe("pack");
+    expect(classifyRowForEpisode(rowTitled("Show Season 2 1080p"), 2, 5)).toBe("pack");
+    expect(classifyRowForEpisode(rowTitled("Show.Complete.Series"), 2, 5)).toBe("pack");
+    expect(classifyRowForEpisode(rowTitled("Show 1080p WEB"), 2, 5)).toBe("unknown");
+  });
+});
+
+describe("filterAndRankForEpisode", () => {
+  it("is a no-op for movies (no episode requested)", () => {
+    const rows = [rowTitled("A.S09E09"), rowTitled("B")];
+    expect(filterAndRankForEpisode(rows, null, null)).toEqual(rows);
+  });
+
+  it("drops mismatches and stable-sorts exact matches first", () => {
+    const pack = rowTitled("Show.S02.COMPLETE");
+    const wrong = rowTitled("Show.S02E06.WEB");
+    const exactA = rowTitled("Show.S02E05.1080p");
+    const untagged = rowTitled("Show WEB-DL");
+    const exactB = rowTitled("Show.2x05.HDTV");
+    const out = filterAndRankForEpisode([pack, wrong, exactA, untagged, exactB], 2, 5);
+    expect(out.map((r) => r.result.title)).toEqual([
+      "Show.S02E05.1080p", // exacts first, original relative order kept
+      "Show.2x05.HDTV",
+      "Show.S02.COMPLETE", // then pack + untagged, original order
+      "Show WEB-DL",
+    ]);
   });
 });

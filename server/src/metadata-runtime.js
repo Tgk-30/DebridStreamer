@@ -431,3 +431,18 @@ export async function getServerDetail(db, config, profileId, input) {
     imdbId: detail.id.startsWith("tt") ? detail.id : null,
   };
 }
+
+/** A series' seasons for the episode picker (thin proxy over the server-side
+ *  TMDB key, mirroring getServerDetail). */
+export async function getServerSeasons(db, config, profileId, input) {
+  const service = tmdbService(db, config, profileId);
+  const seasons = await service.getSeasons(input.tmdbId);
+  return { seasons };
+}
+
+/** One season's episode list for the episode picker. */
+export async function getServerEpisodes(db, config, profileId, input) {
+  const service = tmdbService(db, config, profileId);
+  const episodes = await service.getEpisodes(input.tmdbId, input.season);
+  return { episodes };
+}

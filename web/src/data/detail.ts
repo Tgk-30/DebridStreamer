@@ -95,7 +95,14 @@ export function useDetail(
     let cancelled = false;
 
     setState({
-      data: { item: previewToItem(currentPreview), cast: [], related: [], imdbId: null },
+      data: {
+        item: previewToItem(currentPreview),
+        cast: [],
+        related: [],
+        // IMDb-rooted previews (tt…) can start the stream search immediately,
+        // in parallel with the metadata load.
+        imdbId: currentPreview.id.startsWith("tt") ? currentPreview.id : null,
+      },
       loading: true,
       error: null,
       source: "fixtures",
@@ -120,7 +127,9 @@ export function useDetail(
                 item: previewToItem(currentPreview),
                 cast: [],
                 related: [],
-                imdbId: null,
+                // Catalog previews are often IMDb-rooted (tt…) — pass the id
+                // through so series/stream search works without TMDB.
+                imdbId: currentPreview.id.startsWith("tt") ? currentPreview.id : null,
               },
               loading: false,
               error: message,
@@ -138,7 +147,7 @@ export function useDetail(
               item: previewToItem(currentPreview),
               cast: [],
               related: [],
-              imdbId: null,
+              imdbId: currentPreview.id.startsWith("tt") ? currentPreview.id : null,
             },
             loading: false,
             error: null,
@@ -161,7 +170,7 @@ export function useDetail(
               item: previewToItem(currentPreview),
               cast: [],
               related: [],
-              imdbId: null,
+              imdbId: currentPreview.id.startsWith("tt") ? currentPreview.id : null,
             },
             loading: false,
             error: message,
