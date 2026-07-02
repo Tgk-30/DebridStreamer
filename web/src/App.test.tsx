@@ -351,7 +351,7 @@ describe("Setup nudge", () => {
       services: { debrid: null, indexers: { activeIndexers: [{}] } },
     });
     render(<App />);
-    expect(screen.getByText("Finish setup to start streaming")).toBeInTheDocument();
+    expect(screen.getByText("Let's get you streaming")).toBeInTheDocument();
   });
 
   it("shows the nudge when there is no active source", () => {
@@ -359,13 +359,13 @@ describe("Setup nudge", () => {
       services: { debrid: { hasServices: true }, indexers: { activeIndexers: [] } },
     });
     render(<App />);
-    expect(screen.getByText("Finish setup to start streaming")).toBeInTheDocument();
+    expect(screen.getByText("Let's get you streaming")).toBeInTheDocument();
   });
 
   it("hides the nudge once a debrid + source are configured", () => {
     store = makeStore(); // configured by default
     render(<App />);
-    expect(screen.queryByText("Finish setup to start streaming")).toBeNull();
+    expect(screen.queryByText("Let's get you streaming")).toBeNull();
   });
 
   it("hides the nudge on the Settings screen", () => {
@@ -374,7 +374,7 @@ describe("Setup nudge", () => {
       services: { debrid: null, indexers: { activeIndexers: [] } },
     });
     render(<App />);
-    expect(screen.queryByText("Finish setup to start streaming")).toBeNull();
+    expect(screen.queryByText("Let's get you streaming")).toBeNull();
   });
 });
 

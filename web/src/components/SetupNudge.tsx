@@ -1,16 +1,21 @@
-// SetupNudge — a small, dismissible bottom bar shown (Local Mode only) while the
-// app isn't ready to stream yet: no debrid service, or no active source. It's the
-// gentle "what's next" after onboarding — one tap to Settings — and it vanishes
-// on its own once setup is complete. Dismissal is remembered so it never nags.
+// SetupNudge — the "get started" card shown (Local Mode only) while the app
+// isn't ready to stream yet: no debrid service, or no active source. The
+// primary action re-runs the guided first-run wizard — the clear onboarding
+// path even when the original first-run flags were consumed long ago (webview
+// storage survives app updates) — and the secondary opens the welcome tour.
+// The card vanishes on its own once setup is complete; dismissal is remembered
+// so it never nags.
 
 import { Icon } from "./Icon";
 import "./SetupNudge.css";
 
 export function SetupNudge({
-  onOpenSettings,
+  onStartWizard,
+  onShowTour,
   onDismiss,
 }: {
-  onOpenSettings: () => void;
+  onStartWizard: () => void;
+  onShowTour: () => void;
   onDismiss: () => void;
 }) {
   return (
@@ -19,18 +24,24 @@ export function SetupNudge({
         <Icon name="play" size={16} />
       </span>
       <div className="setup-nudge-text">
-        <strong>Finish setup to start streaming</strong>
+        <strong>Let&apos;s get you streaming</strong>
         <span className="t-secondary">
-          Add a debrid service and a source — then search and play.
+          A two-minute guided setup: pick how you&apos;ll use the app, then add
+          the two things streaming needs — a debrid service and a source.
         </span>
       </div>
-      <button
-        type="button"
-        className="btn btn-prominent setup-nudge-cta"
-        onClick={onOpenSettings}
-      >
-        Open Settings
-      </button>
+      <div className="setup-nudge-actions">
+        <button
+          type="button"
+          className="btn btn-prominent setup-nudge-cta"
+          onClick={onStartWizard}
+        >
+          Start guided setup
+        </button>
+        <button type="button" className="btn" onClick={onShowTour}>
+          Show me around
+        </button>
+      </div>
       <button
         type="button"
         className="setup-nudge-dismiss"

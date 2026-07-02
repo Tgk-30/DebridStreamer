@@ -176,6 +176,18 @@ export function App() {
     }
   };
 
+  // On-demand guided setup: the SAME persona wizard a genuine first run shows,
+  // re-runnable at any time. This is the clear onboarding path for installs
+  // whose one-shot first-run flags were consumed long ago (webview storage
+  // survives updates) but that were never actually configured. Opened from the
+  // setup card below or via ⌘K ("Run guided setup") through `ds:open-first-run`.
+  const [firstRunOpen, setFirstRunOpen] = useState(false);
+  useEffect(() => {
+    const openWizard = () => setFirstRunOpen(true);
+    window.addEventListener("ds:open-first-run", openWizard);
+    return () => window.removeEventListener("ds:open-first-run", openWizard);
+  }, []);
+
   // App-wide keyboard-shortcuts reference, opened from ⌘K (no persistence — it's
   // a reference, not a one-time greeting).
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -223,6 +235,7 @@ export function App() {
     detailItem == null &&
     !welcomeGuideOpen &&
     !tierWelcomeOpen &&
+    !firstRunOpen &&
     !shortcutsOpen;
 
   // Smart preloading (invisible): while idle, warm the lazy Detail + Browse code
@@ -329,9 +342,14 @@ export function App() {
         <TierOnboarding onDone={() => setTierWelcomeOpen(false)} />
       )}
 
+      {/* Re-run of the first-run persona wizard (full-screen; closes on done or
+          skip — the wizard persists its own onboarding_completed flag). */}
+      {firstRunOpen && <FirstRunWizard onDone={() => setFirstRunOpen(false)} />}
+
       {showSetupNudge && (
         <SetupNudge
-          onOpenSettings={() => navigate("settings")}
+          onStartWizard={() => setFirstRunOpen(true)}
+          onShowTour={() => setWelcomeGuideOpen(true)}
           onDismiss={dismissNudge}
         />
       )}

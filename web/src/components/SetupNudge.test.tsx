@@ -11,21 +11,44 @@ import { SetupNudge } from "./SetupNudge";
 
 afterEach(cleanup);
 
+function renderNudge(
+  overrides: Partial<Parameters<typeof SetupNudge>[0]> = {},
+) {
+  const props = {
+    onStartWizard: vi.fn(),
+    onShowTour: vi.fn(),
+    onDismiss: vi.fn(),
+    ...overrides,
+  };
+  render(<SetupNudge {...props} />);
+  return props;
+}
+
 describe("SetupNudge", () => {
-  it("shows the finish-setup prompt", () => {
-    render(<SetupNudge onOpenSettings={() => {}} onDismiss={() => {}} />);
-    expect(screen.getByText("Finish setup to start streaming")).toBeInTheDocument();
+  it("shows the get-started prompt", () => {
+    renderNudge();
+    expect(screen.getByText("Let's get you streaming")).toBeInTheDocument();
   });
 
-  it("routes to Settings and can be dismissed", async () => {
+  it("starts the guided setup wizard", async () => {
     const user = userEvent.setup();
-    const onOpenSettings = vi.fn();
-    const onDismiss = vi.fn();
-    render(
-      <SetupNudge onOpenSettings={onOpenSettings} onDismiss={onDismiss} />,
+    const { onStartWizard } = renderNudge();
+    await user.click(
+      screen.getByRole("button", { name: "Start guided setup" }),
     );
-    await user.click(screen.getByRole("button", { name: "Open Settings" }));
-    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    expect(onStartWizard).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the welcome tour", async () => {
+    const user = userEvent.setup();
+    const { onShowTour } = renderNudge();
+    await user.click(screen.getByRole("button", { name: "Show me around" }));
+    expect(onShowTour).toHaveBeenCalledTimes(1);
+  });
+
+  it("can be dismissed", async () => {
+    const user = userEvent.setup();
+    const { onDismiss } = renderNudge();
     await user.click(
       screen.getByRole("button", { name: "Dismiss setup reminder" }),
     );

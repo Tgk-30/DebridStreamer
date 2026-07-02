@@ -87,6 +87,16 @@ export function CommandPalette() {
       });
     }
     list.push({
+      id: "setup-wizard",
+      label: "Run guided setup",
+      icon: "sliders",
+      keywords: "setup wizard configure onboarding get started first run debrid source",
+      run: () => {
+        window.dispatchEvent(new CustomEvent("ds:open-first-run"));
+        close();
+      },
+    });
+    list.push({
       id: "welcome-tour",
       label: "Show welcome tour",
       icon: "sparkles",

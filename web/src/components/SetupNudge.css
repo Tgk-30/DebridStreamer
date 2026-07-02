@@ -8,10 +8,17 @@
   z-index: 40;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--sp-md);
-  width: min(560px, calc(100% - var(--sp-xl)));
-  padding: var(--sp-sm) var(--sp-md);
-  border-radius: var(--r-pill, 999px);
+  width: min(680px, calc(100% - var(--sp-xl)));
+  padding: var(--sp-md) var(--sp-lg);
+  border-radius: var(--r-lg, 18px);
+}
+.setup-nudge-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  flex: 0 0 auto;
 }
 .setup-nudge-icon {
   display: grid;
@@ -57,8 +64,12 @@
   color: var(--text-primary);
 }
 
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   .setup-nudge-text span {
     display: none;
+  }
+  .setup-nudge-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
   }
 }
