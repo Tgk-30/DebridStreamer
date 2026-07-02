@@ -312,6 +312,11 @@ export function Detail() {
           requestState={requestState}
           tasteSignal={tasteSignal}
           onTasteSignal={recordTasteSignal}
+          playDisabledReason={
+            !streams.hasDebrid
+              ? "Add a debrid service in Settings to play"
+              : null
+          }
           onPlay={() => {
             // Instant play: if the auto-resolve job pre-cached a ready stream
             // for this title, play it immediately instead of re-walking the

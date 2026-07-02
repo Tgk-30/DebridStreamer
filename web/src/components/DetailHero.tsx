@@ -31,6 +31,9 @@ interface DetailHeroProps {
   tasteSignal?: TasteSignal;
   /** Record (or toggle off) a like/dislike taste signal for this title. */
   onTasteSignal?: (signal: "liked" | "disliked") => void;
+  /** When set, Play is disabled and this explains why (e.g. no debrid service
+   *  configured yet) — an honest gate instead of a click that goes nowhere. */
+  playDisabledReason?: string | null;
 }
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -45,6 +48,7 @@ export function DetailHero({
   requestState = "idle",
   tasteSignal = null,
   onTasteSignal,
+  playDisabledReason = null,
 }: DetailHeroProps) {
   const backdrop = MediaItemNS.backdropURL(item);
   const [backdropFailed, setBackdropFailed] = useState(false);
@@ -139,7 +143,13 @@ export function DetailHero({
           {item.overview && <p className="detail-hero-overview">{item.overview}</p>}
 
           <div className="detail-hero-actions">
-            <button type="button" className="btn btn-prominent detail-play" onClick={onPlay}>
+            <button
+              type="button"
+              className="btn btn-prominent detail-play"
+              onClick={onPlay}
+              disabled={playDisabledReason != null}
+              title={playDisabledReason ?? "Play"}
+            >
               <Icon name="play" size={16} />
               Play
             </button>

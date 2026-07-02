@@ -288,28 +288,46 @@ function StreamBody({
     const chipsEmpty = chipFiltersActive && filteredCount > 0;
     const cachedOnlyEmpty = !chipsEmpty && cachedOnly && filteredCount > 0;
     const filtersEmpty = !chipsEmpty && state.rows.length > 0 && filteredCount === 0;
+    // With no debrid service there IS no playback path — saying "sources did
+    // not return a match" would be false (nothing was searched for playback).
+    // Tell the truth and route to the guided setup.
+    const noDebrid = !state.hasDebrid;
 
     return (
       <div className="streams-empty glass-rest">
         <p className="streams-empty-title">
-          {chipsEmpty
-            ? "No streams match those filters"
-            : cachedOnlyEmpty
-              ? "No instant streams shown"
-              : filtersEmpty
-                ? "Playback filters hid every stream"
-                : "No streams found"}
+          {noDebrid
+            ? "Almost there — add a debrid service"
+            : chipsEmpty
+              ? "No streams match those filters"
+              : cachedOnlyEmpty
+                ? "No instant streams shown"
+                : filtersEmpty
+                  ? "Playback filters hid every stream"
+                  : "No streams found"}
         </p>
         <p className="t-secondary streams-empty-sub">
-          {chipsEmpty
-            ? "No release matches that resolution + codec combination. Clear a filter to see more."
-            : cachedOnlyEmpty
-              ? "Switch off Cached only to show sources that can be cached first."
-              : filtersEmpty
-                ? "Your quality or file-size limits removed the available results for this title."
-                : "The configured sources did not return a match for this title yet. Add another indexer or try a different release."}
+          {noDebrid
+            ? "A debrid service turns a matched release into an instant stream. Nothing was searched for playback yet. Run the two-minute guided setup, or add one in Settings."
+            : chipsEmpty
+              ? "No release matches that resolution + codec combination. Clear a filter to see more."
+              : cachedOnlyEmpty
+                ? "Switch off Cached only to show sources that can be cached first."
+                : filtersEmpty
+                  ? "Your quality or file-size limits removed the available results for this title."
+                  : "The configured sources did not return a match for this title yet. Add another indexer or try a different release."}
         </p>
         <div className="streams-empty-actions">
+          {noDebrid && (
+            <button
+              type="button"
+              className="btn btn-prominent"
+              onClick={() => window.dispatchEvent(new Event("ds:open-first-run"))}
+            >
+              <Icon name="play" size={15} />
+              Run guided setup
+            </button>
+          )}
           {chipsEmpty && (
             <button type="button" className="btn" onClick={onClearChips}>
               Clear filters
@@ -323,7 +341,7 @@ function StreamBody({
           {onOpenSettings && (
             <button
               type="button"
-              className={cachedOnlyEmpty ? "btn" : "btn btn-prominent"}
+              className={cachedOnlyEmpty || noDebrid ? "btn" : "btn btn-prominent"}
               onClick={onOpenSettings}
             >
               <Icon name="settings" size={15} />

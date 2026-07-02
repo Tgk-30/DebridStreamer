@@ -107,6 +107,9 @@ describe("NavRail render", () => {
     expect(screen.queryByRole("button", { name: "Debrid" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Calendar" })).toBeNull();
     expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+    // With every tool gated off, the empty "Tools" group label disappears too
+    // (an orphaned section header reads as a broken menu).
+    expect(screen.queryByText("Tools")).toBeNull();
   });
 
   it("toggles the mobile More drawer open and closed", async () => {

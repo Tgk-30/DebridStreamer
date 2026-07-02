@@ -120,12 +120,27 @@ describe("Settings shell", () => {
     );
   });
 
-  it("shows the full advanced tab set and defaults to Appearance", () => {
+  it("shows the full advanced tab set and defaults to Appearance when configured", () => {
+    // A configured profile (has a debrid token) keeps the familiar default tab.
+    mockSettings = {
+      ...defaultSettings(),
+      debridTokens: [{ service: "real_debrid", apiToken: "tok" }],
+    };
     renderAt();
     // Appearance is the default tab — its quick-profile card renders.
     expect(screen.getByText("Quick profile")).toBeInTheDocument();
     // Sources tab chip is present in advanced mode.
     expect(document.querySelector('button[data-tab="sources"]')).not.toBeNull();
+  });
+
+  it("defaults to Install & setup when nothing is configured", () => {
+    // Unconfigured (no debrid tokens) → land on the critical path, not the
+    // Appearance dial-park.
+    renderAt();
+    expect(screen.queryByText("Quick profile")).toBeNull();
+    expect(
+      document.querySelector('button[data-tab="install"]')?.className ?? "",
+    ).toContain("is-active");
   });
 
   it("collapses to the simple tab set in Simple mode (no Sources/Updates)", () => {
@@ -139,6 +154,12 @@ describe("Settings shell", () => {
   });
 
   it("Save is disabled when there are no unsaved changes", () => {
+    // Configured → lands on Appearance, where the save footer renders (the
+    // Install & setup tab intentionally has no footer).
+    mockSettings = {
+      ...defaultSettings(),
+      debridTokens: [{ service: "real_debrid", apiToken: "tok" }],
+    };
     renderAt();
     const save = screen.getByRole("button", { name: "Up to date" });
     expect(save).toBeDisabled();

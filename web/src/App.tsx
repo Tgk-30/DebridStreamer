@@ -275,7 +275,9 @@ export function App() {
     browseContext == null;
 
   return (
-    <div className="app">
+    // data-setup-nudge reserves scroll room under the fixed get-started card
+    // (App.css) so the last content row is never stranded behind it.
+    <div className="app" data-setup-nudge={showSetupNudge || undefined}>
       <div className="aurora-glow" />
 
       <NavRail

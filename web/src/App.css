@@ -19,6 +19,14 @@
   overflow-y: auto;
 }
 
+/* Room for the fixed SetupNudge card so the last row stays reachable while it
+   shows (App.tsx sets data-setup-nudge only while the card is mounted — zero
+   cost once dismissed or configured). */
+.app[data-setup-nudge] .app-content {
+  padding-bottom: calc(96px + var(--sp-lg));
+  scroll-padding-bottom: calc(96px + var(--sp-lg));
+}
+
 /* Route transition — a brief lift + fade on each screen mount. The keyed
    .route-frame in App.tsx remounts per navigation, restarting this animation.
    Fill-mode `backwards` (not `both`) is deliberate: the frame's RESTING state is
@@ -57,6 +65,12 @@
     overflow-y: auto;
     padding-bottom: var(--mobile-nav-reserve);
     scroll-padding-bottom: var(--mobile-nav-reserve);
+  }
+
+  /* On mobile the nudge wraps its action row, so reserve more. */
+  .app[data-setup-nudge] .app-content {
+    padding-bottom: calc(var(--mobile-nav-reserve) + 128px);
+    scroll-padding-bottom: calc(var(--mobile-nav-reserve) + 128px);
   }
 }
 

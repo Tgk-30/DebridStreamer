@@ -614,7 +614,14 @@ export function Settings() {
   const { settings, updateSettings, simpleMode } = useAppStore();
   const serverSession = useServerSession();
   const setServerSession = useSetServerSession();
-  const [tab, setTab] = useState<Tab>("appearance");
+  // Land where the user's next step is: an unconfigured profile (no debrid
+  // token yet) opens on Install & setup — the critical path — instead of the
+  // Appearance dial-park. Configured profiles keep the familiar default.
+  const [tab, setTab] = useState<Tab>(() =>
+    settings.debridTokens.some((t) => t.apiToken.trim().length > 0)
+      ? "appearance"
+      : "install",
+  );
   // Edit a local draft; "Save" commits it through the store.
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saved, setSaved] = useState(false);
@@ -717,6 +724,7 @@ export function Settings() {
               type="button"
               className="settings-insight"
               onClick={() => setTab("appearance")}
+              title="Open Appearance settings"
             >
               <span>Appearance</span>
               <strong>{selectedProfile?.label ?? "Custom current"}</strong>
@@ -725,6 +733,7 @@ export function Settings() {
               type="button"
               className="settings-insight"
               onClick={() => setTab("keys")}
+              title="Open API keys settings"
             >
               <span>Catalog</span>
               <strong>{metadataState}</strong>
@@ -733,6 +742,7 @@ export function Settings() {
               type="button"
               className="settings-insight"
               onClick={() => setTab("debrid")}
+              title="Open Providers settings"
             >
               <span>Providers</span>
               <strong>
@@ -745,6 +755,7 @@ export function Settings() {
               type="button"
               className="settings-insight"
               onClick={() => setTab("sources")}
+              title="Open Sources settings"
             >
               <span>Sources</span>
               <strong>

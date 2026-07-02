@@ -156,7 +156,14 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
         />
       )}
 
-      {GROUPS.map((group) => (
+      {/* Skip groups with nothing to show (e.g. Tools when every tool is
+          gated off) — an orphaned section label reads as a broken menu. The
+          Account group also hosts the profile switcher, which isn't a navItem. */}
+      {GROUPS.filter(
+        (group) =>
+          navItems.some((item) => item.group === group) ||
+          (group === "Account" && showProfileSwitch),
+      ).map((group) => (
         <div key={group} className="nav-rail-section" data-group={group}>
           <div className="nav-rail-group-label">{group}</div>
           {group === "Account" && showProfileSwitch && (

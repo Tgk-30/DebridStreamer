@@ -164,6 +164,30 @@ describe("StreamPicker", () => {
     expect(screen.getByText("No streams found")).toBeInTheDocument();
   });
 
+  it("tells the truth with no debrid service and routes to the guided setup", () => {
+    const onEvent = vi.fn();
+    window.addEventListener("ds:open-first-run", onEvent);
+    try {
+      render(
+        <StreamPicker
+          state={baseState({ rows: [], hasDebrid: false })}
+          resolveStream={neverResolve}
+          onPlay={noop}
+        />,
+      );
+      // NOT the misleading "sources did not return a match" copy — nothing was
+      // searched for playback without a debrid service.
+      expect(
+        screen.getByText("Almost there — add a debrid service"),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("No streams found")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Run guided setup" }));
+      expect(onEvent).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener("ds:open-first-run", onEvent);
+    }
+  });
+
   it("lists rows with quality, metadata and the correct cached / will-cache badge", () => {
     const rows = [
       makeRow({
