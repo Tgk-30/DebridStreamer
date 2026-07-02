@@ -80,6 +80,15 @@ export const SIGNUP_LINKS: readonly SignupLink[] = [
   },
 ];
 
+/** DebridServiceType value → SIGNUP_LINKS id. (Settings.tsx and
+ *  ServerSetupWizard.tsx carry local copies today — dedupe onto this later.) */
+export const DEBRID_SIGNUP_ID: Record<string, string> = {
+  real_debrid: "realDebrid",
+  all_debrid: "allDebrid",
+  premiumize: "premiumize",
+  torbox: "torbox",
+};
+
 /** Look up a signup URL by id (e.g. "tmdb", "realDebrid"); null if unknown. */
 export function signupUrl(id: string): string | null {
   return SIGNUP_LINKS.find((l) => l.id === id)?.url ?? null;

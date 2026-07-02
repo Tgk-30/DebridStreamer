@@ -1176,7 +1176,7 @@ function getOrBuildIndexerManager(settings: AppSettings): IndexerManager {
 const realSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-function buildDebridService(entry: DebridTokenEntry): DebridService | null {
+export function buildDebridService(entry: DebridTokenEntry): DebridService | null {
   const token = entry.apiToken.trim();
   if (token.length === 0) return null;
   // Route through `appFetch` so debrid hosts (CORS-blocked in a plain browser)

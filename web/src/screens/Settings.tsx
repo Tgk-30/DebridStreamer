@@ -56,6 +56,11 @@ import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import { AdvancedOnly } from "../components/AdvancedOnly";
 import { CONCEPTS, signupUrl } from "../data/onboardingHelp";
+import {
+  type BeforeInstallPromptEvent,
+  deviceKind,
+  isStandaloneDisplay,
+} from "../lib/platform";
 import { ACCENTS, THEMES } from "../theme/themes";
 import {
   configuredServerURL,
@@ -492,40 +497,12 @@ interface EffectiveCredential {
   updatedAt?: string;
 }
 
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-}
-
 interface HealthResponse {
   ok: boolean;
   setupRequired?: boolean;
 }
 
-type DeviceKind = "ios" | "android" | "mac" | "windows" | "linux" | "desktop" | "unknown";
 type InstallPath = "device" | "connect" | "downloads" | "deploy";
-
-function deviceKind(): DeviceKind {
-  const ua = navigator.userAgent.toLowerCase();
-  const platform = navigator.platform.toLowerCase();
-  const touchPoints = navigator.maxTouchPoints ?? 0;
-  if (/iphone|ipad|ipod/.test(ua)) return "ios";
-  if (platform.includes("mac") && touchPoints > 1) return "ios";
-  if (ua.includes("android")) return "android";
-  if (platform.includes("mac") || ua.includes("mac os")) return "mac";
-  if (platform.includes("win") || ua.includes("windows")) return "windows";
-  if (platform.includes("linux") || ua.includes("x11")) return "linux";
-  if (/desktop|cros/.test(ua)) return "desktop";
-  return "unknown";
-}
-
-function isStandaloneDisplay(): boolean {
-  const nav = navigator as Navigator & { standalone?: boolean };
-  return (
-    nav.standalone === true ||
-    window.matchMedia?.("(display-mode: standalone)").matches === true
-  );
-}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";

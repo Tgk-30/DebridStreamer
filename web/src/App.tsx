@@ -19,6 +19,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { WelcomeGuide } from "./components/WelcomeGuide";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { SetupNudge } from "./components/SetupNudge";
+import { InstallPrompt, isInstallPromptEligible } from "./components/InstallPrompt";
 import { isSmartPreloadEnabled, whenIdle } from "./lib/smartPreload";
 import { useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
@@ -238,6 +239,36 @@ export function App() {
     !firstRunOpen &&
     !shortcutsOpen;
 
+  // Mobile-browser "add to home screen" card. Eligibility is static for the
+  // session (platform + display-mode don't change mid-run); dismissal persists.
+  const [installEligible] = useState(() => isInstallPromptEligible());
+  const [installDismissed, setInstallDismissed] = useState(() => {
+    try {
+      return globalThis.localStorage?.getItem("ds_pwa_install_dismissed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismissInstall = () => {
+    setInstallDismissed(true);
+    try {
+      globalThis.localStorage?.setItem("ds_pwa_install_dismissed", "1");
+    } catch {
+      // ignore (private mode)
+    }
+  };
+  // The setup nudge outranks it — one bottom card at a time.
+  const showInstallPrompt =
+    installEligible &&
+    !installDismissed &&
+    !showSetupNudge &&
+    route !== "settings" &&
+    detailItem == null &&
+    !welcomeGuideOpen &&
+    !tierWelcomeOpen &&
+    !firstRunOpen &&
+    !shortcutsOpen;
+
   // Smart preloading (invisible): while idle, warm the lazy Detail + Browse code
   // chunks so opening a title or "See all" is instant instead of waiting on a
   // chunk fetch. Off → metered users skip the background bytes.
@@ -277,7 +308,7 @@ export function App() {
   return (
     // data-setup-nudge reserves scroll room under the fixed get-started card
     // (App.css) so the last content row is never stranded behind it.
-    <div className="app" data-setup-nudge={showSetupNudge || undefined}>
+    <div className="app" data-setup-nudge={showSetupNudge || showInstallPrompt || undefined}>
       <div className="aurora-glow" />
 
       <NavRail
@@ -355,6 +386,8 @@ export function App() {
           onDismiss={dismissNudge}
         />
       )}
+
+      {showInstallPrompt && <InstallPrompt onDismiss={dismissInstall} />}
 
       {/* Desktop auto-update toast. Runs the launch-time check itself and is a
           no-op in a plain browser (isTauri-gated in updater.ts). */}

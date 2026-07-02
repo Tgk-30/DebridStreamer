@@ -2,9 +2,9 @@
 //
 // Component coverage for the Local-Mode persona first-run wizard. Verifies the
 // choose step renders all four personas, each persona routes correctly (device =
-// finish simple, advanced = finish + navigate to settings, connect/host = sub
-// steps), skip + back navigation, the connect-step fetch/validation/submit flow,
-// and the host-step desktop-vs-web copy.
+// forced catalog→streaming key steps, advanced = finish + navigate to settings,
+// connect/host = sub steps), skip requires a confirm step, the connect-step
+// fetch/validation/submit flow, and the host-step desktop-vs-web copy.
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -14,7 +14,12 @@ import userEvent from "@testing-library/user-event";
 
 const updateSettings = vi.fn();
 const navigate = vi.fn();
-const settings = { simpleMode: false, theme: "dark" };
+const settings = {
+  simpleMode: false,
+  theme: "dark",
+  tmdbKey: "",
+  debridTokens: [] as { service: string; apiToken: string }[],
+};
 
 vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({ settings, updateSettings, navigate }),
@@ -35,12 +40,32 @@ vi.mock("../lib/tauri", () => ({
   isTauri: () => isTauriMock(),
 }));
 
+vi.mock("../lib/onboardingValidation", () => ({
+  testTmdbKey: vi.fn(),
+  testDebridToken: vi.fn(),
+}));
+
+import { testDebridToken, testTmdbKey } from "../lib/onboardingValidation";
 import { FirstRunWizard } from "./FirstRunWizard";
+
+const testTmdbKeyMock = vi.mocked(testTmdbKey);
+const testDebridTokenMock = vi.mocked(testDebridToken);
+
+/** Click through choose → catalog with a validated key, landing on streaming. */
+async function reachStreamingStep(user: ReturnType<typeof userEvent.setup>) {
+  testTmdbKeyMock.mockResolvedValue("ok");
+  await user.click(screen.getByText("Just watch on this device"));
+  await user.type(screen.getByLabelText("TMDB API key"), "tmdb-key-1");
+  await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+  await screen.findByRole("heading", { name: "Connect your debrid service" });
+}
 
 describe("FirstRunWizard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isTauriMock.mockReturnValue(false);
+    settings.tmdbKey = "";
+    settings.debridTokens = [];
   });
 
   it("renders the choose step with all four personas and a skip button", () => {
@@ -55,29 +80,188 @@ describe("FirstRunWizard", () => {
     expect(screen.getByRole("button", { name: "Skip for now" })).toBeInTheDocument();
   });
 
-  it("Skip marks onboarding complete and calls onDone", async () => {
+  it("Skip requires a confirm step; Go back returns, Skip anyway completes", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
     render(<FirstRunWizard onDone={onDone} />);
     await user.click(screen.getByRole("button", { name: "Skip for now" }));
+    // Not skipped yet — an honest warning stands in the way.
+    expect(screen.getByText("Skip setup?")).toBeInTheDocument();
+    expect(screen.getByText(/nothing will play/)).toBeInTheDocument();
+    expect(onDone).not.toHaveBeenCalled();
+    expect(markOnboardingComplete).not.toHaveBeenCalled();
+    // Go back returns to the persona chooser.
+    await user.click(screen.getByRole("button", { name: "Go back" }));
+    expect(
+      screen.getByText("How do you want to use DebridStreamer?"),
+    ).toBeInTheDocument();
+    // Skip anyway completes without touching settings.
+    await user.click(screen.getByRole("button", { name: "Skip for now" }));
+    await user.click(screen.getByRole("button", { name: "Skip anyway" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(markOnboardingComplete).toHaveBeenCalledTimes(1);
-    // Skip does not touch settings.
     expect(updateSettings).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("'device' persona finishes in simple mode and calls onDone", async () => {
+  it("'device' persona opens the catalog key step instead of finishing", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
     render(<FirstRunWizard onDone={onDone} />);
     await user.click(screen.getByText("Just watch on this device"));
+    expect(
+      screen.getByRole("heading", { name: "Power up search & artwork" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("TMDB API key")).toBeInTheDocument();
+    // Nothing is finalized by merely choosing the persona.
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(markOnboardingComplete).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("catalog step rejects an empty key locally without validating", async () => {
+    const user = userEvent.setup();
+    render(<FirstRunWizard onDone={() => {}} />);
+    await user.click(screen.getByText("Just watch on this device"));
+    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    expect(
+      screen.getByText(
+        "Enter your TMDB API key, or continue with the built-in catalog.",
+      ),
+    ).toBeInTheDocument();
+    expect(testTmdbKeyMock).not.toHaveBeenCalled();
+  });
+
+  it("catalog step shows the rejected-key error on unauthorized", async () => {
+    const user = userEvent.setup();
+    testTmdbKeyMock.mockResolvedValue("unauthorized");
+    render(<FirstRunWizard onDone={() => {}} />);
+    await user.click(screen.getByText("Just watch on this device"));
+    await user.type(screen.getByLabelText("TMDB API key"), "bad-key");
+    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    expect(
+      await screen.findByText(
+        "TMDB rejected that key — double-check it (use the v3 API key).",
+      ),
+    ).toBeInTheDocument();
+    // Still on the catalog step, button usable again.
+    expect(
+      screen.getByRole("button", { name: "Test key & continue" }),
+    ).toBeEnabled();
+  });
+
+  it("catalog step advances to streaming when the key validates", async () => {
+    const user = userEvent.setup();
+    render(<FirstRunWizard onDone={() => {}} />);
+    await reachStreamingStep(user);
+    expect(testTmdbKeyMock).toHaveBeenCalledWith("tmdb-key-1");
+  });
+
+  it("catalog escape advances without validating", async () => {
+    const user = userEvent.setup();
+    render(<FirstRunWizard onDone={() => {}} />);
+    await user.click(screen.getByText("Just watch on this device"));
+    await user.click(
+      screen.getByRole("button", { name: /Continue with the built-in catalog/ }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Connect your debrid service" }),
+    ).toBeInTheDocument();
+    expect(testTmdbKeyMock).not.toHaveBeenCalled();
+  });
+
+  it("streaming step saves key + verified token in a single settings update", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    testDebridTokenMock.mockResolvedValue(true);
+    render(<FirstRunWizard onDone={onDone} />);
+    await reachStreamingStep(user);
+    await user.type(screen.getByLabelText("API token"), "rd-token-1");
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(testDebridTokenMock).toHaveBeenCalledWith({
+      service: "real_debrid",
+      apiToken: "rd-token-1",
+    });
+    expect(updateSettings).toHaveBeenCalledTimes(1);
     expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ simpleMode: true }),
+      expect.objectContaining({
+        simpleMode: true,
+        tmdbKey: "tmdb-key-1",
+        debridTokens: [{ service: "real_debrid", apiToken: "rd-token-1" }],
+      }),
     );
     expect(markOnboardingComplete).toHaveBeenCalledTimes(1);
-    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("streaming step replaces an existing token for the same service", async () => {
+    const user = userEvent.setup();
+    settings.debridTokens = [
+      { service: "real_debrid", apiToken: "old-token" },
+      { service: "torbox", apiToken: "tb-token" },
+    ];
+    testDebridTokenMock.mockResolvedValue(true);
+    render(<FirstRunWizard onDone={() => {}} />);
+    await reachStreamingStep(user);
+    const tokenInput = screen.getByLabelText("API token");
+    await user.clear(tokenInput);
+    await user.type(tokenInput, "new-token");
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        debridTokens: [
+          { service: "real_debrid", apiToken: "new-token" },
+          { service: "torbox", apiToken: "tb-token" },
+        ],
+      }),
+    );
+  });
+
+  it("streaming 'Add later' escape never clobbers existing tokens or key", async () => {
+    const user = userEvent.setup();
+    settings.tmdbKey = "existing-key";
+    settings.debridTokens = [{ service: "premiumize", apiToken: "pm-token" }];
+    const onDone = vi.fn();
+    render(<FirstRunWizard onDone={onDone} />);
+    // Take the no-key escape through catalog too — worst case for clobbering.
+    await user.click(screen.getByText("Just watch on this device"));
+    await user.click(
+      screen.getByRole("button", { name: /Continue with the built-in catalog/ }),
+    );
+    await user.click(screen.getByRole("button", { name: /Add later/ }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(testDebridTokenMock).not.toHaveBeenCalled();
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tmdbKey: "existing-key",
+        debridTokens: [{ service: "premiumize", apiToken: "pm-token" }],
+      }),
+    );
+  });
+
+  it("streaming step hedges on a failed check and offers save-without-testing", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    testDebridTokenMock.mockResolvedValue(false);
+    render(<FirstRunWizard onDone={onDone} />);
+    await reachStreamingStep(user);
+    await user.type(screen.getByLabelText("API token"), "maybe-token");
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    expect(
+      await screen.findByText(
+        "Couldn't verify that token — check it and your connection.",
+      ),
+    ).toBeInTheDocument();
+    expect(onDone).not.toHaveBeenCalled();
+    // The escape hatch appears only after a failed check.
+    await user.click(screen.getByRole("button", { name: /Save without testing/ }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        debridTokens: [{ service: "real_debrid", apiToken: "maybe-token" }],
+      }),
+    );
   });
 
   it("'advanced' persona finishes in full mode and navigates to settings", async () => {

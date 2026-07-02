@@ -1,0 +1,70 @@
+/* InstallPrompt — fixed bottom glass card, mobile browsers only (mirrors
+   SetupNudge). Bottom offset respects the iOS Safari toolbar safe area. */
+.install-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--sp-lg) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--sp-md);
+  width: min(560px, calc(100% - var(--sp-xl)));
+  padding: var(--sp-md) var(--sp-lg);
+  border-radius: var(--r-lg, 18px);
+}
+.install-prompt-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--glass-tint-control);
+  color: var(--accent);
+}
+.install-prompt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.install-prompt-text strong {
+  font-size: 13.5px;
+}
+.install-prompt-steps {
+  margin: 2px 0 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.install-prompt-steps svg {
+  vertical-align: -2px;
+}
+.install-prompt-actions {
+  flex: 0 0 auto;
+  align-self: center;
+}
+.install-prompt-dismiss {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.install-prompt-dismiss:hover {
+  background: var(--glass-tint-control);
+  color: var(--text-primary);
+}
