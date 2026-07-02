@@ -5,9 +5,14 @@ import { FirstRunHost } from "./App";
 import { ServerModeGate } from "./components/ServerModeGate";
 import { AppStoreProvider } from "./store/AppStore";
 import { installSuspendOnHidden } from "./lib/suspendOnHidden";
+import { initInstallPromptCapture } from "./lib/installPrompt";
 
 // Park all CSS animations whenever the window is hidden/minimized/covered.
 installSuspendOnHidden();
+
+// Capture beforeinstallprompt before React mounts — Chromium can fire it
+// before the first component effect runs.
+initInstallPromptCapture();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

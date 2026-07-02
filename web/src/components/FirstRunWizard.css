@@ -545,3 +545,61 @@
 .server-setup-skip-inline:hover {
   color: var(--text-primary);
 }
+
+/* ── Device-path key steps ──────────────────────────────────────────────── */
+
+/* Quiet escape under the step actions — honest, findable, not inviting. */
+.first-run-escape {
+  align-self: center;
+  min-height: 44px;
+  margin-top: var(--sp-sm);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  max-width: 46ch;
+}
+.first-run-escape:hover {
+  color: var(--text-primary);
+}
+
+.first-run-footnote {
+  margin: var(--sp-md) 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+/* Skip-confirm warning box */
+.first-run-warn {
+  margin: 0 0 var(--sp-md);
+  padding: var(--sp-md) var(--sp-lg);
+  border-radius: var(--r-md);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  border: 0.75px solid rgba(var(--danger-rgb), 0.45);
+  background: rgba(var(--danger-rgb), 0.1);
+}
+
+.first-run-danger {
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 10px 20px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  color: var(--danger);
+  background: none;
+  border: 0.75px solid rgba(var(--danger-rgb), 0.45);
+}
+.first-run-danger:hover {
+  background: rgba(var(--danger-rgb), 0.12);
+}

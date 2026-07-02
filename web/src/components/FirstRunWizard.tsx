@@ -1,12 +1,20 @@
 // Persona-based first-run wizard (Local Mode only). Routes a brand-new user down
-// one of four paths and configures the right defaults + experience tier, or lets
-// them skip. Mounted by FirstRunHost (see App.tsx) when isFirstRun() is true.
+// one of four paths, or lets them skip past an honest warning. The "device"
+// path is a FORCED key-collection flow: the app can't search properly without
+// a TMDB key and can't play anything without a debrid token, so both are
+// collected (with live validation) before the wizard completes — each with an
+// explicit, honest escape rather than a silent skip. Mounted by FirstRunHost
+// (see App.tsx) when isFirstRun() is true.
 
 import { useState, type FormEvent } from "react";
 import { useAppStore } from "../store/AppStore";
 import { markOnboardingComplete } from "../lib/firstRun";
 import { saveServerURL } from "../lib/serverMode";
 import { isTauri } from "../lib/tauri";
+import { DebridServiceType } from "../services/debrid/models";
+import type { AppSettings, DebridTokenEntry } from "../data/settings";
+import { CONCEPTS, DEBRID_SIGNUP_ID, signupUrl } from "../data/onboardingHelp";
+import { testDebridToken, testTmdbKey } from "../lib/onboardingValidation";
 import { Icon, type IconName } from "./Icon";
 import "./FirstRunWizard.css";
 
@@ -23,7 +31,7 @@ const PERSONAS: Persona[] = [
   {
     id: "device",
     title: "Just watch on this device",
-    copy: "A quick one-time setup — a debrid service and a source — and you're streaming. No account needed.",
+    copy: "A quick two-step setup — a catalog key and your debrid service — and you're streaming. No account needed.",
     icon: "play",
     badge: "Most popular",
   },
@@ -57,7 +65,12 @@ function normalizeURL(raw: string): string {
 
 export function FirstRunWizard({ onDone }: { onDone: () => void }) {
   const { settings, updateSettings, navigate } = useAppStore();
-  const [step, setStep] = useState<"choose" | "connect" | "host">("choose");
+  const [step, setStep] = useState<
+    "choose" | "connect" | "host" | "catalog" | "streaming" | "skip-confirm"
+  >("choose");
+  // Validated TMDB key carried from the catalog step; null = the user chose
+  // the built-in-catalog escape (an existing key is never clobbered).
+  const [collectedTmdb, setCollectedTmdb] = useState<string | null>(null);
 
   async function finish(simple: boolean, andThen?: () => void) {
     updateSettings({ ...settings, simpleMode: simple });
@@ -66,8 +79,28 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
     onDone();
   }
 
+  /** The device path's SINGLE settings write: both collected keys land in one
+   *  updateSettings so services rebuild once and nothing races. Escapes pass
+   *  null and never write empty values over a re-running user's existing keys. */
+  async function finishDevice(debrid: DebridTokenEntry | null) {
+    const next: AppSettings = { ...settings, simpleMode: true };
+    if (collectedTmdb != null && collectedTmdb.trim().length > 0) {
+      next.tmdbKey = collectedTmdb.trim();
+    }
+    if (debrid != null) {
+      // Replace an existing entry for the same provider, else prepend.
+      next.debridTokens = [
+        debrid,
+        ...settings.debridTokens.filter((t) => t.service !== debrid.service),
+      ];
+    }
+    updateSettings(next);
+    await markOnboardingComplete();
+    onDone();
+  }
+
   async function choose(id: Persona["id"]) {
-    if (id === "device") return finish(true);
+    if (id === "device") return setStep("catalog");
     if (id === "advanced") return finish(false, () => navigate("settings"));
     if (id === "connect") return setStep("connect");
     if (id === "host") return setStep("host");
@@ -87,6 +120,32 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
         onBack={() => setStep("choose")}
         onContinue={() => void finish(true, () => navigate("settings"))}
       />
+    );
+  }
+  if (step === "catalog") {
+    return (
+      <CatalogStep
+        initialKey={collectedTmdb ?? settings.tmdbKey}
+        onBack={() => setStep("choose")}
+        onNext={(key) => {
+          setCollectedTmdb(key);
+          setStep("streaming");
+        }}
+      />
+    );
+  }
+  if (step === "streaming") {
+    return (
+      <StreamingStep
+        existing={settings.debridTokens}
+        onBack={() => setStep("catalog")}
+        onDone={(entry) => void finishDevice(entry)}
+      />
+    );
+  }
+  if (step === "skip-confirm") {
+    return (
+      <SkipConfirmStep onBack={() => setStep("choose")} onSkip={() => void skip()} />
     );
   }
 
@@ -126,9 +185,303 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
             </button>
           ))}
         </div>
-        <button type="button" className="first-run-skip" onClick={() => void skip()}>
+        <button
+          type="button"
+          className="first-run-skip"
+          onClick={() => setStep("skip-confirm")}
+        >
           Skip for now
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** Two-dot progress rail for the device path (reuses the server-setup CSS). */
+function DeviceProgress({ active }: { active: 1 | 2 }) {
+  return (
+    <ol className="server-setup-progress">
+      <li
+        className={
+          "server-setup-progress-dot " + (active === 1 ? "is-active" : "is-done")
+        }
+      >
+        <span className="server-setup-progress-num">1</span>
+        <span className="server-setup-progress-label">Catalog</span>
+      </li>
+      <li
+        className={
+          "server-setup-progress-dot" + (active === 2 ? " is-active" : "")
+        }
+      >
+        <span className="server-setup-progress-num">2</span>
+        <span className="server-setup-progress-label">Streaming</span>
+      </li>
+    </ol>
+  );
+}
+
+/** Device step 1 — the catalog key. Passes only with a live-validated TMDB key
+ *  or the explicit (honest) built-in-catalog escape. */
+function CatalogStep({
+  initialKey,
+  onBack,
+  onNext,
+}: {
+  initialKey: string;
+  onBack: () => void;
+  onNext: (key: string | null) => void;
+}) {
+  const [key, setKey] = useState(initialKey);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const tmdbSignup = signupUrl("tmdb");
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const trimmed = key.trim();
+    if (trimmed.length === 0) {
+      setError("Enter your TMDB API key, or continue with the built-in catalog.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const result = await testTmdbKey(trimmed);
+    if (result === "ok") {
+      onNext(trimmed);
+      return;
+    }
+    setError(
+      result === "unauthorized"
+        ? "TMDB rejected that key — double-check it (use the v3 API key)."
+        : "Couldn't reach TMDB — check your connection and try again.",
+    );
+    setBusy(false);
+  }
+
+  return (
+    <div className="first-run">
+      <div className="first-run-card">
+        <DeviceProgress active={1} />
+        <h1 className="first-run-title">Power up search &amp; artwork</h1>
+        <p className="first-run-sub">{CONCEPTS.tmdb.blurb}</p>
+        <form className="first-run-form" onSubmit={submit}>
+          <label className="first-run-field">
+            TMDB API key
+            <input
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder="v3 API key"
+              autoComplete="off"
+              spellCheck={false}
+              autoFocus
+            />
+          </label>
+          {tmdbSignup != null && (
+            <a
+              className="server-setup-signup"
+              href={tmdbSignup}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Get a free key ↗
+            </a>
+          )}
+          {error != null && (
+            <p className="first-run-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="first-run-actions">
+            <button type="button" className="first-run-secondary" onClick={onBack}>
+              Back
+            </button>
+            <button type="submit" className="first-run-primary" disabled={busy}>
+              {busy ? "Testing…" : "Test key & continue"}
+            </button>
+          </div>
+        </form>
+        <button
+          type="button"
+          className="first-run-escape"
+          onClick={() => onNext(null)}
+        >
+          Continue with the built-in catalog (limited — no search artwork, no
+          episode guide)
+        </button>
+        <p className="first-run-footnote">
+          Optional: an OMDb key adds IMDb / Rotten Tomatoes ratings — add it any
+          time in Settings → Keys.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Device step 2 — the streaming token. Passes with a verified debrid token,
+ *  an explicit save-without-testing (debrid hosts are CORS-blocked in plain
+ *  browsers, so a valid token can fail the live check), or the honest
+ *  add-later escape. */
+function StreamingStep({
+  existing,
+  onBack,
+  onDone,
+}: {
+  existing: DebridTokenEntry[];
+  onBack: () => void;
+  onDone: (entry: DebridTokenEntry | null) => void;
+}) {
+  const seed = existing.length > 0 ? existing[0] : null;
+  const [service, setService] = useState<DebridServiceType>(
+    seed?.service ?? "real_debrid",
+  );
+  const [token, setToken] = useState(seed?.apiToken ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [unverifiedOk, setUnverifiedOk] = useState(false);
+
+  const signup = signupUrl(DEBRID_SIGNUP_ID[service] ?? "");
+
+  // A failed check only vouches for the exact service+token it ran against —
+  // any edit hides the save-without-testing hatch until the user tests again.
+  function changeService(next: DebridServiceType) {
+    setService(next);
+    setToken(existing.find((t) => t.service === next)?.apiToken ?? "");
+    setUnverifiedOk(false);
+    setError(null);
+  }
+  function changeToken(next: string) {
+    setToken(next);
+    setUnverifiedOk(false);
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const trimmed = token.trim();
+    if (trimmed.length === 0) {
+      setError("Paste your API token, or choose Add later.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const ok = await testDebridToken({ service, apiToken: trimmed });
+    if (ok) {
+      onDone({ service, apiToken: trimmed });
+      return;
+    }
+    // Hedged on purpose: validateToken() can't distinguish a bad token from
+    // an offline/CORS-blocked check.
+    setError(
+      "Couldn't verify that token — it may be mistyped, or your browser may be blocked from reaching the provider.",
+    );
+    setUnverifiedOk(true);
+    setBusy(false);
+  }
+
+  return (
+    <div className="first-run">
+      <div className="first-run-card">
+        <DeviceProgress active={2} />
+        <h1 className="first-run-title">Connect your debrid service</h1>
+        <p className="first-run-sub">{CONCEPTS.debrid.blurb}</p>
+        <form className="first-run-form" onSubmit={submit}>
+          <div className="server-setup-fields">
+            <label className="first-run-field">
+              Provider
+              <select
+                value={service}
+                onChange={(e) => changeService(e.target.value as DebridServiceType)}
+              >
+                {DebridServiceType.allCases().map((s) => (
+                  <option key={s} value={s}>
+                    {DebridServiceType.displayName(s)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="first-run-field">
+              API token
+              <input
+                value={token}
+                onChange={(e) => changeToken(e.target.value)}
+                placeholder="API token"
+                autoComplete="off"
+                spellCheck={false}
+                autoFocus
+              />
+            </label>
+            {signup != null && (
+              <a
+                className="server-setup-signup"
+                href={signup}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Get a {DebridServiceType.displayName(service)} token ↗
+              </a>
+            )}
+          </div>
+          {error != null && (
+            <p className="first-run-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="first-run-actions">
+            <button type="button" className="first-run-secondary" onClick={onBack}>
+              Back
+            </button>
+            <button type="submit" className="first-run-primary" disabled={busy}>
+              {busy ? "Testing…" : "Test token & finish"}
+            </button>
+          </div>
+          {unverifiedOk && (
+            <button
+              type="button"
+              className="first-run-escape"
+              onClick={() => onDone({ service, apiToken: token.trim() })}
+            >
+              Save without testing (the desktop app can reach providers a
+              browser can't)
+            </button>
+          )}
+        </form>
+        <button
+          type="button"
+          className="first-run-escape"
+          onClick={() => onDone(null)}
+        >
+          Add later — nothing will play until you do.
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Honest confirmation before skipping the whole wizard. */
+function SkipConfirmStep({
+  onBack,
+  onSkip,
+}: {
+  onBack: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <div className="first-run">
+      <div className="first-run-card">
+        <h1 className="first-run-title">Skip setup?</h1>
+        <div className="first-run-warn">
+          Without a TMDB key, search and artwork are limited. Without a debrid
+          token, nothing will play. You can add both any time in Settings →
+          Keys.
+        </div>
+        <div className="first-run-actions">
+          <button type="button" className="first-run-primary" onClick={onBack}>
+            Go back
+          </button>
+          <button type="button" className="first-run-danger" onClick={onSkip}>
+            Skip anyway
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -185,7 +538,11 @@ function ConnectStep({ onBack }: { onBack: () => void }) {
               autoFocus
             />
           </label>
-          {error != null && <p className="first-run-error">{error}</p>}
+          {error != null && (
+            <p className="first-run-error" role="alert">
+              {error}
+            </p>
+          )}
           <div className="first-run-actions">
             <button type="button" className="first-run-secondary" onClick={onBack}>
               Back
