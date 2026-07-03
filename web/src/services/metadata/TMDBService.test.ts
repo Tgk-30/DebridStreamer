@@ -1025,3 +1025,48 @@ describe("TMDBService cache key behavior", () => {
     expect(mock.hits()).toBe(2);
   });
 });
+
+describe("TMDBService.getTrailer", () => {
+  const trailerBody = (results: unknown[]) => JSON.stringify({ results });
+
+  it("prefers the official YouTube trailer and hits the videos path", async () => {
+    const mock = makeMockFetch(() =>
+      ok(
+        trailerBody([
+          { key: "teaser1", site: "YouTube", type: "Teaser", official: true },
+          { key: "unofficial", site: "YouTube", type: "Trailer", official: false },
+          { key: "official1", site: "YouTube", type: "Trailer", official: true },
+        ]),
+      ),
+    );
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+    expect(await service.getTrailer(603, "movie")).toBe("official1");
+    expect(mock.lastURL()?.pathname).toBe("/3/movie/603/videos");
+  });
+
+  it("falls back to any Trailer, then a Teaser", async () => {
+    const t = makeMockFetch(() =>
+      ok(trailerBody([{ key: "any", site: "YouTube", type: "Trailer", official: false }])),
+    );
+    expect(await new TMDBService("k", t.fetchImpl).getTrailer(1, "series")).toBe("any");
+
+    const teaser = makeMockFetch(() =>
+      ok(trailerBody([{ key: "te", site: "YouTube", type: "Teaser", official: false }])),
+    );
+    expect(await new TMDBService("k", teaser.fetchImpl).getTrailer(1, "movie")).toBe("te");
+    // Series path resolves to /tv/.
+    expect(t.lastURL()?.pathname).toBe("/3/tv/1/videos");
+  });
+
+  it("ignores non-YouTube videos and returns null when none qualify", async () => {
+    const mock = makeMockFetch(() =>
+      ok(trailerBody([{ key: "v", site: "Vimeo", type: "Trailer", official: true }])),
+    );
+    expect(await new TMDBService("k", mock.fetchImpl).getTrailer(1, "movie")).toBeNull();
+  });
+
+  it("returns null for an empty results list", async () => {
+    const mock = makeMockFetch(() => ok(trailerBody([])));
+    expect(await new TMDBService("k", mock.fetchImpl).getTrailer(1, "movie")).toBeNull();
+  });
+});
