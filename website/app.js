@@ -351,80 +351,42 @@ function initSectionNav() {
   requestSettledUpdates();
 }
 
-/* ── The transport: scroll progress rendered as playback on a player bar.
-      Chapters (sections) become ticks on the timeline; the mono timestamp
-      maps page position onto a feature-length runtime. ─────────────────── */
-function initTransport() {
-  const bar = document.querySelector(".transport");
-  if (!bar) return;
-  const fill = bar.querySelector(".transport-fill");
-  const time = bar.querySelector(".transport-time");
-  const ticks = [...bar.querySelectorAll(".transport-tick")];
-  const RUNTIME = 148; // "02:28" — a feature-length page
-
-  const pad = (n) => String(n).padStart(2, "0");
-  const fmt = (s) => `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
-
-  function layoutTicks() {
-    const total = document.documentElement.scrollHeight - window.innerHeight;
-    if (total <= 0) return;
-    const headerHeight =
-      document.querySelector(".site-header")?.getBoundingClientRect().height ?? 0;
-    for (const tick of ticks) {
-      const target = document.querySelector(tick.getAttribute("href"));
-      if (!target) continue;
-      const top =
-        target.getBoundingClientRect().top + window.scrollY - headerHeight - 24;
-      const pct = Math.min(98, Math.max(2, (top / total) * 100));
-      tick.style.left = `${pct}%`;
-    }
-  }
-
+/* ── The scrubline: scroll progress as a hairline playback bar across the top
+      of the viewport. Sets --scrub (0–1) on a fixed, width-only element, so it
+      can never touch layout or cause horizontal overflow. ─────────────────── */
+function initScrubline() {
+  const line = document.querySelector(".scrubline span");
+  if (!line) return;
   let frame = 0;
   function update() {
     frame = 0;
     const total = document.documentElement.scrollHeight - window.innerHeight;
     const progress = total > 0 ? Math.min(1, Math.max(0, window.scrollY / total)) : 0;
-    if (fill) fill.style.transform = `scaleX(${progress.toFixed(4)})`;
-    if (time) {
-      time.textContent = `${fmt(Math.round(progress * RUNTIME))} / ${fmt(RUNTIME)}`;
-    }
+    line.style.setProperty("--scrub", progress.toFixed(4));
   }
   function request() {
     if (!frame) frame = window.requestAnimationFrame(update);
   }
-
   window.addEventListener("scroll", request, { passive: true });
-  window.addEventListener("resize", () => {
-    layoutTicks();
-    request();
-  });
-  // Re-measure whenever the document height changes — images settling, the
-  // GitHub release fetch inserting asset rows, details elements toggling.
-  if ("ResizeObserver" in window) {
-    let settle = 0;
-    const observer = new ResizeObserver(() => {
-      window.clearTimeout(settle);
-      settle = window.setTimeout(() => {
-        layoutTicks();
-        request();
-      }, 120);
-    });
-    observer.observe(document.body);
-  } else {
-    window.addEventListener("load", layoutTicks);
-    window.setTimeout(layoutTicks, 800);
-  }
-  layoutTicks();
+  window.addEventListener("resize", request);
   update();
 }
 
-/* One-shot scroll reveals — sections rise in as playback advances. */
+/* Scroll reveals — sections rise in on first view. FAILSAFE: the content is
+   visible by default (no .reveal class = no opacity:0); the class is only added
+   when we can also arm an observer to un-hide it, AND a load/timeout backstop
+   reveals everything unconditionally, so content can never get stuck hidden. */
 function initReveals() {
   if (!("IntersectionObserver" in window)) return;
   const nodes = document.querySelectorAll(
     ".proof-strip span, .section-head, .rail-card, .picker, .split > *, .hosting-grid article, .steps article, .status-list",
   );
+  if (!nodes.length) return;
+
+  const revealAll = () => {
+    for (const node of nodes) node.classList.add("is-in");
+  };
+
   const observer = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
@@ -442,6 +404,13 @@ function initReveals() {
     index += 1;
     observer.observe(node);
   }
+  // Backstops: if anything (a flaky observer, a bfcache restore, an inert tab)
+  // leaves a block hidden, reveal it unconditionally. Content > choreography.
+  window.addEventListener("load", () => window.setTimeout(revealAll, 1500));
+  window.setTimeout(revealAll, 3500);
+  window.addEventListener("pageshow", (e) => {
+    if (e.persisted) revealAll();
+  });
 }
 
 /* The hero window leans toward the cursor — fine pointers only, never under
@@ -490,7 +459,7 @@ if (typeof window !== "undefined" && !window.__DEBRIDSTREAMER_WEBSITE_TEST__) {
   initCommandCopy();
   initMobileMenu();
   initSectionNav();
-  initTransport();
+  initScrubline();
   initReveals();
   initTilt();
 }
