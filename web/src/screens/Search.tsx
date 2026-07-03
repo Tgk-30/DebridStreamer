@@ -71,11 +71,11 @@ export function Search() {
   const starters = useMemo(() => fixtureStarters(), []);
   const serverMode = isServerMode();
 
-  // Pick up a query handed over from the global search field.
+  // Pick up a query handed over from the global search field. The debounce
+  // effect below then runs it (no immediate call, so there's no double fetch).
   useEffect(() => {
     if (pendingSearch != null) {
       setQuery(pendingSearch);
-      void runSearch(pendingSearch, filter);
       consumePendingSearch();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,13 +85,14 @@ export function Search() {
   // response guard; mirrors useBrowse).
   const runIdRef = useRef(0);
 
-  // Re-run when the type filter changes (if there's an active query).
+  // Live search — results update as you type (debounced), and re-run when the
+  // type filter changes. Enter still fires an immediate search via the input
+  // handler; this is what removes the "you have to press Enter" friction.
   useEffect(() => {
-    if (query.trim().length > 0 && results != null) {
-      void runSearch(query, filter);
-    }
+    const id = window.setTimeout(() => void runSearch(query, filter), 300);
+    return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [query, filter]);
 
   async function runSearch(q: string, type: TypeFilter) {
     const trimmed = q.trim();

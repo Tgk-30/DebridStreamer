@@ -65,3 +65,69 @@
     padding-bottom: var(--sp-xl);
   }
 }
+
+/* ── Episode streams page — a dedicated view for a series' episode streams,
+      opened from the episode picker instead of loading inline at the bottom. */
+.episode-streams {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding: clamp(16px, 4vw, 48px) 16px;
+  overflow-y: auto;
+  background: rgba(5, 6, 12, 0.72);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  animation: episode-streams-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes episode-streams-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .episode-streams { animation: none; }
+}
+.episode-streams-panel {
+  width: min(880px, 100%);
+  align-self: flex-start;
+}
+.episode-streams-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 6px 0 12px;
+}
+.episode-streams-back {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-primary, #fff);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.07));
+  border: 0.75px solid var(--glass-border, rgba(255, 255, 255, 0.14));
+  border-radius: var(--r-pill, 999px);
+  padding: 9px 16px 9px 12px;
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s;
+}
+.episode-streams-back:hover {
+  background: var(--glass-tint-hover, rgba(255, 255, 255, 0.12));
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+.episode-streams-title {
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

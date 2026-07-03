@@ -150,6 +150,17 @@ vi.mock("../components/StreamPicker", () => ({
   ),
 }));
 
+vi.mock("../components/EpisodePicker", () => ({
+  EpisodePicker: ({ onSelect }: any) => (
+    <button
+      data-testid="pick-episode"
+      onClick={() => onSelect({ season: 1, episode: 3 })}
+    >
+      pick-ep
+    </button>
+  ),
+}));
+
 vi.mock("../components/CastRail", () => ({
   CastRail: ({ cast }: any) => (
     <div data-testid="castrail" data-count={cast.length} />
@@ -280,6 +291,21 @@ describe("Detail base render", () => {
     expect(screen.queryByTestId("hero")).toBeNull();
     // The stream picker still renders even without metadata.
     expect(screen.getByTestId("streampicker")).toBeInTheDocument();
+  });
+
+  it("series: streams open on a dedicated page, not inline at the bottom", async () => {
+    mockDetailItem = preview("s1", { type: "series", title: "The Series", tmdbId: 200 });
+    mockDetail = detailState({ item: mediaItem({ type: "series", id: "s1", tmdbId: 200 }) });
+    render(<Detail />);
+    // For a series the picker is NOT inline — it lives on its own page.
+    expect(screen.queryByTestId("streampicker")).not.toBeInTheDocument();
+    // Picking an episode opens the dedicated streams page.
+    await userEvent.click(screen.getByTestId("pick-episode"));
+    expect(screen.getByRole("dialog", { name: /Streams/ })).toBeInTheDocument();
+    expect(screen.getByTestId("streampicker")).toBeInTheDocument();
+    // "‹ Episodes" back button returns to the episode list (closes the page).
+    await userEvent.click(screen.getByRole("button", { name: /Episodes/ }));
+    expect(screen.queryByTestId("streampicker")).not.toBeInTheDocument();
   });
 
   it("renders the AI analysis only when the provider exposes analyzeTitle", () => {

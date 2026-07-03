@@ -209,6 +209,11 @@ export function Detail() {
 
   const [player, setPlayer] = useState<ActivePlayer | null>(null);
   const [scrollToStreams, setScrollToStreams] = useState(false);
+  // Series show their streams on a dedicated page (opened by picking an
+  // episode) instead of inline at the bottom of Detail; movies keep the inline
+  // list since they have no episode step.
+  const isSeries = detailItem?.type === "series";
+  const [streamsPageOpen, setStreamsPageOpen] = useState(false);
 
   // ── Next-episode auto-advance ─────────────────────────────────────────────
   // The up-next target is computed from the PLAYER SNAPSHOT (never the live
@@ -248,6 +253,29 @@ export function Detail() {
     selectedRef.current = selected;
   }, [selected]);
   const streamsAnchorRef = useRef<HTMLDivElement>(null);
+  // Surface the stream list: series open the dedicated page, movies scroll to
+  // the inline picker. Used by the hero Watch button and the auto-advance
+  // fallback so both honor the same series-vs-movie split.
+  const revealStreams = () => {
+    if (isSeries) {
+      setStreamsPageOpen(true);
+    } else {
+      streamsAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+  // Escape closes the episode-streams page first (capture phase, so it beats
+  // Detail's own Escape-to-close and returns the user to the episode list).
+  useEffect(() => {
+    if (!streamsPageOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setStreamsPageOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [streamsPageOpen]);
   useEffect(() => {
     if (autoPlayPending == null || streams.loading || autoPlayBusy.current) return;
     if (
@@ -268,7 +296,7 @@ export function Detail() {
     if (row == null) {
       // Nothing instant for the next episode — land the user on the honest,
       // episode-scoped stream list instead of auto-playing something uncached.
-      streamsAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
+      revealStreams();
       return;
     }
     autoPlayBusy.current = true;
@@ -569,8 +597,13 @@ export function Detail() {
               void playStream(cached.stream, cached.stream.fileName || detailItem.title);
               return;
             }
+            // Series open the dedicated streams page; movies scroll the inline
+            // picker into view.
+            if (isSeries) {
+              setStreamsPageOpen(true);
+              return;
+            }
             setScrollToStreams(true);
-            // Scroll the picker into view; the user picks a stream there.
             queueMicrotask(() => {
               document
                 .getElementById("detail-streams")
@@ -619,7 +652,11 @@ export function Detail() {
           tmdbId={item?.tmdbId ?? detailItem.tmdbId ?? null}
           tmdb={services.tmdb}
           selected={selected}
-          onSelect={(next) => selectEpisode(detailItem.id, next)}
+          onSelect={(next) => {
+            // Picking an episode opens the dedicated streams page for it.
+            selectEpisode(detailItem.id, next);
+            setStreamsPageOpen(true);
+          }}
           progressByEpisodeId={progressByEpisodeId}
           watchedEpisodeIds={watchedEpisodeIds}
           onToggleWatched={(ep, watched) => {
@@ -636,25 +673,27 @@ export function Detail() {
         />
       )}
 
-      <div
-        id="detail-streams"
-        ref={streamsAnchorRef}
-        className={scrollToStreams ? "detail-streams-anchor" : undefined}
-      >
-        <StreamPicker
-          state={streams}
-          resolveStream={resolveSelectedStream}
-          onPlay={handlePlay}
-          episodeLabel={
-            selected != null ? episodeLabel(selected.season, selected.episode) : null
-          }
-          episodeContext={selected}
-          onOpenSettings={() => {
-            closeDetail();
-            navigate("settings");
-          }}
-        />
-      </div>
+      {/* Movies: the stream list sits inline. Series show it on a dedicated
+          page (below) opened by picking an episode. */}
+      {!isSeries && (
+        <div
+          id="detail-streams"
+          ref={streamsAnchorRef}
+          className={scrollToStreams ? "detail-streams-anchor" : undefined}
+        >
+          <StreamPicker
+            state={streams}
+            resolveStream={resolveSelectedStream}
+            onPlay={handlePlay}
+            episodeLabel={null}
+            episodeContext={null}
+            onOpenSettings={() => {
+              closeDetail();
+              navigate("settings");
+            }}
+          />
+        </div>
+      )}
 
       <CastRail cast={detail.data.cast} />
 
@@ -664,6 +703,46 @@ export function Detail() {
         onSelect={openDetail}
       />
       </div>
+
+      {/* Series streams live on their own page (opened by picking an episode),
+          instead of loading inline at the bottom of Detail. */}
+      {isSeries && streamsPageOpen && selected != null && (
+        <div
+          className="episode-streams"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Streams — ${episodeLabel(selected.season, selected.episode)}`}
+        >
+          <div className="episode-streams-panel">
+            <div className="episode-streams-head">
+              <button
+                type="button"
+                className="episode-streams-back"
+                onClick={() => setStreamsPageOpen(false)}
+              >
+                ‹ Episodes
+              </button>
+              <strong className="episode-streams-title">
+                {(item?.title ?? detailItem.title) + " · "}
+                {episodeLabel(selected.season, selected.episode)}
+              </strong>
+            </div>
+            <div className="episode-streams-body">
+              <StreamPicker
+                state={streams}
+                resolveStream={resolveSelectedStream}
+                onPlay={handlePlay}
+                episodeLabel={episodeLabel(selected.season, selected.episode)}
+                episodeContext={selected}
+                onOpenSettings={() => {
+                  closeDetail();
+                  navigate("settings");
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {player && (
         <Suspense fallback={<Spinner variant="overlay" label="Loading player…" />}>
