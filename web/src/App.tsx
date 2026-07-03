@@ -25,6 +25,7 @@ import { useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
 import { isServerMode } from "./lib/serverMode";
 import { devBypassesOnboarding, isFirstRun, needsKeyOnboarding } from "./lib/firstRun";
+import { secretReadsFailedThisSession } from "./storage/KeychainSecretStore";
 import { shouldShowServerSetup } from "./lib/serverSetup";
 import { fetchServerAdminHealth } from "./lib/serverApi";
 import { useTheme } from "./theme/useTheme";
@@ -84,6 +85,12 @@ export function FirstRunHost() {
   useEffect(() => {
     if (!hydrated || keyGate != null) return;
     if (devBypassesOnboarding()) {
+      setKeyGate(false);
+      return;
+    }
+    // A locked/broken keychain hydrates secrets as null — the keys may exist
+    // but be unreadable. Never force onboarding on top of that.
+    if (secretReadsFailedThisSession()) {
       setKeyGate(false);
       return;
     }

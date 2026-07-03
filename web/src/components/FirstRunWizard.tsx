@@ -88,6 +88,12 @@ export function FirstRunWizard({
   // Validated catalog key carried from the catalog step; null = the user chose
   // the built-in-catalog escape (an existing key is never clobbered).
   const [collectedCatalog, setCollectedCatalog] = useState<CatalogKey | null>(null);
+  // Which persona the key steps will exit into. In forced mode the advanced and
+  // host paths route THROUGH catalog+streaming first — otherwise they'd close
+  // the mandatory wizard keyless and every next launch would re-trap the user.
+  const [exitPersona, setExitPersona] = useState<"device" | "advanced" | "host">(
+    "device",
+  );
 
   async function finish(simple: boolean, andThen?: () => void) {
     updateSettings({ ...settings, simpleMode: simple });
@@ -100,7 +106,11 @@ export function FirstRunWizard({
    *  updateSettings so services rebuild once and nothing races. Escapes pass
    *  null and never write empty values over a re-running user's existing keys. */
   async function finishDevice(debrid: DebridTokenEntry | null) {
-    const next: AppSettings = { ...settings, simpleMode: true };
+    const next: AppSettings = {
+      ...settings,
+      // Advanced keeps the full UI it asked for; device/host stay simple.
+      simpleMode: exitPersona !== "advanced",
+    };
     if (collectedCatalog?.tmdbKey != null && collectedCatalog.tmdbKey.trim().length > 0) {
       next.tmdbKey = collectedCatalog.tmdbKey.trim();
     }
@@ -116,12 +126,25 @@ export function FirstRunWizard({
     }
     updateSettings(next);
     await markOnboardingComplete();
+    // Advanced and host asked for Settings — land them there once keys are in.
+    if (exitPersona !== "device") navigate("settings");
     onDone();
   }
 
   async function choose(id: Persona["id"]) {
-    if (id === "device") return setStep("catalog");
-    if (id === "advanced") return finish(false, () => navigate("settings"));
+    if (id === "device") {
+      setExitPersona("device");
+      return setStep("catalog");
+    }
+    if (id === "advanced") {
+      // Forced: keys first, then the full settings they asked for — a keyless
+      // finish would just re-trap them on the next launch.
+      if (forced) {
+        setExitPersona("advanced");
+        return setStep("catalog");
+      }
+      return finish(false, () => navigate("settings"));
+    }
     if (id === "connect") return setStep("connect");
     if (id === "host") return setStep("host");
   }
@@ -138,7 +161,17 @@ export function FirstRunWizard({
     return (
       <HostStep
         onBack={() => setStep("choose")}
-        onContinue={() => void finish(true, () => navigate("settings"))}
+        onContinue={() => {
+          // Forced: collect this device's keys before the hosting hand-off —
+          // hosting setup lives in Settings, but the local client must not
+          // leave the mandatory wizard unusable.
+          if (forced) {
+            setExitPersona("host");
+            setStep("catalog");
+            return;
+          }
+          void finish(true, () => navigate("settings"));
+        }}
       />
     );
   }

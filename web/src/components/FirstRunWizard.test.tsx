@@ -528,3 +528,60 @@ describe("FirstRunWizard — forced key gate", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("FirstRunWizard — forced advanced/host route through keys", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isTauriMock.mockReturnValue(false);
+    settings.tmdbKey = "";
+    settings.omdbKey = "";
+    settings.debridTokens = [];
+  });
+
+  async function completeKeySteps(user: ReturnType<typeof userEvent.setup>) {
+    testTmdbKeyMock.mockResolvedValue("ok");
+    testDebridTokenMock.mockResolvedValue(true);
+    await user.type(screen.getByLabelText("TMDB API key"), "tmdb-key-1");
+    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    await screen.findByRole("heading", { name: "Connect your debrid service" });
+    await user.type(screen.getByLabelText("API token"), "rd-token-1");
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+  }
+
+  it("forced Advanced collects keys first, then lands in full-mode Settings", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(<FirstRunWizard forced onDone={onDone} />);
+    await user.click(screen.getByText("Advanced setup"));
+    // No keyless finish: the catalog step opens instead of settings.
+    expect(
+      screen.getByRole("heading", { name: "Power up search & artwork" }),
+    ).toBeInTheDocument();
+    expect(markOnboardingComplete).not.toHaveBeenCalled();
+    await completeKeySteps(user);
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ simpleMode: false, tmdbKey: "tmdb-key-1" }),
+    );
+    expect(navigate).toHaveBeenCalledWith("settings");
+  });
+
+  it("forced Host explains hosting, then collects keys before Settings", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(<FirstRunWizard forced onDone={onDone} />);
+    await user.click(screen.getByText("Host for my family"));
+    await user.click(screen.getByRole("button", { name: "Open Settings" }));
+    // Still inside the wizard — keys come first.
+    expect(
+      screen.getByRole("heading", { name: "Power up search & artwork" }),
+    ).toBeInTheDocument();
+    expect(markOnboardingComplete).not.toHaveBeenCalled();
+    await completeKeySteps(user);
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ simpleMode: true, tmdbKey: "tmdb-key-1" }),
+    );
+    expect(navigate).toHaveBeenCalledWith("settings");
+  });
+});
