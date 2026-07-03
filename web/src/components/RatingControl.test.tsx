@@ -103,3 +103,24 @@ describe("RatingControl — 0–100 slider", () => {
     expect(onRate).not.toHaveBeenCalled();
   });
 });
+
+describe("RatingControl — clear", () => {
+  it("shows Clear only when rated AND onClear is provided, and fires it", async () => {
+    const onClear = vi.fn();
+    const { rerender } = render(
+      <RatingControl scale="ten" value={7} onRate={() => {}} onClear={onClear} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(onClear).toHaveBeenCalledTimes(1);
+
+    // Not rated yet → no Clear.
+    rerender(
+      <RatingControl scale="ten" value={null} onRate={() => {}} onClear={onClear} />,
+    );
+    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+
+    // Rated but no onClear handler → no Clear.
+    rerender(<RatingControl scale="ten" value={7} onRate={() => {}} />);
+    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+  });
+});

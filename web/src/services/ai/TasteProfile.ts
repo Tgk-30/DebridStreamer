@@ -180,14 +180,12 @@ async function assembleTasteContext(store: Store, now: number): Promise<string> 
     }
 
     if (event.eventType === "rated") {
-      // metadata.norm is the rating on a [0,1] scale, so it feeds the profile
-      // the same way regardless of whether the user rates out of 10 or 100.
-      const norm = Number(event.metadata?.norm);
-      if (!Number.isFinite(norm)) continue;
       const title = titleFromEvent(event);
       // Dedupe by the stable media id (falling back to title) so two different
       // titles that happen to share a name don't collide, and a re-rate of the
-      // SAME media is superseded by its newest score.
+      // SAME media is superseded by its newest event. The seen-check comes FIRST
+      // (before reading norm) so a newest "cleared" rating — one with no norm —
+      // still suppresses an older score for that media instead of letting it leak.
       const key =
         event.mediaId != null && event.mediaId.length > 0
           ? `id:${event.mediaId}`
@@ -195,9 +193,14 @@ async function assembleTasteContext(store: Store, now: number): Promise<string> 
             ? `t:${title.toLowerCase()}`
             : null;
       if (key != null) {
-        if (ratedSeen.has(key)) continue; // older duplicate — newest already counted
+        if (ratedSeen.has(key)) continue; // older duplicate — newest already decided
         ratedSeen.add(key);
       }
+      // metadata.norm is the rating on a [0,1] scale, so it feeds the profile the
+      // same way regardless of whether the user rates out of 10 or 100. A cleared
+      // rating has no norm → NaN → contributes nothing (media already marked seen).
+      const norm = Number(event.metadata?.norm);
+      if (!Number.isFinite(norm)) continue;
       const clamped = Math.min(1, Math.max(0, norm));
       // Scale the genre signal by distance from neutral (5/10): a 10/10 counts
       // like a full like, a 7/10 as a partial one, a 5/10 as nothing.

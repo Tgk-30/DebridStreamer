@@ -185,6 +185,7 @@ export function Detail() {
     detailItem?.type ?? "movie",
     selected?.season ?? null,
     selected?.episode ?? null,
+    detailItem?.title ?? detail.data.item?.title ?? null,
     services.indexers,
     services.debrid,
   );
@@ -531,6 +532,31 @@ export function Detail() {
       });
   }
 
+  /** Remove a previously-given rating. Taste events are append-only, so we record
+   * a newest "rated" event with NO norm — the Detail load reads it as "unrated"
+   * and the taste profile (newest-per-media) contributes nothing for it, which
+   * also suppresses the older score. */
+  function clearRating(): void {
+    if (detailItem == null) return;
+    setRatingNorm(null);
+    const store = getStore();
+    void store
+      .addTasteEvent({
+        id: `taste-${detailItem.id}-${Date.now()}`,
+        userId: "default",
+        mediaId: detailItem.id,
+        episodeId: null,
+        eventType: "rated" as TasteEventType,
+        signalStrength: 0,
+        metadata: { title: detailItem.title, cleared: "true" },
+        createdAt: new Date().toISOString(),
+      })
+      .then(() => rebuildTasteContext(store))
+      .catch(() => {
+        // best-effort; the in-memory value already reflects the cleared rating.
+      });
+  }
+
   /** Play an already-resolved StreamInfo directly (the instant-play path for a
    * cached resolution). Mirrors handlePlay's container/codec routing but without
    * a TorrentResult to cross-check, so it keys off the stream alone. */
@@ -741,6 +767,7 @@ export function Detail() {
               : null
           }
           onRate={recordRating}
+          onClear={clearRating}
         />
       )}
 

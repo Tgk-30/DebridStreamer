@@ -188,15 +188,100 @@ export function filterAndRankForEpisode(
     .map((entry) => entry.row);
 }
 
+/** The human-title query for the NAME-matching indexers (APIBay etc.). They
+ * search torrent titles, so an imdb id returns nothing there — an episode needs
+ * the `Title SxxEyy` form and a movie just the title. */
+export function buildTitleQuery(
+  title: string,
+  season: number | null,
+  episode: number | null,
+): string {
+  const base = title.trim();
+  if (season != null && episode != null) {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${base} S${pad(season)}E${pad(episode)}`;
+  }
+  return base;
+}
+
+/** Lowercase, strip everything non-alphanumeric to spaces, collapse. */
+function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Keep only title-pass results whose release name actually contains every word
+ * of the requested title (as whole words). The name-matching indexers (APIBay)
+ * do a loose substring search, so a short/common title ("It", "Up") or a
+ * different show that happens to share an SxxEyy tag would otherwise pollute the
+ * list. The imdb pass is already exact, so this only guards the title pass. */
+export function filterResultsByTitle(
+  results: TorrentResult[],
+  title: string,
+): TorrentResult[] {
+  const tokens = normalizeForMatch(title)
+    .split(" ")
+    .filter((t) => t.length > 0);
+  if (tokens.length === 0) return results;
+  return results.filter((r) => {
+    const name = ` ${normalizeForMatch(r.title)} `;
+    return tokens.every((tok) => name.includes(` ${tok} `));
+  });
+}
+
+/** Merge two result sets: dedupe by infoHash (keep the higher-seeder copy) and
+ * sort by quality then seeders. Lets the imdb-based and title-based passes be
+ * combined without double-listing the same torrent. */
+function mergeResults(a: TorrentResult[], b: TorrentResult[]): TorrentResult[] {
+  const byHash = new Map<string, TorrentResult>();
+  for (const r of a.concat(b)) {
+    const key = r.infoHash.toLowerCase();
+    const existing = byHash.get(key);
+    if (existing == null || r.seeders > existing.seeders) byHash.set(key, r);
+  }
+  return [...byHash.values()].sort((x, y) => {
+    if (x.quality !== y.quality) {
+      return VideoQuality.sortOrder(y.quality) - VideoQuality.sortOrder(x.quality);
+    }
+    return y.seeders - x.seeders;
+  });
+}
+
 async function resolveStreams(
   imdbId: string,
   type: MediaType,
   season: number | null,
   episode: number | null,
+  title: string | null,
   indexers: IndexerManager,
   debrid: DebridManager | null,
 ): Promise<StreamRow[]> {
-  const results = await indexers.searchAll(imdbId, type, season, episode);
+  // Two complementary passes, merged: the imdb-based search (YTS/EZTV are
+  // imdb-native) AND a title-based query — APIBay and other name-matching
+  // indexers return nothing for a bare imdb id, so without this they never
+  // contribute and a single dead imdb indexer (e.g. EZTV) empties every series.
+  const query =
+    title != null && title.trim().length > 0
+      ? buildTitleQuery(title, season, episode)
+      : null;
+  const [byImdb, byTitle] = await Promise.all([
+    // searchAll errors still surface (state.error); IndexerManager already
+    // absorbs per-indexer failures internally, so a throw here is catastrophic.
+    indexers.searchAll(imdbId, type, season, episode),
+    // The title pass is best-effort — a failure there must NOT empty the imdb
+    // results, so it degrades to an empty set.
+    query != null
+      ? indexers.searchByQuery(query, type).catch(() => [] as TorrentResult[])
+      : Promise.resolve([] as TorrentResult[]),
+  ]);
+  // The imdb pass is title-exact; the title pass is a loose name search, so
+  // validate it against the requested title before merging.
+  const validatedByTitle =
+    title != null ? filterResultsByTitle(byTitle, title) : byTitle;
+  const results = mergeResults(byImdb, validatedByTitle);
   if (results.length === 0) return [];
 
   // Check cache across all configured debrid services for every infoHash.
@@ -239,6 +324,7 @@ export function useStreams(
   type: MediaType,
   season: number | null,
   episode: number | null,
+  title: string | null,
   indexers: IndexerManager,
   debrid: DebridManager | null,
 ): StreamsState {
@@ -279,7 +365,15 @@ export function useStreams(
           }
           return;
         }
-        const rows = await resolveStreams(imdbId, type, season, episode, indexers, debrid);
+        const rows = await resolveStreams(
+          imdbId,
+          type,
+          season,
+          episode,
+          title,
+          indexers,
+          debrid,
+        );
         if (!signal.cancelled) {
           setState({ rows, loading: false, error: null, hasIndexers, hasDebrid });
         }
@@ -290,7 +384,7 @@ export function useStreams(
         }
       }
     },
-    [imdbId, type, season, episode, indexers, debrid, hasIndexers, hasDebrid, serverMode],
+    [imdbId, type, season, episode, title, indexers, debrid, hasIndexers, hasDebrid, serverMode],
   );
 
   useEffect(() => {
