@@ -94,7 +94,9 @@ export async function resolveOne(
       .checkCacheAll(hashes)
       .catch(() => ({}));
     const rows: StreamRow[] = results.map((result) => {
-      const entry = merged[result.infoHash];
+      // checkCacheAll canonicalizes to lowercase — match it so a case
+      // difference can't make a cached title read as uncached.
+      const entry = merged[result.infoHash.toLowerCase()];
       const cachedOn =
         entry != null && CacheStatusNS.isCached(entry.status) ? entry.service : null;
       return { result, cachedOn };

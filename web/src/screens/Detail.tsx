@@ -263,10 +263,17 @@ export function Detail() {
       streamsAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   };
-  // Escape closes the episode-streams page first (capture phase, so it beats
-  // Detail's own Escape-to-close and returns the user to the episode list).
+  const streamsBackRef = useRef<HTMLButtonElement>(null);
+  // Modal behavior for the episode-streams page: Escape closes it first
+  // (capture phase, before Detail's own Escape), focus moves into the page and
+  // the detail content behind is inerted so keyboard users can't reach covered
+  // controls; focus is restored to the opener on close.
   useEffect(() => {
     if (!streamsPageOpen) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const inner = rootRef.current?.querySelector<HTMLElement>(".detail-inner");
+    inner?.setAttribute("inert", "");
+    streamsBackRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -274,7 +281,11 @@ export function Detail() {
       }
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      inner?.removeAttribute("inert");
+      opener?.focus?.();
+    };
   }, [streamsPageOpen]);
   useEffect(() => {
     if (autoPlayPending == null || streams.loading || autoPlayBusy.current) return;
@@ -312,7 +323,7 @@ export function Detail() {
         }
         return handlePlay(s, row.result);
       })
-      .catch(() => streamsAnchorRef.current?.scrollIntoView({ behavior: "smooth" }))
+      .catch(() => revealStreams())
       .finally(() => {
         autoPlayBusy.current = false;
       });
@@ -716,6 +727,7 @@ export function Detail() {
           <div className="episode-streams-panel">
             <div className="episode-streams-head">
               <button
+                ref={streamsBackRef}
                 type="button"
                 className="episode-streams-back"
                 onClick={() => setStreamsPageOpen(false)}

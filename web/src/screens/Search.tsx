@@ -86,11 +86,12 @@ export function Search() {
   const runIdRef = useRef(0);
 
   // Live search — results update as you type (debounced), and re-run when the
-  // type filter changes. Enter still fires an immediate search via the input
-  // handler; this is what removes the "you have to press Enter" friction.
+  // type filter changes. Enter fires an immediate search via the input handler
+  // AND cancels this pending timer (debounceRef) so it can't double-fetch.
+  const debounceRef = useRef<number | undefined>(undefined);
   useEffect(() => {
-    const id = window.setTimeout(() => void runSearch(query, filter), 300);
-    return () => window.clearTimeout(id);
+    debounceRef.current = window.setTimeout(() => void runSearch(query, filter), 300);
+    return () => window.clearTimeout(debounceRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, filter]);
 
@@ -162,7 +163,11 @@ export function Search() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void runSearch(query, filter);
+              if (e.key === "Enter") {
+                // Cancel the pending debounce so Enter doesn't double-fetch.
+                window.clearTimeout(debounceRef.current);
+                void runSearch(query, filter);
+              }
             }}
             aria-label="Search movies and shows"
           />
