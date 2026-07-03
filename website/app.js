@@ -399,9 +399,22 @@ function initTransport() {
     layoutTicks();
     request();
   });
-  // Re-measure once images/fonts settle the document height.
-  window.addEventListener("load", layoutTicks);
-  window.setTimeout(layoutTicks, 800);
+  // Re-measure whenever the document height changes — images settling, the
+  // GitHub release fetch inserting asset rows, details elements toggling.
+  if ("ResizeObserver" in window) {
+    let settle = 0;
+    const observer = new ResizeObserver(() => {
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        layoutTicks();
+        request();
+      }, 120);
+    });
+    observer.observe(document.body);
+  } else {
+    window.addEventListener("load", layoutTicks);
+    window.setTimeout(layoutTicks, 800);
+  }
   layoutTicks();
   update();
 }
