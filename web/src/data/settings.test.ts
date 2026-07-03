@@ -89,6 +89,7 @@ vi.mock("../storage", () => ({
 import {
   normalizeStreamMaxQuality,
   normalizeStreamMaxSizeGB,
+  normalizeRatingScale,
   defaultSettings,
   loadSettings,
   saveSettings,
@@ -161,6 +162,22 @@ describe("normalizeStreamMaxSizeGB", () => {
     expect(normalizeStreamMaxSizeGB(9999)).toBe(500);
     expect(normalizeStreamMaxSizeGB(500)).toBe(500);
     expect(normalizeStreamMaxSizeGB(500.9)).toBe(500);
+  });
+});
+
+describe("normalizeRatingScale", () => {
+  it("passes through the three legal scales", () => {
+    expect(normalizeRatingScale("ten")).toBe("ten");
+    expect(normalizeRatingScale("hundred")).toBe("hundred");
+    expect(normalizeRatingScale("thumbs")).toBe("thumbs");
+  });
+
+  it("falls back to the 1–10 default for anything else", () => {
+    expect(normalizeRatingScale(undefined)).toBe("ten");
+    expect(normalizeRatingScale(null)).toBe("ten");
+    expect(normalizeRatingScale("five")).toBe("ten");
+    expect(normalizeRatingScale(10)).toBe("ten");
+    expect(normalizeRatingScale({})).toBe("ten");
   });
 });
 
@@ -274,6 +291,7 @@ describe("loadSettings", () => {
         subtitleFontScale: 99,
         subtitleTextColor: "red",
         subtitleBgOpacity: 5,
+        ratingScale: "eleven",
       }),
     });
     const s = loadSettings();
@@ -295,6 +313,7 @@ describe("loadSettings", () => {
     expect(s.subtitleFontScale).toBe(1.8); // clamped to max
     expect(s.subtitleTextColor).toBe("#ffffff");
     expect(s.subtitleBgOpacity).toBe(0.95); // clamped to max
+    expect(s.ratingScale).toBe("ten"); // poisoned scale → 1–10 default
   });
 
   it("keeps valid appearance / subtitle values verbatim (lowercasing hex)", () => {

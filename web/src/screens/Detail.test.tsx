@@ -9,7 +9,7 @@
 // can be asserted without their internals.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MediaPreview, MediaItem } from "../models/media";
 import type { DetailState } from "../data/detail";
@@ -253,7 +253,7 @@ beforeEach(() => {
     subtitles: null,
     translator: null,
   };
-  mockSettings = { transcode: false };
+  mockSettings = { transcode: false, ratingScale: "thumbs" };
   vi.clearAllMocks();
   recentTasteEvents.mockResolvedValue([]);
 });
@@ -475,6 +475,62 @@ describe("Detail taste signal", () => {
     expect(screen.getByTestId("hero-taste").textContent).toBe("disliked");
     await waitFor(() => expect(addTasteEvent).toHaveBeenCalled());
     expect((addTasteEvent.mock.calls[0][0] as any).signalStrength).toBe(-1);
+  });
+});
+
+describe("Detail numeric rating", () => {
+  it("records a 1–10 pick as a normalized 'rated' taste event", async () => {
+    mockSettings.ratingScale = "ten";
+    render(<Detail />);
+    await userEvent.click(await screen.findByLabelText("8 out of 10"));
+    await waitFor(() => expect(addTasteEvent).toHaveBeenCalled());
+    const evt = addTasteEvent.mock.calls[0][0] as any;
+    expect(evt.eventType).toBe("rated");
+    expect(evt.mediaId).toBe("m1");
+    expect(evt.signalStrength).toBeCloseTo(0.6, 5);
+    expect(evt.metadata.rating).toBe("8");
+    expect(evt.metadata.scale).toBe("ten");
+    expect(evt.metadata.norm).toBe("0.8000");
+    await waitFor(() => expect(rebuildTasteContext).toHaveBeenCalled());
+  });
+
+  it("seeds the 1–10 control from the newest saved rating", async () => {
+    mockSettings.ratingScale = "ten";
+    recentTasteEvents.mockResolvedValue([
+      {
+        mediaId: "m1",
+        eventType: "rated",
+        metadata: { norm: "0.7" },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    render(<Detail />);
+    expect(await screen.findByText("7/10")).toBeTruthy();
+    expect(
+      screen.getByLabelText("7 out of 10").getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("commits a 0–100 rating only on release", async () => {
+    mockSettings.ratingScale = "hundred";
+    render(<Detail />);
+    const slider = await screen.findByLabelText("Rate out of 100");
+    fireEvent.change(slider, { target: { value: "90" } });
+    expect(addTasteEvent).not.toHaveBeenCalled();
+    fireEvent.pointerUp(slider);
+    await waitFor(() => expect(addTasteEvent).toHaveBeenCalled());
+    const evt = addTasteEvent.mock.calls[0][0] as any;
+    expect(evt.metadata.scale).toBe("hundred");
+    expect(evt.metadata.rating).toBe("90");
+    expect(evt.metadata.norm).toBe("0.9000");
+    expect(evt.signalStrength).toBeCloseTo(0.8, 5);
+  });
+
+  it("hides the numeric control in thumbs mode (hero thumbs only)", async () => {
+    mockSettings.ratingScale = "thumbs";
+    render(<Detail />);
+    await screen.findByTestId("hero");
+    expect(screen.queryByLabelText("Your rating")).toBeNull();
   });
 });
 
