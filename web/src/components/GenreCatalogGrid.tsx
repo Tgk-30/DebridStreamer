@@ -7,17 +7,22 @@
 
 import type { BrowseContext } from "../data/browse";
 import { catalogTilesFor, tileGenreId, type GenreCatalogTile } from "../data/genreCatalog";
+import { useGenreArtwork } from "../data/genreArtwork";
 import { fallbackGenres } from "../data/genres";
 import type { MediaType } from "../models/media";
+import type { MetadataProvider } from "../services/metadata/types";
 import "./GenreCatalogGrid.css";
 
 interface Props {
   type: MediaType;
   onOpen: (ctx: BrowseContext) => void;
+  /** Metadata source for live tile artwork; gradient-only when null. */
+  tmdb?: MetadataProvider | null;
 }
 
-export function GenreCatalogGrid({ type, onOpen }: Props) {
+export function GenreCatalogGrid({ type, onOpen, tmdb = null }: Props) {
   const tiles = catalogTilesFor(type);
+  const artwork = useGenreArtwork(type, tmdb);
 
   const genreName = (tile: GenreCatalogTile): string => {
     const gid = tileGenreId(tile, type);
@@ -36,28 +41,40 @@ export function GenreCatalogGrid({ type, onOpen }: Props) {
   };
 
   return (
-    <div className="genre-catalog" role="list">
-      {tiles.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          role="listitem"
-          className="genre-tile"
-          style={
-            {
-              "--tile-a": t.accent[0],
-              "--tile-b": t.accent[1],
-            } as React.CSSProperties
-          }
-          onClick={() => open(t)}
-          aria-label={`Browse ${t.category != null ? t.label : genreName(t)}`}
-        >
-          <span className="genre-tile-glyph" aria-hidden>
-            {t.glyph}
-          </span>
-          <span className="genre-tile-label">{t.label}</span>
-        </button>
-      ))}
+    <div className="genre-catalog">
+      {tiles.map((t) => {
+        const art = artwork.get(t.id);
+        return (
+          <button
+            key={t.id}
+            type="button"
+            className={"genre-tile" + (art != null ? " has-art" : "")}
+            style={
+              {
+                "--tile-a": t.accent[0],
+                "--tile-b": t.accent[1],
+              } as React.CSSProperties
+            }
+            onClick={() => open(t)}
+            aria-label={`Browse ${t.category != null ? t.label : genreName(t)}`}
+          >
+            {art != null && (
+              <img
+                className="genre-tile-art"
+                src={art}
+                alt=""
+                aria-hidden
+                loading="lazy"
+                decoding="async"
+              />
+            )}
+            <span className="genre-tile-glyph" aria-hidden>
+              {t.glyph}
+            </span>
+            <span className="genre-tile-label">{t.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

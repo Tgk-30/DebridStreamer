@@ -213,6 +213,7 @@ export function Search() {
           <GenreCatalogGrid
             type={filter === "series" ? "series" : "movie"}
             onOpen={openBrowse}
+            tmdb={services.tmdb}
           />
           <h2 className="search-section-title search-section-title-spaced">
             Trending now
