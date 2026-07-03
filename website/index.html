@@ -18,10 +18,17 @@
     <meta name="twitter:card" content="summary_large_image" />
     <title>DebridStreamer — your private streaming app</title>
     <link rel="icon" href="./icons/icon-128.png" />
-    <link rel="stylesheet" href="./styles.css?v=2026-07-03" />
+    <!-- JS marker before first paint so the boot sequence never flashes the
+         final state first. Everything remains fully visible without JS. -->
+    <script>document.documentElement.classList.add("js-boot");</script>
+    <link rel="stylesheet" href="./styles.css?v=2026-07-03b" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
+
+    <!-- One-shot cinematic boot: letterbox bars sweep open on load. -->
+    <div class="letterbox letterbox-top" aria-hidden="true"></div>
+    <div class="letterbox letterbox-bottom" aria-hidden="true"></div>
 
     <header class="site-header">
       <div class="header-inner">
@@ -372,6 +379,24 @@ docker compose -f docker-compose.ghcr.yml up -d</code></pre>
       <a href="https://github.com/Tgk-30/DebridStreamer/issues">Issues</a>
     </footer>
 
-    <script src="./app.js?v=2026-07-03" type="module"></script>
+    <!-- The signature: the app's player transport as site chrome. Scroll
+         progress is playback; sections are chapters on the timeline. -->
+    <nav class="transport" aria-label="Page chapters">
+      <a class="transport-now" href="#top">
+        <span class="transport-dot" aria-hidden="true"></span>
+        <span class="transport-label">Now playing</span>
+        <strong>DebridStreamer</strong>
+      </a>
+      <div class="transport-track">
+        <div class="transport-fill" aria-hidden="true"></div>
+        <a class="transport-tick" href="#features"><span>Features</span></a>
+        <a class="transport-tick" href="#download"><span>Download</span></a>
+        <a class="transport-tick" href="#self-host"><span>Self-host</span></a>
+        <a class="transport-tick" href="#pwa"><span>Devices</span></a>
+      </div>
+      <span class="transport-time" aria-hidden="true">00:00&nbsp;/&nbsp;02:28</span>
+    </nav>
+
+    <script src="./app.js?v=2026-07-03b" type="module"></script>
   </body>
 </html>
