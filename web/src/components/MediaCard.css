@@ -16,6 +16,10 @@
   text-align: left;
   cursor: pointer;
   color: var(--text-primary);
+  /* Isolate each card's layout so one card's internal changes (shimmer, reveal,
+     progress) don't reflow the whole grid. NOT `paint` here — the card lifts +
+     scales past its box on hover and paint containment would clip that. */
+  contain: layout;
 }
 .media-card:hover,
 .media-card:focus-visible {
@@ -37,6 +41,9 @@
   aspect-ratio: 2 / 3;
   border-radius: var(--r-md);
   overflow: hidden;
+  /* Safe here (already clips via overflow): scopes the shimmer/reveal/progress
+     repaints to the poster box so they never invalidate the surrounding grid. */
+  contain: layout paint;
   border: 0.5px solid rgba(255, 255, 255, 0.1);
   background: rgba(0, 0, 0, 0.35);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
