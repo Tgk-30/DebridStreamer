@@ -24,7 +24,20 @@ import {
   resolveFetch,
 } from "./types";
 
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+
+/** Config for pointing this provider at an OpenAI-compatible host (Gemini,
+ * Groq, OpenRouter, Mistral, DeepSeek, xAI). Omit for stock OpenAI. */
+export interface OpenAICompatConfig {
+  /** Base URL WITHOUT a trailing `/chat/completions` (e.g. https://api.groq.com/openai/v1). */
+  baseURL?: string;
+  /** The kind this instance reports (drives usage records + display). */
+  kind?: AIProviderKind;
+  /** Human-facing name used in error messages ("Groq error"). */
+  label?: string;
+  /** Default model when the user hasn't chosen one. */
+  defaultModel?: string;
+}
 
 // MARK: - Request shape (mirrors OpenAIChatRequest)
 
@@ -53,16 +66,30 @@ interface RawOpenAIChatResponse {
 }
 
 export class OpenAIProvider implements AIAssistantProvider {
-  readonly kind: AIProviderKind = "openai";
+  readonly kind: AIProviderKind;
 
   private readonly apiKey: string;
   private readonly model: string;
   private readonly fetchImpl: FetchImpl;
+  private readonly chatURL: string;
+  private readonly label: string;
 
-  constructor(apiKey: string, model = "gpt-4o-mini", fetchImpl?: FetchImpl) {
+  constructor(
+    apiKey: string,
+    model?: string,
+    fetchImpl?: FetchImpl,
+    config?: OpenAICompatConfig,
+  ) {
     this.apiKey = apiKey;
-    this.model = model;
+    const chosen = model?.trim();
+    this.model =
+      chosen != null && chosen.length > 0
+        ? chosen
+        : config?.defaultModel ?? "gpt-4o-mini";
     this.fetchImpl = resolveFetch(fetchImpl);
+    this.chatURL = `${config?.baseURL ?? DEFAULT_BASE_URL}/chat/completions`;
+    this.kind = config?.kind ?? "openai";
+    this.label = config?.label ?? "OpenAI";
   }
 
   async recommend(
@@ -93,7 +120,7 @@ export class OpenAIProvider implements AIAssistantProvider {
       temperature: 0.4,
     };
 
-    const response = await this.fetchImpl(OPENAI_URL, {
+    const response = await this.fetchImpl(this.chatURL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -103,7 +130,7 @@ export class OpenAIProvider implements AIAssistantProvider {
     });
 
     if (!(response.status >= 200 && response.status <= 299)) {
-      const errorText = (await response.text().catch(() => "")) || "OpenAI error";
+      const errorText = (await response.text().catch(() => "")) || `${this.label} error`;
       throw AIAssistantProviderError.apiError(errorText);
     }
 
@@ -165,7 +192,7 @@ export class OpenAIProvider implements AIAssistantProvider {
       temperature: 0.4,
     };
 
-    const response = await this.fetchImpl(OPENAI_URL, {
+    const response = await this.fetchImpl(this.chatURL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -175,7 +202,7 @@ export class OpenAIProvider implements AIAssistantProvider {
     });
 
     if (!(response.status >= 200 && response.status <= 299)) {
-      const errorText = (await response.text().catch(() => "")) || "OpenAI error";
+      const errorText = (await response.text().catch(() => "")) || `${this.label} error`;
       throw AIAssistantProviderError.apiError(errorText);
     }
 

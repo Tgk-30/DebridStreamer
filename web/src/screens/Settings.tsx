@@ -16,6 +16,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
   type CSSProperties,
@@ -53,6 +54,8 @@ import type {
 } from "../data/settings";
 import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
+import { fetchAvailableModels } from "../services/ai/ModelCatalog";
+import { appFetch } from "../lib/http";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import { AdvancedOnly } from "../components/AdvancedOnly";
@@ -3667,17 +3670,125 @@ function SegmentedControl({
   );
 }
 
+// Static fallbacks shown before (or when) a live fetch runs. The Refresh button
+// replaces these with the provider's actual catalog.
 const AI_MODEL_OPTIONS: Record<AppSettings["aiProvider"], string[]> = {
-  openai: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1"],
+  openai: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1", "o4-mini"],
   anthropic: ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-opus-4-1"],
   ollama: ["llama3.2", "qwen2.5", "mistral"],
+  gemini: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"],
+  openrouter: [
+    "openai/gpt-4o-mini",
+    "anthropic/claude-3.5-sonnet",
+    "meta-llama/llama-3.3-70b-instruct",
+  ],
+  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+  mistral: ["mistral-small-latest", "mistral-large-latest", "open-mistral-nemo"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  xai: ["grok-2-latest", "grok-2-mini"],
 };
 
-function modelOptions(provider: AppSettings["aiProvider"], current: string): string[] {
-  const base = AI_MODEL_OPTIONS[provider] ?? [];
-  return current.trim().length > 0 && !base.includes(current)
-    ? [current, ...base]
-    : base;
+/** Merge the current value + live-fetched ids + static fallbacks into a unique,
+ * ordered option list (current first so an off-list saved model stays visible). */
+function modelOptions(
+  provider: AppSettings["aiProvider"],
+  current: string,
+  fetched: string[],
+): string[] {
+  const base = fetched.length > 0 ? fetched : AI_MODEL_OPTIONS[provider] ?? [];
+  const merged =
+    current.trim().length > 0 && !base.includes(current)
+      ? [current, ...base]
+      : base;
+  const seen = new Set<string>();
+  return merged.filter((m) => (seen.has(m) ? false : (seen.add(m), true)));
+}
+
+/** The Advanced "Model" picker with a live "Refresh" that pulls the provider's
+ * real catalog from its own endpoint. Falls back to a static list until then. */
+function ModelSelectField({ draft, patch }: TabProps) {
+  const [fetched, setFetched] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  // Bumped on every provider change and every refresh; a resolved fetch only
+  // commits its result if its id still matches, so a slow response from the
+  // previous provider can't populate the new provider's dropdown.
+  const reqId = useRef(0);
+
+  // A provider switch invalidates any previously fetched catalog.
+  const provider = draft.aiProvider;
+  useEffect(() => {
+    reqId.current += 1;
+    setFetched([]);
+    setError(null);
+    setNote(null);
+    setLoading(false);
+  }, [provider]);
+
+  async function refresh() {
+    const id = (reqId.current += 1);
+    setLoading(true);
+    setError(null);
+    setNote(null);
+    try {
+      const models = await fetchAvailableModels({
+        kind: provider,
+        apiKey: draft.aiApiKey,
+        endpoint: draft.ollamaEndpoint,
+        fetchImpl: appFetch,
+      });
+      if (id !== reqId.current) return; // superseded — drop stale result
+      setFetched(models);
+      setNote(
+        models.length > 0
+          ? `${models.length} model${models.length === 1 ? "" : "s"} available`
+          : "No models returned for this account.",
+      );
+    } catch (err) {
+      if (id !== reqId.current) return;
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (id === reqId.current) setLoading(false);
+    }
+  }
+
+  return (
+    <Field label="Model" hint="Refresh to load this provider's live catalog.">
+      <div className="settings-model-row">
+        <select
+          value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
+          onChange={(event) =>
+            patch({
+              aiModel: event.target.value === "__default" ? "" : event.target.value,
+            })
+          }
+        >
+          <option value="__default">Provider default (recommended)</option>
+          {modelOptions(provider, draft.aiModel, fetched).map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="chip settings-model-refresh"
+          onClick={() => void refresh()}
+          disabled={loading}
+          aria-busy={loading}
+          title="Load the provider's current models"
+        >
+          <Icon name={loading ? "refresh" : "sparkles"} size={14} />
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+      {error != null && <p className="settings-model-msg t-warning">{error}</p>}
+      {error == null && note != null && (
+        <p className="settings-model-msg t-secondary">{note}</p>
+      )}
+    </Field>
+  );
 }
 
 function KeysTab({ draft, patch }: TabProps) {
@@ -3787,7 +3898,12 @@ function KeysTab({ draft, patch }: TabProps) {
                 <select
                   value={draft.aiProvider}
                   onChange={(e) =>
-                    patch({ aiProvider: e.target.value as AppSettings["aiProvider"] })
+                    // Reset the model override too: a model id from the old
+                    // provider (e.g. gpt-4o-mini) would be rejected by the new host.
+                    patch({
+                      aiProvider: e.target.value as AppSettings["aiProvider"],
+                      aiModel: "",
+                    })
                   }
                 >
                   {AIProviderKind.allCases().map((k) => (
@@ -3801,24 +3917,7 @@ function KeysTab({ draft, patch }: TabProps) {
               {/* The explicit model override is an Advanced dial — Simple mode
                   sticks with the recommended provider default. */}
               <AdvancedOnly>
-                <Field label="Model" hint="Recommended default stays first.">
-                  <select
-                    value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
-                    onChange={(event) =>
-                      patch({
-                        aiModel:
-                          event.target.value === "__default" ? "" : event.target.value,
-                      })
-                    }
-                  >
-                    <option value="__default">Provider default (recommended)</option>
-                    {modelOptions(draft.aiProvider, draft.aiModel).map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <ModelSelectField draft={draft} patch={patch} />
               </AdvancedOnly>
             </div>
 

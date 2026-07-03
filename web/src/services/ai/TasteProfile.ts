@@ -154,18 +154,71 @@ async function assembleTasteContext(store: Store, now: number): Promise<string> 
   const dislikedTitles: string[] = [];
   const likedSeen = new Set<string>();
   const dislikedSeen = new Set<string>();
+  // Numeric ratings (1–10 / 0–100), collected with their normalized /10 score.
+  const ratedHigh: string[] = [];
+  const ratedLow: string[] = [];
+  const ratedHighSeen = new Set<string>();
+  const ratedLowSeen = new Set<string>();
+  // Only the newest rating per title counts (events arrive newest-first), so a
+  // re-rate supersedes the old score instead of stacking or contradicting it.
+  const ratedSeen = new Set<string>();
 
   for (const event of events) {
-    if (event.eventType !== "liked" && event.eventType !== "disliked") continue;
     const weight = recencyDecay(event.createdAt, now);
-    const target = event.eventType === "liked" ? likedGenreScore : dislikedGenreScore;
-    for (const genre of genresFromEvent(event)) {
-      target.set(genre, (target.get(genre) ?? 0) + weight);
+
+    if (event.eventType === "liked" || event.eventType === "disliked") {
+      const target = event.eventType === "liked" ? likedGenreScore : dislikedGenreScore;
+      for (const genre of genresFromEvent(event)) {
+        target.set(genre, (target.get(genre) ?? 0) + weight);
+      }
+      const title = titleFromEvent(event);
+      if (title != null) {
+        if (event.eventType === "liked") pushUnique(likedTitles, title, likedSeen, 8);
+        else pushUnique(dislikedTitles, title, dislikedSeen, 8);
+      }
+      continue;
     }
-    const title = titleFromEvent(event);
-    if (title != null) {
-      if (event.eventType === "liked") pushUnique(likedTitles, title, likedSeen, 8);
-      else pushUnique(dislikedTitles, title, dislikedSeen, 8);
+
+    if (event.eventType === "rated") {
+      // metadata.norm is the rating on a [0,1] scale, so it feeds the profile
+      // the same way regardless of whether the user rates out of 10 or 100.
+      const norm = Number(event.metadata?.norm);
+      if (!Number.isFinite(norm)) continue;
+      const title = titleFromEvent(event);
+      // Dedupe by the stable media id (falling back to title) so two different
+      // titles that happen to share a name don't collide, and a re-rate of the
+      // SAME media is superseded by its newest score.
+      const key =
+        event.mediaId != null && event.mediaId.length > 0
+          ? `id:${event.mediaId}`
+          : title != null
+            ? `t:${title.toLowerCase()}`
+            : null;
+      if (key != null) {
+        if (ratedSeen.has(key)) continue; // older duplicate — newest already counted
+        ratedSeen.add(key);
+      }
+      const clamped = Math.min(1, Math.max(0, norm));
+      // Scale the genre signal by distance from neutral (5/10): a 10/10 counts
+      // like a full like, a 7/10 as a partial one, a 5/10 as nothing.
+      const magnitude = Math.abs(clamped * 2 - 1);
+      const scoreOutOf10 = Math.round(clamped * 10);
+      if (clamped >= 0.7) {
+        for (const genre of genresFromEvent(event)) {
+          likedGenreScore.set(genre, (likedGenreScore.get(genre) ?? 0) + weight * magnitude);
+        }
+        if (title != null) {
+          pushUnique(ratedHigh, `${title} (${scoreOutOf10}/10)`, ratedHighSeen, 8);
+        }
+      } else if (clamped <= 0.4) {
+        for (const genre of genresFromEvent(event)) {
+          dislikedGenreScore.set(genre, (dislikedGenreScore.get(genre) ?? 0) + weight * magnitude);
+        }
+        if (title != null) {
+          pushUnique(ratedLow, `${title} (${scoreOutOf10}/10)`, ratedLowSeen, 8);
+        }
+      }
+      continue;
     }
   }
 
@@ -199,6 +252,12 @@ async function assembleTasteContext(store: Store, now: number): Promise<string> 
   }
   if (dislikedTitles.length > 0) {
     notes.push(`Disliked titles: ${dislikedTitles.join(", ")}`);
+  }
+  if (ratedHigh.length > 0) {
+    notes.push(`Rated highly: ${ratedHigh.join(", ")}`);
+  }
+  if (ratedLow.length > 0) {
+    notes.push(`Rated low: ${ratedLow.join(", ")}`);
   }
   if (recentlyWatched.length > 0) {
     notes.push(`Recently watched: ${recentlyWatched.join(", ")}`);

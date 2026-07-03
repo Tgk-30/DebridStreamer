@@ -101,6 +101,42 @@ export const SIGNUP_LINKS: readonly SignupLink[] = [
     url: "https://platform.openai.com/api-keys",
     kind: "ai",
   },
+  {
+    id: "gemini",
+    label: "Google Gemini API key",
+    url: "https://aistudio.google.com/apikey",
+    kind: "ai",
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter API key",
+    url: "https://openrouter.ai/keys",
+    kind: "ai",
+  },
+  {
+    id: "groq",
+    label: "Groq API key",
+    url: "https://console.groq.com/keys",
+    kind: "ai",
+  },
+  {
+    id: "mistral",
+    label: "Mistral API key",
+    url: "https://console.mistral.ai/api-keys",
+    kind: "ai",
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek API key",
+    url: "https://platform.deepseek.com/api_keys",
+    kind: "ai",
+  },
+  {
+    id: "xai",
+    label: "xAI (Grok) API key",
+    url: "https://console.x.ai",
+    kind: "ai",
+  },
 ];
 
 /** DebridServiceType value → SIGNUP_LINKS id. (Settings.tsx and
@@ -116,6 +152,12 @@ export const DEBRID_SIGNUP_ID: Record<string, string> = {
 export const AI_SIGNUP_ID: Record<string, string> = {
   anthropic: "anthropic",
   openai: "openai",
+  gemini: "gemini",
+  openrouter: "openrouter",
+  groq: "groq",
+  mistral: "mistral",
+  deepseek: "deepseek",
+  xai: "xai",
 };
 
 /** Look up a signup URL by id (e.g. "tmdb", "realDebrid"); null if unknown. */
