@@ -33,7 +33,7 @@ import {
   makeIndexerConfig,
 } from "../services/indexers/types";
 import type { AIAssistantProvider } from "../services/ai/types";
-import type { AIProviderKind } from "../services/ai/models";
+import { AIProviderKind, OPENAI_COMPATIBLE } from "../services/ai/models";
 import { OpenAIProvider } from "../services/ai/OpenAIProvider";
 import { AnthropicProvider } from "../services/ai/AnthropicProvider";
 import { OllamaProvider } from "../services/ai/OllamaProvider";
@@ -421,6 +421,12 @@ export function loadSettings(): AppSettings {
       subtitleTextColor: normalizeSubtitleTextColor(parsed.subtitleTextColor),
       subtitleBgOpacity: normalizeSubtitleBgOpacity(parsed.subtitleBgOpacity),
       ratingScale: normalizeRatingScale(parsed.ratingScale),
+      // A stale/poisoned provider id would route to a host that can't serve it.
+      aiProvider: AIProviderKind.allCases().includes(
+        parsed.aiProvider as AIProviderKind,
+      )
+        ? (parsed.aiProvider as AIProviderKind)
+        : base.aiProvider,
     };
   } catch {
     return base;
@@ -714,7 +720,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     debridTokens,
     sources,
     builtInIndexersEnabled: builtIn == null ? base.builtInIndexersEnabled : builtIn === "true",
-    aiProvider: (aiProvider as AIProviderKind) ?? base.aiProvider,
+    aiProvider: AIProviderKind.allCases().includes(aiProvider as AIProviderKind)
+      ? (aiProvider as AIProviderKind)
+      : base.aiProvider,
     aiApiKey: aiApiKey ?? base.aiApiKey,
     aiModel: aiModel ?? base.aiModel,
     ollamaEndpoint: ollamaEndpoint ?? base.ollamaEndpoint,
@@ -1269,19 +1277,27 @@ function buildAIProvider(settings: AppSettings): AIAssistantProvider | null {
   // default model parameter applies; `appFetch` is threaded either way so AI
   // hosts work in the desktop app (degrades to global fetch in a browser).
   const modelArg = model.length > 0 ? model : undefined;
-  switch (settings.aiProvider) {
-    case "openai":
-      if (key.length === 0) return null;
-      return new OpenAIProvider(key, modelArg, appFetch);
-    case "anthropic":
-      if (key.length === 0) return null;
-      return new AnthropicProvider(key, modelArg, appFetch);
-    case "ollama": {
-      const endpoint = settings.ollamaEndpoint.trim();
-      if (endpoint.length === 0) return null;
-      return new OllamaProvider(endpoint, modelArg, appFetch);
-    }
+  const kind = settings.aiProvider;
+
+  if (kind === "anthropic") {
+    if (key.length === 0) return null;
+    return new AnthropicProvider(key, modelArg, appFetch);
   }
+  if (kind === "ollama") {
+    const endpoint = settings.ollamaEndpoint.trim();
+    if (endpoint.length === 0) return null;
+    return new OllamaProvider(endpoint, modelArg, appFetch);
+  }
+  // Everything else is an OpenAI-compatible host (OpenAI, Gemini, OpenRouter,
+  // Groq, Mistral, DeepSeek, xAI) — one provider class, different base URL.
+  const compat = OPENAI_COMPATIBLE[kind];
+  if (compat == null || key.length === 0) return null;
+  return new OpenAIProvider(key, modelArg, appFetch, {
+    baseURL: compat.baseURL,
+    kind,
+    label: AIProviderKind.displayName(kind),
+    defaultModel: compat.defaultModel,
+  });
 }
 
 /** Build-time TMDB key fallback (VITE_TMDB_KEY), read defensively. Lets the

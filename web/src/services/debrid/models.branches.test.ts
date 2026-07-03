@@ -381,10 +381,34 @@ describe("AIProviderKind", () => {
     expect(AIProviderKind.displayName("openai")).toBe("OpenAI");
     expect(AIProviderKind.displayName("anthropic")).toBe("Anthropic");
     expect(AIProviderKind.displayName("ollama")).toBe("Ollama");
+    expect(AIProviderKind.displayName("gemini")).toBe("Google Gemini");
+    expect(AIProviderKind.displayName("openrouter")).toBe("OpenRouter");
+    expect(AIProviderKind.displayName("groq")).toBe("Groq");
+    expect(AIProviderKind.displayName("mistral")).toBe("Mistral");
+    expect(AIProviderKind.displayName("deepseek")).toBe("DeepSeek");
+    expect(AIProviderKind.displayName("xai")).toBe("xAI (Grok)");
   });
 
   it("allCases lists every provider raw value", () => {
-    expect(AIProviderKind.allCases()).toEqual(["openai", "anthropic", "ollama"]);
+    expect(AIProviderKind.allCases()).toEqual([
+      "anthropic",
+      "openai",
+      "gemini",
+      "openrouter",
+      "groq",
+      "mistral",
+      "deepseek",
+      "xai",
+      "ollama",
+    ]);
+  });
+
+  it("flags OpenAI-compatible hosts (and excludes anthropic/ollama)", () => {
+    expect(AIProviderKind.isOpenAICompatible("openai")).toBe(true);
+    expect(AIProviderKind.isOpenAICompatible("groq")).toBe(true);
+    expect(AIProviderKind.isOpenAICompatible("gemini")).toBe(true);
+    expect(AIProviderKind.isOpenAICompatible("anthropic")).toBe(false);
+    expect(AIProviderKind.isOpenAICompatible("ollama")).toBe(false);
   });
 });
 

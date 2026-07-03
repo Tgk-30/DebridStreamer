@@ -513,3 +513,43 @@ describe("OpenAIProvider error identity", () => {
     );
   });
 });
+
+// MARK: - OpenAI-compatible hosts (Groq/Gemini/OpenRouter/... via config)
+
+describe("OpenAIProvider compatible-host config", () => {
+  it("POSTs to the configured base URL, reports its kind, and uses the default model", async () => {
+    const mock = makeMockFetch(200, okBody(undefined, { omitModel: true }));
+    const provider = new OpenAIProvider("gsk_key", undefined, mock.fetchImpl, {
+      baseURL: "https://api.groq.com/openai/v1",
+      kind: "groq",
+      label: "Groq",
+      defaultModel: "llama-3.3-70b-versatile",
+    });
+    expect(provider.kind).toBe("groq");
+
+    const result = await provider.recommend("action films", ["Heat"], 3);
+    const req = mock.lastRequest()!;
+    expect(req.url).toBe("https://api.groq.com/openai/v1/chat/completions");
+    expect(JSON.parse(req.body ?? "{}").model).toBe("llama-3.3-70b-versatile");
+    // No model echoed by the host → falls back to the configured default.
+    expect(result.model).toBe("llama-3.3-70b-versatile");
+  });
+
+  it("uses the host's label in the non-2xx error message", async () => {
+    const mock = makeMockFetch(500, "");
+    const provider = new OpenAIProvider("k", undefined, mock.fetchImpl, {
+      baseURL: "https://openrouter.ai/api/v1",
+      kind: "openrouter",
+      label: "OpenRouter",
+    });
+    await expect(provider.recommend("x", [], 1)).rejects.toThrow(/OpenRouter error/);
+  });
+
+  it("still defaults to stock OpenAI when no config is passed", async () => {
+    const mock = makeMockFetch(200, okBody());
+    const provider = new OpenAIProvider("k", undefined, mock.fetchImpl);
+    expect(provider.kind).toBe("openai");
+    await provider.recommend("x", [], 1);
+    expect(mock.lastRequest()!.url).toBe(OPENAI_URL);
+  });
+});

@@ -433,6 +433,45 @@
   gap: var(--sp-md);
 }
 
+/* Live model picker: the select flexes, the Refresh button sits alongside. */
+.settings-model-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-sm);
+}
+.settings-model-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.settings-model-refresh {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.settings-model-refresh[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+.settings-model-refresh[aria-busy="true"] svg {
+  animation: settings-model-spin 0.8s linear infinite;
+}
+@keyframes settings-model-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-model-refresh[aria-busy="true"] svg {
+    animation: none;
+  }
+}
+.settings-model-msg {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
 .settings-divider {
   height: 1px;
   background: var(--glass-border);
