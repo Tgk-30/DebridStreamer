@@ -853,8 +853,11 @@ function UpdatesTab({ draft, patch }: TabProps) {
           }
         />
         <span>
-          <strong>Check for desktop updates on launch</strong>
-          <span className="t-secondary"> — shows a signed update prompt.</span>
+          <strong>Check for desktop updates automatically</strong>
+          <span className="t-secondary">
+            {" "}
+            — on launch and weekly; shows a signed update prompt.
+          </span>
         </span>
       </label>
 

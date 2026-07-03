@@ -150,7 +150,7 @@ describe("Settings · Updates", () => {
     renderAt("updates", { autoUpdateChecks: false, autoInstallUpdates: false });
 
     const autoCheck = screen
-      .getByText("Check for desktop updates on launch")
+      .getByText("Check for desktop updates automatically")
       .closest("label")!
       .querySelector('input[type="checkbox"]') as HTMLInputElement;
     expect(autoCheck.checked).toBe(false);
@@ -178,7 +178,7 @@ describe("Settings · Updates", () => {
     expect(autoInstall.disabled).toBe(false);
 
     const autoCheck = screen
-      .getByText("Check for desktop updates on launch")
+      .getByText("Check for desktop updates automatically")
       .closest("label")!
       .querySelector('input[type="checkbox"]') as HTMLInputElement;
     await user.click(autoCheck); // turn checks OFF

@@ -1,6 +1,7 @@
 // In-app auto-update check + install.
 //
-// Runs once on launch (via the UpdateBanner component, mounted from App.tsx). It
+// Runs on launch and then weekly for long-running instances (via the
+// UpdateBanner component, mounted from App.tsx). It
 // is a deliberate no-op in a plain browser — the updater plugin only exists in
 // the desktop Tauri shell — so it's guarded by `isTauri()` and never throws into
 // the UI. When running under Tauri it asks the updater plugin whether a newer
@@ -15,6 +16,35 @@
 // before reporting an update, so an unsigned/forged `latest.json` is ignored.
 
 import { isTauri } from "./tauri";
+
+const LAST_CHECK_KEY = "ds_last_update_check";
+
+/** Record that an update check just ran — drives the weekly re-check cadence for
+ * long-running app instances (a fresh launch always checks regardless). */
+export function markUpdateChecked(now = Date.now()): void {
+  try {
+    globalThis.localStorage?.setItem(LAST_CHECK_KEY, String(now));
+  } catch {
+    // best-effort; without persistence every poll simply reads as "due".
+  }
+}
+
+/** Milliseconds since the last recorded update check, or Infinity when never
+ * checked / unreadable (so the first eligible poll is always "due"). */
+export function updateCheckAgeMs(now = Date.now()): number {
+  try {
+    const raw = globalThis.localStorage?.getItem(LAST_CHECK_KEY);
+    const at = raw != null ? Number(raw) : NaN;
+    if (!Number.isFinite(at)) return Infinity;
+    return Math.max(0, now - at);
+  } catch {
+    return Infinity;
+  }
+}
+
+/** How often a long-running instance re-checks for updates (the user's "check
+ * every week" cadence). A fresh launch always checks immediately regardless. */
+export const WEEKLY_UPDATE_CHECK_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** A pending desktop update, with the version + an install action. The install
  * action downloads + applies the update (reporting byte progress) and then
