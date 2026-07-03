@@ -1138,3 +1138,279 @@ code {
     padding: 10px 14px;
   }
 }
+
+/* ── Cinematic boot — one-shot page-load sequence (JS-gated via .js-boot;
+      prefers-reduced-motion collapses every animation to instant). ───────── */
+
+.letterbox {
+  display: none;
+}
+.js-boot .letterbox {
+  display: block;
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 9vh;
+  z-index: 90;
+  background: var(--site-bg);
+  pointer-events: none;
+}
+.js-boot .letterbox-top {
+  top: 0;
+  transform-origin: top;
+  animation: lb-open 0.8s cubic-bezier(0.7, 0, 0.2, 1) 0.25s forwards;
+}
+.js-boot .letterbox-bottom {
+  bottom: 0;
+  transform-origin: bottom;
+  animation: lb-open 0.8s cubic-bezier(0.7, 0, 0.2, 1) 0.25s forwards;
+}
+@keyframes lb-open {
+  to {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes boot-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.js-boot .hero-chips {
+  animation: boot-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+.js-boot .hero h1 {
+  animation: boot-rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.45s both;
+}
+.js-boot .lede {
+  animation: boot-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.58s both;
+}
+.js-boot .hero-actions {
+  animation: boot-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.7s both;
+}
+.js-boot .hero-platforms {
+  animation: boot-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.8s both;
+}
+.js-boot .hero .download-note {
+  animation: boot-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.88s both;
+}
+@keyframes stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.965);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.js-boot .product-stage {
+  animation: stage-in 1s cubic-bezier(0.16, 1, 0.3, 1) 0.6s both;
+}
+
+/* Projector-beam sweep across the gradient word, once, at boot. */
+.js-boot .hero h1 em {
+  background: linear-gradient(
+    115deg,
+    var(--accent) 20%,
+    var(--accent-2) 38%,
+    #fff 50%,
+    var(--accent-2) 62%,
+    var(--accent-3) 82%
+  );
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: beam-sweep 1.6s ease-out 1s both;
+}
+@keyframes beam-sweep {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+/* ── Scroll reveals — content rises in as playback advances. ─────────────── */
+
+.js-boot .reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.js-boot .reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── Pointer tilt — the hero window leans toward the cursor (desktop only,
+      set from JS; coarse pointers and reduced motion never enable it). ───── */
+
+.js-boot .product-stage {
+  perspective: 1400px;
+}
+.js-boot .app-window-main {
+  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transition: transform 0.25s ease-out;
+  will-change: transform;
+}
+
+/* ── The transport — the app's player scrub bar as site chrome. Scroll is
+      playback; chapters are sections; the timestamp is the page runtime. ─── */
+
+.transport {
+  display: none;
+}
+.js-boot .transport {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 55;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 18px;
+  width: min(920px, calc(100% - 32px));
+  padding: 12px 18px;
+  border-radius: var(--r-pill);
+  border: 0.75px solid var(--glass-border);
+  background: rgba(13, 15, 26, 0.72);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  box-shadow: 0 18px 48px -18px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: boot-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 1.15s both;
+}
+/* Keep the footer reachable above the fixed transport. */
+.js-boot .site-footer {
+  padding-bottom: 96px;
+}
+
+.transport-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: var(--text);
+  min-width: 0;
+}
+.transport-dot {
+  width: 0;
+  height: 0;
+  border-left: 10px solid var(--accent);
+  border-top: 6.5px solid transparent;
+  border-bottom: 6.5px solid transparent;
+  filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.8));
+}
+.transport-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.transport-now strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.transport-track {
+  position: relative;
+  height: 22px;
+}
+.transport-track::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 5px;
+  transform: translateY(-50%);
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.12);
+}
+.transport-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.55);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.transport-tick {
+  position: absolute;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  background: var(--bg-2);
+  transition: border-color 0.16s, background 0.16s, transform 0.16s;
+}
+.transport-tick:hover,
+.transport-tick:focus-visible {
+  transform: translate(-50%, -50%) scale(1.25);
+  border-color: #fff;
+}
+.transport-tick.is-active {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.7);
+}
+.transport-tick span {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text);
+  background: rgba(13, 15, 26, 0.9);
+  border: 0.75px solid var(--glass-border);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s;
+}
+.transport-tick:hover span,
+.transport-tick:focus-visible span,
+.transport-tick.is-active span {
+  opacity: 1;
+}
+
+.transport-time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  /* The transport is desktop chrome — phones keep the header menu. */
+  .js-boot .transport {
+    display: none;
+  }
+  .js-boot .site-footer {
+    padding-bottom: 32px;
+  }
+}

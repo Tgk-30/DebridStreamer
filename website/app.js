@@ -351,6 +351,129 @@ function initSectionNav() {
   requestSettledUpdates();
 }
 
+/* ── The transport: scroll progress rendered as playback on a player bar.
+      Chapters (sections) become ticks on the timeline; the mono timestamp
+      maps page position onto a feature-length runtime. ─────────────────── */
+function initTransport() {
+  const bar = document.querySelector(".transport");
+  if (!bar) return;
+  const fill = bar.querySelector(".transport-fill");
+  const time = bar.querySelector(".transport-time");
+  const ticks = [...bar.querySelectorAll(".transport-tick")];
+  const RUNTIME = 148; // "02:28" — a feature-length page
+
+  const pad = (n) => String(n).padStart(2, "0");
+  const fmt = (s) => `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
+
+  function layoutTicks() {
+    const total = document.documentElement.scrollHeight - window.innerHeight;
+    if (total <= 0) return;
+    const headerHeight =
+      document.querySelector(".site-header")?.getBoundingClientRect().height ?? 0;
+    for (const tick of ticks) {
+      const target = document.querySelector(tick.getAttribute("href"));
+      if (!target) continue;
+      const top =
+        target.getBoundingClientRect().top + window.scrollY - headerHeight - 24;
+      const pct = Math.min(98, Math.max(2, (top / total) * 100));
+      tick.style.left = `${pct}%`;
+    }
+  }
+
+  let frame = 0;
+  function update() {
+    frame = 0;
+    const total = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = total > 0 ? Math.min(1, Math.max(0, window.scrollY / total)) : 0;
+    if (fill) fill.style.transform = `scaleX(${progress.toFixed(4)})`;
+    if (time) {
+      time.textContent = `${fmt(Math.round(progress * RUNTIME))} / ${fmt(RUNTIME)}`;
+    }
+  }
+  function request() {
+    if (!frame) frame = window.requestAnimationFrame(update);
+  }
+
+  window.addEventListener("scroll", request, { passive: true });
+  window.addEventListener("resize", () => {
+    layoutTicks();
+    request();
+  });
+  // Re-measure whenever the document height changes — images settling, the
+  // GitHub release fetch inserting asset rows, details elements toggling.
+  if ("ResizeObserver" in window) {
+    let settle = 0;
+    const observer = new ResizeObserver(() => {
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        layoutTicks();
+        request();
+      }, 120);
+    });
+    observer.observe(document.body);
+  } else {
+    window.addEventListener("load", layoutTicks);
+    window.setTimeout(layoutTicks, 800);
+  }
+  layoutTicks();
+  update();
+}
+
+/* One-shot scroll reveals — sections rise in as playback advances. */
+function initReveals() {
+  if (!("IntersectionObserver" in window)) return;
+  const nodes = document.querySelectorAll(
+    ".proof-strip span, .section-head, .rail-card, .picker, .split > *, .hosting-grid article, .steps article, .status-list",
+  );
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add("is-in");
+        observer.unobserve(entry.target);
+      }
+    },
+    { rootMargin: "0px 0px -8% 0px", threshold: 0.1 },
+  );
+  let index = 0;
+  for (const node of nodes) {
+    node.classList.add("reveal");
+    node.style.transitionDelay = `${(index % 5) * 70}ms`;
+    index += 1;
+    observer.observe(node);
+  }
+}
+
+/* The hero window leans toward the cursor — fine pointers only, never under
+   reduced motion. Pure transform, rAF-throttled. */
+function initTilt() {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (window.matchMedia("(pointer: coarse)").matches) return;
+  const stage = document.querySelector(".product-stage");
+  const target = document.querySelector(".app-window-main");
+  if (!stage || !target) return;
+
+  let frame = 0;
+  let tiltX = 0;
+  let tiltY = 0;
+  stage.addEventListener("pointermove", (event) => {
+    const rect = stage.getBoundingClientRect();
+    tiltY = ((event.clientX - rect.left) / rect.width - 0.5) * 4.4;
+    tiltX = (0.5 - (event.clientY - rect.top) / rect.height) * 3.2;
+    if (!frame) {
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        target.style.setProperty("--tilt-x", `${tiltX.toFixed(2)}deg`);
+        target.style.setProperty("--tilt-y", `${tiltY.toFixed(2)}deg`);
+      });
+    }
+  });
+  stage.addEventListener("pointerleave", () => {
+    target.style.setProperty("--tilt-x", "0deg");
+    target.style.setProperty("--tilt-y", "0deg");
+  });
+}
+
 if (typeof window !== "undefined") {
   window.DebridStreamerWebsite = {
     bestAsset,
@@ -367,4 +490,7 @@ if (typeof window !== "undefined" && !window.__DEBRIDSTREAMER_WEBSITE_TEST__) {
   initCommandCopy();
   initMobileMenu();
   initSectionNav();
+  initTransport();
+  initReveals();
+  initTilt();
 }
