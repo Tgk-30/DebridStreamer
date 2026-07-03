@@ -106,7 +106,8 @@ function torrent(overrides: Partial<TorrentResult>): TorrentResult {
   };
 }
 
-/** Minimal IndexerManager stand-in: only activeIndexers + searchAll are read. */
+/** Minimal IndexerManager stand-in: activeIndexers + searchAll (+ optional
+ * searchByQuery, exercised by the title-based pass). */
 function fakeIndexers(opts: {
   active?: string[];
   searchAll?: (
@@ -115,13 +116,14 @@ function fakeIndexers(opts: {
     season?: number | null,
     episode?: number | null,
   ) => Promise<TorrentResult[]>;
+  searchByQuery?: (query: string, type: MediaType) => Promise<TorrentResult[]>;
 }): IndexerManager {
   return {
     get activeIndexers() {
       return opts.active ?? ["jackett"];
     },
-    searchAll:
-      opts.searchAll ?? (async () => [] as TorrentResult[]),
+    searchAll: opts.searchAll ?? (async () => [] as TorrentResult[]),
+    searchByQuery: opts.searchByQuery ?? (async () => [] as TorrentResult[]),
   } as unknown as IndexerManager;
 }
 
@@ -148,10 +150,11 @@ async function renderStreams(
   debrid: DebridManager | null,
   season: number | null = null,
   episode: number | null = null,
+  title: string | null = null,
 ): Promise<{ state: StreamsState; cleanup: () => void }> {
   // First synchronous render: the hook returns the initial state and registers
   // its effect.
-  const initial = useStreams(imdbId, type, season, episode, indexers, debrid);
+  const initial = useStreams(imdbId, type, season, episode, title, indexers, debrid);
   // Run the registered effect (kicks off the async run + returns teardown).
   const teardown = cell.effect ? cell.effect() : undefined;
   // Flush the microtask queue so the async `run` settles into setState.
@@ -249,7 +252,9 @@ describe("useStreams — Local resolve path (resolveStreams)", () => {
     expect(state.error).toBeNull();
   });
 
-  it("preserves searchAll order (resolveStreams maps, does not sort)", async () => {
+  it("sorts the merged results by quality (highest first)", async () => {
+    // resolveStreams now merges the imdb-based + title-based passes, so it
+    // re-sorts by quality/seeders rather than trusting one pass's order.
     const results = [
       torrent({ infoHash: "z", quality: VideoQuality.sd480p }),
       torrent({ infoHash: "a", quality: VideoQuality.uhd4k }),
@@ -258,7 +263,72 @@ describe("useStreams — Local resolve path (resolveStreams)", () => {
     const indexers = fakeIndexers({ searchAll: async () => results });
     const debrid = fakeDebrid({ hasServices: true });
     const { state } = await renderStreams("tt1", "movie", indexers, debrid);
-    expect(state.rows.map((r) => r.result.infoHash)).toEqual(["z", "a", "m"]);
+    // 4k → 1080p → 480p.
+    expect(state.rows.map((r) => r.result.infoHash)).toEqual(["a", "m", "z"]);
+  });
+
+  it("runs a title-based query and merges it when the imdb pass is empty", async () => {
+    // The real bug: EZTV (imdb-native) is down so searchAll returns nothing, but
+    // APIBay (name-matching) finds the episode via a `Title SxxEyy` query.
+    let capturedQuery = "";
+    const indexers = fakeIndexers({
+      searchAll: async () => [],
+      searchByQuery: async (q) => {
+        capturedQuery = q;
+        return [torrent({ infoHash: "t1", title: "Show S01E06 1080p x264" })];
+      },
+    });
+    const { state } = await renderStreams(
+      "tt9",
+      "series",
+      indexers,
+      null,
+      1,
+      6,
+      "Show",
+    );
+    expect(capturedQuery).toBe("Show S01E06");
+    expect(state.rows.map((r) => r.result.infoHash)).toEqual(["t1"]);
+  });
+
+  it("dedupes the same torrent across the imdb and title passes (higher seeders wins)", async () => {
+    const indexers = fakeIndexers({
+      searchAll: async () => [torrent({ infoHash: "DUP", seeders: 5 })],
+      // Same torrent, different hash case + more seeders.
+      searchByQuery: async () => [torrent({ infoHash: "dup", seeders: 40 })],
+    });
+    const { state } = await renderStreams(
+      "tt9",
+      "movie",
+      indexers,
+      null,
+      null,
+      null,
+      "Movie", // matches the default torrent title "Movie.1080p.BluRay"
+    );
+    expect(state.rows).toHaveLength(1);
+    expect(state.rows[0].result.seeders).toBe(40);
+  });
+
+  it("drops title-pass results whose name doesn't contain the requested title", async () => {
+    const indexers = fakeIndexers({
+      searchAll: async () => [],
+      searchByQuery: async () => [
+        torrent({ infoHash: "good", title: "Breaking Bad S01E06 1080p" }),
+        torrent({ infoHash: "wrong", title: "Better Call Saul S01E06 1080p" }),
+      ],
+    });
+    const { state } = await renderStreams(
+      "tt9",
+      "series",
+      indexers,
+      null,
+      1,
+      6,
+      "Breaking Bad",
+    );
+    // Only the matching show survives the title validation.
+    expect(state.rows.map((r) => r.result.infoHash)).toEqual(["good"]);
   });
 
   it("leaves every row uncached when no debrid manager is supplied", async () => {
@@ -330,7 +400,7 @@ describe("useStreams — cancellation", () => {
         }),
     });
     // Render and immediately tear down BEFORE the search resolves.
-    const initial = useStreams("tt1", "movie", null, null, indexers, null);
+    const initial = useStreams("tt1", "movie", null, null, null, indexers, null);
     expect(initial.loading).toBe(true); // imdb + indexers ⇒ starts loading
     const teardown = cell.effect ? cell.effect() : undefined;
     if (typeof teardown === "function") teardown(); // mark cancelled

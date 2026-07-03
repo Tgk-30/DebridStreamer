@@ -299,6 +299,31 @@ describe("buildTasteContext numeric ratings", () => {
     const context = await buildTasteContext(store, { useCache: false, now: NOW });
     expect(lineValues(context, "Rated highly")).toContain("Epic (10/10)");
   });
+
+  it("a newest cleared rating suppresses the older score for that media", async () => {
+    const store = makeFakeStore({
+      tasteEvents: [
+        // Newest first: a cleared rating (no norm) over an older 9/10.
+        tasteEvent({
+          id: "clr",
+          mediaId: "m",
+          eventType: "rated",
+          createdAt: isoDaysAgo(0),
+          metadata: { cleared: "true", title: "Dune" },
+        }),
+        tasteEvent({
+          id: "old",
+          mediaId: "m",
+          eventType: "rated",
+          createdAt: isoDaysAgo(3),
+          metadata: { norm: "0.9", genres: "Science Fiction", title: "Dune" },
+        }),
+      ],
+    });
+    const context = await buildTasteContext(store, { useCache: false, now: NOW });
+    // The cleared rating wins → no liked-genre pull, no "Rated highly" line.
+    expect(context).toBe("");
+  });
 });
 
 // MARK: - genre / title metadata parsing edge cases
