@@ -91,4 +91,35 @@ describe("GenreCatalogGrid", () => {
     // Special "New Releases" tile is a category lookup, not a genre discover.
     expect(tmdb.getCategory).toHaveBeenCalled();
   });
+
+  // Regression: on a real boot the grid first mounts with tmdb=null (services
+  // aren't built until the TMDB key hydrates from Dexie), then the prop flips to
+  // a real provider. The effect's [type, tmdb] deps must re-fire on that flip so
+  // artwork actually loads — not stay blank because it only saw null at mount.
+  it("loads artwork after tmdb transitions from null to a real provider (boot path)", async () => {
+    const preview = (backdropPath: string) => ({
+      items: [{ id: "1", type: "movie" as const, title: "X", backdropPath }],
+      page: 1,
+      totalPages: 1,
+      totalResults: 1,
+    });
+    const tmdb = {
+      discover: vi.fn(async () => preview("/late.jpg")),
+      getCategory: vi.fn(async () => preview("/late-cat.jpg")),
+    } as unknown as MetadataProvider;
+
+    // First render: no provider yet (mid-boot). No artwork, no lookups.
+    const { container, rerender } = render(
+      <GenreCatalogGrid type="movie" onOpen={() => {}} tmdb={null} />,
+    );
+    expect(container.querySelectorAll("img.genre-tile-art").length).toBe(0);
+    expect(tmdb.discover).not.toHaveBeenCalled();
+
+    // Key hydrates → services rebuild → provider prop flips null → real.
+    rerender(<GenreCatalogGrid type="movie" onOpen={() => {}} tmdb={tmdb} />);
+    await waitFor(() => {
+      expect(container.querySelectorAll("img.genre-tile-art").length).toBeGreaterThan(0);
+    });
+    expect(tmdb.discover).toHaveBeenCalled();
+  });
 });
