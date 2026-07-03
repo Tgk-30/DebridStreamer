@@ -12,7 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
-import { KEYCHAIN_SERVICE, KeychainSecretStore } from "./KeychainSecretStore";
+import {
+  __resetSecretReadFailuresForTesting,
+  KEYCHAIN_SERVICE,
+  KeychainSecretStore,
+  secretReadsFailedThisSession,
+} from "./KeychainSecretStore";
 import type { SecretStore } from "./types";
 
 /** A stateful in-memory SecretStore standing in for the Dexie fallback. */
@@ -49,7 +54,10 @@ function statefulKeychain(failOn: string[] = []): Map<string, string> {
 }
 
 describe("KeychainSecretStore", () => {
-  beforeEach(() => invoke.mockReset());
+  beforeEach(() => {
+    invoke.mockReset();
+    __resetSecretReadFailuresForTesting();
+  });
   afterEach(() => vi.clearAllMocks());
 
   it("getSecret invokes keychain_get with the service namespace", async () => {
@@ -114,6 +122,17 @@ describe("KeychainSecretStore", () => {
     await expect(store.getSecret("tmdb_api_key")).resolves.toBeNull();
     // And it must not have touched the legacy copy.
     expect(await fb.getSecret("tmdb_api_key")).toBe("legacy-plaintext");
+    // The failure is signalled so key-dependent gates (forced onboarding)
+    // stand down instead of treating "unreadable" as "missing".
+    expect(secretReadsFailedThisSession()).toBe(true);
+  });
+
+  it("does NOT signal read failures on a genuine miss or a healthy read", async () => {
+    statefulKeychain().set("tmdb_api_key", "tok-123");
+    const store = new KeychainSecretStore(mapStore());
+    await store.getSecret("tmdb_api_key");
+    await store.getSecret("missing_key");
+    expect(secretReadsFailedThisSession()).toBe(false);
   });
 
   it("migrates a legacy IndexedDB secret into the keychain AND purges the plaintext copy", async () => {

@@ -44,10 +44,24 @@ async function loadInvoke(): Promise<InvokeFn> {
   return cachedInvoke;
 }
 
+/** True once any secret READ failed this session (locked keychain, denied,
+ *  backend down). Consumers that would treat "no key" as actionable — like the
+ *  forced key-onboarding gate — must stand down when this is set: the keys may
+ *  exist but be unreadable, and forcing re-entry would mislead (and any re-save
+ *  would fail against the same broken keychain anyway). */
+let readFailures = 0;
+export function secretReadsFailedThisSession(): boolean {
+  return readFailures > 0;
+}
+export function __resetSecretReadFailuresForTesting(): void {
+  readFailures = 0;
+}
+
 /** Warn at most once per (op, key) so a persistently locked keychain doesn't spam
  *  the console. Only the key NAME (not a secret value) is logged. */
 const warned = new Set<string>();
 function warnKeychain(op: string, key: string, err: unknown): void {
+  if (op === "read" || op === "init") readFailures += 1;
   const id = `${op}:${key}`;
   if (warned.has(id)) return;
   warned.add(id);

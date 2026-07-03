@@ -24,7 +24,8 @@ import { isSmartPreloadEnabled, whenIdle } from "./lib/smartPreload";
 import { useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
 import { isServerMode } from "./lib/serverMode";
-import { isFirstRun } from "./lib/firstRun";
+import { devBypassesOnboarding, isFirstRun, needsKeyOnboarding } from "./lib/firstRun";
+import { secretReadsFailedThisSession } from "./storage/KeychainSecretStore";
 import { shouldShowServerSetup } from "./lib/serverSetup";
 import { fetchServerAdminHealth } from "./lib/serverApi";
 import { useTheme } from "./theme/useTheme";
@@ -69,12 +70,41 @@ const Detail = lazy(() =>
  *  before a wizard. Lives inside AppStoreProvider + ServerSessionProvider so all
  *  branches have store + session access. */
 export function FirstRunHost() {
-  const { hydrated } = useAppStore();
+  const { hydrated, settings, services } = useAppStore();
   const session = useServerSession();
   const serverMode = isServerMode();
 
   // Local-Mode persona wizard gate.
   const [firstRun, setFirstRun] = useState<boolean | null>(null);
+  // The FORCED key gate: a Local-Mode launch without a catalog key or a debrid
+  // token re-opens the wizard as mandatory, regardless of onboarding history.
+  // Latched ONCE per launch (after hydration) so completing the wizard — or
+  // deliberately clearing keys in Settings — doesn't re-trap mid-session; the
+  // next launch re-evaluates.
+  const [keyGate, setKeyGate] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!hydrated || keyGate != null) return;
+    if (devBypassesOnboarding()) {
+      setKeyGate(false);
+      return;
+    }
+    // A locked/broken keychain hydrates secrets as null — the keys may exist
+    // but be unreadable. Never force onboarding on top of that.
+    if (secretReadsFailedThisSession()) {
+      setKeyGate(false);
+      return;
+    }
+    setKeyGate(
+      needsKeyOnboarding({
+        serverMode,
+        // services.tmdb folds in an env-provided key; settings alone would
+        // force dev builds that are actually configured.
+        hasTmdb: services.tmdb != null,
+        omdbKey: settings.omdbKey,
+        hasDebrid: services.debrid?.hasServices === true,
+      }),
+    );
+  }, [hydrated, keyGate, serverMode, settings.omdbKey, services]);
   // Server-Mode owner setup gate (null = undecided, false = skip/done/non-owner).
   const [serverSetup, setServerSetup] = useState<boolean | null>(null);
   // Tier-aware welcome (shown once, before the setup wizards, on a fresh start).
@@ -133,13 +163,25 @@ export function FirstRunHost() {
   // Wait for BOTH the relevant gate AND Store hydration before deciding. This
   // ensures the wizard's choice (e.g. Advanced → simpleMode false) is applied
   // AFTER hydration's setSettings, so a late hydration can't revert it.
-  if (firstRun == null || serverSetup == null || !hydrated) return null;
+  if (firstRun == null || serverSetup == null || keyGate == null || !hydrated) {
+    return null;
+  }
   // Tier-tailored welcome first, on a genuine fresh start (then the existing
   // mode-specific setup wizard collects the actual config).
-  if (!welcomed && (firstRun || serverSetup)) {
+  if (!welcomed && (firstRun || keyGate || serverSetup)) {
     return <TierOnboarding onDone={markWelcomed} />;
   }
-  if (firstRun) return <FirstRunWizard onDone={() => setFirstRun(false)} />;
+  if (firstRun || keyGate) {
+    return (
+      <FirstRunWizard
+        forced={keyGate}
+        onDone={() => {
+          setFirstRun(false);
+          setKeyGate(false);
+        }}
+      />
+    );
+  }
   if (serverSetup) return <ServerSetupWizard onDone={() => setServerSetup(false)} />;
   return <App />;
 }

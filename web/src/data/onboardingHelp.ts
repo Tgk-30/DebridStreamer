@@ -29,6 +29,11 @@ export const CONCEPTS = {
     blurb:
       "A free key from The Movie Database that powers search, artwork, and recommendations.",
   },
+  omdb: {
+    term: "OMDb key",
+    blurb:
+      "A free key from the Open Movie Database that adds IMDb and Rotten Tomatoes ratings and basic lookups.",
+  },
 } as const;
 
 export type ConceptKey = keyof typeof CONCEPTS;
@@ -46,6 +51,12 @@ export const SIGNUP_LINKS: readonly SignupLink[] = [
     id: "tmdb",
     label: "Get a free TMDB key",
     url: "https://www.themoviedb.org/settings/api",
+    kind: "metadata",
+  },
+  {
+    id: "omdb",
+    label: "Get a free OMDb key",
+    url: "https://www.omdbapi.com/apikey.aspx",
     kind: "metadata",
   },
   {

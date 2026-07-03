@@ -18,6 +18,7 @@ const settings = {
   simpleMode: false,
   theme: "dark",
   tmdbKey: "",
+  omdbKey: "",
   debridTokens: [] as { service: string; apiToken: string }[],
 };
 
@@ -42,13 +43,15 @@ vi.mock("../lib/tauri", () => ({
 
 vi.mock("../lib/onboardingValidation", () => ({
   testTmdbKey: vi.fn(),
+  testOmdbKey: vi.fn(),
   testDebridToken: vi.fn(),
 }));
 
-import { testDebridToken, testTmdbKey } from "../lib/onboardingValidation";
+import { testDebridToken, testOmdbKey, testTmdbKey } from "../lib/onboardingValidation";
 import { FirstRunWizard } from "./FirstRunWizard";
 
 const testTmdbKeyMock = vi.mocked(testTmdbKey);
+const testOmdbKeyMock = vi.mocked(testOmdbKey);
 const testDebridTokenMock = vi.mocked(testDebridToken);
 
 /** Click through choose → catalog with a validated key, landing on streaming. */
@@ -65,6 +68,7 @@ describe("FirstRunWizard", () => {
     vi.clearAllMocks();
     isTauriMock.mockReturnValue(false);
     settings.tmdbKey = "";
+    settings.omdbKey = "";
     settings.debridTokens = [];
   });
 
@@ -126,7 +130,7 @@ describe("FirstRunWizard", () => {
     await user.click(screen.getByRole("button", { name: "Test key & continue" }));
     expect(
       screen.getByText(
-        "Enter your TMDB API key, or continue with the built-in catalog.",
+        "Enter your TMDB API key — the app can't search without a catalog key.",
       ),
     ).toBeInTheDocument();
     expect(testTmdbKeyMock).not.toHaveBeenCalled();
@@ -433,5 +437,151 @@ describe("FirstRunWizard", () => {
     expect(
       screen.getByText("How do you want to use DebridStreamer?"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("FirstRunWizard — forced key gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isTauriMock.mockReturnValue(false);
+    settings.tmdbKey = "";
+    settings.omdbKey = "";
+    settings.debridTokens = [];
+  });
+
+  it("hides Skip on the chooser and states why setup is required", () => {
+    render(<FirstRunWizard forced onDone={() => {}} />);
+    expect(
+      screen.queryByRole("button", { name: "Skip for now" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/needs its keys before it can search or stream/),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the keyless catalog escape but keeps the OMDb alternative", async () => {
+    const user = userEvent.setup();
+    render(<FirstRunWizard forced onDone={() => {}} />);
+    await user.click(screen.getByText("Just watch on this device"));
+    expect(
+      screen.queryByRole("button", { name: /Continue with the built-in catalog/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Only have an OMDb key/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides Add later on the streaming step", async () => {
+    const user = userEvent.setup();
+    testTmdbKeyMock.mockResolvedValue("ok");
+    render(<FirstRunWizard forced onDone={() => {}} />);
+    await user.click(screen.getByText("Just watch on this device"));
+    await user.type(screen.getByLabelText("TMDB API key"), "tmdb-key-1");
+    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    await screen.findByRole("heading", { name: "Connect your debrid service" });
+    expect(
+      screen.queryByRole("button", { name: /Add later/ }),
+    ).not.toBeInTheDocument();
+    // The CORS-honest save-without-testing path must survive forced mode.
+    testDebridTokenMock.mockResolvedValue(false);
+    await user.type(screen.getByLabelText("API token"), "rd-token");
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    expect(
+      await screen.findByRole("button", { name: /Save without testing/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("accepts a validated OMDb key as the catalog minimum and saves it", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    testOmdbKeyMock.mockResolvedValue("ok");
+    testDebridTokenMock.mockResolvedValue(true);
+    render(<FirstRunWizard forced onDone={onDone} />);
+    await user.click(screen.getByText("Just watch on this device"));
+    await user.click(screen.getByRole("button", { name: /Only have an OMDb key/ }));
+    await user.type(screen.getByLabelText("OMDb API key"), "omdb-key-1");
+    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    await screen.findByRole("heading", { name: "Connect your debrid service" });
+    expect(testOmdbKeyMock).toHaveBeenCalledWith("omdb-key-1");
+    await user.type(screen.getByLabelText("API token"), "rd-token-1");
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        omdbKey: "omdb-key-1",
+        tmdbKey: "",
+        debridTokens: [{ service: "real_debrid", apiToken: "rd-token-1" }],
+      }),
+    );
+  });
+
+  it("rejected OMDb key shows the activation hint and stays put", async () => {
+    const user = userEvent.setup();
+    testOmdbKeyMock.mockResolvedValue("unauthorized");
+    render(<FirstRunWizard forced onDone={() => {}} />);
+    await user.click(screen.getByText("Just watch on this device"));
+    await user.click(screen.getByRole("button", { name: /Only have an OMDb key/ }));
+    await user.type(screen.getByLabelText("OMDb API key"), "bad-omdb");
+    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    expect(
+      await screen.findByText(/OMDb rejected that key/),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("FirstRunWizard — forced advanced/host route through keys", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isTauriMock.mockReturnValue(false);
+    settings.tmdbKey = "";
+    settings.omdbKey = "";
+    settings.debridTokens = [];
+  });
+
+  async function completeKeySteps(user: ReturnType<typeof userEvent.setup>) {
+    testTmdbKeyMock.mockResolvedValue("ok");
+    testDebridTokenMock.mockResolvedValue(true);
+    await user.type(screen.getByLabelText("TMDB API key"), "tmdb-key-1");
+    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    await screen.findByRole("heading", { name: "Connect your debrid service" });
+    await user.type(screen.getByLabelText("API token"), "rd-token-1");
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+  }
+
+  it("forced Advanced collects keys first, then lands in full-mode Settings", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(<FirstRunWizard forced onDone={onDone} />);
+    await user.click(screen.getByText("Advanced setup"));
+    // No keyless finish: the catalog step opens instead of settings.
+    expect(
+      screen.getByRole("heading", { name: "Power up search & artwork" }),
+    ).toBeInTheDocument();
+    expect(markOnboardingComplete).not.toHaveBeenCalled();
+    await completeKeySteps(user);
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ simpleMode: false, tmdbKey: "tmdb-key-1" }),
+    );
+    expect(navigate).toHaveBeenCalledWith("settings");
+  });
+
+  it("forced Host explains hosting, then collects keys before Settings", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(<FirstRunWizard forced onDone={onDone} />);
+    await user.click(screen.getByText("Host for my family"));
+    await user.click(screen.getByRole("button", { name: "Open Settings" }));
+    // Still inside the wizard — keys come first.
+    expect(
+      screen.getByRole("heading", { name: "Power up search & artwork" }),
+    ).toBeInTheDocument();
+    expect(markOnboardingComplete).not.toHaveBeenCalled();
+    await completeKeySteps(user);
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ simpleMode: true, tmdbKey: "tmdb-key-1" }),
+    );
+    expect(navigate).toHaveBeenCalledWith("settings");
   });
 });
