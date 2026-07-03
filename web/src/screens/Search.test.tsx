@@ -174,6 +174,17 @@ describe("Search — type filter chips", () => {
 });
 
 describe("Search — running a search", () => {
+  it("live-searches as you type (no Enter needed)", async () => {
+    render(<Search />);
+    // Type without pressing Enter — the debounced effect runs the search.
+    await userEvent.type(fieldInput(), "dune");
+    await waitFor(() => expect(tmdbSearch).toHaveBeenCalledWith("dune", null), {
+      timeout: 2000,
+    });
+    await screen.findByTestId("media-grid");
+    expect(screen.getByText("Dune")).toBeInTheDocument();
+  });
+
   it("runs on Enter and renders the results grid + heading", async () => {
     render(<Search />);
     const input = fieldInput();

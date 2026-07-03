@@ -201,7 +201,10 @@ async function resolveTitleToEntry(
     if (debrid != null && debrid.hasServices) {
       try {
         const merged = await debrid.checkCacheAll(results.map((r) => r.infoHash));
-        const cached = results.find((r) => merged[r.infoHash]?.status.kind === "cached");
+        // checkCacheAll canonicalizes to lowercase — look up the same way.
+        const cached = results.find(
+          (r) => merged[r.infoHash.toLowerCase()]?.status.kind === "cached",
+        );
         if (cached != null) chosen = cached;
       } catch {
         // keep the seeder-sorted top pick

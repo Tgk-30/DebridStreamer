@@ -13,7 +13,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IndexerFactory } from "./IndexerFactory";
-import { IndexerManager } from "./IndexerManager";
+import { IndexerManager, INDEXER_TIMEOUT_MS } from "./IndexerManager";
 import { VideoQuality } from "./models";
 import {
   defaultFetchImpl,
@@ -136,6 +136,43 @@ describe("IndexerManager errorMessage branches", () => {
     const results = await manager.searchAll("tt0001", "movie");
     expect(results.map((r) => r.infoHash)).toEqual(["a".repeat(40)]);
     expect(manager.lastSearchErrors).toEqual([{ indexer: "Bad", error: "boom" }]);
+  });
+
+  it("drops a hung indexer after the timeout but keeps the fast one's results", async () => {
+    vi.useFakeTimers();
+    try {
+      const hung: TorrentIndexer = {
+        name: "Hung",
+        // Never resolves — simulates a stalled indexer server/socket.
+        search: () => new Promise<never>(() => {}),
+        async searchByQuery() {
+          return [];
+        },
+      };
+      const manager = new IndexerManager();
+      manager.setIndexers([
+        makeStub({
+          name: "Fast",
+          results: [{ infoHash: "b".repeat(40), quality: VideoQuality.hd1080p, seeders: 5 }],
+        }),
+        hung,
+      ]);
+
+      const promise = manager.searchAll("tt0002", "movie");
+      // Let the fast indexer settle, then trip the hung one's timeout.
+      await vi.advanceTimersByTimeAsync(INDEXER_TIMEOUT_MS + 50);
+      const results = await promise;
+
+      // The fast indexer's result survives; the hung one is dropped + recorded.
+      expect(results.map((r) => r.infoHash)).toEqual(["b".repeat(40)]);
+      expect(
+        manager.lastSearchErrors.some(
+          (e) => e.indexer === "Hung" && /timed out/i.test(e.error),
+        ),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
