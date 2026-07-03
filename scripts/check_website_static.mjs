@@ -9,10 +9,12 @@ const html = readFileSync(join(website, "index.html"), "utf8");
 const css = readFileSync(join(website, "styles.css"), "utf8");
 const js = readFileSync(join(website, "app.js"), "utf8");
 const failures = [];
+// Real app captures (pngquant-compressed), not drawn placeholders — byte
+// ranges sized for photographic poster/backdrop content at the pinned dims.
 const expectedGeneratedMedia = {
-  "media/discover-desktop.png": { width: 1440, height: 848, minBytes: 20_000, maxBytes: 260_000 },
-  "media/discover-tablet.png": { width: 768, height: 1196, minBytes: 20_000, maxBytes: 260_000 },
-  "media/settings-mobile.png": { width: 390, height: 792, minBytes: 8_000, maxBytes: 120_000 },
+  "media/discover-desktop.png": { width: 1440, height: 848, minBytes: 20_000, maxBytes: 360_000 },
+  "media/discover-tablet.png": { width: 768, height: 1196, minBytes: 20_000, maxBytes: 320_000 },
+  "media/settings-mobile.png": { width: 390, height: 792, minBytes: 8_000, maxBytes: 140_000 },
 };
 
 function fail(message) {
