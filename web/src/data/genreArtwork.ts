@@ -11,14 +11,25 @@ import { makeDiscoverFilters, SortOption } from "../services/metadata/types";
 import { catalogTilesFor, tileGenreId, type GenreCatalogTile } from "./genreCatalog";
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
+// Cache entries live 30 min, so artwork refreshes within a long session (and a
+// cached null — a genre with no usable backdrop — stops blocking a later retry).
+const ARTWORK_TTL_MS = 30 * 60 * 1000;
+// Cap parallel TMDB lookups so opening Search doesn't fire ~15 requests at once
+// (which can trip the free-tier rate limit and blank every tile).
+const MAX_CONCURRENT = 4;
+
+interface CacheEntry {
+  url: string | null;
+  expiresAt: number;
+}
 
 // Caches are scoped PER provider instance (a new TMDB key rebuilds the service,
 // so a swapped credential naturally gets a fresh cache and stale artwork/nulls
 // don't leak across it). Inner maps are keyed by `${type}:${tileId}`.
-const caches = new WeakMap<MetadataProvider, Map<string, string | null>>();
+const caches = new WeakMap<MetadataProvider, Map<string, CacheEntry>>();
 const inflights = new WeakMap<MetadataProvider, Map<string, Promise<string | null>>>();
 
-function cacheFor(tmdb: MetadataProvider): Map<string, string | null> {
+function cacheFor(tmdb: MetadataProvider): Map<string, CacheEntry> {
   let m = caches.get(tmdb);
   if (m == null) {
     m = new Map();
@@ -39,6 +50,13 @@ function keyFor(type: MediaType, tileId: string): string {
   return `${type}:${tileId}`;
 }
 
+/** The cached entry if present AND unexpired, else undefined (miss / stale). */
+function fresh(cache: Map<string, CacheEntry>, key: string): CacheEntry | undefined {
+  const e = cache.get(key);
+  if (e == null || e.expiresAt <= Date.now()) return undefined;
+  return e;
+}
+
 /** Fetch (once) the representative backdrop URL for a single tile. */
 async function loadTileBackdrop(
   tmdb: MetadataProvider,
@@ -48,8 +66,8 @@ async function loadTileBackdrop(
   const key = keyFor(type, tile.id);
   const cache = cacheFor(tmdb);
   const inflight = inflightFor(tmdb);
-  const cached = cache.get(key);
-  if (cached !== undefined) return cached;
+  const hit = fresh(cache, key);
+  if (hit !== undefined) return hit.url;
   const pending = inflight.get(key);
   if (pending != null) return pending;
 
@@ -72,10 +90,10 @@ async function loadTileBackdrop(
       const path =
         result?.items?.find((it) => it.backdropPath != null)?.backdropPath ?? null;
       const url = path != null ? `${TMDB_IMAGE_BASE}/w780${path}` : null;
-      // A successful-but-empty lookup IS cached (null) — the genre genuinely has
-      // no usable backdrop, so don't keep re-asking. A THROWN error is not
-      // cached, so a transient failure or a just-fixed key recovers on remount.
-      cache.set(key, url);
+      // A successful lookup (even an empty one → null) is cached with a TTL, so
+      // it stops re-asking for a while but recovers after the entry expires. A
+      // THROWN error is NOT cached, so a transient failure retries on remount.
+      cache.set(key, { url, expiresAt: Date.now() + ARTWORK_TTL_MS });
       return url;
     } catch {
       return null;
@@ -85,6 +103,27 @@ async function loadTileBackdrop(
   })();
   inflight.set(key, run);
   return run;
+}
+
+/** Run `task` over `items` with at most `limit` in flight at once. Stops pulling
+ * new work once `stopped()` returns true. */
+async function runPool<T>(
+  items: T[],
+  limit: number,
+  stopped: () => boolean,
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < items.length) {
+      if (stopped()) return;
+      const item = items[cursor++];
+      await task(item);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
+  );
 }
 
 /** Backdrop URLs for every tile of a media type, keyed by tile id. Missing keys
@@ -113,23 +152,23 @@ export function useGenreArtwork(
     // the map is immediately tagged with the CURRENT type.
     const seed = new Map<string, string>();
     for (const tile of tiles) {
-      const cached = cache.get(keyFor(type, tile.id));
-      if (typeof cached === "string") seed.set(tile.id, cached);
+      const hit = fresh(cache, keyFor(type, tile.id));
+      if (hit != null && typeof hit.url === "string") seed.set(tile.id, hit.url);
     }
     setState({ type, art: seed });
 
-    for (const tile of tiles) {
-      if (typeof cache.get(keyFor(type, tile.id)) === "string") continue;
-      void loadTileBackdrop(tmdb, type, tile).then((url) => {
-        if (cancelled || url == null) return;
-        setState((prev) => {
-          if (prev.type !== type || prev.art.get(tile.id) === url) return prev;
-          const next = new Map(prev.art);
-          next.set(tile.id, url);
-          return { type, art: next };
-        });
+    // Fetch only the misses, capped to MAX_CONCURRENT in flight.
+    const misses = tiles.filter((t) => fresh(cache, keyFor(type, t.id)) === undefined);
+    void runPool(misses, MAX_CONCURRENT, () => cancelled, async (tile) => {
+      const url = await loadTileBackdrop(tmdb, type, tile);
+      if (cancelled || url == null) return;
+      setState((prev) => {
+        if (prev.type !== type || prev.art.get(tile.id) === url) return prev;
+        const next = new Map(prev.art);
+        next.set(tile.id, url);
+        return { type, art: next };
       });
-    }
+    });
 
     return () => {
       cancelled = true;

@@ -11,15 +11,10 @@ import { NavRail, isScreenHidden, type ScreenId } from "./components/NavRail";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
-import { FirstRunWizard } from "./components/FirstRunWizard";
-import { ServerSetupWizard } from "./components/ServerSetupWizard";
-import { TierOnboarding } from "./components/TierOnboarding";
-import { ProfilePicker } from "./components/ProfilePicker";
-import { CommandPalette } from "./components/CommandPalette";
-import { WelcomeGuide } from "./components/WelcomeGuide";
-import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
-import { SetupNudge } from "./components/SetupNudge";
 import { InstallPrompt, isInstallPromptEligible } from "./components/InstallPrompt";
+// Eager: it's always mounted (self-contained) and owns the global ⌘K listener, so
+// code-splitting it would leave the shortcut dead until its chunk resolved.
+import { CommandPalette } from "./components/CommandPalette";
 import { isSmartPreloadEnabled, whenIdle } from "./lib/smartPreload";
 import { useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
@@ -59,6 +54,34 @@ const Browse = lazy(() =>
 );
 const Detail = lazy(() =>
   import("./screens/Detail").then((m) => ({ default: m.Detail })),
+);
+
+// Modal/overlay flows most returning users never open (onboarding wizards, the
+// command palette, the guide, the shortcuts sheet) are code-split too, so their
+// bytes — and ServerSetupWizard's QRCode dependency — stay out of first paint.
+// Each render site sits inside a <Suspense fallback={null}> (a modal appearing a
+// frame late is invisible). InstallPrompt stays eager: it shares a module with
+// the isInstallPromptEligible predicate used during render.
+const FirstRunWizard = lazy(() =>
+  import("./components/FirstRunWizard").then((m) => ({ default: m.FirstRunWizard })),
+);
+const ServerSetupWizard = lazy(() =>
+  import("./components/ServerSetupWizard").then((m) => ({ default: m.ServerSetupWizard })),
+);
+const TierOnboarding = lazy(() =>
+  import("./components/TierOnboarding").then((m) => ({ default: m.TierOnboarding })),
+);
+const ProfilePicker = lazy(() =>
+  import("./components/ProfilePicker").then((m) => ({ default: m.ProfilePicker })),
+);
+const WelcomeGuide = lazy(() =>
+  import("./components/WelcomeGuide").then((m) => ({ default: m.WelcomeGuide })),
+);
+const KeyboardShortcuts = lazy(() =>
+  import("./components/KeyboardShortcuts").then((m) => ({ default: m.KeyboardShortcuts })),
+);
+const SetupNudge = lazy(() =>
+  import("./components/SetupNudge").then((m) => ({ default: m.SetupNudge })),
 );
 
 /** Gates a genuine first-run behind the right wizard, then the app:
@@ -169,20 +192,31 @@ export function FirstRunHost() {
   // Tier-tailored welcome first, on a genuine fresh start (then the existing
   // mode-specific setup wizard collects the actual config).
   if (!welcomed && (firstRun || keyGate || serverSetup)) {
-    return <TierOnboarding onDone={markWelcomed} />;
+    return (
+      <Suspense fallback={null}>
+        <TierOnboarding onDone={markWelcomed} />
+      </Suspense>
+    );
   }
   if (firstRun || keyGate) {
     return (
-      <FirstRunWizard
-        forced={keyGate}
-        onDone={() => {
-          setFirstRun(false);
-          setKeyGate(false);
-        }}
-      />
+      <Suspense fallback={null}>
+        <FirstRunWizard
+          forced={keyGate}
+          onDone={() => {
+            setFirstRun(false);
+            setKeyGate(false);
+          }}
+        />
+      </Suspense>
     );
   }
-  if (serverSetup) return <ServerSetupWizard onDone={() => setServerSetup(false)} />;
+  if (serverSetup)
+    return (
+      <Suspense fallback={null}>
+        <ServerSetupWizard onDone={() => setServerSetup(false)} />
+      </Suspense>
+    );
   return <App />;
 }
 
@@ -392,42 +426,47 @@ export function App() {
         )}
       </main>
 
-      {/* "Who's watching" picker overlay (Server Mode only) — mounts above
-          everything when opened from the rail's profile switcher. */}
-      {profilePickerOpen && (
-        <ProfilePicker onClose={() => setProfilePickerOpen(false)} />
-      )}
+      {/* Lazily-loaded overlays — each chunk downloads only when first opened.
+          A null Suspense fallback is correct here: these are modals, so "nothing
+          for a frame" is invisible until the chunk resolves. */}
+      <Suspense fallback={null}>
+        {/* "Who's watching" picker overlay (Server Mode only) — mounts above
+            everything when opened from the rail's profile switcher. */}
+        {profilePickerOpen && (
+          <ProfilePicker onClose={() => setProfilePickerOpen(false)} />
+        )}
 
-      {/* ⌘K quick switcher — self-contained; hidden until invoked. */}
-      <CommandPalette />
+        {/* ⌘K quick switcher — self-contained; hidden until invoked. */}
+        <CommandPalette />
 
-      {/* First-run feature tour (and re-openable from Settings / ⌘K). */}
-      {welcomeGuideOpen && (
-        <WelcomeGuide
-          onClose={closeWelcomeGuide}
-          onOpenSettings={() => navigate("settings")}
-        />
-      )}
+        {/* First-run feature tour (and re-openable from Settings / ⌘K). */}
+        {welcomeGuideOpen && (
+          <WelcomeGuide
+            onClose={closeWelcomeGuide}
+            onOpenSettings={() => navigate("settings")}
+          />
+        )}
 
-      {shortcutsOpen && (
-        <KeyboardShortcuts onClose={() => setShortcutsOpen(false)} />
-      )}
+        {shortcutsOpen && (
+          <KeyboardShortcuts onClose={() => setShortcutsOpen(false)} />
+        )}
 
-      {tierWelcomeOpen && (
-        <TierOnboarding onDone={() => setTierWelcomeOpen(false)} />
-      )}
+        {tierWelcomeOpen && (
+          <TierOnboarding onDone={() => setTierWelcomeOpen(false)} />
+        )}
 
-      {/* Re-run of the first-run persona wizard (full-screen; closes on done or
-          skip — the wizard persists its own onboarding_completed flag). */}
-      {firstRunOpen && <FirstRunWizard onDone={() => setFirstRunOpen(false)} />}
+        {/* Re-run of the first-run persona wizard (full-screen; closes on done or
+            skip — the wizard persists its own onboarding_completed flag). */}
+        {firstRunOpen && <FirstRunWizard onDone={() => setFirstRunOpen(false)} />}
 
-      {showSetupNudge && (
-        <SetupNudge
-          onStartWizard={() => setFirstRunOpen(true)}
-          onShowTour={() => setWelcomeGuideOpen(true)}
-          onDismiss={dismissNudge}
-        />
-      )}
+        {showSetupNudge && (
+          <SetupNudge
+            onStartWizard={() => setFirstRunOpen(true)}
+            onShowTour={() => setWelcomeGuideOpen(true)}
+            onDismiss={dismissNudge}
+          />
+        )}
+      </Suspense>
 
       {showInstallPrompt && <InstallPrompt onDismiss={dismissInstall} />}
 

@@ -500,16 +500,26 @@ export class RemoteStore implements Store, SecretStore {
       : null;
     const token =
       secretKey != null ? this.pendingSecrets.get(secretKey) : config.apiToken;
-    if (token == null || token.trim().length === 0) return;
-    await this.api.put("/api/profile/credentials", {
-      id: config.id,
-      provider: config.service,
-      label: config.service,
-      value: token,
-      priority: config.priority,
-      isActive: config.isActive,
-    });
-    if (secretKey != null) this.pendingSecrets.delete(secretKey);
+    if (token == null || token.trim().length === 0) {
+      // Nothing to send — but still drop any transient (e.g. empty) pending entry.
+      if (secretKey != null) this.pendingSecrets.delete(secretKey);
+      return;
+    }
+    try {
+      await this.api.put("/api/profile/credentials", {
+        id: config.id,
+        provider: config.service,
+        label: config.service,
+        value: token,
+        priority: config.priority,
+        isActive: config.isActive,
+      });
+    } finally {
+      // Clear the transient plaintext secret whether or not the PUT succeeded —
+      // a failed save must not leave a credential sitting in memory until the
+      // next profile switch or restart. A retry re-populates it via setSecret().
+      if (secretKey != null) this.pendingSecrets.delete(secretKey);
+    }
   }
 
   async listDebridConfigs(): Promise<DebridConfigRecord[]> {

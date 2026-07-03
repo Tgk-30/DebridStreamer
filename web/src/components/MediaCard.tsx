@@ -4,7 +4,7 @@
 // in place (no neighbor-overlap clipping). Poster fades in on load with a shimmer
 // placeholder. Motion via `motion`.
 
-import { useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { motion } from "motion/react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import type { MediaPreview } from "../models/media";
@@ -26,9 +26,27 @@ interface MediaCardProps {
   cornerLabel?: string;
 }
 
+// Animation objects are hoisted to module scope so they're referentially stable
+// across every card render — motion never re-reconciles them, and they don't add
+// per-render allocation on grids of 100+ cards.
 const SPRING = { type: "spring", stiffness: 380, damping: 30, mass: 0.7 } as const;
+const WHILE_TAP = { scale: 0.98 } as const;
+const CARD_VARIANTS = {
+  rest: { y: 0, scale: 1 },
+  hover: { y: -10, scale: 1.05 },
+} as const;
+const IMG_TRANSITION = { duration: 0.5, ease: [0.16, 1, 0.3, 1] } as const;
+const REVEAL_VARIANTS = { rest: { opacity: 0 }, hover: { opacity: 1 } } as const;
+const REVEAL_TRANSITION = { duration: 0.25, ease: "easeOut" } as const;
+const REVEAL_INNER_VARIANTS = {
+  rest: { y: 10, opacity: 0 },
+  hover: { y: 0, opacity: 1 },
+} as const;
+const REVEAL_INNER_TRANSITION = { duration: 0.3, ease: [0.16, 1, 0.3, 1] } as const;
 
-export function MediaCard({
+// memo: a grid re-render (filter/scroll/parent state) shouldn't re-run 100+ cards
+// whose props are unchanged.
+export const MediaCard = memo(function MediaCard({
   item,
   onSelect,
   onPlay,
@@ -40,19 +58,29 @@ export function MediaCard({
   const rating = MediaPreviewNS.ratingString(item);
   const [loaded, setLoaded] = useState(false);
 
+  // Stable handlers so the memo above isn't defeated by a fresh closure each render.
+  const handleSelect = useCallback(() => onSelect?.(item), [onSelect, item]);
+  const handlePlay = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      (onPlay ?? onSelect)?.(item);
+    },
+    [onPlay, onSelect, item],
+  );
+
   return (
     <motion.button
       type="button"
       className="media-card"
-      onClick={() => onSelect?.(item)}
+      onClick={handleSelect}
       title={item.title}
       aria-label={item.title}
       initial={false}
       whileHover="hover"
       whileFocus="hover"
-      whileTap={{ scale: 0.98 }}
+      whileTap={WHILE_TAP}
       animate="rest"
-      variants={{ rest: { y: 0, scale: 1 }, hover: { y: -10, scale: 1.05 } }}
+      variants={CARD_VARIANTS}
       transition={SPRING}
     >
       <div className="media-card-poster">
@@ -71,7 +99,7 @@ export function MediaCard({
             draggable={false}
             initial={{ opacity: 0, scale: 1.04 }}
             animate={loaded ? { opacity: 1, scale: 1 } : { opacity: 0 }}
-            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            transition={IMG_TRANSITION}
             onLoad={() => setLoaded(true)}
             onError={() => setLoaded(true)}
           />
@@ -96,13 +124,13 @@ export function MediaCard({
         {/* Cinematic reveal layer — fades/slides in on hover. */}
         <motion.div
           className="media-card-reveal"
-          variants={{ rest: { opacity: 0 }, hover: { opacity: 1 } }}
-          transition={{ duration: 0.25, ease: "easeOut" }}
+          variants={REVEAL_VARIANTS}
+          transition={REVEAL_TRANSITION}
         >
           <motion.div
             className="media-card-reveal-inner"
-            variants={{ rest: { y: 10, opacity: 0 }, hover: { y: 0, opacity: 1 } }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            variants={REVEAL_INNER_VARIANTS}
+            transition={REVEAL_INNER_TRANSITION}
           >
             <div className="media-card-reveal-title">{item.title}</div>
             <div className="media-card-reveal-meta">
@@ -119,13 +147,7 @@ export function MediaCard({
                 action visually for mouse users, so they're aria-hidden rather
                 than exposed as separate (and un-nestable) interactive controls. */}
             <div className="media-card-reveal-actions" aria-hidden="true">
-              <span
-                className="media-card-play"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  (onPlay ?? onSelect)?.(item);
-                }}
-              >
+              <span className="media-card-play" onClick={handlePlay}>
                 <Icon name="play" size={13} />
               </span>
               <span className="media-card-more">
@@ -157,4 +179,4 @@ export function MediaCard({
       </div>
     </motion.button>
   );
-}
+});

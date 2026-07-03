@@ -355,20 +355,21 @@ describe("App routing", () => {
 });
 
 describe("Setup nudge", () => {
-  it("shows the finish-setup nudge when Local Mode has no debrid", () => {
+  it("shows the finish-setup nudge when Local Mode has no debrid", async () => {
     store = makeStore({
       services: { debrid: null, indexers: { activeIndexers: [{}] } },
     });
     render(<App />);
-    expect(screen.getByText("Let's get you streaming")).toBeInTheDocument();
+    // SetupNudge is code-split (React.lazy) — resolve its chunk before asserting.
+    expect(await screen.findByText("Let's get you streaming")).toBeInTheDocument();
   });
 
-  it("shows the nudge when there is no active source", () => {
+  it("shows the nudge when there is no active source", async () => {
     store = makeStore({
       services: { debrid: { hasServices: true }, indexers: { activeIndexers: [] } },
     });
     render(<App />);
-    expect(screen.getByText("Let's get you streaming")).toBeInTheDocument();
+    expect(await screen.findByText("Let's get you streaming")).toBeInTheDocument();
   });
 
   it("hides the nudge once a debrid + source are configured", () => {
@@ -460,10 +461,11 @@ describe("ProfilePicker gating", () => {
     expect(screen.queryByTestId("profile-picker")).not.toBeInTheDocument();
   });
 
-  it("opens the picker from the rail and closes it via onClose", () => {
+  it("opens the picker from the rail and closes it via onClose", async () => {
     render(<App />);
     fireEvent.click(screen.getByTestId("nav-switch-profile"));
-    expect(screen.getByTestId("profile-picker")).toBeInTheDocument();
+    // ProfilePicker is code-split (React.lazy) — await its chunk.
+    expect(await screen.findByTestId("profile-picker")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("profile-picker"));
     expect(screen.queryByTestId("profile-picker")).not.toBeInTheDocument();
   });
@@ -487,10 +489,11 @@ describe("CommandPalette + UpdateBanner globals", () => {
 });
 
 describe("WelcomeGuide auto-tour", () => {
-  it("auto-opens when the seen flag is absent", () => {
+  it("auto-opens when the seen flag is absent", async () => {
     globalThis.localStorage.removeItem("ds_welcome_guide_seen");
     render(<App />);
-    expect(screen.getByTestId("welcome-guide")).toBeInTheDocument();
+    // WelcomeGuide is code-split (React.lazy) — await its chunk on first mount.
+    expect(await screen.findByTestId("welcome-guide")).toBeInTheDocument();
   });
 
   it("stays closed when the seen flag is set", () => {
