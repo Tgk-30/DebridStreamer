@@ -25,6 +25,7 @@ import {
 import { filterStreamRows } from "../data/streams";
 import { EpisodePicker } from "../components/EpisodePicker";
 import { DetailHero, type TasteSignal } from "../components/DetailHero";
+import { RatingControl } from "../components/RatingControl";
 import { DetailAnalysis } from "../components/DetailAnalysis";
 import { OmdbRatings } from "../components/OmdbRatings";
 import { StreamPicker } from "../components/StreamPicker";
@@ -351,6 +352,9 @@ export function Detail() {
   // newest taste event for it. Drives the DetailHero thumbs control's active
   // state and toggles off when the same thumb is tapped again.
   const [tasteSignal, setTasteSignal] = useState<TasteSignal>(null);
+  // The user's numeric rating for this title, stored NORMALIZED (0–1) so it can
+  // be shown on whichever scale (1–10 / 0–100) the user currently prefers.
+  const [ratingNorm, setRatingNorm] = useState<number | null>(null);
 
   const detailId = detailItem?.id ?? null;
   useEffect(() => {
@@ -358,10 +362,11 @@ export function Detail() {
   }, [detailId]);
 
   useEffect(() => {
-    if (detailId == null) {
-      setTasteSignal(null);
-      return;
-    }
+    // Clear the previous title's signal/rating up front so nothing from the last
+    // Detail lingers on screen while this title's events load (or if none exist).
+    setTasteSignal(null);
+    setRatingNorm(null);
+    if (detailId == null) return;
     let cancelled = false;
     void getStore()
       .recentTasteEvents(200)
@@ -383,9 +388,21 @@ export function Detail() {
               ? "disliked"
               : null,
         );
+        // Newest "rated" event carries the normalized score in metadata.norm.
+        const rated = events.find(
+          (e) => e.mediaId === detailId && e.eventType === "rated",
+        );
+        const norm = rated != null ? Number(rated.metadata?.norm) : NaN;
+        // Clamp to [0,1] so a corrupt metadata value can't render 15/10 or 150/100.
+        setRatingNorm(
+          Number.isFinite(norm) ? Math.min(1, Math.max(0, norm)) : null,
+        );
       })
       .catch(() => {
-        if (!cancelled) setTasteSignal(null);
+        if (!cancelled) {
+          setTasteSignal(null);
+          setRatingNorm(null);
+        }
       });
     return () => {
       cancelled = true;
@@ -463,6 +480,40 @@ export function Detail() {
       .then(() => rebuildTasteContext(store))
       .catch(() => {
         // best-effort; the in-memory toggle already reflects the user's intent.
+      });
+  }
+
+  /** Record a numeric rating (1–10 or 0–100). Stored normalized (0–1) in
+   *  metadata.norm so it survives a scale change, and fed to the taste profile
+   *  as a −1…1 signal (5/10 is neutral). */
+  function recordRating(value: number): void {
+    if (detailItem == null) return;
+    const max = settings.ratingScale === "hundred" ? 100 : 10;
+    const norm = Math.min(1, Math.max(0, value / max));
+    setRatingNorm(norm);
+    const genres = item?.genres ?? [];
+    const metadata: Record<string, string> = {
+      title: detailItem.title,
+      rating: String(value),
+      scale: settings.ratingScale,
+      norm: norm.toFixed(4),
+    };
+    if (genres.length > 0) metadata.genres = genres.join(", ");
+    const store = getStore();
+    void store
+      .addTasteEvent({
+        id: `taste-${detailItem.id}-${Date.now()}`,
+        userId: "default",
+        mediaId: detailItem.id,
+        episodeId: null,
+        eventType: "rated" as TasteEventType,
+        signalStrength: norm * 2 - 1,
+        metadata,
+        createdAt: new Date().toISOString(),
+      })
+      .then(() => rebuildTasteContext(store))
+      .catch(() => {
+        // best-effort; the in-memory value already reflects the user's rating.
       });
   }
 
@@ -594,7 +645,9 @@ export function Detail() {
           onRequest={isServerMode() ? () => void requestTitle() : undefined}
           requestState={requestState}
           tasteSignal={tasteSignal}
-          onTasteSignal={recordTasteSignal}
+          onTasteSignal={
+            settings.ratingScale === "thumbs" ? recordTasteSignal : undefined
+          }
           playDisabledReason={
             !streams.hasDebrid
               ? "Add a debrid service in Settings to play"
@@ -649,6 +702,20 @@ export function Detail() {
           from the user's own key (local BYOK) or the server "hidden key" proxy.
           Renders nothing when no key is available. */}
       <OmdbRatings imdbId={detail.data.imdbId} />
+
+      {/* Your own rating (1–10 pips or a 0–100 slider). Thumbs mode keeps the
+          like/dislike control in the hero instead. */}
+      {settings.ratingScale !== "thumbs" && (
+        <RatingControl
+          scale={settings.ratingScale}
+          value={
+            ratingNorm != null
+              ? Math.round(ratingNorm * (settings.ratingScale === "hundred" ? 100 : 10))
+              : null
+          }
+          onRate={recordRating}
+        />
+      )}
 
       {/* AI "Would I Like This?" — only when a local AI provider is configured.
           analyzeTitle is the local-Dexie path; Server-Mode parity is out of scope. */}

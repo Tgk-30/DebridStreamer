@@ -47,6 +47,7 @@ import type {
   AppearancePosterSize,
   AppearanceRadius,
   AppearanceTextSize,
+  RatingScale,
   SourceEntry,
   StreamMaxQuality,
 } from "../data/settings";
@@ -963,6 +964,19 @@ function PlaybackTab({ draft, patch }: TabProps) {
           <span className="t-secondary"> — when a series episode ends, play the next one automatically if an instant (cached) stream is available. Otherwise you're taken to the stream list.</span>
         </span>
       </label>
+
+      <div className="settings-control-grid">
+        <SegmentedControl
+          label="Rating scale"
+          value={draft.ratingScale}
+          options={[
+            { value: "ten", label: "1–10" },
+            { value: "hundred", label: "0–100" },
+            { value: "thumbs", label: "Thumbs" },
+          ]}
+          onChange={(value) => patch({ ratingScale: value as RatingScale })}
+        />
+      </div>
 
       {/* Quality + size caps are power-user filters — hidden in Simple mode,
           which keeps "cached only" as the one safe, essential toggle. */}

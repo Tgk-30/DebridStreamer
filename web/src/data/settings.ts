@@ -100,6 +100,7 @@ const SettingsKeys = {
   autoAdvanceEpisodes: "auto_advance_episodes",
   showWatchStats: "show_watch_stats",
   transcode: "transcode",
+  ratingScale: "rating_scale",
 } as const;
 
 /** Marker written into the KV table for secret-valued keys; the real value
@@ -156,6 +157,19 @@ export type AppearanceNavTint = "airy" | "balanced" | "solid";
 export type AppearancePosterSize = "compact" | "default" | "large";
 
 /** Everything the user can configure, persisted to localStorage this phase. */
+/** How the user rates a title on Detail. "ten" = 1–10, "hundred" = 0–100
+ *  slider, "thumbs" = like/dislike. Default is "ten". */
+export type RatingScale = "ten" | "hundred" | "thumbs";
+export const RATING_SCALES: readonly RatingScale[] = ["ten", "hundred", "thumbs"];
+export function isRatingScale(v: unknown): v is RatingScale {
+  return v === "ten" || v === "hundred" || v === "thumbs";
+}
+/** Coerce any persisted value to a legal scale, falling back to the 1–10 default
+ * so a poisoned/stale blob can never render one control while another is saved. */
+export function normalizeRatingScale(v: unknown): RatingScale {
+  return isRatingScale(v) ? v : "ten";
+}
+
 export interface AppSettings {
   tmdbKey: string;
   omdbKey: string;
@@ -214,6 +228,8 @@ export interface AppSettings {
    *  playback (lower bitrate, re-encoded). Only effective when the server
    *  advertises transcodeAvailable. */
   transcode: boolean;
+  /** Which rating control Detail shows (1–10, 0–100, or thumbs). */
+  ratingScale: RatingScale;
 }
 
 /** Read a `VITE_*` env var without assuming `import.meta.env` exists. */
@@ -367,6 +383,7 @@ export function defaultSettings(): AppSettings {
     autoAdvanceEpisodes: true,
     showWatchStats: false,
     transcode: false,
+    ratingScale: "ten",
   };
 }
 
@@ -403,6 +420,7 @@ export function loadSettings(): AppSettings {
       subtitleFontScale: normalizeSubtitleFontScale(parsed.subtitleFontScale),
       subtitleTextColor: normalizeSubtitleTextColor(parsed.subtitleTextColor),
       subtitleBgOpacity: normalizeSubtitleBgOpacity(parsed.subtitleBgOpacity),
+      ratingScale: normalizeRatingScale(parsed.ratingScale),
     };
   } catch {
     return base;
@@ -630,6 +648,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     showWatchStats,
     transcode,
     simpleMode,
+    ratingScale,
   ] = await Promise.all([
     store.getSetting(SettingsKeys.aiProvider),
     store.getSetting(SettingsKeys.aiModel),
@@ -662,6 +681,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.showWatchStats),
     store.getSetting(SettingsKeys.transcode),
     store.getSetting(SettingsKeys.simpleMode),
+    store.getSetting(SettingsKeys.ratingScale),
   ]);
 
   const debridConfigs = await store.listDebridConfigs();
@@ -763,6 +783,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     showWatchStats:
       showWatchStats == null ? base.showWatchStats : showWatchStats === "true",
     transcode: transcode == null ? base.transcode : transcode === "true",
+    ratingScale: normalizeRatingScale(ratingScale),
   };
 
   // Proactively scrub any pre-existing plaintext-secret blob a prior build wrote
@@ -920,6 +941,7 @@ export async function saveSettingsToStore(
       SettingsKeys.transcode,
       settings.transcode ? "true" : "false",
     ),
+    store.setSetting(SettingsKeys.ratingScale, settings.ratingScale),
     store.setSetting(
       SettingsKeys.builtInIndexersEnabled,
       settings.builtInIndexersEnabled ? "true" : "false",

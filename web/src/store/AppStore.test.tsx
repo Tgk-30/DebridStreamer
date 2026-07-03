@@ -172,6 +172,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     autoAdvanceEpisodes: true,
     showWatchStats: false,
     transcode: false,
+    ratingScale: "ten",
     ...overrides,
   };
 }
