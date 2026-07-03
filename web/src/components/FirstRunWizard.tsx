@@ -12,8 +12,9 @@ import { markOnboardingComplete } from "../lib/firstRun";
 import { saveServerURL } from "../lib/serverMode";
 import { isTauri } from "../lib/tauri";
 import { DebridServiceType } from "../services/debrid/models";
+import { AIProviderKind } from "../services/ai/models";
 import type { AppSettings, DebridTokenEntry } from "../data/settings";
-import { CONCEPTS, DEBRID_SIGNUP_ID, signupUrl } from "../data/onboardingHelp";
+import { AI_SIGNUP_ID, CONCEPTS, DEBRID_SIGNUP_ID, signupUrl } from "../data/onboardingHelp";
 import { testDebridToken, testOmdbKey, testTmdbKey } from "../lib/onboardingValidation";
 import { Icon, type IconName } from "./Icon";
 import "./FirstRunWizard.css";
@@ -70,6 +71,14 @@ export interface CatalogKey {
   omdbKey?: string;
 }
 
+/** The optional AI step's result. A cloud provider carries an apiKey; the
+ *  local Ollama provider carries an endpoint instead. */
+export interface AiChoice {
+  provider: AIProviderKind;
+  apiKey?: string;
+  ollamaEndpoint?: string;
+}
+
 export function FirstRunWizard({
   onDone,
   forced = false,
@@ -83,8 +92,19 @@ export function FirstRunWizard({
 }) {
   const { settings, updateSettings, navigate } = useAppStore();
   const [step, setStep] = useState<
-    "choose" | "connect" | "host" | "catalog" | "streaming" | "skip-confirm"
+    | "choose"
+    | "connect"
+    | "host"
+    | "catalog"
+    | "streaming"
+    | "ai"
+    | "skip-confirm"
   >("choose");
+  // Debrid entry carried from the streaming step into the optional AI step, so
+  // both land in the single final settings write.
+  const [collectedDebrid, setCollectedDebrid] = useState<DebridTokenEntry | null>(
+    null,
+  );
   // Validated catalog key carried from the catalog step; null = the user chose
   // the built-in-catalog escape (an existing key is never clobbered).
   const [collectedCatalog, setCollectedCatalog] = useState<CatalogKey | null>(null);
@@ -102,10 +122,14 @@ export function FirstRunWizard({
     onDone();
   }
 
-  /** The device path's SINGLE settings write: both collected keys land in one
-   *  updateSettings so services rebuild once and nothing races. Escapes pass
-   *  null and never write empty values over a re-running user's existing keys. */
-  async function finishDevice(debrid: DebridTokenEntry | null) {
+  /** The device path's SINGLE settings write: catalog keys, the debrid entry,
+   *  and the optional AI choice all land in one updateSettings so services
+   *  rebuild once and nothing races. Escapes pass null and never write empty
+   *  values over a re-running user's existing keys. */
+  async function finishDevice(
+    debrid: DebridTokenEntry | null,
+    ai: AiChoice | null,
+  ) {
     const next: AppSettings = {
       ...settings,
       // Advanced keeps the full UI it asked for; device/host stay simple.
@@ -123,6 +147,13 @@ export function FirstRunWizard({
         debrid,
         ...settings.debridTokens.filter((t) => t.service !== debrid.service),
       ];
+    }
+    if (ai != null) {
+      next.aiProvider = ai.provider;
+      if (ai.apiKey != null) next.aiApiKey = ai.apiKey.trim();
+      if (ai.ollamaEndpoint != null && ai.ollamaEndpoint.trim().length > 0) {
+        next.ollamaEndpoint = ai.ollamaEndpoint.trim();
+      }
     }
     updateSettings(next);
     await markOnboardingComplete();
@@ -195,7 +226,24 @@ export function FirstRunWizard({
         existing={settings.debridTokens}
         forced={forced}
         onBack={() => setStep("catalog")}
-        onDone={(entry) => void finishDevice(entry)}
+        onDone={(entry) => {
+          // The debrid choice is made — offer the optional AI step before the
+          // single final settings write.
+          setCollectedDebrid(entry);
+          setStep("ai");
+        }}
+      />
+    );
+  }
+  if (step === "ai") {
+    return (
+      <AiStep
+        initialProvider={settings.aiProvider}
+        initialKey={settings.aiApiKey}
+        initialOllamaEndpoint={settings.ollamaEndpoint}
+        onBack={() => setStep("streaming")}
+        onSkip={() => void finishDevice(collectedDebrid, null)}
+        onSave={(ai) => void finishDevice(collectedDebrid, ai)}
       />
     );
   }
@@ -281,9 +329,13 @@ function DeviceProgress({ active }: { active: 1 | 2 }) {
   );
 }
 
-/** Device step 1 — the catalog key. Accepts a live-validated TMDB key or (per
- *  the "tmdb OR omdb" minimum) a live-validated OMDb key via the mode toggle.
- *  The keyless built-in-catalog escape exists only when NOT forced. */
+/** Device step 1 — the catalog keys. TMDB is the primary key (it alone
+ *  provides posters, backdrops/banners, search, and the episode guide). OMDb
+ *  is an OPTIONAL companion for IMDb / Rotten Tomatoes ratings — worth adding
+ *  if you have an OMDb Patreon (premium) plan, though TMDB still supplies the
+ *  artwork either way. Both fields are validated live; only the ones you fill
+ *  are checked, and at least one catalog key is required to continue (the
+ *  keyless built-in-catalog escape exists only when NOT forced). */
 function CatalogStep({
   initialTmdb,
   initialOmdb,
@@ -297,55 +349,55 @@ function CatalogStep({
   onBack: () => void;
   onNext: (key: CatalogKey | null) => void;
 }) {
-  const [mode, setMode] = useState<"tmdb" | "omdb">("tmdb");
   const [tmdb, setTmdb] = useState(initialTmdb);
   const [omdb, setOmdb] = useState(initialOmdb);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const signup = signupUrl(mode);
-
-  function switchMode(next: "tmdb" | "omdb") {
-    setMode(next);
-    setError(null);
-  }
+  const tmdbSignup = signupUrl("tmdb");
+  const omdbSignup = signupUrl("omdb");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const trimmed = (mode === "tmdb" ? tmdb : omdb).trim();
-    if (trimmed.length === 0) {
+    const t = tmdb.trim();
+    const o = omdb.trim();
+    if (t.length === 0 && o.length === 0) {
       setError(
-        mode === "tmdb"
-          ? "Enter your TMDB API key — the app can't search without a catalog key."
-          : "Enter your OMDb API key — the app can't look titles up without a catalog key.",
+        "Enter your TMDB API key to continue — it powers search, artwork, and banners. OMDb is optional.",
       );
       return;
     }
     setBusy(true);
     setError(null);
-    if (mode === "tmdb") {
-      const result = await testTmdbKey(trimmed);
-      if (result === "ok") {
-        onNext({ tmdbKey: trimmed });
+    const next: CatalogKey = {};
+    // Validate only the fields the user filled; a bad key blocks continuing and
+    // names which one failed.
+    if (t.length > 0) {
+      const result = await testTmdbKey(t);
+      if (result !== "ok") {
+        setError(
+          result === "unauthorized"
+            ? "TMDB rejected that key — double-check it (use the v3 API key)."
+            : "Couldn't reach TMDB — check your connection and try again.",
+        );
+        setBusy(false);
         return;
       }
-      setError(
-        result === "unauthorized"
-          ? "TMDB rejected that key — double-check it (use the v3 API key)."
-          : "Couldn't reach TMDB — check your connection and try again.",
-      );
-    } else {
-      const result = await testOmdbKey(trimmed);
-      if (result === "ok") {
-        onNext({ omdbKey: trimmed });
-        return;
-      }
-      setError(
-        result === "unauthorized"
-          ? "OMDb rejected that key — double-check it (free keys need the email activation link)."
-          : "Couldn't reach OMDb — check your connection and try again.",
-      );
+      next.tmdbKey = t;
     }
-    setBusy(false);
+    if (o.length > 0) {
+      const result = await testOmdbKey(o);
+      if (result !== "ok") {
+        setError(
+          result === "unauthorized"
+            ? "OMDb rejected that key — double-check it (free keys need the activation link OMDb emails you)."
+            : "Couldn't reach OMDb — check your connection and try again.",
+        );
+        setBusy(false);
+        return;
+      }
+      next.omdbKey = o;
+    }
+    onNext(next);
   }
 
   return (
@@ -353,45 +405,60 @@ function CatalogStep({
       <div className="first-run-card">
         <DeviceProgress active={1} />
         <h1 className="first-run-title">Power up search &amp; artwork</h1>
-        <p className="first-run-sub">
-          {mode === "tmdb" ? CONCEPTS.tmdb.blurb : CONCEPTS.omdb.blurb}
-        </p>
+        <p className="first-run-sub">{CONCEPTS.tmdb.blurb}</p>
         <form className="first-run-form" onSubmit={submit}>
-          {mode === "tmdb" ? (
-            <label className="first-run-field">
-              TMDB API key
-              <input
-                value={tmdb}
-                onChange={(e) => setTmdb(e.target.value)}
-                placeholder="v3 API key"
-                autoComplete="off"
-                spellCheck={false}
-                autoFocus
-              />
-            </label>
-          ) : (
-            <label className="first-run-field">
-              OMDb API key
-              <input
-                value={omdb}
-                onChange={(e) => setOmdb(e.target.value)}
-                placeholder="OMDb key"
-                autoComplete="off"
-                spellCheck={false}
-                autoFocus
-              />
-            </label>
-          )}
-          {signup != null && (
+          <label className="first-run-field">
+            TMDB API key
+            <input
+              value={tmdb}
+              onChange={(e) => setTmdb(e.target.value)}
+              placeholder="v3 API key"
+              autoComplete="off"
+              spellCheck={false}
+              autoFocus
+            />
+          </label>
+          {tmdbSignup != null && (
             <a
               className="server-setup-signup"
-              href={signup}
+              href={tmdbSignup}
               target="_blank"
               rel="noreferrer"
             >
-              Get a free key ↗
+              Get a free TMDB key ↗
             </a>
           )}
+
+          <label className="first-run-field first-run-field-optional">
+            <span className="first-run-field-label">
+              OMDb API key
+              <span className="first-run-optional-tag">Optional</span>
+            </span>
+            <input
+              value={omdb}
+              onChange={(e) => setOmdb(e.target.value)}
+              placeholder="OMDb key — for IMDb & Rotten Tomatoes ratings"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+          {omdbSignup != null && (
+            <a
+              className="server-setup-signup"
+              href={omdbSignup}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Get a free OMDb key ↗
+            </a>
+          )}
+          <p className="first-run-hint">
+            OMDb adds IMDb &amp; Rotten Tomatoes ratings. The free tier (1,000
+            lookups/day) suits most homes; an OMDb Patreon plan raises the limit
+            and is the richer ratings source — TMDB still supplies the artwork
+            and banners either way.
+          </p>
+
           {error != null && (
             <p className="first-run-error" role="alert">
               {error}
@@ -402,19 +469,10 @@ function CatalogStep({
               Back
             </button>
             <button type="submit" className="first-run-primary" disabled={busy}>
-              {busy ? "Testing…" : "Test key & continue"}
+              {busy ? "Testing…" : "Test keys & continue"}
             </button>
           </div>
         </form>
-        <button
-          type="button"
-          className="first-run-escape"
-          onClick={() => switchMode(mode === "tmdb" ? "omdb" : "tmdb")}
-        >
-          {mode === "tmdb"
-            ? "Only have an OMDb key? Use that instead"
-            : "Use a TMDB key instead (full search & artwork)"}
-        </button>
         {!forced && (
           <button
             type="button"
@@ -426,9 +484,7 @@ function CatalogStep({
           </button>
         )}
         <p className="first-run-footnote">
-          {mode === "tmdb"
-            ? "Optional: an OMDb key adds IMDb / Rotten Tomatoes ratings — add it any time in Settings → Keys."
-            : "Heads up: OMDb covers lookups and ratings; a TMDB key gives the full search, artwork, and episode-guide experience. You can add one any time in Settings → Keys."}
+          You can add or change either key any time in Settings → Keys.
         </p>
       </div>
     </div>
@@ -607,6 +663,132 @@ function SkipConfirmStep({
             Skip anyway
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Device step 3 (OPTIONAL) — AI recommendations. Never blocks onboarding:
+ *  "Skip — add AI later" always completes. Cloud providers take an API key
+ *  (with a working signup link); the local Ollama provider takes an endpoint.
+ *  The provider list is data-driven, so new providers appear here for free. */
+function AiStep({
+  initialProvider,
+  initialKey,
+  initialOllamaEndpoint,
+  onBack,
+  onSkip,
+  onSave,
+}: {
+  initialProvider: AIProviderKind;
+  initialKey: string;
+  initialOllamaEndpoint: string;
+  onBack: () => void;
+  onSkip: () => void;
+  onSave: (ai: AiChoice) => void;
+}) {
+  const [provider, setProvider] = useState<AIProviderKind>(initialProvider);
+  const [apiKey, setApiKey] = useState(initialKey);
+  const [endpoint, setEndpoint] = useState(
+    initialOllamaEndpoint.trim().length > 0
+      ? initialOllamaEndpoint
+      : "http://localhost:11434",
+  );
+  const isLocal = provider === AIProviderKind.ollama;
+  const signup = signupUrl(AI_SIGNUP_ID[provider] ?? "");
+  const canSave = isLocal
+    ? endpoint.trim().length > 0
+    : apiKey.trim().length > 0;
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!canSave) {
+      onSkip();
+      return;
+    }
+    onSave(
+      isLocal
+        ? { provider, ollamaEndpoint: endpoint.trim() }
+        : { provider, apiKey: apiKey.trim() },
+    );
+  }
+
+  return (
+    <div className="first-run">
+      <div className="first-run-card">
+        <p className="first-run-eyebrow">
+          <Icon name="sparkles" size={13} />
+          Optional
+        </p>
+        <h1 className="first-run-title">Add AI recommendations</h1>
+        <p className="first-run-sub">
+          Describe a vibe for a curated lineup and get a “would I like this?”
+          take on any title. Bring your own key, or point it at a local model —
+          change this any time in Settings.
+        </p>
+        <form className="first-run-form" onSubmit={submit}>
+          <div className="server-setup-fields">
+            <label className="first-run-field">
+              Provider
+              <select
+                value={provider}
+                onChange={(e) => setProvider(e.target.value as AIProviderKind)}
+              >
+                {AIProviderKind.allCases().map((p) => (
+                  <option key={p} value={p}>
+                    {AIProviderKind.displayName(p)}
+                    {p === AIProviderKind.ollama ? " — local" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {isLocal ? (
+              <label className="first-run-field">
+                Ollama endpoint
+                <input
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                  placeholder="http://localhost:11434"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+            ) : (
+              <label className="first-run-field">
+                API key
+                <input
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="API key"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoFocus
+                />
+              </label>
+            )}
+            {signup != null && !isLocal && (
+              <a
+                className="server-setup-signup"
+                href={signup}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Get an {AIProviderKind.displayName(provider)} key ↗
+              </a>
+            )}
+          </div>
+          <div className="first-run-actions">
+            <button type="button" className="first-run-secondary" onClick={onBack}>
+              Back
+            </button>
+            <button type="submit" className="first-run-primary" disabled={!canSave}>
+              Save &amp; finish
+            </button>
+          </div>
+        </form>
+        <button type="button" className="first-run-escape" onClick={onSkip}>
+          Skip — add AI later
+        </button>
       </div>
     </div>
   );

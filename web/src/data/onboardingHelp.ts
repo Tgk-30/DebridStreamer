@@ -42,7 +42,7 @@ export interface SignupLink {
   id: string;
   label: string;
   url: string;
-  kind: "metadata" | "debrid" | "subtitles";
+  kind: "metadata" | "debrid" | "subtitles" | "ai";
 }
 
 /** Where to sign up / find each key. Opened in a new tab from the field's help. */
@@ -89,6 +89,18 @@ export const SIGNUP_LINKS: readonly SignupLink[] = [
     url: "https://www.opensubtitles.com/en/consumers",
     kind: "subtitles",
   },
+  {
+    id: "anthropic",
+    label: "Anthropic API key",
+    url: "https://console.anthropic.com/settings/keys",
+    kind: "ai",
+  },
+  {
+    id: "openai",
+    label: "OpenAI API key",
+    url: "https://platform.openai.com/api-keys",
+    kind: "ai",
+  },
 ];
 
 /** DebridServiceType value → SIGNUP_LINKS id. (Settings.tsx and
@@ -98,6 +110,12 @@ export const DEBRID_SIGNUP_ID: Record<string, string> = {
   all_debrid: "allDebrid",
   premiumize: "premiumize",
   torbox: "torbox",
+};
+
+/** AIProviderKind value → SIGNUP_LINKS id. Ollama runs locally (no signup). */
+export const AI_SIGNUP_ID: Record<string, string> = {
+  anthropic: "anthropic",
+  openai: "openai",
 };
 
 /** Look up a signup URL by id (e.g. "tmdb", "realDebrid"); null if unknown. */
