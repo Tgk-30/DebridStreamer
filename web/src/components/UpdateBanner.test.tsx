@@ -6,16 +6,25 @@
 // progress -> error), Retry, auto-install, and Dismiss.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PendingUpdate } from "../lib/updater";
 
-// The single dependency the component imports: lib/updater.checkForUpdates.
+// The component imports checkForUpdates + the weekly-cadence helpers from
+// lib/updater. markUpdateChecked/updateCheckAgeMs are backed by real localStorage
+// so the weekly-poll gate behaves as in production; WEEKLY_UPDATE_CHECK_MS is the
+// real constant.
 const checkForUpdates = vi.fn<() => Promise<PendingUpdate | null>>();
 
-vi.mock("../lib/updater", () => ({
-  checkForUpdates: () => checkForUpdates(),
-}));
+vi.mock("../lib/updater", async () => {
+  const actual = await vi.importActual<typeof import("../lib/updater")>(
+    "../lib/updater",
+  );
+  return {
+    ...actual,
+    checkForUpdates: () => checkForUpdates(),
+  };
+});
 
 // Icon renders an inline SVG that hard-depends on lucide-react; stub it to a
 // data-name span so the component tree is trivial to assert on.
@@ -36,10 +45,20 @@ function makeUpdate(
 
 beforeEach(() => {
   checkForUpdates.mockReset();
+  // A working in-memory localStorage so the weekly-check gate (markUpdateChecked
+  // / updateCheckAgeMs) actually persists — the default test stub no-ops setItem.
+  const store = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+    clear: () => store.clear(),
+  });
 });
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("UpdateBanner", () => {
@@ -217,5 +236,73 @@ describe("UpdateBanner", () => {
     expect(
       screen.getByText("Couldn't install v7.0.0. Try again later."),
     ).toBeInTheDocument();
+  });
+
+  it("re-checks weekly for a long-running instance once a week has elapsed", async () => {
+    vi.useFakeTimers();
+    try {
+      checkForUpdates.mockResolvedValue(null); // no update → poll stays eligible
+      render(<UpdateBanner autoCheck autoInstall={false} />);
+      await vi.advanceTimersByTimeAsync(0); // flush the launch check
+      expect(checkForUpdates).toHaveBeenCalledTimes(1);
+
+      // Backdate the last check to over a week ago so the poll's gate opens.
+      localStorage.setItem(
+        "ds_last_update_check",
+        String(Date.now() - 8 * 24 * 60 * 60 * 1000),
+      );
+      // One poll interval later, the gate is open → a second check fires.
+      await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
+      expect(checkForUpdates).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not re-check when the last check was recent (within a week)", async () => {
+    vi.useFakeTimers();
+    try {
+      checkForUpdates.mockResolvedValue(null);
+      render(<UpdateBanner autoCheck autoInstall={false} />);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(checkForUpdates).toHaveBeenCalledTimes(1);
+
+      // Launch just marked "now" → a poll interval later is still within the
+      // week, so no second network check.
+      await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
+      expect(checkForUpdates).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a dismissed version hidden but surfaces a later one on the next weekly check", async () => {
+    const weekAgo = () => String(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    vi.useFakeTimers();
+    try {
+      checkForUpdates.mockResolvedValue(makeUpdate("1.0.0", vi.fn()));
+      render(<UpdateBanner autoCheck autoInstall={false} />);
+      await vi.advanceTimersByTimeAsync(0); // launch → v1.0.0 surfaces
+      expect(screen.getByText("Update v1.0.0 available")).toBeInTheDocument();
+
+      // Dismiss it.
+      fireEvent.click(
+        screen.getByRole("button", { name: "Dismiss update notification" }),
+      );
+      expect(screen.queryByText("Update v1.0.0 available")).toBeNull();
+
+      // A week later the poll re-checks and finds the SAME version → stays hidden.
+      localStorage.setItem("ds_last_update_check", weekAgo());
+      await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
+      expect(screen.queryByText("Update v1.0.0 available")).toBeNull();
+
+      // A NEWER version appears → the next weekly poll surfaces it.
+      checkForUpdates.mockResolvedValue(makeUpdate("1.1.0", vi.fn()));
+      localStorage.setItem("ds_last_update_check", weekAgo());
+      await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
+      expect(screen.getByText("Update v1.1.0 available")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
