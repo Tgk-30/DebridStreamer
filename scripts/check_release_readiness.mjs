@@ -46,7 +46,6 @@ check(
 const releaseWorkflow = read(".github/workflows/web-release.yml");
 const dockerWorkflow = read(".github/workflows/docker-image.yml");
 const ciWorkflow = read(".github/workflows/ci.yml");
-const siteWorkflow = read(".github/workflows/site.yml");
 const cloudflareSiteWorkflow = read(".github/workflows/cloudflare-site.yml");
 const dockerIgnore = read(".dockerignore");
 const publicRepoPreflight = read("scripts/public_repo_preflight.mjs");
@@ -249,36 +248,12 @@ check(
     /public_repo_preflight\.mjs/.test(cloudflareDeployHelper),
   "scripts/deploy_website_cloudflare.mjs must run download, static, mounted-path, and public-repo checks before mutating Cloudflare",
 );
+// GitHub Pages (site.yml) was removed 2026-07 — Pages was never enabled and
+// Cloudflare (cloudflare-site.yml, checked below) is the deploy that counts.
 check(
-  "GitHub Pages workflow exists",
-  existsSync(join(root, ".github/workflows/site.yml")),
-  ".github/workflows/site.yml must publish the downloader site",
-);
-check(
-  "GitHub Pages workflow validates website",
-  /check_website_download_logic\.mjs/.test(siteWorkflow) &&
-    /check_website_static\.mjs/.test(siteWorkflow) &&
-    /check_website_path_mount\.mjs/.test(siteWorkflow) &&
-    /public_repo_preflight\.mjs/.test(siteWorkflow),
-  ".github/workflows/site.yml must run public repo preflight, website download logic, static site QA, and mounted-path QA before deploy",
-);
-check(
-  "GitHub Pages workflow public preflight uses full Git history",
-  workflowHasFullHistoryCheckout(siteWorkflow),
-  ".github/workflows/site.yml must checkout with fetch-depth: 0 before running public repo preflight",
-);
-check(
-  "GitHub Pages workflow watches site dependencies",
-  [
-    "website/**",
-    "web/public/icons/**",
-    "scripts/check_website_download_logic.mjs",
-    "scripts/check_website_static.mjs",
-    "scripts/check_website_path_mount.mjs",
-    "scripts/deploy_website_cloudflare.mjs",
-    "scripts/public_repo_preflight.mjs",
-  ].every((path) => siteWorkflow.includes(path)),
-  ".github/workflows/site.yml paths must include website assets, copied icons, and site validation scripts",
+  "Legacy GitHub Pages workflow stays deleted",
+  !existsSync(join(root, ".github/workflows/site.yml")),
+  ".github/workflows/site.yml is dead legacy — the Cloudflare workflow owns the site deploy",
 );
 check(
   "Cloudflare site workflow exists",
