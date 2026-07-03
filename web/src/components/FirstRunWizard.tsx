@@ -14,7 +14,7 @@ import { isTauri } from "../lib/tauri";
 import { DebridServiceType } from "../services/debrid/models";
 import type { AppSettings, DebridTokenEntry } from "../data/settings";
 import { CONCEPTS, DEBRID_SIGNUP_ID, signupUrl } from "../data/onboardingHelp";
-import { testDebridToken, testTmdbKey } from "../lib/onboardingValidation";
+import { testDebridToken, testOmdbKey, testTmdbKey } from "../lib/onboardingValidation";
 import { Icon, type IconName } from "./Icon";
 import "./FirstRunWizard.css";
 
@@ -63,14 +63,31 @@ function normalizeURL(raw: string): string {
   return value.replace(/\/+$/, "");
 }
 
-export function FirstRunWizard({ onDone }: { onDone: () => void }) {
+/** The catalog step's validated result: exactly one key, or null when the
+ *  (non-forced) built-in-catalog escape was taken. */
+export interface CatalogKey {
+  tmdbKey?: string;
+  omdbKey?: string;
+}
+
+export function FirstRunWizard({
+  onDone,
+  forced = false,
+}: {
+  onDone: () => void;
+  /** Mandatory mode: the launch found no catalog key or no debrid token, so
+   *  skipping and the keyless escapes are hidden — the wizard only closes by
+   *  actually configuring the app (or picking the server paths, which supply
+   *  keys from a server). */
+  forced?: boolean;
+}) {
   const { settings, updateSettings, navigate } = useAppStore();
   const [step, setStep] = useState<
     "choose" | "connect" | "host" | "catalog" | "streaming" | "skip-confirm"
   >("choose");
-  // Validated TMDB key carried from the catalog step; null = the user chose
+  // Validated catalog key carried from the catalog step; null = the user chose
   // the built-in-catalog escape (an existing key is never clobbered).
-  const [collectedTmdb, setCollectedTmdb] = useState<string | null>(null);
+  const [collectedCatalog, setCollectedCatalog] = useState<CatalogKey | null>(null);
 
   async function finish(simple: boolean, andThen?: () => void) {
     updateSettings({ ...settings, simpleMode: simple });
@@ -84,8 +101,11 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
    *  null and never write empty values over a re-running user's existing keys. */
   async function finishDevice(debrid: DebridTokenEntry | null) {
     const next: AppSettings = { ...settings, simpleMode: true };
-    if (collectedTmdb != null && collectedTmdb.trim().length > 0) {
-      next.tmdbKey = collectedTmdb.trim();
+    if (collectedCatalog?.tmdbKey != null && collectedCatalog.tmdbKey.trim().length > 0) {
+      next.tmdbKey = collectedCatalog.tmdbKey.trim();
+    }
+    if (collectedCatalog?.omdbKey != null && collectedCatalog.omdbKey.trim().length > 0) {
+      next.omdbKey = collectedCatalog.omdbKey.trim();
     }
     if (debrid != null) {
       // Replace an existing entry for the same provider, else prepend.
@@ -125,10 +145,12 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
   if (step === "catalog") {
     return (
       <CatalogStep
-        initialKey={collectedTmdb ?? settings.tmdbKey}
+        initialTmdb={collectedCatalog?.tmdbKey ?? settings.tmdbKey}
+        initialOmdb={collectedCatalog?.omdbKey ?? settings.omdbKey}
+        forced={forced}
         onBack={() => setStep("choose")}
         onNext={(key) => {
-          setCollectedTmdb(key);
+          setCollectedCatalog(key);
           setStep("streaming");
         }}
       />
@@ -138,6 +160,7 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
     return (
       <StreamingStep
         existing={settings.debridTokens}
+        forced={forced}
         onBack={() => setStep("catalog")}
         onDone={(entry) => void finishDevice(entry)}
       />
@@ -158,7 +181,9 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
         </p>
         <h1 className="first-run-title">How do you want to use DebridStreamer?</h1>
         <p className="first-run-sub">
-          Pick one to get started — you can change anything later in Settings.
+          {forced
+            ? "The app needs its keys before it can search or stream — pick a path to set them up."
+            : "Pick one to get started — you can change anything later in Settings."}
         </p>
         <div className="first-run-choices">
           {PERSONAS.map((p) => (
@@ -185,13 +210,15 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          className="first-run-skip"
-          onClick={() => setStep("skip-confirm")}
-        >
-          Skip for now
-        </button>
+        {!forced && (
+          <button
+            type="button"
+            className="first-run-skip"
+            onClick={() => setStep("skip-confirm")}
+          >
+            Skip for now
+          </button>
+        )}
       </div>
     </div>
   );
@@ -221,41 +248,70 @@ function DeviceProgress({ active }: { active: 1 | 2 }) {
   );
 }
 
-/** Device step 1 — the catalog key. Passes only with a live-validated TMDB key
- *  or the explicit (honest) built-in-catalog escape. */
+/** Device step 1 — the catalog key. Accepts a live-validated TMDB key or (per
+ *  the "tmdb OR omdb" minimum) a live-validated OMDb key via the mode toggle.
+ *  The keyless built-in-catalog escape exists only when NOT forced. */
 function CatalogStep({
-  initialKey,
+  initialTmdb,
+  initialOmdb,
+  forced,
   onBack,
   onNext,
 }: {
-  initialKey: string;
+  initialTmdb: string;
+  initialOmdb: string;
+  forced: boolean;
   onBack: () => void;
-  onNext: (key: string | null) => void;
+  onNext: (key: CatalogKey | null) => void;
 }) {
-  const [key, setKey] = useState(initialKey);
+  const [mode, setMode] = useState<"tmdb" | "omdb">("tmdb");
+  const [tmdb, setTmdb] = useState(initialTmdb);
+  const [omdb, setOmdb] = useState(initialOmdb);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const tmdbSignup = signupUrl("tmdb");
+  const signup = signupUrl(mode);
+
+  function switchMode(next: "tmdb" | "omdb") {
+    setMode(next);
+    setError(null);
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const trimmed = key.trim();
+    const trimmed = (mode === "tmdb" ? tmdb : omdb).trim();
     if (trimmed.length === 0) {
-      setError("Enter your TMDB API key, or continue with the built-in catalog.");
+      setError(
+        mode === "tmdb"
+          ? "Enter your TMDB API key — the app can't search without a catalog key."
+          : "Enter your OMDb API key — the app can't look titles up without a catalog key.",
+      );
       return;
     }
     setBusy(true);
     setError(null);
-    const result = await testTmdbKey(trimmed);
-    if (result === "ok") {
-      onNext(trimmed);
-      return;
+    if (mode === "tmdb") {
+      const result = await testTmdbKey(trimmed);
+      if (result === "ok") {
+        onNext({ tmdbKey: trimmed });
+        return;
+      }
+      setError(
+        result === "unauthorized"
+          ? "TMDB rejected that key — double-check it (use the v3 API key)."
+          : "Couldn't reach TMDB — check your connection and try again.",
+      );
+    } else {
+      const result = await testOmdbKey(trimmed);
+      if (result === "ok") {
+        onNext({ omdbKey: trimmed });
+        return;
+      }
+      setError(
+        result === "unauthorized"
+          ? "OMDb rejected that key — double-check it (free keys need the email activation link)."
+          : "Couldn't reach OMDb — check your connection and try again.",
+      );
     }
-    setError(
-      result === "unauthorized"
-        ? "TMDB rejected that key — double-check it (use the v3 API key)."
-        : "Couldn't reach TMDB — check your connection and try again.",
-    );
     setBusy(false);
   }
 
@@ -264,23 +320,39 @@ function CatalogStep({
       <div className="first-run-card">
         <DeviceProgress active={1} />
         <h1 className="first-run-title">Power up search &amp; artwork</h1>
-        <p className="first-run-sub">{CONCEPTS.tmdb.blurb}</p>
+        <p className="first-run-sub">
+          {mode === "tmdb" ? CONCEPTS.tmdb.blurb : CONCEPTS.omdb.blurb}
+        </p>
         <form className="first-run-form" onSubmit={submit}>
-          <label className="first-run-field">
-            TMDB API key
-            <input
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              placeholder="v3 API key"
-              autoComplete="off"
-              spellCheck={false}
-              autoFocus
-            />
-          </label>
-          {tmdbSignup != null && (
+          {mode === "tmdb" ? (
+            <label className="first-run-field">
+              TMDB API key
+              <input
+                value={tmdb}
+                onChange={(e) => setTmdb(e.target.value)}
+                placeholder="v3 API key"
+                autoComplete="off"
+                spellCheck={false}
+                autoFocus
+              />
+            </label>
+          ) : (
+            <label className="first-run-field">
+              OMDb API key
+              <input
+                value={omdb}
+                onChange={(e) => setOmdb(e.target.value)}
+                placeholder="OMDb key"
+                autoComplete="off"
+                spellCheck={false}
+                autoFocus
+              />
+            </label>
+          )}
+          {signup != null && (
             <a
               className="server-setup-signup"
-              href={tmdbSignup}
+              href={signup}
               target="_blank"
               rel="noreferrer"
             >
@@ -304,14 +376,26 @@ function CatalogStep({
         <button
           type="button"
           className="first-run-escape"
-          onClick={() => onNext(null)}
+          onClick={() => switchMode(mode === "tmdb" ? "omdb" : "tmdb")}
         >
-          Continue with the built-in catalog (limited — no search artwork, no
-          episode guide)
+          {mode === "tmdb"
+            ? "Only have an OMDb key? Use that instead"
+            : "Use a TMDB key instead (full search & artwork)"}
         </button>
+        {!forced && (
+          <button
+            type="button"
+            className="first-run-escape"
+            onClick={() => onNext(null)}
+          >
+            Continue with the built-in catalog (limited — no search artwork, no
+            episode guide)
+          </button>
+        )}
         <p className="first-run-footnote">
-          Optional: an OMDb key adds IMDb / Rotten Tomatoes ratings — add it any
-          time in Settings → Keys.
+          {mode === "tmdb"
+            ? "Optional: an OMDb key adds IMDb / Rotten Tomatoes ratings — add it any time in Settings → Keys."
+            : "Heads up: OMDb covers lookups and ratings; a TMDB key gives the full search, artwork, and episode-guide experience. You can add one any time in Settings → Keys."}
         </p>
       </div>
     </div>
@@ -324,10 +408,12 @@ function CatalogStep({
  *  add-later escape. */
 function StreamingStep({
   existing,
+  forced,
   onBack,
   onDone,
 }: {
   existing: DebridTokenEntry[];
+  forced: boolean;
   onBack: () => void;
   onDone: (entry: DebridTokenEntry | null) => void;
 }) {
@@ -359,7 +445,11 @@ function StreamingStep({
     event.preventDefault();
     const trimmed = token.trim();
     if (trimmed.length === 0) {
-      setError("Paste your API token, or choose Add later.");
+      setError(
+        forced
+          ? "Paste your API token — nothing can play without a debrid service."
+          : "Paste your API token, or choose Add later.",
+      );
       return;
     }
     setBusy(true);
@@ -445,13 +535,15 @@ function StreamingStep({
             </button>
           )}
         </form>
-        <button
-          type="button"
-          className="first-run-escape"
-          onClick={() => onDone(null)}
-        >
-          Add later — nothing will play until you do.
-        </button>
+        {!forced && (
+          <button
+            type="button"
+            className="first-run-escape"
+            onClick={() => onDone(null)}
+          >
+            Add later — nothing will play until you do.
+          </button>
+        )}
       </div>
     </div>
   );

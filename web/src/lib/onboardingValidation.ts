@@ -22,6 +22,30 @@ export async function testTmdbKey(key: string): Promise<TmdbTestResult> {
   }
 }
 
+export type OmdbTestResult = "ok" | "unauthorized" | "network";
+
+/** One title lookup with the candidate key. OMDb answers HTTP 200/401 with a
+ *  JSON body either way and sends permissive CORS headers, so a plain browser
+ *  can genuinely distinguish a bad key from a network failure. */
+export async function testOmdbKey(key: string): Promise<OmdbTestResult> {
+  try {
+    const res = await fetch(
+      `https://www.omdbapi.com/?apikey=${encodeURIComponent(key.trim())}&i=tt0111161`,
+    );
+    if (res.status === 401) return "unauthorized";
+    const json: { Response?: string; Error?: string } = await res.json();
+    if (json.Response === "True") return "ok";
+    if (typeof json.Error === "string" && /key/i.test(json.Error)) {
+      return "unauthorized";
+    }
+    // Reached OMDb and the key wasn't rejected — treat other API quirks
+    // (e.g. temporary lookup errors) as a working key.
+    return "ok";
+  } catch {
+    return "network";
+  }
+}
+
 /** true = verified. false = rejected OR unreachable — validateToken() is a
  *  catch-all boolean, so callers must hedge their copy (and offer a
  *  save-without-testing path: debrid hosts are CORS-blocked in plain

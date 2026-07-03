@@ -31,7 +31,12 @@ type StoreSlice = {
   browseContext: unknown;
   openDetail: typeof openDetail;
   search: typeof search;
-  settings: { autoUpdateChecks: boolean; autoInstallUpdates: boolean };
+  settings: {
+    autoUpdateChecks: boolean;
+    autoInstallUpdates: boolean;
+    tmdbKey: string;
+    omdbKey: string;
+  };
   simpleMode: boolean;
   hydrated: boolean;
   services: {
@@ -221,8 +226,11 @@ vi.mock("./lib/ServerSessionContext", () => ({
 }));
 
 let firstRunValue = false;
+let keyGateValue = false;
 vi.mock("./lib/firstRun", () => ({
   isFirstRun: () => Promise.resolve(firstRunValue),
+  devBypassesOnboarding: () => false,
+  needsKeyOnboarding: () => keyGateValue,
 }));
 
 let serverSetupValue = false;
@@ -268,7 +276,7 @@ function makeStore(over: Partial<StoreSlice> = {}): StoreSlice {
     browseContext: null,
     openDetail,
     search,
-    settings: { autoUpdateChecks: true, autoInstallUpdates: false },
+    settings: { autoUpdateChecks: true, autoInstallUpdates: false, tmdbKey: "k", omdbKey: "" },
     simpleMode: false,
     hydrated: true,
     // Configured by default so the "finish setup" nudge stays hidden here.
@@ -289,6 +297,7 @@ beforeEach(() => {
   smartPreloadEnabled = false;
   sessionValue = null;
   firstRunValue = false;
+  keyGateValue = false;
   serverSetupValue = false;
   adminHealthCredentials = 0;
   store = makeStore();
@@ -468,7 +477,7 @@ describe("CommandPalette + UpdateBanner globals", () => {
 
   it("forwards update settings to the UpdateBanner", () => {
     store = makeStore({
-      settings: { autoUpdateChecks: false, autoInstallUpdates: true },
+      settings: { autoUpdateChecks: false, autoInstallUpdates: true, tmdbKey: "k", omdbKey: "" },
     });
     render(<App />);
     const banner = screen.getByTestId("update-banner");
@@ -593,6 +602,23 @@ describe("FirstRunHost gating", () => {
 
   it("completing the FirstRunWizard reveals the App", async () => {
     firstRunValue = true;
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    fireEvent.click(await screen.findByTestId("first-run"));
+    expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
+  });
+
+  it("forces the wizard when keys are missing even after onboarding completed", async () => {
+    firstRunValue = false; // onboarding_completed is set…
+    keyGateValue = true; // …but the launch found no catalog key / debrid token
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    expect(await screen.findByTestId("first-run")).toBeInTheDocument();
+  });
+
+  it("key-gated wizard completion reveals the App for this session", async () => {
+    firstRunValue = false;
+    keyGateValue = true;
     globalThis.localStorage.setItem("ds_tier_welcomed", "1");
     render(<FirstRunHost />);
     fireEvent.click(await screen.findByTestId("first-run"));
