@@ -6,6 +6,7 @@ import { ServerModeGate } from "./components/ServerModeGate";
 import { AppStoreProvider } from "./store/AppStore";
 import { installSuspendOnHidden } from "./lib/suspendOnHidden";
 import { initInstallPromptCapture } from "./lib/installPrompt";
+import { installExternalLinkHandler } from "./lib/externalLinks";
 
 // Park all CSS animations whenever the window is hidden/minimized/covered.
 installSuspendOnHidden();
@@ -13,6 +14,10 @@ installSuspendOnHidden();
 // Capture beforeinstallprompt before React mounts — Chromium can fire it
 // before the first component effect runs.
 initInstallPromptCapture();
+
+// Route external http(s) links through the OS browser under Tauri (a plain
+// <a target="_blank"> is otherwise swallowed by the desktop webview).
+installExternalLinkHandler();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

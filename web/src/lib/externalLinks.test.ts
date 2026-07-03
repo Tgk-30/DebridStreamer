@@ -1,0 +1,61 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const isTauriMock = vi.fn(() => true);
+const openExternalURL = vi.fn();
+vi.mock("./tauri", () => ({
+  isTauri: () => isTauriMock(),
+  openExternalURL: (url: string) => openExternalURL(url),
+}));
+
+import { installExternalLinkHandler } from "./externalLinks";
+
+// The handler installs a single document-level listener the first time it is
+// called; a module-level guard makes repeat calls no-ops. So install once and
+// drive behavior through the mocks.
+installExternalLinkHandler();
+
+function clickAnchor(href: string, init: MouseEventInit = {}) {
+  const a = document.createElement("a");
+  a.setAttribute("href", href);
+  a.textContent = "link";
+  document.body.append(a);
+  a.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, ...init }));
+  a.remove();
+}
+
+describe("installExternalLinkHandler", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isTauriMock.mockReturnValue(true);
+  });
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("routes an external https link through the opener under Tauri", () => {
+    clickAnchor("https://www.themoviedb.org/settings/api");
+    expect(openExternalURL).toHaveBeenCalledWith("https://www.themoviedb.org/settings/api");
+  });
+
+  it("routes an http link too", () => {
+    clickAnchor("http://example.com/x");
+    expect(openExternalURL).toHaveBeenCalledWith("http://example.com/x");
+  });
+
+  it("ignores in-app (non-http) hrefs like fragments", () => {
+    clickAnchor("#section");
+    expect(openExternalURL).not.toHaveBeenCalled();
+  });
+
+  it("does nothing in a plain browser (native link handles it)", () => {
+    isTauriMock.mockReturnValue(false);
+    clickAnchor("https://real-debrid.com/apitoken");
+    expect(openExternalURL).not.toHaveBeenCalled();
+  });
+
+  it("leaves modified clicks (cmd/ctrl) to the browser", () => {
+    clickAnchor("https://alldebrid.com/apikeys", { metaKey: true });
+    expect(openExternalURL).not.toHaveBeenCalled();
+  });
+});

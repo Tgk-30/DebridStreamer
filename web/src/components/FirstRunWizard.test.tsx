@@ -20,6 +20,9 @@ const settings = {
   tmdbKey: "",
   omdbKey: "",
   debridTokens: [] as { service: string; apiToken: string }[],
+  aiProvider: "anthropic" as string,
+  aiApiKey: "",
+  ollamaEndpoint: "http://localhost:11434",
 };
 
 vi.mock("../store/AppStore", () => ({
@@ -54,12 +57,19 @@ const testTmdbKeyMock = vi.mocked(testTmdbKey);
 const testOmdbKeyMock = vi.mocked(testOmdbKey);
 const testDebridTokenMock = vi.mocked(testDebridToken);
 
+/** After the streaming step completes, the optional AI step appears — dismiss
+ *  it so the wizard finishes (finishDevice runs on skip). */
+async function skipAi(user: ReturnType<typeof userEvent.setup>) {
+  await screen.findByRole("heading", { name: "Add AI recommendations" });
+  await user.click(screen.getByRole("button", { name: /Skip — add AI later/ }));
+}
+
 /** Click through choose → catalog with a validated key, landing on streaming. */
 async function reachStreamingStep(user: ReturnType<typeof userEvent.setup>) {
   testTmdbKeyMock.mockResolvedValue("ok");
   await user.click(screen.getByText("Just watch on this device"));
   await user.type(screen.getByLabelText("TMDB API key"), "tmdb-key-1");
-  await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+  await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
   await screen.findByRole("heading", { name: "Connect your debrid service" });
 }
 
@@ -127,10 +137,10 @@ describe("FirstRunWizard", () => {
     const user = userEvent.setup();
     render(<FirstRunWizard onDone={() => {}} />);
     await user.click(screen.getByText("Just watch on this device"));
-    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
     expect(
       screen.getByText(
-        "Enter your TMDB API key — the app can't search without a catalog key.",
+        "Enter your TMDB API key to continue — it powers search, artwork, and banners. OMDb is optional.",
       ),
     ).toBeInTheDocument();
     expect(testTmdbKeyMock).not.toHaveBeenCalled();
@@ -142,7 +152,7 @@ describe("FirstRunWizard", () => {
     render(<FirstRunWizard onDone={() => {}} />);
     await user.click(screen.getByText("Just watch on this device"));
     await user.type(screen.getByLabelText("TMDB API key"), "bad-key");
-    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
     expect(
       await screen.findByText(
         "TMDB rejected that key — double-check it (use the v3 API key).",
@@ -150,7 +160,7 @@ describe("FirstRunWizard", () => {
     ).toBeInTheDocument();
     // Still on the catalog step, button usable again.
     expect(
-      screen.getByRole("button", { name: "Test key & continue" }),
+      screen.getByRole("button", { name: "Test keys & continue" }),
     ).toBeEnabled();
   });
 
@@ -182,6 +192,7 @@ describe("FirstRunWizard", () => {
     await reachStreamingStep(user);
     await user.type(screen.getByLabelText("API token"), "rd-token-1");
     await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    await skipAi(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(testDebridTokenMock).toHaveBeenCalledWith({
       service: "real_debrid",
@@ -211,6 +222,7 @@ describe("FirstRunWizard", () => {
     await user.clear(tokenInput);
     await user.type(tokenInput, "new-token");
     await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    await skipAi(user);
     await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -234,6 +246,7 @@ describe("FirstRunWizard", () => {
       screen.getByRole("button", { name: /Continue with the built-in catalog/ }),
     );
     await user.click(screen.getByRole("button", { name: /Add later/ }));
+    await skipAi(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(testDebridTokenMock).not.toHaveBeenCalled();
     expect(updateSettings).toHaveBeenCalledWith(
@@ -280,6 +293,7 @@ describe("FirstRunWizard", () => {
     render(<FirstRunWizard onDone={onDone} />);
     await reachStreamingStep(user);
     await user.click(screen.getByRole("button", { name: /Add later/ }));
+    await skipAi(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ tmdbKey: "tmdb-key-1", debridTokens: [] }),
@@ -302,6 +316,7 @@ describe("FirstRunWizard", () => {
     expect(onDone).not.toHaveBeenCalled();
     // The escape hatch appears only after a failed check.
     await user.click(screen.getByRole("button", { name: /Save without testing/ }));
+    await skipAi(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -459,16 +474,17 @@ describe("FirstRunWizard — forced key gate", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides the keyless catalog escape but keeps the OMDb alternative", async () => {
+  it("hides the keyless catalog escape but shows TMDB + optional OMDb fields", async () => {
     const user = userEvent.setup();
     render(<FirstRunWizard forced onDone={() => {}} />);
     await user.click(screen.getByText("Just watch on this device"));
     expect(
       screen.queryByRole("button", { name: /Continue with the built-in catalog/ }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Only have an OMDb key/ }),
-    ).toBeInTheDocument();
+    // Both catalog fields are present at once — OMDb is optional, not a toggle.
+    expect(screen.getByLabelText("TMDB API key")).toBeInTheDocument();
+    expect(screen.getByLabelText(/OMDb API key/)).toBeInTheDocument();
+    expect(screen.getByText("Optional")).toBeInTheDocument();
   });
 
   it("hides Add later on the streaming step", async () => {
@@ -477,7 +493,7 @@ describe("FirstRunWizard — forced key gate", () => {
     render(<FirstRunWizard forced onDone={() => {}} />);
     await user.click(screen.getByText("Just watch on this device"));
     await user.type(screen.getByLabelText("TMDB API key"), "tmdb-key-1");
-    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
     await screen.findByRole("heading", { name: "Connect your debrid service" });
     expect(
       screen.queryByRole("button", { name: /Add later/ }),
@@ -491,21 +507,24 @@ describe("FirstRunWizard — forced key gate", () => {
     ).toBeInTheDocument();
   });
 
-  it("accepts a validated OMDb key as the catalog minimum and saves it", async () => {
+  it("accepts an OMDb-only catalog key (no TMDB) and saves it", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
     testOmdbKeyMock.mockResolvedValue("ok");
     testDebridTokenMock.mockResolvedValue(true);
     render(<FirstRunWizard forced onDone={onDone} />);
     await user.click(screen.getByText("Just watch on this device"));
-    await user.click(screen.getByRole("button", { name: /Only have an OMDb key/ }));
-    await user.type(screen.getByLabelText("OMDb API key"), "omdb-key-1");
-    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    // Fill only the optional OMDb field, leaving TMDB empty.
+    await user.type(screen.getByLabelText(/OMDb API key/), "omdb-key-1");
+    await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
     await screen.findByRole("heading", { name: "Connect your debrid service" });
     expect(testOmdbKeyMock).toHaveBeenCalledWith("omdb-key-1");
+    expect(testTmdbKeyMock).not.toHaveBeenCalled();
     await user.type(screen.getByLabelText("API token"), "rd-token-1");
     await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    await skipAi(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    // OMDb saved, and the blank TMDB field is left as-is (not fabricated).
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         omdbKey: "omdb-key-1",
@@ -515,17 +534,46 @@ describe("FirstRunWizard — forced key gate", () => {
     );
   });
 
-  it("rejected OMDb key shows the activation hint and stays put", async () => {
+  it("validates and saves BOTH keys when both are provided", async () => {
     const user = userEvent.setup();
-    testOmdbKeyMock.mockResolvedValue("unauthorized");
-    render(<FirstRunWizard forced onDone={() => {}} />);
+    const onDone = vi.fn();
+    testTmdbKeyMock.mockResolvedValue("ok");
+    testOmdbKeyMock.mockResolvedValue("ok");
+    testDebridTokenMock.mockResolvedValue(true);
+    render(<FirstRunWizard forced onDone={onDone} />);
     await user.click(screen.getByText("Just watch on this device"));
-    await user.click(screen.getByRole("button", { name: /Only have an OMDb key/ }));
-    await user.type(screen.getByLabelText("OMDb API key"), "bad-omdb");
-    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    await user.type(screen.getByLabelText("TMDB API key"), "tmdb-key-1");
+    await user.type(screen.getByLabelText(/OMDb API key/), "omdb-key-1");
+    await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
+    await screen.findByRole("heading", { name: "Connect your debrid service" });
+    expect(testTmdbKeyMock).toHaveBeenCalledWith("tmdb-key-1");
+    expect(testOmdbKeyMock).toHaveBeenCalledWith("omdb-key-1");
+    await user.type(screen.getByLabelText("API token"), "rd-token-1");
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    await skipAi(user);
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ tmdbKey: "tmdb-key-1", omdbKey: "omdb-key-1" }),
+    );
+  });
+
+  it("a bad OMDb key blocks continuing even when TMDB is valid", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    testTmdbKeyMock.mockResolvedValue("ok");
+    testOmdbKeyMock.mockResolvedValue("unauthorized");
+    render(<FirstRunWizard forced onDone={onDone} />);
+    await user.click(screen.getByText("Just watch on this device"));
+    await user.type(screen.getByLabelText("TMDB API key"), "tmdb-key-1");
+    await user.type(screen.getByLabelText(/OMDb API key/), "bad-omdb");
+    await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
+    expect(await screen.findByText(/OMDb rejected that key/)).toBeInTheDocument();
+    // Still on the catalog step; nothing saved.
     expect(
-      await screen.findByText(/OMDb rejected that key/),
+      screen.getByRole("heading", { name: "Power up search & artwork" }),
     ).toBeInTheDocument();
+    expect(onDone).not.toHaveBeenCalled();
+    expect(updateSettings).not.toHaveBeenCalled();
   });
 });
 
@@ -542,10 +590,11 @@ describe("FirstRunWizard — forced advanced/host route through keys", () => {
     testTmdbKeyMock.mockResolvedValue("ok");
     testDebridTokenMock.mockResolvedValue(true);
     await user.type(screen.getByLabelText("TMDB API key"), "tmdb-key-1");
-    await user.click(screen.getByRole("button", { name: "Test key & continue" }));
+    await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
     await screen.findByRole("heading", { name: "Connect your debrid service" });
     await user.type(screen.getByLabelText("API token"), "rd-token-1");
     await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    await skipAi(user);
   }
 
   it("forced Advanced collects keys first, then lands in full-mode Settings", async () => {
@@ -583,5 +632,76 @@ describe("FirstRunWizard — forced advanced/host route through keys", () => {
       expect.objectContaining({ simpleMode: true, tmdbKey: "tmdb-key-1" }),
     );
     expect(navigate).toHaveBeenCalledWith("settings");
+  });
+});
+
+describe("FirstRunWizard — optional AI step", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isTauriMock.mockReturnValue(false);
+    settings.tmdbKey = "";
+    settings.omdbKey = "";
+    settings.debridTokens = [];
+    settings.aiProvider = "anthropic";
+    settings.aiApiKey = "";
+    settings.ollamaEndpoint = "http://localhost:11434";
+  });
+
+  async function reachAiStep(user: ReturnType<typeof userEvent.setup>) {
+    testTmdbKeyMock.mockResolvedValue("ok");
+    testDebridTokenMock.mockResolvedValue(true);
+    await user.click(screen.getByText("Just watch on this device"));
+    await user.type(screen.getByLabelText("TMDB API key"), "tmdb-key-1");
+    await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
+    await user.type(screen.getByLabelText("API token"), "rd-token-1");
+    await user.click(screen.getByRole("button", { name: "Test token & finish" }));
+    await screen.findByRole("heading", { name: "Add AI recommendations" });
+  }
+
+  it("is optional — Skip finishes without writing AI settings", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(<FirstRunWizard onDone={onDone} />);
+    await reachAiStep(user);
+    await user.click(screen.getByRole("button", { name: /Skip — add AI later/ }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    // AI key left untouched (empty), and Save & finish was disabled while empty.
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ aiApiKey: "" }),
+    );
+  });
+
+  it("saves a cloud provider key on Save & finish", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(<FirstRunWizard onDone={onDone} />);
+    await reachAiStep(user);
+    await user.type(screen.getByLabelText("API key"), "sk-ant-123");
+    await user.click(screen.getByRole("button", { name: "Save & finish" }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ aiProvider: "anthropic", aiApiKey: "sk-ant-123" }),
+    );
+  });
+
+  it("switches to a local endpoint field for Ollama and saves it", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(<FirstRunWizard onDone={onDone} />);
+    await reachAiStep(user);
+    await user.selectOptions(screen.getByLabelText("Provider"), "ollama");
+    // The API key field is replaced by the endpoint field.
+    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
+    const endpoint = screen.getByLabelText("Ollama endpoint");
+    await user.clear(endpoint);
+    await user.type(endpoint, "http://localhost:1234");
+    await user.click(screen.getByRole("button", { name: "Save & finish" }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aiProvider: "ollama",
+        ollamaEndpoint: "http://localhost:1234",
+      }),
+    );
   });
 });

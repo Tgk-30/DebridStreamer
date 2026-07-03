@@ -577,6 +577,34 @@
   opacity: 0.85;
 }
 
+/* Optional catalog field (OMDb) — labelled with a quiet "Optional" tag and a
+   little more breathing room from the primary TMDB field above it. */
+.first-run-field-optional {
+  margin-top: 6px;
+}
+.first-run-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.first-run-optional-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  color: var(--text-secondary);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
+  border: 0.75px solid var(--glass-border);
+}
+.first-run-hint {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 /* Skip-confirm warning box */
 .first-run-warn {
   margin: 0 0 var(--sp-md);
