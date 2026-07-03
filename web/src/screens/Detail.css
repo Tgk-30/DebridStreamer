@@ -131,3 +131,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* "Watch trailer" affordance — sits between the hero and the ratings/analysis. */
+.detail-trailer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+}

@@ -30,8 +30,11 @@ import { DetailAnalysis } from "../components/DetailAnalysis";
 import { OmdbRatings } from "../components/OmdbRatings";
 import { StreamPicker } from "../components/StreamPicker";
 import { CastRail } from "../components/CastRail";
+import { TrailerModal } from "../components/TrailerModal";
+import { useTrailer } from "../data/trailer";
 import { Rail } from "../components/Rail";
 import { Spinner } from "../components/Spinner";
+import { Icon } from "../components/Icon";
 import { isInWatchlist } from "../data/library";
 import { VideoCodec, type StreamInfo } from "../services/debrid/models";
 import type { TorrentResult } from "../services/indexers/models";
@@ -215,6 +218,17 @@ export function Detail() {
   // list since they have no episode step.
   const isSeries = detailItem?.type === "series";
   const [streamsPageOpen, setStreamsPageOpen] = useState(false);
+
+  // The title's YouTube trailer (null while loading / when TMDB has none). Kept
+  // above the early return so hook order stays stable.
+  const [trailerOpen, setTrailerOpen] = useState(false);
+  const trailer = useTrailer(
+    // Prefer the fresh navigation target's id; detail.data.item can lag a title
+    // change by a fetch. Falls back to the enriched id when the preview lacks one.
+    detailItem?.tmdbId ?? detail.data.item?.tmdbId ?? null,
+    detailItem?.type ?? null,
+    services.tmdb,
+  );
 
   // ── Next-episode auto-advance ─────────────────────────────────────────────
   // The up-next target is computed from the PLAYER SNAPSHOT (never the live
@@ -698,6 +712,19 @@ export function Detail() {
         </p>
       )}
 
+      {/* Watch the official trailer in-app (YouTube, privacy-nocookie embed).
+          Hidden until TMDB confirms a trailer exists for this title. */}
+      {trailer.key != null && (
+        <button
+          type="button"
+          className="btn detail-trailer-btn"
+          onClick={() => setTrailerOpen(true)}
+        >
+          <Icon name="play" size={14} />
+          Watch trailer
+        </button>
+      )}
+
       {/* External ratings (IMDb / Rotten Tomatoes / Metacritic) via OMDb —
           from the user's own key (local BYOK) or the server "hidden key" proxy.
           Renders nothing when no key is available. */}
@@ -854,6 +881,14 @@ export function Detail() {
             autoCountdown={!settings.dataSaver}
           />
         </Suspense>
+      )}
+
+      {trailerOpen && trailer.key != null && (
+        <TrailerModal
+          videoKey={trailer.key}
+          title={detailItem.title}
+          onClose={() => setTrailerOpen(false)}
+        />
       )}
     </div>
   );

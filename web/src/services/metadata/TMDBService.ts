@@ -127,6 +127,17 @@ interface RawCredits {
   cast: RawCastMember[];
 }
 
+interface RawVideos {
+  results: RawVideo[];
+}
+interface RawVideo {
+  key?: string | null;
+  site?: string | null;
+  type?: string | null;
+  official?: boolean | null;
+  name?: string | null;
+}
+
 interface RawCastMember {
   id: number;
   name: string;
@@ -529,6 +540,28 @@ export class TMDBService implements MetadataProvider {
       return response.cast.map((c) =>
         makeCastMember(c.id, c.name, c.character ?? "", c.profile_path),
       );
+    });
+  }
+
+  /** The YouTube key of the best official trailer (prefer official Trailer, then
+   * any Trailer, then a Teaser), or null when TMDB has no usable YouTube video.
+   * Cached with the short TTL. */
+  async getTrailer(tmdbId: number, type: MediaType): Promise<string | null> {
+    const path = `/${MediaTypeNS.tmdbPath(type)}/${tmdbId}/videos`;
+    const params = { language: "en-US" };
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawVideos>(path, params);
+      const yt = response.results.filter(
+        (v) =>
+          v.site === "YouTube" && typeof v.key === "string" && v.key.length > 0,
+      );
+      const pick =
+        yt.find((v) => v.type === "Trailer" && v.official === true) ??
+        yt.find((v) => v.type === "Trailer") ??
+        yt.find((v) => v.type === "Teaser" && v.official === true) ??
+        yt.find((v) => v.type === "Teaser") ??
+        yt[0];
+      return pick?.key ?? null;
     });
   }
 
