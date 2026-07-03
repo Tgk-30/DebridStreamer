@@ -22,12 +22,10 @@ export function installExternalLinkHandler(): void {
   document.addEventListener(
     "click",
     (event) => {
+      // Only relevant in the desktop webview; a real browser opens links itself.
       if (!isTauri()) return;
-      // Respect modified clicks and non-primary buttons (a no-op in Tauri's
-      // single window, but correct to leave alone).
+      // Let an explicit component handler win if it already acted.
       if (event.defaultPrevented) return;
-      if (event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
       const target = event.target as Element | null;
       const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null;
@@ -36,6 +34,11 @@ export function installExternalLinkHandler(): void {
       const href = anchor.getAttribute("href") ?? "";
       if (!/^https?:\/\//i.test(href)) return; // external links only
 
+      // NB: no modifier/button gating here. In a browser those open a new
+      // tab/window natively, but the desktop webview has no such concept — a
+      // Cmd/Ctrl/middle-click would just fall through to the swallowed
+      // target="_blank" and do nothing. Route every external click to the OS
+      // browser instead.
       event.preventDefault();
       void openExternalURL(href);
     },
