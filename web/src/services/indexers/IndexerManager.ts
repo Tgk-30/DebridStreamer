@@ -25,6 +25,32 @@ export interface IndexerSearchError {
   error: string;
 }
 
+/** Hard ceiling on how long any single indexer may take before it's dropped
+ * from a search. Without this, one hung indexer (slow server, stalled socket)
+ * blocks the whole Promise.all and the entire stream list never appears. */
+export const INDEXER_TIMEOUT_MS = 12_000;
+
+/** Resolve/reject with `promise`, but reject with a timeout error if it hasn't
+ * settled within `ms`. The underlying request keeps running but is no longer
+ * awaited, so a slow indexer can't hold up the ones that already answered. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export class IndexerManager {
   private indexers: TorrentIndexer[];
   private _lastSearchErrors: IndexerSearchError[] = [];
@@ -66,7 +92,11 @@ export class IndexerManager {
     const settled = await Promise.all(
       this.indexers.map(async (indexer) => {
         try {
-          const results = await indexer.search(imdbId, type, season, episode);
+          const results = await withTimeout(
+            indexer.search(imdbId, type, season, episode),
+            INDEXER_TIMEOUT_MS,
+            indexer.name,
+          );
           return { name: indexer.name, results, error: null as string | null };
         } catch (error) {
           return {
@@ -90,7 +120,11 @@ export class IndexerManager {
           // protocol default returns []); tolerate a missing method the same way.
           const results =
             typeof indexer.searchByQuery === "function"
-              ? await indexer.searchByQuery(query, type)
+              ? await withTimeout(
+                  indexer.searchByQuery(query, type),
+                  INDEXER_TIMEOUT_MS,
+                  indexer.name,
+                )
               : [];
           return { name: indexer.name, results, error: null as string | null };
         } catch (error) {

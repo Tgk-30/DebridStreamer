@@ -219,7 +219,10 @@ async function resolveStreams(
     dedupeStreamRows(
       results.map((result) => ({
         result,
-        cachedOn: cacheByHash[result.infoHash] ?? null,
+        // checkCacheAll canonicalizes to lowercase; match it so a case
+        // difference between the indexer hash and the provider's echo can't
+        // make a cached torrent read as uncached.
+        cachedOn: cacheByHash[result.infoHash.toLowerCase()] ?? null,
       })),
     ),
     season,
