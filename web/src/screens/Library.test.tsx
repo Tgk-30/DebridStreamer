@@ -28,6 +28,15 @@ let mockWatchlist: MediaPreview[] = [];
 const ensureSystemFolders = vi.fn(async () => {});
 let listFoldersImpl: () => Promise<LibraryFolderRecord[]>;
 let listLibraryImpl: () => Promise<LibraryEntryRecord[]>;
+const createFolderFn = vi.fn<(...a: unknown[]) => Promise<LibraryFolderRecord>>(
+  async (name) => folder("f-new", String(name)),
+);
+const saveFolderFn = vi.fn<(...a: unknown[]) => Promise<void>>(async () => {});
+const deleteFolderFn = vi.fn<(...a: unknown[]) => Promise<void>>(async () => {});
+const addToLibraryFn = vi.fn<(...a: unknown[]) => Promise<LibraryEntryRecord>>(
+  async () => ({}) as LibraryEntryRecord,
+);
+const removeFromLibraryFn = vi.fn<(...a: unknown[]) => Promise<void>>(async () => {});
 
 let mockServerMode = false;
 const listRequested = vi.fn(async () => ({ items: [] as { preview: MediaPreview }[] }));
@@ -46,6 +55,12 @@ vi.mock("../storage", () => ({
     ensureSystemFolders,
     listFolders: () => listFoldersImpl(),
     listLibrary: () => listLibraryImpl(),
+    createFolder: (name: string, listType: string, parentId: string | null) =>
+      createFolderFn(name, listType, parentId),
+    saveFolder: (f: LibraryFolderRecord) => saveFolderFn(f),
+    deleteFolder: (id: string) => deleteFolderFn(id),
+    addToLibrary: (e: unknown) => addToLibraryFn(e),
+    removeFromLibrary: (id: string) => removeFromLibraryFn(id),
   }),
 }));
 
@@ -118,6 +133,11 @@ beforeEach(() => {
   openBrowse.mockClear();
   navigate.mockClear();
   ensureSystemFolders.mockClear();
+  createFolderFn.mockClear();
+  saveFolderFn.mockClear();
+  deleteFolderFn.mockClear();
+  addToLibraryFn.mockClear();
+  removeFromLibraryFn.mockClear();
   listRequested.mockClear();
   mockWatchlist = [];
   mockServerMode = false;
@@ -246,5 +266,87 @@ describe("Library — requested rail (Server Mode)", () => {
     render(<Library />);
     await screen.findByText("Your library is empty");
     expect(screen.queryByTestId("rail")).not.toBeInTheDocument();
+  });
+});
+
+describe("Library — folder management", () => {
+  const withEntries = () => {
+    listFoldersImpl = async () => [
+      folder("__root__", "Root", "system_root"),
+      folder("f-action", "Action"),
+    ];
+    listLibraryImpl = async () => [
+      entry("e1", "__root__", preview("m1", "Heat")),
+      entry("e2", "f-action", preview("m2", "Die Hard")),
+    ];
+  };
+
+  it("creates a folder from the inline creator", async () => {
+    withEntries();
+    render(<Library />);
+    await screen.findByText("grid:Heat");
+    await userEvent.click(screen.getByRole("button", { name: /new folder/i }));
+    await userEvent.type(screen.getByPlaceholderText("Folder name"), "Comedy");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() =>
+      expect(createFolderFn).toHaveBeenCalledWith("Comedy", "favorites", null),
+    );
+  });
+
+  it("renames the selected folder", async () => {
+    withEntries();
+    render(<Library />);
+    await userEvent.click(await screen.findByRole("button", { name: "Action" }));
+    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const input = screen.getByDisplayValue("Action");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Thrillers");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveFolderFn).toHaveBeenCalled());
+    expect(saveFolderFn.mock.calls[0][0]).toMatchObject({
+      id: "f-action",
+      name: "Thrillers",
+    });
+  });
+
+  it("deletes the selected folder after confirmation", async () => {
+    withEntries();
+    render(<Library />);
+    await userEvent.click(await screen.findByRole("button", { name: "Action" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    // A confirm step appears before the destructive call.
+    expect(deleteFolderFn).not.toHaveBeenCalled();
+    await userEvent.click(
+      screen.getByRole("button", { name: /confirm delete folder/i }),
+    );
+    await waitFor(() => expect(deleteFolderFn).toHaveBeenCalledWith("f-action"));
+  });
+
+  it("moves a title to another folder in Organize mode", async () => {
+    withEntries();
+    render(<Library />);
+    await screen.findByText("grid:Heat");
+    await userEvent.click(screen.getByRole("button", { name: /organize/i }));
+    // Heat lives in root → move it into the Action folder.
+    const selects = await screen.findAllByRole("combobox");
+    await userEvent.selectOptions(selects[0], "f-action");
+    await waitFor(() => expect(addToLibraryFn).toHaveBeenCalled());
+    expect(addToLibraryFn.mock.calls[0][0]).toMatchObject({
+      mediaId: "m1",
+      folderId: "f-action",
+      listType: "favorites",
+    });
+    // The source row is dropped so it's a move, not a copy.
+    expect(removeFromLibraryFn).toHaveBeenCalledWith("e1");
+  });
+
+  it("removes a title from the library in Organize mode", async () => {
+    withEntries();
+    render(<Library />);
+    await screen.findByText("grid:Heat");
+    await userEvent.click(screen.getByRole("button", { name: /organize/i }));
+    const removeButtons = await screen.findAllByRole("button", { name: /remove/i });
+    await userEvent.click(removeButtons[0]);
+    await waitFor(() => expect(removeFromLibraryFn).toHaveBeenCalledWith("e1"));
   });
 });
