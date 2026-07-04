@@ -7,7 +7,7 @@
 // props/callbacks as DOM. The pure storage/models helpers are used as-is.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MediaPreview } from "../models/media";
 import type { WatchHistoryRecord } from "../storage/models";
@@ -21,6 +21,7 @@ let mockDiscover: { data: DiscoverData | null; loading: boolean } = {
 };
 
 const openBrowse = vi.fn();
+const openDetail = vi.fn();
 let mockContinueWatching: WatchHistoryRecord[] = [];
 let mockServices: {
   tmdb: unknown;
@@ -35,6 +36,7 @@ vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({
     services: mockServices,
     openBrowse,
+    openDetail,
     continueWatching: mockContinueWatching,
   }),
 }));
@@ -60,13 +62,15 @@ vi.mock("../components/HeroSpotlight", () => ({
   ),
 }));
 
-vi.mock("../components/MoodStrip", () => ({
-  MoodStrip: ({ onCurate, loading, status, error }: any) => (
-    <div data-testid="moodstrip">
-      <span data-testid="mood-loading">{String(loading)}</span>
-      <span data-testid="mood-status">{status ?? ""}</span>
-      <span data-testid="mood-error">{error ?? ""}</span>
-      <button onClick={() => onCurate?.("cozy mystery")}>curate</button>
+vi.mock("../components/ContinueWatchingRail", () => ({
+  ContinueWatchingRail: ({ records, onResume }: any) => (
+    <div data-testid="cw-rail">
+      <span data-testid="cw-count">{records.length}</span>
+      {records.map((r: any) => (
+        <button key={r.id} onClick={() => onResume?.(r.preview)}>
+          cw-{r.id}
+        </button>
+      ))}
     </div>
   ),
 }));
@@ -135,6 +139,7 @@ beforeEach(() => {
   mockServices = { tmdb: null, ai: null };
   serverModeOn = false;
   openBrowse.mockReset();
+  openDetail.mockReset();
   curateServerAI.mockReset();
 });
 
@@ -169,8 +174,6 @@ describe("Discover loaded", () => {
     const titles = screen.getAllByTestId("rail-title").map((n) => n.textContent);
     expect(titles).toEqual(
       expect.arrayContaining([
-        "Continue Watching",
-        "Mood picks",
         "Top 10 Movies",
         "Top 10 TV Shows",
         "Popular Movies",
@@ -179,6 +182,8 @@ describe("Discover loaded", () => {
         "Upcoming",
       ]),
     );
+    // "Describe a vibe" moved to Search; no mood rail on Discover.
+    expect(titles).not.toContain("Mood picks");
   });
 
   it("hides the hero when data.hero is null", () => {
@@ -271,31 +276,36 @@ describe("Discover loaded", () => {
 });
 
 describe("Discover Continue Watching", () => {
-  it("surfaces resumable items with per-card progress", () => {
-    // 50% → resumable; progress 0.5
+  it("surfaces resumable items in the banner rail", () => {
+    // 50% → resumable
     mockContinueWatching = [historyRecord("res1", 50, 100)];
     mockDiscover = { data: fullData(), loading: false };
     render(<Discover />);
-    const cw = screen
-      .getAllByTestId("rail")
-      .find((r) => r.getAttribute("data-title") === "Continue Watching")!;
-    expect(within(cw).getByText("item-res1")).toBeInTheDocument();
-    expect(within(cw).getByTestId("rail-progress").textContent).toContain(
-      '"res1":0.5',
-    );
+    const cw = screen.getByTestId("cw-rail");
+    expect(within(cw).getByText("cw-res1")).toBeInTheDocument();
+    expect(within(cw).getByTestId("cw-count").textContent).toBe("1");
   });
 
-  it("excludes finished/barely-started items (hasResumePoint filter)", () => {
+  it("hides the rail entirely when nothing is resumable (hasResumePoint filter)", () => {
     mockContinueWatching = [
       historyRecord("done", 99, 100), // 99% → excluded
       historyRecord("fresh", 1, 100), // 1% → excluded
     ];
     mockDiscover = { data: fullData(), loading: false };
     render(<Discover />);
-    const cw = screen
-      .getAllByTestId("rail")
-      .find((r) => r.getAttribute("data-title") === "Continue Watching")!;
-    expect(within(cw).getByTestId("rail-count").textContent).toBe("0");
+    // Rail is only rendered when there is something to resume.
+    expect(screen.queryByTestId("cw-rail")).toBeNull();
+  });
+
+  it("forwards a resume click to onResume (openDetail) with the preview", async () => {
+    mockContinueWatching = [historyRecord("res1", 50, 100)];
+    mockDiscover = { data: fullData(), loading: false };
+    render(<Discover />);
+    await userEvent.click(screen.getByText("cw-res1"));
+    // openDetail is the mocked store callback wired to onResume.
+    expect(openDetail).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "res1" }),
+    );
   });
 });
 
@@ -323,147 +333,3 @@ describe("Discover See all", () => {
   });
 });
 
-describe("Discover mood — no AI (filter-based fallback)", () => {
-  it("opens a filter-based browse and surfaces a status when no AI provider", async () => {
-    mockServices = { tmdb: null, ai: null };
-    mockDiscover = { data: fullData(), loading: false };
-    render(<Discover />);
-    await userEvent.click(screen.getByText("curate"));
-    expect(openBrowse).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "discover", type: "movie" }),
-    );
-    // mood title updated and a status message rendered.
-    expect(
-      screen.getByText('Mood picks for “cozy mystery”'),
-    ).toBeInTheDocument();
-    expect(screen.getByTestId("mood-status").textContent).toContain(
-      "filter-based browse",
-    );
-  });
-
-  it("maps cozy/mystery vibe to comedy + mystery genres in the filters", async () => {
-    mockServices = { tmdb: null, ai: null };
-    mockDiscover = { data: fullData(), loading: false };
-    render(<Discover />);
-    await userEvent.click(screen.getByText("curate"));
-    const ctx = openBrowse.mock.calls[0][0];
-    // "cozy" → 35 (comedy), "mystery" → 9648
-    expect(ctx.filters.genreIds).toEqual(
-      expect.arrayContaining([9648, 35]),
-    );
-  });
-});
-
-describe("Discover mood — local AI provider", () => {
-  it("resolves AI recommendations into a mood rail with status", async () => {
-    const recommend = vi.fn(async () => ({
-      recommendations: [
-        { title: "Picked One", mediaType: "movie", mediaId: "ai1" },
-      ],
-    }));
-    const search = vi.fn(async () => ({
-      items: [preview("ai1", { title: "Picked One" })],
-    }));
-    mockServices = { tmdb: { search }, ai: { recommend } };
-    mockDiscover = { data: fullData(), loading: false };
-    render(<Discover />);
-    await userEvent.click(screen.getByText("curate"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("mood-status").textContent).toContain(
-        "1 titles matched",
-      );
-    });
-    const moodRail = screen
-      .getAllByTestId("rail")
-      .find(
-        (r) =>
-          r.getAttribute("data-title") === 'Mood picks for “cozy mystery”',
-      )!;
-    expect(within(moodRail).getByText("item-ai1")).toBeInTheDocument();
-    // mood rail now exposes a "see all" search context.
-    expect(within(moodRail).getByTestId("rail-has-seeall").textContent).toBe(
-      "true",
-    );
-  });
-
-  it("shows an error when no recommendations could be matched", async () => {
-    const recommend = vi.fn(async () => ({ recommendations: [] }));
-    mockServices = { tmdb: { search: vi.fn() }, ai: { recommend } };
-    mockDiscover = { data: fullData(), loading: false };
-    render(<Discover />);
-    await userEvent.click(screen.getByText("curate"));
-    await waitFor(() => {
-      expect(screen.getByTestId("mood-error").textContent).toContain(
-        "none could be matched",
-      );
-    });
-  });
-
-  it("surfaces a thrown AI error message", async () => {
-    const recommend = vi.fn(async () => {
-      throw new Error("AI exploded");
-    });
-    mockServices = { tmdb: null, ai: { recommend } };
-    mockDiscover = { data: fullData(), loading: false };
-    render(<Discover />);
-    await userEvent.click(screen.getByText("curate"));
-    await waitFor(() => {
-      expect(screen.getByTestId("mood-error").textContent).toBe("AI exploded");
-    });
-  });
-});
-
-describe("Discover mood — server mode", () => {
-  it("curates via the server and renders the returned items", async () => {
-    serverModeOn = true;
-    curateServerAI.mockResolvedValue({
-      items: [preview("srv1", { title: "Server Pick" })],
-    });
-    mockDiscover = { data: fullData(), loading: false };
-    render(<Discover />);
-    await userEvent.click(screen.getByText("curate"));
-    await waitFor(() => {
-      expect(curateServerAI).toHaveBeenCalledWith({
-        prompt: "cozy mystery",
-        count: 8,
-      });
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId("mood-status").textContent).toContain(
-        "1 titles matched",
-      );
-    });
-    const moodRail = screen
-      .getAllByTestId("rail")
-      .find(
-        (r) =>
-          r.getAttribute("data-title") === 'Mood picks for “cozy mystery”',
-      )!;
-    expect(within(moodRail).getByText("item-srv1")).toBeInTheDocument();
-  });
-
-  it("shows an error when the server returns zero matches", async () => {
-    serverModeOn = true;
-    curateServerAI.mockResolvedValue({ items: [] });
-    mockDiscover = { data: fullData(), loading: false };
-    render(<Discover />);
-    await userEvent.click(screen.getByText("curate"));
-    await waitFor(() => {
-      expect(screen.getByTestId("mood-error").textContent).toContain(
-        "none could be matched",
-      );
-    });
-  });
-
-  it("surfaces a thrown server error", async () => {
-    serverModeOn = true;
-    curateServerAI.mockRejectedValue(new Error("server down"));
-    mockDiscover = { data: fullData(), loading: false };
-    render(<Discover />);
-    await userEvent.click(screen.getByText("curate"));
-    await waitFor(() => {
-      expect(screen.getByTestId("mood-error").textContent).toBe("server down");
-    });
-  });
-});

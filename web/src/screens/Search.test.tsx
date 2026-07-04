@@ -16,6 +16,7 @@ import {
   screen,
   fireEvent,
   waitFor,
+  within,
   cleanup,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -33,8 +34,12 @@ let mockPendingSearch: string | null = null;
 const consumePendingSearch = vi.fn();
 const openDetail = vi.fn();
 const openBrowse = vi.fn();
-let mockServices: { tmdb: { search: typeof tmdbSearch } | null } = {
+let mockServices: {
+  tmdb: { search: typeof tmdbSearch } | null;
+  ai: { recommend: ReturnType<typeof vi.fn> } | null;
+} = {
   tmdb: { search: tmdbSearch },
+  ai: null,
 };
 
 vi.mock("../store/AppStore", () => ({
@@ -53,8 +58,33 @@ vi.mock("../lib/serverMode", () => ({
 }));
 
 const searchServerMedia = vi.fn();
+const curateServerAI = vi.fn();
 vi.mock("../lib/serverApi", () => ({
   searchServerMedia: (...a: unknown[]) => searchServerMedia(...a),
+  curateServerAI: (...a: unknown[]) => curateServerAI(...a),
+}));
+
+// "Describe a vibe" doubles (moved here from Discover). MoodStrip exposes a
+// curate button; Rail exposes its title + items so mood results are testable.
+vi.mock("../components/MoodStrip", () => ({
+  MoodStrip: ({ onCurate, status, error }: any) => (
+    <div data-testid="moodstrip">
+      <span data-testid="mood-status">{status ?? ""}</span>
+      <span data-testid="mood-error">{error ?? ""}</span>
+      <button onClick={() => onCurate?.("cozy mystery")}>curate</button>
+    </div>
+  ),
+}));
+vi.mock("../components/Rail", () => ({
+  Rail: ({ title, items, onSeeAll }: any) => (
+    <div data-testid="rail" data-title={title}>
+      <span data-testid="rail-title">{title}</span>
+      <span data-testid="rail-has-seeall">{String(onSeeAll != null)}</span>
+      {(items ?? []).map((it: MediaPreview) => (
+        <span key={it.id}>mood-{it.id}</span>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock("../data/fixtures", () => ({
@@ -116,7 +146,7 @@ function fieldInput() {
 beforeEach(() => {
   mockPendingSearch = null;
   mockServerMode = false;
-  mockServices = { tmdb: { search: tmdbSearch } };
+  mockServices = { tmdb: { search: tmdbSearch }, ai: null };
   vi.clearAllMocks();
   tmdbSearch.mockResolvedValue({
     items: [
@@ -287,7 +317,7 @@ describe("Search — pending search handoff", () => {
 
 describe("Search — no TMDB key fallback", () => {
   it("filters the bundled starters locally when there is no tmdb service", async () => {
-    mockServices = { tmdb: null };
+    mockServices = { tmdb: null, ai: null };
     render(<Search />);
     const input = fieldInput();
     await userEvent.type(input, "incep");
@@ -304,7 +334,7 @@ describe("Search — no TMDB key fallback", () => {
 describe("Search — server mode", () => {
   it("searches via the server proxy when in server mode", async () => {
     mockServerMode = true;
-    mockServices = { tmdb: null };
+    mockServices = { tmdb: null, ai: null };
     searchServerMedia.mockResolvedValue({
       items: [{ id: "sv1", type: "movie", title: "Server Hit" }],
     });
@@ -320,5 +350,78 @@ describe("Search — server mode", () => {
       }),
     );
     await screen.findByText("Server Hit");
+  });
+});
+
+describe("Search — Describe a vibe (mood)", () => {
+  it("falls back to a filter-based browse when no AI provider", async () => {
+    mockServices = { tmdb: null, ai: null };
+    render(<Search />);
+    await userEvent.click(screen.getByText("curate"));
+    expect(openBrowse).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "discover", type: "movie" }),
+    );
+    expect(screen.getByTestId("mood-status").textContent).toContain(
+      "filter-based browse",
+    );
+  });
+
+  it("maps cozy/mystery vibe to comedy + mystery genres", async () => {
+    mockServices = { tmdb: null, ai: null };
+    render(<Search />);
+    await userEvent.click(screen.getByText("curate"));
+    const ctx = openBrowse.mock.calls[0][0];
+    expect(ctx.filters.genreIds).toEqual(expect.arrayContaining([9648, 35]));
+  });
+
+  it("resolves local-AI recommendations into a mood rail", async () => {
+    const recommend = vi.fn(async () => ({
+      recommendations: [{ title: "Picked One", mediaType: "movie", mediaId: "ai1" }],
+    }));
+    tmdbSearch.mockResolvedValue({
+      items: [{ id: "ai1", type: "movie", title: "Picked One" }],
+    });
+    mockServices = { tmdb: { search: tmdbSearch }, ai: { recommend } };
+    render(<Search />);
+    await userEvent.click(screen.getByText("curate"));
+    await waitFor(() =>
+      expect(screen.getByTestId("mood-status").textContent).toContain(
+        "1 titles matched",
+      ),
+    );
+    const moodRail = screen
+      .getAllByTestId("rail")
+      .find((r) => r.getAttribute("data-title") === 'Mood picks for “cozy mystery”')!;
+    expect(within(moodRail).getByText("mood-ai1")).toBeInTheDocument();
+    expect(within(moodRail).getByTestId("rail-has-seeall").textContent).toBe("true");
+  });
+
+  it("curates via the server and renders returned items", async () => {
+    mockServerMode = true;
+    mockServices = { tmdb: null, ai: null };
+    curateServerAI.mockResolvedValue({
+      items: [{ id: "srv1", type: "movie", title: "Server Pick" }],
+    });
+    render(<Search />);
+    await userEvent.click(screen.getByText("curate"));
+    await waitFor(() =>
+      expect(curateServerAI).toHaveBeenCalledWith({ prompt: "cozy mystery", count: 8 }),
+    );
+    const moodRail = screen
+      .getAllByTestId("rail")
+      .find((r) => r.getAttribute("data-title") === 'Mood picks for “cozy mystery”')!;
+    expect(within(moodRail).getByText("mood-srv1")).toBeInTheDocument();
+  });
+
+  it("surfaces a thrown mood error", async () => {
+    const recommend = vi.fn(async () => {
+      throw new Error("AI exploded");
+    });
+    mockServices = { tmdb: null, ai: { recommend } };
+    render(<Search />);
+    await userEvent.click(screen.getByText("curate"));
+    await waitFor(() =>
+      expect(screen.getByTestId("mood-error").textContent).toBe("AI exploded"),
+    );
   });
 });

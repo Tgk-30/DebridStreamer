@@ -1,0 +1,177 @@
+/* Continue Watching — wide 16:9 banner cards with a centered play button. */
+
+.cw-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.cw-rail-title {
+  margin: 0;
+  font-size: clamp(19px, 1.5vw, 23px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.cw-track {
+  display: flex;
+  gap: var(--sp-lg);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 4px;
+  /* Let the hover lift + shadow breathe without clipping. */
+  margin: calc(-1 * var(--sp-sm));
+  padding: var(--sp-sm);
+  scrollbar-width: none;
+}
+.cw-track::-webkit-scrollbar {
+  display: none;
+}
+
+.cw-card {
+  position: relative;
+  flex: 0 0 auto;
+  width: clamp(260px, 26vw, 380px);
+  aspect-ratio: 16 / 9;
+  border: 0;
+  padding: 0;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  cursor: pointer;
+  scroll-snap-align: start;
+  background: rgba(0, 0, 0, 0.4);
+  box-shadow: 0 10px 26px -12px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cw-card:hover,
+.cw-card:focus-visible {
+  outline: none;
+  transform: translateY(-4px) scale(1.015);
+  box-shadow: 0 26px 56px -18px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(var(--accent-rgb), 0.4),
+    0 12px 40px rgba(var(--accent-rgb), 0.26);
+}
+
+.cw-card-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cw-card-img-fallback {
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.4),
+    rgba(var(--accent-secondary-rgb), 0.28),
+    rgba(0, 0, 0, 0.5)
+  );
+}
+
+.cw-card-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgba(6, 7, 14, 0.9) 0%,
+    rgba(6, 7, 14, 0.32) 42%,
+    rgba(6, 7, 14, 0.05) 70%
+  );
+}
+
+/* Centered play button — the card's signature affordance. */
+.cw-card-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  color: #0a0b16;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -50%);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s;
+}
+.cw-card-play svg {
+  transform: translateX(1px);
+  fill: currentColor;
+}
+.cw-card:hover .cw-card-play,
+.cw-card:focus-visible .cw-card-play {
+  transform: translate(-50%, -50%) scale(1.1);
+  background: rgba(var(--accent-rgb), 1);
+  color: #fff;
+}
+
+.cw-card-meta {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--sp-md) var(--sp-md) calc(var(--sp-md) + 4px);
+  pointer-events: none;
+}
+.cw-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #fff;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-card-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.82);
+}
+.cw-card-ep {
+  color: rgba(255, 255, 255, 0.92);
+}
+.cw-card-left {
+  color: rgba(255, 255, 255, 0.7);
+}
+.cw-card-ep + .cw-card-left::before {
+  content: "·";
+  margin-right: 8px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.cw-card-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.cw-card-progress-fill {
+  height: 100%;
+  min-width: 4px;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6);
+}
+
+@media (max-width: 767px) {
+  .cw-card {
+    width: clamp(220px, 72vw, 320px);
+  }
+}
