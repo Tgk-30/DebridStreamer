@@ -101,6 +101,7 @@ const SettingsKeys = {
   showWatchStats: "show_watch_stats",
   transcode: "transcode",
   ratingScale: "rating_scale",
+  preferredExternalPlayer: "preferred_external_player",
 } as const;
 
 /** Marker written into the KV table for secret-valued keys; the real value
@@ -230,6 +231,8 @@ export interface AppSettings {
   transcode: boolean;
   /** Which rating control Detail shows (1–10, 0–100, or thumbs). */
   ratingScale: RatingScale;
+  /** Chosen external player name (from list_external_players); "" = auto. */
+  preferredExternalPlayer: string;
 }
 
 /** Read a `VITE_*` env var without assuming `import.meta.env` exists. */
@@ -384,6 +387,7 @@ export function defaultSettings(): AppSettings {
     showWatchStats: false,
     transcode: false,
     ratingScale: "ten",
+    preferredExternalPlayer: "",
   };
 }
 
@@ -421,6 +425,10 @@ export function loadSettings(): AppSettings {
       subtitleTextColor: normalizeSubtitleTextColor(parsed.subtitleTextColor),
       subtitleBgOpacity: normalizeSubtitleBgOpacity(parsed.subtitleBgOpacity),
       ratingScale: normalizeRatingScale(parsed.ratingScale),
+      preferredExternalPlayer:
+        typeof parsed.preferredExternalPlayer === "string"
+          ? parsed.preferredExternalPlayer
+          : "",
       // A stale/poisoned provider id would route to a host that can't serve it.
       aiProvider: AIProviderKind.allCases().includes(
         parsed.aiProvider as AIProviderKind,
@@ -655,6 +663,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     transcode,
     simpleMode,
     ratingScale,
+    preferredExternalPlayer,
   ] = await Promise.all([
     store.getSetting(SettingsKeys.aiProvider),
     store.getSetting(SettingsKeys.aiModel),
@@ -688,6 +697,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.transcode),
     store.getSetting(SettingsKeys.simpleMode),
     store.getSetting(SettingsKeys.ratingScale),
+    store.getSetting(SettingsKeys.preferredExternalPlayer),
   ]);
 
   const debridConfigs = await store.listDebridConfigs();
@@ -792,6 +802,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
       showWatchStats == null ? base.showWatchStats : showWatchStats === "true",
     transcode: transcode == null ? base.transcode : transcode === "true",
     ratingScale: normalizeRatingScale(ratingScale),
+    preferredExternalPlayer:
+      typeof preferredExternalPlayer === "string" ? preferredExternalPlayer : "",
   };
 
   // Proactively scrub any pre-existing plaintext-secret blob a prior build wrote
@@ -950,6 +962,10 @@ export async function saveSettingsToStore(
       settings.transcode ? "true" : "false",
     ),
     store.setSetting(SettingsKeys.ratingScale, settings.ratingScale),
+    store.setSetting(
+      SettingsKeys.preferredExternalPlayer,
+      settings.preferredExternalPlayer,
+    ),
     store.setSetting(
       SettingsKeys.builtInIndexersEnabled,
       settings.builtInIndexersEnabled ? "true" : "false",

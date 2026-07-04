@@ -19,23 +19,91 @@ mod keychain;
 // desktop app can host the PWA/API for other devices.
 mod server_host;
 
+// The external players we can detect + hand a stream to, in default-preference
+// order. macOS entries are .app names (opened via LaunchServices); "mpv" is also
+// probed on PATH for a CLI/Homebrew install with no .app.
+#[cfg(target_os = "macos")]
+const MACOS_PLAYERS: &[&str] = &["IINA", "VLC", "mpv", "QuickTime Player", "Infuse"];
+
+#[cfg(target_os = "macos")]
+fn macos_app_installed(app: &str) -> bool {
+    // `open -Ra <app>` exits 0 iff the app is registered with LaunchServices.
+    Command::new("open")
+        .args(["-Ra", app])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn cli_on_path(bin: &str) -> bool {
+    Command::new(bin)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// The external media players actually installed on this machine, so the UI can
+/// offer only real choices (and pick a sensible default).
 #[tauri::command]
-fn open_in_external_player(url: String) -> Result<String, String> {
-    // Preference order: VLC (installed here, matches the current VLCKit player), then mpv, then IINA.
+fn list_external_players() -> Vec<String> {
     #[cfg(target_os = "macos")]
     {
-        let candidates = ["VLC", "mpv", "IINA"];
-        for app in candidates {
-            let status = Command::new("open")
-                .args(["-a", app, &url])
-                .status();
-            if let Ok(s) = status {
-                if s.success() {
-                    return Ok(format!("Opened in {app}"));
-                }
+        let mut found: Vec<String> = MACOS_PLAYERS
+            .iter()
+            .filter(|app| **app == "mpv" || macos_app_installed(app))
+            .map(|s| s.to_string())
+            .collect();
+        // mpv is often a CLI-only Homebrew install (no .app) — keep it only if
+        // actually present.
+        found.retain(|p| p != "mpv" || cli_on_path("mpv"));
+        found
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        ["mpv", "vlc", "mpc-hc64", "mpc-hc", "PotPlayerMini64"]
+            .iter()
+            .filter(|b| cli_on_path(b))
+            .map(|s| s.to_string())
+            .collect()
+    }
+}
+
+/// Hand `url` to an external player. `preferred` (a value from
+/// `list_external_players`) is tried first; otherwise the default order is used.
+#[tauri::command]
+fn open_in_external_player(url: String, preferred: Option<String>) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        // Preferred first (when still installed), then the default order.
+        let mut order: Vec<String> = Vec::new();
+        if let Some(p) = preferred.as_deref() {
+            if !p.is_empty() {
+                order.push(p.to_string());
             }
         }
-        // Last resort: hand the URL to the OS default handler.
+        for app in MACOS_PLAYERS {
+            if !order.iter().any(|o| o == app) {
+                order.push(app.to_string());
+            }
+        }
+        for app in &order {
+            let opened = if app == "mpv" {
+                // CLI mpv: spawn directly (no .app).
+                Command::new("mpv").arg(&url).spawn().is_ok()
+            } else {
+                Command::new("open")
+                    .args(["-a", app, &url])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false)
+            };
+            if opened {
+                return Ok(format!("Opened in {app}"));
+            }
+        }
         Command::new("open")
             .arg(&url)
             .spawn()
@@ -45,8 +113,18 @@ fn open_in_external_player(url: String) -> Result<String, String> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        // Cross-platform: try mpv on PATH, else VLC.
+        let mut order: Vec<String> = Vec::new();
+        if let Some(p) = preferred {
+            if !p.is_empty() {
+                order.push(p);
+            }
+        }
         for bin in ["mpv", "vlc"] {
+            if !order.iter().any(|o| o == bin) {
+                order.push(bin.to_string());
+            }
+        }
+        for bin in &order {
             if Command::new(bin).arg(&url).spawn().is_ok() {
                 return Ok(format!("Opened in {bin}"));
             }
@@ -83,6 +161,7 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             open_in_external_player,
+            list_external_players,
             player::mpv_play,
             player::mpv_pause,
             player::mpv_resume,

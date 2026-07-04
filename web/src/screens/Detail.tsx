@@ -883,6 +883,7 @@ export function Detail() {
             url={player.url}
             title={player.title}
             kind={player.external ? "external" : undefined}
+            preferredPlayer={settings.preferredExternalPlayer}
             startPositionSeconds={player.startPositionSeconds}
             onClose={() => setPlayer(null)}
             onProgress={(current, duration) => {

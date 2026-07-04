@@ -173,6 +173,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     showWatchStats: false,
     transcode: false,
     ratingScale: "ten",
+    preferredExternalPlayer: "",
     ...overrides,
   };
 }
