@@ -631,3 +631,17 @@
 .first-run-danger:hover {
   background: rgba(var(--danger-rgb), 0.12);
 }
+
+/* Signup + "watch setup guide" links sit on one wrapping row under a key field. */
+.first-run-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+}
+.first-run-video {
+  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
+}
+.first-run-video:hover {
+  color: var(--accent);
+}

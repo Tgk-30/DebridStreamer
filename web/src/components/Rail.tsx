@@ -18,13 +18,17 @@ interface RailProps {
   progressById?: Record<string | number, number>;
   /** Optional corner label per item id (e.g. "S2 E5" on a series card). */
   labelById?: Record<string, string>;
+  /** Render the Apple TV "Top 10" treatment: a large ghosted rank numeral to the
+   * left of each poster (numbered from 1). Items are capped at 10. */
+  ranked?: boolean;
 }
 
-export function Rail({ title, items, onSelect, onSeeAll, progressById, labelById }: RailProps) {
+export function Rail({ title, items, onSelect, onSeeAll, progressById, labelById, ranked }: RailProps) {
   if (items.length === 0) return null;
+  const shown = ranked ? items.slice(0, 10) : items;
 
   return (
-    <section className="rail">
+    <section className={ranked ? "rail rail-ranked" : "rail"}>
       <div className="rail-header">
         <h2 className="rail-title">{title}</h2>
         {onSeeAll && (
@@ -38,13 +42,14 @@ export function Rail({ title, items, onSelect, onSeeAll, progressById, labelById
       </div>
       <div className="rail-scroll rail-fade">
         <div className="rail-track">
-          {items.map((item) => (
+          {shown.map((item, i) => (
             <MediaCard
               key={item.id}
               item={item}
               onSelect={onSelect}
               progress={progressById?.[item.id]}
               cornerLabel={labelById?.[item.id]}
+              rank={ranked ? i + 1 : undefined}
             />
           ))}
         </div>

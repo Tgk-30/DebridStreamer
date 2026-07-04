@@ -235,14 +235,16 @@ export function Discover({ onSelect }: DiscoverProps) {
       />
 
       <Rail
-        title="Trending Movies"
-        items={withoutHero(data.trendingMovies)}
+        title="Top 10 Movies"
+        items={data.trendingMovies}
+        ranked
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "movie", category: "trending" })}
       />
       <Rail
-        title="Trending TV Shows"
-        items={withoutHero(data.trendingTV)}
+        title="Top 10 TV Shows"
+        items={data.trendingTV}
+        ranked
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "series", category: "trending" })}
       />

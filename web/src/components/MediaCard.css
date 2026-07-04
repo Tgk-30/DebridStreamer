@@ -53,9 +53,43 @@
 .media-card:hover .media-card-poster,
 .media-card:focus-visible .media-card-poster {
   border-color: rgba(var(--accent-rgb), 0.55);
-  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(var(--accent-rgb), 0.4),
-    0 8px 36px rgba(var(--accent-rgb), 0.3);
+  box-shadow: 0 24px 54px -12px rgba(0, 0, 0, 0.66),
+    0 0 0 1px rgba(var(--accent-rgb), 0.45),
+    0 10px 40px rgba(var(--accent-rgb), 0.32);
+}
+
+/* ── "Top 10" ranked treatment ────────────────────────────────────────────
+   A large ghosted numeral tucked behind the poster's left edge — the Apple TV
+   Top-10 signature. The card gains left room; the poster keeps its z-order on
+   top so the number reads as sitting behind it. */
+.media-card.is-ranked {
+  padding-left: calc(var(--poster-w) * 0.46);
+  overflow: visible;
+}
+.media-card-rank {
+  position: absolute;
+  left: -0.06em;
+  bottom: 30px;
+  z-index: 0;
+  font-family: var(--font-display, ui-sans-serif, system-ui, sans-serif);
+  font-weight: 800;
+  font-size: calc(var(--poster-w) * 0.96);
+  line-height: 0.78;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+  color: transparent;
+  -webkit-text-stroke: 2.5px rgba(255, 255, 255, 0.32);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  user-select: none;
+}
+.media-card.is-ranked .media-card-poster {
+  position: relative;
+  z-index: 1;
+}
+.media-card.is-ranked:hover .media-card-rank,
+.media-card.is-ranked:focus-visible .media-card-rank {
+  -webkit-text-stroke-color: rgba(var(--accent-rgb), 0.7);
 }
 
 .media-card-poster img {

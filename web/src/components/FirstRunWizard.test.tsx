@@ -124,7 +124,7 @@ describe("FirstRunWizard", () => {
     render(<FirstRunWizard onDone={onDone} />);
     await user.click(screen.getByText("Just watch on this device"));
     expect(
-      screen.getByRole("heading", { name: "Power up search & artwork" }),
+      screen.getByRole("heading", { name: "Connect your catalog" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("TMDB API key")).toBeInTheDocument();
     // Nothing is finalized by merely choosing the persona.
@@ -140,7 +140,7 @@ describe("FirstRunWizard", () => {
     await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
     expect(
       screen.getByText(
-        "Enter your TMDB API key to continue — it powers search, artwork, and banners. OMDb is optional.",
+        "Add a catalog key to continue — TMDB (free) powers browsing, artwork & banners; OMDb adds richer ratings. Either one unlocks the app.",
       ),
     ).toBeInTheDocument();
     expect(testTmdbKeyMock).not.toHaveBeenCalled();
@@ -570,7 +570,7 @@ describe("FirstRunWizard — forced key gate", () => {
     expect(await screen.findByText(/OMDb rejected that key/)).toBeInTheDocument();
     // Still on the catalog step; nothing saved.
     expect(
-      screen.getByRole("heading", { name: "Power up search & artwork" }),
+      screen.getByRole("heading", { name: "Connect your catalog" }),
     ).toBeInTheDocument();
     expect(onDone).not.toHaveBeenCalled();
     expect(updateSettings).not.toHaveBeenCalled();
@@ -604,7 +604,7 @@ describe("FirstRunWizard — forced advanced/host route through keys", () => {
     await user.click(screen.getByText("Advanced setup"));
     // No keyless finish: the catalog step opens instead of settings.
     expect(
-      screen.getByRole("heading", { name: "Power up search & artwork" }),
+      screen.getByRole("heading", { name: "Connect your catalog" }),
     ).toBeInTheDocument();
     expect(markOnboardingComplete).not.toHaveBeenCalled();
     await completeKeySteps(user);
@@ -623,7 +623,7 @@ describe("FirstRunWizard — forced advanced/host route through keys", () => {
     await user.click(screen.getByRole("button", { name: "Open Settings" }));
     // Still inside the wizard — keys come first.
     expect(
-      screen.getByRole("heading", { name: "Power up search & artwork" }),
+      screen.getByRole("heading", { name: "Connect your catalog" }),
     ).toBeInTheDocument();
     expect(markOnboardingComplete).not.toHaveBeenCalled();
     await completeKeySteps(user);

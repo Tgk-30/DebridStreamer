@@ -208,9 +208,29 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const refreshCachedResolutions = useCallback(async () => {
     try {
       const rows = await getStore().listCachedResolutions();
-      const map: Record<string, CachedResolutionRecord> = {};
-      for (const r of rows) map[r.mediaId] = r;
-      setCachedResolutions(map);
+      setCachedResolutions((prev) => {
+        // The 30s badge poll almost always returns an identical set. Replacing
+        // the map with a fresh object each tick changes the context value's
+        // identity and re-renders EVERY useAppStore() consumer — expensive idle
+        // churn. Bail out (return the same reference) unless a resolution
+        // actually changed, comparing only the scalar identity fields (`stream`
+        // is a freshly-built object every fetch, so it can't be compared by ref).
+        const unchanged =
+          rows.length === Object.keys(prev).length &&
+          rows.every((r) => {
+            const p = prev[r.mediaId];
+            return (
+              p != null &&
+              p.infoHash === r.infoHash &&
+              p.resolvedAt === r.resolvedAt &&
+              p.debridService === r.debridService
+            );
+          });
+        if (unchanged) return prev;
+        const map: Record<string, CachedResolutionRecord> = {};
+        for (const r of rows) map[r.mediaId] = r;
+        return map;
+      });
     } catch {
       // best-effort
     }
