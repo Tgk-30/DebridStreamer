@@ -68,7 +68,14 @@ function TenScale({
         next = 10;
         break;
       default:
-        return;
+        // Quick-rate: number keys 1–9 set that score, 0 sets 10.
+        if (/^[1-9]$/.test(e.key)) {
+          next = Number(e.key);
+        } else if (e.key === "0") {
+          next = 10;
+        } else {
+          return;
+        }
     }
     e.preventDefault();
     if (next !== cur) onRate(next);
@@ -132,21 +139,26 @@ function HundredScale({
   // write a taste event per pixel. `dirty` guards against committing an unchanged
   // value (e.g. a Tab keyup or a release with no move) or re-persisting on blur.
   const [draft, setDraft] = useState(value ?? 50);
+  // Whether a drag/keyboard adjust is in progress but not yet committed — drives
+  // the "release to save" affordance so it's clear the value isn't saved mid-drag.
+  const [dragging, setDragging] = useState(false);
   const dirty = useRef(false);
   // Resync when the saved value changes OR clears — falling back to 50 so an
   // unrated title never shows (or commits) the previous title's slider position.
   useEffect(() => {
     setDraft(value ?? 50);
     dirty.current = false;
+    setDragging(false);
   }, [value]);
   const commit = () => {
+    setDragging(false);
     if (!dirty.current) return;
     dirty.current = false;
     onRate(draft);
   };
 
   return (
-    <div className="rating-hundred">
+    <div className={"rating-hundred" + (dragging ? " is-dragging" : "")}>
       <input
         type="range"
         min={0}
@@ -154,6 +166,7 @@ function HundredScale({
         value={draft}
         onChange={(e) => {
           dirty.current = true;
+          setDragging(true);
           setDraft(Number(e.target.value));
         }}
         onPointerUp={commit}
@@ -164,6 +177,9 @@ function HundredScale({
         style={{ ["--fill" as string]: `${draft}%` }}
       />
       <span className="rating-readout rating-readout-lg">{draft}/100</span>
+      <span className="rating-hundred-hint" aria-hidden="true">
+        {dragging ? "Release to save" : ""}
+      </span>
     </div>
   );
 }

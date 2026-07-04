@@ -153,3 +153,48 @@
 .profile-menu-switch {
   flex: 1 1 100%;
 }
+
+/* Built-in preset avatars — a quick alternative to uploading a photo. */
+.profile-menu-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-menu-presets-label {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.profile-menu-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 8px;
+}
+.profile-menu-preset {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  background: none;
+  transition: transform 0.14s ease, border-color 0.14s ease;
+}
+.profile-menu-preset img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-menu-preset:hover {
+  transform: translateY(-2px) scale(1.06);
+}
+.profile-menu-preset.is-selected {
+  border-color: rgb(var(--accent-rgb));
+}
+@media (max-width: 480px) {
+  .profile-menu-presets-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}

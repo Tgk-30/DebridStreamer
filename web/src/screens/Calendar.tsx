@@ -6,6 +6,7 @@
 // concurrent (see data/calendar + lib/metadata). Gates gracefully without a
 // TMDB key or when the user has no series saved.
 
+import { Fragment } from "react";
 import { useAppStore } from "../store/AppStore";
 import { useCalendar } from "../data/calendar";
 import type { UpcomingEpisode } from "../lib/metadata";
@@ -31,6 +32,38 @@ function formatAirDate(iso: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+/** A friendly countdown for near-term air dates: "Today", "Tomorrow", or
+ * "In N days" (within a week). Returns null further out — the absolute date
+ * carries it. Date-only inputs are parsed at LOCAL midnight to match
+ * formatAirDate, so the "today" boundary is the user's local day. Exported for
+ * unit tests (with an injectable `now`). */
+export function relativeAir(iso: string, now = Date.now()): string | null {
+  // Require a full YYYY-MM-DD: `new Date("2026-07T00:00:00")` parses leniently
+  // (to Jul 1), which would give a bogus countdown for a partial air date.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const air = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(air.getTime())) return null;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((air.getTime() - today.getTime()) / 86_400_000);
+  if (days < 0) return null;
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days <= 7) return `In ${days} days`;
+  return null;
+}
+
+/** "August 2026" — the month sub-header label for the Upcoming bucket. Null for
+ * an unparseable date, so we never render a garbage month divider. */
+function monthLabel(iso: string): string | null {
+  // Strict full-date check — a partial ISO ("2026-07") parses leniently and
+  // would render a garbage/misleading month divider.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
 export function Calendar() {
@@ -93,41 +126,71 @@ export function Calendar() {
       ) : (
         <div className="cal-groups">
           {state.groups.map((group) => (
-            <section key={group.bucket} className="cal-group">
+            <section
+              key={group.bucket}
+              className={
+                "cal-group" + (group.bucket === "today" ? " cal-group--today" : "")
+              }
+            >
               <h2 className="cal-group-label">{group.label}</h2>
               <div className="cal-rows">
-                {group.episodes.map((ep) => (
-                  <button
-                    key={`${ep.series.id}-${ep.seasonNumber}-${ep.episodeNumber}`}
-                    type="button"
-                    className="cal-row glass-rest glass-lit"
-                    onClick={() => openDetail(ep.series)}
-                    title={`Open ${ep.series.title}`}
-                  >
-                    <div className="cal-row-poster">
-                      {MediaPreviewNS.posterURL(ep.series) ? (
-                        <img
-                          src={MediaPreviewNS.posterURL(ep.series) ?? undefined}
-                          alt={ep.series.title}
-                          loading="lazy"
-                          draggable={false}
-                        />
-                      ) : (
-                        <div className="cal-row-poster-ph">
-                          <Icon name="calendar" size={18} />
-                        </div>
+                {group.episodes.map((ep, i) => {
+                  const when = relativeAir(ep.airDate);
+                  // Month sub-headers break up the long "Upcoming" list; the
+                  // episodes arrive pre-sorted by air date, so a plain
+                  // adjacent-comparison is enough.
+                  const isNewMonth =
+                    group.bucket === "later" &&
+                    (i === 0 ||
+                      ep.airDate.slice(0, 7) !==
+                        group.episodes[i - 1].airDate.slice(0, 7));
+                  const month = isNewMonth ? monthLabel(ep.airDate) : null;
+                  return (
+                    <Fragment
+                      key={`${ep.series.id}-${ep.seasonNumber}-${ep.episodeNumber}`}
+                    >
+                      {month != null && (
+                        <div className="cal-month-sep">{month}</div>
                       )}
-                    </div>
-                    <div className="cal-row-main">
-                      <div className="cal-row-title">{ep.series.title}</div>
-                      <div className="cal-row-sub t-secondary">
-                        <span className="cal-code">{episodeCode(ep)}</span>
-                        {ep.title && <span className="cal-eptitle">{ep.title}</span>}
-                      </div>
-                    </div>
-                    <div className="cal-row-date">{formatAirDate(ep.airDate)}</div>
-                  </button>
-                ))}
+                      <button
+                        type="button"
+                        className="cal-row glass-rest glass-lit"
+                        onClick={() => openDetail(ep.series)}
+                        title={`Open ${ep.series.title}`}
+                      >
+                        <div className="cal-row-poster">
+                          {MediaPreviewNS.posterURL(ep.series) ? (
+                            <img
+                              src={MediaPreviewNS.posterURL(ep.series) ?? undefined}
+                              alt={ep.series.title}
+                              loading="lazy"
+                              draggable={false}
+                            />
+                          ) : (
+                            <div className="cal-row-poster-ph">
+                              <Icon name="calendar" size={18} />
+                            </div>
+                          )}
+                        </div>
+                        <div className="cal-row-main">
+                          <div className="cal-row-title">{ep.series.title}</div>
+                          <div className="cal-row-sub t-secondary">
+                            <span className="cal-code">{episodeCode(ep)}</span>
+                            {ep.title && (
+                              <span className="cal-eptitle">{ep.title}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="cal-row-date">
+                          {when != null && (
+                            <span className="cal-row-when">{when}</span>
+                          )}
+                          <span className="cal-row-abs">{formatAirDate(ep.airDate)}</span>
+                        </div>
+                      </button>
+                    </Fragment>
+                  );
+                })}
               </div>
             </section>
           ))}

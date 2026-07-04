@@ -62,6 +62,7 @@ import { getStore } from "../storage";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import { AdvancedOnly } from "../components/AdvancedOnly";
+import { SettingsSearch } from "../components/SettingsSearch";
 import type { ScreenId } from "../components/NavRail";
 import { CONCEPTS, signupUrl } from "../data/onboardingHelp";
 import {
@@ -791,6 +792,11 @@ export function Settings() {
             : "Advanced reveals all tabs and controls."}
         </p>
       </div>
+
+      <SettingsSearch
+        onJump={(id) => setTab(id as Tab)}
+        visibleTabs={new Set(tabs.map((t) => t.id))}
+      />
 
       <label className="settings-tab-select">
         <span className="settings-label">Settings category</span>
@@ -3375,6 +3381,7 @@ function AppearanceTab({
         </div>
       </div>
 
+      <div className="settings-section-title">Display</div>
       <div className="settings-control-grid">
         <SegmentedControl
           label="Density"
@@ -3485,6 +3492,7 @@ function AppearanceTab({
         </div>
       </div>
 
+      <div className="settings-section-title">Navigation &amp; posters</div>
       <div className="settings-control-grid">
         <SegmentedControl
           label="Nav labels"
