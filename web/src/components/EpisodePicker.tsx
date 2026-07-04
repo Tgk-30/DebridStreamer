@@ -17,6 +17,20 @@ import "./EpisodePicker.css";
 
 const TMDB_STILL_BASE = "https://image.tmdb.org/t/p/w300";
 
+// Above this many seasons the chip row gets unwieldy (wraps into a big block),
+// so we switch to a compact "Season N" dropdown instead.
+const MANY_SEASONS = 6;
+
+/** A season's dropdown label: its TMDB name (or "Season N") + episode count. */
+function seasonOptionLabel(s: {
+  name: string;
+  seasonNumber: number;
+  episodeCount: number;
+}): string {
+  const base = s.name || `Season ${s.seasonNumber}`;
+  return s.episodeCount > 0 ? `${base} · ${s.episodeCount} eps` : base;
+}
+
 interface EpisodePickerProps {
   /** Numeric TMDB id for the series (null → degraded stepper mode). */
   tmdbId: number | null;
@@ -155,22 +169,45 @@ export function EpisodePicker({
     <section className="episode-picker glass-rest" aria-label="Episodes">
       <div className="episode-picker-head">
         <h3 className="episode-picker-title">Episodes</h3>
-        <div className="episode-picker-seasons">
-          {seasons.seasons.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={
-                "episode-season-chip chip" +
-                (s.seasonNumber === browseSeason ? " is-active" : "")
-              }
-              aria-pressed={s.seasonNumber === browseSeason}
-              onClick={() => setBrowseSeason(s.seasonNumber)}
+        {seasons.seasons.length > MANY_SEASONS ? (
+          // Many seasons → a compact dropdown so the head doesn't wrap into a
+          // huge chip block. Still a real, keyboard-accessible season selector.
+          <label className="episode-season-select glass-rest">
+            <span className="episode-season-select-label t-secondary">Season</span>
+            <select
+              className="episode-season-select-input"
+              value={browseSeason}
+              onChange={(e) => setBrowseSeason(Number(e.target.value))}
+              aria-label="Season"
             >
-              {s.name || `Season ${s.seasonNumber}`}
-            </button>
-          ))}
-        </div>
+              {seasons.seasons.map((s) => (
+                <option key={s.id} value={s.seasonNumber}>
+                  {seasonOptionLabel(s)}
+                </option>
+              ))}
+            </select>
+            <span className="episode-season-select-caret" aria-hidden>
+              ▾
+            </span>
+          </label>
+        ) : (
+          <div className="episode-picker-seasons">
+            {seasons.seasons.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={
+                  "episode-season-chip chip" +
+                  (s.seasonNumber === browseSeason ? " is-active" : "")
+                }
+                aria-pressed={s.seasonNumber === browseSeason}
+                onClick={() => setBrowseSeason(s.seasonNumber)}
+              >
+                {s.name || `Season ${s.seasonNumber}`}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <ul className="episode-list" aria-busy={episodes.loading}>

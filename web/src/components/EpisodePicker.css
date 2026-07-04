@@ -35,6 +35,52 @@
   color: var(--text-primary);
 }
 
+/* Compact season dropdown — shown when a show has many seasons so the head
+   doesn't wrap into a huge chip block. */
+.episode-season-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  padding: 5px 10px;
+  border-radius: var(--r-pill, 999px);
+}
+.episode-season-select-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.episode-season-select-input {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  padding: 2px 20px 2px 2px;
+  max-width: 240px;
+  cursor: pointer;
+}
+.episode-season-select-input:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.6);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* Native option menu is OS-rendered (light) — keep its text legible there. */
+.episode-season-select-input option {
+  color: #12141f;
+}
+.episode-season-select-caret {
+  position: absolute;
+  right: 12px;
+  font-size: 11px;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
 .episode-picker-note {
   margin: 0;
   font-size: 13px;

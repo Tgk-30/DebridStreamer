@@ -1,7 +1,9 @@
 .genre-catalog {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+  gap: 18px;
+  /* A touch of breathing room from the section title above + grid below. */
+  margin: 4px 0 8px;
 }
 
 .genre-tile {
@@ -30,23 +32,30 @@
 }
 
 /* The real backdrop sits under a scrim: a darkened base + the accent tint, so
-   the label stays legible and the tile keeps its per-genre colour identity. */
+   the label stays legible and the tile keeps its per-genre colour identity.
+   Two layered images cross-fade so the banner can rotate through several
+   representative stills over a session (see GenreTileArt). */
+.genre-tile-arts {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
 .genre-tile-art {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  z-index: 0;
   opacity: 0;
-  transform: scale(1.06);
+  transform: scale(1.03);
   transition:
-    opacity 0.5s ease,
-    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 0.7s ease,
+    transform 9s ease-out;
 }
-.genre-tile.has-art .genre-tile-art {
+/* The visible layer: fully opaque, with a slow Ken-Burns drift as it shows. */
+.genre-tile-art.is-current {
   opacity: 1;
-  transform: scale(1);
+  transform: scale(1.08);
 }
 .genre-tile.has-art::after {
   content: "";
@@ -63,10 +72,6 @@
     linear-gradient(135deg, var(--tile-a), transparent 62%);
   transition: opacity 0.16s ease;
 }
-.genre-tile.has-art:hover .genre-tile-art {
-  transform: scale(1.05);
-}
-
 .genre-tile:hover {
   transform: translateY(-3px);
   filter: brightness(1.06);
@@ -104,20 +109,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .genre-tile-art {
+  .genre-tile-art,
+  .genre-tile-art.is-current {
     transition: opacity 0.2s ease;
-    transform: none;
-  }
-  .genre-tile.has-art .genre-tile-art,
-  .genre-tile.has-art:hover .genre-tile-art {
     transform: none;
   }
 }
 
 @media (max-width: 480px) {
   .genre-catalog {
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 14px;
   }
   .genre-tile {
     min-height: 88px;
