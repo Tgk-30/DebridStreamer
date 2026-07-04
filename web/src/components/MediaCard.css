@@ -68,18 +68,24 @@
 }
 .media-card-rank {
   position: absolute;
-  left: -0.06em;
-  bottom: 30px;
+  left: 0;
+  /* Overlay exactly the POSTER's vertical span (card padding + 2:3 height) and
+     bottom-align the numeral to the poster's bottom edge, so it sits BESIDE the
+     poster and never crosses the title/meta text below it. */
+  top: var(--sp-sm);
+  height: calc(var(--poster-w) * 1.5);
+  display: flex;
+  align-items: flex-end;
   z-index: 0;
   font-family: var(--font-display, ui-sans-serif, system-ui, sans-serif);
   font-weight: 800;
-  font-size: calc(var(--poster-w) * 0.96);
-  line-height: 0.78;
-  letter-spacing: -0.05em;
+  font-size: calc(var(--poster-w) * 0.86);
+  line-height: 0.66;
+  letter-spacing: -0.06em;
   font-variant-numeric: tabular-nums;
   color: transparent;
-  -webkit-text-stroke: 2.5px rgba(255, 255, 255, 0.32);
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
+  -webkit-text-stroke: 2px rgba(255, 255, 255, 0.38);
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.55);
   pointer-events: none;
   user-select: none;
 }

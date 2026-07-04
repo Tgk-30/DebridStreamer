@@ -301,6 +301,8 @@ describe("loadSettings", () => {
     expect(s.appearanceDensity).toBe("comfortable");
     expect(s.appearanceTextSize).toBe("m");
     expect(s.appearanceMotion).toBe("system");
+    // These three normalize to their neutral fallbacks (not the new-user
+    // premium defaults, which only apply to a fresh install with no stored blob).
     expect(s.appearanceRadius).toBe("default");
     expect(s.appearanceBlur).toBe(28); // clamped to max
     expect(s.appearanceChrome).toBe("balanced");
