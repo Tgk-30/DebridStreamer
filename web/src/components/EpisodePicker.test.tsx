@@ -124,6 +124,41 @@ describe("EpisodePicker — rich mode", () => {
     expect(lastCall[1]).toBe(2);
   });
 
+  it("uses a season dropdown (not chips) when a show has many seasons", async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 9 }, (_, i) => season(i + 1));
+    mockUseSeasons.mockReturnValue({ seasons: many, loading: false, source: "live" });
+    mockUseEpisodes.mockReturnValue({
+      episodes: [episode(1, 1)],
+      loading: false,
+      source: "live",
+    });
+    renderPicker();
+    // No chip buttons past the threshold — a proper season selector instead.
+    expect(screen.queryByRole("button", { name: "Season 2" })).toBeNull();
+    const select = screen.getByRole("combobox", { name: "Season" });
+    expect(select).toHaveValue("1");
+    // Switching it browses that season (refetch) without changing the selection.
+    await user.selectOptions(select, "5");
+    const lastCall = mockUseEpisodes.mock.calls.at(-1)!;
+    expect(lastCall[1]).toBe(5);
+  });
+
+  it("keeps season chips for a short run (at or below the threshold)", () => {
+    const six = Array.from({ length: 6 }, (_, i) => season(i + 1));
+    mockUseSeasons.mockReturnValue({ seasons: six, loading: false, source: "live" });
+    mockUseEpisodes.mockReturnValue({
+      episodes: [episode(1, 1)],
+      loading: false,
+      source: "live",
+    });
+    renderPicker();
+    expect(screen.getByRole("button", { name: "Season 6" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Season" }),
+    ).toBeNull();
+  });
+
   it("shows a skeleton while seasons load", () => {
     mockUseSeasons.mockReturnValue({ seasons: [], loading: true, source: "none" });
     mockUseEpisodes.mockReturnValue({ episodes: [], loading: false, source: "none" });

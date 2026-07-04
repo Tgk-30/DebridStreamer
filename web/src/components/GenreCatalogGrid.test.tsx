@@ -92,6 +92,33 @@ describe("GenreCatalogGrid", () => {
     expect(tmdb.getCategory).toHaveBeenCalled();
   });
 
+  it("renders two cross-fade layers behind a tile that has artwork", async () => {
+    const preview = (backdropPath: string) => ({
+      items: [{ id: "1", type: "movie" as const, title: "X", backdropPath }],
+      page: 1,
+      totalPages: 1,
+      totalResults: 1,
+    });
+    const tmdb = {
+      discover: vi.fn(async () => preview("/g.jpg")),
+      getCategory: vi.fn(async () => preview("/c.jpg")),
+    } as unknown as MetadataProvider;
+
+    const { container } = render(
+      <GenreCatalogGrid type="movie" onOpen={() => {}} tmdb={tmdb} />,
+    );
+    await waitFor(() => {
+      expect(
+        container.querySelector(".genre-tile.has-art .genre-tile-arts"),
+      ).not.toBeNull();
+    });
+    // Two layered <img>s per art tile enable the rotating cross-fade.
+    const arts = container.querySelector(
+      ".genre-tile.has-art .genre-tile-arts",
+    ) as HTMLElement;
+    expect(arts.querySelectorAll("img.genre-tile-art")).toHaveLength(2);
+  });
+
   // Regression: on a real boot the grid first mounts with tmdb=null (services
   // aren't built until the TMDB key hydrates from Dexie), then the prop flips to
   // a real provider. The effect's [type, tmdb] deps must re-fire on that flip so
