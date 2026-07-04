@@ -2,10 +2,10 @@
 
 .detail-hero {
   position: relative;
-  min-height: clamp(460px, 56vh, 600px);
+  min-height: clamp(500px, 62vh, 660px);
   border-radius: var(--r-lg);
   overflow: hidden;
-  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6),
+  box-shadow: 0 40px 80px -24px rgba(0, 0, 0, 0.68),
     inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   isolation: isolate;
 }
@@ -68,14 +68,14 @@
   inset: auto 0 0 0;
   display: flex;
   align-items: flex-end;
-  gap: clamp(var(--sp-lg), 2.5vw, 36px);
-  padding: clamp(var(--sp-xl), 3.5vw, 52px);
+  gap: clamp(var(--sp-lg), 2.8vw, 40px);
+  padding: clamp(var(--sp-xl), 4vw, 60px);
   will-change: transform, opacity;
 }
 
 .detail-hero-poster {
   flex: 0 0 auto;
-  width: clamp(140px, 13vw, 188px);
+  width: clamp(150px, 13.5vw, 204px);
   aspect-ratio: 2 / 3;
   border-radius: var(--r-md);
   object-fit: cover;
@@ -105,12 +105,12 @@
 
 .detail-hero-title {
   margin: 0;
-  font-size: clamp(32px, 4vw, 52px);
+  font-size: clamp(38px, 4.6vw, 66px);
   font-weight: 800;
-  line-height: 1.02;
-  letter-spacing: 0;
+  line-height: 0.99;
+  letter-spacing: -0.022em;
   color: #fff;
-  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
 }
 
 .detail-hero-meta {
@@ -172,17 +172,17 @@
   margin-top: var(--sp-xs);
 }
 .detail-play {
-  padding: 12px 28px;
-  font-size: 15px;
+  padding: 15px 34px;
+  font-size: 16px;
   font-weight: 700;
 }
 .detail-watch,
 .detail-request {
-  padding: 12px 22px;
-  font-size: 15px;
+  padding: 15px 26px;
+  font-size: 16px;
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
 }
 .detail-watch:hover,
 .detail-request:not(:disabled):hover {
