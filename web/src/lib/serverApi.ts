@@ -79,6 +79,10 @@ export async function fetchServerStreams(input: {
   type: MediaType;
   season?: number | null;
   episode?: number | null;
+  /** Human title for the server's name-matching indexer pass (APIBay etc.),
+   *  which an imdb id alone can't reach. Optional — older servers ignore the
+   *  extra query param and fall back to the imdb-only search. */
+  title?: string | null;
 }): Promise<{
   rows: StreamRow[];
   hasIndexers: boolean;
@@ -87,6 +91,9 @@ export async function fetchServerStreams(input: {
   const params = new URLSearchParams({ type: input.type });
   if (input.season != null) params.set("season", String(input.season));
   if (input.episode != null) params.set("episode", String(input.episode));
+  if (input.title != null && input.title.trim().length > 0) {
+    params.set("title", input.title.trim());
+  }
   const response = await serverRequest<{
     rows: StreamRow[];
     hasIndexers: boolean;

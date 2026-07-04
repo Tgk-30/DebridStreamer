@@ -307,6 +307,12 @@ const streamSearchQuerySchema = z.object({
   type: mediaTypeSchema.default("movie"),
   season: z.coerce.number().int().min(0).max(10_000).optional(),
   episode: z.coerce.number().int().min(0).max(10_000).optional(),
+  // Human title for the name-matching indexer pass (APIBay etc.). Optional so an
+  // older client that omits it still works (imdb-only). Bounded to the same 300
+  // chars as a media title. NO `.min(1)`: a blank `title=` must be accepted and
+  // treated as "no title pass" (searchServerStreams only runs the pass when the
+  // trimmed title is non-empty) — rejecting it would 400 a direct/older client.
+  title: z.string().trim().max(300).optional(),
 });
 
 const mediaSearchQuerySchema = z.object({
@@ -3558,11 +3564,19 @@ function registerRoutes(
     // Over-cap source enumeration is blocked for kids — both an info leak and the
     // supply of infoHashes the resolve path would otherwise have to defend alone.
     await requireTitleWithinCap(auth, imdbId, query.type);
+    // The name-matching title pass is deliberately SUPPRESSED for kid/capped
+    // profiles: it can surface loosely-name-matched (e.g. APIBay) sources that
+    // the fail-closed play-block (titleHasInfoHash, imdb-EXACT) would then refuse
+    // to bind — a legit stream a kid couldn't play — and widening that gate to
+    // accept name-matched hashes would weaken the child-safety guarantee. So kids
+    // stay imdb-exact end-to-end; only normal profiles get the extra pass.
+    const capped = auth.isKid || auth.maturityMax != null;
     return searchServerStreams(db, config, auth.profileId, {
       imdbId,
       type: query.type,
       season: query.season ?? null,
       episode: query.episode ?? null,
+      title: capped ? null : query.title ?? null,
     });
   });
 

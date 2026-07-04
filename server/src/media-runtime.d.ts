@@ -53,6 +53,23 @@ export function rowMatchesStreamFilters(
   filters: StreamFilters,
 ): boolean;
 
+export interface TorrentResultLike {
+  infoHash: string;
+  title: string;
+  seeders: number;
+  quality: string;
+  [key: string]: unknown;
+}
+
+/** Fold an imdb-native pass and a title/name pass into one ranked, deduped set
+ *  (the title pass validated against `title` when given). Shared with the client
+ *  so Local + Server Mode combine the two passes identically. */
+export function combineStreamResults(
+  byImdb: TorrentResultLike[],
+  byTitle: TorrentResultLike[],
+  title: string | null,
+): TorrentResultLike[];
+
 export function searchServerStreams(
   db: AppDatabase,
   config: ServerConfig,
@@ -62,6 +79,9 @@ export function searchServerStreams(
     type: MediaType;
     season?: number | null;
     episode?: number | null;
+    /** Human title for the name-matching indexer pass (APIBay etc.). Omitted /
+     *  null → imdb-only (also how the route forces capped/kid profiles). */
+    title?: string | null;
   },
 ): Promise<ServerStreamsResult>;
 
