@@ -86,13 +86,14 @@ export function SpotlightTour({
   }, [isLast, onDone, steps.length]);
   const back = useCallback(() => setI((n) => Math.max(n - 1, 0)), []);
 
-  // Keyboard: →/Enter next, ← back, Esc skip.
+  // Keyboard: → next, ← back, Esc skip. (Enter is NOT hijacked, so it activates
+  // whichever tour button — Back/Next/Skip — the user has focused.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         onDone();
-      } else if (e.key === "ArrowRight" || e.key === "Enter") {
+      } else if (e.key === "ArrowRight") {
         e.preventDefault();
         next();
       } else if (e.key === "ArrowLeft") {
@@ -107,38 +108,44 @@ export function SpotlightTour({
   // Tooltip position: place beside the target on the side with the most room,
   // clamped to the viewport. Centered when there's no target.
   const tip = useMemo(() => {
+    // Fit the tooltip on tiny viewports (never wider than the screen minus gutters).
+    const w = Math.min(TOOLTIP_W, vp.w - 32);
     if (rect == null) {
-      return { left: vp.w / 2 - TOOLTIP_W / 2, top: vp.h / 2 - 90, arrow: "none" as const };
+      return { left: vp.w / 2 - w / 2, top: vp.h / 2 - 90, width: w, arrow: "none" as const };
     }
-    const spaceRight = vp.w - (rect.left + rect.width);
-    const preferred = step?.placement;
-    const side =
-      preferred ??
-      (spaceRight > TOOLTIP_W + GAP + 24
-        ? "right"
-        : rect.left > TOOLTIP_W + GAP + 24
-          ? "left"
-          : rect.top > 220
-            ? "top"
-            : "bottom");
+    // Which sides actually have room. `placement` is a PREFERENCE — used only if
+    // that side fits, else we flip to the first side that does.
+    const fits = {
+      right: vp.w - (rect.left + rect.width) >= w + GAP + 8,
+      left: rect.left >= w + GAP + 8,
+      bottom: vp.h - (rect.top + rect.height) >= 200,
+      top: rect.top >= 200,
+    };
+    const order: Array<"right" | "left" | "bottom" | "top"> =
+      step?.placement != null
+        ? [step.placement, "right", "left", "bottom", "top"].filter(
+            (s, idx, a) => a.indexOf(s) === idx,
+          ) as Array<"right" | "left" | "bottom" | "top">
+        : ["right", "left", "bottom", "top"];
+    const side = order.find((s) => fits[s]) ?? "bottom";
     let left: number;
     let top: number;
     if (side === "right") {
       left = rect.left + rect.width + GAP;
       top = rect.top + rect.height / 2 - 70;
     } else if (side === "left") {
-      left = rect.left - TOOLTIP_W - GAP;
+      left = rect.left - w - GAP;
       top = rect.top + rect.height / 2 - 70;
     } else if (side === "top") {
-      left = rect.left + rect.width / 2 - TOOLTIP_W / 2;
+      left = rect.left + rect.width / 2 - w / 2;
       top = rect.top - GAP - 168;
     } else {
-      left = rect.left + rect.width / 2 - TOOLTIP_W / 2;
+      left = rect.left + rect.width / 2 - w / 2;
       top = rect.top + rect.height + GAP;
     }
-    left = Math.max(16, Math.min(left, vp.w - TOOLTIP_W - 16));
+    left = Math.max(16, Math.min(left, vp.w - w - 16));
     top = Math.max(16, Math.min(top, vp.h - 200));
-    return { left, top, arrow: side };
+    return { left, top, width: w, arrow: side };
   }, [rect, vp, step]);
 
   // Focus the tooltip so keyboard nav works immediately.
@@ -169,8 +176,25 @@ export function SpotlightTour({
       <div
         ref={tipRef}
         className={`tour-tip tour-arrow-${tip.arrow}`}
-        style={{ left: tip.left, top: tip.top, width: TOOLTIP_W }}
+        style={{ left: tip.left, top: tip.top, width: tip.width }}
         tabIndex={-1}
+        onKeyDown={(e) => {
+          // Trap Tab within the tooltip so focus can't wander to the (inert,
+          // dimmed) app behind the modal tour.
+          if (e.key !== "Tab") return;
+          const f = tipRef.current?.querySelectorAll<HTMLElement>("button");
+          if (f == null || f.length === 0) return;
+          const first = f[0];
+          const last = f[f.length - 1];
+          const active = document.activeElement;
+          if (e.shiftKey && (active === first || active === tipRef.current)) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && active === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }}
       >
         <div className="tour-step-count">
           Step {i + 1} of {steps.length}
