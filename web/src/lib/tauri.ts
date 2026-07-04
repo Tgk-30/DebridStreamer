@@ -20,14 +20,33 @@ export function isTauri(): boolean {
 /** Open a direct stream URL in a native external player via the Rust command.
  * Resolves to the command's status string. Throws if not running under Tauri
  * (callers should gate on `isTauri()` first) or if the command fails. */
-export async function openInExternalPlayer(url: string): Promise<string> {
+export async function openInExternalPlayer(
+  url: string,
+  preferred?: string | null,
+): Promise<string> {
   if (!isTauri()) {
     throw new Error("Not running under Tauri — no native player available.");
   }
   // Imported dynamically so the browser bundle never tries to resolve the Tauri
   // runtime at module-eval time (it's only present in the desktop webview).
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("open_in_external_player", { url });
+  return invoke<string>("open_in_external_player", {
+    url,
+    preferred: preferred != null && preferred.length > 0 ? preferred : null,
+  });
+}
+
+/** The external media players actually installed on this machine (from the Rust
+ * detector). Empty outside Tauri. Drives the Settings picker so it only offers
+ * real choices. */
+export async function listExternalPlayers(): Promise<string[]> {
+  if (!isTauri()) return [];
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<string[]>("list_external_players");
+  } catch {
+    return [];
+  }
 }
 
 /** Result of {@link playWithMpv}: whether mpv attempted in-window embedding and

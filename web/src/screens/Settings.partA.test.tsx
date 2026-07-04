@@ -44,6 +44,7 @@ vi.mock("../lib/serverMode", () => ({
 
 vi.mock("../lib/tauri", () => ({
   isTauri: () => false,
+  listExternalPlayers: vi.fn(async () => []),
   desktopServerStatus: vi.fn(async () => null),
   startDesktopServer: vi.fn(),
   stopDesktopServer: vi.fn(),

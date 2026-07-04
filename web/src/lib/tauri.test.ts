@@ -88,6 +88,17 @@ describe("openInExternalPlayer", () => {
     expect(status).toBe("opened");
     expect(invokeMock).toHaveBeenCalledWith("open_in_external_player", {
       url: "http://x/file.mkv",
+      preferred: null,
+    });
+  });
+
+  it("forwards a preferred player when given", async () => {
+    enterTauri();
+    invokeMock.mockResolvedValue("Opened in IINA");
+    await openInExternalPlayer("http://x/file.mkv", "IINA");
+    expect(invokeMock).toHaveBeenCalledWith("open_in_external_player", {
+      url: "http://x/file.mkv",
+      preferred: "IINA",
     });
   });
 });

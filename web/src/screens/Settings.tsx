@@ -75,6 +75,7 @@ import {
 import {
   desktopServerStatus,
   isTauri,
+  listExternalPlayers,
   openExternalURL,
   startDesktopServer,
   stopDesktopServer,
@@ -903,6 +904,19 @@ const STREAM_SIZE_CAP_OPTIONS = [
 const CUSTOM_STREAM_SIZE_CAP = "custom";
 
 function PlaybackTab({ draft, patch }: TabProps) {
+  // Populate the external-player picker with the players actually installed
+  // (detected natively; empty in a plain browser, so the picker hides there).
+  const [players, setPlayers] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void listExternalPlayers().then((p) => {
+      if (alive) setPlayers(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const sizeCapOption =
     STREAM_SIZE_CAP_OPTIONS.find((option) => option.value === draft.streamMaxSizeGB) ??
     null;
@@ -920,6 +934,32 @@ function PlaybackTab({ draft, patch }: TabProps) {
         top and also governs automatic (watchlist) playback. Server Mode applies
         them before sending stream rows to this device.
       </p>
+
+      {players.length > 0 && (
+        <label className="settings-field">
+          <span className="settings-field-label">
+            <strong>External player</strong>
+            <span className="t-secondary">
+              {" "}
+              — which app opens streams the built-in player can&apos;t decode
+              (4K&nbsp;HEVC, MKV). Detected on this machine.
+            </span>
+          </span>
+          <select
+            value={draft.preferredExternalPlayer}
+            onChange={(event) =>
+              patch({ preferredExternalPlayer: event.target.value })
+            }
+          >
+            <option value="">Automatic (best available)</option>
+            {players.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <label className="settings-toggle-row">
         <input

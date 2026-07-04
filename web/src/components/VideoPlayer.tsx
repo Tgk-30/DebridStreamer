@@ -61,6 +61,9 @@ interface VideoPlayerProps {
   /** Whether the card auto-plays after a countdown (false under Data Saver —
    *  nothing plays without a click). */
   autoCountdown?: boolean;
+  /** Chosen external player name (Settings). Passed to the VLC/IINA/mpv hand-off
+   *  so it opens the user's preferred app first. "" / undefined = auto order. */
+  preferredPlayer?: string;
 }
 
 /** Toggle fullscreen on an element, defensively (the APIs are absent in jsdom
@@ -137,6 +140,7 @@ export function VideoPlayer({
   upNext = null,
   onPlayNext,
   autoCountdown = true,
+  preferredPlayer,
 }: VideoPlayerProps) {
   const mode = kind ?? classify(url);
   const [externalStatus, setExternalStatus] = useState<string | null>(null);
@@ -167,7 +171,7 @@ export function VideoPlayer({
       .catch(() => {
         // mpv missing / failed to spawn — fall back to the VLC/IINA hand-off.
         if (cancelled) return;
-        openInExternalPlayer(url)
+        openInExternalPlayer(url, preferredPlayer)
           .then((status) => {
             if (!cancelled) setExternalStatus(status);
           })
@@ -185,7 +189,7 @@ export function VideoPlayer({
         mpvStop().catch(() => {});
       }
     };
-  }, [mode, underTauri, url]);
+  }, [mode, underTauri, url, preferredPlayer]);
 
   return (
     <div className="player-backdrop" onClick={onClose}>
