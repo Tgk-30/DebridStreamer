@@ -305,10 +305,13 @@ describe("HeroSpotlight backdrop preload effect", () => {
     expect(preloaded!.src).toBe("");
   });
 
-  it("does not preload when smart-preload is disabled", () => {
+  it("still preloads the next backdrop even when smart-preload is disabled", () => {
+    // The next backdrop is a single image the carousel shows in ~7s regardless,
+    // so it's preloaded unconditionally (same bytes, a beat earlier) — only the
+    // expensive code-chunk preloads stay gated on smart-preload.
     isSmartPreloadEnabled.mockReturnValue(false);
     render(<HeroSpotlight items={items} />);
-    expect(created.some((c) => c.src.includes("/bravo.jpg"))).toBe(false);
+    expect(created.some((c) => c.src.includes("/bravo.jpg"))).toBe(true);
   });
 
   it("does not run the preload effect for a single item", () => {

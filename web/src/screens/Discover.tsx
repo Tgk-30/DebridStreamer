@@ -22,7 +22,7 @@ interface DiscoverProps {
 
 export function Discover({ onSelect }: DiscoverProps) {
   const { services, openBrowse, openDetail, continueWatching } = useAppStore();
-  const { data, loading } = useDiscover(services.tmdb);
+  const { data, loading, railsLoading } = useDiscover(services.tmdb);
 
   // Continue Watching — resumable history (>2% and <95%) surfaced at the top of
   // the home as wide banner cards. Only renders when there's something to resume,
@@ -38,6 +38,23 @@ export function Discover({ onSelect }: DiscoverProps) {
   if (loading || !data) {
     return <DiscoverSkeleton />;
   }
+
+  // A category rail: its data may still be streaming in (progressive load), so
+  // show a titled skeleton row in its place until it settles, then the real rail
+  // (or nothing, if it resolved empty).
+  const categoryRail = (
+    title: string,
+    items: MediaPreview[],
+    ctx: BrowseContext,
+  ) => {
+    const rows = withoutHero(items);
+    if (rows.length > 0) {
+      return (
+        <Rail title={title} items={rows} onSelect={onSelect} onSeeAll={seeAll(ctx)} />
+      );
+    }
+    return railsLoading ? <RailSkeleton title={title} /> : null;
+  };
 
   return (
     <div className="discover">
@@ -82,31 +99,44 @@ export function Discover({ onSelect }: DiscoverProps) {
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "series", category: "trending" })}
       />
-      <Rail
-        title="Popular Movies"
-        items={withoutHero(data.popularMovies)}
-        onSelect={onSelect}
-        onSeeAll={seeAll({ kind: "category", type: "movie", category: "popular" })}
-      />
-      <Rail
-        title="Top Rated Movies"
-        items={withoutHero(data.topRatedMovies)}
-        onSelect={onSelect}
-        onSeeAll={seeAll({ kind: "category", type: "movie", category: "top_rated" })}
-      />
-      <Rail
-        title="Now Playing"
-        items={withoutHero(data.nowPlayingMovies)}
-        onSelect={onSelect}
-        onSeeAll={seeAll({ kind: "category", type: "movie", category: "now_playing" })}
-      />
-      <Rail
-        title="Upcoming"
-        items={withoutHero(data.upcomingMovies)}
-        onSelect={onSelect}
-        onSeeAll={seeAll({ kind: "category", type: "movie", category: "upcoming" })}
-      />
+      {categoryRail("Popular Movies", data.popularMovies, {
+        kind: "category",
+        type: "movie",
+        category: "popular",
+      })}
+      {categoryRail("Top Rated Movies", data.topRatedMovies, {
+        kind: "category",
+        type: "movie",
+        category: "top_rated",
+      })}
+      {categoryRail("Now Playing", data.nowPlayingMovies, {
+        kind: "category",
+        type: "movie",
+        category: "now_playing",
+      })}
+      {categoryRail("Upcoming", data.upcomingMovies, {
+        kind: "category",
+        type: "movie",
+        category: "upcoming",
+      })}
     </div>
+  );
+}
+
+/** A single titled skeleton rail — placeholder for a category still streaming in
+ * during the progressive load, so the row's spot is held (no pop-in shift). */
+function RailSkeleton({ title }: { title: string }) {
+  return (
+    <section className="rail" aria-hidden>
+      <div className="rail-header">
+        <h2 className="rail-title">{title}</h2>
+      </div>
+      <div className="skel-cards">
+        {[0, 1, 2, 3, 4, 5].map((c) => (
+          <div className="skel-card glass-rest" key={c} />
+        ))}
+      </div>
+    </section>
   );
 }
 

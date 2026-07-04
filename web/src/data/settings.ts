@@ -39,6 +39,7 @@ import { AnthropicProvider } from "../services/ai/AnthropicProvider";
 import { OllamaProvider } from "../services/ai/OllamaProvider";
 import { getSecretStore, getStore } from "../storage";
 import type { SecretStore } from "../storage";
+import type { ScreenId } from "../components/NavRail";
 import { appFetch } from "../lib/http";
 import { isServerMode } from "../lib/serverMode";
 import { DEFAULT_THEME_ID, resolveThemeId } from "../theme/themes";
@@ -87,6 +88,7 @@ const SettingsKeys = {
   appearanceNavPosition: "appearance_nav_position",
   appearanceNavTint: "appearance_nav_tint",
   appearancePosterSize: "appearance_poster_size",
+  appearanceDefaultTab: "appearance_default_tab",
   subtitleFontScale: "subtitle_font_scale",
   subtitleTextColor: "subtitle_text_color",
   subtitleBgOpacity: "subtitle_bg_opacity",
@@ -202,6 +204,8 @@ export interface AppSettings {
   appearanceNavPosition: AppearanceNavPosition;
   appearanceNavTint: AppearanceNavTint;
   appearancePosterSize: AppearancePosterSize;
+  /** The nav destination the app lands on at launch. Default "discover". */
+  appearanceDefaultTab: ScreenId;
   /** Subtitle appearance, applied to the player's `::cue` (ported from
    * VPStudio's subtitle settings): font scale (1 = default), text color (hex),
    * and caption-background opacity (0–0.95). */
@@ -332,6 +336,25 @@ function normalizeAppearancePosterSize(value: unknown): AppearancePosterSize {
   return value === "compact" || value === "large" ? value : "default";
 }
 
+/** The nav destinations a user can pick as their default landing tab. */
+const DEFAULT_TAB_VALUES: readonly ScreenId[] = [
+  "discover",
+  "search",
+  "library",
+  "watchlist",
+  "calendar",
+  "history",
+  "assistant",
+  "debrid",
+  "settings",
+];
+function normalizeAppearanceDefaultTab(value: unknown): ScreenId {
+  return typeof value === "string" &&
+    (DEFAULT_TAB_VALUES as readonly string[]).includes(value)
+    ? (value as ScreenId)
+    : "discover";
+}
+
 function toFiniteNumber(value: unknown): number | null {
   const n =
     typeof value === "number"
@@ -387,6 +410,7 @@ export function defaultSettings(): AppSettings {
     appearanceNavPosition: "side",
     appearanceNavTint: "balanced",
     appearancePosterSize: "large",
+    appearanceDefaultTab: "discover",
     subtitleFontScale: 1,
     subtitleTextColor: "#ffffff",
     subtitleBgOpacity: 0.55,
@@ -441,6 +465,7 @@ export function loadSettings(): AppSettings {
       ),
       appearanceNavTint: normalizeAppearanceNavTint(parsed.appearanceNavTint),
       appearancePosterSize: normalizeAppearancePosterSize(parsed.appearancePosterSize),
+      appearanceDefaultTab: normalizeAppearanceDefaultTab(parsed.appearanceDefaultTab),
       subtitleFontScale: normalizeSubtitleFontScale(parsed.subtitleFontScale),
       subtitleTextColor: normalizeSubtitleTextColor(parsed.subtitleTextColor),
       subtitleBgOpacity: normalizeSubtitleBgOpacity(parsed.subtitleBgOpacity),
@@ -736,6 +761,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceNavPosition,
     appearanceNavTint,
     appearancePosterSize,
+    appearanceDefaultTab,
     subtitleFontScale,
     subtitleTextColor,
     subtitleBgOpacity,
@@ -773,6 +799,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.appearanceNavPosition),
     store.getSetting(SettingsKeys.appearanceNavTint),
     store.getSetting(SettingsKeys.appearancePosterSize),
+    store.getSetting(SettingsKeys.appearanceDefaultTab),
     store.getSetting(SettingsKeys.subtitleFontScale),
     store.getSetting(SettingsKeys.subtitleTextColor),
     store.getSetting(SettingsKeys.subtitleBgOpacity),
@@ -868,6 +895,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     ),
     appearancePosterSize: normalizeAppearancePosterSize(
       appearancePosterSize ?? base.appearancePosterSize,
+    ),
+    appearanceDefaultTab: normalizeAppearanceDefaultTab(
+      appearanceDefaultTab ?? base.appearanceDefaultTab,
     ),
     subtitleFontScale: normalizeSubtitleFontScale(
       subtitleFontScale ?? base.subtitleFontScale,
@@ -1012,6 +1042,10 @@ export async function saveSettingsToStore(
     store.setSetting(
       SettingsKeys.appearancePosterSize,
       normalizeAppearancePosterSize(settings.appearancePosterSize),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceDefaultTab,
+      normalizeAppearanceDefaultTab(settings.appearanceDefaultTab),
     ),
     store.setSetting(
       SettingsKeys.subtitleFontScale,

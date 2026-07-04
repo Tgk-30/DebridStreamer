@@ -8,7 +8,6 @@ import { AnimatePresence, motion } from "motion/react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import type { MediaPreview } from "../models/media";
 import { Icon } from "./Icon";
-import { isSmartPreloadEnabled } from "../lib/smartPreload";
 import "./HeroSpotlight.css";
 
 interface HeroSpotlightProps {
@@ -112,7 +111,10 @@ export function HeroSpotlight({
   }, [list.length, paused, hidden, intervalMs]);
 
   // Invisible polish: preload the next backdrop so the crossfade never flashes a
-  // half-loaded image. Gated by the smart-preload preference. The Image is held
+  // half-loaded image. This is a single image the carousel is about to show in
+  // ~7s regardless, so we preload it unconditionally (it's the same bytes, just
+  // a beat earlier — not extra data) rather than gating on smart-preload; only
+  // the expensive code-chunk preloads stay gated (see App). The Image is held
   // and detached on cleanup so an in-flight preload doesn't keep loading (and
   // pinning memory) after the hero unmounts or advances. Keyed on the URL string
   // (`list` is a fresh slice every render — using it as a dep re-ran this effect,
@@ -120,7 +122,7 @@ export function HeroSpotlight({
   const nextBackdrop =
     list.length > 1 ? MediaPreviewNS.backdropURL(list[(index + 1) % list.length]) : null;
   useEffect(() => {
-    if (!nextBackdrop || !isSmartPreloadEnabled()) return;
+    if (!nextBackdrop) return;
     const img = new Image();
     img.src = nextBackdrop;
     return () => {

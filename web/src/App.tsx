@@ -8,6 +8,7 @@
 import "./theme/theme.css";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { NavRail, isScreenHidden, type ScreenId } from "./components/NavRail";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SpotlightTour, type TourStep } from "./components/SpotlightTour";
 
 // The point-and-highlight tour shown once after the welcome guide. Each step
@@ -463,9 +464,18 @@ export function App() {
             nested-motion screens. Suspense stays inside so a lazy screen shows the
             spinner within the frame. */}
         <div key={route} className="route-frame">
-          <Suspense fallback={<Spinner variant="inline" />}>
-            {renderScreen(route)}
-          </Suspense>
+          {/* Per-screen boundary: a single screen's render crash offers "Go
+              home" instead of sinking the whole app. resetKey={route} clears it
+              on navigation (the keyed frame also remounts). */}
+          <ErrorBoundary
+            label={route}
+            resetKey={route}
+            onGoHome={() => navigate("discover")}
+          >
+            <Suspense fallback={<Spinner variant="inline" />}>
+              {renderScreen(route)}
+            </Suspense>
+          </ErrorBoundary>
         </div>
 
         {/* Browse overlay — mounts over the current screen ("See all" +

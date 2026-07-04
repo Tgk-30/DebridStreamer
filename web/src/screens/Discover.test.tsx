@@ -15,7 +15,11 @@ import type { DiscoverData } from "../data/discover";
 
 // --- mutable mock state -----------------------------------------------------
 
-let mockDiscover: { data: DiscoverData | null; loading: boolean } = {
+let mockDiscover: {
+  data: DiscoverData | null;
+  loading: boolean;
+  railsLoading?: boolean;
+} = {
   data: null,
   loading: true,
 };
@@ -29,7 +33,9 @@ let mockServices: {
 } = { tmdb: null, ai: null };
 
 vi.mock("../data/discover", () => ({
-  useDiscover: () => mockDiscover,
+  // Default railsLoading to false (the settled state) so tests that don't set it
+  // match the real non-optional field rather than leaving it undefined.
+  useDiscover: () => ({ railsLoading: false, ...mockDiscover }),
 }));
 
 vi.mock("../store/AppStore", () => ({
@@ -184,6 +190,29 @@ describe("Discover loaded", () => {
     );
     // "Describe a vibe" moved to Search; no mood rail on Discover.
     expect(titles).not.toContain("Mood picks");
+  });
+
+  it("holds a titled skeleton for a category rail still streaming in (progressive)", () => {
+    // Trending resolved (hero + Top 10 present) but Popular hasn't yet.
+    const data = { ...fullData(), popularMovies: [] };
+    mockDiscover = { data, loading: false, railsLoading: true };
+    const { container } = render(<Discover />);
+    // A skeleton placeholder (titled, with skel cards) holds Popular's row.
+    expect(container.querySelectorAll(".skel-card").length).toBeGreaterThan(0);
+    // It's a skeleton, not the (mocked) Rail — so no rail-title for Popular yet,
+    // while a populated category still renders its real rail.
+    const railTitles = screen.getAllByTestId("rail-title").map((n) => n.textContent);
+    expect(railTitles).not.toContain("Popular Movies");
+    expect(railTitles).toContain("Now Playing");
+  });
+
+  it("hides an empty category rail once loading settles (no skeleton)", () => {
+    const data = { ...fullData(), popularMovies: [] };
+    mockDiscover = { data, loading: false, railsLoading: false };
+    const { container } = render(<Discover />);
+    expect(container.querySelector(".skel-card")).toBeNull();
+    const railTitles = screen.getAllByTestId("rail-title").map((n) => n.textContent);
+    expect(railTitles).not.toContain("Popular Movies");
   });
 
   it("hides the hero when data.hero is null", () => {

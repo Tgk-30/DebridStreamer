@@ -163,6 +163,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     appearanceNavPosition: "side",
     appearanceNavTint: "balanced",
     appearancePosterSize: "default",
+    appearanceDefaultTab: "discover",
     subtitleFontScale: 1,
     subtitleTextColor: "#ffffff",
     subtitleBgOpacity: 0.55,
@@ -257,6 +258,14 @@ describe("initial load / hydration", () => {
     expect(result.current.detailItem).toBeNull();
     expect(result.current.browseContext).toBeNull();
     expect(result.current.pendingSearch).toBeNull();
+  });
+
+  it("lands on the user's chosen default tab after hydration", async () => {
+    loadSettingsFromStore.mockResolvedValue(
+      settings({ appearanceDefaultTab: "watchlist" }),
+    );
+    const { result } = await renderStore();
+    expect(result.current.route).toBe("watchlist");
   });
 
   it("hydrates settings/watchlist/history/continueWatching/cachedResolutions from the Store", async () => {

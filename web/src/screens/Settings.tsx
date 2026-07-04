@@ -60,6 +60,7 @@ import { appFetch } from "../lib/http";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import { AdvancedOnly } from "../components/AdvancedOnly";
+import type { ScreenId } from "../components/NavRail";
 import { CONCEPTS, signupUrl } from "../data/onboardingHelp";
 import {
   type BeforeInstallPromptEvent,
@@ -3533,6 +3534,31 @@ function AppearanceTab({
           }
         />
       </div>
+
+      <label className="settings-field">
+        <span className="settings-field-label">
+          <strong>Start on</strong>
+          <span className="t-secondary">
+            {" "}
+            — the screen the app opens to at launch.
+          </span>
+        </span>
+        <select
+          value={draft.appearanceDefaultTab}
+          onChange={(event) =>
+            applyAppearance({
+              appearanceDefaultTab: event.target.value as ScreenId,
+            })
+          }
+        >
+          <option value="discover">Discover</option>
+          <option value="search">Search</option>
+          <option value="library">Library</option>
+          <option value="watchlist">Watchlist</option>
+          <option value="calendar">Calendar</option>
+          <option value="history">History</option>
+        </select>
+      </label>
 
       <div className="settings-source glass-rest">
         <div className="settings-sources-head">
