@@ -90,6 +90,7 @@ vi.mock("../lib/serverMode", () => ({
 
 import {
   applyDesignRefresh,
+  markDesignRefreshApplied,
   defaultSettings,
   loadSettingsFromStore,
   saveSettingsToStore,
@@ -609,11 +610,26 @@ describe("applyDesignRefresh", () => {
     expect(refreshed.appearancePosterSize).toBe(d.appearancePosterSize);
     expect(refreshed.appearanceBackdrop).toBe(d.appearanceBackdrop);
 
-    // Second run is a no-op (same reference back) — never resets twice.
+    // Once the caller confirms the persist, it never resets again.
+    markDesignRefreshApplied();
     const again = applyDesignRefresh(
       settingsWith({ appearanceRadius: "sharp" }),
     );
     expect(again.appearanceRadius).toBe("sharp");
+  });
+
+  it("re-applies until marked (a failed persist is retried, never lost)", () => {
+    stubLocalStorage();
+    const cramped = settingsWith({ appearanceRadius: "sharp" });
+    const target = defaultSettings().appearanceRadius;
+
+    // First load: applies, but the caller's persist "failed" so it is NOT marked.
+    expect(applyDesignRefresh(cramped).appearanceRadius).toBe(target);
+    // Next load: still pending (never marked) → applies again, not lost.
+    expect(applyDesignRefresh(cramped).appearanceRadius).toBe(target);
+    // After a successful persist the caller marks it → subsequent loads no-op.
+    markDesignRefreshApplied();
+    expect(applyDesignRefresh(cramped).appearanceRadius).toBe("sharp");
   });
 
   it("never touches theme, accent, keys, or debrid tokens", () => {

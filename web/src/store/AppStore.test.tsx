@@ -55,6 +55,7 @@ vi.mock("../data/settings", () => ({
   // Identity in tests: the one-time design refresh is exercised in its own
   // unit suite; here it must not mutate the hydrated fixture.
   applyDesignRefresh: (s: AppSettings) => s,
+  markDesignRefreshApplied: () => {},
 }));
 
 const loadWatchlist = vi.fn<() => Promise<MediaPreview[]>>();
