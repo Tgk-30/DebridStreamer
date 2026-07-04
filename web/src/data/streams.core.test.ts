@@ -435,6 +435,7 @@ describe("useStreams — Server mode", () => {
       type: "movie",
       season: null,
       episode: null,
+      title: null,
     });
     expect(state.rows.map((r) => r.result.infoHash)).toEqual(["s1"]);
     expect(state.rows[0].cachedOn).toBe(DebridServiceType.torBox);
@@ -442,6 +443,25 @@ describe("useStreams — Server mode", () => {
     expect(state.hasIndexers).toBe(true);
     expect(state.hasDebrid).toBe(false);
     expect(state.loading).toBe(false);
+  });
+
+  it("forwards the title + episode context so the server can run its name pass", async () => {
+    mockFetchServerStreams.mockResolvedValue({
+      rows: [],
+      hasIndexers: true,
+      hasDebrid: true,
+    });
+    const indexers = fakeIndexers({ active: [] });
+    // series + season/episode + title — the exact context the server needs to
+    // build "The Bear S01E06" for its APIBay-style name-matching pass.
+    await renderStreams("tt5", "series", indexers, null, 1, 6, "The Bear");
+    expect(mockFetchServerStreams).toHaveBeenCalledWith({
+      imdbId: "tt5",
+      type: "series",
+      season: 1,
+      episode: 6,
+      title: "The Bear",
+    });
   });
 
   it("surfaces a server fetch error into state.error", async () => {

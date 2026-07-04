@@ -4191,7 +4191,7 @@ function SourcesTab({ draft, patch }: TabProps) {
         <span>
           <strong>Built-in scrapers</strong>
           <span className="settings-built-in-list t-secondary">
-            APIBay, YTS, EZTV
+            Torrentio, APIBay, YTS, EZTV
           </span>
           <span className="settings-pill">No setup needed</span>
         </span>

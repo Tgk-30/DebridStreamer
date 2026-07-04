@@ -582,9 +582,9 @@ describe("IndexerFactory.testConnection", () => {
 // MARK: - IndexerFactory.buildIndexers
 
 describe("IndexerFactory.buildIndexers", () => {
-  it("defaults to the three built-in scrapers when no configs are given", () => {
+  it("defaults to the built-in scrapers (Torrentio-first) when no configs are given", () => {
     const indexers = IndexerFactory.buildIndexers([]);
-    expect(indexers.map((i) => i.name)).toEqual(["APIBay", "YTS", "EZTV"]);
+    expect(indexers.map((i) => i.name)).toEqual(["Torrentio", "APIBay", "YTS", "EZTV"]);
   });
 
   it("omits built-ins when a built_in config is inactive and adds external indexers by priority", () => {
