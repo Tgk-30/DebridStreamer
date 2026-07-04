@@ -12,7 +12,7 @@
 // resolves true. Styling reuses the persona wizard's .first-run* classes plus a
 // few server-setup additions in FirstRunWizard.css.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import {
   saveServerSharedCredential,
@@ -398,6 +398,14 @@ function InviteStep({
   const [qrDataURL, setQrDataURL] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const invitePreset = serverSetupInvitePreset(invitePresetId);
+  // Guards the async invite/QR setState calls: the user can click Back/Skip (or
+  // the wizard can close) while createServerInvite / QRCode.toDataURL are still
+  // in flight, and updating state after unmount warns under StrictMode and can
+  // crash the walkthrough.
+  const mounted = useRef(true);
+  useEffect(() => () => {
+    mounted.current = false;
+  }, []);
 
   async function create() {
     setBusy(true);
@@ -415,19 +423,27 @@ function InviteStep({
       const url = new URL(base);
       url.searchParams.set("invite", result.token);
       const built = url.toString();
+      if (!mounted.current) return;
       setInviteURL(built);
-      // Render a QR a phone can scan to open the invite link directly.
+      // Render a QR a phone can scan to open the invite link directly. The
+      // promise can resolve after the step unmounts, so guard the setState.
       QRCode.toDataURL(built, {
         width: 168,
         margin: 1,
         color: { dark: "#111827", light: "#ffffff" },
       })
-        .then(setQrDataURL)
-        .catch(() => setQrDataURL(null));
+        .then((data) => {
+          if (mounted.current) setQrDataURL(data);
+        })
+        .catch(() => {
+          if (mounted.current) setQrDataURL(null);
+        });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't create the invite.");
+      if (mounted.current) {
+        setError(err instanceof Error ? err.message : "Couldn't create the invite.");
+      }
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
