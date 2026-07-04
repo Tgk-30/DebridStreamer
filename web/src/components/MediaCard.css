@@ -59,50 +59,41 @@
 }
 
 /* ── "Top 10" ranked treatment ────────────────────────────────────────────
-   A large ghosted numeral tucked behind the poster's left edge — the Apple TV
-   Top-10 signature. The card gains left room; the poster keeps its z-order on
-   top so the number reads as sitting behind it. */
-.media-card.is-ranked {
-  padding-left: calc(var(--poster-w) * 0.56);
-  overflow: visible;
-}
+   A small GOLD-metallic rank numeral in the poster's TOP-LEFT corner —
+   contained inside the poster, a gold gradient fill with a lower sheen band,
+   dark edge for legibility over any art, and a soft gold glow. */
 .media-card-rank {
   position: absolute;
-  left: 0;
-  /* Overlay the POSTER's vertical band and CENTER the numeral within it, then
-     CLIP to that band (block axis only) so a large glyph can NEVER bulge above
-     the poster or spill below into the title — only its left overhang shows. */
-  top: var(--sp-sm);
-  height: calc(var(--poster-w) * 1.5);
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  overflow-x: visible;
-  overflow-y: clip;
-  z-index: 0;
+  top: calc(var(--sp-sm) + 6px);
+  left: calc(var(--sp-sm) + 8px);
+  z-index: 2;
   font-family: var(--font-display, ui-sans-serif, system-ui, sans-serif);
   font-weight: 800;
-  /* Apple TV-scale: the numeral fills most of the poster height, with the poster
-     overlapping its right half. */
-  font-size: calc(var(--poster-w) * 1.62);
+  font-size: clamp(24px, calc(var(--poster-w) * 0.25), 40px);
   line-height: 1;
-  letter-spacing: -0.04em;
-  font-variant-numeric: tabular-nums;
-  /* Solid light-silver fill (not an outline), sitting behind the poster's left
-     edge with a soft shadow for separation. */
-  color: rgba(240, 242, 250, 0.92);
-  -webkit-text-stroke: 0;
-  text-shadow: 0 8px 26px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.45);
+  letter-spacing: -0.03em;
+  background: linear-gradient(
+    155deg,
+    #fff4cf 0%,
+    #f4d074 40%,
+    #dca63f 68%,
+    #f7de95 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6))
+    drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6))
+    drop-shadow(0 0 8px rgba(226, 178, 70, 0.4));
   pointer-events: none;
   user-select: none;
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.media-card.is-ranked .media-card-poster {
-  position: relative;
-  z-index: 1;
-}
-.media-card.is-ranked:hover .media-card-rank,
-.media-card.is-ranked:focus-visible .media-card-rank {
-  color: #fff;
+.media-card:hover .media-card-rank,
+.media-card:focus-visible .media-card-rank {
+  transform: scale(1.08);
 }
 
 .media-card-poster img {
