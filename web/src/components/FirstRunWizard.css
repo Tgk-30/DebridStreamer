@@ -24,13 +24,13 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(640px, 100%);
-  padding: clamp(var(--sp-xl), 4vw, 44px);
+  width: min(680px, 100%);
+  padding: clamp(var(--sp-xl), 4.5vw, 52px);
   border-radius: var(--r-lg);
   background: var(--glass-tint-hero);
   border: 0.75px solid var(--glass-border);
-  box-shadow: 0 40px 100px -28px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: 0 48px 120px -30px rgba(0, 0, 0, 0.74),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 /* Quiet escape hatch, centered under the choices (no longer a floating
@@ -65,17 +65,18 @@
 }
 
 .first-run-title {
-  margin: 0 0 6px;
-  font-size: clamp(22px, 3vw, 28px);
+  margin: 0 0 8px;
+  font-size: clamp(26px, 3.4vw, 34px);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
 }
 .first-run-sub {
-  margin: 0 0 var(--sp-lg);
-  font-size: 14px;
-  line-height: 1.5;
+  margin: 0 0 var(--sp-xl);
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--text-secondary);
-  max-width: 48ch;
+  max-width: 50ch;
 }
 
 .first-run-choices {
@@ -247,10 +248,10 @@
 }
 .first-run-primary,
 .first-run-secondary {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
   font-family: inherit;
-  padding: 10px 20px;
+  padding: 13px 28px;
   border-radius: var(--r-pill);
   cursor: pointer;
   border: 0.75px solid var(--glass-border);
