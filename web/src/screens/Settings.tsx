@@ -56,7 +56,9 @@ import type {
 import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
 import { fetchAvailableModels } from "../services/ai/ModelCatalog";
+import { readModelCache, writeModelCache } from "../services/ai/ModelCache";
 import { appFetch } from "../lib/http";
+import { getStore } from "../storage";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import { AdvancedOnly } from "../components/AdvancedOnly";
@@ -3756,19 +3758,19 @@ function SegmentedControl({
 // Static fallbacks shown before (or when) a live fetch runs. The Refresh button
 // replaces these with the provider's actual catalog.
 const AI_MODEL_OPTIONS: Record<AppSettings["aiProvider"], string[]> = {
-  openai: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1", "o4-mini"],
-  anthropic: ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-opus-4-1"],
+  openai: ["gpt-5", "gpt-5-mini", "gpt-4.1-mini", "o4-mini"],
+  anthropic: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
   ollama: ["llama3.2", "qwen2.5", "mistral"],
   gemini: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"],
   openrouter: [
-    "openai/gpt-4o-mini",
-    "anthropic/claude-3.5-sonnet",
+    "openai/gpt-5-mini",
+    "anthropic/claude-sonnet-4-6",
     "meta-llama/llama-3.3-70b-instruct",
   ],
   groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
   mistral: ["mistral-small-latest", "mistral-large-latest", "open-mistral-nemo"],
   deepseek: ["deepseek-chat", "deepseek-reasoner"],
-  xai: ["grok-2-latest", "grok-2-mini"],
+  xai: ["grok-4", "grok-3", "grok-3-mini"],
 };
 
 /** Merge the current value + live-fetched ids + static fallbacks into a unique,
@@ -3787,57 +3789,101 @@ function modelOptions(
   return merged.filter((m) => (seen.has(m) ? false : (seen.add(m), true)));
 }
 
-/** The Advanced "Model" picker with a live "Refresh" that pulls the provider's
- * real catalog from its own endpoint. Falls back to a static list until then. */
+/** Short "3 min ago" / "2 days ago" for a cache timestamp. */
+function relativeTime(fromMs: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - fromMs) / 1000));
+  if (s < 45) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return `${d} day${d === 1 ? "" : "s"} ago`;
+}
+
+/** The "Model" picker. Seeds instantly from a per-provider cache, then quietly
+ * refreshes the provider's live catalog in the background (no manual click
+ * needed) whenever the provider or credential changes. A manual Refresh forces
+ * a re-fetch. Falls back to the static list before any fetch/cache exists. */
 function ModelSelectField({ draft, patch }: TabProps) {
   const [fetched, setFetched] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  // Bumped on every provider change and every refresh; a resolved fetch only
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  // Bumped on every provider change and every (re)fetch; a resolved fetch only
   // commits its result if its id still matches, so a slow response from the
   // previous provider can't populate the new provider's dropdown.
   const reqId = useRef(0);
 
-  // A provider switch invalidates any previously fetched catalog.
   const provider = draft.aiProvider;
-  useEffect(() => {
-    reqId.current += 1;
-    setFetched([]);
-    setError(null);
-    setNote(null);
-    setLoading(false);
-  }, [provider]);
+  const apiKey = draft.aiApiKey;
+  const endpoint = draft.ollamaEndpoint;
+  const hasCredential =
+    provider === "ollama"
+      ? endpoint.trim().length > 0
+      : apiKey.trim().length > 0;
 
-  async function refresh() {
-    const id = (reqId.current += 1);
-    setLoading(true);
-    setError(null);
-    setNote(null);
-    try {
-      const models = await fetchAvailableModels({
-        kind: provider,
-        apiKey: draft.aiApiKey,
-        endpoint: draft.ollamaEndpoint,
-        fetchImpl: appFetch,
-      });
-      if (id !== reqId.current) return; // superseded — drop stale result
-      setFetched(models);
-      setNote(
-        models.length > 0
-          ? `${models.length} model${models.length === 1 ? "" : "s"} available`
-          : "No models returned for this account.",
-      );
-    } catch (err) {
+  const load = useCallback(
+    async (force: boolean) => {
+      const id = (reqId.current += 1);
+      const store = getStore();
+      // 1. Seed from cache immediately (instant + offline-friendly).
+      const cached = await readModelCache(store, provider).catch(() => null);
       if (id !== reqId.current) return;
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      if (id === reqId.current) setLoading(false);
-    }
-  }
+      if (cached != null && cached.models.length > 0) {
+        setFetched(cached.models);
+        setFetchedAt(cached.fetchedAt);
+      } else {
+        setFetched([]);
+        setFetchedAt(null);
+      }
+      setError(null);
+      // 2. Decide whether to hit the network: a forced Refresh always does; an
+      // automatic pass only when there's a credential AND the cache is missing
+      // or stale (so re-opening Settings doesn't re-hit the API every time).
+      const cacheFresh = cached != null && !cached.stale && cached.models.length > 0;
+      const credential =
+        provider === "ollama"
+          ? endpoint.trim().length > 0
+          : apiKey.trim().length > 0;
+      if (!credential) return;
+      if (!force && cacheFresh) return;
+
+      setLoading(true);
+      try {
+        const models = await fetchAvailableModels({
+          kind: provider,
+          apiKey,
+          endpoint,
+          fetchImpl: appFetch,
+        });
+        if (id !== reqId.current) return;
+        setFetched(models);
+        const now = Date.now();
+        setFetchedAt(now);
+        void writeModelCache(store, provider, models, now);
+      } catch (err) {
+        if (id !== reqId.current) return;
+        // Keep any cached list visible; a fetch failure is a soft warning.
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (id === reqId.current) setLoading(false);
+      }
+    },
+    [provider, apiKey, endpoint],
+  );
+
+  // Auto-load on mount and whenever the provider/credential changes. Debounced
+  // so typing an API key character-by-character coalesces into a single fetch
+  // (once the user pauses) instead of firing a request per keystroke. The reqId
+  // guard inside load() still drops any stale in-flight result.
+  useEffect(() => {
+    const t = window.setTimeout(() => void load(false), 600);
+    return () => window.clearTimeout(t);
+  }, [load]);
 
   return (
-    <Field label="Model" hint="Refresh to load this provider's live catalog.">
+    <Field label="Model" hint="Updates automatically from your provider's live catalog.">
       <div className="settings-model-row">
         <select
           value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
@@ -3857,19 +3903,29 @@ function ModelSelectField({ draft, patch }: TabProps) {
         <button
           type="button"
           className="chip settings-model-refresh"
-          onClick={() => void refresh()}
+          onClick={() => void load(true)}
           disabled={loading}
           aria-busy={loading}
-          title="Load the provider's current models"
+          title="Reload the provider's current models"
         >
-          <Icon name={loading ? "refresh" : "sparkles"} size={14} />
+          <Icon name="refresh" size={14} />
           {loading ? "Loading…" : "Refresh"}
         </button>
       </div>
-      {error != null && <p className="settings-model-msg t-warning">{error}</p>}
-      {error == null && note != null && (
-        <p className="settings-model-msg t-secondary">{note}</p>
-      )}
+      {error != null ? (
+        <p className="settings-model-msg t-warning">{error}</p>
+      ) : loading ? (
+        <p className="settings-model-msg t-secondary">Loading live models…</p>
+      ) : fetchedAt != null ? (
+        <p className="settings-model-msg t-secondary">
+          {fetched.length} model{fetched.length === 1 ? "" : "s"} · updated{" "}
+          {relativeTime(fetchedAt)}
+        </p>
+      ) : !hasCredential ? (
+        <p className="settings-model-msg t-secondary">
+          Add your API key to load this provider's live model list.
+        </p>
+      ) : null}
     </Field>
   );
 }
@@ -3977,7 +4033,10 @@ function KeysTab({ draft, patch }: TabProps) {
         {keyPanel === "assistant" && (
           <section className="settings-key-card glass-rest" aria-label="Assistant AI credentials">
             <div className="settings-key-provider-grid">
-              <Field label="AI provider" hint="Provider default is selected first.">
+              <Field
+                label="AI provider"
+                hint="Ollama runs locally (no key); the rest need an API key below."
+              >
                 <select
                   value={draft.aiProvider}
                   onChange={(e) =>
@@ -3992,6 +4051,7 @@ function KeysTab({ draft, patch }: TabProps) {
                   {AIProviderKind.allCases().map((k) => (
                     <option key={k} value={k}>
                       {AIProviderKind.displayName(k)}
+                      {k === "ollama" ? " · local, no key" : ""}
                     </option>
                   ))}
                 </select>

@@ -708,7 +708,9 @@ interface Rate {
 }
 
 const KNOWN_RATES: Record<string, Rate> = {
-  // OpenAI
+  // OpenAI (best-effort estimates for the local usage ledger)
+  "gpt-5": { inputPerMillionUSD: 1.25, outputPerMillionUSD: 10.0 },
+  "gpt-5-mini": { inputPerMillionUSD: 0.25, outputPerMillionUSD: 2.0 },
   "gpt-4.1": { inputPerMillionUSD: 2.0, outputPerMillionUSD: 8.0 },
   "gpt-4.1-mini": { inputPerMillionUSD: 0.4, outputPerMillionUSD: 1.6 },
   "gpt-4.1-nano": { inputPerMillionUSD: 0.1, outputPerMillionUSD: 0.4 },
