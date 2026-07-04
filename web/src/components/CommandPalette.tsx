@@ -107,6 +107,16 @@ export function CommandPalette() {
       },
     });
     list.push({
+      id: "app-tour",
+      label: "Take the app tour",
+      icon: "sparkles",
+      keywords: "tour walkthrough highlight spotlight guide onboarding where is",
+      run: () => {
+        window.dispatchEvent(new CustomEvent("ds:open-tour"));
+        close();
+      },
+    });
+    list.push({
       id: "keyboard-shortcuts",
       label: "Keyboard shortcuts",
       icon: "sliders",
