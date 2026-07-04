@@ -119,12 +119,14 @@ describe("HeroSpotlight empty / single-item guards", () => {
     expect(container.querySelector(".hero-dots")).toBeNull();
   });
 
-  it("renders dot navigation with a count label when there are multiple items", () => {
+  it("renders dot navigation when there are multiple items", () => {
     const { container } = render(<HeroSpotlight items={items} />);
     expect(container.querySelector(".hero-dots")).not.toBeNull();
-    expect(screen.getByText("1/3")).toBeInTheDocument();
-    // One dot button per item.
+    // One dot button per item; the first is active.
     expect(container.querySelectorAll(".hero-dot")).toHaveLength(3);
+    expect(container.querySelector(".hero-dot.is-active")).toBe(
+      container.querySelectorAll(".hero-dot")[0],
+    );
   });
 
   it("caps the rotation list at 6 items", () => {
@@ -135,7 +137,6 @@ describe("HeroSpotlight empty / single-item guards", () => {
     }));
     const { container } = render(<HeroSpotlight items={many} />);
     expect(container.querySelectorAll(".hero-dot")).toHaveLength(6);
-    expect(screen.getByText("1/6")).toBeInTheDocument();
   });
 
   it("prefers items over the singular item prop when both are given", () => {
@@ -161,7 +162,6 @@ describe("HeroSpotlight auto-advance", () => {
       vi.advanceTimersByTime(5000);
     });
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Bravo");
-    expect(screen.getByText("2/3")).toBeInTheDocument();
   });
 
   it("wraps back to the first item after the last", () => {
@@ -170,7 +170,6 @@ describe("HeroSpotlight auto-advance", () => {
       vi.advanceTimersByTime(3000);
     });
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Alpha");
-    expect(screen.getByText("1/3")).toBeInTheDocument();
   });
 
   it("does not auto-advance when there is only a single item", () => {
@@ -188,7 +187,6 @@ describe("HeroSpotlight dot navigation & hover pause", () => {
     const dots = container.querySelectorAll<HTMLButtonElement>(".hero-dot");
     fireEvent.click(dots[2]);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Charlie");
-    expect(screen.getByText("3/3")).toBeInTheDocument();
     expect(dots[2].className).toContain("is-active");
   });
 

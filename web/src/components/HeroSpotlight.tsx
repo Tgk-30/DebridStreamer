@@ -256,16 +256,15 @@ export function HeroSpotlight({
       </AnimatePresence>
 
       {list.length > 1 && (
-        <div className="hero-dots">
-          <span className="hero-dots-label">
-            {index + 1}/{list.length}
-          </span>
+        <div className="hero-dots" role="tablist" aria-label="Featured titles">
           {list.map((it, i) => (
             <button
               key={it.id}
               type="button"
+              role="tab"
+              aria-selected={i === index}
               className={"hero-dot" + (i === index ? " is-active" : "")}
-              aria-label={`Featured ${i + 1}`}
+              aria-label={`Featured ${i + 1} of ${list.length}`}
               onClick={() => setIndex(i)}
             />
           ))}
