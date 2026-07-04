@@ -27,6 +27,9 @@ async function fileToAvatarDataURL(file: File): Promise<string> {
       i.onerror = () => reject(new Error("Could not read image"));
       i.src = url;
     });
+    // A corrupt/empty image would yield a zero scale → a blank avatar; reject so
+    // the caller keeps the previous one instead of silently storing a blank.
+    if (!img.width || !img.height) throw new Error("Empty image");
     const size = 160;
     const canvas = document.createElement("canvas");
     canvas.width = size;

@@ -20,8 +20,11 @@ function remainingLabel(
   progressSeconds: number,
   durationSeconds: number | null | undefined,
 ): string | null {
-  if (durationSeconds == null || durationSeconds <= 0) return null;
-  const left = Math.max(0, Math.round((durationSeconds - progressSeconds) / 60));
+  if (durationSeconds == null || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return null;
+  }
+  const elapsed = Number.isFinite(progressSeconds) ? Math.max(0, progressSeconds) : 0;
+  const left = Math.max(0, Math.round((durationSeconds - elapsed) / 60));
   if (left <= 0) return null;
   if (left < 60) return `${left}m left`;
   const h = Math.floor(left / 60);
