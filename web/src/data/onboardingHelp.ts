@@ -164,3 +164,23 @@ export const AI_SIGNUP_ID: Record<string, string> = {
 export function signupUrl(id: string): string | null {
   return SIGNUP_LINKS.find((l) => l.id === id)?.url ?? null;
 }
+
+/** A "watch how to set this up" YouTube link per service. Deliberately a YouTube
+ *  SEARCH URL (not a single video id) so it always resolves to current, relevant
+ *  walkthroughs and can never 404 when a creator takes a video down. */
+export const SETUP_VIDEOS: Record<string, string> = {
+  tmdb: "https://www.youtube.com/results?search_query=how+to+get+a+tmdb+api+key",
+  omdb: "https://www.youtube.com/results?search_query=how+to+get+an+omdb+api+key",
+  torbox: "https://www.youtube.com/results?search_query=how+to+set+up+torbox+api",
+  realDebrid:
+    "https://www.youtube.com/results?search_query=how+to+set+up+real-debrid+api",
+  allDebrid:
+    "https://www.youtube.com/results?search_query=how+to+set+up+alldebrid+api",
+  premiumize:
+    "https://www.youtube.com/results?search_query=how+to+set+up+premiumize+api",
+};
+
+/** Look up a YouTube setup-walkthrough URL by id (e.g. "tmdb", "realDebrid"). */
+export function setupVideoUrl(id: string): string | null {
+  return SETUP_VIDEOS[id] ?? null;
+}

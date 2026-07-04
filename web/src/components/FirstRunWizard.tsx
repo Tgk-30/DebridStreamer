@@ -14,7 +14,13 @@ import { isTauri } from "../lib/tauri";
 import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
 import type { AppSettings, DebridTokenEntry } from "../data/settings";
-import { AI_SIGNUP_ID, CONCEPTS, DEBRID_SIGNUP_ID, signupUrl } from "../data/onboardingHelp";
+import {
+  AI_SIGNUP_ID,
+  CONCEPTS,
+  DEBRID_SIGNUP_ID,
+  setupVideoUrl,
+  signupUrl,
+} from "../data/onboardingHelp";
 import { testDebridToken, testOmdbKey, testTmdbKey } from "../lib/onboardingValidation";
 import { Icon, type IconName } from "./Icon";
 import "./FirstRunWizard.css";
@@ -355,6 +361,8 @@ function CatalogStep({
   const [error, setError] = useState<string | null>(null);
   const tmdbSignup = signupUrl("tmdb");
   const omdbSignup = signupUrl("omdb");
+  const tmdbVideo = setupVideoUrl("tmdb");
+  const omdbVideo = setupVideoUrl("omdb");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -422,16 +430,28 @@ function CatalogStep({
               autoFocus
             />
           </label>
-          {tmdbSignup != null && (
-            <a
-              className="server-setup-signup"
-              href={tmdbSignup}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Get a free TMDB key ↗
-            </a>
-          )}
+          <div className="first-run-links">
+            {tmdbSignup != null && (
+              <a
+                className="server-setup-signup"
+                href={tmdbSignup}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Get a free TMDB key ↗
+              </a>
+            )}
+            {tmdbVideo != null && (
+              <a
+                className="server-setup-signup first-run-video"
+                href={tmdbVideo}
+                target="_blank"
+                rel="noreferrer"
+              >
+                ▶ Watch setup guide
+              </a>
+            )}
+          </div>
 
           <label className="first-run-field first-run-field-optional">
             <span className="first-run-field-label">
@@ -446,16 +466,28 @@ function CatalogStep({
               spellCheck={false}
             />
           </label>
-          {omdbSignup != null && (
-            <a
-              className="server-setup-signup"
-              href={omdbSignup}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Get a free OMDb key ↗
-            </a>
-          )}
+          <div className="first-run-links">
+            {omdbSignup != null && (
+              <a
+                className="server-setup-signup"
+                href={omdbSignup}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Get a free OMDb key ↗
+              </a>
+            )}
+            {omdbVideo != null && (
+              <a
+                className="server-setup-signup first-run-video"
+                href={omdbVideo}
+                target="_blank"
+                rel="noreferrer"
+              >
+                ▶ Watch setup guide
+              </a>
+            )}
+          </div>
           <p className="first-run-hint">
             OMDb adds IMDb &amp; Rotten Tomatoes ratings. The free tier (1,000
             lookups/day) suits most homes; an OMDb Patreon plan raises the limit
@@ -520,6 +552,7 @@ function StreamingStep({
   const [unverifiedOk, setUnverifiedOk] = useState(false);
 
   const signup = signupUrl(DEBRID_SIGNUP_ID[service] ?? "");
+  const setupVideo = setupVideoUrl(DEBRID_SIGNUP_ID[service] ?? "");
 
   // A failed check only vouches for the exact service+token it ran against —
   // any edit hides the save-without-testing hatch until the user tests again.
@@ -601,6 +634,16 @@ function StreamingStep({
                 rel="noreferrer"
               >
                 Get a {DebridServiceType.displayName(service)} token ↗
+              </a>
+            )}
+            {setupVideo != null && (
+              <a
+                className="server-setup-signup first-run-video"
+                href={setupVideo}
+                target="_blank"
+                rel="noreferrer"
+              >
+                ▶ Watch setup guide
               </a>
             )}
           </div>
