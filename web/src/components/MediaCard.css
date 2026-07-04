@@ -63,31 +63,36 @@
    Top-10 signature. The card gains left room; the poster keeps its z-order on
    top so the number reads as sitting behind it. */
 .media-card.is-ranked {
-  padding-left: calc(var(--poster-w) * 0.46);
+  padding-left: calc(var(--poster-w) * 0.56);
   overflow: visible;
 }
 .media-card-rank {
   position: absolute;
   left: 0;
-  /* Overlay exactly the POSTER's vertical span (card padding + 2:3 height) and
-     bottom-align the numeral to the poster's bottom edge, so it sits BESIDE the
-     poster and never crosses the title/meta text below it. */
+  /* Overlay the POSTER's vertical band and CENTER the numeral within it, then
+     CLIP to that band (block axis only) so a large glyph can NEVER bulge above
+     the poster or spill below into the title — only its left overhang shows. */
   top: var(--sp-sm);
   height: calc(var(--poster-w) * 1.5);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: flex-start;
+  overflow-x: visible;
+  overflow-y: clip;
   z-index: 0;
   font-family: var(--font-display, ui-sans-serif, system-ui, sans-serif);
   font-weight: 800;
-  font-size: calc(var(--poster-w) * 0.86);
-  line-height: 0.66;
-  letter-spacing: -0.06em;
+  /* Apple TV-scale: the numeral fills most of the poster height, with the poster
+     overlapping its right half. */
+  font-size: calc(var(--poster-w) * 1.62);
+  line-height: 1;
+  letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
-  /* Apple TV-style: a SOLID light-silver numeral (not an outline), sitting
-     behind the poster's left edge with a soft shadow for separation. */
+  /* Solid light-silver fill (not an outline), sitting behind the poster's left
+     edge with a soft shadow for separation. */
   color: rgba(240, 242, 250, 0.92);
   -webkit-text-stroke: 0;
-  text-shadow: 0 6px 22px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 8px 26px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.45);
   pointer-events: none;
   user-select: none;
 }
