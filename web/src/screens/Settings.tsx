@@ -43,6 +43,7 @@ import type {
   AppearanceHeroScale,
   AppearanceMotion,
   AppearanceNavLabels,
+  AppearanceNavPosition,
   AppearanceNavTint,
   AppearancePanelContrast,
   AppearancePosterSize,
@@ -3492,6 +3493,19 @@ function AppearanceTab({
           ]}
           onChange={(value) =>
             applyAppearance({ appearanceNavLabels: value as AppearanceNavLabels })
+          }
+        />
+        <SegmentedControl
+          label="Nav position"
+          value={draft.appearanceNavPosition}
+          options={[
+            { value: "side", label: "Side rail" },
+            { value: "bottom", label: "Bottom bar" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({
+              appearanceNavPosition: value as AppearanceNavPosition,
+            })
           }
         />
         <SegmentedControl

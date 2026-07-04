@@ -160,6 +160,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     appearanceHeroScale: "standard",
     appearancePanelContrast: "standard",
     appearanceNavLabels: "auto",
+    appearanceNavPosition: "side",
     appearanceNavTint: "balanced",
     appearancePosterSize: "default",
     subtitleFontScale: 1,
@@ -178,6 +179,8 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     transcode: false,
     ratingScale: "ten",
     preferredExternalPlayer: "",
+    userName: "",
+    userAvatar: "",
     ...overrides,
   };
 }

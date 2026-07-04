@@ -1,23 +1,50 @@
 /* NavRail — breakpoint-specific primary navigation. */
 
+/* Floating glass rail (Apple TV-style): a detached, rounded panel that hovers
+   over full-bleed content. Its backdrop-filter frosts whatever scrolls behind it
+   — most visibly the hero banner — so the rail reads as a translucent reflection
+   of the content rather than a solid gutter. Mobile overrides this to a bottom
+   pill bar further down. */
 .nav-rail {
-  position: relative;
-  z-index: 2;
+  position: fixed;
+  top: var(--nav-gap, 14px);
+  left: var(--nav-gap, 14px);
+  bottom: var(--nav-gap, 14px);
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: var(--sp-md);
   width: var(--nav-rail-width, 96px);
-  flex: 0 0 var(--nav-rail-width, 96px);
-  padding: 30px var(--sp-sm) var(--sp-lg);
-  height: 100vh;
-  background: var(--nav-rail-bg);
-  border-right: 1px solid var(--nav-rail-border);
+  padding: 26px var(--sp-sm) var(--sp-lg);
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid var(--nav-rail-glass-border, rgba(255, 255, 255, 0.14));
+  /* Theme-adaptive translucency: dark base in Aurora/Midnight, light in Daybreak,
+     kept low-opacity so the frosted hero banner reads through it. The strong blur
+     + saturate turns whatever scrolls behind (hero, rails) into a soft reflection.
+     WKWebView applies the -webkit- form; modern engines the unprefixed one. */
+  background: color-mix(in srgb, var(--bg-1) 30%, transparent);
   box-shadow:
-    inset -1px 0 0 rgba(0, 0, 0, 0.14),
-    inset 1px 0 0 var(--nav-rail-highlight);
-  backdrop-filter: blur(18px) saturate(1.2);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    0 34px 70px -26px rgba(0, 0, 0, 0.66),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(44px) saturate(1.7);
+  -webkit-backdrop-filter: blur(44px) saturate(1.7);
+}
+
+/* A soft top-down sheen so the glass catches light like the Apple TV rail. */
+.nav-rail::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0) 26%
+  );
 }
 
 .nav-rail-section {
@@ -121,18 +148,7 @@
   stroke-width: 0;
 }
 
-.nav-rail-btn.is-selected::before {
-  content: "";
-  position: absolute;
-  left: -5px;
-  top: 12px;
-  bottom: 12px;
-  width: 3px;
-  border-radius: var(--r-pill);
-  background: linear-gradient(180deg, var(--accent), var(--accent-secondary));
-  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.52);
-}
-
+/* The selected state reads from the filled pill alone — no accent side-bar. */
 .nav-rail-more,
 .nav-rail-more-scrim,
 .nav-rail-more-sheet {
@@ -180,12 +196,6 @@
   .nav-rail-btn svg {
     width: 22px;
     height: 22px;
-  }
-
-  .nav-rail-btn.is-selected::before {
-    left: -6px;
-    top: 10px;
-    bottom: 10px;
   }
 
   .nav-rail-label {
@@ -277,6 +287,7 @@
 @media (max-width: 699px), (max-width: 950px) and (max-height: 500px) {
   .nav-rail {
     position: fixed;
+    top: auto;
     left: 50%;
     right: auto;
     bottom: var(--mobile-nav-bottom);
@@ -593,5 +604,126 @@
 
   .nav-rail-label {
     font-size: 9px;
+  }
+}
+
+/* ── Desktop "bottom bar" layout (appearance → nav position) ──────────────────
+   Reflows the side rail into a centered floating horizontal bar at the bottom of
+   the window. Mobile already uses a bottom bar via the max-width query above, so
+   this only needs the desktop range. --nav-safe-left is zeroed in App.css so the
+   content bleeds full-width with no left gutter. */
+@media (min-width: 700px) {
+  :root[data-nav-position="bottom"] .nav-rail {
+    position: fixed;
+    top: auto;
+    left: 50%;
+    right: auto;
+    bottom: var(--nav-gap, 14px);
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: auto;
+    max-width: calc(100vw - 2 * var(--nav-gap, 14px));
+    height: auto;
+    padding: 8px 12px;
+    border-radius: var(--r-pill, 999px);
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: none;
+    transform: translateX(-50%);
+  }
+  :root[data-nav-position="bottom"] .nav-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  :root[data-nav-position="bottom"] .nav-rail-section {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+  }
+  :root[data-nav-position="bottom"] .nav-rail-section[data-group="Account"] {
+    margin-top: 0;
+    margin-left: 6px;
+    padding-left: 8px;
+    border-left: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  }
+  :root[data-nav-position="bottom"] .nav-rail-group-label {
+    display: none;
+  }
+
+  :root[data-nav-position="bottom"] .nav-rail-btn {
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 0 15px;
+    border-radius: var(--r-pill, 999px);
+    white-space: nowrap;
+  }
+  :root[data-nav-position="bottom"] .nav-rail-label {
+    font-size: 13px;
+  }
+  /* Icons-only in the bar when labels are set to "icons". */
+  :root[data-nav-position="bottom"][data-nav-labels="icons"] .nav-rail-btn {
+    padding: 0 11px;
+  }
+}
+
+/* ── Collapsible side rail (#2) ───────────────────────────────────────────────
+   A small toggle at the top of the rail shrinks it to icons only. The collapsed
+   state is reflected as :root[data-nav-collapsed] so the width var (App.css) and
+   the content inset track it. Desktop side-rail only. */
+.nav-rail-collapse {
+  align-self: flex-end;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: -6px -2px 0 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.16s, color 0.16s;
+}
+.nav-rail-collapse:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+.nav-rail-collapse-glyph {
+  transform: translateY(-1px);
+}
+
+@media (min-width: 700px) {
+  :root[data-nav-collapsed="true"] .nav-rail-group-label,
+  :root[data-nav-collapsed="true"] .nav-rail-label {
+    display: none;
+  }
+  :root[data-nav-collapsed="true"] .nav-rail-btn {
+    flex-direction: column;
+    justify-content: center;
+    gap: 0;
+    padding-inline: var(--sp-xs);
+  }
+  :root[data-nav-collapsed="true"] .nav-rail-collapse {
+    align-self: center;
+    margin-right: 0;
+  }
+}
+
+/* The collapse control is only meaningful on the desktop side rail. */
+:root[data-nav-position="bottom"] .nav-rail-collapse {
+  display: none;
+}
+@media (max-width: 699px), (max-width: 950px) and (max-height: 500px) {
+  .nav-rail-collapse {
+    display: none;
   }
 }

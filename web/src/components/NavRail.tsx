@@ -3,7 +3,7 @@
 // Breakpoint-aware primary navigation: compact rail on tablets, labeled rail on
 // wide desktop, and a five-item bottom bar on phones with a More drawer.
 
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { Icon, type IconName } from "./Icon";
 import { isServerMode } from "../lib/serverMode";
 import { useSimpleMode } from "../store/AppStore";
@@ -118,8 +118,33 @@ function initialOf(name: string): string {
   return trimmed.length > 0 ? trimmed[0]!.toUpperCase() : "?";
 }
 
+const NAV_COLLAPSED_KEY = "ds_nav_collapsed";
+
 export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  // Collapsed (icons-only) side rail — an ephemeral UI preference persisted to
+  // localStorage. Reflected on the root so the layout var + content inset track.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return globalThis.localStorage?.getItem(NAV_COLLAPSED_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  useLayoutEffect(() => {
+    document.documentElement.dataset.navCollapsed = collapsed ? "true" : "false";
+  }, [collapsed]);
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        globalThis.localStorage?.setItem(NAV_COLLAPSED_KEY, next ? "true" : "false");
+      } catch {
+        /* non-persistent is fine */
+      }
+      return next;
+    });
+  };
   const serverMode = isServerMode();
   const simpleMode = useSimpleMode();
   const session = useServerSession();
@@ -147,6 +172,20 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
 
   return (
     <nav className="nav-rail" aria-label="Primary">
+      <button
+        type="button"
+        className="nav-rail-collapse"
+        data-mobile="false"
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+        aria-pressed={collapsed}
+        title={collapsed ? "Expand" : "Collapse"}
+      >
+        <span className="nav-rail-collapse-glyph" aria-hidden>
+          {collapsed ? "»" : "«"}
+        </span>
+      </button>
+
       {moreOpen && (
         <button
           type="button"

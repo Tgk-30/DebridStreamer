@@ -19,6 +19,17 @@ initInstallPromptCapture();
 // <a target="_blank"> is otherwise swallowed by the desktop webview).
 installExternalLinkHandler();
 
+// Apply the persisted collapsed-nav state BEFORE first paint so a collapsed rail
+// doesn't render expanded and snap shut once React mounts. NavRail keeps it in
+// sync afterward via its own layout effect.
+try {
+  if (localStorage.getItem("ds_nav_collapsed") === "true") {
+    document.documentElement.dataset.navCollapsed = "true";
+  }
+} catch {
+  /* no localStorage (SSR/private mode) — NavRail's effect still applies it */
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {/* Honor OS "Reduce Motion" across the JS/motion layer too (the CSS layer is

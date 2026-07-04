@@ -2,7 +2,7 @@
 
 .browse {
   position: fixed;
-  inset: 0 0 0 var(--nav-rail-width, 96px);
+  inset: 0 0 0 var(--nav-safe-left, 96px);
   /* Below Detail (z-index 20) so a Detail opened from Browse layers on top,
    * above the base content + global search. */
   z-index: 18;

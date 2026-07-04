@@ -3,7 +3,8 @@
 .global-search {
   position: absolute;
   top: var(--sp-md);
-  right: var(--sp-lg);
+  /* Leave room on the right for the floating profile avatar (44px + gap). */
+  right: calc(var(--sp-lg) + 44px + var(--sp-md));
   z-index: 5;
   border-radius: var(--r-pill);
   width: 320px;

@@ -40,6 +40,7 @@ const TOUR_STEPS: TourStep[] = [
 ];
 const TOUR_SEEN_KEY = "ds_tour_seen";
 import { GlobalSearch } from "./components/GlobalSearch";
+import { ProfileMenu } from "./components/ProfileMenu";
 import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { InstallPrompt, isInstallPromptEligible } from "./components/InstallPrompt";
@@ -446,6 +447,12 @@ export function App() {
 
       <main className="app-content">
         {showsGlobalSearch && <GlobalSearch onSubmit={search} />}
+        {showsGlobalSearch && (
+          <ProfileMenu
+            onSwitchProfile={() => setProfilePickerOpen(true)}
+            showSwitch={isServerMode()}
+          />
+        )}
 
         {/* Route transition: a keyed frame that plays a CSS enter animation on
             each navigation. The `key={route}` remounts this div on every route
