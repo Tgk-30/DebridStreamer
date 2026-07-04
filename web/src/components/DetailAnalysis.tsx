@@ -1,7 +1,7 @@
-// DetailAnalysis — the AI "Would I Like This?" card on the Detail screen.
+// DetailAnalysis — the AI "Will I Like This?" card on the Detail screen.
 //
 // Shown only when an AI provider is configured (the parent gates on it). It
-// offers a single "Would I like this?" button; on click it builds the user's
+// offers a single "Will I like this?" button; on click it builds the user's
 // taste-profile context, calls provider.analyzeTitle(...), and renders a
 // verdict-tinted glass card: a big predicted X/10, a verdict pill, the
 // personalized blurb, and 2-4 bullet reasons. Loading + error states are inline.
@@ -129,7 +129,7 @@ export function DetailAnalysis({ item, provider }: DetailAnalysisProps) {
                 <span className="detail-analysis-score-den">/10</span>
               </div>
               <div className="detail-analysis-headtext">
-                <span className="detail-analysis-eyebrow">Would I like this?</span>
+                <span className="detail-analysis-eyebrow">Will I like this?</span>
                 <span className="detail-analysis-verdict">
                   {VERDICT_LABEL[analysis.verdict]}
                 </span>
@@ -201,7 +201,7 @@ export function DetailAnalysis({ item, provider }: DetailAnalysisProps) {
             exit={{ opacity: 0 }}
           >
             <Icon name="sparkles" size={15} className="t-accent" />
-            Would I like this?
+            Will I like this?
           </motion.button>
         )}
       </AnimatePresence>
