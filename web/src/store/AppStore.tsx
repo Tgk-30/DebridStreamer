@@ -29,9 +29,11 @@ import type { BrowseContext } from "../data/browse";
 import {
   type AppServices,
   type AppSettings,
+  applyDesignRefresh,
   buildServices,
   loadSettings,
   loadSettingsFromStore,
+  markDesignRefreshApplied,
   saveSettingsToStore,
 } from "../data/settings";
 import {
@@ -156,7 +158,19 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         getStore().listCachedResolutions().catch(() => []),
       ]);
       if (cancelled) return;
-      setSettings(loadedSettings);
+      // One-time premium-redesign refresh: adopt the spacious appearance
+      // defaults for installs that predate it (no-op after it has run once).
+      // Mark it applied ONLY after a successful persist, so a failed Store write
+      // retries next load instead of leaving the reset marked-done-but-lost.
+      const refreshedSettings = applyDesignRefresh(loadedSettings);
+      setSettings(refreshedSettings);
+      if (refreshedSettings !== loadedSettings) {
+        void saveSettingsToStore(refreshedSettings)
+          .then(() => markDesignRefreshApplied())
+          .catch(() => {
+            /* leave the marker unset so the refresh retries next load */
+          });
+      }
       setWatchlist(wl);
       setHistory(hist);
       setContinueWatching(cw);

@@ -363,15 +363,15 @@ export function defaultSettings(): AppSettings {
     appearanceDensity: "comfortable",
     appearanceTextSize: "m",
     appearanceMotion: "system",
-    appearanceRadius: "default",
+    appearanceRadius: "round",
     appearanceBlur: 18,
     appearanceChrome: "balanced",
     appearanceBackdrop: "ambient",
-    appearanceHeroScale: "standard",
+    appearanceHeroScale: "cinematic",
     appearancePanelContrast: "standard",
     appearanceNavLabels: "auto",
     appearanceNavTint: "balanced",
-    appearancePosterSize: "default",
+    appearancePosterSize: "large",
     subtitleFontScale: 1,
     subtitleTextColor: "#ffffff",
     subtitleBgOpacity: 0.55,
@@ -439,6 +439,69 @@ export function loadSettings(): AppSettings {
   } catch {
     return base;
   }
+}
+
+/** Per-device marker for the one-time premium-redesign appearance refresh. Bump
+ * the VERSION to re-run it on a future redesign. */
+const DESIGN_REFRESH_KEY = "ds_design_refresh";
+const DESIGN_REFRESH_VERSION = "2026-07-premium";
+
+/** True while the one-time design refresh is still pending on this device.
+ * False once it has been applied+persisted, or when localStorage is unavailable
+ * (we can't track once-only there, so we skip rather than re-apply every load —
+ * SSR / private-mode / tests). */
+function isDesignRefreshPending(): boolean {
+  try {
+    const store = globalThis.localStorage;
+    if (!store) return false;
+    return store.getItem(DESIGN_REFRESH_KEY) !== DESIGN_REFRESH_VERSION;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Record that the design refresh has been applied AND durably persisted, so it
+ * never runs again on this device. Call this ONLY after the refreshed settings
+ * have been successfully written to the Store — that ordering is what makes a
+ * failed Store write retry on the next load instead of being lost forever (the
+ * reset is idempotent, so at worst a re-apply is a no-op).
+ */
+export function markDesignRefreshApplied(): void {
+  try {
+    globalThis.localStorage?.setItem(DESIGN_REFRESH_KEY, DESIGN_REFRESH_VERSION);
+  } catch {
+    /* best-effort: if we can't record the marker, the refresh re-applies next
+       load — idempotent, so harmless. */
+  }
+}
+
+/**
+ * One-time redesign refresh: adopt the premium *spatial* appearance defaults
+ * (spacing, text size, corner radius, hero scale, poster size, backdrop) for
+ * installs that predate the redesign, so the new look isn't hidden behind a
+ * saved "compact/small/sharp" profile. Deliberately narrow — it never touches
+ * theme, accent, motion, keys, debrid, or sources, and is fully reversible via
+ * Settings → Appearance. A no-op on fresh installs (their values already equal
+ * the defaults) and once the refresh has been marked applied.
+ *
+ * Does NOT record completion — the caller marks it via markDesignRefreshApplied()
+ * only after the result is durably persisted, so a failed persist retries next
+ * load instead of losing the redesign. Returns the same reference when nothing
+ * changes, so callers can skip a redundant persist with an identity check.
+ */
+export function applyDesignRefresh(loaded: AppSettings): AppSettings {
+  if (!isDesignRefreshPending()) return loaded;
+  const d = defaultSettings();
+  return {
+    ...loaded,
+    appearanceDensity: d.appearanceDensity,
+    appearanceTextSize: d.appearanceTextSize,
+    appearanceRadius: d.appearanceRadius,
+    appearanceHeroScale: d.appearanceHeroScale,
+    appearancePosterSize: d.appearancePosterSize,
+    appearanceBackdrop: d.appearanceBackdrop,
+  };
 }
 
 /** Parse the RAW legacy localStorage blob WITHOUT merging env/defaults, so a
