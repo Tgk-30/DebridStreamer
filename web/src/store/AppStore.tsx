@@ -171,6 +171,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             /* leave the marker unset so the refresh retries next load */
           });
       }
+      // Land on the user's chosen default tab. Only here, on first hydration —
+      // the app is still gated behind the wizard/hydration, so this can't stomp
+      // a mid-session navigation. If the chosen tab is hidden under the active
+      // modes, App's redirect effect sends it back to Discover.
+      if (refreshedSettings.appearanceDefaultTab !== "discover") {
+        setRoute(refreshedSettings.appearanceDefaultTab);
+      }
       setWatchlist(wl);
       setHistory(hist);
       setContinueWatching(cw);
