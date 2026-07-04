@@ -6,6 +6,10 @@
 import { useEffect, useRef, useState } from "react";
 import "./RatingControl.css";
 
+// A single five-pointed star path, filled via `currentColor`.
+const STAR_PATH =
+  "M12 2l2.9 6.26 6.6.62-4.9 4.42 1.42 6.68L12 17.9 5.98 20l1.42-6.68L2.5 8.88l6.6-.62L12 2z";
+
 export function RatingControl({
   scale,
   value,
@@ -70,17 +74,24 @@ function TenScale({
     if (next !== cur) onRate(next);
   }
 
+  // Hovering previews the score you'd give; leaving reverts to the saved value.
+  const [hover, setHover] = useState<number | null>(null);
+  const shown = hover ?? value ?? 0;
+
   return (
     <div
-      className="rating-ten"
+      className="rating-stars"
       role="radiogroup"
       aria-label="Rate out of 10"
       onKeyDown={onKeyDown}
+      onMouseLeave={() => setHover(null)}
     >
       {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
         const checked = value === n;
-        // One tab stop: the selected pip, or pip 1 when nothing is chosen yet.
+        // One tab stop: the selected star, or star 1 when nothing is chosen yet.
         const tabbable = checked || (value == null && n === 1);
+        const filled = n <= shown;
+        const previewing = hover != null && n <= hover;
         return (
           <button
             key={n}
@@ -89,14 +100,23 @@ function TenScale({
             aria-checked={checked}
             aria-label={`${n} out of 10`}
             tabIndex={tabbable ? 0 : -1}
-            className={"rating-pip" + (value != null && n <= value ? " is-on" : "")}
+            className={
+              "rating-star" +
+              (filled ? " is-on" : "") +
+              (previewing ? " is-preview" : "")
+            }
             onClick={() => onRate(n)}
+            onMouseEnter={() => setHover(n)}
           >
-            {n}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d={STAR_PATH} />
+            </svg>
           </button>
         );
       })}
-      <span className="rating-readout">{value != null ? `${value}/10` : ""}</span>
+      <span className="rating-readout" aria-hidden="true">
+        {shown > 0 ? `${shown}/10` : ""}
+      </span>
     </div>
   );
 }

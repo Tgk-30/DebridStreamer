@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { RatingControl } from "./RatingControl";
 
-describe("RatingControl — 1–10 pips", () => {
-  it("exposes radio semantics with one checked pip and one tab stop", () => {
+describe("RatingControl — 1–10 stars", () => {
+  it("exposes radio semantics with one checked star and one tab stop", () => {
     render(<RatingControl scale="ten" value={7} onRate={() => {}} />);
     const group = screen.getByRole("radiogroup", { name: "Rate out of 10" });
     expect(group).toBeTruthy();
