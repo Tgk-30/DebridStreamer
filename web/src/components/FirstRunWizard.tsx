@@ -362,7 +362,7 @@ function CatalogStep({
     const o = omdb.trim();
     if (t.length === 0 && o.length === 0) {
       setError(
-        "Enter your TMDB API key to continue — it powers search, artwork, and banners. OMDb is optional.",
+        "Add a catalog key to continue — TMDB (free) powers browsing, artwork & banners; OMDb adds richer ratings. Either one unlocks the app.",
       );
       return;
     }
@@ -404,8 +404,12 @@ function CatalogStep({
     <div className="first-run">
       <div className="first-run-card">
         <DeviceProgress active={1} />
-        <h1 className="first-run-title">Power up search &amp; artwork</h1>
-        <p className="first-run-sub">{CONCEPTS.tmdb.blurb}</p>
+        <h1 className="first-run-title">Connect your catalog</h1>
+        <p className="first-run-sub">
+          Add a <b>TMDB</b> key for browsing, artwork &amp; banners, an <b>OMDb</b>{" "}
+          key for richer IMDb / Rotten Tomatoes ratings, or both. Either one is
+          enough to get started — both are free.
+        </p>
         <form className="first-run-form" onSubmit={submit}>
           <label className="first-run-field">
             TMDB API key
