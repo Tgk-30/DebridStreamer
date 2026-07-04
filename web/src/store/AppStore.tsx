@@ -29,6 +29,7 @@ import type { BrowseContext } from "../data/browse";
 import {
   type AppServices,
   type AppSettings,
+  applyDesignRefresh,
   buildServices,
   loadSettings,
   loadSettingsFromStore,
@@ -156,7 +157,15 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         getStore().listCachedResolutions().catch(() => []),
       ]);
       if (cancelled) return;
-      setSettings(loadedSettings);
+      // One-time premium-redesign refresh: adopt the spacious appearance
+      // defaults for installs that predate it (no-op after it has run once).
+      const refreshedSettings = applyDesignRefresh(loadedSettings);
+      setSettings(refreshedSettings);
+      if (refreshedSettings !== loadedSettings) {
+        void saveSettingsToStore(refreshedSettings).catch(() => {
+          /* best-effort: the in-memory refresh still applies this session */
+        });
+      }
       setWatchlist(wl);
       setHistory(hist);
       setContinueWatching(cw);

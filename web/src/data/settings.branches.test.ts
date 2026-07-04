@@ -89,6 +89,7 @@ vi.mock("../lib/serverMode", () => ({
 // ---- Import under test (after mocks) ----------------------------------------
 
 import {
+  applyDesignRefresh,
   defaultSettings,
   loadSettingsFromStore,
   saveSettingsToStore,
@@ -573,5 +574,67 @@ describe("buildServices — Server Mode", () => {
   it("still honors a user-provided OMDb key in Server Mode (BYOK precedence)", () => {
     const svc = buildServices(settingsWith({ omdbKey: "BYOK" }));
     expect(svc.omdb).not.toBeNull();
+  });
+});
+
+// ---- One-time premium-redesign appearance refresh ---------------------------
+
+describe("applyDesignRefresh", () => {
+  function stubLocalStorage(): Map<string, string> {
+    const m = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => (m.has(k) ? m.get(k)! : null),
+      setItem: (k: string, v: string) => void m.set(k, v),
+      removeItem: (k: string) => void m.delete(k),
+    });
+    return m;
+  }
+
+  it("adopts the premium spatial defaults on first run, once", () => {
+    stubLocalStorage();
+    const cramped = settingsWith({
+      appearanceDensity: "compact",
+      appearanceTextSize: "s",
+      appearanceRadius: "sharp",
+      appearanceHeroScale: "compact",
+      appearancePosterSize: "compact",
+      appearanceBackdrop: "plain",
+    });
+
+    const refreshed = applyDesignRefresh(cramped);
+    const d = defaultSettings();
+    expect(refreshed.appearanceDensity).toBe(d.appearanceDensity);
+    expect(refreshed.appearanceRadius).toBe(d.appearanceRadius);
+    expect(refreshed.appearanceHeroScale).toBe(d.appearanceHeroScale);
+    expect(refreshed.appearancePosterSize).toBe(d.appearancePosterSize);
+    expect(refreshed.appearanceBackdrop).toBe(d.appearanceBackdrop);
+
+    // Second run is a no-op (same reference back) — never resets twice.
+    const again = applyDesignRefresh(
+      settingsWith({ appearanceRadius: "sharp" }),
+    );
+    expect(again.appearanceRadius).toBe("sharp");
+  });
+
+  it("never touches theme, accent, keys, or debrid tokens", () => {
+    stubLocalStorage();
+    const input = settingsWith({
+      theme: "light",
+      appearanceAccent: "amber",
+      omdbKey: "SECRET",
+      appearanceDensity: "compact",
+    });
+    const out = applyDesignRefresh(input);
+    expect(out.theme).toBe("light");
+    expect(out.appearanceAccent).toBe("amber");
+    expect(out.omdbKey).toBe("SECRET");
+    // ...but the spatial lever was still refreshed.
+    expect(out.appearanceDensity).toBe(defaultSettings().appearanceDensity);
+  });
+
+  it("is a safe no-op when localStorage is unavailable", () => {
+    vi.stubGlobal("localStorage", undefined);
+    const input = settingsWith({ appearanceRadius: "sharp" });
+    expect(applyDesignRefresh(input)).toBe(input);
   });
 });

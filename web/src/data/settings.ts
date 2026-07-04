@@ -441,6 +441,46 @@ export function loadSettings(): AppSettings {
   }
 }
 
+/** Per-device marker for the one-time premium-redesign appearance refresh. Bump
+ * the VERSION to re-run it on a future redesign. */
+const DESIGN_REFRESH_KEY = "ds_design_refresh";
+const DESIGN_REFRESH_VERSION = "2026-07-premium";
+
+/**
+ * One-time redesign refresh: adopt the premium *spatial* appearance defaults
+ * (spacing, text size, corner radius, hero scale, poster size, backdrop) for
+ * installs that predate the redesign, so the new look isn't hidden behind a
+ * saved "compact/small/sharp" profile. Deliberately narrow — it never touches
+ * theme, accent, motion, keys, debrid, or sources, and is fully reversible via
+ * Settings → Appearance. Runs once per device (keyed on VERSION); a no-op on
+ * fresh installs (their values already equal the defaults).
+ *
+ * Returns the same reference when it has already run, so callers can skip a
+ * redundant persist with an identity check.
+ */
+export function applyDesignRefresh(loaded: AppSettings): AppSettings {
+  try {
+    const store = globalThis.localStorage;
+    // No durable storage means we can't record that the refresh ran — skip it
+    // rather than re-apply on every load (SSR / private-mode / tests).
+    if (!store) return loaded;
+    if (store.getItem(DESIGN_REFRESH_KEY) === DESIGN_REFRESH_VERSION) return loaded;
+    store.setItem(DESIGN_REFRESH_KEY, DESIGN_REFRESH_VERSION);
+    const d = defaultSettings();
+    return {
+      ...loaded,
+      appearanceDensity: d.appearanceDensity,
+      appearanceTextSize: d.appearanceTextSize,
+      appearanceRadius: d.appearanceRadius,
+      appearanceHeroScale: d.appearanceHeroScale,
+      appearancePosterSize: d.appearancePosterSize,
+      appearanceBackdrop: d.appearanceBackdrop,
+    };
+  } catch {
+    return loaded;
+  }
+}
+
 /** Parse the RAW legacy localStorage blob WITHOUT merging env/defaults, so a
  * migration decision keyed on "does the legacy still hold secrets" can't be
  * fooled by build-time VITE_* default keys. Returns null when absent/unparseable. */
