@@ -8,19 +8,28 @@
   /* clear the floating top-right global search field */
   padding-top: 64px;
   max-width: 1440px;
-  /* Centered column so wide displays don't strand a one-sided gutter. */
-  margin-inline: auto;
+  /* Left-aligned beside the floating rail (not centered) so the full-bleed hero
+     can reach the true window edge with a deterministic breakout. */
+  margin-inline: 0;
 }
 
-/* Full-bleed cinematic billboard: the hero breaks out of the column padding and
-   reaches the top, with a flat top + gently rounded bottom that feathers into
-   the page — a window into the title, not a card on a page. Desktop only;
-   mobile keeps the inset card (it reads better in a narrow column). */
+/* Full-bleed cinematic billboard: the hero breaks out of the column padding AND
+   the rail's reserved gutter, spanning the whole window — including *behind* the
+   floating glass rail, which frosts it into a translucent reflection. Flat top,
+   rounded bottom. Desktop only; mobile keeps the inset card. */
 @media (min-width: 768px) {
   .discover > .hero {
-    margin: calc(-1 * 64px) calc(-1 * var(--sp-xl)) 0;
+    margin: calc(-1 * 64px) calc(-1 * var(--sp-xl)) 0
+      calc(-1 * (var(--sp-xl) + var(--nav-safe-left)));
     border-radius: 0 0 var(--r-lg) var(--r-lg);
     box-shadow: 0 24px 48px -28px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Keep the hero's title/actions clear of the rail on the left edge. */
+  .discover > .hero .hero-content {
+    padding-left: calc(
+      var(--nav-safe-left) + clamp(var(--sp-lg), 1.8vw, var(--sp-xl))
+    );
   }
 }
 

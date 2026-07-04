@@ -4,7 +4,9 @@
  * fully covers the screen behind it regardless of the underlying scroll. */
 .detail {
   position: fixed;
-  inset: 0 0 0 var(--nav-rail-width, 78px);
+  /* Sit to the right of the floating glass rail (which stays visible + frosts
+     the page behind it), not flush against the window edge. */
+  inset: 0 0 0 var(--nav-safe-left, 78px);
   z-index: 20;
   overflow-y: auto;
   scroll-padding-top: var(--sp-xl);
