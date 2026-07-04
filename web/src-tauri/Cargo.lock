@@ -771,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "debridstreamer"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "getrandom 0.2.17",
  "keyring",
