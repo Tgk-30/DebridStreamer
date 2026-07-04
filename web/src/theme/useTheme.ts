@@ -26,6 +26,7 @@ export function useTheme(settings: AppSettings): void {
     root.dataset.heroScale = settings.appearanceHeroScale;
     root.dataset.panelContrast = settings.appearancePanelContrast;
     root.dataset.navLabels = settings.appearanceNavLabels;
+    root.dataset.navPosition = settings.appearanceNavPosition;
     root.dataset.navTint = settings.appearanceNavTint;
     root.dataset.posterSize = settings.appearancePosterSize;
 

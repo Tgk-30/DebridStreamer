@@ -84,6 +84,7 @@ const SettingsKeys = {
   appearanceHeroScale: "appearance_hero_scale",
   appearancePanelContrast: "appearance_panel_contrast",
   appearanceNavLabels: "appearance_nav_labels",
+  appearanceNavPosition: "appearance_nav_position",
   appearanceNavTint: "appearance_nav_tint",
   appearancePosterSize: "appearance_poster_size",
   subtitleFontScale: "subtitle_font_scale",
@@ -102,6 +103,8 @@ const SettingsKeys = {
   transcode: "transcode",
   ratingScale: "rating_scale",
   preferredExternalPlayer: "preferred_external_player",
+  userName: "user_name",
+  userAvatar: "user_avatar",
 } as const;
 
 /** Marker written into the KV table for secret-valued keys; the real value
@@ -154,6 +157,7 @@ export type AppearanceBackdrop = "ambient" | "subtle" | "plain";
 export type AppearanceHeroScale = "compact" | "standard" | "cinematic";
 export type AppearancePanelContrast = "soft" | "standard" | "high";
 export type AppearanceNavLabels = "auto" | "labels" | "icons";
+export type AppearanceNavPosition = "side" | "bottom";
 export type AppearanceNavTint = "airy" | "balanced" | "solid";
 export type AppearancePosterSize = "compact" | "default" | "large";
 
@@ -194,6 +198,8 @@ export interface AppSettings {
   appearanceHeroScale: AppearanceHeroScale;
   appearancePanelContrast: AppearancePanelContrast;
   appearanceNavLabels: AppearanceNavLabels;
+  /** Desktop nav placement: side rail (default) or a bottom bar. */
+  appearanceNavPosition: AppearanceNavPosition;
   appearanceNavTint: AppearanceNavTint;
   appearancePosterSize: AppearancePosterSize;
   /** Subtitle appearance, applied to the player's `::cue` (ported from
@@ -233,6 +239,10 @@ export interface AppSettings {
   ratingScale: RatingScale;
   /** Chosen external player name (from list_external_players); "" = auto. */
   preferredExternalPlayer: string;
+  /** Local profile display name shown on the top-right avatar; "" = "You". */
+  userName: string;
+  /** Local profile avatar as a data: URL (resized on upload); "" = initial. */
+  userAvatar: string;
 }
 
 /** Read a `VITE_*` env var without assuming `import.meta.env` exists. */
@@ -310,6 +320,10 @@ function normalizeAppearanceNavLabels(value: unknown): AppearanceNavLabels {
   return value === "labels" || value === "icons" ? value : "auto";
 }
 
+function normalizeAppearanceNavPosition(value: unknown): AppearanceNavPosition {
+  return value === "bottom" ? "bottom" : "side";
+}
+
 function normalizeAppearanceNavTint(value: unknown): AppearanceNavTint {
   return value === "airy" || value === "solid" ? value : "balanced";
 }
@@ -370,6 +384,7 @@ export function defaultSettings(): AppSettings {
     appearanceHeroScale: "cinematic",
     appearancePanelContrast: "standard",
     appearanceNavLabels: "auto",
+    appearanceNavPosition: "side",
     appearanceNavTint: "balanced",
     appearancePosterSize: "large",
     subtitleFontScale: 1,
@@ -388,6 +403,8 @@ export function defaultSettings(): AppSettings {
     transcode: false,
     ratingScale: "ten",
     preferredExternalPlayer: "",
+    userName: "",
+    userAvatar: "",
   };
 }
 
@@ -419,6 +436,9 @@ export function loadSettings(): AppSettings {
         parsed.appearancePanelContrast,
       ),
       appearanceNavLabels: normalizeAppearanceNavLabels(parsed.appearanceNavLabels),
+      appearanceNavPosition: normalizeAppearanceNavPosition(
+        parsed.appearanceNavPosition,
+      ),
       appearanceNavTint: normalizeAppearanceNavTint(parsed.appearanceNavTint),
       appearancePosterSize: normalizeAppearancePosterSize(parsed.appearancePosterSize),
       subtitleFontScale: normalizeSubtitleFontScale(parsed.subtitleFontScale),
@@ -429,6 +449,9 @@ export function loadSettings(): AppSettings {
         typeof parsed.preferredExternalPlayer === "string"
           ? parsed.preferredExternalPlayer
           : "",
+      userName: typeof parsed.userName === "string" ? parsed.userName : "",
+      userAvatar:
+        typeof parsed.userAvatar === "string" ? parsed.userAvatar : "",
       // A stale/poisoned provider id would route to a host that can't serve it.
       aiProvider: AIProviderKind.allCases().includes(
         parsed.aiProvider as AIProviderKind,
@@ -710,6 +733,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceHeroScale,
     appearancePanelContrast,
     appearanceNavLabels,
+    appearanceNavPosition,
     appearanceNavTint,
     appearancePosterSize,
     subtitleFontScale,
@@ -727,6 +751,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     simpleMode,
     ratingScale,
     preferredExternalPlayer,
+    userName,
+    userAvatar,
   ] = await Promise.all([
     store.getSetting(SettingsKeys.aiProvider),
     store.getSetting(SettingsKeys.aiModel),
@@ -744,6 +770,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.appearanceHeroScale),
     store.getSetting(SettingsKeys.appearancePanelContrast),
     store.getSetting(SettingsKeys.appearanceNavLabels),
+    store.getSetting(SettingsKeys.appearanceNavPosition),
     store.getSetting(SettingsKeys.appearanceNavTint),
     store.getSetting(SettingsKeys.appearancePosterSize),
     store.getSetting(SettingsKeys.subtitleFontScale),
@@ -761,6 +788,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.simpleMode),
     store.getSetting(SettingsKeys.ratingScale),
     store.getSetting(SettingsKeys.preferredExternalPlayer),
+    store.getSetting(SettingsKeys.userName),
+    store.getSetting(SettingsKeys.userAvatar),
   ]);
 
   const debridConfigs = await store.listDebridConfigs();
@@ -831,6 +860,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceNavLabels: normalizeAppearanceNavLabels(
       appearanceNavLabels ?? base.appearanceNavLabels,
     ),
+    appearanceNavPosition: normalizeAppearanceNavPosition(
+      appearanceNavPosition ?? base.appearanceNavPosition,
+    ),
     appearanceNavTint: normalizeAppearanceNavTint(
       appearanceNavTint ?? base.appearanceNavTint,
     ),
@@ -867,6 +899,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     ratingScale: normalizeRatingScale(ratingScale),
     preferredExternalPlayer:
       typeof preferredExternalPlayer === "string" ? preferredExternalPlayer : "",
+    userName: typeof userName === "string" ? userName : "",
+    userAvatar: typeof userAvatar === "string" ? userAvatar : "",
   };
 
   // Proactively scrub any pre-existing plaintext-secret blob a prior build wrote
@@ -968,6 +1002,10 @@ export async function saveSettingsToStore(
       normalizeAppearanceNavLabels(settings.appearanceNavLabels),
     ),
     store.setSetting(
+      SettingsKeys.appearanceNavPosition,
+      normalizeAppearanceNavPosition(settings.appearanceNavPosition),
+    ),
+    store.setSetting(
       SettingsKeys.appearanceNavTint,
       normalizeAppearanceNavTint(settings.appearanceNavTint),
     ),
@@ -1029,6 +1067,8 @@ export async function saveSettingsToStore(
       SettingsKeys.preferredExternalPlayer,
       settings.preferredExternalPlayer,
     ),
+    store.setSetting(SettingsKeys.userName, settings.userName),
+    store.setSetting(SettingsKeys.userAvatar, settings.userAvatar),
     store.setSetting(
       SettingsKeys.builtInIndexersEnabled,
       settings.builtInIndexersEnabled ? "true" : "false",

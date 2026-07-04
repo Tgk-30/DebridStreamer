@@ -115,3 +115,24 @@
     --nav-rail-width: 96px;
   }
 }
+
+/* Desktop "bottom bar" nav position: no left gutter, reserve room at the bottom
+   for the floating bar (the rail's own layout lives in NavRail.css). */
+@media (min-width: 700px) {
+  :root[data-nav-position="bottom"] .app {
+    --nav-safe-left: 0px;
+  }
+  :root[data-nav-position="bottom"] .app-content {
+    padding-bottom: calc(58px + var(--nav-gap, 14px) + var(--sp-lg));
+    scroll-padding-bottom: calc(58px + var(--nav-gap, 14px) + var(--sp-lg));
+  }
+}
+
+/* Collapsed side rail: narrow the width var so the rail + content inset shrink.
+   Higher specificity than the per-breakpoint width rules, so it wins. Bottom-bar
+   mode zeroes --nav-safe-left separately, so a collapsed+bottom combo is inert. */
+@media (min-width: 700px) {
+  :root[data-nav-collapsed="true"] .app {
+    --nav-rail-width: 76px;
+  }
+}

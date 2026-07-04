@@ -148,18 +148,7 @@
   stroke-width: 0;
 }
 
-.nav-rail-btn.is-selected::before {
-  content: "";
-  position: absolute;
-  left: -5px;
-  top: 12px;
-  bottom: 12px;
-  width: 3px;
-  border-radius: var(--r-pill);
-  background: linear-gradient(180deg, var(--accent), var(--accent-secondary));
-  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.52);
-}
-
+/* The selected state reads from the filled pill alone — no accent side-bar. */
 .nav-rail-more,
 .nav-rail-more-scrim,
 .nav-rail-more-sheet {
@@ -207,12 +196,6 @@
   .nav-rail-btn svg {
     width: 22px;
     height: 22px;
-  }
-
-  .nav-rail-btn.is-selected::before {
-    left: -6px;
-    top: 10px;
-    bottom: 10px;
   }
 
   .nav-rail-label {
@@ -621,5 +604,126 @@
 
   .nav-rail-label {
     font-size: 9px;
+  }
+}
+
+/* ── Desktop "bottom bar" layout (appearance → nav position) ──────────────────
+   Reflows the side rail into a centered floating horizontal bar at the bottom of
+   the window. Mobile already uses a bottom bar via the max-width query above, so
+   this only needs the desktop range. --nav-safe-left is zeroed in App.css so the
+   content bleeds full-width with no left gutter. */
+@media (min-width: 700px) {
+  :root[data-nav-position="bottom"] .nav-rail {
+    position: fixed;
+    top: auto;
+    left: 50%;
+    right: auto;
+    bottom: var(--nav-gap, 14px);
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: auto;
+    max-width: calc(100vw - 2 * var(--nav-gap, 14px));
+    height: auto;
+    padding: 8px 12px;
+    border-radius: var(--r-pill, 999px);
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: none;
+    transform: translateX(-50%);
+  }
+  :root[data-nav-position="bottom"] .nav-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  :root[data-nav-position="bottom"] .nav-rail-section {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+  }
+  :root[data-nav-position="bottom"] .nav-rail-section[data-group="Account"] {
+    margin-top: 0;
+    margin-left: 6px;
+    padding-left: 8px;
+    border-left: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  }
+  :root[data-nav-position="bottom"] .nav-rail-group-label {
+    display: none;
+  }
+
+  :root[data-nav-position="bottom"] .nav-rail-btn {
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 0 15px;
+    border-radius: var(--r-pill, 999px);
+    white-space: nowrap;
+  }
+  :root[data-nav-position="bottom"] .nav-rail-label {
+    font-size: 13px;
+  }
+  /* Icons-only in the bar when labels are set to "icons". */
+  :root[data-nav-position="bottom"][data-nav-labels="icons"] .nav-rail-btn {
+    padding: 0 11px;
+  }
+}
+
+/* ── Collapsible side rail (#2) ───────────────────────────────────────────────
+   A small toggle at the top of the rail shrinks it to icons only. The collapsed
+   state is reflected as :root[data-nav-collapsed] so the width var (App.css) and
+   the content inset track it. Desktop side-rail only. */
+.nav-rail-collapse {
+  align-self: flex-end;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: -6px -2px 0 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.16s, color 0.16s;
+}
+.nav-rail-collapse:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+.nav-rail-collapse-glyph {
+  transform: translateY(-1px);
+}
+
+@media (min-width: 700px) {
+  :root[data-nav-collapsed="true"] .nav-rail-group-label,
+  :root[data-nav-collapsed="true"] .nav-rail-label {
+    display: none;
+  }
+  :root[data-nav-collapsed="true"] .nav-rail-btn {
+    flex-direction: column;
+    justify-content: center;
+    gap: 0;
+    padding-inline: var(--sp-xs);
+  }
+  :root[data-nav-collapsed="true"] .nav-rail-collapse {
+    align-self: center;
+    margin-right: 0;
+  }
+}
+
+/* The collapse control is only meaningful on the desktop side rail. */
+:root[data-nav-position="bottom"] .nav-rail-collapse {
+  display: none;
+}
+@media (max-width: 699px), (max-width: 950px) and (max-height: 500px) {
+  .nav-rail-collapse {
+    display: none;
   }
 }
