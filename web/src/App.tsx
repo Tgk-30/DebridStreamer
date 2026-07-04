@@ -8,6 +8,37 @@
 import "./theme/theme.css";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { NavRail, isScreenHidden, type ScreenId } from "./components/NavRail";
+import { SpotlightTour, type TourStep } from "./components/SpotlightTour";
+
+// The point-and-highlight tour shown once after the welcome guide. Each step
+// spotlights a real nav destination by its stable [data-screen] anchor.
+const TOUR_STEPS: TourStep[] = [
+  {
+    target: '[data-screen="discover"]',
+    title: "Your home base",
+    body: "A cinematic hero plus your Top 10 and rails of trending, popular, and new releases — all pulled live.",
+    placement: "right",
+  },
+  {
+    target: '[data-screen="search"]',
+    title: "Find anything, instantly",
+    body: "Search any movie or show — results appear as you type, no Enter needed.",
+    placement: "right",
+  },
+  {
+    target: '[data-screen="watchlist"]',
+    title: "Save it for later",
+    body: "Add titles to your Watchlist to come back to. In Server Mode it syncs across every device in your household.",
+    placement: "right",
+  },
+  {
+    target: '[data-screen="settings"]',
+    title: "Your keys & preferences",
+    body: "Add or change your TMDB / OMDb and debrid keys, pick a theme, choose your rating scale, and tune playback here anytime.",
+    placement: "right",
+  },
+];
+const TOUR_SEEN_KEY = "ds_tour_seen";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -244,14 +275,34 @@ export function App() {
     window.addEventListener("ds:open-welcome-guide", reopen);
     return () => window.removeEventListener("ds:open-welcome-guide", reopen);
   }, []);
+  // The point-and-highlight tour runs once, right after the welcome guide.
+  const [tourOpen, setTourOpen] = useState(false);
   const closeWelcomeGuide = () => {
     setWelcomeGuideOpen(false);
     try {
       globalThis.localStorage?.setItem("ds_welcome_guide_seen", "1");
+      if (globalThis.localStorage?.getItem(TOUR_SEEN_KEY) !== "1") {
+        // Let the shell paint before the tour measures its targets.
+        setTimeout(() => setTourOpen(true), 350);
+      }
     } catch {
       // ignore (private mode)
     }
   };
+  const closeTour = () => {
+    setTourOpen(false);
+    try {
+      globalThis.localStorage?.setItem(TOUR_SEEN_KEY, "1");
+    } catch {
+      // ignore (private mode)
+    }
+  };
+  // Allow re-running the tour on demand (e.g. from a help menu / ⌘K).
+  useEffect(() => {
+    const open = () => setTourOpen(true);
+    window.addEventListener("ds:open-tour", open);
+    return () => window.removeEventListener("ds:open-tour", open);
+  }, []);
 
   // On-demand guided setup: the SAME persona wizard a genuine first run shows,
   // re-runnable at any time. This is the clear onboarding path for installs
@@ -446,6 +497,8 @@ export function App() {
             onOpenSettings={() => navigate("settings")}
           />
         )}
+
+        {tourOpen && <SpotlightTour steps={TOUR_STEPS} onDone={closeTour} />}
 
         {shortcutsOpen && (
           <KeyboardShortcuts onClose={() => setShortcutsOpen(false)} />
