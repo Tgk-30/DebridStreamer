@@ -108,10 +108,46 @@
 
 .cal-row-date {
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* The friendly countdown ("Tomorrow", "In 3 days") above the absolute date. */
+.cal-row-when {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgb(var(--accent-rgb));
+}
+.cal-row-abs {
+  color: var(--text-secondary);
+}
+
+/* Today's group: an accent-tinted rail so "what's on tonight" pops. */
+.cal-group--today .cal-group-label {
+  color: rgb(var(--accent-rgb));
+}
+.cal-group--today .cal-rows {
+  padding-left: 10px;
+  border-left: 2px solid rgba(var(--accent-rgb), 0.5);
+}
+
+/* Month sub-headers inside the long "Upcoming" list. */
+.cal-month-sep {
+  margin: 6px 0 2px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+.cal-month-sep:first-child {
+  margin-top: 0;
 }
 
 /* --- Loading skeleton --- shimmer placeholders shaped like real cal rows.

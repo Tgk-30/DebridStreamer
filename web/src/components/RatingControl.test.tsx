@@ -51,6 +51,18 @@ describe("RatingControl — 1–10 stars", () => {
     expect(onRate).toHaveBeenLastCalledWith(10);
   });
 
+  it("quick-rates with number keys (1–9, and 0 → 10)", () => {
+    const onRate = vi.fn();
+    render(<RatingControl scale="ten" value={5} onRate={onRate} />);
+    const group = screen.getByRole("radiogroup", { name: "Rate out of 10" });
+    fireEvent.keyDown(group, { key: "7" });
+    expect(onRate).toHaveBeenLastCalledWith(7);
+    fireEvent.keyDown(group, { key: "0" });
+    expect(onRate).toHaveBeenLastCalledWith(10);
+    fireEvent.keyDown(group, { key: "1" });
+    expect(onRate).toHaveBeenLastCalledWith(1);
+  });
+
   it("clamps arrow movement at the ends", () => {
     const onRate = vi.fn();
     const { rerender } = render(
@@ -78,6 +90,18 @@ describe("RatingControl — 0–100 slider", () => {
     expect(onRate).not.toHaveBeenCalled();
     fireEvent.pointerUp(slider);
     expect(onRate).toHaveBeenCalledExactlyOnceWith(85);
+  });
+
+  it("shows a 'release to save' affordance while dragging, cleared on commit", () => {
+    render(<RatingControl scale="hundred" value={40} onRate={() => {}} />);
+    const slider = screen.getByLabelText("Rate out of 100");
+    const wrap = slider.closest(".rating-hundred") as HTMLElement;
+    expect(wrap.className).not.toContain("is-dragging");
+    fireEvent.change(slider, { target: { value: "70" } });
+    expect(wrap.className).toContain("is-dragging");
+    expect(screen.getByText("Release to save")).toBeTruthy();
+    fireEvent.pointerUp(slider);
+    expect(wrap.className).not.toContain("is-dragging");
   });
 
   it("commits on blur (covers pointer-cancel / focus-out)", () => {

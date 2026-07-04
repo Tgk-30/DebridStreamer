@@ -7,6 +7,7 @@
 import { useRef, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { Icon } from "./Icon";
+import { PRESET_AVATARS } from "./AvatarPresets";
 import "./ProfileMenu.css";
 
 interface Props {
@@ -135,6 +136,32 @@ export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
                   Remove
                 </button>
               )}
+            </div>
+
+            <div className="profile-menu-presets">
+              <span className="profile-menu-presets-label t-secondary">
+                Or pick one
+              </span>
+              <div className="profile-menu-presets-grid">
+                {PRESET_AVATARS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={
+                      "profile-menu-preset" +
+                      (avatar === preset.dataUrl ? " is-selected" : "")
+                    }
+                    aria-label={preset.label}
+                    aria-pressed={avatar === preset.dataUrl}
+                    title={preset.label}
+                    onClick={() =>
+                      updateSettings({ ...settings, userAvatar: preset.dataUrl })
+                    }
+                  >
+                    <img src={preset.dataUrl} alt="" />
+                  </button>
+                ))}
+              </div>
             </div>
 
             {showSwitch && onSwitchProfile && (
