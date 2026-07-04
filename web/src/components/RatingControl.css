@@ -32,45 +32,66 @@
   text-decoration: underline;
 }
 
-/* ── 1–10 pips ─────────────────────────────────────────────────────────── */
-.rating-ten {
+/* ── 1–10 stars ────────────────────────────────────────────────────────── */
+/* Stars (not numbered pills) so this reads unmistakably as a RATING and never
+   as an episode picker. Warm gold fill is the universal rating cue and sets it
+   apart from the app's violet chips. */
+.rating-stars {
+  --rating-gold: #f5b301;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
 }
-.rating-pip {
-  width: 34px;
-  height: 34px;
+.rating-star {
+  width: 28px;
+  height: 28px;
+  padding: 2px;
   flex: 0 0 auto;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 700;
-  font-family: inherit;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
-  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
-  border: 0.75px solid var(--glass-border, rgba(255, 255, 255, 0.14));
+  background: none;
+  border: none;
   cursor: pointer;
-  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1), background 0.14s,
-    border-color 0.14s, color 0.14s;
+  color: var(--glass-border, rgba(255, 255, 255, 0.2)); /* empty star */
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1), color 0.12s;
 }
-.rating-pip:hover {
-  transform: translateY(-2px);
-  border-color: rgba(var(--accent-rgb), 0.55);
-  color: var(--text-primary, #fff);
+.rating-star svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 0.75;
 }
-.rating-pip.is-on {
-  color: #fff;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2, var(--accent)));
-  border-color: transparent;
+.rating-star:hover {
+  transform: scale(1.18);
+}
+.rating-star.is-on {
+  color: var(--rating-gold);
+  filter: drop-shadow(0 1px 4px rgba(245, 179, 1, 0.4));
+}
+/* The stars from 1..hovered read a touch lighter so the hover preview is
+   distinguishable from a committed rating. */
+.rating-star.is-preview:not(.is-on) {
+  color: var(--rating-gold);
+}
+.rating-star.is-preview {
+  opacity: 0.9;
+}
+.rating-star:focus-visible {
+  outline: none;
+  border-radius: 6px;
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(140, 133, 250, 0.5));
 }
 .rating-readout {
-  margin-left: 6px;
+  margin-left: 8px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--accent);
   min-width: 3ch;
+}
+.rating-stars .rating-readout {
+  color: var(--rating-gold);
 }
 
 /* ── 0–100 slider ──────────────────────────────────────────────────────── */
