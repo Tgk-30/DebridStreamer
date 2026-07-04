@@ -145,6 +145,9 @@ pub fn run() {
         // Process plugin: lets the webview `relaunch()` the app after the
         // auto-updater downloads + installs a new version (see updater.ts).
         .plugin(tauri_plugin_process::init())
+        // Embedded libmpv player — exposes init/command/setProperty/observe to
+        // the webview (`tauri-plugin-libmpv-api`) for in-window video.
+        .plugin(tauri_plugin_libmpv::init())
         // At-most-one mpv instance, shared across the mpv_* commands.
         .manage(player::MpvState::default())
         // At-most-one local DebridStreamer server process.

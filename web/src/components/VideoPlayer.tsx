@@ -26,6 +26,7 @@ import { useSubtitleTracks } from "./player/useSubtitleTracks";
 import { useScrubThumbnails } from "./player/useScrubThumbnails";
 import { ScrubBar } from "./player/ScrubBar";
 import { CaptionsMenu } from "./player/CaptionsMenu";
+import { EmbeddedPlayer } from "./EmbeddedPlayer";
 import "./VideoPlayer.css";
 
 type Playability = "webview" | "external";
@@ -64,6 +65,11 @@ interface VideoPlayerProps {
   /** Chosen external player name (Settings). Passed to the VLC/IINA/mpv hand-off
    *  so it opens the user's preferred app first. "" / undefined = auto order. */
   preferredPlayer?: string;
+  /** Desktop only (EXPERIMENTAL): use the in-window libmpv player for containers
+   *  the webview can't decode (MKV/HEVC) instead of handing off to an external
+   *  app. When false the external hand-off (bundled mpv / VLC) is used. Opt-in
+   *  (default false) until native bundling is verified. */
+  useBuiltInPlayer?: boolean;
 }
 
 /** Toggle fullscreen on an element, defensively (the APIs are absent in jsdom
@@ -141,20 +147,26 @@ export function VideoPlayer({
   onPlayNext,
   autoCountdown = true,
   preferredPlayer,
+  useBuiltInPlayer = false,
 }: VideoPlayerProps) {
   const mode = kind ?? classify(url);
+  const underTauri = isTauri();
+  // In-window native player: the desktop path for containers/codecs the webview
+  // can't decode (MKV/HEVC). Renders libmpv on a native surface behind the
+  // transparent window (see EmbeddedPlayer). When off, we fall back to the
+  // external hand-off (bundled mpv / VLC) below.
+  const useEmbedded = underTauri && mode === "external" && useBuiltInPlayer;
   const [externalStatus, setExternalStatus] = useState<string | null>(null);
   const [externalError, setExternalError] = useState<string | null>(null);
 
-  // Native hand-off when running under Tauri. Primary path is the BUNDLED mpv
-  // sidecar (shipped + app-controlled over IPC); if mpv isn't available we fall
-  // back to the raw VLC/IINA hand-off. On macOS mpv's `--wid` in-window
-  // embedding is unreliable, so mpv typically opens its own (app-controlled)
-  // window — see src-tauri/src/player.rs. mpv is stopped when this panel closes.
-  const underTauri = isTauri();
+  // Native hand-off when running under Tauri and the in-window player is off.
+  // Primary path is the BUNDLED mpv sidecar (shipped + app-controlled over IPC);
+  // if mpv isn't available we fall back to the raw VLC/IINA hand-off. On macOS
+  // mpv's `--wid` in-window embedding is unreliable, so mpv typically opens its
+  // own window — see src-tauri/src/player.rs. mpv is stopped when this closes.
   const startedMpvRef = useRef(false);
   useEffect(() => {
-    if (mode !== "external" || !underTauri) return;
+    if (mode !== "external" || !underTauri || useEmbedded) return;
     let cancelled = false;
     startedMpvRef.current = false;
 
@@ -189,7 +201,21 @@ export function VideoPlayer({
         mpvStop().catch(() => {});
       }
     };
-  }, [mode, underTauri, url, preferredPlayer]);
+  }, [mode, underTauri, url, preferredPlayer, useEmbedded]);
+
+  // In-window native player takes over the whole window (transparent surface +
+  // hidden app chrome), so render it standalone — outside the modal frame.
+  if (useEmbedded) {
+    return (
+      <EmbeddedPlayer
+        url={url}
+        title={title}
+        startPositionSeconds={startPositionSeconds}
+        onProgress={(current, duration) => onProgress?.(current, duration)}
+        onClose={onClose}
+      />
+    );
+  }
 
   return (
     <div className="player-backdrop" onClick={onClose}>

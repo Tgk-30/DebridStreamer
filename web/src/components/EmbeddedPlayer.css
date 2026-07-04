@@ -1,0 +1,245 @@
+/* EmbeddedPlayer — controls overlaid on the native libmpv video surface.
+
+   The video renders on a native Metal/GL layer BEHIND the transparent webview.
+   To reveal it, while `.mpv-active` is on <html> we punch the page transparent
+   and hide the rest of the app UI, so the window shows: [native video] then
+   [these controls] on top. Everything is restored when the player unmounts. */
+
+html.mpv-active,
+html.mpv-active body {
+  background: transparent !important;
+}
+/* Hide the app UI (nav, screens, overlays) so only the video + player show. */
+html.mpv-active .app {
+  visibility: hidden;
+}
+html.mpv-active .embed-player,
+html.mpv-active .embed-player * {
+  visibility: visible;
+}
+
+.embed-player {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: transparent;
+  overflow: hidden;
+  color: #fff;
+  font-family: inherit;
+}
+.embed-player:not(.show-controls) {
+  cursor: none;
+}
+
+/* Transparent stage — the native mpv surface shows through here. */
+.embed-stage {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+
+/* ── Buffering spinner ─────────────────────────────────────────────────────*/
+.embed-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  width: 54px;
+  height: 54px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.embed-spinner span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.22);
+  border-top-color: #fff;
+  animation: embedSpin 0.9s linear infinite;
+}
+@keyframes embedSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Error card ────────────────────────────────────────────────────────────*/
+.embed-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 420px;
+  padding: 26px 30px;
+  text-align: center;
+  border-radius: var(--r-lg, 18px);
+  background: rgba(14, 16, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.embed-error p {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.embed-error-detail {
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  color: rgba(255, 255, 255, 0.62);
+  word-break: break-word;
+}
+
+/* ── Controls (auto-hide) ──────────────────────────────────────────────────*/
+.embed-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s ease;
+}
+.embed-player.show-controls .embed-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.embed-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 26px 40px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.62), transparent);
+}
+.embed-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.embed-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 44px 30px 26px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.74), transparent);
+}
+
+.embed-scrub {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.embed-time {
+  min-width: 48px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+}
+
+.embed-range {
+  flex: 1 1 auto;
+  height: 6px;
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+.embed-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+  transition: transform 0.15s;
+}
+.embed-range::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.embed-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.embed-icon-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.16s, transform 0.16s;
+}
+.embed-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.embed-icon-btn:active {
+  transform: scale(0.92);
+}
+.embed-skip-num {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  font-size: 8.5px;
+  font-weight: 800;
+}
+.embed-flip {
+  transform: scaleX(-1);
+}
+
+.embed-play-btn {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.16s, transform 0.16s;
+}
+.embed-play-btn:hover {
+  background: rgba(255, 255, 255, 0.26);
+  transform: scale(1.05);
+}
+.embed-pause-glyph {
+  display: inline-flex;
+  gap: 5px;
+}
+.embed-pause-glyph i {
+  display: block;
+  width: 5px;
+  height: 22px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.embed-volume {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.embed-vol-range {
+  width: 96px;
+  height: 5px;
+}

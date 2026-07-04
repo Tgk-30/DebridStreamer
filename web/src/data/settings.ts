@@ -103,6 +103,7 @@ const SettingsKeys = {
   transcode: "transcode",
   ratingScale: "rating_scale",
   preferredExternalPlayer: "preferred_external_player",
+  builtInPlayer: "built_in_player",
   userName: "user_name",
   userAvatar: "user_avatar",
 } as const;
@@ -239,6 +240,10 @@ export interface AppSettings {
   ratingScale: RatingScale;
   /** Chosen external player name (from list_external_players); "" = auto. */
   preferredExternalPlayer: string;
+  /** Desktop only, EXPERIMENTAL: play MKV/HEVC in the built-in libmpv window
+   *  instead of handing off to an external player (VLC/mpv/IINA). Off by
+   *  default until native bundling is verified — see EMBEDDED_PLAYER.md. */
+  builtInPlayer: boolean;
   /** Local profile display name shown on the top-right avatar; "" = "You". */
   userName: string;
   /** Local profile avatar as a data: URL (resized on upload); "" = initial. */
@@ -403,6 +408,9 @@ export function defaultSettings(): AppSettings {
     transcode: false,
     ratingScale: "ten",
     preferredExternalPlayer: "",
+    // Experimental: OFF by default until the native libmpv bundling is verified
+    // on a clean (Homebrew-less) machine. See web/src-tauri/EMBEDDED_PLAYER.md.
+    builtInPlayer: false,
     userName: "",
     userAvatar: "",
   };
@@ -753,6 +761,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     preferredExternalPlayer,
     userName,
     userAvatar,
+    builtInPlayer,
   ] = await Promise.all([
     store.getSetting(SettingsKeys.aiProvider),
     store.getSetting(SettingsKeys.aiModel),
@@ -790,6 +799,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.preferredExternalPlayer),
     store.getSetting(SettingsKeys.userName),
     store.getSetting(SettingsKeys.userAvatar),
+    store.getSetting(SettingsKeys.builtInPlayer),
   ]);
 
   const debridConfigs = await store.listDebridConfigs();
@@ -899,6 +909,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     ratingScale: normalizeRatingScale(ratingScale),
     preferredExternalPlayer:
       typeof preferredExternalPlayer === "string" ? preferredExternalPlayer : "",
+    builtInPlayer:
+      builtInPlayer == null ? base.builtInPlayer : builtInPlayer === "true",
     userName: typeof userName === "string" ? userName : "",
     userAvatar: typeof userAvatar === "string" ? userAvatar : "",
   };
@@ -1066,6 +1078,10 @@ export async function saveSettingsToStore(
     store.setSetting(
       SettingsKeys.preferredExternalPlayer,
       settings.preferredExternalPlayer,
+    ),
+    store.setSetting(
+      SettingsKeys.builtInPlayer,
+      settings.builtInPlayer ? "true" : "false",
     ),
     store.setSetting(SettingsKeys.userName, settings.userName),
     store.setSetting(SettingsKeys.userAvatar, settings.userAvatar),
