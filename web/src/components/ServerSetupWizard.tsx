@@ -403,8 +403,14 @@ function InviteStep({
   // in flight, and updating state after unmount warns under StrictMode and can
   // crash the walkthrough.
   const mounted = useRef(true);
-  useEffect(() => () => {
-    mounted.current = false;
+  useEffect(() => {
+    // Set true in the SETUP body (not just false in cleanup): StrictMode runs
+    // mount → cleanup → mount again, so a cleanup-only ref would be stuck false
+    // after the dev double-invoke and freeze the step on "Creating…".
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
   }, []);
 
   async function create() {
@@ -451,9 +457,9 @@ function InviteStep({
     if (inviteURL == null) return;
     try {
       await navigator.clipboard.writeText(inviteURL);
-      setCopied(true);
+      if (mounted.current) setCopied(true);
     } catch {
-      setError("Clipboard is unavailable in this session.");
+      if (mounted.current) setError("Clipboard is unavailable in this session.");
     }
   }
 
