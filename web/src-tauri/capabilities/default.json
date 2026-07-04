@@ -9,6 +9,7 @@
     "opener:default",
     "updater:default",
     "process:default",
+    "libmpv:default",
     {
       "identifier": "http:default",
       "allow": [

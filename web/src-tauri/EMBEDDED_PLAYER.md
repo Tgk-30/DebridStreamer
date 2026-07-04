@@ -66,6 +66,20 @@ name (`/opt/homebrew/opt/mpv/lib/libmpv.2.dylib`). Options:
 
 **Neither can be validated without running a bundled build on a clean machine.**
 
+### Smoke-test findings (2026-07-04, dev on this M1)
+
+- **Dev discovery works.** `tauri dev` copies `lib/**/*` to `target/debug/lib/`
+  — i.e. `exe_dir/lib`, exactly where `get_wrapper()` looks — so the wrapper IS
+  found in dev. The `Contents/Resources/lib` gap is a **bundle-only** problem.
+- **Writable-dylib gotcha.** Homebrew's `libmpv.2.dylib` is mode `444`; a `cp -L`
+  preserves that, and Tauri's dev resource-copy then makes a `444` copy under
+  `target/debug/lib/`. The next build fails to overwrite it with
+  `Permission denied (os error 13)` in the build script. Fix: `chmod u+w` the
+  bundled `lib/*.dylib` (and any stale `target/**/lib` copies) — CI must ensure
+  the fetched dylibs are writable before the tauri build step.
+- Capability grant `"libmpv:default"` is required in `capabilities/default.json`
+  or the plugin's IPC commands are denied at runtime.
+
 ## Per-platform CI bundling (to add to `web-release.yml` once verified)
 
 Mirror the existing `download_tauri_node_runtime.mjs` precedent — drop files
