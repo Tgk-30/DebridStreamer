@@ -24,6 +24,9 @@ interface MediaCardProps {
   /** Small glass chip in the poster corner (e.g. "S2 E5" on a series' Continue
    * Watching card). Rendered only when present. */
   cornerLabel?: string;
+  /** 1-based rank — renders a large ghosted numeral to the left of the poster
+   * (the Apple TV "Top 10" treatment). Omit for an ordinary card. */
+  rank?: number;
 }
 
 // Animation objects are hoisted to module scope so they're referentially stable
@@ -33,7 +36,7 @@ const SPRING = { type: "spring", stiffness: 380, damping: 30, mass: 0.7 } as con
 const WHILE_TAP = { scale: 0.98 } as const;
 const CARD_VARIANTS = {
   rest: { y: 0, scale: 1 },
-  hover: { y: -10, scale: 1.05 },
+  hover: { y: -14, scale: 1.08 },
 } as const;
 const IMG_TRANSITION = { duration: 0.5, ease: [0.16, 1, 0.3, 1] } as const;
 const REVEAL_VARIANTS = { rest: { opacity: 0 }, hover: { opacity: 1 } } as const;
@@ -53,6 +56,7 @@ export const MediaCard = memo(function MediaCard({
   ready = false,
   progress,
   cornerLabel,
+  rank,
 }: MediaCardProps) {
   const poster = MediaPreviewNS.posterURL(item);
   const rating = MediaPreviewNS.ratingString(item);
@@ -71,10 +75,10 @@ export const MediaCard = memo(function MediaCard({
   return (
     <motion.button
       type="button"
-      className="media-card"
+      className={rank != null ? "media-card is-ranked" : "media-card"}
       onClick={handleSelect}
       title={item.title}
-      aria-label={item.title}
+      aria-label={rank != null ? `#${rank}: ${item.title}` : item.title}
       initial={false}
       whileHover="hover"
       whileFocus="hover"
@@ -83,6 +87,11 @@ export const MediaCard = memo(function MediaCard({
       variants={CARD_VARIANTS}
       transition={SPRING}
     >
+      {rank != null && (
+        <span className="media-card-rank" aria-hidden="true">
+          {rank}
+        </span>
+      )}
       <div className="media-card-poster">
         {poster ? (
           <motion.img

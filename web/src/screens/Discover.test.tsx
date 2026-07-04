@@ -171,8 +171,8 @@ describe("Discover loaded", () => {
       expect.arrayContaining([
         "Continue Watching",
         "Mood picks",
-        "Trending Movies",
-        "Trending TV Shows",
+        "Top 10 Movies",
+        "Top 10 TV Shows",
         "Popular Movies",
         "Top Rated Movies",
         "Now Playing",
@@ -216,33 +216,38 @@ describe("Discover loaded", () => {
     expect(screen.getByTestId("hero-count").textContent).toBe("2");
   });
 
-  it("filters the hero item out of the trending rails (withoutHero)", () => {
+  it("filters the hero item out of the withoutHero rails (Popular)", () => {
     const data = fullData();
-    // hero1 is also injected into trendingMovies to prove dedupe.
+    // hero1 is also injected into a withoutHero rail (Popular) to prove dedupe.
+    data.popularMovies = [
+      preview("hero1", { backdropPath: "/bd.jpg" }),
+      preview("pm2"),
+    ];
+    mockDiscover = { data, loading: false };
+    render(<Discover />);
+    const popular = screen
+      .getAllByTestId("rail")
+      .find((r) => r.getAttribute("data-title") === "Popular Movies")!;
+    // hero1 removed, only pm2 left.
+    expect(within(popular).queryByText("item-hero1")).toBeNull();
+    expect(within(popular).getByText("item-pm2")).toBeInTheDocument();
+  });
+
+  it("keeps the true chart (incl. hero) in the ranked Top 10 rail", () => {
+    const data = fullData();
+    // The hero also tops the trending chart — the Top 10 rail must still show it
+    // as #1 (a real chart), unlike the withoutHero rails.
     data.trendingMovies = [
       preview("hero1", { backdropPath: "/bd.jpg" }),
       preview("tm2"),
     ];
     mockDiscover = { data, loading: false };
     render(<Discover />);
-    const trendingMovies = screen
+    const top10 = screen
       .getAllByTestId("rail")
-      .find((r) => r.getAttribute("data-title") === "Trending Movies")!;
-    // hero1 removed, only tm2 left.
-    expect(within(trendingMovies).queryByText("item-hero1")).toBeNull();
-    expect(within(trendingMovies).getByText("item-tm2")).toBeInTheDocument();
-  });
-
-  it("does not filter rails when there is no hero", () => {
-    const data = fullData();
-    data.hero = null;
-    data.trendingMovies = [preview("tm1"), preview("tm2")];
-    mockDiscover = { data, loading: false };
-    render(<Discover />);
-    const trendingMovies = screen
-      .getAllByTestId("rail")
-      .find((r) => r.getAttribute("data-title") === "Trending Movies")!;
-    expect(within(trendingMovies).getByTestId("rail-count").textContent).toBe("2");
+      .find((r) => r.getAttribute("data-title") === "Top 10 Movies")!;
+    expect(within(top10).getByText("item-hero1")).toBeInTheDocument();
+    expect(within(top10).getByText("item-tm2")).toBeInTheDocument();
   });
 
   it("forwards item clicks to onSelect", async () => {
@@ -298,7 +303,7 @@ describe("Discover See all", () => {
   it("opens browse with the category context for a rail", async () => {
     mockDiscover = { data: fullData(), loading: false };
     render(<Discover />);
-    await userEvent.click(screen.getByText("seeall-Trending Movies"));
+    await userEvent.click(screen.getByText("seeall-Top 10 Movies"));
     expect(openBrowse).toHaveBeenCalledWith({
       kind: "category",
       type: "movie",
@@ -309,7 +314,7 @@ describe("Discover See all", () => {
   it("opens browse for the trending TV rail with type series", async () => {
     mockDiscover = { data: fullData(), loading: false };
     render(<Discover />);
-    await userEvent.click(screen.getByText("seeall-Trending TV Shows"));
+    await userEvent.click(screen.getByText("seeall-Top 10 TV Shows"));
     expect(openBrowse).toHaveBeenCalledWith({
       kind: "category",
       type: "series",

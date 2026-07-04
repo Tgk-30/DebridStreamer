@@ -15,9 +15,9 @@
 
 .rail-title {
   margin: 0;
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: 0;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
 }
 
 /* "See all" — a quiet text affordance; accent only on hover. */
@@ -89,4 +89,12 @@
 
 .rail-track .media-card {
   scroll-snap-align: start;
+}
+
+/* Ranked (Top 10) rows: the big numerals live in each card's left padding, so
+   give the row a touch more air and a little left inset so the #1 isn't clipped
+   against the scroll edge. */
+.rail-ranked .rail-track {
+  gap: var(--sp-md);
+  padding-left: 6px;
 }

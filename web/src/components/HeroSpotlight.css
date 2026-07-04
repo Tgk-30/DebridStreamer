@@ -41,8 +41,8 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to top, rgba(8, 9, 18, 0.96) 0%, rgba(8, 9, 18, 0.5) 34%, rgba(8, 9, 18, 0) 66%),
-    linear-gradient(to right, rgba(8, 9, 18, 0.78) 0%, rgba(8, 9, 18, 0.2) 42%, rgba(8, 9, 18, 0) 70%);
+    linear-gradient(to top, rgba(8, 9, 18, 0.86) 0%, rgba(8, 9, 18, 0.34) 40%, rgba(8, 9, 18, 0) 70%),
+    linear-gradient(to right, rgba(8, 9, 18, 0.64) 0%, rgba(8, 9, 18, 0.14) 46%, rgba(8, 9, 18, 0) 74%);
 }
 /* Subtle edge vignette for a cinematic frame. */
 .hero-vignette {
