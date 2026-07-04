@@ -115,7 +115,9 @@ describe("Debrid HTTP request shapes", () => {
 
     const torBoxRequest = mock.byPath("/v1/api/torrents/requestdl")!;
     expect(torBoxRequest.headers.Authorization).toBe("Bearer tb-token");
-    expect(torBoxRequest.url.search.includes("token=")).toBe(false);
+    // requestdl authenticates via the query token (TorBox's API requires
+    // ?token=; a header-only request 422s), so it MUST be present here.
+    expect(torBoxRequest.url.searchParams.get("token")).toBe("tb-token");
   });
 });
 
