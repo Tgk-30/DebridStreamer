@@ -74,10 +74,13 @@ check(
   ".github/workflows/web-release.yml must run the desktop release job on macOS, Linux, and Windows",
 );
 check(
-  "Release workflow builds universal macOS target",
-  /args:\s*"--target universal-apple-darwin"/.test(releaseWorkflow) &&
+  "Release workflow builds per-arch macOS targets",
+  // macOS ships PER-ARCH now (native runners, each bundling its own libmpv) —
+  // no universal/lipo build. Verify both arch targets flow through matrix.args.
+  /--target aarch64-apple-darwin/.test(releaseWorkflow) &&
+    /--target x86_64-apple-darwin/.test(releaseWorkflow) &&
     /args:\s*\$\{\{\s*matrix\.args\s*\}\}/.test(releaseWorkflow),
-  ".github/workflows/web-release.yml must pass the universal-apple-darwin target into tauri-action for macOS",
+  ".github/workflows/web-release.yml must build per-arch macOS (aarch64 + x86_64) targets via matrix.args",
 );
 check(
   "Release workflow packages desktop server",
@@ -143,8 +146,12 @@ check(
 );
 check(
   "Release workflow bundles macOS Node runtimes",
-  /download_tauri_node_runtime\.mjs\s+darwin-arm64\s+darwin-x64/.test(releaseWorkflow),
-  ".github/workflows/web-release.yml must bundle both darwin-arm64 and darwin-x64 for the universal mac app",
+  // Per-arch: each mac job downloads only its own runtime via matrix.node_runtime,
+  // and both arches are present across the matrix.
+  /node_runtime:\s*darwin-arm64/.test(releaseWorkflow) &&
+    /node_runtime:\s*darwin-x64/.test(releaseWorkflow) &&
+    /download_tauri_node_runtime\.mjs \$\{\{ matrix\.node_runtime \}\}/.test(releaseWorkflow),
+  ".github/workflows/web-release.yml must bundle darwin-arm64 and darwin-x64 Node runtimes across the per-arch mac matrix",
 );
 check(
   "Release workflow bundles Linux Node runtime",
