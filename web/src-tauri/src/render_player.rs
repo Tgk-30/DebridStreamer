@@ -54,16 +54,19 @@ mod imp {
     use tauri::{AppHandle, Emitter, Manager, Runtime, State, Window};
 
     // GL enum constants we need (not worth a GL crate).
-    const GL_COLOR_BUFFER_BIT: u32 = 0x0000_4000;
     const GL_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
     const GL_VIEWPORT: u32 = 0x0BA2;
     // 3.2 Core profile value for kCGLPFAOpenGLProfile.
     const CGL_OGLP_VERSION_3_2_CORE: u32 = 0x3200;
 
-    // DIAGNOSTIC (WIP): append to a file — GUI-app stderr is unreliable in
-    // `tauri dev`. Remove after validation.
+    // Trace log for diagnosing the player, OFF unless `DS_MPV_DEBUG` is set (GUI-app
+    // stderr is unreliable in `tauri dev`, so this appends to a file when enabled).
     fn rp_log(msg: &str) {
         use std::io::Write;
+        static ON: OnceLock<bool> = OnceLock::new();
+        if !*ON.get_or_init(|| std::env::var_os("DS_MPV_DEBUG").is_some()) {
+            return;
+        }
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -122,17 +125,6 @@ mod imp {
                 (v[2].max(1), v[3].max(1))
             }
             None => (1, 1),
-        }
-    }
-
-    fn gl_clear_magenta() {
-        type CC = unsafe extern "C" fn(f32, f32, f32, f32);
-        type CL = unsafe extern "C" fn(u32);
-        if let (Some(cc), Some(cl)) = (gl_fn::<CC>("glClearColor"), gl_fn::<CL>("glClear")) {
-            unsafe {
-                cc(1.0, 0.0, 1.0, 1.0);
-                cl(GL_COLOR_BUFFER_BIT);
-            }
         }
     }
 
@@ -258,29 +250,15 @@ mod imp {
                     }
                 }
 
+                // FBO 0-relative; w/h are the layer's drawable size in pixels.
                 let fbo = gl_get_int(GL_FRAMEBUFFER_BINDING);
                 let (w, h) = gl_viewport_size();
-                // Magenta first (compositing probe); video overdraws it once frames
-                // arrive. DIAGNOSTIC — remove after validation.
-                gl_clear_magenta();
                 if let Some(sr) = render_slot.as_ref() {
                     if let Err(e) = sr.0.render::<()>(fbo, w, h, true) {
                         rp_log(&format!("VideoLayer.draw: render failed: {e}"));
                     }
                 }
                 drop(render_slot);
-                {
-                    use std::sync::atomic::{AtomicU64, Ordering};
-                    static N: AtomicU64 = AtomicU64::new(0);
-                    let n = N.fetch_add(1, Ordering::Relaxed);
-                    if n < 3 || n % 120 == 0 {
-                        let b = self.bounds();
-                        rp_log(&format!(
-                            "VideoLayer.draw #{n}: fbo={fbo} vp={w}x{h} layer={}x{}",
-                            b.size.width as i32, b.size.height as i32
-                        ));
-                    }
-                }
                 unsafe { CGLUnlockContext(ctx) };
                 // Let CAOpenGLLayer's default implementation flush the context.
                 unsafe {
@@ -333,12 +311,18 @@ mod imp {
                     let _: () = msg_send![super(self), setFrameSize: size];
                 }
                 let layer = &self.ivars().layer;
-                layer.setFrame(self.bounds());
-                layer.setNeedsDisplay();
-                rp_log(&format!(
-                    "HostView.setFrameSize {}x{}",
-                    size.width as i32, size.height as i32
-                ));
+                // Resize the layer to the view + force CAOpenGLLayer to reallocate
+                // its GL drawable at the new size (a plain setNeedsDisplay does not
+                // reliably grow it). Wrapped so the geometry change doesn't animate.
+                let b = self.bounds();
+                layer.setFrame(b);
+                unsafe {
+                    layer.setBounds(objc2_foundation::NSRect::new(
+                        objc2_foundation::NSPoint::new(0.0, 0.0),
+                        b.size,
+                    ));
+                };
+                unsafe { layer.display() };
             }
         }
     );
@@ -432,9 +416,7 @@ mod imp {
                 };
                 let _ = client.observe_property(&spec.name, fmt, i as u64);
             }
-            rp_log(&format!("event thread: started, observing {} props", observed.len()));
             let ctx = client.ctx.as_ptr();
-            let mut n_emit = 0u32;
             while !stop.load(Ordering::Acquire) {
                 let ev = unsafe { &*libmpv2_sys::mpv_wait_event(ctx, 0.25) };
                 match ev.event_id {
@@ -453,17 +435,6 @@ mod imp {
                             .to_string_lossy()
                             .into_owned();
                         let data = unsafe { prop_data_to_json(prop.format, prop.data) };
-                        n_emit += 1;
-                        // DIAGNOSTIC: log state-changes throughout so we can see the
-                        // file load + playback progress.
-                        let log_it = n_emit <= 6
-                            || name == "core-idle"
-                            || name == "duration"
-                            || name == "eof-reached"
-                            || (name == "time-pos" && n_emit % 40 == 0);
-                        if log_it {
-                            rp_log(&format!("event thread: emit #{n_emit} {name}={data}"));
-                        }
                         let _ = app.emit("player-event", json!({ "name": name, "data": data }));
                     }
                     _ => {}
@@ -782,46 +753,6 @@ mod imp {
         Value::Array(arr)
     }
 
-    /// DIAGNOSTIC: if `RP_TEST_URL` is set, auto-start ~3s after launch + punch the
-    /// page transparent via eval so a screenshot proves in-window compositing.
-    pub fn debug_autostart<R: Runtime>(app: AppHandle<R>) {
-        let url = match std::env::var("RP_TEST_URL") {
-            Ok(u) if !u.is_empty() => u,
-            _ => return,
-        };
-        rp_log(&format!("debug_autostart: RP_TEST_URL={url}"));
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(3));
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.eval(
-                    "document.documentElement.style.background='transparent';\
-                     document.body.style.background='transparent';\
-                     var r=document.getElementById('root'); if(r) r.style.visibility='hidden';",
-                );
-            }
-            let mut opts = std::collections::HashMap::new();
-            opts.insert("loop-file".to_string(), "inf".to_string());
-            let observed = ["pause", "time-pos", "duration", "volume", "eof-reached"]
-                .iter()
-                .map(|n| ObserveSpec {
-                    name: n.to_string(),
-                    format: if *n == "pause" || *n == "eof-reached" {
-                        "flag".to_string()
-                    } else {
-                        "double".to_string()
-                    },
-                })
-                .collect();
-            if let Err(e) = create_player(app.clone(), opts, observed) {
-                rp_log(&format!("debug_autostart: create_player ERROR: {e}"));
-                return;
-            }
-            let state = app.state::<PlayerState>();
-            let _ = with_player(&state, |p| {
-                p.mpv.command("loadfile", &[url.as_str()]).map_err(|e| e.to_string())
-            });
-        });
-    }
 }
 
 #[cfg(target_os = "macos")]
@@ -894,8 +825,6 @@ mod stub {
     ) -> Result<(), String> {
         Ok(())
     }
-
-    pub fn debug_autostart<R: Runtime>(_app: AppHandle<R>) {}
 }
 
 #[cfg(not(target_os = "macos"))]

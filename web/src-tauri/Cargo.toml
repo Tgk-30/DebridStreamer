@@ -22,10 +22,6 @@ tauri-build = { version = "2", features = [] }
 # embedded libmpv player needs (video renders behind the transparent webview).
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
-# Embedded libmpv player (in-window video via a native Metal/GL surface behind
-# the transparent webview). The plugin ships a wrapper dylib that dlopen()s the
-# system libmpv at runtime; both dylibs are bundled under resources/mpv/.
-tauri-plugin-libmpv = { path = "vendor/tauri-plugin-libmpv" }
 # Native HTTP client exposed to the webview. The JS side calls it via
 # `@tauri-apps/plugin-http`'s `fetch` to bypass the browser CORS policy for
 # arbitrary indexer / debrid / Stremio-addon hosts the user configures.

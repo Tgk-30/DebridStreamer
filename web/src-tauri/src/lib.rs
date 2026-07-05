@@ -150,9 +150,6 @@ pub fn run() {
         // Process plugin: lets the webview `relaunch()` the app after the
         // auto-updater downloads + installs a new version (see updater.ts).
         .plugin(tauri_plugin_process::init())
-        // Embedded libmpv player — exposes init/command/setProperty/observe to
-        // the webview (`tauri-plugin-libmpv-api`) for in-window video.
-        .plugin(tauri_plugin_libmpv::init())
         // At-most-one mpv instance, shared across the mpv_* commands.
         .manage(player::MpvState::default())
         // At-most-one in-window render-API player (v0.5).
@@ -167,13 +164,6 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
-
-    // DIAGNOSTIC (v0.5 Stage 1): Rust-side render-player autostart, gated on the
-    // RP_TEST_URL env var. No-op unless set. Remove after validation.
-    builder = builder.setup(|app| {
-        render_player::debug_autostart(app.handle().clone());
-        Ok(())
-    });
 
     builder
         .invoke_handler(tauri::generate_handler![
