@@ -365,6 +365,43 @@ pub fn attach_surface<R: Runtime>(
     let (host_view_ptr, layer_ptr) = rx
         .recv_timeout(std::time::Duration::from_secs(8))
         .map_err(|_| "timed out setting up the video surface".to_string())??;
+
+    // Wait for the CA layer's first draw to create the mpv RenderContext BEFORE we
+    // return — so mpv's vo=libmpv finds it the moment a file is loaded. Without
+    // this, `create_player` returns and the caller loads a file before the async
+    // first draw runs → mpv opens vo=libmpv with "No render context set" → the
+    // video output fails permanently (black). We run off the main thread, so the
+    // main run loop keeps drawing the layer while we poll.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        let ready = {
+            let layer: &VideoLayer = unsafe { &*(layer_ptr as *const VideoLayer) };
+            layer
+                .ivars()
+                .render
+                .lock()
+                .map(|g| g.is_some())
+                .unwrap_or(false)
+        };
+        if ready {
+            rp_log("attach_surface: render context ready");
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            rp_log("attach_surface: WARN render context not ready after 3s");
+            break;
+        }
+        // Nudge a redraw (harmless if one is already pending) and yield.
+        DispatchQueue::main().exec_async({
+            let p = layer_ptr;
+            move || {
+                let l: &VideoLayer = unsafe { &*(p as *const VideoLayer) };
+                l.setNeedsDisplay();
+            }
+        });
+        std::thread::sleep(std::time::Duration::from_millis(15));
+    }
+
     Ok(Box::new(MacosSurface {
         host_view_ptr,
         layer_ptr,
@@ -434,8 +471,17 @@ fn setup_on_main(mpv: Arc<Mpv>) -> Result<(usize, usize), String> {
         );
     }
 
-    layer.set_needs_display();
-    rp_log("setup_on_main: layer host inserted below webview");
+    // Force a SYNCHRONOUS first draw NOW (async=false → display() draws on this
+    // thread), which creates the mpv RenderContext before we return. Otherwise
+    // `create_player` returns + the caller loads a file before the async first
+    // draw runs, and mpv opens vo=libmpv with "No render context set" → the video
+    // output fails permanently (vo-configured=no, black). Eager creation makes the
+    // player robust to a load-immediately-after-init sequence.
+    unsafe { layer.display() };
+    rp_log(&format!(
+        "setup_on_main: layer host inserted below webview; render_ready={}",
+        layer.ivars().render.lock().map(|g| g.is_some()).unwrap_or(false)
+    ));
     Ok((
         Retained::as_ptr(&host) as usize,
         Retained::as_ptr(&layer) as usize,

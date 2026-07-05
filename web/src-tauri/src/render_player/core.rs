@@ -214,13 +214,17 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
     #[cfg(target_os = "macos")]
     {
         o.push(("vo", "libmpv")); // render API requires vo=libmpv
-        o.push(("hwdec", "auto-safe")); // videotoolbox w/ safe SW fallback
+        // auto-copy engages COPY-mode videotoolbox, which works under the OpenGL
+        // render API (auto-safe skips it — zero-copy needs advanced render
+        // control) and still falls back to software. Big win for HEVC/4K.
+        o.push(("hwdec", "auto-copy"));
         o.push(("ao", "coreaudio"));
     }
     #[cfg(target_os = "linux")]
     {
         o.push(("vo", "libmpv")); // render API (GtkGLArea)
-        o.push(("hwdec", "auto-safe")); // vaapi/nvdec w/ safe SW fallback
+        // Copy-mode vaapi/nvdec under the render API, SW fallback.
+        o.push(("hwdec", "auto-copy"));
         o.push(("ao", "pipewire,pulse,alsa"));
     }
     #[cfg(target_os = "windows")]
@@ -483,13 +487,13 @@ mod tests {
         #[cfg(target_os = "macos")]
         {
             assert_eq!(map.get("vo"), Some(&"libmpv")); // render API mandate
-            assert_eq!(map.get("hwdec"), Some(&"auto-safe"));
+            assert_eq!(map.get("hwdec"), Some(&"auto-copy"));
             assert_eq!(map.get("ao"), Some(&"coreaudio"));
         }
         #[cfg(target_os = "linux")]
         {
             assert_eq!(map.get("vo"), Some(&"libmpv")); // render API mandate
-            assert_eq!(map.get("hwdec"), Some(&"auto-safe"));
+            assert_eq!(map.get("hwdec"), Some(&"auto-copy"));
         }
         #[cfg(target_os = "windows")]
         {
