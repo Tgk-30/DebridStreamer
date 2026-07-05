@@ -1,5 +1,41 @@
 # Built-in (embedded) libmpv player
 
+## v0.5 status (2026-07-05)
+
+**Native packaging is SOLVED and validated on a real bundle** — a locally-built
+`.app` loads libmpv + the wrapper from inside `Contents/Resources/lib` and
+decodes/plays video (confirmed on-device: the Sintel trailer rendered from the
+built app). The three prior blockers are fixed:
+
+1. **Wrapper discovery** — the plugin is now **vendored** (`vendor/tauri-plugin-libmpv`,
+   a Cargo `path` dep) and patched: `get_wrapper()` also searches
+   `exe_dir/../Resources/lib` (and `resource_dir()`), since Tauri bundles
+   resources there, not next to the exe.
+2. **libmpv load on a clean Mac** — the patch adds `preload_bundled_libmpv()`:
+   `libc::dlopen(RTLD_NOW|RTLD_GLOBAL)` of the co-located libmpv so the wrapper's
+   leaf `dlopen("libmpv.dylib")` resolves to it. Requires the bundled dylib's
+   install-name leaf to be `libmpv.dylib` (`install_name_tool -id libmpv.dylib`).
+3. **The SIGKILL crash** — `install_name_tool` INVALIDATES the code signature →
+   `dlopen` is killed with "Code Signature Invalid". **You MUST re-sign after the
+   edit** (`codesign --force --sign - libmpv.dylib`; CI: sign with the Developer
+   ID). Hardened runtime also needs `entitlements.plist`
+   (disable-library-validation), wired via `tauri.conf` `bundle.macOS.entitlements`.
+
+**OPEN — the in-window blocker.** On macOS the plugin embeds mpv via `--wid`
+(passing the window's NSView pointer, which IS valid). But mpv opens its OWN
+window instead of compositing inside the app surface. Root cause confirmed:
+mpv's macOS `--wid` view attachment needs AppKit's **main thread**, but the
+plugin's `init` is a Tauri IPC command that runs on a **worker thread**
+(`main_thread=false`). Dispatching `mpv_wrapper_create` to the main thread and
+blocking on the result **deadlocks** (mpv's init needs the main run loop that the
+blocking create occupies). So `--wid` has no clean fix here in mpv 0.41. The
+robust in-window path is mpv's **render API** (an `mpv_render_context` drawing
+into a `CAMetalLayer` behind the transparent webview) — how IINA does it — which
+this plugin does not provide. That is the remaining (large) piece for true
+in-window on macOS.
+
+---
+
 Status: **foundation complete + tested; native distributable packaging NOT yet
 verified.** The in-window player is gated behind an experimental Settings toggle
 that is **off by default** (`builtInPlayer`). Turning it on today only works in a

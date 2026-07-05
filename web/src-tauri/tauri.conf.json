@@ -29,6 +29,9 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "macOS": {
+      "entitlements": "entitlements.plist"
+    },
     "category": "public.app-category.entertainment",
     "copyright": "Copyright © 2026 tgk30. All rights reserved.",
     "shortDescription": "Stream debrid media on your desktop.",

@@ -206,12 +206,19 @@ export function VideoPlayer({
   // In-window native player takes over the whole window (transparent surface +
   // hidden app chrome), so render it standalone — outside the modal frame.
   if (useEmbedded) {
+    const epLabel =
+      season != null && episode != null
+        ? `S${season} · E${episode}`
+        : null;
     return (
       <EmbeddedPlayer
         url={url}
         title={title}
+        subtitle={epLabel}
         startPositionSeconds={startPositionSeconds}
         onProgress={(current, duration) => onProgress?.(current, duration)}
+        onPlayNext={upNext != null ? onPlayNext : undefined}
+        nextLabel={upNext?.label ?? null}
         onClose={onClose}
       />
     );
