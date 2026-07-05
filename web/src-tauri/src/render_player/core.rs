@@ -168,6 +168,72 @@ unsafe fn prop_data_to_json(format: libmpv2_sys::mpv_format, data: *mut c_void) 
     }
 }
 
+/// Best-in-class mpv options applied to EVERY player before user overrides —
+/// the same engine mpv/IINA use, tuned for high-quality scaling, debanding,
+/// hardware decode, and streaming-cache "debrid feel". Per-platform decode +
+/// output are selected by `cfg!(target_os)`:
+///   * macOS/Linux use the OpenGL render API → `vo=libmpv` is MANDATORY; the
+///     quality options below still tune the gpu renderer the render API drives.
+///     (gpu-next-as-a-vo does not apply under the render API — see the memory.)
+///   * Windows wid-embeds mpv → it owns a native `vo=gpu-next` + d3d11.
+/// hwdec is `auto-safe` on render-API platforms: it uses hardware decode when it
+/// works and falls back to software automatically, so it can't break playback.
+pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
+    let mut o = vec![
+        // Rendering quality (libplacebo-grade scaling + downscale correctness).
+        ("scale", "ewa_lanczossharp"),
+        ("cscale", "ewa_lanczossharp"),
+        ("dscale", "mitchell"),
+        ("scale-antiring", "0.6"),
+        ("cscale-antiring", "0.6"),
+        ("correct-downscaling", "yes"),
+        ("linear-downscaling", "yes"),
+        ("sigmoid-upscaling", "yes"),
+        // Debanding + dithering (big win on compressed debrid streams).
+        ("deband", "yes"),
+        ("deband-iterations", "2"),
+        ("deband-threshold", "35"),
+        ("deband-range", "16"),
+        ("deband-grain", "4"),
+        ("dither-depth", "auto"),
+        ("dither", "error-diffusion"),
+        ("error-diffusion", "sierra-lite"),
+        // Streaming cache — the debrid-feel levers (instant seek both directions).
+        ("cache", "yes"),
+        ("demuxer-max-bytes", "150MiB"),
+        ("demuxer-max-back-bytes", "50MiB"),
+        ("cache-secs", "60"),
+        ("demuxer-readahead-secs", "20"),
+        ("hls-bitrate", "max"),
+        // Subtitles (libass; per-style props are driven live by the app UI).
+        ("sub-auto", "fuzzy"),
+        ("sub-ass-override", "force"),
+        // Audio.
+        ("gapless-audio", "weak"),
+    ];
+    #[cfg(target_os = "macos")]
+    {
+        o.push(("vo", "libmpv")); // render API requires vo=libmpv
+        o.push(("hwdec", "auto-safe")); // videotoolbox w/ safe SW fallback
+        o.push(("ao", "coreaudio"));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        o.push(("vo", "libmpv")); // render API (GtkGLArea)
+        o.push(("hwdec", "auto-safe")); // vaapi/nvdec w/ safe SW fallback
+        o.push(("ao", "pipewire,pulse,alsa"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        o.push(("vo", "gpu-next")); // wid-embed: mpv owns its native vo
+        o.push(("gpu-api", "d3d11"));
+        o.push(("gpu-context", "d3d11"));
+        o.push(("hwdec", "d3d11va"));
+        o.push(("ao", "wasapi"));
+    }
+    o
+}
+
 // ---- Player creation (mpv + surface + event thread; NO loadfile) ---------
 pub fn create_player<R: Runtime>(
     app: AppHandle<R>,
@@ -183,12 +249,17 @@ pub fn create_player<R: Runtime>(
     }
 
     let mpv = Mpv::with_initializer(|init| {
-        // The render API REQUIRES vo=libmpv; hwdec stays SW for now (Phase 1 makes
-        // rendering + hwdec best-in-class + platform-aware). Both override config.
-        let _ = init.set_option("vo", "libmpv");
-        let _ = init.set_option("hwdec", "no");
+        // Best-in-class defaults first, then user options override them — except
+        // `vo` on the render-API platforms (macOS/Linux), which MUST stay libmpv
+        // or the render context can't bind to mpv.
+        for (k, v) in best_in_class_options() {
+            if let Err(e) = init.set_option(k, v) {
+                rp_log(&format!("create_player: default {k}={v} ERR {e}"));
+            }
+        }
         for (k, v) in &options {
-            if k == "vo" || k == "hwdec" {
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if k == "vo" {
                 continue;
             }
             if let Err(e) = init.set_option(k.as_str(), v.as_str()) {
@@ -382,4 +453,49 @@ fn build_chapter_list(mpv: &Mpv) -> Value {
         }));
     }
     Value::Array(arr)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::best_in_class_options;
+    use std::collections::HashMap;
+
+    /// The best-in-class defaults are stable + platform-correct. Pure/headless —
+    /// no GPU, no mpv instance — so it runs on every CI runner.
+    #[test]
+    fn best_in_class_options_are_quality_and_platform_correct() {
+        let opts = best_in_class_options();
+        let map: HashMap<&str, &str> = opts.iter().cloned().collect();
+        // No duplicate keys (a later override would silently win).
+        assert_eq!(map.len(), opts.len(), "duplicate option keys: {opts:?}");
+
+        // Cross-platform quality baseline.
+        assert_eq!(map.get("scale"), Some(&"ewa_lanczossharp"));
+        assert_eq!(map.get("cscale"), Some(&"ewa_lanczossharp"));
+        assert_eq!(map.get("deband"), Some(&"yes"));
+        assert_eq!(map.get("dither"), Some(&"error-diffusion"));
+        assert_eq!(map.get("cache"), Some(&"yes"));
+        assert_eq!(map.get("demuxer-max-back-bytes"), Some(&"50MiB"));
+        assert_eq!(map.get("sub-ass-override"), Some(&"force"));
+        assert!(map.contains_key("hwdec"), "hwdec must be set on every platform");
+
+        // Per-platform decode + output.
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(map.get("vo"), Some(&"libmpv")); // render API mandate
+            assert_eq!(map.get("hwdec"), Some(&"auto-safe"));
+            assert_eq!(map.get("ao"), Some(&"coreaudio"));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(map.get("vo"), Some(&"libmpv")); // render API mandate
+            assert_eq!(map.get("hwdec"), Some(&"auto-safe"));
+        }
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(map.get("vo"), Some(&"gpu-next")); // wid-embed native
+            assert_eq!(map.get("hwdec"), Some(&"d3d11va"));
+            assert_eq!(map.get("gpu-api"), Some(&"d3d11"));
+        }
+    }
 }
