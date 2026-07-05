@@ -22,7 +22,11 @@ realpath_f() { python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' 
 deps_of() { otool -L "$1" | awk 'NR>1{print $1}' | grep -E '^/opt/homebrew/|^/usr/local/' || true; }
 
 # ---- 1. BFS the transitive dependency set (by resolved real path) -------------
-declare -A seen
+# Keep this bash-3.2 compatible: macOS's system bash — and the CI mac runners'
+# default `/usr/bin/env bash` — is 3.2, which has no `declare -A`. Track seen
+# basenames in a newline-delimited string set instead of an associative array.
+LF=$'\n'
+seen="$LF"
 queue=("$(realpath_f "$LIBMPV")")
 files=()
 while [ ${#queue[@]} -gt 0 ]; do
@@ -30,8 +34,8 @@ while [ ${#queue[@]} -gt 0 ]; do
   [ -f "$cur" ] || continue
   real="$(realpath_f "$cur")"
   name="$(basename "$real")"
-  [ -n "${seen[$name]:-}" ] && continue
-  seen[$name]="$real"
+  case "$seen" in *"$LF$name$LF"*) continue ;; esac
+  seen="$seen$name$LF"
   files+=("$real")
   while read -r dep; do queue+=("$(realpath_f "$dep")"); done < <(deps_of "$real")
 done
