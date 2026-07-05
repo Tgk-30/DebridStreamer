@@ -181,6 +181,7 @@ pub fn run() {
             render_player::player_set_property,
             render_player::player_get_property,
             render_player::player_set_video_margin,
+            render_player::player_set_rect,
             render_player::player_destroy,
             keychain::keychain_get,
             keychain::keychain_set,
