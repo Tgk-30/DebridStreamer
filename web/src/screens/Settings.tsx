@@ -956,9 +956,9 @@ function PlaybackTab({ draft, patch }: TabProps) {
             <strong>Built-in player</strong>
             <span className="t-secondary">
               {" "}
-              — <em>experimental.</em> Play MKV / HEVC right inside the window
-              (native libmpv) instead of opening an external app. May not work
-              on every machine yet.
+              — play MKV / HEVC right inside the window (bundled libmpv, nothing
+              to install). On by default; turn it off to open your chosen
+              external player below instead. macOS only for now.
             </span>
           </span>
         </label>

@@ -432,9 +432,11 @@ export function defaultSettings(): AppSettings {
     transcode: false,
     ratingScale: "ten",
     preferredExternalPlayer: "",
-    // Experimental: OFF by default until the native libmpv bundling is verified
-    // on a clean (Homebrew-less) machine. See web/src-tauri/EMBEDDED_PLAYER.md.
-    builtInPlayer: false,
+    // The in-window player is the DEFAULT on macOS (libmpv + its deps ship inside
+    // the .app — see scripts/bundle-mpv-deps.sh). Turn it off to hand off to an
+    // external player (VLC/IINA/…) instead. macOS-only; VideoPlayer falls back to
+    // the external hand-off on other platforms regardless.
+    builtInPlayer: true,
     userName: "",
     userAvatar: "",
   };

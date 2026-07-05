@@ -51,6 +51,14 @@ vi.mock("../lib/tauri", () => ({
   mpvStop: () => mpvStopMock(),
 }));
 
+// Platform — the in-window player is macOS-gated; report mac so the built-in
+// player tests exercise it (external-handoff tests pass useBuiltInPlayer=false).
+const deviceKindMock = vi.fn<() => string>(() => "mac");
+vi.mock("../lib/platform", async (orig) => ({
+  ...(await orig<typeof import("../lib/platform")>()),
+  deviceKind: () => deviceKindMock(),
+}));
+
 // AppStore — VideoPlayer doesn't read it directly, but its captions menu does;
 // stub it so nothing transitively touches a real store.
 vi.mock("../store/AppStore", () => ({
@@ -618,12 +626,47 @@ describe("Built-in player (Tauri)", () => {
     expect(openInExternalPlayerMock).not.toHaveBeenCalled();
   });
 
-  it("uses the external hand-off by default (built-in player is opt-in)", async () => {
+  it("uses the in-window player by default on macOS (external is the opt-out)", async () => {
+    isTauriMock.mockReturnValue(true);
+    render(<VideoPlayer url="https://x/movie.mkv" title="T" onClose={() => {}} />);
+    // Default (no useBuiltInPlayer prop) is now the built-in player; no hand-off.
+    expect(screen.getByTestId("embedded-player")).toHaveAttribute(
+      "data-url",
+      "https://x/movie.mkv",
+    );
+    expect(playWithMpvMock).not.toHaveBeenCalled();
+  });
+
+  it("hands off to an external player when the built-in player is turned off", async () => {
     isTauriMock.mockReturnValue(true);
     playWithMpvMock.mockResolvedValue({ embedded: false, status: "ok" });
-    render(<VideoPlayer url="https://x/movie.mkv" title="T" onClose={() => {}} />);
+    render(
+      <VideoPlayer
+        url="https://x/movie.mkv"
+        title="T"
+        onClose={() => {}}
+        useBuiltInPlayer={false}
+      />,
+    );
     expect(screen.queryByTestId("embedded-player")).toBeNull();
     await waitFor(() => expect(playWithMpvMock).toHaveBeenCalled());
+  });
+
+  it("falls back to the external hand-off on non-macOS even when built-in is on", async () => {
+    isTauriMock.mockReturnValue(true);
+    deviceKindMock.mockReturnValue("windows");
+    playWithMpvMock.mockResolvedValue({ embedded: false, status: "ok" });
+    render(
+      <VideoPlayer
+        url="https://x/movie.mkv"
+        title="T"
+        onClose={() => {}}
+        useBuiltInPlayer
+      />,
+    );
+    expect(screen.queryByTestId("embedded-player")).toBeNull();
+    await waitFor(() => expect(playWithMpvMock).toHaveBeenCalled());
+    deviceKindMock.mockReturnValue("mac");
   });
 });
 

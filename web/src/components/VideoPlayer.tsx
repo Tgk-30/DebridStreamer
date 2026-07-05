@@ -20,6 +20,7 @@ import {
   playWithMpv,
   mpvStop,
 } from "../lib/tauri";
+import { deviceKind } from "../lib/platform";
 import type { SubtitleClient } from "../services/subtitles/OpenSubtitlesClient";
 import type { Translator } from "../services/subtitles/SubtitleTranslator";
 import { useSubtitleTracks } from "./player/useSubtitleTracks";
@@ -147,15 +148,20 @@ export function VideoPlayer({
   onPlayNext,
   autoCountdown = true,
   preferredPlayer,
-  useBuiltInPlayer = false,
+  useBuiltInPlayer = true,
 }: VideoPlayerProps) {
   const mode = kind ?? classify(url);
   const underTauri = isTauri();
-  // In-window native player: the desktop path for containers/codecs the webview
-  // can't decode (MKV/HEVC). Renders libmpv on a native surface behind the
-  // transparent window (see EmbeddedPlayer). When off, we fall back to the
-  // external hand-off (bundled mpv / VLC) below.
-  const useEmbedded = underTauri && mode === "external" && useBuiltInPlayer;
+  // In-window native player: the DEFAULT desktop path for containers/codecs the
+  // webview can't decode (MKV/HEVC). Renders libmpv on a native CAOpenGLLayer
+  // behind the transparent window (see EmbeddedPlayer). macOS-only for now (the
+  // surface is AppKit); elsewhere, and when the user opts out, we fall back to
+  // the external hand-off (VLC/IINA/…) below — Stremio-style player choice.
+  const useEmbedded =
+    underTauri &&
+    deviceKind() === "mac" &&
+    mode === "external" &&
+    useBuiltInPlayer;
   const [externalStatus, setExternalStatus] = useState<string | null>(null);
   const [externalError, setExternalError] = useState<string | null>(null);
 
