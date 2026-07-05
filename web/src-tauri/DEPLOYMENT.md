@@ -28,68 +28,62 @@ into the `.app` and relocated to `@rpath`.
    Homebrew). Verified: with `MPV_LIB_DIR` set to the relocated dir, the app binary
    references `@rpath/libmpv.2.dylib`, not the Homebrew absolute path.
 
-## CI changes still to make (`.github/workflows/web-release.yml`)
+## CI — now WIRED (`.github/workflows/web-release.yml`)
 
-These need a real CI run + the Developer ID secrets to validate, so they're
-written up rather than committed blind.
+The workflow builds macOS **per-arch** and bundles libmpv into each `.app`. What
+it does, in order (macOS jobs):
 
-### 1. Per-arch matrix (replace the single universal macOS job)
+1. **Per-arch matrix** — `macos-15` builds `aarch64-apple-darwin`, `macos-13`
+   (Intel) builds `x86_64-apple-darwin`. Each installs its NATIVE Homebrew mpv
+   (no lipo), downloads only its own Node runtime (`darwin-arm64` / `darwin-x64`),
+   and its `smoke_tauri_server_bundle.mjs` checks the runner's own arch — all
+   consistent per job. Runtime node selection is by `std::env::consts::ARCH`
+   (`server_host.rs`), so a single-arch bundle launches correctly.
+2. **Import the Developer ID cert** (`apple-actions/import-codesign-certs`) into a
+   keychain FIRST — so the relocated dylibs can be Developer-ID signed here. Because
+   the cert is already imported, `tauri-action` is given `APPLE_SIGNING_IDENTITY`
+   but NOT `APPLE_CERTIFICATE` (that would re-import).
+3. **Bundle + sign** — `bundle-mpv-deps.sh $(brew --prefix)/lib/libmpv.2.dylib
+   web/src-tauri/Frameworks`, then re-sign every dylib with the Developer ID +
+   `--options runtime` + `--timestamp` (AFTER `install_name_tool`, which the script
+   runs internally — it invalidates sigs). Sets `MPV_LIB_DIR` (so `build.rs` links
+   `@rpath/libmpv.2.dylib`) and generates a `--config` override listing the real
+   dylibs under `bundle.macOS.frameworks` (paths relative to `tauri.conf.json`;
+   symlink excluded via `find -type f`).
+4. **tauri-action** builds with `--target <arch> --config <fw.conf.json>`, copies
+   the dylibs into `Contents/Frameworks`, signs + notarizes the `.app`.
+5. **Notarize & staple the .dmg** (tauri-action notarizes the `.app` but not the
+   `.dmg` container), then re-upload it to the draft release.
 
-```yaml
-matrix:
-  include:
-    - { platform: macos-15, arch: aarch64, rust_target: aarch64-apple-darwin }
-    - { platform: macos-13, arch: x86_64,  rust_target: x86_64-apple-darwin  }
-```
-- Use `targets: ${{ matrix.rust_target }}` (single target per job, not both).
-- `macos-13` is the Intel runner → its `brew install mpv` gives x86_64 dylibs
-  natively (no Rosetta/lipo).
+The hardened-runtime entitlements (`disable-library-validation` + `allow-jit`,
+already in `entitlements.plist`) let the app load the bundled dylibs.
 
-### 2. Bundle + sign step (per job, BEFORE the tauri-action build)
+### First-run checklist (validate on the first real release)
 
-```bash
-brew install mpv
-FW="$PWD/web/src-tauri/Frameworks"
-web/src-tauri/scripts/bundle-mpv-deps.sh "$(brew --prefix)/lib/libmpv.2.dylib" "$FW"
-# Re-sign each dylib with the Developer ID + hardened runtime + timestamp so
-# notarization accepts them (the ad-hoc sigs from the script are for local use):
-for f in "$FW"/*.dylib; do
-  codesign --force --timestamp --options runtime \
-    --sign "$APPLE_SIGNING_IDENTITY" "$f"
-done
-echo "MPV_LIB_DIR=$FW" >> "$GITHUB_ENV"   # so build.rs links @rpath libmpv
-```
-
-### 3. Make Tauri bundle the Frameworks into the `.app`
-
-Tauri copies `bundle.macOS.frameworks` entries into `Contents/Frameworks` during
-assembly (before it signs), so the Developer-ID-signed dylibs get carried in and
-kept intact. Pass the generated list via `tauri-action`'s `args` as a `--config`
-override (the list is dynamic):
-
-```bash
-FW_JSON=$(ls "$FW"/*.dylib | jq -R . | jq -s '{bundle:{macOS:{frameworks:.}}}')
-echo "$FW_JSON" > /tmp/fw.conf.json
-# tauri-action: args: --config /tmp/fw.conf.json
-```
-
-Verify after build: `otool -L <app>/Contents/MacOS/debridstreamer | grep mpv`
-shows `@rpath/libmpv.2.dylib`, and `codesign --verify --deep --strict <app>`
-passes. The hardened-runtime entitlement `disable-library-validation`
-(already in `entitlements.plist`) lets the app load these Developer-ID dylibs.
-
-### 4. Updater `latest.json` — per-arch targets
-
-The universal build produced one `darwin-x86_64`/`darwin-universal` entry; with
-per-arch DMGs the updater manifest needs both `darwin-aarch64` and `darwin-x86_64`
-platform keys pointing at their respective signed `.app.tar.gz` + signature.
-tauri-action emits per-target artifacts; merge them into one `latest.json`.
+- **Signing identity flow** — confirm the single `import-codesign-certs` + no
+  `APPLE_CERTIFICATE` to tauri-action actually signs the `.app`. If tauri-action
+  complains it needs the cert, add `APPLE_CERTIFICATE`/`_PASSWORD` back to its env
+  (double-import is usually harmless).
+- **Dylibs carried + signed** — on a built `.app`:
+  `otool -L Contents/MacOS/debridstreamer | grep mpv` → `@rpath/libmpv.2.dylib`;
+  `codesign --verify --deep --strict <app>` passes; notarization log lists no
+  unsigned/`runtime`-less dylibs. If dylibs are rejected, the step-3 re-sign didn't
+  take — check it ran after the script.
+- **`latest.json` merge** — two macOS jobs + Linux + Windows all upload to the same
+  draft release; tauri-action merges platform keys into one `latest.json`. This repo
+  ALREADY relied on that merge across 3 concurrent jobs, so a 4th (2nd mac arch)
+  should just add `darwin-aarch64` + `darwin-x86_64`. Verify both keys land and
+  neither job clobbers the other (matrix is `fail-fast: false`).
+- **Clean-Mac smoke** — on a Mac with NO `brew install mpv`, open the notarized
+  DMG, install, play an MKV → the in-window player renders. `DYLD_PRINT_LIBRARIES=1
+  /Applications/DebridStreamer.app/Contents/MacOS/debridstreamer` should load
+  libmpv from inside the app bundle, not `/opt/homebrew` or `/usr/local`.
 
 ## Gotchas (from the render-player work)
 
-- `install_name_tool` invalidates code signatures → the CI re-sign in step 2 is
-  mandatory, and it must run AFTER the script's `install_name_tool` rewrites.
+- `install_name_tool` invalidates code signatures → the CI re-sign is mandatory and
+  must run AFTER the script's `install_name_tool` rewrites (it does — step 3).
 - Pin runners (`macos-15`, `macos-13`), never `macos-latest` (moved to macOS 26,
   whose SDK produces "damaged"-app codesigning — see the release-verification notes).
-- The player is macOS-gated in `VideoPlayer.tsx`; no bundling is needed for the
-  Windows/Linux jobs.
+- The player is macOS-gated in `VideoPlayer.tsx`; no bundling on the Windows/Linux
+  jobs (`matrix.os == 'macos'` guards every player step).
