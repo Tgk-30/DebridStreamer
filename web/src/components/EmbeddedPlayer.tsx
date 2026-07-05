@@ -80,8 +80,9 @@ const MPV_CONFIG: MpvConfig = {
 };
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3] as const;
-/** Leave the bottom of the video clear so the control bar never covers it. */
-const VIDEO_MARGIN_BOTTOM = 0.12;
+/** No reserved margin — the video fills edge-to-edge and centers; the control
+ *  bar overlays it on a gradient scrim (like every modern streaming player). */
+const VIDEO_MARGIN_BOTTOM = 0;
 
 function fmt(s: number): string {
   if (!Number.isFinite(s) || s < 0) return "0:00";

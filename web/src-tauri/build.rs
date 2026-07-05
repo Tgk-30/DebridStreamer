@@ -9,6 +9,12 @@ fn main() {
         // CGL functions (CGLChoosePixelFormat/CGLLockContext/…) used by the
         // CAOpenGLLayer video surface live in the OpenGL framework.
         println!("cargo:rustc-link-lib=framework=OpenGL");
+        // Runtime search path for the BUNDLED libmpv + its deps. In a release
+        // .app they live in Contents/Frameworks (relocated to @rpath by
+        // scripts/bundle-mpv-deps.sh); the binary is in Contents/MacOS, so
+        // @executable_path/../Frameworks points at them. Harmless in dev (there
+        // libmpv is linked by its absolute Homebrew path and found directly).
+        println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
     }
 
     tauri_build::build()
