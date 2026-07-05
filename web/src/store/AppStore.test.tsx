@@ -180,6 +180,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     transcode: false,
     ratingScale: "ten",
     preferredExternalPlayer: "",
+    builtInPlayer: true,
     userName: "",
     userAvatar: "",
     ...overrides,

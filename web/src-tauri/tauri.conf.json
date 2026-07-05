@@ -16,9 +16,11 @@
         "width": 1280,
         "height": 860,
         "minWidth": 960,
-        "minHeight": 640
+        "minHeight": 640,
+        "transparent": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; frame-src https://www.youtube-nocookie.com; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://image.tmdb.org https://*.tmdb.org; media-src 'self' blob: data: http: https:; connect-src 'self' ipc: http://ipc.localhost http://tauri.localhost tauri://localhost http://localhost:* http://127.0.0.1:* http: https:; worker-src 'self' blob:; font-src 'self' data:"
     }
@@ -39,7 +41,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources/server/**/*"
+      "resources/server/**/*",
+      "lib/**/*"
     ]
   },
   "plugins": {

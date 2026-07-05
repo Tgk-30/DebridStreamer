@@ -945,14 +945,33 @@ function PlaybackTab({ draft, patch }: TabProps) {
         them before sending stream rows to this device.
       </p>
 
+      {isTauri() && (
+        <label className="settings-toggle-row">
+          <input
+            type="checkbox"
+            checked={draft.builtInPlayer}
+            onChange={(event) => patch({ builtInPlayer: event.target.checked })}
+          />
+          <span>
+            <strong>Built-in player</strong>
+            <span className="t-secondary">
+              {" "}
+              — <em>experimental.</em> Play MKV / HEVC right inside the window
+              (native libmpv) instead of opening an external app. May not work
+              on every machine yet.
+            </span>
+          </span>
+        </label>
+      )}
+
       {players.length > 0 && (
         <label className="settings-field">
           <span className="settings-field-label">
             <strong>External player</strong>
             <span className="t-secondary">
               {" "}
-              — which app opens streams the built-in player can&apos;t decode
-              (4K&nbsp;HEVC, MKV). Detected on this machine.
+              — which app opens MKV / 4K&nbsp;HEVC streams when the built-in
+              player is off (or as a fallback). Detected on this machine.
             </span>
           </span>
           <select

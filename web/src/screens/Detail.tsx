@@ -884,6 +884,7 @@ export function Detail() {
             title={player.title}
             kind={player.external ? "external" : undefined}
             preferredPlayer={settings.preferredExternalPlayer}
+            useBuiltInPlayer={settings.builtInPlayer}
             startPositionSeconds={player.startPositionSeconds}
             onClose={() => setPlayer(null)}
             onProgress={(current, duration) => {

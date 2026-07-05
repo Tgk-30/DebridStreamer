@@ -114,6 +114,17 @@ vi.mock("./Icon", () => ({
   Icon: ({ name }: { name: string }) => <span data-icon={name} />,
 }));
 
+// Built-in libmpv player — a native surface that can't render in jsdom, so stub
+// it. These tests only assert WHICH path VideoPlayer chooses (embedded vs the
+// external hand-off), not the player internals (covered by its own concerns).
+vi.mock("./EmbeddedPlayer", () => ({
+  EmbeddedPlayer: (props: { title: string; url: string }) => (
+    <div data-testid="embedded-player" data-url={props.url}>
+      {props.title}
+    </div>
+  ),
+}));
+
 import { VideoPlayer } from "./VideoPlayer";
 
 // jsdom's <video> has no play/pause/load/canPlayType implementations.
@@ -587,11 +598,47 @@ describe("ExternalPanel (browser)", () => {
   });
 });
 
+describe("Built-in player (Tauri)", () => {
+  it("renders the in-window libmpv player for MKV when enabled, no hand-off", async () => {
+    isTauriMock.mockReturnValue(true);
+    render(
+      <VideoPlayer
+        url="https://x/movie.mkv"
+        title="T"
+        onClose={() => {}}
+        useBuiltInPlayer
+      />,
+    );
+    // The embedded player takes over; the external mpv/VLC hand-off is skipped.
+    expect(screen.getByTestId("embedded-player")).toHaveAttribute(
+      "data-url",
+      "https://x/movie.mkv",
+    );
+    expect(playWithMpvMock).not.toHaveBeenCalled();
+    expect(openInExternalPlayerMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the external hand-off by default (built-in player is opt-in)", async () => {
+    isTauriMock.mockReturnValue(true);
+    playWithMpvMock.mockResolvedValue({ embedded: false, status: "ok" });
+    render(<VideoPlayer url="https://x/movie.mkv" title="T" onClose={() => {}} />);
+    expect(screen.queryByTestId("embedded-player")).toBeNull();
+    await waitFor(() => expect(playWithMpvMock).toHaveBeenCalled());
+  });
+});
+
 describe("ExternalPanel (Tauri)", () => {
   it("plays via the bundled mpv and shows its status", async () => {
     isTauriMock.mockReturnValue(true);
     playWithMpvMock.mockResolvedValue({ embedded: false, status: "ok" });
-    render(<VideoPlayer url="https://x/movie.mkv" title="T" onClose={() => {}} />);
+    render(
+      <VideoPlayer
+        url="https://x/movie.mkv"
+        title="T"
+        onClose={() => {}}
+        useBuiltInPlayer={false}
+      />,
+    );
     expect(screen.getByText("Opening in the bundled player")).toBeInTheDocument();
     await waitFor(() =>
       expect(playWithMpvMock).toHaveBeenCalledWith("https://x/movie.mkv"),
@@ -606,7 +653,14 @@ describe("ExternalPanel (Tauri)", () => {
   it("reports the in-window embedding status when mpv embeds", async () => {
     isTauriMock.mockReturnValue(true);
     playWithMpvMock.mockResolvedValue({ embedded: true, status: "ok" });
-    render(<VideoPlayer url="https://x/movie.mkv" title="T" onClose={() => {}} />);
+    render(
+      <VideoPlayer
+        url="https://x/movie.mkv"
+        title="T"
+        onClose={() => {}}
+        useBuiltInPlayer={false}
+      />,
+    );
     await waitFor(() =>
       expect(
         screen.getByText(
@@ -620,7 +674,14 @@ describe("ExternalPanel (Tauri)", () => {
     isTauriMock.mockReturnValue(true);
     playWithMpvMock.mockRejectedValue(new Error("no mpv"));
     openInExternalPlayerMock.mockResolvedValue("Opened in VLC");
-    render(<VideoPlayer url="https://x/movie.mkv" title="T" onClose={() => {}} />);
+    render(
+      <VideoPlayer
+        url="https://x/movie.mkv"
+        title="T"
+        onClose={() => {}}
+        useBuiltInPlayer={false}
+      />,
+    );
     await waitFor(() =>
       expect(openInExternalPlayerMock).toHaveBeenCalledWith(
         "https://x/movie.mkv",
@@ -636,7 +697,12 @@ describe("ExternalPanel (Tauri)", () => {
     playWithMpvMock.mockRejectedValue(new Error("no mpv"));
     openInExternalPlayerMock.mockRejectedValue(new Error("VLC missing"));
     const { container } = render(
-      <VideoPlayer url="https://x/movie.mkv" title="T" onClose={() => {}} />,
+      <VideoPlayer
+        url="https://x/movie.mkv"
+        title="T"
+        onClose={() => {}}
+        useBuiltInPlayer={false}
+      />,
     );
     await waitFor(() =>
       expect(container.querySelector(".player-external-err")).toHaveTextContent(
@@ -649,7 +715,12 @@ describe("ExternalPanel (Tauri)", () => {
     isTauriMock.mockReturnValue(true);
     playWithMpvMock.mockResolvedValue({ embedded: false, status: "ok" });
     const { unmount } = render(
-      <VideoPlayer url="https://x/movie.mkv" title="T" onClose={() => {}} />,
+      <VideoPlayer
+        url="https://x/movie.mkv"
+        title="T"
+        onClose={() => {}}
+        useBuiltInPlayer={false}
+      />,
     );
     await waitFor(() => expect(playWithMpvMock).toHaveBeenCalled());
     unmount();

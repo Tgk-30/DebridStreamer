@@ -1,0 +1,6 @@
+# Embedded-player native libs — large + platform-specific; provisioned via
+# `brew install mpv` (macOS) or CI. See docs.
+*.dylib
+*.so
+*.so.*
+*.dll
