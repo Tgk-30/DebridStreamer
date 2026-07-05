@@ -778,10 +778,13 @@ dependencies = [
  "keyring",
  "libc",
  "libmpv2",
+ "libmpv2-sys",
  "objc2",
  "objc2-app-kit",
+ "objc2-core-foundation",
  "objc2-core-video",
  "objc2-foundation",
+ "objc2-open-gl",
  "objc2-quartz-core",
  "raw-window-handle",
  "serde",
@@ -2581,7 +2584,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536"
 dependencies = [
  "bitflags 2.13.0",
+ "block2",
  "dispatch2",
+ "libc",
  "objc2",
 ]
 
@@ -2696,6 +2701,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-open-gl"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ecc7fd7519a189d9ba9ed9de51af81e41d096aea1d08cca59fd9d8c65d8f585"
+dependencies = [
+ "objc2",
+ "objc2-io-surface",
+]
+
+[[package]]
 name = "objc2-osa-kit"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2722,6 +2737,7 @@ dependencies = [
  "objc2-core-video",
  "objc2-foundation",
  "objc2-metal",
+ "objc2-open-gl",
 ]
 
 [[package]]

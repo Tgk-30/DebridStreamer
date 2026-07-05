@@ -4,7 +4,12 @@ fn main() {
     // (dev) or the CI-fetched copy. At runtime the bundled dylib is used instead
     // (see render_player.rs / Stage 4 packaging) — this is link-time only.
     #[cfg(target_os = "macos")]
-    emit_mpv_link_search();
+    {
+        emit_mpv_link_search();
+        // CGL functions (CGLChoosePixelFormat/CGLLockContext/…) used by the
+        // CAOpenGLLayer video surface live in the OpenGL framework.
+        println!("cargo:rustc-link-lib=framework=OpenGL");
+    }
 
     tauri_build::build()
 }

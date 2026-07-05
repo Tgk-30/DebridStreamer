@@ -49,6 +49,18 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>,
 );
 
+// DEV-ONLY: mount the render-player test harness in a sibling root. Remove before
+// ship (along with RenderPlayerDevHarness.tsx).
+if (import.meta.env.DEV) {
+  void import("./components/RenderPlayerDevHarness").then(
+    ({ RenderPlayerDevHarness }) => {
+      const el = document.createElement("div");
+      document.body.appendChild(el);
+      createRoot(el).render(<RenderPlayerDevHarness />);
+    },
+  );
+}
+
 if ("serviceWorker" in navigator && !import.meta.env.DEV) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {

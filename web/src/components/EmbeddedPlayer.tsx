@@ -18,7 +18,7 @@ import {
   setVideoMarginRatio,
   type MpvConfig,
   type MpvObservableProperty,
-} from "tauri-plugin-libmpv-api";
+} from "../lib/renderPlayer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon } from "./Icon";
 import "./EmbeddedPlayer.css";

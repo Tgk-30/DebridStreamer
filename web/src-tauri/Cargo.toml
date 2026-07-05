@@ -63,6 +63,10 @@ keyring = { version = "3", features = ["apple-native"] }
 # into our own NSOpenGLView composited behind the transparent webview, paced by a
 # CVDisplayLink. Replaces the unreliable --wid embedding on macOS.
 libmpv2 = "5"
+# Raw mpv FFI for the event loop: libmpv2's safe wait_event panics (unreachable!)
+# on MPV_FORMAT_NONE property changes (a property becoming unavailable), which is
+# routine — so we pull events via libmpv2-sys and handle NONE ourselves.
+libmpv2-sys = "4"
 libc = "0.2"
 # Grand Central Dispatch — hop AppKit setup onto the main thread reliably
 # (Tauri's run_on_main_thread proxy doesn't drain while the loop is idle).
@@ -70,8 +74,17 @@ dispatch2 = "0.3"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
-objc2-quartz-core = "0.3"
+# CAOpenGLLayer (layer-backed GL surface — survives window occlusion/activation,
+# unlike a bare NSOpenGLContext+NSView) needs the GL/CV/CF interop features.
+objc2-quartz-core = { version = "0.3", features = [
+    "CAOpenGLLayer",
+    "objc2-core-foundation",
+    "objc2-core-video",
+    "objc2-open-gl",
+] }
 objc2-core-video = "0.3"
+objc2-open-gl = "0.3"
+objc2-core-foundation = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }

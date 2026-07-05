@@ -1,54 +1,67 @@
 // In-window mpv render-API player (macOS).
 //
-// This is the "beyond IINA" in-window video path. Instead of mpv's unreliable
-// `--wid` embedding (which spawns its own window on macOS — see player.rs), we
-// drive mpv's *render API* ourselves:
+// The "beyond IINA" in-window video path. mpv's `--wid` embedding is dead on
+// macOS (spawns its own window); instead we drive mpv's *render API* into our
+// own layer-backed OpenGL surface composited BEHIND the transparent webview:
 //
-//   * Create a bare `NSView` and our own `NSOpenGLContext`, insert the view
-//     BELOW the WKWebView in the (transparent) window's content view, and set
-//     the context's drawable to that view.
-//   * Create mpv with `vo=libmpv` and an `mpv_render_context` bound to OpenGL.
-//   * A dedicated render thread owns the GL context + the render context and
-//     draws whenever mpv's update callback signals a new frame (the canonical
-//     libmpv render loop). All mpv/GL calls happen on that one thread; only the
-//     AppKit view mutations happen on the main thread.
+//   * A `CAOpenGLLayer` subclass (VideoLayer) hosts the GL surface. CoreAnimation
+//     owns the context + backbuffer and calls our draw callback on its render
+//     thread; we render an mpv frame into the bound FBO there. Being LAYER-BACKED,
+//     it survives window occlusion/activation/Space changes — unlike a bare
+//     NSOpenGLContext+NSView, which detaches (goes black) on those events.
+//   * The layer is hosted in a plain NSView inserted below the WKWebView.
+//   * mpv (vo=libmpv) + an `mpv_render_context` (OpenGL) drive the pixels; mpv's
+//     render-update callback pokes the layer (`setNeedsDisplay`) when a new frame
+//     is ready — CoreAnimation then calls our draw callback.
 //
-// The webview is punched transparent by the frontend while the player is up, so
-// the video composited behind it shows through, with our React controls on top.
-//
-// Correctness invariants (see RENDER_PLAYER_PLAN.md risks):
-//   * `RenderContext` is `!Send` — it is created lazily ON the render thread so
-//     it is born on the thread that will only ever touch it.
-//   * The `NSOpenGLContext` ownership is transferred to the render thread via
-//     `Retained::into_raw`/`from_raw` (no cross-thread refcount race).
-//   * mpv's render context is freed (render thread exit) BEFORE mpv itself is
-//     destroyed (Player's `Arc<Mpv>` drop after the thread is joined).
+// Threading walls (all hit + solved — see memory debridstreamer-embedded-player):
+//   * `RenderContext` is `!Send` → created LAZILY inside the draw callback, so it
+//     is born on the CA render thread that is the only thread to touch it.
+//   * AppKit view/layer setup is hopped to the main thread via GCD
+//     (dispatch2) — Tauri's `run_on_main_thread` proxy does not drain while idle.
+//   * The content view is taken from `NSApplication` (not Tauri's window handle,
+//     which dispatch_sync-deadlocks off-main).
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use std::ffi::{c_void, CString};
-    use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
-    use std::sync::{Arc, Condvar, Mutex, OnceLock};
+    use std::ffi::{c_void, CStr, CString};
+    use std::ptr::NonNull;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex, OnceLock};
     use std::thread::JoinHandle;
 
     use libmpv2::render::{OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType};
-    use libmpv2::Mpv;
+    use libmpv2::{Format, Mpv};
 
     use dispatch2::DispatchQueue;
     use objc2::rc::Retained;
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{
-        NSApplication, NSOpenGLContext, NSOpenGLPFAAccelerated, NSOpenGLPFAAlphaSize,
-        NSOpenGLPFAColorSize, NSOpenGLPFADoubleBuffer, NSOpenGLPFAOpenGLProfile, NSOpenGLPixelFormat,
-        NSOpenGLPixelFormatAttribute, NSOpenGLProfileVersion3_2Core, NSView, NSWindowOrderingMode,
+    use objc2::runtime::AnyObject;
+    use objc2::{
+        define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly,
     };
+    use objc2_app_kit::{NSApplication, NSView, NSWindowOrderingMode};
+    use objc2_core_foundation::CFTimeInterval;
+    use objc2_core_video::CVTimeStamp;
     use objc2_foundation::{NSPoint, NSRect, NSSize};
+    use objc2_open_gl::{
+        CGLChoosePixelFormat, CGLContextObj, CGLLockContext, CGLPixelFormatAttribute,
+        CGLPixelFormatObj, CGLUnlockContext,
+    };
+    use objc2_quartz_core::{CAAutoresizingMask, CALayer, CAOpenGLLayer};
 
-    use std::ptr::NonNull;
-    use tauri::{AppHandle, Manager, Runtime, State, Window};
+    use serde::Deserialize;
+    use serde_json::{json, Value};
+    use tauri::{AppHandle, Emitter, Manager, Runtime, State, Window};
 
-    // DIAGNOSTIC (Stage 1): append to a file — GUI-app stderr is unreliable in
-    // `tauri dev`, but a file is always readable. Remove after validation.
+    // GL enum constants we need (not worth a GL crate).
+    const GL_COLOR_BUFFER_BIT: u32 = 0x0000_4000;
+    const GL_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
+    const GL_VIEWPORT: u32 = 0x0BA2;
+    // 3.2 Core profile value for kCGLPFAOpenGLProfile.
+    const CGL_OGLP_VERSION_3_2_CORE: u32 = 0x3200;
+
+    // DIAGNOSTIC (WIP): append to a file — GUI-app stderr is unreliable in
+    // `tauri dev`. Remove after validation.
     fn rp_log(msg: &str) {
         use std::io::Write;
         if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -60,13 +73,11 @@ mod imp {
         }
     }
 
-    // ---- get_proc_address: resolve GL symbols from the system OpenGL framework.
-    // Bare `fn` (no captures) as libmpv2 requires. The dlopen handle is cached.
+    // ---- GL symbol resolution ------------------------------------------------
     fn gl_get_proc_address(_ctx: &(), name: &str) -> *mut c_void {
         static GL: OnceLock<usize> = OnceLock::new();
         let handle = *GL.get_or_init(|| {
-            let path =
-                CString::new("/System/Library/Frameworks/OpenGL.framework/OpenGL").unwrap();
+            let path = CString::new("/System/Library/Frameworks/OpenGL.framework/OpenGL").unwrap();
             unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_GLOBAL) as usize }
         });
         if handle == 0 {
@@ -79,58 +90,407 @@ mod imp {
         unsafe { libc::dlsym(handle as *mut c_void, cname.as_ptr()) }
     }
 
-    // ---- Shared render-thread signalling (condvar woken by mpv's update cb).
-    struct RenderShared {
-        pending: Mutex<bool>,
-        cv: Condvar,
-        shutdown: AtomicBool,
-    }
-    impl RenderShared {
-        fn new() -> Self {
-            Self {
-                pending: Mutex::new(true), // draw once on start
-                cv: Condvar::new(),
-                shutdown: AtomicBool::new(false),
-            }
-        }
-        fn wake(&self) {
-            if let Ok(mut p) = self.pending.lock() {
-                *p = true;
-                self.cv.notify_one();
-            }
-        }
-        fn request_shutdown(&self) {
-            self.shutdown.store(true, Ordering::Release);
-            self.wake();
+    fn gl_fn<T: Copy>(name: &str) -> Option<T> {
+        let p = gl_get_proc_address(&(), name);
+        if p.is_null() {
+            None
+        } else {
+            Some(unsafe { std::mem::transmute_copy::<*mut c_void, T>(&p) })
         }
     }
 
-    /// A live in-window player. All fields are `Send` (the AppKit objects live on
-    /// the render/main threads, referenced here only by raw pointer/handle).
+    /// Read `glGetIntegerv(pname)` (single value).
+    fn gl_get_int(pname: u32) -> i32 {
+        type F = unsafe extern "C" fn(u32, *mut i32);
+        match gl_fn::<F>("glGetIntegerv") {
+            Some(f) => {
+                let mut v = 0i32;
+                unsafe { f(pname, &mut v) };
+                v
+            }
+            None => 0,
+        }
+    }
+
+    /// Read the current GL_VIEWPORT as (width, height) in pixels.
+    fn gl_viewport_size() -> (i32, i32) {
+        type F = unsafe extern "C" fn(u32, *mut i32);
+        match gl_fn::<F>("glGetIntegerv") {
+            Some(f) => {
+                let mut v = [0i32; 4];
+                unsafe { f(GL_VIEWPORT, v.as_mut_ptr()) };
+                (v[2].max(1), v[3].max(1))
+            }
+            None => (1, 1),
+        }
+    }
+
+    fn gl_clear_magenta() {
+        type CC = unsafe extern "C" fn(f32, f32, f32, f32);
+        type CL = unsafe extern "C" fn(u32);
+        if let (Some(cc), Some(cl)) = (gl_fn::<CC>("glClearColor"), gl_fn::<CL>("glClear")) {
+            unsafe {
+                cc(1.0, 0.0, 1.0, 1.0);
+                cl(GL_COLOR_BUFFER_BIT);
+            }
+        }
+    }
+
+    // ---- The layer-backed video surface -------------------------------------
+    // The RenderContext is created on the CA render thread but must be FREED at
+    // teardown (before mpv is destroyed) from the main thread. mpv_render_context_free
+    // is thread-safe; we serialize all access with a Mutex, so the !Send wrapper is
+    // sound. `dead` gates the draw callback off once teardown starts.
+    struct SendRender(RenderContext);
+    unsafe impl Send for SendRender {}
+
+    struct VideoLayerIvars {
+        mpv: Arc<Mpv>,
+        render: Mutex<Option<SendRender>>,
+        dead: AtomicBool,
+    }
+
+    define_class!(
+        #[unsafe(super(CAOpenGLLayer))]
+        #[name = "DSVideoLayer"]
+        #[ivars = VideoLayerIvars]
+        struct VideoLayer;
+
+        impl VideoLayer {
+            // Provide a 3.2-core, accelerated pixel format for mpv's GL renderer.
+            #[unsafe(method(copyCGLPixelFormatForDisplayMask:))]
+            fn copy_cgl_pixel_format(&self, _mask: u32) -> CGLPixelFormatObj {
+                let attribs = [
+                    CGLPixelFormatAttribute::CGLPFAAccelerated,
+                    CGLPixelFormatAttribute::CGLPFAOpenGLProfile,
+                    CGLPixelFormatAttribute(CGL_OGLP_VERSION_3_2_CORE),
+                    CGLPixelFormatAttribute(0),
+                ];
+                let mut pf: CGLPixelFormatObj = std::ptr::null_mut();
+                let mut n: i32 = 0;
+                unsafe {
+                    CGLChoosePixelFormat(
+                        NonNull::new(attribs.as_ptr() as *mut CGLPixelFormatAttribute).unwrap(),
+                        NonNull::new(&mut pf).unwrap(),
+                        NonNull::new(&mut n).unwrap(),
+                    );
+                }
+                pf
+            }
+
+            #[unsafe(method(canDrawInCGLContext:pixelFormat:forLayerTime:displayTime:))]
+            fn can_draw(
+                &self,
+                _ctx: CGLContextObj,
+                _pf: CGLPixelFormatObj,
+                _t: CFTimeInterval,
+                _ts: *const CVTimeStamp,
+            ) -> bool {
+                true
+            }
+
+            // Disable ALL implicit animations on this layer. As a sublayer, CA would
+            // otherwise animate every autoresize geometry change (~0.25s), so the
+            // video lags behind the window edge during a drag-resize ("not locked
+            // to the sides"). Returning NSNull means "no action" for every key.
+            #[unsafe(method(actionForKey:))]
+            fn action_for_key(&self, _key: *const AnyObject) -> *mut AnyObject {
+                unsafe { msg_send![objc2::class!(NSNull), null] }
+            }
+
+            #[unsafe(method(drawInCGLContext:pixelFormat:forLayerTime:displayTime:))]
+            fn draw(
+                &self,
+                ctx: CGLContextObj,
+                pf: CGLPixelFormatObj,
+                t: CFTimeInterval,
+                ts: *const CVTimeStamp,
+            ) {
+                unsafe { CGLLockContext(ctx) };
+
+                let ivars = self.ivars();
+                // Teardown has started — do not touch mpv/render at all.
+                if ivars.dead.load(Ordering::Acquire) {
+                    unsafe { CGLUnlockContext(ctx) };
+                    unsafe {
+                        let _: () = msg_send![super(self),
+                            drawInCGLContext: ctx, pixelFormat: pf,
+                            forLayerTime: t, displayTime: ts];
+                    }
+                    return;
+                }
+
+                let mut render_slot = ivars.render.lock().unwrap();
+                if render_slot.is_none() {
+                    // Re-check dead now that we hold the lock (teardown may have run
+                    // between the check above and acquiring the lock).
+                    if ivars.dead.load(Ordering::Acquire) {
+                        drop(render_slot);
+                        unsafe { CGLUnlockContext(ctx) };
+                        return;
+                    }
+                    let mpv_handle = unsafe { &mut *ivars.mpv.ctx.as_ptr() };
+                    match RenderContext::new(
+                        mpv_handle,
+                        [
+                            RenderParam::ApiType(RenderParamApiType::OpenGl),
+                            RenderParam::InitParams(OpenGLInitParams {
+                                get_proc_address: gl_get_proc_address,
+                                ctx: (),
+                            }),
+                        ],
+                    ) {
+                        Ok(mut rc) => {
+                            // When mpv has a new frame, poke the layer to redraw
+                            // (on the main thread — CALayer.setNeedsDisplay).
+                            let layer_ptr = self as *const VideoLayer as usize;
+                            rc.set_update_callback(move || {
+                                DispatchQueue::main().exec_async(move || {
+                                    let layer: &VideoLayer =
+                                        unsafe { &*(layer_ptr as *const VideoLayer) };
+                                    layer.setNeedsDisplay();
+                                });
+                            });
+                            rp_log("VideoLayer.draw: RenderContext created");
+                            *render_slot = Some(SendRender(rc));
+                        }
+                        Err(e) => rp_log(&format!("VideoLayer.draw: RenderContext failed: {e}")),
+                    }
+                }
+
+                let fbo = gl_get_int(GL_FRAMEBUFFER_BINDING);
+                let (w, h) = gl_viewport_size();
+                // Magenta first (compositing probe); video overdraws it once frames
+                // arrive. DIAGNOSTIC — remove after validation.
+                gl_clear_magenta();
+                if let Some(sr) = render_slot.as_ref() {
+                    if let Err(e) = sr.0.render::<()>(fbo, w, h, true) {
+                        rp_log(&format!("VideoLayer.draw: render failed: {e}"));
+                    }
+                }
+                drop(render_slot);
+                {
+                    use std::sync::atomic::{AtomicU64, Ordering};
+                    static N: AtomicU64 = AtomicU64::new(0);
+                    let n = N.fetch_add(1, Ordering::Relaxed);
+                    if n < 3 || n % 120 == 0 {
+                        let b = self.bounds();
+                        rp_log(&format!(
+                            "VideoLayer.draw #{n}: fbo={fbo} vp={w}x{h} layer={}x{}",
+                            b.size.width as i32, b.size.height as i32
+                        ));
+                    }
+                }
+                unsafe { CGLUnlockContext(ctx) };
+                // Let CAOpenGLLayer's default implementation flush the context.
+                unsafe {
+                    let _: () = msg_send![super(self),
+                        drawInCGLContext: ctx,
+                        pixelFormat: pf,
+                        forLayerTime: t,
+                        displayTime: ts];
+                }
+            }
+        }
+    );
+
+    impl VideoLayer {
+        fn new(mpv: Arc<Mpv>) -> Retained<Self> {
+            let this = Self::alloc().set_ivars(VideoLayerIvars {
+                mpv,
+                render: Mutex::new(None),
+                dead: AtomicBool::new(false),
+            });
+            unsafe { msg_send![super(this), init] }
+        }
+
+        fn set_needs_display(&self) {
+            self.setNeedsDisplay();
+        }
+    }
+
+    // ---- Host view: redraws the video layer on every resize -----------------
+    // The video layer autoresizes to fill this view, but CAOpenGLLayer only
+    // reallocates its GL drawable + re-renders when explicitly asked. Overriding
+    // setFrameSize (called by AppKit on every resize step) to poke the layer makes
+    // the video re-render at the new native resolution — even while paused/ended —
+    // instead of stretching a stale texture.
+    struct HostIvars {
+        layer: Retained<VideoLayer>,
+    }
+
+    define_class!(
+        #[unsafe(super(NSView))]
+        #[name = "DSVideoHostView"]
+        #[ivars = HostIvars]
+        #[thread_kind = MainThreadOnly]
+        struct HostView;
+
+        impl HostView {
+            #[unsafe(method(setFrameSize:))]
+            fn set_frame_size(&self, size: NSSize) {
+                unsafe {
+                    let _: () = msg_send![super(self), setFrameSize: size];
+                }
+                let layer = &self.ivars().layer;
+                layer.setFrame(self.bounds());
+                layer.setNeedsDisplay();
+                rp_log(&format!(
+                    "HostView.setFrameSize {}x{}",
+                    size.width as i32, size.height as i32
+                ));
+            }
+        }
+    );
+
+    impl HostView {
+        fn new(mtm: MainThreadMarker, frame: NSRect, layer: Retained<VideoLayer>) -> Retained<Self> {
+            let this = mtm.alloc::<HostView>().set_ivars(HostIvars { layer });
+            unsafe { msg_send![super(this), initWithFrame: frame] }
+        }
+    }
+
+    /// A live in-window player. Fields are Send (AppKit objects referenced only by
+    /// raw pointer / retained by the view hierarchy).
     pub struct Player {
         mpv: Arc<Mpv>,
-        shared: Arc<RenderShared>,
-        render_thread: Option<JoinHandle<()>>,
-        /// Raw `NSView*` of our GL view, for main-thread teardown.
-        gl_view_ptr: usize,
-        /// Drawable size in pixels the render thread renders at.
-        dims: Arc<(AtomicI32, AtomicI32)>,
+        /// Raw `NSView*` of the layer host, for main-thread teardown.
+        host_view_ptr: usize,
+        /// Raw `VideoLayer*`, for freeing its render context before mpv dies.
+        layer_ptr: usize,
+        /// Signals the mpv event thread to stop.
+        event_stop: Arc<AtomicBool>,
+        event_thread: Option<JoinHandle<()>>,
     }
 
     impl Player {
         fn shutdown(&mut self) {
-            self.shared.request_shutdown();
-            if let Some(t) = self.render_thread.take() {
+            self.event_stop.store(true, Ordering::Release);
+            if let Some(t) = self.event_thread.take() {
                 let _ = t.join();
             }
-            // Remove the GL view from the hierarchy on the main thread (via GCD).
-            let ptr = self.gl_view_ptr;
-            DispatchQueue::main().exec_async(move || {
-                if ptr != 0 {
-                    let view: &NSView = unsafe { &*(ptr as *const NSView) };
-                    view.removeFromSuperview();
+            let host = self.host_view_ptr;
+            let layer = self.layer_ptr;
+            // ORDERED teardown, SYNCHRONOUS on the main thread: mark the layer dead
+            // (draw callback becomes a no-op), remove the host view (CA stops
+            // drawing), then FREE the mpv render context. This must complete before
+            // `self.mpv` (Arc) drops and destroys mpv — freeing the render context
+            // after mpv is destroyed is a use-after-free (the "back button crashes"
+            // bug). exec_sync (not async) guarantees the ordering; shutdown is only
+            // ever called off the main thread, so no dispatch_sync self-deadlock.
+            DispatchQueue::main().exec_sync(move || {
+                if layer != 0 {
+                    let l: &VideoLayer = unsafe { &*(layer as *const VideoLayer) };
+                    l.ivars().dead.store(true, Ordering::Release);
+                    if host != 0 {
+                        let v: &NSView = unsafe { &*(host as *const NSView) };
+                        v.removeFromSuperview();
+                    }
+                    // Frees mpv_render_context (Drop). Uncontended: draws see `dead`
+                    // and skip before locking.
+                    let _ = l.ivars().render.lock().unwrap().take();
+                } else if host != 0 {
+                    let v: &NSView = unsafe { &*(host as *const NSView) };
+                    v.removeFromSuperview();
                 }
             });
+        }
+    }
+
+    /// One property to observe (from the JS `MpvConfig.observedProperties`).
+    #[derive(Deserialize)]
+    pub struct ObserveSpec {
+        pub name: String,
+        /// "flag" | "double" | "int64" | "string"
+        pub format: String,
+    }
+
+    // ---- mpv event loop → webview events ------------------------------------
+    // Uses raw libmpv2-sys `mpv_wait_event` (libmpv2's safe wrapper panics on a
+    // MPV_FORMAT_NONE property change, which happens routinely when a property
+    // becomes unavailable). Emits `player-event` = { name, data } to the webview.
+    fn spawn_event_thread<R: Runtime>(
+        app: AppHandle<R>,
+        mpv: Arc<Mpv>,
+        observed: Vec<ObserveSpec>,
+        stop: Arc<AtomicBool>,
+    ) -> JoinHandle<()> {
+        std::thread::spawn(move || {
+            let client = match mpv.create_client(Some("dsevents")) {
+                Ok(c) => c,
+                Err(e) => {
+                    rp_log(&format!("event thread: create_client failed: {e}"));
+                    return;
+                }
+            };
+            for (i, spec) in observed.iter().enumerate() {
+                let fmt = match spec.format.as_str() {
+                    "flag" => Format::Flag,
+                    "double" => Format::Double,
+                    "int64" => Format::Int64,
+                    _ => Format::String,
+                };
+                let _ = client.observe_property(&spec.name, fmt, i as u64);
+            }
+            rp_log(&format!("event thread: started, observing {} props", observed.len()));
+            let ctx = client.ctx.as_ptr();
+            let mut n_emit = 0u32;
+            while !stop.load(Ordering::Acquire) {
+                let ev = unsafe { &*libmpv2_sys::mpv_wait_event(ctx, 0.25) };
+                match ev.event_id {
+                    libmpv2_sys::mpv_event_id_MPV_EVENT_NONE => {}
+                    libmpv2_sys::mpv_event_id_MPV_EVENT_SHUTDOWN => break,
+                    libmpv2_sys::mpv_event_id_MPV_EVENT_END_FILE => {
+                        let ef = unsafe { &*(ev.data as *mut libmpv2_sys::mpv_event_end_file) };
+                        rp_log(&format!(
+                            "event thread: END_FILE reason={} error={}",
+                            ef.reason, ef.error
+                        ));
+                    }
+                    libmpv2_sys::mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
+                        let prop = unsafe { &*(ev.data as *mut libmpv2_sys::mpv_event_property) };
+                        let name = unsafe { CStr::from_ptr(prop.name) }
+                            .to_string_lossy()
+                            .into_owned();
+                        let data = unsafe { prop_data_to_json(prop.format, prop.data) };
+                        n_emit += 1;
+                        // DIAGNOSTIC: log state-changes throughout so we can see the
+                        // file load + playback progress.
+                        let log_it = n_emit <= 6
+                            || name == "core-idle"
+                            || name == "duration"
+                            || name == "eof-reached"
+                            || (name == "time-pos" && n_emit % 40 == 0);
+                        if log_it {
+                            rp_log(&format!("event thread: emit #{n_emit} {name}={data}"));
+                        }
+                        let _ = app.emit("player-event", json!({ "name": name, "data": data }));
+                    }
+                    _ => {}
+                }
+            }
+            rp_log("event thread: stopped");
+        })
+    }
+
+    unsafe fn prop_data_to_json(format: libmpv2_sys::mpv_format, data: *mut c_void) -> Value {
+        if data.is_null() {
+            return Value::Null;
+        }
+        match format {
+            libmpv2_sys::mpv_format_MPV_FORMAT_FLAG => json!(*(data as *mut i32) != 0),
+            libmpv2_sys::mpv_format_MPV_FORMAT_INT64 => json!(*(data as *mut i64)),
+            libmpv2_sys::mpv_format_MPV_FORMAT_DOUBLE => json!(*(data as *mut f64)),
+            libmpv2_sys::mpv_format_MPV_FORMAT_STRING
+            | libmpv2_sys::mpv_format_MPV_FORMAT_OSD_STRING => {
+                let s = *(data as *mut *mut std::os::raw::c_char);
+                if s.is_null() {
+                    Value::Null
+                } else {
+                    json!(CStr::from_ptr(s).to_string_lossy().into_owned())
+                }
+            }
+            _ => Value::Null,
         }
     }
 
@@ -138,15 +498,9 @@ mod imp {
     #[derive(Default)]
     pub struct PlayerState(pub Mutex<Option<Player>>);
 
-    // ---- Main-thread setup: build the GL view + context, spawn the render loop.
-    // The content view is obtained directly from AppKit's NSApplication on the
-    // main thread — this deliberately avoids Tauri's `window_handle()`, which does
-    // a `dispatch_sync` to main and deadlocks when touched from the wrong thread.
-    fn setup_on_main(
-        mpv: Arc<Mpv>,
-        shared: Arc<RenderShared>,
-        dims: Arc<(AtomicI32, AtomicI32)>,
-    ) -> Result<(usize, JoinHandle<()>), String> {
+    // ---- Main-thread surface setup ------------------------------------------
+    /// Returns (host_view_ptr, layer_ptr).
+    fn setup_on_main(mpv: Arc<Mpv>) -> Result<(usize, usize), String> {
         rp_log("setup_on_main: start");
         let mtm = MainThreadMarker::new().ok_or("setup must run on the main thread")?;
 
@@ -157,220 +511,71 @@ mod imp {
             .or_else(|| ns_app.windows().firstObject())
             .ok_or("no app window")?;
         let content = ns_window.contentView().ok_or("no content view")?;
-        rp_log("setup_on_main: content view ok");
-
-        // GL view fills the content view (point coordinates; Retina refined later).
+        let backing_scale = ns_window.backingScaleFactor();
         let bounds = content.bounds();
-        let w = bounds.size.width.max(1.0) as i32;
-        let h = bounds.size.height.max(1.0) as i32;
-        rp_log(&format!("setup_on_main: content bounds {w}x{h} (points)"));
+        rp_log(&format!(
+            "setup_on_main: content {}x{} scale {}",
+            bounds.size.width as i32, bounds.size.height as i32, backing_scale
+        ));
 
+        // Host view (layer-hosting) filling the content view.
         let frame = NSRect::new(
             NSPoint::new(0.0, 0.0),
             NSSize::new(bounds.size.width, bounds.size.height),
         );
-        let gl_view = unsafe { NSView::initWithFrame(mtm.alloc(), frame) };
+        let layer = VideoLayer::new(mpv);
+        unsafe { layer.setContentsScale(backing_scale) };
+        // Draw only when there's a new frame (mpv's update callback pokes
+        // setNeedsDisplay) or the bounds change — not 60fps continuously. This also
+        // makes CA reallocate the GL drawable to the new size on resize, so the
+        // video always renders at native resolution instead of a stretched texture.
+        layer.setAsynchronous(false);
+        unsafe { layer.setNeedsDisplayOnBoundsChange(true) };
+        layer.setAutoresizingMask(
+            CAAutoresizingMask::LayerWidthSizable | CAAutoresizingMask::LayerHeightSizable,
+        );
 
-        // Pixel format: OpenGL 3.2 core, double-buffered, hardware accelerated,
-        // 24-bit color + 8-bit alpha (for compositing over the transparent page).
-        let attrs: [NSOpenGLPixelFormatAttribute; 9] = [
-            NSOpenGLPFAOpenGLProfile,
-            NSOpenGLProfileVersion3_2Core as NSOpenGLPixelFormatAttribute,
-            NSOpenGLPFADoubleBuffer,
-            NSOpenGLPFAAccelerated,
-            NSOpenGLPFAColorSize,
-            24,
-            NSOpenGLPFAAlphaSize,
-            8,
-            0,
-        ];
-        let pf = unsafe {
-            NSOpenGLPixelFormat::initWithAttributes(
-                mtm.alloc(),
-                NonNull::new(attrs.as_ptr() as *mut NSOpenGLPixelFormatAttribute).unwrap(),
-            )
-        }
-        .ok_or("failed to create NSOpenGLPixelFormat")?;
+        // Layer-BACKED host that re-renders the video layer on every resize step.
+        let host = HostView::new(mtm, frame, layer.clone());
+        host.setWantsLayer(true);
+        layer.setFrame(host.bounds());
 
-        let gl_context =
-            NSOpenGLContext::initWithFormat_shareContext(mtm.alloc(), &pf, None)
-                .ok_or("failed to create NSOpenGLContext")?;
-
-        // Insert BELOW the webview so the transparent page reveals the video.
-        content.addSubview_positioned_relativeTo(&gl_view, NSWindowOrderingMode::Below, None);
-        gl_context.setView(Some(&gl_view), mtm);
-
-        // The GL drawable is sized in BACKING pixels (Retina 2× etc.). Render mpv
-        // at that size so the video fills the whole surface, not a corner.
-        let backing = gl_view.convertRectToBacking(gl_view.bounds());
-        let bw = (backing.size.width.max(1.0)) as i32;
-        let bh = (backing.size.height.max(1.0)) as i32;
-        dims.0.store(bw, Ordering::Relaxed);
-        dims.1.store(bh, Ordering::Relaxed);
-        rp_log(&format!(
-            "setup_on_main: gl_view inserted below webview, backing {bw}x{bh}"
-        ));
-
-        let gl_view_ptr = Retained::as_ptr(&gl_view) as usize;
-        // Transfer context ownership to the render thread (no refcount race).
-        let ctx_ptr = Retained::into_raw(gl_context) as usize;
-
-        // Spawn the render thread. It owns the GL context + render context.
-        let t_mpv = mpv.clone();
-        let t_shared = shared.clone();
-        let t_dims = dims.clone();
-        let handle = std::thread::Builder::new()
-            .name("mpv-render".into())
-            .spawn(move || render_loop(ctx_ptr, t_mpv, t_shared, t_dims))
-            .map_err(|e| format!("failed to spawn render thread: {e}"))?;
-
-        Ok((gl_view_ptr, handle))
-    }
-
-    // ---- The render thread: create the render context here (it is !Send), then
-    // draw on every wake from mpv's update callback.
-    fn render_loop(
-        ctx_ptr: usize,
-        mpv: Arc<Mpv>,
-        shared: Arc<RenderShared>,
-        dims: Arc<(AtomicI32, AtomicI32)>,
-    ) {
-        rp_log("render_loop: thread started");
-        let gl_context = match unsafe { Retained::from_raw(ctx_ptr as *mut NSOpenGLContext) } {
-            Some(c) => c,
-            None => {
-                rp_log("render_loop: FATAL null context ptr");
-                return;
-            }
-        };
-        gl_context.makeCurrentContext();
-        rp_log("render_loop: made context current");
-
-        let mpv_handle = unsafe { &mut *mpv.ctx.as_ptr() };
-        let mut render = match RenderContext::new(
-            mpv_handle,
-            [
-                RenderParam::ApiType(RenderParamApiType::OpenGl),
-                RenderParam::InitParams(OpenGLInitParams {
-                    get_proc_address: gl_get_proc_address,
-                    ctx: (),
-                }),
-            ],
-        ) {
-            Ok(r) => {
-                rp_log("render_loop: RenderContext::new OK");
-                r
-            }
-            Err(e) => {
-                rp_log(&format!("render_loop: RenderContext::new FAILED: {e}"));
-                eprintln!("[render_player] RenderContext::new failed: {e}");
-                return;
-            }
-        };
-
-        let cb_shared = shared.clone();
-        render.set_update_callback(move || cb_shared.wake());
-
-        // DIAGNOSTIC (Stage 1): resolve glClearColor/glClear so we can paint the
-        // GL view a solid colour before mpv draws. A visible magenta rectangle
-        // proves the GL view is composited in-window even before any video frame.
-        let gl_clear_color: Option<unsafe extern "C" fn(f32, f32, f32, f32)> = {
-            let p = gl_get_proc_address(&(), "glClearColor");
-            if p.is_null() {
-                None
-            } else {
-                Some(unsafe { std::mem::transmute::<*mut c_void, _>(p) })
-            }
-        };
-        let gl_clear: Option<unsafe extern "C" fn(u32)> = {
-            let p = gl_get_proc_address(&(), "glClear");
-            if p.is_null() {
-                None
-            } else {
-                Some(unsafe { std::mem::transmute::<*mut c_void, _>(p) })
-            }
-        };
-        const GL_COLOR_BUFFER_BIT: u32 = 0x0000_4000;
-        let frame_flag = libmpv2::render::mpv_render_update::Frame as u64;
-        rp_log(&format!(
-            "render_loop: entering loop (glClearColor={}, glClear={})",
-            gl_clear_color.is_some(),
-            gl_clear.is_some()
-        ));
-        let mut draw_count: u64 = 0;
-
-        loop {
-            {
-                let mut pending = match shared.pending.lock() {
-                    Ok(p) => p,
-                    Err(_) => break,
-                };
-                while !*pending && !shared.shutdown.load(Ordering::Acquire) {
-                    pending = match shared.cv.wait(pending) {
-                        Ok(p) => p,
-                        Err(_) => return,
-                    };
-                }
-                if shared.shutdown.load(Ordering::Acquire) {
-                    break;
-                }
-                *pending = false;
-            }
-
-            // Required after each update-callback wake; also pulls the next frame.
-            let flags = render.update().map(|f| f as u64).unwrap_or(0);
-            let w = dims.0.load(Ordering::Relaxed).max(1);
-            let h = dims.1.load(Ordering::Relaxed).max(1);
-            gl_context.makeCurrentContext();
-            // Paint magenta first (compositing probe), then let mpv draw over it
-            // once a real frame is available.
-            if let (Some(cc), Some(cl)) = (gl_clear_color, gl_clear) {
-                unsafe {
-                    cc(1.0, 0.0, 1.0, 1.0);
-                    cl(GL_COLOR_BUFFER_BIT);
-                }
-            }
-            let mut did_video = false;
-            if flags & frame_flag != 0 {
-                did_video = true;
-                if let Err(e) = render.render::<()>(0, w, h, true) {
-                    rp_log(&format!("render_loop: render() FAILED: {e}"));
-                }
-            }
-            gl_context.flushBuffer();
-            render.report_swap();
-            draw_count += 1;
-            if draw_count <= 3 || did_video && draw_count % 60 == 0 {
-                rp_log(&format!(
-                    "render_loop: draw #{draw_count} size={w}x{h} flags={flags} video={did_video}"
-                ));
+        // Add the video layer as a sublayer of the host's backing layer.
+        let backing: *mut AnyObject = unsafe { msg_send![&*host, layer] };
+        if !backing.is_null() {
+            let sublayer: &CALayer = &layer;
+            unsafe {
+                let _: () = msg_send![backing, addSublayer: sublayer];
             }
         }
 
-        // Free the render context (GL teardown) on this thread while mpv is still
-        // alive, before the Player's Arc<Mpv> drops and destroys mpv.
-        drop(render);
+        // Insert BELOW the webview so the transparent page reveals the video with
+        // the React controls composited on top.
+        content.addSubview_positioned_relativeTo(&host, NSWindowOrderingMode::Below, None);
+        // Autoresize the host with the content view (wry may leave this off).
+        unsafe {
+            content.setAutoresizesSubviews(true);
+            host.setAutoresizingMask(
+                objc2_app_kit::NSAutoresizingMaskOptions::ViewWidthSizable
+                    | objc2_app_kit::NSAutoresizingMaskOptions::ViewHeightSizable,
+            );
+        }
+
+        layer.set_needs_display();
+        rp_log("setup_on_main: layer host inserted below webview");
+        Ok((
+            Retained::as_ptr(&host) as usize,
+            Retained::as_ptr(&layer) as usize,
+        ))
     }
 
-    // ---- Tauri commands ----
-
-    /// Start (or replace) the in-window player on `url`.
-    #[tauri::command]
-    pub fn player_load<R: Runtime>(
+    // ---- Player creation (mpv + surface + event thread; NO loadfile) ---------
+    pub fn create_player<R: Runtime>(
         app: AppHandle<R>,
-        _window: Window<R>,
-        _state: State<'_, PlayerState>,
-        url: String,
+        options: std::collections::HashMap<String, String>,
+        observed: Vec<ObserveSpec>,
     ) -> Result<(), String> {
-        start_player(app, url)
-    }
-
-    /// The actual player-start logic, callable from the command OR from a
-    /// Rust-side test autostart (see debug_autostart). Gets its state from `app`.
-    pub fn start_player<R: Runtime>(app: AppHandle<R>, url: String) -> Result<(), String> {
-        rp_log(&format!("start_player: called url={url}"));
         let state = app.state::<PlayerState>();
-        // Tear down any existing player first.
         {
             let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
             if let Some(mut old) = guard.take() {
@@ -378,125 +583,207 @@ mod imp {
             }
         }
 
-        // Create mpv configured for the render API (vo=libmpv, SW decode for now).
-        // Log each option; don't abort on a single failure so we can see which
-        // one errors and still let mpv_initialize run.
-        rp_log("start_player: creating mpv");
         let mpv = Mpv::with_initializer(|init| {
-            for (k, v) in [
-                ("vo", "libmpv"),
-                ("hwdec", "no"),
-                ("ytdl", "no"),
-                // DIAGNOSTIC: loop the test clip so it's always on screen while
-                // verifying. Removed with the rest of the Stage-1 diagnostics.
-                ("loop-file", "inf"),
-            ] {
-                match init.set_option(k, v) {
-                    Ok(()) => rp_log(&format!("start_player: set_option {k}={v} ok")),
-                    Err(e) => rp_log(&format!("start_player: set_option {k}={v} ERR {e}")),
+            // The render API REQUIRES vo=libmpv; hwdec stays SW for now (videotoolbox
+            // GL interop is a later hardening item). Both override any config value.
+            let _ = init.set_option("vo", "libmpv");
+            let _ = init.set_option("hwdec", "no");
+            for (k, v) in &options {
+                if k == "vo" || k == "hwdec" {
+                    continue;
+                }
+                if let Err(e) = init.set_option(k.as_str(), v.as_str()) {
+                    rp_log(&format!("create_player: set_option {k}={v} ERR {e}"));
                 }
             }
             Ok(())
         })
         .map_err(|e| format!("mpv init failed: {e}"))?;
-        rp_log("start_player: mpv created");
         let mpv = Arc::new(mpv);
+        rp_log("create_player: mpv created");
 
-        let shared = Arc::new(RenderShared::new());
-        let dims = Arc::new((AtomicI32::new(1), AtomicI32::new(1)));
-
-        // Build the AppKit view + GL context + render thread on the main thread.
-        // The JoinHandle (Send) is returned through the channel with the view ptr.
-        let (tx, rx) = std::sync::mpsc::channel::<Result<(usize, JoinHandle<()>), String>>();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(usize, usize), String>>();
         let m2 = mpv.clone();
-        let s2 = shared.clone();
-        let d2 = dims.clone();
-        // Hop the AppKit view/context creation onto the main thread via GCD.
         DispatchQueue::main().exec_async(move || {
-            let res = setup_on_main(m2, s2, d2);
-            let _ = tx.send(res);
+            let _ = tx.send(setup_on_main(m2));
         });
-
-        let (gl_view_ptr, render_thread) = rx
+        let (host_view_ptr, layer_ptr) = rx
             .recv_timeout(std::time::Duration::from_secs(8))
             .map_err(|_| "timed out setting up the video surface".to_string())??;
-        let render_thread = Some(render_thread);
 
-        // Begin playback.
-        rp_log("player_load: setup complete, issuing loadfile");
-        mpv.command("loadfile", &[&url])
-            .map_err(|e| format!("loadfile failed: {e}"))?;
-        rp_log("player_load: loadfile issued OK");
+        let event_stop = Arc::new(AtomicBool::new(false));
+        let event_thread = Some(spawn_event_thread(
+            app.clone(),
+            mpv.clone(),
+            observed,
+            event_stop.clone(),
+        ));
 
-        let player = Player {
-            mpv,
-            shared,
-            render_thread,
-            gl_view_ptr,
-            dims,
-        };
         let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
-        *guard = Some(player);
+        *guard = Some(Player {
+            mpv,
+            host_view_ptr,
+            layer_ptr,
+            event_stop,
+            event_thread,
+        });
+        rp_log("create_player: ready");
         Ok(())
     }
 
-    /// Run an arbitrary mpv command (e.g. `["seek","10","absolute"]`).
-    #[tauri::command]
-    pub fn player_command(
-        state: State<'_, PlayerState>,
-        args: Vec<String>,
-    ) -> Result<(), String> {
+    fn with_player<T>(
+        state: &State<'_, PlayerState>,
+        f: impl FnOnce(&Player) -> Result<T, String>,
+    ) -> Result<T, String> {
         let guard = state.0.lock().map_err(|_| "player state poisoned")?;
         let p = guard.as_ref().ok_or("no player running")?;
-        let (name, rest) = args.split_first().ok_or("empty command")?;
-        let rest_refs: Vec<&str> = rest.iter().map(|s| s.as_str()).collect();
-        p.mpv
-            .command(name, &rest_refs)
-            .map_err(|e| format!("mpv command failed: {e}"))
+        f(p)
     }
 
-    /// Set an mpv property to a string value.
+    // ---- Tauri commands ------------------------------------------------------
+
+    /// Create the player (mpv + layer surface + event thread). Loading a file is a
+    /// separate `player_command("loadfile", [url])`.
+    ///
+    /// MUST be `async`: create_player blocks on a channel while the AppKit surface
+    /// is built on the main thread (via GCD). A SYNC Tauri command runs ON the main
+    /// thread, which would deadlock (it blocks the very thread that must build the
+    /// surface). Async commands run on the async runtime, off the main thread.
+    #[tauri::command]
+    pub async fn player_init<R: Runtime>(
+        app: AppHandle<R>,
+        options: std::collections::HashMap<String, String>,
+        observed: Vec<ObserveSpec>,
+    ) -> Result<(), String> {
+        create_player(app, options, observed)
+    }
+
+    /// Convenience: create with defaults + load a URL (used by the dev autostart).
+    #[tauri::command]
+    pub async fn player_load<R: Runtime>(
+        app: AppHandle<R>,
+        _window: Window<R>,
+        url: String,
+    ) -> Result<(), String> {
+        create_player(app.clone(), std::collections::HashMap::new(), Vec::new())?;
+        let state = app.state::<PlayerState>();
+        with_player(&state, |p| {
+            p.mpv
+                .command("loadfile", &[&url])
+                .map_err(|e| format!("loadfile failed: {e}"))
+        })
+    }
+
+    #[tauri::command]
+    pub fn player_command(state: State<'_, PlayerState>, args: Vec<String>) -> Result<(), String> {
+        with_player(&state, |p| {
+            let (name, rest) = args.split_first().ok_or("empty command")?;
+            let rest_refs: Vec<&str> = rest.iter().map(|s| s.as_str()).collect();
+            let r = p
+                .mpv
+                .command(name, &rest_refs)
+                .map_err(|e| format!("mpv command failed: {e}"));
+            rp_log(&format!("cmd {name} {rest:?} -> {r:?}"));
+            r
+        })
+    }
+
     #[tauri::command]
     pub fn player_set_property(
         state: State<'_, PlayerState>,
         name: String,
         value: String,
     ) -> Result<(), String> {
-        let guard = state.0.lock().map_err(|_| "player state poisoned")?;
-        let p = guard.as_ref().ok_or("no player running")?;
-        p.mpv
-            .set_property(&name, value.as_str())
-            .map_err(|e| format!("set_property failed: {e}"))
+        with_player(&state, |p| {
+            let r = p
+                .mpv
+                .set_property(&name, value.as_str())
+                .map_err(|e| format!("set_property failed: {e}"));
+            rp_log(&format!("set {name}={value} -> {r:?}"));
+            r
+        })
     }
 
-    /// Get an mpv property as a string ("" if unavailable).
+    /// Get a property as JSON. `track-list`/`chapter-list` are assembled from mpv
+    /// sub-properties (avoids raw mpv_node FFI); everything else returns a string.
     #[tauri::command]
     pub fn player_get_property(
         state: State<'_, PlayerState>,
         name: String,
-    ) -> Result<String, String> {
-        let guard = state.0.lock().map_err(|_| "player state poisoned")?;
-        let p = guard.as_ref().ok_or("no player running")?;
-        Ok(p.mpv.get_property::<String>(&name).unwrap_or_default())
+    ) -> Result<Value, String> {
+        with_player(&state, |p| match name.as_str() {
+            "track-list" => Ok(build_track_list(&p.mpv)),
+            "chapter-list" => Ok(build_chapter_list(&p.mpv)),
+            _ => Ok(json!(p.mpv.get_property::<String>(&name).unwrap_or_default())),
+        })
     }
 
-    /// Stop playback and tear down the player.
+    /// Reserve a fraction of the bottom of the video for the control bar so the
+    /// controls never cover the picture (mpv `video-margin-ratio-bottom`).
     #[tauri::command]
-    pub fn player_destroy<R: Runtime>(
-        _app: AppHandle<R>,
+    pub fn player_set_video_margin(
         state: State<'_, PlayerState>,
+        bottom: f64,
     ) -> Result<(), String> {
-        let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
-        if let Some(mut p) = guard.take() {
+        with_player(&state, |p| {
+            let r = p
+                .mpv
+                .set_property("video-margin-ratio-bottom", bottom)
+                .map_err(|e| format!("set video margin failed: {e}"));
+            rp_log(&format!("video-margin {bottom} -> {r:?}"));
+            r
+        })
+    }
+
+    #[tauri::command]
+    pub async fn player_destroy<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+        let state = app.state::<PlayerState>();
+        let taken = {
+            let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
+            guard.take()
+        };
+        if let Some(mut p) = taken {
             p.shutdown();
         }
         Ok(())
     }
 
-    /// DIAGNOSTIC (Stage 1): if `RP_TEST_URL` is set, auto-start the render player
-    /// from Rust ~3s after launch — bypassing the JS harness, reload timing, and
-    /// window-focus entirely — and punch the page transparent via `eval` so a
-    /// screenshot proves in-window compositing. Remove after Stage 1 validation.
+    fn build_track_list(mpv: &Mpv) -> Value {
+        let count = mpv.get_property::<i64>("track-list/count").unwrap_or(0);
+        let mut arr = Vec::new();
+        for i in 0..count {
+            let s = |p: &str| mpv.get_property::<String>(&format!("track-list/{i}/{p}")).ok();
+            let b = |p: &str| {
+                mpv.get_property::<bool>(&format!("track-list/{i}/{p}"))
+                    .unwrap_or(false)
+            };
+            arr.push(json!({
+                "id": mpv.get_property::<i64>(&format!("track-list/{i}/id")).ok(),
+                "type": s("type"),
+                "title": s("title"),
+                "lang": s("lang"),
+                "selected": b("selected"),
+                "codec": s("codec"),
+                "external": b("external"),
+            }));
+        }
+        Value::Array(arr)
+    }
+
+    fn build_chapter_list(mpv: &Mpv) -> Value {
+        let count = mpv.get_property::<i64>("chapter-list/count").unwrap_or(0);
+        let mut arr = Vec::new();
+        for i in 0..count {
+            arr.push(json!({
+                "title": mpv.get_property::<String>(&format!("chapter-list/{i}/title")).unwrap_or_default(),
+                "time": mpv.get_property::<f64>(&format!("chapter-list/{i}/time")).unwrap_or(0.0),
+            }));
+        }
+        Value::Array(arr)
+    }
+
+    /// DIAGNOSTIC: if `RP_TEST_URL` is set, auto-start ~3s after launch + punch the
+    /// page transparent via eval so a screenshot proves in-window compositing.
     pub fn debug_autostart<R: Runtime>(app: AppHandle<R>) {
         let url = match std::env::var("RP_TEST_URL") {
             Ok(u) if !u.is_empty() => u,
@@ -505,24 +792,34 @@ mod imp {
         rp_log(&format!("debug_autostart: RP_TEST_URL={url}"));
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(3));
-            let window = match app.get_webview_window("main") {
-                Some(w) => w,
-                None => {
-                    rp_log("debug_autostart: no 'main' webview window");
-                    return;
-                }
-            };
-            // Punch the page transparent + hide the React UI so the video behind
-            // shows through the (already transparent) window.
-            let _ = window.eval(
-                "document.documentElement.style.background='transparent';\
-                 document.body.style.background='transparent';\
-                 var r=document.getElementById('root'); if(r) r.style.visibility='hidden';",
-            );
-            rp_log("debug_autostart: transparency eval issued, starting player");
-            if let Err(e) = start_player(app.clone(), url.clone()) {
-                rp_log(&format!("debug_autostart: start_player ERROR: {e}"));
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.eval(
+                    "document.documentElement.style.background='transparent';\
+                     document.body.style.background='transparent';\
+                     var r=document.getElementById('root'); if(r) r.style.visibility='hidden';",
+                );
             }
+            let mut opts = std::collections::HashMap::new();
+            opts.insert("loop-file".to_string(), "inf".to_string());
+            let observed = ["pause", "time-pos", "duration", "volume", "eof-reached"]
+                .iter()
+                .map(|n| ObserveSpec {
+                    name: n.to_string(),
+                    format: if *n == "pause" || *n == "eof-reached" {
+                        "flag".to_string()
+                    } else {
+                        "double".to_string()
+                    },
+                })
+                .collect();
+            if let Err(e) = create_player(app.clone(), opts, observed) {
+                rp_log(&format!("debug_autostart: create_player ERROR: {e}"));
+                return;
+            }
+            let state = app.state::<PlayerState>();
+            let _ = with_player(&state, |p| {
+                p.mpv.command("loadfile", &[url.as_str()]).map_err(|e| e.to_string())
+            });
         });
     }
 }
@@ -530,16 +827,33 @@ mod imp {
 #[cfg(target_os = "macos")]
 pub use imp::*;
 
-// ---- Non-macOS stub: the in-window render player is macOS-only. The crate must
-// still compile for the Windows/Linux release matrix; these commands report that
-// the feature is unavailable so the frontend can fall back.
+// ---- Non-macOS stub: the in-window render player is macOS-only. ----
 #[cfg(not(target_os = "macos"))]
 mod stub {
     use std::sync::Mutex;
     use tauri::{AppHandle, Runtime, State, Window};
 
+    use std::collections::HashMap;
+
     #[derive(Default)]
     pub struct PlayerState(pub Mutex<Option<()>>);
+
+    #[tauri::command]
+    pub fn player_init<R: Runtime>(
+        _app: AppHandle<R>,
+        _options: HashMap<String, String>,
+        _observed: Vec<serde_json::Value>,
+    ) -> Result<(), String> {
+        Err("the in-window player is only available on macOS".into())
+    }
+
+    #[tauri::command]
+    pub fn player_set_video_margin(
+        _state: State<'_, PlayerState>,
+        _bottom: f64,
+    ) -> Result<(), String> {
+        Err("the in-window player is only available on macOS".into())
+    }
 
     #[tauri::command]
     pub fn player_load<R: Runtime>(
