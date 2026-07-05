@@ -12,6 +12,11 @@ use std::process::Command;
 // JSON IPC. See player.rs for the `--wid` in-window-embedding caveat (macOS).
 mod player;
 
+// In-window mpv render-API player (v0.5): drives mpv's render API into our own
+// NSOpenGLView composited behind the transparent webview. The real "beyond IINA"
+// in-window path — see render_player.rs (macOS) + RENDER_PLAYER_PLAN.md.
+mod render_player;
+
 // OS-keychain SecretStore backend (keychain_get / keychain_set / keychain_delete).
 mod keychain;
 
@@ -150,6 +155,8 @@ pub fn run() {
         .plugin(tauri_plugin_libmpv::init())
         // At-most-one mpv instance, shared across the mpv_* commands.
         .manage(player::MpvState::default())
+        // At-most-one in-window render-API player (v0.5).
+        .manage(render_player::PlayerState::default())
         // At-most-one local DebridStreamer server process.
         .manage(server_host::ServerState::default());
 
@@ -161,6 +168,13 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
+    // DIAGNOSTIC (v0.5 Stage 1): Rust-side render-player autostart, gated on the
+    // RP_TEST_URL env var. No-op unless set. Remove after validation.
+    builder = builder.setup(|app| {
+        render_player::debug_autostart(app.handle().clone());
+        Ok(())
+    });
+
     builder
         .invoke_handler(tauri::generate_handler![
             open_in_external_player,
@@ -171,6 +185,11 @@ pub fn run() {
             player::mpv_seek,
             player::mpv_get_position,
             player::mpv_stop,
+            render_player::player_load,
+            render_player::player_command,
+            render_player::player_set_property,
+            render_player::player_get_property,
+            render_player::player_destroy,
             keychain::keychain_get,
             keychain::keychain_set,
             keychain::keychain_delete,
