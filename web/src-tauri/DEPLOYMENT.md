@@ -87,3 +87,52 @@ already in `entitlements.plist`) let the app load the bundled dylibs.
   whose SDK produces "damaged"-app codesigning — see the release-verification notes).
 - The player is macOS-gated in `VideoPlayer.tsx`; no bundling on the Windows/Linux
   jobs (`matrix.os == 'macos'` guards every player step).
+
+## v0.6 — cross-platform in-window player (Windows + Linux)
+
+The in-window player is expanding to Windows and Linux (v0.6). Architecture:
+`render_player/core.rs` (shared mpv lifecycle + `VideoSurface` trait + `PreInit`)
++ a per-OS surface. macOS = render API into a CAOpenGLLayer (done). Windows =
+mpv `wid`-embed into the window's HWND. Linux = render API into a GtkGLArea.
+
+### Windows CI (to make `web-release.yml`'s windows job build the player)
+
+The shared core links libmpv, so the Windows job must supply libmpv at link time
+and ship `libmpv-2.dll` at runtime. `surface_windows.rs` itself needs no extra
+crate (it reads the HWND via `raw-window-handle`). Steps to add BEFORE the
+tauri-action build, `if: matrix.os == 'windows'`:
+
+1. **Fetch libmpv dev** (single self-contained DLL + def):
+   ```pwsh
+   $rel = gh api repos/shinchiro/mpv-winbuild-cmake/releases/latest | ConvertFrom-Json
+   $asset = $rel.assets | ? { $_.name -like 'mpv-dev-x86_64-2*' } | select -First 1
+   curl -L -o mpv-dev.7z $asset.browser_download_url
+   7z x mpv-dev.7z -o"$env:RUNNER_TEMP\mpv"
+   ```
+2. **Generate the MSVC import lib** `mpv.lib` from `mpv.def` (libmpv2-sys emits
+   `-l mpv` → the MSVC linker wants `mpv.lib`). Put `lib.exe` on PATH first with
+   `ilammy/msvc-dev-cmd@v1`, then:
+   ```pwsh
+   lib /def:"$env:RUNNER_TEMP\mpv\mpv.def" /out:"$env:RUNNER_TEMP\mpv\mpv.lib" /machine:x64
+   "MPV_LIB_DIR=$env:RUNNER_TEMP\mpv" >> $env:GITHUB_ENV   # build.rs reads this
+   ```
+3. **Bundle `libmpv-2.dll` next to the exe.** Add it to the Windows bundle via a
+   generated `--config` (`bundle.resources`) OR copy it into the target dir the
+   installer packs, so it sits beside `debridstreamer.exe` at runtime. Verify on a
+   clean Windows box that the app finds the bundled DLL (not a system one).
+4. Pass `MPV_LIB_DIR` into the tauri-action env (like `MPV_LIB_DIR` for macOS).
+
+**GATE:** the windows job compiles + links + bundles. Then a HUMAN must runtime-
+test on real Windows: in-window video appears; d3d11va hwdec engages (mpv log);
+and the WebView2 compositing — a transparent WebView2 will NOT show video behind
+it (windowed hosting airspace), so confirm the acceptable model (UI frames the
+video / mpv's child z-order). If the child covers the UI or vice-versa, that's the
+compositing-refinement work (topmost control overlay, or DOM-rect SetWindowPos of
+a dedicated child instead of the whole-window wid).
+
+### Linux CI (Phase 3, not yet implemented)
+
+`surface_linux.rs` = mpv render API into a `gtk::GLArea` (gtk3-rs, matching wry's
+webkit2gtk) behind a transparent WebKitGTK. Depend on distro `libmpv2` for the
+.deb (or bundle the .so tree in the AppImage). The make-or-break unknown is
+webkit2gtk show-through on X11 + Wayland — needs a human GUI test on real hardware.
