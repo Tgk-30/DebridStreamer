@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="DebridStreamer is a self-hosted streaming app: discover with TMDB, get AI picks, and play instantly-cached streams from your own Real-Debrid, AllDebrid, Premiumize, or TorBox account on every screen."
+      content="DebridStreamer is a self-hosted streaming app: discover with TMDB, get AI picks, and play instantly-cached streams from your own Real-Debrid, AllDebrid, Premiumize, or TorBox account in a built-in player — on every screen."
     />
     <meta name="theme-color" content="#050505" />
     <meta property="og:title" content="DebridStreamer — your private streaming app" />
     <meta
       property="og:description"
-      content="Discover with TMDB, get AI recommendations, and play cached debrid streams in a built-in player. Self-hosted, with profiles for the whole house and apps for macOS, Windows, Linux, and mobile."
+      content="Discover with TMDB, get AI recommendations, and play cached debrid streams in a built-in player that handles MKV, HEVC, and 4K with nothing to install. Self-hosted, with profiles for the whole house and apps for macOS, Windows, Linux, and mobile."
     />
     <meta property="og:image" content="https://tgk30.com/debridstreamer/media/discover-desktop.png" />
     <meta property="og:type" content="website" />
@@ -73,8 +73,9 @@
             DebridStreamer turns your Real-Debrid, AllDebrid, Premiumize, or
             TorBox account into a private streaming service: browse with TMDB
             artwork, get AI picks, and play instantly-cached streams in a
-            built-in player — on a server you run, with profiles for the whole
-            house.
+            built-in player that handles anything &mdash; MKV, HEVC, 4K &mdash;
+            with nothing else to install. On a server you run, with profiles for
+            the whole house.
           </p>
           <div class="hero-actions" aria-label="Primary actions">
             <a id="smart-download" class="primary-action" href="#download">
@@ -164,6 +165,11 @@
             <p>Checks your debrid caches across four providers plus your sources, then plays what's already there — no waiting on downloads.</p>
           </article>
           <article class="rail-card" role="listitem">
+            <span>Player</span>
+            <strong>A real player, built in</strong>
+            <p>MKV, HEVC, 4K — playing right inside the window, with nothing to install. Premium controls, instant seeking, and subtitle styling. Prefer VLC or IINA? Point playback anywhere.</p>
+          </article>
+          <article class="rail-card" role="listitem">
             <span>Series</span>
             <strong>Episode picker and auto-play</strong>
             <p>Browse seasons with stills and resume bars, mark episodes watched, and roll straight into the next one when the credits hit.</p>
@@ -188,8 +194,9 @@
             <p class="eyebrow">Download</p>
             <h2>Pick your platform. It's instant.</h2>
             <p>
-              Signed desktop builds with an in-app updater, and a PWA for
-              everything with a browser.
+              Signed desktop builds with an in-app updater and a built-in
+              player — nothing else to install — plus a PWA for everything with
+              a browser.
             </p>
           </div>
           <a class="text-link" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
@@ -210,8 +217,18 @@
               <a class="stream-row" data-download="mac" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
                 <span class="stream-os" aria-hidden="true">MAC</span>
                 <span class="stream-main">
-                  <span class="stream-name">macOS — universal</span>
+                  <span class="stream-name">macOS — Apple Silicon</span>
                   <span class="stream-meta" data-download-meta="mac">Latest release page</span>
+                </span>
+                <span class="stream-badge">Instant · notarized</span>
+              </a>
+            </li>
+            <li>
+              <a class="stream-row" data-download="mac-intel" href="https://github.com/Tgk-30/DebridStreamer/releases/latest">
+                <span class="stream-os" aria-hidden="true">MAC</span>
+                <span class="stream-main">
+                  <span class="stream-name">macOS — Intel</span>
+                  <span class="stream-meta" data-download-meta="mac-intel">Latest release page</span>
                 </span>
                 <span class="stream-badge">Instant · notarized</span>
               </a>

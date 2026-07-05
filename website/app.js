@@ -103,6 +103,21 @@ function bestAsset(release, platform) {
   return platformAssets(release, platform)[0] ?? null;
 }
 
+// macOS ships PER-ARCH (two DMGs) — an arm64-only build won't launch on an Intel
+// Mac and vice-versa. Resolve each arch's best asset by its Tauri filename
+// (aarch64 vs x64) so the picker can offer both explicitly. Falls back to null
+// when that arch isn't present (e.g. an older single-arch release).
+const macArchPatterns = {
+  arm64: /(aarch64|arm64)/i,
+  intel: /(x86_64|x64|intel|amd64)/i,
+};
+
+function macAssetForArch(release, arch) {
+  const pattern = macArchPatterns[arch];
+  if (!pattern) return null;
+  return platformAssets(release, "mac").find((entry) => pattern.test(entry.name ?? "")) ?? null;
+}
+
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "";
   const units = ["B", "KB", "MB", "GB"];
@@ -207,13 +222,24 @@ async function hydrateDownloads() {
       return res.json();
     });
 
-    for (const key of ["mac", "windows", "linux"]) {
+    for (const key of ["windows", "linux"]) {
       const asset = bestAsset(release, key);
       if (asset?.browser_download_url) {
         setLink(`[data-download="${key}"]`, asset.browser_download_url);
       }
       setMeta(key, asset);
     }
+
+    // macOS is per-arch: fill the Apple Silicon + Intel rows from their own DMGs
+    // so no Mac visitor is handed a build that won't launch. The "mac" hook is
+    // Apple Silicon (falling back to the best mac asset for older single-arch
+    // releases); "mac-intel" is the Intel build.
+    const macArm = macAssetForArch(release, "arm64") ?? bestAsset(release, "mac");
+    if (macArm?.browser_download_url) setLink('[data-download="mac"]', macArm.browser_download_url);
+    setMeta("mac", macArm);
+    const macIntel = macAssetForArch(release, "intel");
+    if (macIntel?.browser_download_url) setLink('[data-download="mac-intel"]', macIntel.browser_download_url);
+    setMeta("mac-intel", macIntel);
 
     const asset = bestAsset(release, platform);
     if (smart && asset?.browser_download_url) {
@@ -449,6 +475,7 @@ if (typeof window !== "undefined") {
     detectPlatform,
     isInstallerAsset,
     labelFor,
+    macAssetForArch,
     platformAssets,
     scoreAsset,
   };
