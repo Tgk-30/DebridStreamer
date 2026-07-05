@@ -238,6 +238,16 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
     o
 }
 
+/// What a surface contributes BEFORE mpv is initialized. Windows wid-embedding
+/// creates its child window here and passes `wid` as a pre-init option (mpv's
+/// `wid` is init-only); the render-API surfaces (macOS/Linux) need nothing
+/// pre-init and return an empty `PreInit`. The opaque `handle` (e.g. the child
+/// HWND as a usize) is handed back to `surface_attach`.
+pub struct PreInit {
+    pub options: Vec<(String, String)>,
+    pub handle: usize,
+}
+
 // ---- Player creation (mpv + surface + event thread; NO loadfile) ---------
 pub fn create_player<R: Runtime>(
     app: AppHandle<R>,
@@ -252,13 +262,22 @@ pub fn create_player<R: Runtime>(
         }
     }
 
+    // Phase 1: let the surface create any native handle it needs before mpv
+    // (Windows: the child HWND) and contribute pre-init mpv options (Windows: wid).
+    let pre = super::surface_pre_init(&app)?;
+
     let mpv = Mpv::with_initializer(|init| {
-        // Best-in-class defaults first, then user options override them — except
-        // `vo` on the render-API platforms (macOS/Linux), which MUST stay libmpv
-        // or the render context can't bind to mpv.
+        // Best-in-class defaults first, then the surface's pre-init options, then
+        // user options override — except `vo` on the render-API platforms
+        // (macOS/Linux), which MUST stay libmpv or the render context can't bind.
         for (k, v) in best_in_class_options() {
             if let Err(e) = init.set_option(k, v) {
                 rp_log(&format!("create_player: default {k}={v} ERR {e}"));
+            }
+        }
+        for (k, v) in &pre.options {
+            if let Err(e) = init.set_option(k.as_str(), v.as_str()) {
+                rp_log(&format!("create_player: pre-init {k}={v} ERR {e}"));
             }
         }
         for (k, v) in &options {
@@ -276,9 +295,10 @@ pub fn create_player<R: Runtime>(
     let mpv = Arc::new(mpv);
     rp_log("create_player: mpv created");
 
-    // Platform surface: creates the native video surface + binds it to mpv. The
-    // cfg-selected `attach_surface` lives in the active `surface_*.rs`.
-    let surface = super::attach_surface(&app, mpv.clone())?;
+    // Phase 2: bind mpv to the native surface (macOS/Linux create the render
+    // context surface; Windows wraps the already-wid'd child HWND). The
+    // cfg-selected `surface_pre_init`/`surface_attach` live in the active surface.
+    let surface = super::surface_attach(&app, mpv.clone(), pre.handle)?;
 
     let event_stop = Arc::new(AtomicBool::new(false));
     let event_thread = Some(spawn_event_thread(

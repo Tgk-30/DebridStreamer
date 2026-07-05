@@ -39,7 +39,7 @@ use objc2_quartz_core::{CAAutoresizingMask, CALayer, CAOpenGLLayer};
 
 use tauri::{AppHandle, Runtime};
 
-use super::core::{rp_log, VideoSurface};
+use super::core::{rp_log, PreInit, VideoSurface};
 
 // GL enum constants we need (not worth a GL crate).
 const GL_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
@@ -354,9 +354,18 @@ impl VideoSurface for MacosSurface {
 /// from `core::create_player`. `app` is unused on macOS (the content view is taken
 /// from `NSApplication`, not Tauri's window handle, which dispatch_sync-deadlocks
 /// off-main).
-pub fn attach_surface<R: Runtime>(
+/// The render-API surface needs nothing set up before mpv is initialized.
+pub fn surface_pre_init<R: Runtime>(_app: &AppHandle<R>) -> Result<PreInit, String> {
+    Ok(PreInit {
+        options: Vec::new(),
+        handle: 0,
+    })
+}
+
+pub fn surface_attach<R: Runtime>(
     _app: &AppHandle<R>,
     mpv: Arc<Mpv>,
+    _handle: usize,
 ) -> Result<Box<dyn VideoSurface>, String> {
     let (tx, rx) = std::sync::mpsc::channel::<Result<(usize, usize), String>>();
     DispatchQueue::main().exec_async(move || {

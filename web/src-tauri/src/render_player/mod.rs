@@ -21,7 +21,7 @@ pub use core::*;
 #[cfg(target_os = "macos")]
 mod surface_macos;
 #[cfg(target_os = "macos")]
-use surface_macos::attach_surface;
+use surface_macos::{surface_attach, surface_pre_init};
 
 // ── Platforms WITHOUT a surface yet: libmpv-free error stubs ──────────────
 #[cfg(not(target_os = "macos"))]
