@@ -17,6 +17,25 @@ fn main() {
         println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
     }
 
+    // Windows: libmpv2-sys emits `cargo:rustc-link-lib=mpv`, so the MSVC linker
+    // needs `mpv.lib` on its search path. CI generates that import lib from the
+    // shinchiro mpv-dev package's mpv.def and points MPV_LIB_DIR (or MPV_SOURCE)
+    // at the folder holding it. At runtime the bundled `libmpv-2.dll` (shipped
+    // next to the exe) is loaded.
+    #[cfg(target_os = "windows")]
+    {
+        println!("cargo:rerun-if-env-changed=MPV_LIB_DIR");
+        println!("cargo:rerun-if-env-changed=MPV_SOURCE");
+        for var in ["MPV_LIB_DIR", "MPV_SOURCE"] {
+            if let Ok(dir) = std::env::var(var) {
+                if !dir.is_empty() {
+                    println!("cargo:rustc-link-search=native={dir}");
+                    break;
+                }
+            }
+        }
+    }
+
     tauri_build::build()
 }
 
