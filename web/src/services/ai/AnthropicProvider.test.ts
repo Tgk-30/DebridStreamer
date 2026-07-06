@@ -74,6 +74,27 @@ function makeFetchTextThrows(status: number): MockFetch {
   return { fetchImpl, lastRequest: () => captured, hits: () => count };
 }
 
+function makeThrowingTextFetch(status: number): MockFetch {
+  let count = 0;
+  let captured: MockRequest | null = null;
+  const fetchImpl: FetchImpl = async (url, init) => {
+    count += 1;
+    captured = {
+      url,
+      method: init?.method,
+      headers: init?.headers,
+      body: init?.body,
+    };
+    return {
+      status,
+      text: async () => {
+        throw new Error("response body failed");
+      },
+    };
+  };
+  return { fetchImpl, lastRequest: () => captured, hits: () => count };
+}
+
 const analyzeInput: AIAnalyzeTitleInput = {
   title: "Arrival",
   year: 2016,
@@ -411,6 +432,16 @@ describe("AnthropicProvider.analyzeTitle", () => {
   it("falls back to 'Anthropic error' on an empty non-2xx analysis body", async () => {
     const mock = makeMockFetch(500, "");
     const provider = new AnthropicProvider("k", undefined, mock.fetchImpl);
+    await expect(provider.analyzeTitle!(analyzeInput)).rejects.toMatchObject({
+      kind: "apiError",
+      message: "Anthropic error",
+    });
+  });
+
+  it("falls back to 'Anthropic error' when reading a non-2xx analysis body throws", async () => {
+    const mock = makeThrowingTextFetch(502);
+    const provider = new AnthropicProvider("k", undefined, mock.fetchImpl);
+
     await expect(provider.analyzeTitle!(analyzeInput)).rejects.toMatchObject({
       kind: "apiError",
       message: "Anthropic error",

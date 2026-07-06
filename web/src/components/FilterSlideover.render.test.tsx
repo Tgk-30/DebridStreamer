@@ -6,7 +6,7 @@
 // list and AppStore are stubbed so the panel renders deterministically.
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FilterSlideover } from "./FilterSlideover";
 import { emptyBrowseFilters } from "../data/browse";
@@ -133,6 +133,23 @@ describe("FilterSlideover", () => {
     expect(onApply.mock.calls[0][1].minRating).toBe(7);
   });
 
+  it("can clear the min rating with the Any chip", async () => {
+    const user = userEvent.setup();
+    const { onApply } = setup();
+    await user.click(screen.getByRole("button", { name: "7+" }));
+    expect(screen.getByRole("button", { name: "7+" })).toHaveAttribute("aria-pressed", "true");
+
+    const minRatingSection = screen.getByText("Min rating").closest("section")!;
+    const anyRating = within(minRatingSection).getByRole("button", { name: "Any" });
+    await user.click(anyRating);
+    expect(anyRating).toHaveAttribute("aria-pressed", "true");
+    const done = screen.getByRole("button", { name: "Done" });
+    await user.click(done);
+
+    expect(onApply).not.toHaveBeenCalled();
+    expect(done).toBeInTheDocument();
+  });
+
   it("Clear is disabled with no active filters and resets the draft once dirty", async () => {
     const user = userEvent.setup();
     const { onApply } = setup();
@@ -152,6 +169,20 @@ describe("FilterSlideover", () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
+  it("applies min votes, runtime, and original language filters", async () => {
+    const user = userEvent.setup();
+    const { onApply } = setup();
+    await user.click(screen.getByRole("button", { name: "100+" }));
+    await user.click(screen.getByRole("button", { name: "≤ 90m" }));
+    await user.click(screen.getByRole("button", { name: "English" }));
+
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+    const filters = onApply.mock.calls[0][1];
+    expect(filters.minVotes).toBe(100);
+    expect(filters.runtimeLTE).toBe(90);
+    expect(filters.originalLanguage).toBe("en");
+  });
+
   it("switching the media type clears selected genres in the payload", async () => {
     const user = userEvent.setup();
     const { onApply } = setup({ type: "movie" });
@@ -162,6 +193,57 @@ describe("FilterSlideover", () => {
     const [type, filters] = onApply.mock.calls[0];
     expect(type).toBe("series");
     expect(filters.genreIds).toEqual([]);
+  });
+
+  it("preserves type-specific runtime behavior when switching back to movie", async () => {
+    const user = userEvent.setup();
+    const { onApply } = setup({ type: "series" });
+    await user.click(screen.getByRole("button", { name: "TV" }));
+    await user.click(screen.getByRole("button", { name: "Movies" }));
+    await user.click(screen.getByRole("button", { name: "≤ 90m" }));
+    await user.click(screen.getByRole("button", { name: "TV" }));
+    await user.click(screen.getByRole("button", { name: "Movies" }));
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    const [type, filters] = onApply.mock.calls[0];
+    expect(type).toBe("movie");
+    expect(filters.runtimeLTE).toBeNull();
+  });
+
+  it("clears original-language filter with the Language Any chip", async () => {
+    const user = userEvent.setup();
+    const { onApply } = setup();
+    const languageSection = screen.getByText("Language").closest("section")!;
+    const english = within(languageSection).getByRole("button", { name: "English" });
+    await user.click(english);
+    expect(english).toHaveAttribute("aria-pressed", "true");
+
+    const anyLanguage = within(languageSection).getByRole("button", { name: "Any" });
+    await user.click(anyLanguage);
+    expect(anyLanguage).toHaveAttribute("aria-pressed", "true");
+    expect(english).toHaveAttribute("aria-pressed", "false");
+    // Keep dirty so Apply remains visible while we verify reset-to-any behavior.
+    await user.click(screen.getByRole("button", { name: "100+" }));
+
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(onApply.mock.calls[0][1].originalLanguage).toBeNull();
+  });
+
+  it("parses an empty and non-numeric release-year input as null", async () => {
+    const user = userEvent.setup();
+    const { onApply } = setup();
+    await user.click(screen.getByRole("button", { name: "100+" }));
+    const from = screen.getByLabelText("Release year from");
+    fireEvent.change(from, { target: { value: "2010" } });
+    fireEvent.change(from, { target: { value: "" } });
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(onApply.mock.calls[0][1].yearGTE).toBeNull();
+
+    const to = screen.getByLabelText("Release year to");
+    to.setAttribute("type", "text");
+    fireEvent.change(to, { target: { value: "abc" } });
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(onApply.mock.calls[1][1].yearLTE).toBeNull();
   });
 
   it("shows 'Done' (not 'Apply filters') when the draft is unchanged, and Done closes", async () => {
@@ -198,5 +280,17 @@ describe("FilterSlideover", () => {
     const scrim = container.querySelector(".fs-scrim")!;
     await user.click(scrim as Element);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders a non-open panel state without open-specific classes", () => {
+    const { container } = setup({ open: false });
+    const scrim = container.querySelector(".fs-scrim");
+    const panel = container.querySelector(".fs-panel");
+
+    expect(scrim).toHaveClass("fs-scrim");
+    expect(scrim).not.toHaveClass("is-open");
+    expect(panel).toHaveClass("fs-panel");
+    expect(panel).not.toHaveClass("is-open");
+    expect(container.querySelector('[role="dialog"]')).toBeInTheDocument();
   });
 });

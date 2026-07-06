@@ -135,6 +135,17 @@ describe("isFirstRun", () => {
       // location?.search ?? "" → "" → URLSearchParams("") has no param → no bypass.
       await expect(isFirstRun()).resolves.toBe(true);
     });
+
+    it("falls back to normal gating when search normalization throws", async () => {
+      vi.stubEnv("DEV", true);
+      vi.stubGlobal("location", {
+        get search() {
+          throw new Error("bad location search");
+        },
+      } as unknown as Location);
+      await expect(isFirstRun()).resolves.toBe(true);
+      expect(getSetting).toHaveBeenCalledWith(ONBOARDING_KEY);
+    });
   });
 });
 

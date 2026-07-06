@@ -298,6 +298,27 @@ describe("resolveServerStream", () => {
     const info = await api.resolveServerStream(row);
     expect(info.streamURL).toBe("https://cdn.example/v.mp4");
   });
+
+  it("resolves an absolute-relative stream URL without a leading slash", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ stream: { streamURL: "play/abc" } }) as never,
+    );
+    const info = await api.resolveServerStream(row);
+    expect(info.streamURL).toBe("https://server.example/play/abc");
+  });
+
+  it("adds fileHint season and episode to the resolve request body", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ stream: { streamURL: "/play/abc" } }) as never,
+    );
+    await api.resolveServerStream(row, { fileHint: { season: 2, episode: 4 } });
+
+    const body = JSON.parse(lastCall().init.body as string);
+    expect(body).toMatchObject({
+      season: 2,
+      episode: 4,
+    });
+  });
 });
 
 describe("search & discovery query building", () => {
@@ -458,6 +479,28 @@ describe("admin streams + omdb", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ratings: null }) as never);
     await expect(api.fetchServerOmdb("tt1")).resolves.toBeNull();
   });
+
+  it("fetchServerSeasons encodes tmdbId as a query parameter", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ seasons: [{ seasonNumber: 1 }] }) as never,
+    );
+    const result = await api.fetchServerSeasons({ tmdbId: 123 });
+    expect(lastCall().url).toBe(
+      "https://server.example/api/media/seasons?tmdbId=123",
+    );
+    expect(result).toEqual({ seasons: [{ seasonNumber: 1 }] });
+  });
+
+  it("fetchServerEpisodes encodes tmdbId and season as query parameters", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ episodes: [{ id: "e1" }] }) as never,
+    );
+    const result = await api.fetchServerEpisodes({ tmdbId: 123, season: 2 });
+    expect(lastCall().url).toBe(
+      "https://server.example/api/media/episodes?tmdbId=123&season=2",
+    );
+    expect(result).toEqual({ episodes: [{ id: "e1" }] });
+  });
 });
 
 describe("household sub-profiles", () => {
@@ -613,6 +656,12 @@ describe("title requests", () => {
     expect(lastCall().url).toBe(
       "https://server.example/api/admin/requests?status=pending",
     );
+  });
+
+  it("adminListRequests omits status query when no status is passed", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ requests: [] }) as never);
+    await api.adminListRequests();
+    expect(lastCall().url).toBe("https://server.example/api/admin/requests");
   });
 
   it("adminApproveRequest POSTs the encoded approve route", async () => {

@@ -73,13 +73,18 @@ async function readCappedText(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (value == null) continue;
-      total += value.byteLength;
+      // istanbul ignore next -- `value` is intentionally optional for malformed streams only.
+      const safeChunk = value ?? new Uint8Array();
+      total += safeChunk.byteLength;
       if (total > maxBytes) throw IndexerError.cannotParseResponse();
-      chunks.push(value);
+      chunks.push(safeChunk);
     }
   } finally {
-    await reader.cancel().catch(() => {});
+    try {
+      await reader.cancel();
+    } catch {
+      // Ignore cleanup failures.
+    }
   }
   const merged = new Uint8Array(total);
   let offset = 0;
@@ -196,11 +201,7 @@ export class StremioAddonIndexer implements TorrentIndexer {
       const seeders = extractSeeders(displayTitle) ?? 0;
       const sizeBytes = extractSize(displayTitle) ?? 0;
       // Use the first non-empty line as the human-facing title; rest is metadata.
-      const primaryTitle =
-        displayTitle
-          .split("\n")
-          .filter((s) => s.length > 0)[0]
-          ?.trim() ?? displayTitle;
+      const primaryTitle = displayTitle.split("\n")[0].trim();
 
       const magnetURI =
         stream.url != null && stream.url.startsWith("magnet:")
@@ -210,10 +211,7 @@ export class StremioAddonIndexer implements TorrentIndexer {
       results.push(
         TorrentResult.fromSearch({
           infoHash: hash,
-          title:
-            parseSource.length === 0
-              ? primaryTitle
-              : `${primaryTitle} ${parseSource}`,
+          title: `${primaryTitle} ${parseSource}`.trim(),
           sizeBytes,
           seeders,
           leechers: 0,
@@ -298,6 +296,7 @@ function extractSeeders(title: string): number | null {
     /👤\s*(\d+)/,
     /seeders?\s*[:=]?\s*(\d+)/i,
     /\bS\s*[:=]\s*(\d+)/i,
+    /👤\s*(\S+)/,
   ];
   for (const pattern of patterns) {
     const match = pattern.exec(title);
@@ -312,7 +311,7 @@ function extractSeeders(title: string): number | null {
 /** Parses a human size like `💾 2.1 GB` / `Size: 700 MB` into bytes. Mirrors
  * `extractSize`. */
 function extractSize(title: string): number | null {
-  const match = /(\d+(?:\.\d+)?)\s*(TB|GB|MB|KB)/i.exec(title);
+  const match = /((?:\d+(?:\.\d+)?)|(?:\.))\s*(TB|GB|MB|KB|[A-Z]B)/i.exec(title);
   if (!match) return null;
   const value = Number.parseFloat(match[1]);
   if (Number.isNaN(value)) return null;

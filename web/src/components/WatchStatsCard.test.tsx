@@ -55,10 +55,27 @@ describe("WatchStatsCard", () => {
     expect(container.querySelector(".watch-stats-genres")).toBeNull();
   });
 
+  it("renders a 0% genre bar width when all genre counts are zero", () => {
+    const { container } = render(
+      <WatchStatsCard stats={stats({ favoriteGenres: [{ genre: "Calm", count: 0 }] })} />,
+    );
+    expect(container.querySelector(".watch-stats-genres")).not.toBeNull();
+    const fill = container.querySelector(".watch-stats-bar-fill");
+    expect(fill).not.toBeNull();
+    expect((fill as HTMLElement).style.width).toBe("0%");
+  });
+
   it("shows a dash and no accent for a broken (zero-day) streak", () => {
     render(
       <WatchStatsCard stats={stats({ streakDays: 0, streakOngoing: false })} />,
     );
     expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("renders a singular day label when streak is exactly one day", () => {
+    render(
+      <WatchStatsCard stats={stats({ streakDays: 1, streakOngoing: true })} />,
+    );
+    expect(screen.getByText("1 day")).toBeInTheDocument();
   });
 });

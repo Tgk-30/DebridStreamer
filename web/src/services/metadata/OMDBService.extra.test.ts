@@ -9,7 +9,7 @@
 //
 // Reuses the FetchImpl-stub pattern from OMDBService.test.ts. TESTS ONLY.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { type FetchImpl, OMDBService } from "./OMDBService";
 
 function fetchReturning(status: number, body: string): FetchImpl {
@@ -39,6 +39,16 @@ describe("OMDBService defensive numeric parsing", () => {
     expect((await service.fetchRatings("tt1")).metascore).toBe(63);
   });
 
+  it("maps parseIntStrict NaN to undefined for malformed integer literals", async () => {
+    const parseIntSpy = vi.spyOn(Number, "parseInt").mockImplementation(() => Number.NaN);
+    try {
+      const service = new OMDBService("k", okBody({ Metascore: "63" }));
+      expect((await service.fetchRatings("tt1")).metascore).toBeUndefined();
+    } finally {
+      parseIntSpy.mockRestore();
+    }
+  });
+
   it("clamps an out-of-range Rotten Tomatoes percent into 0..100", async () => {
     const service = new OMDBService(
       "k",
@@ -53,6 +63,22 @@ describe("OMDBService defensive numeric parsing", () => {
       okBody({ Ratings: [{ Source: "Rotten Tomatoes", Value: "Fresh" }] }),
     );
     expect((await service.fetchRatings("tt1")).rtPercent).toBeUndefined();
+  });
+
+  it("maps rotten tomatoes parseInt NaN to undefined", async () => {
+    const original = Number.parseInt;
+    const parseIntSpy = vi.spyOn(Number, "parseInt").mockImplementation((value, radix) =>
+      value === "74" ? Number.NaN : original(value, radix),
+    );
+    try {
+      const service = new OMDBService(
+        "k",
+        okBody({ Ratings: [{ Source: "Rotten Tomatoes", Value: "74%" }] }),
+      );
+      expect((await service.fetchRatings("tt1")).rtPercent).toBeUndefined();
+    } finally {
+      parseIntSpy.mockRestore();
+    }
   });
 });
 
@@ -90,5 +116,36 @@ describe("OMDBService default fetch wiring", () => {
     // no real network is hit.
     const service = new OMDBService("k");
     expect(service).toBeInstanceOf(OMDBService);
+  });
+
+  it("uses the global fetch when no fetch implementation is passed in", async () => {
+    const fetchMock = vi.fn(async () => ({
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          Response: "True",
+          imdbRating: "8.8",
+          Metascore: "77",
+          Ratings: [{ Source: "Rotten Tomatoes", Value: "91%" }],
+        }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const service = new OMDBService("k");
+      const ratings = await service.fetchRatings("tt1234");
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(ratings.imdbRating).toBe(8.8);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("maps an invalid URL into an invalidURL OMDBError", async () => {
+    const service = new OMDBService("k");
+    (service as unknown as { baseURL: string }).baseURL = "://bad-url";
+    await expect(service.fetchRatings("tt1")).rejects.toMatchObject({
+      kind: "invalidURL",
+    });
   });
 });

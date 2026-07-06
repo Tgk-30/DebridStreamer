@@ -74,4 +74,14 @@ describe("serverSetupSteps", () => {
       expect(previousStep(bogus)).toBeNull();
     });
   });
+
+  it("returns full progress when the flow has no terminal denominator (defensive branch)", () => {
+    const original = [...SERVER_SETUP_STEPS];
+    SERVER_SETUP_STEPS.length = 0;
+    try {
+      expect(stepProgress("welcome")).toBe(1);
+    } finally {
+      SERVER_SETUP_STEPS.splice(0, 0, ...original);
+    }
+  });
 });

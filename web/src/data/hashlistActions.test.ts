@@ -465,6 +465,32 @@ describe("aiEmitHashList", () => {
     expect(result.entries).toEqual([{ infoHash: HASH_A, name: "Fallback Pick" }]);
   });
 
+  it("keeps the seeder-top pick when cache lookup has no cached rows", async () => {
+    const ai = {
+      recommend: vi.fn().mockResolvedValue({
+        model: null,
+        recommendations: [rec("No Cache Match")],
+        rawText: null,
+        usage: null,
+      }),
+    } as never;
+    const searchByQuery = vi
+      .fn()
+      .mockResolvedValue([torrent(HASH_A, 100), torrent(HASH_B, 10)]);
+    const indexers = makeIndexers(["x"], { searchByQuery });
+    const checkCacheAll = vi.fn().mockResolvedValue({
+      [HASH_A]: { status: { kind: "uncached" } },
+      [HASH_B]: { status: { kind: "uncached" } },
+    });
+    const debrid = { hasServices: true, checkCacheAll } as never;
+    const deps: AIEmitDeps = { ai, tmdb: null, indexers, debrid };
+
+    const result = await aiEmitHashList("p", 1, deps);
+
+    expect(checkCacheAll).toHaveBeenCalledWith([HASH_A, HASH_B]);
+    expect(result.entries).toEqual([{ infoHash: HASH_A, name: "No Cache Match" }]);
+  });
+
   it("skips cache lookup when debrid has no services", async () => {
     const ai = {
       recommend: vi.fn().mockResolvedValue({

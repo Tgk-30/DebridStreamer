@@ -177,6 +177,70 @@ describe("EZTVIndexer.search (decoding + filtering)", () => {
     );
   });
 
+  it("filters by episode when season is set and episode mismatches", async () => {
+    const body = JSON.stringify({
+      torrents: [
+        {
+          id: 1,
+          hash: "1111111111111111111111111111111111111111",
+          title: "Wrong episode",
+          season: "1",
+          episode: "2",
+          seeds: 5,
+          size_bytes: "1",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const indexer = new EZTVIndexer(mock.fetchImpl);
+
+    const results = await indexer.search("tt1", "series", 1, 1);
+    expect(results).toEqual([]);
+  });
+
+  it("filters by season when a torrent season is present and differs", async () => {
+    const body = JSON.stringify({
+      torrents: [
+        {
+          id: 1,
+          hash: "1111111111111111111111111111111111111111",
+          title: "Wrong season",
+          season: "2",
+          episode: "1",
+          seeds: 5,
+          size_bytes: "1",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const indexer = new EZTVIndexer(mock.fetchImpl);
+
+    const results = await indexer.search("tt1", "series", 1, 1);
+    expect(results).toEqual([]);
+  });
+
+  it("defaults seeds/leechers to 0 when values are absent", async () => {
+    const body = JSON.stringify({
+      torrents: [
+        {
+          id: 1,
+          hash: "1111111111111111111111111111111111111111",
+          title: "Old source",
+          season: "1",
+          episode: "1",
+          size_bytes: "1",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const indexer = new EZTVIndexer(mock.fetchImpl);
+
+    const results = await indexer.search("tt1", "series", null, null);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.seeders).toBe(0);
+    expect(results[0]?.leechers).toBe(0);
+  });
+
   it("keeps a torrent whose season field is null even when a season filter is set", async () => {
     // The filter only applies when BOTH the requested season AND torrent.season
     // are non-null; a null torrent.season bypasses the season check.
@@ -515,6 +579,50 @@ describe("EZTVIndexer.searchByQuery", () => {
     const indexer = new EZTVIndexer(mock.fetchImpl);
     const results = await indexer.searchByQuery("nothing", "series");
     expect(results).toEqual([]);
+  });
+
+  it("uses filename/unknown fallback and defaults missing size and magnet in searchByQuery", async () => {
+    const body = JSON.stringify({
+      torrents: [
+        {
+          id: 1,
+          hash: "9999999999999999999999999999999999999999",
+          filename: "Show.S01E01.720p.HEVC",
+          season: "1",
+          episode: "1",
+          size_bytes: "not-a-number",
+          seeds: 0,
+          peers: 0,
+        },
+        {
+          id: 2,
+          hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          season: "1",
+          episode: "1",
+          seeds: 0,
+          peers: 0,
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const indexer = new EZTVIndexer(mock.fetchImpl);
+
+    const results = await indexer.searchByQuery("show", "series");
+    expect(results).toHaveLength(2);
+    const fromFilename = results.find(
+      (r) => r.infoHash === "9999999999999999999999999999999999999999",
+    );
+    const unknown = results.find(
+      (r) => r.infoHash === "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+
+    expect(fromFilename?.title).toBe("Show.S01E01.720p.HEVC");
+    expect(fromFilename?.sizeBytes).toBe(0);
+    expect(fromFilename?.magnetURI).toBeNull();
+
+    expect(unknown?.title).toBe("Unknown");
+    expect(unknown?.magnetURI).toBeNull();
+    expect(unknown?.sizeBytes).toBe(0);
   });
 });
 

@@ -19,6 +19,7 @@ import {
   defaultFetchImpl,
   type FetchImpl,
   IndexerType,
+  IndexerError,
   makeIndexerConfig,
   type TorrentIndexer,
 } from "./types";
@@ -137,6 +138,22 @@ describe("IndexerManager errorMessage branches", () => {
     expect(results.map((r) => r.infoHash)).toEqual(["a".repeat(40)]);
     expect(manager.lastSearchErrors).toEqual([{ indexer: "Bad", error: "boom" }]);
   });
+
+  it("tolerates an indexer missing searchByQuery by returning no query results", async () => {
+    const legacy: TorrentIndexer = {
+      name: "Legacy",
+      search: async () => [],
+    } as unknown as TorrentIndexer;
+    const manager = new IndexerManager();
+    manager.setIndexers([
+      legacy,
+      makeStub({ name: "Modern", results: [{ infoHash: "new", quality: VideoQuality.hd1080p, seeders: 2 }] }),
+    ]);
+
+    const results = await manager.searchByQuery("probe", "movie");
+    expect(results).toEqual([]);
+    expect(manager.lastSearchErrors).toEqual([]);
+  });
 });
 
 describe("IndexerFactory.testConnection endpoint-path join edge", () => {
@@ -190,5 +207,19 @@ describe("IndexerType.displayName", () => {
     expect(IndexerType.displayName("zilean")).toBe("Zilean");
     expect(IndexerType.displayName("stremio_addon")).toBe("Stremio Addon");
     expect(IndexerType.displayName("built_in")).toBe("Built-in Scrapers");
+  });
+});
+
+describe("IndexerError.badServerResponse", () => {
+  it("includes the HTTP status code when present", () => {
+    const err = IndexerError.badServerResponse(503);
+    expect(err.message).toBe("Bad server response (HTTP 503)");
+    expect(err.statusCode).toBe(503);
+  });
+
+  it("omits the status suffix when absent", () => {
+    const err = IndexerError.badServerResponse();
+    expect(err.message).toBe("Bad server response");
+    expect(err.statusCode).toBeUndefined();
   });
 });

@@ -470,6 +470,26 @@ describe("OpenAIProvider.analyzeTitle", () => {
     });
   });
 
+  it("falls back to 'OpenAI error' for an empty non-2xx analyze response body", async () => {
+    const mock = makeMockFetch(500, "");
+    const provider = new OpenAIProvider("test-key", undefined, mock.fetchImpl);
+
+    await expect(provider.analyzeTitle(analyzeInput)).rejects.toMatchObject({
+      kind: "apiError",
+      message: "OpenAI error",
+    });
+  });
+
+  it("falls back to 'OpenAI error' when analyze-title error body reading fails", async () => {
+    const mock = makeThrowingTextFetch(502);
+    const provider = new OpenAIProvider("test-key", undefined, mock.fetchImpl);
+
+    await expect(provider.analyzeTitle(analyzeInput)).rejects.toMatchObject({
+      kind: "apiError",
+      message: "OpenAI error",
+    });
+  });
+
   it("throws invalidResponse when content is missing", async () => {
     const mock = makeMockFetch(200, JSON.stringify({ choices: [] }));
     const provider = new OpenAIProvider("test-key", undefined, mock.fetchImpl);

@@ -242,6 +242,36 @@ describe("TraktSyncService error handling", () => {
   });
 });
 
+describe("TraktSyncService request internals", () => {
+  it("returns invalidURL when the base URL cannot form a request URL", async () => {
+    let called = false;
+    const fetchImpl: FetchImpl = async () => {
+      called = true;
+      return {
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            device_code: "dev-code",
+            user_code: "ABCD-EFGH",
+            verification_url: "https://trakt.tv/activate",
+            expires_in: 600,
+            interval: 5,
+          }),
+      };
+    };
+
+    const service = new TraktSyncService(fetchImpl) as TraktSyncService & {
+      baseURL: string;
+    };
+    service.baseURL = ":::";
+
+    await expect(service.startDeviceAuth("client-id")).rejects.toMatchObject({
+      kind: "invalidURL",
+    });
+    expect(called).toBe(false);
+  });
+});
+
 // MARK: - pushWatchlist decodes added/existing/not_found (pushWatchlistDecodesSummary)
 
 describe("TraktSyncService pushWatchlist", () => {

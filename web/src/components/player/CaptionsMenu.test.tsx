@@ -6,7 +6,7 @@
 // mocked AppStore slice.
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CaptionsMenu } from "./CaptionsMenu";
 import type { UseSubtitleTracks, SubtitleTrack } from "./useSubtitleTracks";
@@ -343,6 +343,16 @@ describe("OpenSubtitles search (gated)", () => {
     expect(subs.search).toHaveBeenCalledWith(
       expect.objectContaining({ languages: ["es"] }),
     );
+  });
+
+  it("does not run search on non-Enter key presses", async () => {
+    const user = userEvent.setup();
+    const subs = makeSubs({ canSearch: true });
+    renderMenu(subs, { seedTitle: "X", seedImdbId: null });
+    const input = screen.getByPlaceholderText("Search title…");
+    await user.type(input, "abc");
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(subs.search).not.toHaveBeenCalled();
   });
 
   it("shows a search spinner and disables Search while searching", () => {

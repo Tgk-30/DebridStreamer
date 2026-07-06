@@ -153,6 +153,30 @@ describe("PendingUpdate.install — progress translation + relaunch", () => {
     expect(relaunchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("treats a missing contentLength in Started as unknown size", async () => {
+    enterTauri();
+    const downloadAndInstall = vi.fn(
+      async (cb: (event: unknown) => void) => {
+        cb({ event: "Started", data: {} });
+      },
+    );
+    checkMock.mockResolvedValue({
+      version: "1.2.0",
+      currentVersion: "1.1.0",
+      body: null,
+      downloadAndInstall,
+    });
+    relaunchMock.mockResolvedValue(undefined);
+
+    const pending = await checkForUpdates();
+    const fractions: (number | null)[] = [];
+    await pending!.install((f) => fractions.push(f));
+
+    expect(fractions).toEqual([null]);
+    expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+    expect(relaunchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("install works without an onProgress callback", async () => {
     enterTauri();
     const downloadAndInstall = vi.fn(

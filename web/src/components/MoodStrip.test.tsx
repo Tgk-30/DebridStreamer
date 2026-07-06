@@ -73,4 +73,11 @@ describe("MoodStrip", () => {
     expect(status).toHaveTextContent("Curating your lineup");
     expect(status).not.toHaveClass("is-error");
   });
+
+  it("shows the filtered-browse subtitle when AI is not available", () => {
+    render(<MoodStrip aiAvailable={false} />);
+    expect(
+      screen.getByText("Opens a filtered browse — add an AI key in Settings for real AI picks"),
+    ).toBeInTheDocument();
+  });
 });

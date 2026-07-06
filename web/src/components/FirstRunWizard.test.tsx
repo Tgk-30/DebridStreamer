@@ -165,11 +165,26 @@ describe("FirstRunWizard", () => {
     vi.unstubAllGlobals();
   });
 
+  it("connect step surfaces the fallback error message when fetch throws a non-Error", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockRejectedValue("network failed");
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<FirstRunWizard onDone={() => {}} />);
+    await user.click(screen.getByText("Connect to a server"));
+    await user.type(screen.getByLabelText("Server address"), "stream.example.com");
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    expect(await screen.findByText("Couldn't reach that server.")).toBeInTheDocument();
+    expect(saveServerURL).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("'host' persona shows the web copy when not running under Tauri", async () => {
     const user = userEvent.setup();
     isTauriMock.mockReturnValue(false);
     render(<FirstRunWizard onDone={() => {}} />);
-    await user.click(screen.getByText("Host for my family"));
+    await user.click(screen.getByRole("button", { name: /Host for my family/i }));
     expect(
       screen.getByRole("heading", { name: "Host for your household" }),
     ).toBeInTheDocument();
@@ -180,17 +195,28 @@ describe("FirstRunWizard", () => {
     const user = userEvent.setup();
     isTauriMock.mockReturnValue(true);
     render(<FirstRunWizard onDone={() => {}} />);
-    await user.click(screen.getByText("Host for my family"));
+    await user.click(screen.getByRole("button", { name: /Host for my family/i }));
     expect(
       screen.getByText(/This computer can serve DebridStreamer/),
     ).toBeInTheDocument();
+  });
+
+  it("'host' persona enters host mode without finishing onboarding", async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    render(<FirstRunWizard onDone={onDone} />);
+    await user.click(screen.getByRole("button", { name: /Host for my family/i }));
+
+    expect(screen.getByRole("button", { name: "Open Settings" })).toBeInTheDocument();
+    expect(markOnboardingComplete).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
   });
 
   it("host step Continue finishes simple + navigates to settings", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
     render(<FirstRunWizard onDone={onDone} />);
-    await user.click(screen.getByText("Host for my family"));
+    await user.click(screen.getByRole("button", { name: /Host for my family/i }));
     await user.click(screen.getByRole("button", { name: "Open Settings" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
@@ -202,7 +228,7 @@ describe("FirstRunWizard", () => {
   it("host step Back returns to the choose screen", async () => {
     const user = userEvent.setup();
     render(<FirstRunWizard onDone={() => {}} />);
-    await user.click(screen.getByText("Host for my family"));
+    await user.click(screen.getByRole("button", { name: /Host for my family/i }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(
       screen.getByText("How do you want to use DebridStreamer?"),

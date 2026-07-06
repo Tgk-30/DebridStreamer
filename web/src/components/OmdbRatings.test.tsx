@@ -159,4 +159,42 @@ describe("OmdbRatings", () => {
     });
     expect(container.querySelector(".omdb-ratings")).toBeNull();
   });
+
+  it("drops stale BYOK fetch results after an effect refresh (cleanup path)", async () => {
+    let firstResolve:
+      | ((value: OMDBRatings | null) => void)
+      | undefined;
+    let secondResolve:
+      | ((value: OMDBRatings | null) => void)
+      | undefined;
+
+    const first = new Promise<OMDBRatings | null>((resolve) => {
+      firstResolve = resolve;
+    });
+    const second = new Promise<OMDBRatings | null>((resolve) => {
+      secondResolve = resolve;
+    });
+
+    const omdb = {
+      fetchRatings: vi
+        .fn()
+        .mockReturnValueOnce(first)
+        .mockReturnValueOnce(second),
+    };
+    mockServices = { omdb };
+    const { rerender, container } = render(<OmdbRatings imdbId="tt_old" />);
+
+    rerender(<OmdbRatings imdbId="tt_new" />);
+
+    // Resolve the stale first request after refresh; its then branch should skip state.
+    firstResolve?.({ imdbRating: 1.2 });
+    await Promise.resolve();
+    expect(container.querySelector(".omdb-ratings")).toBeNull();
+    expect(screen.queryByText("1.2")).toBeNull();
+
+    // Resolve the active request; now the latest id should render.
+    secondResolve?.({ imdbRating: 9.9 });
+    await screen.findByLabelText("External ratings");
+    expect(screen.getByText("9.9")).toBeInTheDocument();
+  });
 });

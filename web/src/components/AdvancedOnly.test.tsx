@@ -1,32 +1,37 @@
 // @vitest-environment jsdom
+//
+// Tests the Advanced-only control gate used for control-level feature gating in
+// Local and Server modes.
+
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { AdvancedOnly } from "./AdvancedOnly";
 
-const useSimpleMode = vi.fn();
+const useSimpleMode = vi.fn(() => false);
 vi.mock("../store/AppStore", () => ({
   useSimpleMode: () => useSimpleMode(),
 }));
 
-import { AdvancedOnly } from "./AdvancedOnly";
-
 describe("AdvancedOnly", () => {
-  it("renders children in Advanced mode (simpleMode=false)", () => {
+  it("renders children in advanced mode", () => {
     useSimpleMode.mockReturnValue(false);
     render(
       <AdvancedOnly>
-        <span>Maximum file size</span>
+        <span>Advanced control</span>
       </AdvancedOnly>,
     );
-    expect(screen.getByText("Maximum file size")).toBeInTheDocument();
+    expect(screen.getByText("Advanced control")).toBeInTheDocument();
   });
 
-  it("renders nothing in Simple mode (simpleMode=true)", () => {
+  it("hides children in simple mode", () => {
     useSimpleMode.mockReturnValue(true);
-    render(
+    const { container } = render(
       <AdvancedOnly>
-        <span>Maximum file size</span>
+        <span>Simple hidden control</span>
       </AdvancedOnly>,
     );
-    expect(screen.queryByText("Maximum file size")).not.toBeInTheDocument();
+    expect(screen.queryByText("Simple hidden control")).toBeNull();
+    expect(container.firstChild).toBeNull();
   });
 });
+

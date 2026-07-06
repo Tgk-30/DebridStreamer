@@ -132,6 +132,41 @@ describe("computeWatchStats", () => {
     expect(stats.streakDays).toBe(0);
     expect(stats.streakOngoing).toBe(false);
   });
+
+  it("ignores malformed timestamps when deriving streak and active days", () => {
+    const stats = computeWatchStats(
+      [hist({ mediaId: "bad", lastWatched: "not-a-date" })],
+      [],
+      NOW,
+    );
+    expect(stats.activeDays).toBe(0);
+    expect(stats.streakDays).toBe(0);
+    expect(stats.streakOngoing).toBe(false);
+    expect(stats.totalSeconds).toBe(0);
+  });
+
+  it("ignores liked events where genres metadata is not a string", () => {
+    const stats = computeWatchStats(
+      [hist({ mediaId: "movie", completed: true })],
+      [
+        {
+          ...liked("Action", "bad"),
+          metadata: { genres: 42 as unknown as string },
+        },
+      ],
+      NOW,
+    );
+    expect(stats.favoriteGenres).toEqual([]);
+  });
+
+  it("does not credit negative resume positions", () => {
+    const stats = computeWatchStats(
+      [hist({ mediaId: "movie", completed: false, progressSeconds: -30 })],
+      [],
+      NOW,
+    );
+    expect(stats.totalSeconds).toBe(0);
+  });
 });
 
 describe("formatWatchTime", () => {

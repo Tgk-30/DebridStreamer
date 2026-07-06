@@ -375,6 +375,32 @@ describe("library + folders", () => {
     expect(manual.map((f) => f.name)).toEqual(["Alpha", "Zeta"]);
   });
 
+  it("sorts both system folders by name when system-ness ties", async () => {
+    await db.saveFolder({
+      id: "sys-zeta",
+      name: "Zeta",
+      parentId: null,
+      listType: "favorites",
+      folderKind: "system_root",
+      isSystem: true,
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    });
+    await db.saveFolder({
+      id: "sys-alpha",
+      name: "Alpha",
+      parentId: null,
+      listType: "favorites",
+      folderKind: "system_root",
+      isSystem: true,
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    });
+
+    const folders = (await db.listFolders("favorites")).filter((f) => f.isSystem);
+    expect(folders.map((f) => f.name)).toEqual(["Alpha", "Zeta"]);
+  });
+
   it("createFolder with a blank name defaults to 'New Folder'", async () => {
     const folder = await db.createFolder("   ", "favorites", null);
     expect(folder.name).toBe("New Folder");

@@ -84,6 +84,17 @@ describe("useSubtitleTracks gating", () => {
 });
 
 describe("search", () => {
+  it("no-ops when the client is null", async () => {
+    const { result } = renderHook(() => useSubtitleTracks(null, null));
+    await act(async () => {
+      await result.current.search({ query: "x", languages: ["en"] });
+    });
+    expect(result.current.searchError).toBe(
+      "Add an OpenSubtitles API key in Settings.",
+    );
+    expect(result.current.results).toEqual([]);
+  });
+
   it("sets a friendly error and does not call client when no key", async () => {
     const client = makeClient({ hasKey: false });
     const { result } = renderHook(() => useSubtitleTracks(client, null));
@@ -128,6 +139,21 @@ describe("search", () => {
       await result.current.search({ query: "x", languages: ["en"] });
     });
     expect(result.current.searchError).toBe("boom");
+    expect(result.current.results).toEqual([]);
+    expect(result.current.searching).toBe(false);
+  });
+
+  it("uses a default message when search throws a non-Error value", async () => {
+    const client = makeClient({
+      search: vi.fn(async () => {
+        throw "search down";
+      }),
+    });
+    const { result } = renderHook(() => useSubtitleTracks(client, null));
+    await act(async () => {
+      await result.current.search({ query: "x", languages: ["en"] });
+    });
+    expect(result.current.searchError).toBe("Search failed.");
     expect(result.current.results).toEqual([]);
     expect(result.current.searching).toBe(false);
   });
@@ -186,6 +212,21 @@ describe("loadResult / addTrack", () => {
       await result.current.loadResult(makeResult());
     });
     expect(result.current.searchError).toBe("net down");
+    expect(result.current.loadingFileId).toBeNull();
+  });
+
+  it("uses a default message when download throws a non-Error value", async () => {
+    const client = makeClient({
+      download: vi.fn(async () => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-literal
+        throw "download failed";
+      }),
+    });
+    const { result } = renderHook(() => useSubtitleTracks(client, null));
+    await act(async () => {
+      await result.current.loadResult(makeResult());
+    });
+    expect(result.current.searchError).toBe("Download failed.");
     expect(result.current.loadingFileId).toBeNull();
   });
 });

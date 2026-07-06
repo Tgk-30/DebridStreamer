@@ -377,4 +377,20 @@ describe("buildTasteContext length budget", () => {
     // The first (genres) section survives intact.
     expect(context.startsWith("Liked genres:")).toBe(true);
   });
+
+  it("keeps a single long line intact when no line boundary exists", async () => {
+    const store = makeFakeStore({
+      tasteEvents: [
+        tasteEvent({
+          id: "single",
+          metadata: { title: `Title-${"x".repeat(1510)}` },
+        }),
+      ],
+    });
+    const context = await buildTasteContext(store, { useCache: false, now: NOW });
+
+    expect(context.length).toBeLessThanOrEqual(1500);
+    expect(context.startsWith("Liked titles:")).toBe(true);
+    expect(context.includes("\n")).toBe(false);
+  });
 });

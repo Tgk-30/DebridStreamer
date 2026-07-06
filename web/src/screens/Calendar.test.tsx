@@ -16,6 +16,7 @@ import userEvent from "@testing-library/user-event";
 import type { MediaPreview } from "../models/media";
 import type { UpcomingEpisode } from "../lib/metadata";
 import type { CalendarState } from "../data/calendar";
+import { MediaPreview as MediaPreviewNS } from "../models/media";
 
 // --- mutable mock state -----------------------------------------------------
 
@@ -145,6 +146,30 @@ describe("Calendar — loaded agenda", () => {
     expect(openDetail).toHaveBeenCalledWith(
       expect.objectContaining({ id: "s1", title: "Severance" }),
     );
+  });
+
+  it("keeps the poster img node even when posterURL's src helper returns null on reuse", () => {
+    const show = series("s5", "Fallback Poster", "/poster.jpg");
+    const posterURL = vi.spyOn(MediaPreviewNS, "posterURL");
+    posterURL.mockReturnValueOnce("https://image.tmdb.org/t/p/w342/fallback.jpg");
+    posterURL.mockReturnValueOnce(null);
+
+    calendarState = baseState({
+      groups: [
+        {
+          bucket: "today",
+          label: "Today",
+          episodes: [ep(show, 1, 3, "2026-07-01")],
+        },
+      ],
+    });
+    render(<Calendar />);
+
+    const row = screen.getByRole("img", { name: "Fallback Poster" });
+    expect(row).toBeInTheDocument();
+    expect(posterURL).toHaveBeenCalledTimes(2);
+    expect(posterURL).toHaveBeenCalledWith(show);
+    expect(posterURL).toHaveNthReturnedWith(2, null);
   });
 
   it("falls back to a placeholder icon when the series has no poster", () => {

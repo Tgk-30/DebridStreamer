@@ -99,6 +99,15 @@ describe("pickBestMatch", () => {
       pickBestMatch({ title: "x", year: null, type: null }, []),
     ).toBeNull();
   });
+
+  it("adds a bonus for near-year matches when exact year is not present", () => {
+    const entry: ImportEntry = { title: "Dune", year: 2000, type: "movie" };
+    const best = pickBestMatch(entry, [
+      preview({ id: "near", title: "Dune", year: 2001, type: "movie" }),
+      preview({ id: "far", title: "Dune", year: 2004, type: "movie" }),
+    ]);
+    expect(best?.id).toBe("near");
+  });
 });
 
 describe("resolveEntry", () => {
@@ -120,5 +129,46 @@ describe("resolveEntry", () => {
       async () => [],
     );
     expect(match).toBeNull();
+  });
+
+  it("preserves explicit tv/movie hints from IMDb title type", async () => {
+    const searchCalls: Array<{ query: string; type: "movie" | "series" | null }> = [];
+    const match = await resolveEntry({ title: "Heat", year: 1990, type: "series" }, async (query, type) => {
+      searchCalls.push({ query, type });
+      return [preview({ id: "series-match", title: "Heat", year: 1990, type: "series" })];
+    });
+    expect(match?.id).toBe("series-match");
+    expect(searchCalls).toEqual([{ query: "Heat", type: "series" }]);
+  });
+});
+
+describe("parseImportEntries — edge coverage", () => {
+  it("accepts IMDb rows with missing year/type columns and dedupes repeated titles", () => {
+    const csv = [
+      "Const,Title,Year,Title Type",
+      "tt1,Duplicate Title,,movie",
+      "tt2,,2001,movie",
+      "tt3,Duplicate Title,1900,video",
+      "tt4,Duplicate Title,1900,movie",
+    ].join("\n");
+
+    expect(parseImportEntries(csv)).toEqual([
+      { title: "Duplicate Title", year: null, type: "movie" },
+      { title: "Duplicate Title", year: 1900, type: "movie" },
+    ]);
+  });
+
+  it("maps out-of-range parsed years to null in IMDb import mode", () => {
+    const csv = [
+      "Title,Year,Title Type,Const",
+      "Too Far Future,3001,movie,tt9999999",
+      "Too Far Past,1000,short,tt8888888",
+      "Bad Year,bad,video,tt7777777",
+    ].join("\n");
+    expect(parseImportEntries(csv)).toEqual([
+      { title: "Too Far Future", year: null, type: "movie" },
+      { title: "Too Far Past", year: null, type: "movie" },
+      { title: "Bad Year", year: null, type: "movie" },
+    ]);
   });
 });

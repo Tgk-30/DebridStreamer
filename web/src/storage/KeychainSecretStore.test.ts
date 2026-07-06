@@ -125,6 +125,46 @@ describe("KeychainSecretStore", () => {
     expect(await fb.getSecret("tmdb_api_key")).toBeNull(); // purged (move, not copy)
   });
 
+  it("handles fallback Dexie failures when reading legacy secrets", async () => {
+    const fb: SecretStore = {
+      getSecret: async () => {
+        throw new Error("dexie failure");
+      },
+      setSecret: async () => {
+        throw new Error("dexie failure");
+      },
+      deleteSecret: async () => {
+        throw new Error("dexie failure");
+      },
+    };
+    const store = new KeychainSecretStore(fb);
+    await expect(store.getSecret("tmdb_api_key")).resolves.toBeNull();
+  });
+
+  it("serves legacy value when migrate write fails, without throwing", async () => {
+    statefulKeychain(["keychain_set"]);
+    const fb = mapStore({ tmdb_api_key: "legacy-key" });
+    const store = new KeychainSecretStore(fb);
+
+    await expect(store.getSecret("tmdb_api_key")).resolves.toBe("legacy-key");
+    await expect(fb.getSecret("tmdb_api_key")).resolves.toBe("legacy-key");
+  });
+
+  it("emits one warning per key/op and suppresses repeat warnings", async () => {
+    const warnKey = "warning-key-1";
+    statefulKeychain(["keychain_get"]);
+    const fb = mapStore({ [warnKey]: "legacy-plaintext" });
+    const store = new KeychainSecretStore(fb);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await store.getSecret(warnKey);
+    await store.getSecret(warnKey);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(await fb.getSecret(warnKey)).toBe("legacy-plaintext");
+    warnSpy.mockRestore();
+  });
+
   it("does NOT resurrect a deleted secret (migrate -> delete -> re-read stays gone)", async () => {
     const kc = statefulKeychain();
     const fb = mapStore({ "debrid.debrid-real_debrid": "legacy-token" });

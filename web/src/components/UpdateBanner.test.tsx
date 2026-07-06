@@ -92,6 +92,21 @@ describe("UpdateBanner", () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it("dismisses an update banner and suppresses re-render", async () => {
+    checkForUpdates.mockResolvedValue(makeUpdate("1.3.0", vi.fn()));
+    const { container } = render(
+      <UpdateBanner autoCheck autoInstall={false} />,
+    );
+    const user = userEvent.setup();
+
+    await screen.findByText("Update v1.3.0 available");
+    await user.click(
+      screen.getByRole("button", { name: "Dismiss update notification" }),
+    );
+
+    expect(container.firstChild).toBeNull();
+  });
+
   it("Install drives a determinate progress bar from onProgress fractions", async () => {
     let report: ((f: number | null) => void) | undefined;
     // install() that captures onProgress and stays pending (never resolves).
@@ -217,5 +232,23 @@ describe("UpdateBanner", () => {
     expect(
       screen.getByText("Couldn't install v7.0.0. Try again later."),
     ).toBeInTheDocument();
+  });
+
+  it("ignores late update results after unmount", async () => {
+    let resolve: ((value: PendingUpdate | null) => void) | undefined;
+    const pending = new Promise<PendingUpdate | null>((r) => {
+      resolve = r;
+    });
+    const install = vi.fn();
+    checkForUpdates.mockReturnValue(pending);
+
+    const { unmount } = render(<UpdateBanner autoCheck autoInstall={false} />);
+    unmount();
+
+    expect(checkForUpdates).toHaveBeenCalledTimes(1);
+    resolve?.(makeUpdate("9.9.9", install));
+
+    await pending;
+    expect(install).not.toHaveBeenCalled();
   });
 });

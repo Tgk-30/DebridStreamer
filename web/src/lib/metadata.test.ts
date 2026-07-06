@@ -30,6 +30,18 @@ describe("tmdbIdOf", () => {
     expect(tmdbIdOf({ id: "tmdb-7", type: "movie", title: "" })).toBe(7);
     expect(tmdbIdOf({ id: "99", type: "movie", title: "" })).toBe(99);
     expect(tmdbIdOf({ id: "tt123", type: "movie", title: "" })).toBeNull();
+    expect(tmdbIdOf({ id: "tmdb-not-a-number", type: "movie", title: "" })).toBeNull();
+  });
+
+  it("returns null when a numeric-looking id parses to NaN", () => {
+    const parseInt = Number.parseInt;
+    // @ts-expect-error test-only stub to exercise a defensive branch
+    Number.parseInt = () => Number.NaN;
+    try {
+      expect(tmdbIdOf({ id: "99", type: "movie", title: "" })).toBeNull();
+    } finally {
+      Number.parseInt = parseInt;
+    }
   });
 });
 
@@ -152,5 +164,49 @@ describe("getUpcomingEpisodesForSeries", () => {
     const out = await getUpcomingEpisodesForSeries(list, tmdb, NOW);
     expect(seasonsCalls).toBe(1); // deduped
     expect(out).toHaveLength(1);
+  });
+
+  it("sorts merged episodes across series by air date", async () => {
+    const tmdb = stubTMDB({
+      getSeasons: async (id: number) => {
+        if (id === 1) {
+          return [{ id: 1, seasonNumber: 1, name: "S1", episodeCount: 1, airDate: null }];
+        }
+        return [{ id: 1, seasonNumber: 1, name: "S1", episodeCount: 1, airDate: null }];
+      },
+      getEpisodes: async (id: number) => {
+        if (id === 1) {
+          return [
+            {
+              id: "series1-e1",
+              mediaId: "tmdb-1",
+              seasonNumber: 1,
+              episodeNumber: 1,
+              title: "Late",
+              airDate: "2026-08-01",
+            },
+          ];
+        }
+        return [
+          {
+            id: "series2-e1",
+            mediaId: "tmdb-2",
+            seasonNumber: 1,
+            episodeNumber: 1,
+            title: "Early",
+            airDate: "2026-07-01",
+          },
+        ];
+      },
+    });
+
+    const out = await getUpcomingEpisodesForSeries(
+      [previewSeries("tmdb-1", 1), previewSeries("tmdb-2", 2)],
+      tmdb,
+      NOW,
+    );
+    expect(out).toHaveLength(2);
+    expect(out[0].airDate).toBe("2026-07-01");
+    expect(out[1].airDate).toBe("2026-08-01");
   });
 });

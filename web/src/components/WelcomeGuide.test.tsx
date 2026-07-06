@@ -137,4 +137,11 @@ describe("WelcomeGuide", () => {
     await user.keyboard("{ArrowLeft}");
     expect(screen.getByText(`1 / ${TOTAL}`)).toBeInTheDocument();
   });
+
+  it("ignores unrelated keyboard keys", async () => {
+    const user = userEvent.setup();
+    render(<WelcomeGuide onClose={() => {}} />);
+    await user.keyboard("{Tab}");
+    expect(screen.getByText(`1 / ${TOTAL}`)).toBeInTheDocument();
+  });
 });

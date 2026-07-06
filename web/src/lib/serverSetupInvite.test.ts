@@ -14,6 +14,13 @@ describe("serverSetupInvite", () => {
     });
   });
 
+  it("falls back to the default preset when given an unknown id", () => {
+    const unknownId = "guest_access" as unknown as Parameters<
+      typeof serverSetupInvitePreset
+    >[0];
+    expect(serverSetupInvitePreset(unknownId)).toEqual(SERVER_SETUP_INVITE_PRESETS[0]);
+  });
+
   it("keeps simple household options before the advanced option", () => {
     expect(SERVER_SETUP_INVITE_PRESETS.map((preset) => preset.id)).toEqual([
       "family_simple",

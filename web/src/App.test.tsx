@@ -166,10 +166,53 @@ vi.mock("./components/CommandPalette", () => ({
   CommandPalette: () => <div data-testid="command-palette" />,
 }));
 
+vi.mock("./components/SetupNudge", () => ({
+  SetupNudge: ({
+    onStartWizard,
+    onShowTour,
+    onDismiss,
+  }: {
+    onStartWizard: () => void;
+    onShowTour: () => void;
+    onDismiss: () => void;
+  }) => (
+    <div>
+      <button data-testid="setup-nudge" onClick={onStartWizard}>
+        setup
+      </button>
+      <button data-testid="setup-nudge-tour" onClick={onShowTour}>
+        tour
+      </button>
+      <button data-testid="setup-nudge-dismiss" onClick={onDismiss}>
+        dismiss
+      </button>
+    </div>
+  ),
+}));
+
 vi.mock("./components/WelcomeGuide", () => ({
-  WelcomeGuide: ({ onClose }: { onClose: () => void }) => (
-    <button data-testid="welcome-guide" onClick={onClose}>
-      welcome-guide
+  WelcomeGuide: ({
+    onClose,
+    onOpenSettings,
+  }: {
+    onClose: () => void;
+    onOpenSettings: () => void;
+  }) => (
+    <div>
+      <button data-testid="welcome-guide" onClick={onClose}>
+        welcome-guide
+      </button>
+      <button data-testid="welcome-guide-open-settings" onClick={onOpenSettings}>
+        open-settings
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("./components/KeyboardShortcuts", () => ({
+  KeyboardShortcuts: ({ onClose }: { onClose: () => void }) => (
+    <button data-testid="keyboard-shortcuts" onClick={onClose}>
+      keyboard-shortcuts
     </button>
   ),
 }));
@@ -231,9 +274,28 @@ vi.mock("./lib/serverSetup", () => ({
 }));
 
 let adminHealthCredentials = 0;
+let fetchServerAdminHealthError = false;
+let serverHealthResolver: ((value: { counts: { credentials: number } }) => void) | null = null;
+let serverHealthRejecter: ((reason: unknown) => void) | null = null;
+let shouldResolveServerHealth = false;
+let shouldRejectServerHealth = false;
 vi.mock("./lib/serverApi", () => ({
-  fetchServerAdminHealth: () =>
-    Promise.resolve({ counts: { credentials: adminHealthCredentials } }),
+  fetchServerAdminHealth: () => {
+    if (fetchServerAdminHealthError) {
+      return Promise.reject(new Error("blocked"));
+    }
+    if (shouldResolveServerHealth) {
+      return new Promise<{ counts: { credentials: number } }>((resolve) => {
+        serverHealthResolver = resolve;
+      });
+    }
+    if (shouldRejectServerHealth) {
+      return new Promise<{ counts: { credentials: number } }>((_, reject) => {
+        serverHealthRejecter = reject;
+      });
+    }
+    return Promise.resolve({ counts: { credentials: adminHealthCredentials } });
+  },
 }));
 
 import { App, FirstRunHost } from "./App";
@@ -291,6 +353,11 @@ beforeEach(() => {
   firstRunValue = false;
   serverSetupValue = false;
   adminHealthCredentials = 0;
+  fetchServerAdminHealthError = false;
+  shouldResolveServerHealth = false;
+  shouldRejectServerHealth = false;
+  serverHealthResolver = null;
+  serverHealthRejecter = null;
   store = makeStore();
   installLocalStorage();
   // Default: the welcome-guide seen flag is set so the auto-tour is OFF unless
@@ -351,7 +418,7 @@ describe("Setup nudge", () => {
       services: { debrid: null, indexers: { activeIndexers: [{}] } },
     });
     render(<App />);
-    expect(screen.getByText("Let's get you streaming")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-nudge")).toBeInTheDocument();
   });
 
   it("shows the nudge when there is no active source", () => {
@@ -359,13 +426,13 @@ describe("Setup nudge", () => {
       services: { debrid: { hasServices: true }, indexers: { activeIndexers: [] } },
     });
     render(<App />);
-    expect(screen.getByText("Let's get you streaming")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-nudge")).toBeInTheDocument();
   });
 
   it("hides the nudge once a debrid + source are configured", () => {
     store = makeStore(); // configured by default
     render(<App />);
-    expect(screen.queryByText("Let's get you streaming")).toBeNull();
+    expect(screen.queryByTestId("setup-nudge")).toBeNull();
   });
 
   it("hides the nudge on the Settings screen", () => {
@@ -374,7 +441,124 @@ describe("Setup nudge", () => {
       services: { debrid: null, indexers: { activeIndexers: [] } },
     });
     render(<App />);
-    expect(screen.queryByText("Let's get you streaming")).toBeNull();
+    expect(screen.queryByTestId("setup-nudge")).toBeNull();
+  });
+
+  it("hides the nudge while the welcome guide is visible", () => {
+    globalThis.localStorage.removeItem("ds_welcome_guide_seen");
+    store = makeStore({
+      services: { debrid: null, indexers: { activeIndexers: [] } },
+    });
+    render(<App />);
+    expect(screen.getByTestId("welcome-guide")).toBeInTheDocument();
+    expect(screen.queryByTestId("setup-nudge")).not.toBeInTheDocument();
+  });
+
+  it("uses the setup-nudge button to open and close the FirstRunWizard", () => {
+    store = makeStore({
+      services: { debrid: null, indexers: { activeIndexers: [] } },
+    });
+    render(<App />);
+    fireEvent.click(screen.getByTestId("setup-nudge"));
+    expect(screen.getByTestId("first-run")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("first-run"));
+    expect(screen.queryByTestId("first-run")).not.toBeInTheDocument();
+  });
+
+  it("uses setup-nudge tour action to open WelcomeGuide", () => {
+    store = makeStore({
+      services: { debrid: null, indexers: { activeIndexers: [] } },
+    });
+    render(<App />);
+    fireEvent.click(screen.getByTestId("setup-nudge-tour"));
+    expect(screen.getByTestId("welcome-guide")).toBeInTheDocument();
+  });
+
+  it("dismisses setup nudge with localStorage.write failures handled gracefully", () => {
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => (key === "ds_welcome_guide_seen" ? "1" : null),
+        setItem: () => {
+          throw new Error("blocked");
+        },
+        removeItem: () => {},
+        clear: () => {},
+        key: () => null,
+        length: 0,
+      },
+    });
+    store = makeStore({
+      services: { debrid: null, indexers: { activeIndexers: [] } },
+    });
+    render(<App />);
+    fireEvent.click(screen.getByTestId("setup-nudge-dismiss"));
+    expect(screen.queryByTestId("setup-nudge")).not.toBeInTheDocument();
+  });
+
+  it("falls back to defaults when setup nudge localStorage reads fail", () => {
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: () => {
+          throw new Error("blocked");
+        },
+        setItem: () => {},
+        removeItem: () => {},
+        clear: () => {},
+        key: () => null,
+        length: 0,
+      },
+    });
+    store = makeStore({
+      services: { debrid: null, indexers: { activeIndexers: [] } },
+    });
+    render(<App />);
+    expect(screen.getByTestId("setup-nudge")).toBeInTheDocument();
+  });
+});
+
+describe("overlay event listeners", () => {
+  it("opens the first-run wizard on ds:open-first-run", () => {
+    store = makeStore({
+      services: { debrid: null, indexers: { activeIndexers: [] } },
+    });
+    render(<App />);
+    fireEvent(window, new Event("ds:open-first-run"));
+    expect(screen.getByTestId("first-run")).toBeInTheDocument();
+  });
+
+  it("opens the keyboard shortcuts overlay on ds:open-shortcuts", () => {
+    render(<App />);
+    fireEvent(window, new Event("ds:open-shortcuts"));
+    expect(screen.getByTestId("keyboard-shortcuts")).toBeInTheDocument();
+  });
+
+  it("can close the keyboard shortcuts overlay", () => {
+    render(<App />);
+    fireEvent(window, new Event("ds:open-shortcuts"));
+    fireEvent.click(screen.getByTestId("keyboard-shortcuts"));
+    expect(screen.queryByTestId("keyboard-shortcuts")).not.toBeInTheDocument();
+  });
+
+  it("opens the tier welcome on ds:open-tier-welcome", () => {
+    render(<App />);
+    fireEvent(window, new Event("ds:open-tier-welcome"));
+    expect(screen.getByTestId("tier-onboarding")).toBeInTheDocument();
+  });
+
+  it("can close the tier onboarding overlay", () => {
+    render(<App />);
+    fireEvent(window, new Event("ds:open-tier-welcome"));
+    fireEvent.click(screen.getByTestId("tier-onboarding"));
+    expect(screen.queryByTestId("tier-onboarding")).not.toBeInTheDocument();
+  });
+
+  it("opens welcome-guide settings from the overlay action", () => {
+    render(<App />);
+    fireEvent(window, new Event("ds:open-welcome-guide"));
+    fireEvent.click(screen.getByTestId("welcome-guide-open-settings"));
+    expect(navigate).toHaveBeenCalledWith("settings");
   });
 });
 
@@ -538,6 +722,15 @@ describe("smart preload effect", () => {
     render(<App />);
     expect(whenIdle).toHaveBeenCalledTimes(1);
   });
+
+  it("runs the smart-preload callback path", () => {
+    smartPreloadEnabled = true;
+    const trigger = vi.fn();
+    whenIdle.mockImplementation(trigger);
+    render(<App />);
+    expect(trigger).toHaveBeenCalledTimes(1);
+    trigger.mock.calls[0]?.[0]?.();
+  });
 });
 
 // -----------------------------------------------------------------------
@@ -609,6 +802,18 @@ describe("FirstRunHost gating", () => {
     expect(await screen.findByTestId("server-setup")).toBeInTheDocument();
   });
 
+  it("shows TierOnboarding before ServerSetup when the account is fresh and first-run is not yet acknowledged", async () => {
+    serverModeValue = true;
+    sessionValue = { role: "owner" };
+    serverSetupValue = true;
+    adminHealthCredentials = 0;
+    globalThis.localStorage.removeItem("ds_tier_welcomed");
+    render(<FirstRunHost />);
+
+    expect(await screen.findByTestId("tier-onboarding")).toBeInTheDocument();
+    expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
+  });
+
   it("completing the ServerSetupWizard reveals the App", async () => {
     serverModeValue = true;
     sessionValue = { role: "owner" };
@@ -626,6 +831,41 @@ describe("FirstRunHost gating", () => {
     globalThis.localStorage.setItem("ds_tier_welcomed", "1");
     render(<FirstRunHost />);
     expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
+    expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
+  });
+
+  it("falls back to App when server setup health check fails", async () => {
+    serverModeValue = true;
+    sessionValue = { role: "owner" };
+    fetchServerAdminHealthError = true;
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
+    expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
+  });
+
+  it("ignores server setup health failure callbacks after unmount", async () => {
+    serverModeValue = true;
+    sessionValue = { role: "owner" };
+    shouldRejectServerHealth = true;
+    const { unmount } = render(<FirstRunHost />);
+    await waitFor(() => expect(serverHealthRejecter).toBeTypeOf("function"));
+    unmount();
+    expect(() => {
+      serverHealthRejecter?.(new Error("blocked"));
+    }).not.toThrow();
+    await Promise.resolve();
+    expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
+  });
+
+  it("ignores in-flight server setup decision updates after unmount", async () => {
+    serverModeValue = true;
+    sessionValue = { role: "owner" };
+    shouldResolveServerHealth = true;
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    const { unmount } = render(<FirstRunHost />);
+    unmount();
+    serverHealthResolver?.({ counts: { credentials: 0 } });
     expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
   });
 

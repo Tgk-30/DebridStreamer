@@ -130,6 +130,12 @@ describe("Assistant — recommend flow (local provider)", () => {
     expect(screen.getByText("81%")).toBeInTheDocument();
   });
 
+  it("returns early when the prompt is blank", async () => {
+    render(<Assistant />);
+    await userEvent.type(screen.getByLabelText("Describe what to watch"), "{Enter}");
+    expect(recommend).not.toHaveBeenCalled();
+  });
+
   it("submits on Enter key", async () => {
     recommend.mockResolvedValue(result([rec("Drive", 0.7)]));
     render(<Assistant />);
@@ -170,6 +176,14 @@ describe("Assistant — recommend flow (local provider)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Recommend" }));
     expect(await screen.findByText("rate limited")).toBeInTheDocument();
     expect(screen.queryByText(/No recommendations came back/i)).not.toBeInTheDocument();
+  });
+
+  it("stringifies non-Error failures", async () => {
+    recommend.mockRejectedValue("plain failure");
+    render(<Assistant />);
+    await userEvent.type(screen.getByLabelText("Describe what to watch"), "x");
+    await userEvent.click(screen.getByRole("button", { name: "Recommend" }));
+    expect(await screen.findByText("plain failure")).toBeInTheDocument();
   });
 
   it("shows a Thinking… label while the call is in flight", async () => {

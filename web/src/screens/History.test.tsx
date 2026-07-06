@@ -61,6 +61,7 @@ vi.mock("../components/Rail", () => ({
     title: string;
     items: MediaPreview[];
     progressById?: Record<string | number, number>;
+    labelById?: Record<string, string>;
     onSelect?: (i: MediaPreview) => void;
   }) => (
     <div data-testid="rail">
@@ -70,6 +71,7 @@ vi.mock("../components/Rail", () => ({
           key={i.id}
           type="button"
           data-progress={props.progressById?.[i.id]}
+          data-label={props.labelById?.[i.id]}
           onClick={() => props.onSelect?.(i)}
         >
           rail:{i.title}
@@ -92,11 +94,12 @@ function record(
   title: string,
   progressSeconds: number,
   durationSeconds: number | null,
+  episodeId: string | null = null,
 ): WatchHistoryRecord {
   return {
     id,
     mediaId: id,
-    episodeId: null,
+    episodeId,
     progressSeconds,
     durationSeconds,
     completed: false,
@@ -228,5 +231,56 @@ describe("History — Continue Watching rail", () => {
     render(<History />);
     expect(screen.queryByTestId("rail")).not.toBeInTheDocument();
     expect(screen.getByText("grid:Heat")).toBeInTheDocument();
+  });
+
+  it("passes episode labels for resumable series entries", () => {
+    mockHistory = [preview("m1", "Heat")];
+    mockContinueWatching = [
+      record("m1", "Heat", 1800, 3600, "s2e5"),
+      record("m2", "Later", 10, 3600, "s1e1"),
+    ];
+    render(<History />);
+
+    const resumeBtn = screen.getByText("rail:Heat");
+    expect(screen.getByTestId("rail-title")).toHaveTextContent(
+      "Continue Watching",
+    );
+    expect(resumeBtn).toHaveAttribute("data-label", "S2 E5");
+    expect(resumeBtn).toHaveAttribute("data-progress", "0.5");
+  });
+
+  it("sorts resumable rows by most recently watched", () => {
+    mockHistory = [preview("m1", "Heat"), preview("m2", "Drive")];
+    mockContinueWatching = [
+      {
+        id: "old",
+        mediaId: "m2",
+        episodeId: null,
+        progressSeconds: 60,
+        durationSeconds: 600,
+        completed: false,
+        lastWatched: "2026-01-01T00:00:00Z",
+        streamQuality: null,
+        preview: preview("m2", "Drive"),
+      },
+      {
+        id: "new",
+        mediaId: "m1",
+        episodeId: null,
+        progressSeconds: 100,
+        durationSeconds: 800,
+        completed: false,
+        lastWatched: "2026-12-01T00:00:00Z",
+        streamQuality: null,
+        preview: preview("m1", "Heat"),
+      },
+    ];
+    render(<History />);
+
+    const railButtons = screen.getAllByRole("button").filter((button) =>
+      button.textContent?.startsWith("rail:"),
+    );
+    expect(railButtons[0]).toHaveTextContent("rail:Heat");
+    expect(railButtons[1]).toHaveTextContent("rail:Drive");
   });
 });

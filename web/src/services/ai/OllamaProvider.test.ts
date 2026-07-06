@@ -269,6 +269,26 @@ describe("OllamaProvider.analyzeTitle", () => {
     });
   });
 
+  it("falls back to 'Ollama error' for an empty analyze 2xx error response", async () => {
+    const mock = makeMockFetch(500, "");
+    const provider = new OllamaProvider(ENDPOINT, undefined, mock.fetchImpl);
+
+    await expect(provider.analyzeTitle(input)).rejects.toMatchObject({
+      kind: "apiError",
+      message: "Ollama error",
+    });
+  });
+
+  it("falls back to 'Ollama error' when analyze-title error body reading fails", async () => {
+    const mock = makeThrowingTextFetch(503);
+    const provider = new OllamaProvider(ENDPOINT, undefined, mock.fetchImpl);
+
+    await expect(provider.analyzeTitle(input)).rejects.toMatchObject({
+      kind: "apiError",
+      message: "Ollama error",
+    });
+  });
+
   it("throws invalidResponse when content is missing", async () => {
     const mock = makeMockFetch(200, JSON.stringify({ message: { role: "assistant" } }));
     const provider = new OllamaProvider(ENDPOINT, undefined, mock.fetchImpl);

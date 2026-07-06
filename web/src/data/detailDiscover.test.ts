@@ -92,6 +92,16 @@ function mediaItem(partial: Partial<MediaItem> = {}): MediaItem {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 const cast: CastMember[] = [
   { id: 1, name: "Kurt Russell", character: "MacReady", profileURL: null },
 ];
@@ -222,6 +232,65 @@ describe("useDetail", () => {
     const { result } = renderHook(() => useDetail(p, svc));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toBe("weird string failure");
+  });
+
+  it("skips server updates when unmounted before server detail resolves", async () => {
+    isServerMode.mockReturnValue(true);
+    const pending = deferred<{
+      item: MediaItem;
+      cast: CastMember[];
+      related: MediaPreview[];
+      imdbId: string;
+    }>();
+    fetchServerDetail.mockReturnValue(pending.promise);
+
+    const p = preview({ id: "srv-123" });
+    const { result, unmount } = renderHook(() => useDetail(p, fakeTMDB()));
+    unmount();
+
+    pending.resolve({
+      item: mediaItem({ title: "Server Detail" }),
+      cast: [],
+      related: [],
+      imdbId: "ttserver",
+    });
+    await Promise.resolve();
+
+    expect(fetchServerDetail).toHaveBeenCalledTimes(1);
+    expect(result.current.loading).toBe(true);
+    expect(result.current.source).toBe("fixtures");
+    expect(result.current.error).toBeNull();
+    expect(result.current.data.item?.title).toBe("The Thing");
+  });
+
+  it("skips server error updates when unmounted before server detail rejects", async () => {
+    isServerMode.mockReturnValue(true);
+    const pending = deferred<never>();
+    fetchServerDetail.mockReturnValue(pending.promise);
+
+    const p = preview({ id: "srv-456" });
+    const { result, unmount } = renderHook(() => useDetail(p, fakeTMDB()));
+    unmount();
+    pending.reject(new Error("server offline"));
+    await Promise.resolve();
+
+    expect(result.current.loading).toBe(true);
+    expect(result.current.source).toBe("fixtures");
+    expect(result.current.error).toBeNull();
+  });
+
+  it("falls back to fixtures and keeps the preview IMDb id when a live detail request fails with a non-Error", async () => {
+    const svc = fakeTMDB({
+      getDetail: vi.fn(async () => {
+        throw "network offline";
+      }),
+    });
+    const p = preview({ id: "tt999" });
+    const { result } = renderHook(() => useDetail(p, svc));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.source).toBe("fixtures");
+    expect(result.current.error).toBe("network offline");
+    expect(result.current.data.imdbId).toBe("tt999");
   });
 
   it("with a null service and not server mode, resolves to fixtures with no error", async () => {
@@ -460,5 +529,127 @@ describe("useDiscover", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.source).toBe("fixtures");
     expect(result.current.error).toBe("live string");
+  });
+
+  it("skips server-mode state updates when unmounted before fetch resolves", async () => {
+    isServerMode.mockReturnValue(true);
+    const pending = deferred<{ hero: MediaPreview; trendingMovies: MediaPreview[]; trendingTV: MediaPreview[]; popularMovies: MediaPreview[]; topRatedMovies: MediaPreview[]; nowPlayingMovies: MediaPreview[]; upcomingMovies: MediaPreview[] }>();
+    fetchServerDiscoverHome.mockReturnValue(pending.promise);
+    const svc = fakeTMDB();
+    const { result, unmount } = renderHook(() => useDiscover(svc));
+    unmount();
+    pending.resolve({
+      hero: preview({ id: "srv-hero" }),
+      trendingMovies: [],
+      trendingTV: [],
+      popularMovies: [],
+      topRatedMovies: [],
+      nowPlayingMovies: [],
+      upcomingMovies: [],
+    });
+
+    await Promise.resolve();
+    expect(fetchServerDiscoverHome).toHaveBeenCalledTimes(1);
+    // Initial state: loading true and source null, because updates are skipped
+    // after cancellation.
+    expect(result.current.loading).toBe(true);
+    expect(result.current.source).toBeNull();
+  });
+
+  it("skips server-mode error updates when unmounted before fetch rejects", async () => {
+    isServerMode.mockReturnValue(true);
+    const pending = deferred<never>();
+    fetchServerDiscoverHome.mockReturnValue(pending.promise);
+    const svc = fakeTMDB();
+    const { result, unmount } = renderHook(() => useDiscover(svc));
+    unmount();
+    pending.reject("server rejected");
+
+    await Promise.resolve();
+    expect(result.current.loading).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("skips live updates when unmounted before tmdb discover resolves", async () => {
+    const trendingMoviePending = deferred<any>();
+    const trendingTVPending = deferred<any>();
+    const popularPending = deferred<any>();
+    const topRatedPending = deferred<any>();
+    const nowPlayingPending = deferred<any>();
+    const upcomingPending = deferred<any>();
+    const svc = fakeTMDB({
+      getTrending: vi.fn((kind: string) => {
+        if (kind === "movie") return trendingMoviePending.promise;
+        if (kind === "series") return trendingTVPending.promise;
+        return popularPending.promise;
+      }),
+      getCategory: vi.fn((slug: string) => {
+        if (slug === "popular") return popularPending.promise;
+        if (slug === "top_rated") return topRatedPending.promise;
+        if (slug === "now_playing") return nowPlayingPending.promise;
+        return upcomingPending.promise;
+      }),
+    });
+    const { result, unmount } = renderHook(() => useDiscover(svc));
+    await Promise.resolve();
+    unmount();
+    trendingMoviePending.resolve({ items: [preview()] });
+    trendingTVPending.resolve({ items: [] });
+    popularPending.resolve({ items: [] });
+    topRatedPending.resolve({ items: [] });
+    nowPlayingPending.resolve({ items: [] });
+    upcomingPending.resolve({ items: [] });
+
+    await Promise.resolve();
+    expect(svc.getTrending).toHaveBeenCalledTimes(2);
+    expect(svc.getCategory).toHaveBeenCalledTimes(4);
+    expect(result.current.loading).toBe(true);
+    expect(result.current.source).toBeNull();
+  });
+
+  it("skips live error fallback when unmounted before tmdb discover rejects", async () => {
+    const trendingMoviePending = deferred<any>();
+    const trendingTVPending = deferred<any>();
+    const popularPending = deferred<any>();
+    const topRatedPending = deferred<any>();
+    const nowPlayingPending = deferred<any>();
+    const upcomingPending = deferred<any>();
+    const svc = fakeTMDB({
+      getTrending: vi.fn((kind: string) => {
+        if (kind === "movie") return trendingMoviePending.promise;
+        if (kind === "series") return trendingTVPending.promise;
+        return popularPending.promise;
+      }),
+      getCategory: vi.fn((slug: string) => {
+        if (slug === "popular") return popularPending.promise;
+        if (slug === "top_rated") return topRatedPending.promise;
+        if (slug === "now_playing") return nowPlayingPending.promise;
+        return upcomingPending.promise;
+      }),
+    });
+    const { result, unmount } = renderHook(() => useDiscover(svc));
+    await Promise.resolve();
+    unmount();
+    trendingMoviePending.reject(new Error("tmdb rejected"));
+    trendingTVPending.resolve({ items: [] });
+    popularPending.resolve({ items: [] });
+    topRatedPending.resolve({ items: [] });
+    nowPlayingPending.resolve({ items: [] });
+    upcomingPending.resolve({ items: [] });
+
+    await Promise.resolve();
+    expect(svc.getTrending).toHaveBeenCalledTimes(2);
+    expect(result.current.loading).toBe(true);
+    expect(result.current.source).toBeNull();
+  });
+
+  it("skips fixture fallback when unmounted before local-mode discover runs", async () => {
+    isServerMode.mockReturnValue(false);
+    const { result, unmount } = renderHook(() => useDiscover(null));
+    await Promise.resolve();
+    unmount();
+    expect(result.current.loading).toBe(true);
+    expect(result.current.source).toBeNull();
+    expect(result.current.error).toBeNull();
   });
 });

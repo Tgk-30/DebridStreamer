@@ -3,7 +3,7 @@
 // A11y regression: the role="slider" scrub bar must support keyboard seeking.
 
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ScrubBar, formatTime } from "./ScrubBar";
 
 function setup(currentTime = 100, duration = 600) {
@@ -67,6 +67,69 @@ describe("ScrubBar keyboard seeking", () => {
     const { slider, onSeek } = setup(0, 0);
     key(slider, "ArrowRight");
     expect(onSeek).not.toHaveBeenCalled();
+  });
+});
+
+describe("ScrubBar pointer flow", () => {
+  it("tracks hover state and calls onHover with clamped timeline", () => {
+    const onHover = vi.fn();
+    const onLeave = vi.fn();
+    const onSeek = vi.fn();
+
+    const { container } = render(
+      <ScrubBar
+        currentTime={100}
+        duration={600}
+        preview={{ time: 250, image: null }}
+        onHover={onHover}
+        onLeave={onLeave}
+        onSeek={onSeek}
+      />,
+    );
+
+    const slider = screen.getByRole("slider", { name: "Seek" });
+    slider.getBoundingClientRect = vi.fn(() => ({
+      left: 10,
+      width: 200,
+    } as DOMRect));
+
+    fireEvent.pointerMove(slider, { clientX: 110 });
+    expect(onHover).toHaveBeenCalledWith(300);
+    expect(container.querySelector(".scrub-tooltip")).toBeTruthy();
+
+    fireEvent.pointerLeave(slider);
+    expect(onLeave).toHaveBeenCalledTimes(1);
+  });
+
+  it("seeks on click and clamps pointer positions outside the bar", () => {
+    const onHover = vi.fn();
+    const onLeave = vi.fn();
+    const onSeek = vi.fn();
+
+    render(
+      <ScrubBar
+        currentTime={50}
+        duration={600}
+        preview={null}
+        onHover={onHover}
+        onLeave={onLeave}
+        onSeek={onSeek}
+      />,
+    );
+
+    const slider = screen.getByRole("slider", { name: "Seek" });
+    slider.getBoundingClientRect = vi.fn(() => ({
+      left: 0,
+      width: 100,
+    } as DOMRect));
+
+    fireEvent.pointerDown(slider, { clientX: 120 });
+    expect(onSeek).toHaveBeenCalledWith(600);
+    expect(onHover).not.toHaveBeenCalled();
+
+    onSeek.mockClear();
+    fireEvent.pointerDown(slider, { clientX: -40 });
+    expect(onSeek).toHaveBeenCalledWith(0);
   });
 });
 

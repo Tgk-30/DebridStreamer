@@ -37,6 +37,13 @@ describe("serverSetupCredentials", () => {
     });
   });
 
+  it("falls back to the first provider for an unknown debrid provider", () => {
+    const unknown = "mystery" as unknown as Parameters<
+      typeof debridProviderOption
+    >[0];
+    expect(debridProviderOption(unknown)).toEqual(DEBRID_PROVIDER_OPTIONS[0]);
+  });
+
   it("builds trimmed credential drafts and skips empty fields", () => {
     expect(
       buildServerSetupCredentialDrafts({

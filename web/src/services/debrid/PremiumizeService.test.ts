@@ -1,6 +1,6 @@
 // Mirrors Tests/.../Services/Debrid/PremiumizeServiceTests.swift.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PremiumizeService } from "./PremiumizeService";
 import { DebridError, type FetchImpl } from "./types";
 
@@ -14,6 +14,15 @@ interface CapturedRequest {
   method: string;
   headers: Record<string, string>;
   body: string;
+}
+
+interface RequestRawInvoker {
+  requestRaw(
+    path: string,
+    method: string,
+    queryParams?: string,
+    body?: string,
+  ): Promise<string>;
 }
 
 function makeMockFetch(handler: (req: CapturedRequest) => MockResponse): {
@@ -41,6 +50,37 @@ function makeMockFetch(handler: (req: CapturedRequest) => MockResponse): {
 }
 
 const ok = (body: string): MockResponse => ({ status: 200, body });
+
+// MARK: - constructor
+
+describe("PremiumizeService constructor", () => {
+  it("defaults to global fetch when no fetch implementation is supplied", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue({
+        status: 200,
+        text: async () => JSON.stringify({ response: [false], filename: [null], filesize: [null] }),
+      } as Response);
+    try {
+      const service = new PremiumizeService("pm-token");
+      const result = await service.checkCache(["HASHX"]);
+      expect(result.hashx).toEqual({ kind: "notCached" });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
+
+describe("PremiumizeService selectFiles", () => {
+  it("is a no-op for Premiumize and returns resolved void", async () => {
+    const fetchImpl = async () => {
+      throw new Error("should not be called");
+    };
+    const service = new PremiumizeService("pm-token", fetchImpl);
+    await expect(service.selectFiles("torrent-id", [1, 2, 3])).resolves.toBeUndefined();
+  });
+});
 
 // MARK: - getStreamURL
 
@@ -144,6 +184,41 @@ describe("PremiumizeService checkCache", () => {
 
     expect(Object.keys(result).length).toBe(0);
     expect(didCallNetwork).toBe(false);
+  });
+});
+
+// MARK: - requestRaw
+
+describe("PremiumizeService requestRaw", () => {
+  it("emits only the auth body component when body is an empty string", async () => {
+    const mock = makeMockFetch(() => ok("{}"));
+    const service = new PremiumizeService("pm-token", mock.fetchImpl);
+    const raw = service as unknown as RequestRawInvoker;
+    await raw.requestRaw("/account/info", "GET", undefined, "");
+
+    const req = mock.byPath("/api/account/info")!;
+    expect(req.body).toBe("apikey=pm-token");
+    expect(req.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
+  });
+
+  it("uses empty fallback text when response.text() rejects for non-2xx", async () => {
+    const fetchImpl: FetchImpl = async () => ({
+      status: 500,
+      text: async () => {
+        throw new Error("text read failed");
+      },
+    });
+    const service = new PremiumizeService("pm-token", fetchImpl);
+    const raw = service as unknown as RequestRawInvoker;
+
+    let caught: DebridError | null = null;
+    try {
+      await raw.requestRaw("/transfer/directdl", "POST", undefined, "x");
+    } catch (error) {
+      caught = error as DebridError;
+    }
+
+    expect(caught?.equals(DebridError.httpError(500, ""))).toBe(true);
   });
 });
 

@@ -39,4 +39,13 @@ describe("EmptyState", () => {
       screen.getByRole("button", { name: "Do it" }),
     ).toBeInTheDocument();
   });
+
+  it("renders ambient background when an ambient video is provided", () => {
+    const { container } = render(
+      <EmptyState icon="search" title="With ambience" subtitle="Calm" ambient="aurora" />,
+    );
+
+    expect(container.querySelector(".empty-state-ambient")).not.toBeNull();
+    expect(container.querySelector("video.ambient-video")).not.toBeNull();
+  });
 });

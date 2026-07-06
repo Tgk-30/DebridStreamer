@@ -113,6 +113,21 @@ interface NavRailProps {
   onSwitchProfile?: () => void;
 }
 
+export function shouldRenderNavGroup(
+  group: "Primary" | "Library" | "Tools" | "Account",
+  navItems: readonly {
+    id: ScreenId;
+    icon: IconName;
+    label: string;
+    mobileLabel?: string;
+    group: "Primary" | "Library" | "Tools" | "Account";
+    mobile?: boolean;
+  }[],
+  showProfileSwitch: boolean,
+): boolean {
+  return navItems.some((item) => item.group === group) || (group === "Account" && showProfileSwitch);
+}
+
 function initialOf(name: string): string {
   const trimmed = name.trim();
   return trimmed.length > 0 ? trimmed[0]!.toUpperCase() : "?";
@@ -159,11 +174,8 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
       {/* Skip groups with nothing to show (e.g. Tools when every tool is
           gated off) — an orphaned section label reads as a broken menu. The
           Account group also hosts the profile switcher, which isn't a navItem. */}
-      {GROUPS.filter(
-        (group) =>
-          navItems.some((item) => item.group === group) ||
-          (group === "Account" && showProfileSwitch),
-      ).map((group) => (
+      {GROUPS.filter((group) => shouldRenderNavGroup(group, navItems, showProfileSwitch)).map(
+        (group) => (
         <div key={group} className="nav-rail-section" data-group={group}>
           <div className="nav-rail-group-label">{group}</div>
           {group === "Account" && showProfileSwitch && (

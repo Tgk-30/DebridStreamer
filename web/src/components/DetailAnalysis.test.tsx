@@ -328,4 +328,25 @@ describe("DetailAnalysis", () => {
     // The best-effort write rejection is swallowed; the card stays.
     await screen.findByText("Strong yes");
   });
+
+  it("uses the local fallback uuid when randomUUID is unavailable", async () => {
+    const analyzeTitle = vi.fn().mockResolvedValue(result());
+    vi.stubGlobal("crypto", {
+      randomUUID: undefined,
+    } as unknown as Crypto);
+
+    render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+
+    await screen.findByText("Strong yes");
+    await waitFor(() => expect(addAIUsage).toHaveBeenCalledTimes(1));
+
+    const record = addAIUsage.mock.calls[0][0] as Record<string, unknown>;
+    expect(typeof record.id).toBe("string");
+    expect(record.id as string).toMatch(/^aiuse-[0-9a-z]+-[0-9a-z]+$/);
+
+    vi.unstubAllGlobals();
+  });
 });

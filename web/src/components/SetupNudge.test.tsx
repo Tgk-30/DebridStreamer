@@ -1,57 +1,35 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+//
+// Tests the onboarding setup nudge action wiring.
 
-vi.mock("./Icon", () => ({
-  Icon: ({ name }: { name: string }) => <i data-icon={name} />,
-}));
-
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { SetupNudge } from "./SetupNudge";
 
-afterEach(cleanup);
-
-function renderNudge(
-  overrides: Partial<Parameters<typeof SetupNudge>[0]> = {},
-) {
-  const props = {
-    onStartWizard: vi.fn(),
-    onShowTour: vi.fn(),
-    onDismiss: vi.fn(),
-    ...overrides,
-  };
-  render(<SetupNudge {...props} />);
-  return props;
-}
-
 describe("SetupNudge", () => {
-  it("shows the get-started prompt", () => {
-    renderNudge();
+  it("shows setup messaging and binds all actions", () => {
+    const onStartWizard = vi.fn();
+    const onShowTour = vi.fn();
+    const onDismiss = vi.fn();
+
+    render(
+      <SetupNudge
+        onStartWizard={onStartWizard}
+        onShowTour={onShowTour}
+        onDismiss={onDismiss}
+      />,
+    );
+
     expect(screen.getByText("Let's get you streaming")).toBeInTheDocument();
-  });
+    expect(screen.getByRole("button", { name: "Start guided setup" })).toBeInTheDocument();
 
-  it("starts the guided setup wizard", async () => {
-    const user = userEvent.setup();
-    const { onStartWizard } = renderNudge();
-    await user.click(
-      screen.getByRole("button", { name: "Start guided setup" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Start guided setup" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show me around" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss setup reminder" }));
+
     expect(onStartWizard).toHaveBeenCalledTimes(1);
-  });
-
-  it("opens the welcome tour", async () => {
-    const user = userEvent.setup();
-    const { onShowTour } = renderNudge();
-    await user.click(screen.getByRole("button", { name: "Show me around" }));
     expect(onShowTour).toHaveBeenCalledTimes(1);
-  });
-
-  it("can be dismissed", async () => {
-    const user = userEvent.setup();
-    const { onDismiss } = renderNudge();
-    await user.click(
-      screen.getByRole("button", { name: "Dismiss setup reminder" }),
-    );
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
+

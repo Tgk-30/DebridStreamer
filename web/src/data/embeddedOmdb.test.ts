@@ -21,13 +21,35 @@ describe("embeddedOmdbKey", () => {
     expect(embeddedOmdbKey()).toBe("");
   });
 
+  it("returns '' when the embedded value is not a string", () => {
+    g.__OMDB_EMBED__ = 12345 as unknown as string;
+    expect(embeddedOmdbKey()).toBe("");
+  });
+
   it("deobfuscates a build-time embedded key (roundtrip)", () => {
     g.__OMDB_EMBED__ = obfuscate("abc123-XYZ_key");
     expect(embeddedOmdbKey()).toBe("abc123-XYZ_key");
   });
 
+  it("returns '' when atob is unavailable", () => {
+    g.__OMDB_EMBED__ = obfuscate("abc123-XYZ_key");
+    const globalAny = g as Record<string, unknown>;
+    const previousAtob = globalAny.atob;
+    try {
+      globalAny.atob = undefined;
+      expect(embeddedOmdbKey()).toBe("");
+    } finally {
+      globalAny.atob = previousAtob;
+    }
+  });
+
   it("never stores the key as plaintext in the obfuscated blob", () => {
     const blob = obfuscate("supersecretkey");
     expect(blob).not.toContain("supersecretkey");
+  });
+
+  it("returns '' when decoding the blob fails", () => {
+    g.__OMDB_EMBED__ = "not-valid-base64-###";
+    expect(embeddedOmdbKey()).toBe("");
   });
 });

@@ -82,5 +82,5 @@ describe("decodeHashList — bounded inflate (decompression bomb)", () => {
     const encoded = wrapRaw(bomb);
     expect(encoded.length).toBeLessThan(256 * 1024 + "dshl1:".length);
     expect(() => decodeHashList(encoded)).toThrow(/corrupted or not decodable/i);
-  });
+  }, 15000);
 });

@@ -2,10 +2,14 @@ const SERVER_URL_STORAGE_KEY = "debridstreamer.server.url";
 
 declare global {
   var __DEBRIDSTREAMER_SERVER_URL__: string | null | undefined;
+  var __DEBRIDSTREAMER_SERVER_MODE_ENV__: Record<string, string> | undefined;
 }
 
 function envValue(key: string): string {
-  const env = (import.meta as ImportMeta & { env?: Record<string, string> }).env;
+  const env =
+    (globalThis as { __DEBRIDSTREAMER_SERVER_MODE_ENV__?: Record<string, string> })
+      .__DEBRIDSTREAMER_SERVER_MODE_ENV__ ??
+    (import.meta as ImportMeta & { env?: Record<string, string> }).env;
   return env?.[key]?.trim() ?? "";
 }
 

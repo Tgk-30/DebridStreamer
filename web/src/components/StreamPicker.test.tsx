@@ -188,6 +188,40 @@ describe("StreamPicker", () => {
     }
   });
 
+  it("renders a promoted Open settings button when no streams are available", () => {
+    const onOpenSettings = vi.fn();
+    render(
+      <StreamPicker
+        state={baseState({ rows: [], hasIndexers: true, hasDebrid: true })}
+        resolveStream={neverResolve}
+        onPlay={noop}
+        onOpenSettings={onOpenSettings}
+      />,
+    );
+    expect(screen.getByText("No streams found")).toBeInTheDocument();
+    const settings = screen.getByRole("button", { name: /Open settings/ });
+    expect(settings).toBeInTheDocument();
+    expect(settings.className).toContain("btn-prominent");
+    fireEvent.click(settings);
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses compact settings button when no debrid service is configured", () => {
+    const onOpenSettings = vi.fn();
+    render(
+      <StreamPicker
+        state={baseState({ rows: [], hasDebrid: false, hasIndexers: true })}
+        resolveStream={neverResolve}
+        onPlay={noop}
+        onOpenSettings={onOpenSettings}
+      />,
+    );
+    const settings = screen.getByRole("button", { name: /Open settings/ });
+    expect(settings.className).toBe("btn");
+    fireEvent.click(settings);
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
   it("lists rows with quality, metadata and the correct cached / will-cache badge", () => {
     const rows = [
       makeRow({
@@ -224,6 +258,39 @@ describe("StreamPicker", () => {
     // Non-cached row: grey "Will cache" badge.
     const willCache = screen.getByText("Dune.2021.720p.WEB-DL").closest("button")!;
     expect(within(willCache).getByText("Will cache")).toBeInTheDocument();
+  });
+
+  it("renders the size label as a dash for zero-byte entries", () => {
+    const rows = [makeRow({ hash: "ZZZ", title: "Zero byte", sizeBytes: 0 })];
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("uses whole-number formatting when values are large enough", () => {
+    const rows = [makeRow({ hash: "BIG", title: "Large", sizeBytes: 3_000_000_000 })];
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+    expect(screen.getByText("2.8 GB")).toBeInTheDocument();
+  });
+
+  it("uses whole-number formatting for byte-sized values", () => {
+    const rows = [makeRow({ hash: "BYTE", title: "Byte", sizeBytes: 100 })];
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+    expect(screen.getByText("100 B")).toBeInTheDocument();
+  });
+
+  it("shows one decimal place for sub-100 values with larger units", () => {
+    const rows = [makeRow({ hash: "ABC", title: "Medium", sizeBytes: 1_536 })];
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+    // 1536 B -> 1.5 KB from formatSize.
+    expect(screen.getByText("1.5 KB")).toBeInTheDocument();
   });
 
   it("shows the instant/total counts in the header", () => {
@@ -284,6 +351,25 @@ describe("StreamPicker", () => {
     // "Show all streams" turns the toggle back off and re-reveals the rows.
     fireEvent.click(screen.getByRole("button", { name: "Show all streams" }));
     expect(screen.getByText("Uncached A 1080p")).toBeInTheDocument();
+  });
+
+  it("shows a Season pack chip when episodeContext matches a season pack release", () => {
+    const rows = [
+      makeRow({ hash: "AAA", title: "My Show S01", cachedOn: DebridServiceType.realDebrid }),
+      makeRow({ hash: "BBB", title: "Unrelated", cachedOn: DebridServiceType.realDebrid }),
+    ];
+    render(
+      <StreamPicker
+        state={baseState({ rows })}
+        resolveStream={neverResolve}
+        onPlay={noop}
+        episodeLabel="S1E3"
+        episodeContext={{ season: 1, episode: 3 }}
+      />,
+    );
+
+    const packRow = screen.getByText("My Show S01").closest("button")!;
+    expect(within(packRow).getByText("Season pack")).toBeInTheDocument();
   });
 
   it("resolves a selected stream and calls onPlay with the StreamInfo + torrent", async () => {
@@ -372,6 +458,23 @@ describe("StreamPicker", () => {
     expect(screen.getByText("Bad Pick 1080p").closest("button")!).not.toBeDisabled();
   });
 
+  it("surfaces a non-Error resolve error and still clears resolving state", async () => {
+    const row = makeRow({ hash: "TXT", title: "Text Error Pick 1080p", cachedOn: null });
+    const resolveStream = vi.fn().mockRejectedValue("Nope");
+
+    render(
+      <StreamPicker
+        state={baseState({ rows: [row] })}
+        resolveStream={resolveStream}
+        onPlay={noop}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Text Error Pick 1080p").closest("button")!);
+    await waitFor(() => expect(screen.getByText("Nope")).toBeInTheDocument());
+    expect(screen.getByText("Text Error Pick 1080p").closest("button")!).not.toBeDisabled();
+  });
+
   it("blocks selection with a guidance message when no debrid is configured", async () => {
     const row = makeRow({ hash: "AAA", title: "No Debrid 1080p", cachedOn: null });
     const resolveStream = vi.fn();
@@ -388,6 +491,22 @@ describe("StreamPicker", () => {
 
     expect(await screen.findByText(/Add a debrid service in Settings to play/)).toBeInTheDocument();
     expect(resolveStream).not.toHaveBeenCalled();
+  });
+
+  it("shows episode-specific empty-state text when rows are absent", () => {
+    render(
+      <StreamPicker
+        state={baseState({ rows: [] })}
+        resolveStream={neverResolve}
+        onPlay={noop}
+        episodeLabel="S1E5"
+      />,
+    );
+    expect(
+      screen.getByText(
+        "The configured sources have no match for S1E5 yet — try another episode or add another source.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows the 'filters hid every stream' empty state when Data Saver removes all rows", () => {
@@ -437,6 +556,24 @@ describe("StreamPicker", () => {
     fireEvent.click(chip4k);
     expect(chip4k).toHaveAttribute("aria-pressed", "false");
     expect(screen.getAllByText(/^Movie /)).toHaveLength(3);
+  });
+
+  it("filters by codec using the codec chip", () => {
+    const rows = [
+      makeRow({ hash: "A", title: "Movie 2160p x265", cachedOn: null }),
+      makeRow({ hash: "B", title: "Movie 1080p x264", cachedOn: null }),
+    ];
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+
+    const group = screen.getByRole("group", { name: "Filter streams" });
+    fireEvent.click(within(group).getByRole("button", { name: "H.264" }));
+    expect(screen.queryByText("Movie 2160p x265")).toBeNull();
+    expect(screen.getByText("Movie 1080p x264")).toBeInTheDocument();
+    fireEvent.click(within(group).getByRole("button", { name: "H.264" }));
+    expect(screen.getByText("Movie 2160p x265")).toBeInTheDocument();
+    expect(screen.getByText("Movie 1080p x264")).toBeInTheDocument();
   });
 
   it("does not render the chip row when only one resolution and one codec are present", () => {
@@ -499,5 +636,30 @@ describe("StreamPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: /Clear filters/ }));
     // Both rows return after clearing.
     expect(screen.getAllByText(/^Movie /)).toHaveLength(2);
+  });
+
+  it("shows episode-specific empty-state text when filters hide all rows", () => {
+    storeSettings = {
+      dataSaver: false,
+      streamCachedOnly: false,
+      streamMaxQuality: "480p",
+      streamMaxSizeGB: 0,
+    };
+    const rows = [
+      makeRow({ hash: "A", title: "Big 1080p File", cachedOn: null }),
+    ];
+
+    render(
+      <StreamPicker
+        state={baseState({ rows })}
+        resolveStream={neverResolve}
+        onPlay={noop}
+        episodeLabel="S2 E5"
+        episodeContext={{ season: 2, episode: 5 }}
+      />,
+    );
+
+    expect(screen.getByText(/S2 E5/)).toBeInTheDocument();
+    expect(screen.getByText("Playback filters hid every stream")).toBeInTheDocument();
   });
 });

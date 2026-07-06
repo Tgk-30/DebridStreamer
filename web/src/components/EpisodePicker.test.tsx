@@ -175,6 +175,71 @@ describe("EpisodePicker — rich mode", () => {
     renderPicker();
     expect(document.querySelector(".episode-watched-btn")).toBeNull();
   });
+
+  it("shows a skeleton when rich episodes are loading", () => {
+    mockUseSeasons.mockReturnValue({
+      seasons: [season(1)],
+      loading: false,
+      source: "live",
+    });
+    mockUseEpisodes.mockReturnValue({
+      episodes: [],
+      loading: true,
+      source: "live",
+    });
+
+    renderPicker();
+    const skels = document.querySelectorAll(".episode-row-skel");
+    expect(skels.length).toBeGreaterThan(0);
+    expect(document.querySelector(".episode-list")).not.toBeNull();
+  });
+
+  it("handles invalid air dates by omitting date text", () => {
+    mockUseSeasons.mockReturnValue({
+      seasons: [season(1)],
+      loading: false,
+      source: "live",
+    });
+    mockUseEpisodes.mockReturnValue({
+      episodes: [
+        episode(1, 1, {
+          airDate: "not-a-date",
+          runtime: 45,
+          title: null,
+        }),
+      ],
+      loading: false,
+      source: "live",
+    });
+
+    renderPicker({ progressByEpisodeId: {} });
+    expect(screen.getByText("45 min")).toBeInTheDocument();
+    expect(screen.getByText("Episode 1")).toBeInTheDocument();
+  });
+
+  it("renders formatted metadata with a valid air date", () => {
+    mockUseSeasons.mockReturnValue({
+      seasons: [season(1)],
+      loading: false,
+      source: "live",
+    });
+    mockUseEpisodes.mockReturnValue({
+      episodes: [episode(1, 1, { airDate: "2022-03-15", title: "Pilot" })],
+      loading: false,
+      source: "live",
+    });
+    renderPicker();
+
+    const expectedDate = new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date("2022-03-15T00:00:00Z"));
+    expect(screen.getByText(`Pilot`)).toBeInTheDocument();
+    expect(screen.getByText("Pilot").closest(".episode-body")?.textContent).toContain(
+      expectedDate,
+    );
+  });
 });
 
 describe("EpisodePicker — degraded stepper", () => {

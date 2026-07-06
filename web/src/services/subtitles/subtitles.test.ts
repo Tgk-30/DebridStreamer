@@ -2,7 +2,7 @@
 // injected FetchImpl (same pattern as the AI provider tests), so no request is
 // made; the pure query/parse/prompt builders are exercised directly.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FetchImpl } from "../../lib/http";
 import {
   buildSearchQuery,
@@ -48,6 +48,10 @@ describe("imdbDigits", () => {
     expect(imdbDigits(null)).toBeNull();
     expect(imdbDigits("")).toBeNull();
   });
+
+  it("returns null when stripping the tt prefix leaves no digits", () => {
+    expect(imdbDigits("tt")).toBeNull();
+  });
 });
 
 describe("buildSearchQuery", () => {
@@ -68,6 +72,12 @@ describe("buildSearchQuery", () => {
     const q = buildSearchQuery({ query: "The Matrix" });
     expect(q).toContain("query=The+Matrix");
     expect(q).toContain("languages=en");
+  });
+
+  it("omits languages when every language entry is empty", () => {
+    const q = buildSearchQuery({ imdbId: "tt0944947", languages: [] });
+    expect(q).toContain("imdb_id=0944947");
+    expect(q).not.toContain("languages=");
   });
 });
 
@@ -103,6 +113,80 @@ describe("parseSearchResponse", () => {
   it("returns [] for a malformed payload", () => {
     expect(parseSearchResponse({})).toEqual([]);
     expect(parseSearchResponse(null)).toEqual([]);
+  });
+
+  it("skips rows missing attributes and keeps fps when provided", () => {
+    const sample = JSON.stringify({
+      data: [
+        { attributes: null },
+        {
+          attributes: {
+            language: "ES",
+            files: [{ file_id: "12" }],
+            fps: 24,
+          },
+        },
+      ],
+    });
+
+    const results = parseSearchResponse(JSON.parse(sample));
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      fileId: "12",
+      language: "es",
+      fps: 24,
+    });
+  });
+
+  it("defaults language to an empty string when it is missing", () => {
+    const sample = JSON.stringify({
+      data: [
+        {
+          attributes: {
+            files: [{ file_id: "12" }],
+            release: "NoLang",
+          },
+        },
+      ],
+    });
+    const results = parseSearchResponse(JSON.parse(sample));
+    expect(results).toEqual([
+      {
+        fileId: "12",
+        language: "",
+        release: "NoLang",
+        downloadCount: 0,
+        hearingImpaired: false,
+        machineTranslated: false,
+        fps: null,
+      },
+    ]);
+  });
+
+  it("uses feature_details as release and leaves fps null when it is missing", () => {
+    const sample = JSON.stringify({
+      data: [
+        {
+          attributes: {
+            language: "DE",
+            files: [{ file_id: 0 }],
+            feature_details: "The.Matrix.Feature",
+          },
+        },
+      ],
+    });
+    const results = parseSearchResponse(JSON.parse(sample));
+    expect(results).toEqual([
+      {
+        fileId: "0",
+        language: "de",
+        release: "The.Matrix.Feature",
+        downloadCount: 0,
+        hearingImpaired: false,
+        machineTranslated: false,
+        fps: null,
+      },
+    ]);
   });
 });
 
@@ -158,6 +242,17 @@ describe("OpenSubtitlesClient", () => {
     await expect(client.search({ imdbId: "tt1" })).rejects.toMatchObject({
       status: 500,
       message: "OpenSubtitles search failed",
+    });
+  });
+
+  it("search treats unexpected low status codes as failures and forwards message body", async () => {
+    const { fetchImpl } = makeFetch([
+      { match: "/subtitles", status: 100, body: "throttle not ready" },
+    ]);
+    const client = new OpenSubtitlesClient("k", fetchImpl);
+    await expect(client.search({ imdbId: "tt1" })).rejects.toMatchObject({
+      status: 100,
+      message: "throttle not ready",
     });
   });
 
@@ -299,6 +394,15 @@ describe("buildChatCall", () => {
     ).toBeNull();
   });
 
+  it("returns null when ollama endpoint is blank", () => {
+    expect(
+      buildChatCall(
+        { ...base, provider: "ollama", apiKey: "k", ollamaEndpoint: "   " },
+        "hi",
+      ),
+    ).toBeNull();
+  });
+
   it("extracts assistant text from each provider's response shape", () => {
     const openai = buildChatCall(base, "x")!;
     expect(
@@ -308,6 +412,20 @@ describe("buildChatCall", () => {
     expect(
       anthropic.extract({ content: [{ type: "text", text: "out" }] }),
     ).toBe("out");
+  });
+
+  it("passes custom model names through for hosted providers", () => {
+    const openai = buildChatCall(
+      { ...base, model: "gpt-4o", apiKey: "k", provider: "openai" },
+      "x",
+    )!;
+    expect(JSON.parse(openai.body).model).toBe("gpt-4o");
+
+    const anthropic = buildChatCall(
+      { ...base, model: "claude-3-sonnet", provider: "anthropic" },
+      "x",
+    )!;
+    expect(JSON.parse(anthropic.body).model).toBe("claude-3-sonnet");
   });
 });
 
@@ -341,6 +459,31 @@ describe("SubtitleTranslator", () => {
     expect(out[1].text).toBe("Mundo");
   });
 
+  it("reports batch progress while translating", async () => {
+    const progress = vi.fn<(done: number, total: number) => void>();
+    const fetchImpl: FetchImpl = async () => ({
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          choices: [{ message: { content: "[[0]] Hola" } }],
+        }),
+    });
+    const translator = new SubtitleTranslator(
+      {
+        provider: "openai",
+        apiKey: "k",
+        model: "",
+        ollamaEndpoint: "",
+      },
+      fetchImpl,
+    );
+
+    await translator.translate([{ start: 0, end: 1000, text: "Hello" }], "Spanish", progress);
+
+    expect(progress).toHaveBeenCalledTimes(1);
+    expect(progress).toHaveBeenCalledWith(1, 1);
+  });
+
   it("leaves cues untranslated when a batch request fails", async () => {
     const cues: SubtitleCue[] = [{ start: 0, end: 1000, text: "Hello" }];
     const fetchImpl: FetchImpl = async () => ({
@@ -350,6 +493,17 @@ describe("SubtitleTranslator", () => {
     const translator = new SubtitleTranslator(cfg, fetchImpl);
     const out = await translator.translate(cues, "Spanish");
     expect(out[0].text).toBe("Hello"); // best-effort fallback
+  });
+
+  it("leaves cues untranslated when the provider reply contains no translation text", async () => {
+    const cues: SubtitleCue[] = [{ start: 0, end: 1000, text: "Hello" }];
+    const fetchImpl: FetchImpl = async () => ({
+      status: 200,
+      text: async () => JSON.stringify({ choices: [{ message: {} }] }),
+    });
+    const translator = new SubtitleTranslator(cfg, fetchImpl);
+    const out = await translator.translate(cues, "Spanish");
+    expect(out[0].text).toBe("Hello");
   });
 
   it("reports unavailable when no key/endpoint is configured", () => {

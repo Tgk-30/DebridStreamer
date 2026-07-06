@@ -27,6 +27,7 @@ const removeFromWatchlist = vi.fn();
 let mockWatchlist: MediaPreview[] = [];
 let mockCachedResolutions: Record<string, CachedResolutionRecord> = {};
 let mockContinueWatching: WatchHistoryRecord[] = [];
+let watchlistImportOnClose: (() => void) | null = null;
 
 vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({
@@ -38,6 +39,19 @@ vi.mock("../store/AppStore", () => ({
     openBrowse,
     navigate,
   }),
+}));
+
+vi.mock("../components/WatchlistImportDialog", () => ({
+  WatchlistImportDialog: (props: { onClose: () => void }) => {
+    watchlistImportOnClose = props.onClose;
+    return (
+      <div data-testid="watchlist-import-dialog">
+        <button type="button" onClick={() => props.onClose()}>
+          Close import dialog
+        </button>
+      </div>
+    );
+  },
 }));
 
 vi.mock("../components/MediaCard", () => ({
@@ -78,6 +92,7 @@ beforeEach(() => {
   mockWatchlist = [];
   mockCachedResolutions = {};
   mockContinueWatching = [];
+  watchlistImportOnClose = null;
 });
 
 afterEach(() => {
@@ -105,6 +120,14 @@ describe("Watchlist — empty", () => {
     render(<Watchlist />);
     expect(screen.queryByText(/ready to play instantly/i)).not.toBeInTheDocument();
   });
+
+  it("opens the import dialog from the empty-state list action", async () => {
+    const user = userEvent.setup();
+    render(<Watchlist />);
+
+    await user.click(screen.getByRole("button", { name: /Import list/i }));
+    expect(screen.getByTestId("watchlist-import-dialog")).toBeInTheDocument();
+  });
 });
 
 describe("Watchlist — populated", () => {
@@ -128,6 +151,16 @@ describe("Watchlist — populated", () => {
     expect(screen.getByText(/1 ready to play instantly/i)).toBeInTheDocument();
     expect(screen.getByText("card:Tenet")).toHaveAttribute("data-ready", "yes");
     expect(screen.getByText("card:Dune")).toHaveAttribute("data-ready", "no");
+  });
+
+  it("opens the import dialog when a watchlist item exists and Import is tapped", async () => {
+    mockWatchlist = [preview("m1", "Tenet")];
+    render(<Watchlist />);
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(screen.getByTestId("watchlist-import-dialog")).toBeInTheDocument();
+    expect(watchlistImportOnClose).toBeInstanceOf(Function);
+    await userEvent.click(screen.getByRole("button", { name: "Close import dialog" }));
+    expect(screen.queryByTestId("watchlist-import-dialog")).not.toBeInTheDocument();
   });
 
   it("removes an item via its Remove button", async () => {
@@ -160,4 +193,5 @@ describe("Watchlist — populated", () => {
     expect(screen.getByText("card:Tenet")).toHaveAttribute("data-progress", "0.5");
     expect(screen.getByText("card:Dune")).toHaveAttribute("data-progress", "");
   });
+
 });

@@ -1,7 +1,19 @@
 // Pure subtitle cue logic — parse, VTT convert, delay shift, AI-translation
 // batching + reply stitching. No network, no DOM.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("subsrt-ts", async () => {
+  const actual = await vi.importActual<typeof import("subsrt-ts")>("subsrt-ts");
+  return {
+    __esModule: true,
+    ...actual,
+    default: {
+      ...actual.default,
+      parse: vi.fn(actual.default.parse),
+    },
+  };
+});
+import * as subsrt from "subsrt-ts";
 import {
   applyTranslations,
   batchCuesForTranslation,
@@ -51,6 +63,30 @@ describe("parseSubtitles", () => {
     expect(parseSubtitles("   ")).toEqual([]);
     expect(parseSubtitles("not a subtitle file at all")).toEqual([]);
   });
+
+  it("filters non-caption and malformed nodes", () => {
+    const parseSpy = vi.mocked(subsrt.default.parse);
+    parseSpy.mockImplementationOnce(() => [
+      { type: "style", start: 100, end: 200, text: "skip style" },
+      { type: "caption", start: "1" as any, end: 5000, text: "bad start type" },
+      { type: "caption", start: 5000, end: "2" as any, text: "bad end type" },
+      { type: "caption", start: 6000, end: 5000, text: "inverted" },
+      { type: "caption", start: 7000, end: 8000, text: " from text " },
+      { type: "caption", start: 1000, end: 2000, content: " good  \r\n line " },
+      { type: "caption", start: 9000, end: 10000 },
+    ] as any);
+
+    const cues = parseSubtitles("raw");
+
+    expect(cues).toHaveLength(3);
+    expect(cues[0]).toMatchObject({
+      start: 7000,
+      end: 8000,
+      text: "from text",
+    });
+    expect(cues[1]).toMatchObject({ start: 1000, end: 2000, text: "good\n line" });
+    expect(cues[2]).toMatchObject({ start: 9000, end: 10000, text: "" });
+  });
 });
 
 describe("cuesToVTT", () => {
@@ -96,6 +132,13 @@ describe("shiftCues", () => {
     shiftCues(cues, 1000);
     expect(cues[0].start).toBe(1000);
   });
+
+  it("returns a cloned array when delay is zero", () => {
+    const out = shiftCues(cues, 0);
+    expect(out).toHaveLength(2);
+    expect(out[0]).not.toBe(cues[0]);
+    expect(out[0]).toMatchObject({ start: 1000, end: 2000, text: "a" });
+  });
 });
 
 describe("batchCuesForTranslation", () => {
@@ -137,6 +180,10 @@ describe("batchCuesForTranslation", () => {
     expect(batches[0].payload).toContain("⏎");
     expect(batches[0].payload).not.toContain("\n");
   });
+
+  it("returns no batches for empty input", () => {
+    expect(batchCuesForTranslation([])).toEqual([]);
+  });
 });
 
 describe("parseTranslationReply + applyTranslations", () => {
@@ -153,6 +200,36 @@ describe("parseTranslationReply + applyTranslations", () => {
     const reply = ["[[0]] First", "still first"].join("\n");
     const map = parseTranslationReply(reply);
     expect(map.get(0)).toBe("First\nstill first");
+  });
+
+  it("merges multi-line continuation text to the active marker", () => {
+    const reply = ["[[2]] Start", "continues here", "and here"].join("\n");
+    const map = parseTranslationReply(reply);
+    expect(map.get(2)).toBe("Start\ncontinues here\nand here");
+  });
+
+  it("ignores whitespace-only continuation lines", () => {
+    const reply = ["[[3]] Head", "   "].join("\n");
+    const map = parseTranslationReply(reply);
+    expect(map.get(3)).toBe("Head");
+  });
+
+  it("falls back to empty previous text if a cache lookup misses", () => {
+    const originalGet = Map.prototype.get;
+    let callCount = 0;
+    const getSpy = vi
+      .spyOn(Map.prototype, "get")
+      .mockImplementation(function (this: Map<number, string>, key: number) {
+        callCount += 1;
+        if (this.size > 0 && callCount === 1) return undefined;
+        return originalGet.call(this, key);
+      });
+
+    const reply = ["[[4]] Head", "second"].join("\n");
+    const map = parseTranslationReply(reply);
+
+    expect(map.get(4)).toBe("second");
+    getSpy.mockRestore();
   });
 
   it("applies translations over a full batch, preserving timing", () => {

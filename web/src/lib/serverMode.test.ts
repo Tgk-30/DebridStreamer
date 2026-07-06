@@ -7,20 +7,12 @@ import {
 } from "./serverMode";
 
 const SERVER_URL_STORAGE_KEY = "debridstreamer.server.url";
-const g = globalThis as Record<string, unknown>;
-
-// NOTE on the env source:
-// serverMode.ts reads the highest-precedence env value via an indirected access
-// (`const env = (import.meta as ...).env; return env?.[key]`). vitest's static
-// `import.meta.env.KEY` replacement only fires on *direct literal* property
-// access, so this dynamic form is neither statically replaced nor reachable via
-// `vi.stubEnv`. There is also no `.env` file defining VITE_DEBRIDSTREAMER_SERVER_URL,
-// so `envValue` always returns "" in this suite. We therefore exercise every
-// branch that does NOT require a non-empty env value (i.e. env is treated as
-// unset and we fall through to the injected global and localStorage), and leave
-// the populated-env precedence cases as documented `it.skip`s rather than write
-// flaky/failing tests. With env always empty, "fall-through" behavior is exactly
-// what these tests assert.
+const g = globalThis as Record<
+  string,
+  unknown
+> & {
+  __DEBRIDSTREAMER_SERVER_MODE_ENV__?: Record<string, string>;
+};
 
 // A simple in-memory localStorage stand-in so we exercise the real string logic
 // without depending on a browser/jsdom environment.
@@ -41,12 +33,14 @@ function makeLocalStorage(initial: Record<string, string> = {}) {
 describe("serverMode", () => {
   beforeEach(() => {
     delete g.__DEBRIDSTREAMER_SERVER_URL__;
+    delete g.__DEBRIDSTREAMER_SERVER_MODE_ENV__;
     delete g.localStorage;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     delete g.__DEBRIDSTREAMER_SERVER_URL__;
+    delete g.__DEBRIDSTREAMER_SERVER_MODE_ENV__;
     delete g.localStorage;
   });
 
@@ -60,9 +54,23 @@ describe("serverMode", () => {
       expect(configuredServerURL()).toBeNull();
     });
 
-    // Populated-env cases are unreachable in this harness (see top-of-file note).
-    it.skip("uses VITE_DEBRIDSTREAMER_SERVER_URL when set (env not stubbable here)", () => {});
-    it.skip("env takes precedence over injected and localStorage (env not stubbable here)", () => {});
+    it("uses VITE_DEBRIDSTREAMER_SERVER_URL when set", () => {
+      g.__DEBRIDSTREAMER_SERVER_MODE_ENV__ = {
+        VITE_DEBRIDSTREAMER_SERVER_URL: "https://env.example.com",
+      };
+      expect(configuredServerURL()).toBe("https://env.example.com");
+    });
+
+    it("env takes precedence over injected and localStorage", () => {
+      g.__DEBRIDSTREAMER_SERVER_MODE_ENV__ = {
+        VITE_DEBRIDSTREAMER_SERVER_URL: "https://env.example.com",
+      };
+      g.__DEBRIDSTREAMER_SERVER_URL__ = "https://injected.example.com";
+      g.localStorage = makeLocalStorage({
+        [SERVER_URL_STORAGE_KEY]: "https://saved.example.com",
+      });
+      expect(configuredServerURL()).toBe("https://env.example.com");
+    });
 
     describe("injected (same-origin) source", () => {
       it("uses the injected global when set", () => {
@@ -169,8 +177,23 @@ describe("serverMode", () => {
       expect(configuredServerURLSource()).toBeNull();
     });
 
-    // env populated-source cases unreachable here (see top-of-file note).
-    it.skip("returns 'env' when env var is set (env not stubbable here)", () => {});
+    it("returns 'env' when env var is set", () => {
+      g.__DEBRIDSTREAMER_SERVER_MODE_ENV__ = {
+        VITE_DEBRIDSTREAMER_SERVER_URL: "https://env.example.com",
+      };
+      expect(configuredServerURLSource()).toBe("env");
+    });
+
+    it("treats env value as precedence over injected and saved entries", () => {
+      g.__DEBRIDSTREAMER_SERVER_MODE_ENV__ = {
+        VITE_DEBRIDSTREAMER_SERVER_URL: "https://env.example.com",
+      };
+      g.__DEBRIDSTREAMER_SERVER_URL__ = "https://injected.example.com";
+      g.localStorage = makeLocalStorage({
+        [SERVER_URL_STORAGE_KEY]: "https://saved.example.com",
+      });
+      expect(configuredServerURLSource()).toBe("env");
+    });
 
     it("returns 'same-origin' when injected global is set", () => {
       g.__DEBRIDSTREAMER_SERVER_URL__ = "https://injected.example.com";
