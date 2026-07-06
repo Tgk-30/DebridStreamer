@@ -87,9 +87,17 @@ keyring = { version = "3", features = ["windows-native"] }
 # In-window mpv wid-embed player (render_player/surface_windows.rs): the shared
 # core links libmpv; the Windows surface hands mpv the window's HWND (read via
 # raw-window-handle) as `wid` and mpv renders natively (vo=gpu-next + d3d11).
+# libmpv-2.dll is delay-loaded (build.rs) and LoadLibrary'd from resources/lib at
+# startup (lib.rs preload_bundled_libmpv) — see windows-sys below.
 libmpv2 = "5"
 libmpv2-sys = "4"
 libc = "0.2"
+# LoadLibraryExW: preload the bundled libmpv-2.dll by full path so the delay-load
+# stub binds to it (the DLL ships in resources/lib, not next to the exe).
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+] }
 
 # Linux: Secret Service over D-Bus (sync), pure-Rust crypto (no OpenSSL system
 # dep), vendored libdbus (no system build dep) — headless-CI-friendly.

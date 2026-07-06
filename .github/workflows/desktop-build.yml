@@ -125,7 +125,10 @@ jobs:
               ForEach-Object { $_.Matches[0].Groups[1].Value }
             if (-not $names) { throw "no exports parsed from $($dll.Name)" }
             Write-Host "Parsed $($names.Count) exports (e.g. $($names[0]))"
-            @("EXPORTS") + $names | Set-Content -Encoding ascii $defPath
+            # The LIBRARY line makes the import records reference libmpv-2.dll (the
+            # real runtime DLL) — without it, lib.exe names the DLL after the .def
+            # basename and the exe would look for the wrong module at load/delay-load.
+            @("LIBRARY libmpv-2", "EXPORTS") + $names | Set-Content -Encoding ascii $defPath
           }
           lib /def:"$defPath" /out:"$dest\mpv.lib" /machine:x64
           if (-not (Test-Path "$dest\mpv.lib")) { throw "lib.exe did not produce mpv.lib" }

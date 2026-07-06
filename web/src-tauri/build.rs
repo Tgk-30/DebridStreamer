@@ -34,6 +34,13 @@ fn main() {
                 }
             }
         }
+        // Delay-load libmpv-2.dll so the exe LAUNCHES even when the DLL isn't on
+        // the loader's search path (it ships in resources/lib, not next to the
+        // exe). `preload_bundled_libmpv()` in lib.rs LoadLibrary's it by full path
+        // before the first mpv call, so the delay-load stub then binds to it. The
+        // delay-load helper `__delayLoadHelper2` lives in delayimp.lib.
+        println!("cargo:rustc-link-lib=delayimp");
+        println!("cargo:rustc-link-arg=/DELAYLOAD:libmpv-2.dll");
     }
 
     // Linux: `libmpv-dev` puts libmpv.so on the default linker path (usually

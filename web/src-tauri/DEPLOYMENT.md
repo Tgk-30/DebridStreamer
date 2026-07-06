@@ -90,49 +90,58 @@ already in `entitlements.plist`) let the app load the bundled dylibs.
 
 ## v0.6 — cross-platform in-window player (Windows + Linux)
 
-The in-window player is expanding to Windows and Linux (v0.6). Architecture:
+The in-window player runs on all three desktop OSes. Architecture:
 `render_player/core.rs` (shared mpv lifecycle + `VideoSurface` trait + `PreInit`)
-+ a per-OS surface. macOS = render API into a CAOpenGLLayer (done). Windows =
-mpv `wid`-embed into the window's HWND. Linux = render API into a GtkGLArea.
++ a per-OS surface (`render_player/surface_{macos,windows,linux}.rs`):
 
-### Windows CI (to make `web-release.yml`'s windows job build the player)
+- **macOS** — render API into a CAOpenGLLayer (`vo=libmpv`).
+- **Windows** — mpv `wid`-embed into the window's HWND (`vo=gpu-next` + d3d11 +
+  d3d11va).
+- **Linux** — mpv `wid`-embed into the X11 window id (`vo=gpu` + gpu-context=auto
+  + hwdec=auto-copy). Wayland has no XID → the surface errors and the app offers a
+  one-click external-player fallback; XWayland (`GDK_BACKEND=x11`) enables it.
 
-The shared core links libmpv, so the Windows job must supply libmpv at link time
-and ship `libmpv-2.dll` at runtime. `surface_windows.rs` itself needs no extra
-crate (it reads the HWND via `raw-window-handle`). Steps to add BEFORE the
-tauri-action build, `if: matrix.os == 'windows'`:
+`surface_linux.rs`/`surface_windows.rs` need no extra crate (both read the native
+window handle via `raw-window-handle`); the shared `core` links libmpv, so both
+jobs must supply libmpv at link time + ship a runtime libmpv.
 
-1. **Fetch libmpv dev** (single self-contained DLL + def):
-   ```pwsh
-   $rel = gh api repos/shinchiro/mpv-winbuild-cmake/releases/latest | ConvertFrom-Json
-   $asset = $rel.assets | ? { $_.name -like 'mpv-dev-x86_64-2*' } | select -First 1
-   curl -L -o mpv-dev.7z $asset.browser_download_url
-   7z x mpv-dev.7z -o"$env:RUNNER_TEMP\mpv"
-   ```
-2. **Generate the MSVC import lib** `mpv.lib` from `mpv.def` (libmpv2-sys emits
-   `-l mpv` → the MSVC linker wants `mpv.lib`). Put `lib.exe` on PATH first with
-   `ilammy/msvc-dev-cmd@v1`, then:
-   ```pwsh
-   lib /def:"$env:RUNNER_TEMP\mpv\mpv.def" /out:"$env:RUNNER_TEMP\mpv\mpv.lib" /machine:x64
-   "MPV_LIB_DIR=$env:RUNNER_TEMP\mpv" >> $env:GITHUB_ENV   # build.rs reads this
-   ```
-3. **Bundle `libmpv-2.dll` next to the exe.** Add it to the Windows bundle via a
-   generated `--config` (`bundle.resources`) OR copy it into the target dir the
-   installer packs, so it sits beside `debridstreamer.exe` at runtime. Verify on a
-   clean Windows box that the app finds the bundled DLL (not a system one).
-4. Pass `MPV_LIB_DIR` into the tauri-action env (like `MPV_LIB_DIR` for macOS).
+### The blind build loop — `.github/workflows/desktop-build.yml`
 
-**GATE:** the windows job compiles + links + bundles. Then a HUMAN must runtime-
-test on real Windows: in-window video appears; d3d11va hwdec engages (mpv log);
-and the WebView2 compositing — a transparent WebView2 will NOT show video behind
-it (windowed hosting airspace), so confirm the acceptable model (UI frames the
-video / mpv's child z-order). If the child covers the UI or vice-versa, that's the
-compositing-refinement work (topmost control overlay, or DOM-rect SetWindowPos of
-a dedicated child instead of the whole-window wid).
+On push to the player branches this compiles + bundles Windows (nsis) and Linux
+(deb), NO signing/release, and uploads the installers as artifacts for human
+runtime testing. It provisions libmpv per OS:
 
-### Linux CI (Phase 3, not yet implemented)
+- **Windows** — `ilammy/msvc-dev-cmd` (for `lib.exe`/`dumpbin`), fetch the latest
+  shinchiro `mpv-dev-x86_64-2*.7z`. The archive ships no `mpv.def`, so synthesise
+  one from `libmpv-2.dll`'s export table via `dumpbin /exports` → `.def`. The `.def`
+  MUST start with `LIBRARY libmpv-2` (else `lib.exe` names the import DLL after the
+  .def basename and the exe looks for the wrong module). `lib /def /out:mpv.lib
+  /machine:x64`; point `build.rs` at it with `MPV_LIB_DIR`; copy `libmpv-2.dll` into
+  `web/src-tauri/lib/` (shipped via `resources: lib/**/*`).
+  Runtime: the DLL lives in `resources/lib`, NOT next to the exe, so a plain static
+  import wouldn't resolve at load. build.rs **delay-loads** it
+  (`/DELAYLOAD:libmpv-2.dll` + `delayimp`) so the app always launches, and
+  `preload_bundled_libmpv()` (lib.rs, `.setup()`) `LoadLibraryExW`s the bundled copy
+  by full path before the first mpv call so the delay-load stub binds to it — the
+  Windows analogue of the macOS dlopen preload.
+- **Linux** — `ubuntu-24.04` (libmpv.so.2 = mpv 0.37; the 2.x client API the
+  libmpv2 crate needs — NOT 22.04's 0.34). apt `libmpv-dev`; the .deb declares
+  `depends: libmpv2 | libmpv1`. build.rs adds the pkg-config libdir.
 
-`surface_linux.rs` = mpv render API into a `gtk::GLArea` (gtk3-rs, matching wry's
-webkit2gtk) behind a transparent WebKitGTK. Depend on distro `libmpv2` for the
-.deb (or bundle the .so tree in the AppImage). The make-or-break unknown is
-webkit2gtk show-through on X11 + Wayland — needs a human GUI test on real hardware.
+`tauri.ci.conf.json` sets `createUpdaterArtifacts:false` so no signing key is
+needed. libmpv2-sys uses pregenerated bindings → no mpv headers required, only the
+link lib.
+
+**GATE (human, on real hardware):** in-window video appears; hwdec engages (mpv
+log); and the compositing — a *windowed* WebView2 / WebKitGTK does NOT reveal video
+behind it (airspace), so today mpv fills the window and covers the web UI. The
+refinement is DOM-rect child positioning via `player_set_rect` (SetWindowPos /
+XConfigureWindow), shared by both wid platforms — build it once the model is
+confirmed on real Windows + Linux.
+
+### Still TODO — ship the player in the real release
+
+`web-release.yml` still builds Windows/Linux with the libmpv-free **stub** (its
+Linux job is `ubuntu-22.04`, no libmpv provisioning). Porting the provisioning
+above into `web-release.yml` (and deciding the Linux glibc/libmpv baseline —
+bump to 24.04 vs. bundle libmpv on 22.04) is the remaining release-packaging work.
