@@ -90,6 +90,13 @@ html.mpv-active .embed-player * {
   color: rgba(255, 255, 255, 0.62);
   word-break: break-word;
 }
+.embed-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 4px;
+}
 .embed-endcard-eyebrow {
   font-size: 11px;
   font-weight: 800;

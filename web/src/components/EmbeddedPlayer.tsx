@@ -20,6 +20,7 @@ import {
   type MpvObservableProperty,
 } from "../lib/renderPlayer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openInExternalPlayer } from "../lib/tauri";
 import { Icon } from "./Icon";
 import "./EmbeddedPlayer.css";
 
@@ -67,7 +68,9 @@ const OBSERVED: readonly MpvObservableProperty[] = [
 
 const MPV_CONFIG: MpvConfig = {
   initialOptions: {
-    vo: "gpu-next", // Metal/Vulkan via libplacebo
+    // `vo` is chosen per-OS by the Rust core (best_in_class_options): libmpv on
+    // macOS (render API), gpu-next on Windows, gpu on Linux — so it's NOT set
+    // here (a JS override would fight the platform-correct default).
     hwdec: "auto-safe", // hardware decode (HEVC/AV1) when safe
     "keep-open": "yes", // don't tear down the render surface at EOF
     cache: "yes",
@@ -519,11 +522,23 @@ export function EmbeddedPlayer({
         <div className="embed-stage" />
         <div className="embed-error" role="alert">
           <Icon name="info" size={26} className="t-warning" />
-          <p>Couldn’t play this stream.</p>
+          <p>Couldn’t play this stream in the built-in player.</p>
           <p className="embed-error-detail">{error}</p>
-          <button type="button" className="btn btn-prominent" onClick={onClose}>
-            Close
-          </button>
+          <div className="embed-error-actions">
+            <button
+              type="button"
+              className="btn btn-prominent"
+              onClick={() => {
+                void openInExternalPlayer(url).catch(() => {});
+                onClose();
+              }}
+            >
+              Open in external player
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
       </div>
     );

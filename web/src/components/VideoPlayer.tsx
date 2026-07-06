@@ -153,13 +153,15 @@ export function VideoPlayer({
   const mode = kind ?? classify(url);
   const underTauri = isTauri();
   // In-window native player: the DEFAULT desktop path for containers/codecs the
-  // webview can't decode (MKV/HEVC). Renders libmpv on a native CAOpenGLLayer
-  // behind the transparent window (see EmbeddedPlayer). macOS-only for now (the
-  // surface is AppKit); elsewhere, and when the user opts out, we fall back to
-  // the external hand-off (VLC/IINA/…) below — Stremio-style player choice.
+  // webview can't decode (MKV/HEVC). Renders libmpv on a native surface behind the
+  // transparent window (see EmbeddedPlayer): macOS = CAOpenGLLayer render API,
+  // Windows/Linux = mpv wid-embed. If the surface can't init (e.g. Wayland, or a
+  // missing libmpv) the player offers a one-click external hand-off; when the user
+  // opts out it's the external hand-off (VLC/IINA/…) directly.
+  const dk = deviceKind();
   const useEmbedded =
     underTauri &&
-    deviceKind() === "mac" &&
+    (dk === "mac" || dk === "windows" || dk === "linux") &&
     mode === "external" &&
     useBuiltInPlayer;
   const [externalStatus, setExternalStatus] = useState<string | null>(null);

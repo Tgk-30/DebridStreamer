@@ -652,22 +652,25 @@ describe("Built-in player (Tauri)", () => {
     await waitFor(() => expect(playWithMpvMock).toHaveBeenCalled());
   });
 
-  it("falls back to the external hand-off on non-macOS even when built-in is on", async () => {
-    isTauriMock.mockReturnValue(true);
-    deviceKindMock.mockReturnValue("windows");
-    playWithMpvMock.mockResolvedValue({ embedded: false, status: "ok" });
-    render(
-      <VideoPlayer
-        url="https://x/movie.mkv"
-        title="T"
-        onClose={() => {}}
-        useBuiltInPlayer
-      />,
-    );
-    expect(screen.queryByTestId("embedded-player")).toBeNull();
-    await waitFor(() => expect(playWithMpvMock).toHaveBeenCalled());
-    deviceKindMock.mockReturnValue("mac");
-  });
+  it.each(["windows", "linux"] as const)(
+    "uses the in-window player on %s when built-in is on (mpv wid-embed)",
+    async (platform) => {
+      isTauriMock.mockReturnValue(true);
+      deviceKindMock.mockReturnValue(platform);
+      playWithMpvMock.mockResolvedValue({ embedded: false, status: "ok" });
+      render(
+        <VideoPlayer
+          url="https://x/movie.mkv"
+          title="T"
+          onClose={() => {}}
+          useBuiltInPlayer
+        />,
+      );
+      expect(screen.getByTestId("embedded-player")).toBeInTheDocument();
+      expect(playWithMpvMock).not.toHaveBeenCalled();
+      deviceKindMock.mockReturnValue("mac");
+    },
+  );
 });
 
 describe("ExternalPanel (Tauri)", () => {
