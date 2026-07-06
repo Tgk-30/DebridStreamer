@@ -36,6 +36,30 @@ fn main() {
         }
     }
 
+    // Linux: `libmpv-dev` puts libmpv.so on the default linker path (usually
+    // /usr/lib/<triple>), so `-lmpv` resolves without help — but pin the exact
+    // libdir via pkg-config when available so an out-of-tree mpv (e.g. a PPA or a
+    // bundled tree pointed at by MPV_LIB_DIR) is found too.
+    #[cfg(target_os = "linux")]
+    {
+        println!("cargo:rerun-if-env-changed=MPV_LIB_DIR");
+        if let Ok(dir) = std::env::var("MPV_LIB_DIR") {
+            if !dir.is_empty() {
+                println!("cargo:rustc-link-search=native={dir}");
+            }
+        } else if let Ok(out) = std::process::Command::new("pkg-config")
+            .args(["--variable=libdir", "mpv"])
+            .output()
+        {
+            if out.status.success() {
+                let dir = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !dir.is_empty() {
+                    println!("cargo:rustc-link-search=native={dir}");
+                }
+            }
+        }
+    }
+
     tauri_build::build()
 }
 

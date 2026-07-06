@@ -39,17 +39,18 @@ pub(crate) fn rp_log(msg: &str) {
 }
 
 /// The ONE platform-specific seam. A surface owns the native video rendering
-/// (macOS: CAOpenGLLayer render API; Linux: GtkGLArea render API; Windows: a
-/// wid-embedded child HWND) and composites it with the app window. The mpv handle
-/// is shared; a render-API surface binds an `mpv_render_context` to it, while a
-/// wid surface just hands mpv a native window handle.
+/// (macOS: CAOpenGLLayer render API; Windows: a wid-embedded child HWND; Linux: a
+/// wid-embedded X11 child window) and composites it with the app window. The mpv
+/// handle is shared; a render-API surface binds an `mpv_render_context` to it,
+/// while a wid surface just hands mpv a native window handle.
 ///
 /// Object-safe (no `attach` here); construction is the cfg-selected free function
 /// `attach_surface()`, so `Player` can hold a `Box<dyn VideoSurface>`.
 pub trait VideoSurface: Send {
-    /// Keep the video rect synced to the app layout, in BACKING pixels. A no-op
-    /// where the OS autoresizes the surface with the window (macOS/Linux fill the
-    /// window); used by Windows to `SetWindowPos` the child HWND to the DOM rect.
+    /// Keep the video rect synced to the app layout, in BACKING pixels. A no-op on
+    /// macOS (the surface autoresizes with the window) and on the wid-embed
+    /// surfaces for now (mpv fills the wid window); the future refinement is a
+    /// DOM-rect child reposition (SetWindowPos / XConfigureWindow).
     fn set_rect(&self, x: i32, y: i32, w: i32, h: i32);
 
     /// ORDERED teardown — the single most bug-prone invariant. Each surface MUST:
@@ -222,8 +223,12 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
     }
     #[cfg(target_os = "linux")]
     {
-        o.push(("vo", "libmpv")); // render API (GtkGLArea)
-        // Copy-mode vaapi/nvdec under the render API, SW fallback.
+        // wid-embed: mpv owns a native GL vo inside the X11 child window. `gpu`
+        // (not `gpu-next`) is used for broad libmpv-version compat; gpu-context
+        // auto picks x11egl/x11 and honours the quality options above.
+        o.push(("vo", "gpu"));
+        o.push(("gpu-context", "auto"));
+        // Copy-mode vaapi/nvdec, SW fallback — can't break playback.
         o.push(("hwdec", "auto-copy"));
         o.push(("ao", "pipewire,pulse,alsa"));
     }
@@ -238,11 +243,11 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
     o
 }
 
-/// What a surface contributes BEFORE mpv is initialized. Windows wid-embedding
-/// creates its child window here and passes `wid` as a pre-init option (mpv's
-/// `wid` is init-only); the render-API surfaces (macOS/Linux) need nothing
-/// pre-init and return an empty `PreInit`. The opaque `handle` (e.g. the child
-/// HWND as a usize) is handed back to `surface_attach`.
+/// What a surface contributes BEFORE mpv is initialized. The wid-embed surfaces
+/// (Windows HWND, Linux X11 XID) pass `wid` as a pre-init option (mpv's `wid` is
+/// init-only); the macOS render-API surface needs nothing pre-init and returns an
+/// empty `PreInit`. The opaque `handle` (the native window id as a usize) is
+/// handed back to `surface_attach`.
 pub struct PreInit {
     pub options: Vec<(String, String)>,
     pub handle: usize,
@@ -268,8 +273,8 @@ pub fn create_player<R: Runtime>(
 
     let mpv = Mpv::with_initializer(|init| {
         // Best-in-class defaults first, then the surface's pre-init options, then
-        // user options override — except `vo` on the render-API platforms
-        // (macOS/Linux), which MUST stay libmpv or the render context can't bind.
+        // user options override — except `vo` on macOS (render API), which MUST
+        // stay libmpv or the render context can't bind.
         for (k, v) in best_in_class_options() {
             if let Err(e) = init.set_option(k, v) {
                 rp_log(&format!("create_player: default {k}={v} ERR {e}"));
@@ -281,7 +286,9 @@ pub fn create_player<R: Runtime>(
             }
         }
         for (k, v) in &options {
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            // Protect the render-API `vo=libmpv` on macOS only; the wid-embed
+            // platforms (Windows/Linux) let mpv own a native vo the user may tune.
+            #[cfg(target_os = "macos")]
             if k == "vo" {
                 continue;
             }
@@ -295,8 +302,8 @@ pub fn create_player<R: Runtime>(
     let mpv = Arc::new(mpv);
     rp_log("create_player: mpv created");
 
-    // Phase 2: bind mpv to the native surface (macOS/Linux create the render
-    // context surface; Windows wraps the already-wid'd child HWND). The
+    // Phase 2: bind mpv to the native surface (macOS creates the render-context
+    // surface; Windows/Linux wrap the already-wid'd native window). The
     // cfg-selected `surface_pre_init`/`surface_attach` live in the active surface.
     let surface = super::surface_attach(&app, mpv.clone(), pre.handle)?;
 
@@ -512,7 +519,8 @@ mod tests {
         }
         #[cfg(target_os = "linux")]
         {
-            assert_eq!(map.get("vo"), Some(&"libmpv")); // render API mandate
+            assert_eq!(map.get("vo"), Some(&"gpu")); // wid-embed native vo
+            assert_eq!(map.get("gpu-context"), Some(&"auto"));
             assert_eq!(map.get("hwdec"), Some(&"auto-copy"));
         }
         #[cfg(target_os = "windows")]

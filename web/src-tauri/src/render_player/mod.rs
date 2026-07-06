@@ -4,7 +4,7 @@
 //                       `VideoSurface` trait + `PreInit` (the platform seam).
 //   surface_macos.rs  — macOS render-API surface (CAOpenGLLayer).
 //   surface_windows.rs— Windows wid-embed surface (mpv renders into the HWND).
-//   surface_linux.rs  — added in v0.6 Phase 3.
+//   surface_linux.rs  — Linux X11 wid-embed surface (mpv renders into the XID).
 //   stub.rs           — libmpv-free error stubs for platforms without a surface
 //                       yet, so the crate still links on every OS.
 //
@@ -13,9 +13,9 @@
 // `surface_attach()`, resolved here as `super::surface_pre_init/attach`.
 
 // ── Platforms WITH a native surface + libmpv (real player) ────────────────
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod core;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub use core::*;
 
 #[cfg(target_os = "macos")]
@@ -28,8 +28,13 @@ mod surface_windows;
 #[cfg(target_os = "windows")]
 use surface_windows::{surface_attach, surface_pre_init};
 
-// ── Platforms WITHOUT a surface yet (Linux until Phase 3): libmpv-free stubs ─
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(target_os = "linux")]
+mod surface_linux;
+#[cfg(target_os = "linux")]
+use surface_linux::{surface_attach, surface_pre_init};
+
+// ── Platforms WITHOUT a surface yet: libmpv-free stubs (mobile/other). ─────
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 mod stub;
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub use stub::*;
