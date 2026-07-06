@@ -21,6 +21,7 @@ import {
 } from "../lib/renderPlayer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openInExternalPlayer } from "../lib/tauri";
+import type { PlaybackPrefs } from "../storage/models";
 import { Icon } from "./Icon";
 import "./EmbeddedPlayer.css";
 
@@ -30,8 +31,11 @@ interface Props {
   /** Optional secondary line (e.g. "S2 · E5 · Episode title"). */
   subtitle?: string | null;
   startPositionSeconds?: number;
-  /** Throttled progress (current, duration) in seconds — feeds Continue Watching. */
-  onProgress?: (current: number, duration: number) => void;
+  /** Remembered audio/subtitle/speed for this title, restored after load. */
+  savedPrefs?: PlaybackPrefs | null;
+  /** Throttled progress + the current player prefs — feeds Continue Watching and
+   * persists the audio/sub/speed choices for next time. */
+  onProgress?: (current: number, duration: number, prefs?: PlaybackPrefs) => void;
   /** Present for a series with a next episode — shows an "Up next" affordance. */
   onPlayNext?: () => void;
   nextLabel?: string | null;
@@ -150,6 +154,7 @@ export function EmbeddedPlayer({
   title,
   subtitle,
   startPositionSeconds = 0,
+  savedPrefs,
   onProgress,
   onPlayNext,
   nextLabel,
@@ -309,13 +314,26 @@ export function EmbeddedPlayer({
     };
   }, [url, startPositionSeconds, refreshTracks, refreshChapters]);
 
+  // Keep the current player prefs in a ref so the throttled/unmount progress
+  // writes can persist them without re-subscribing on every track/speed change.
+  const prefsRef = useRef<PlaybackPrefs>({});
+  useEffect(() => {
+    prefsRef.current = {
+      preferredAudioId: activeAid,
+      preferredAudioLang:
+        audioTracks.find((t) => String(t.id) === activeAid)?.lang ?? null,
+      preferredSubId: activeSid,
+      playbackSpeed: speed,
+    };
+  }, [activeAid, activeSid, speed, audioTracks]);
+
   // ── Throttled progress write-back (every ~5s) ─────────────────────────────
   useEffect(() => {
     if (!startedRef.current || dur <= 0) return;
     const now = Date.now();
     if (now - lastReportRef.current >= 5000) {
       lastReportRef.current = now;
-      onProgress?.(pos, dur);
+      onProgress?.(pos, dur, prefsRef.current);
     }
   }, [pos, dur, onProgress]);
 
@@ -386,6 +404,34 @@ export function EmbeddedPlayer({
     void setProperty("sid", id);
   }, []);
 
+  // Restore remembered audio/subtitle/speed once, after the track list loads.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    restoredRef.current = false;
+  }, [url]);
+  useEffect(() => {
+    if (restoredRef.current || !savedPrefs || tracks.length === 0) return;
+    restoredRef.current = true;
+    if (savedPrefs.playbackSpeed && savedPrefs.playbackSpeed > 0) {
+      applySpeed(savedPrefs.playbackSpeed);
+    }
+    // Audio: match by language first (survives id re-ordering across sources),
+    // then by exact id.
+    const wantAudio =
+      audioTracks.find((t) => t.lang && t.lang === savedPrefs.preferredAudioLang) ??
+      audioTracks.find((t) => String(t.id) === savedPrefs.preferredAudioId);
+    if (wantAudio) selectAudio(String(wantAudio.id));
+    // Subtitle: "no" = explicitly off; otherwise match id, else language.
+    if (savedPrefs.preferredSubId === "no") {
+      selectSub("no");
+    } else if (savedPrefs.preferredSubId != null) {
+      const wantSub =
+        subTracks.find((t) => String(t.id) === savedPrefs.preferredSubId) ??
+        subTracks.find((t) => t.lang && t.lang === savedPrefs.preferredSubId);
+      if (wantSub) selectSub(String(wantSub.id));
+    }
+  }, [tracks, savedPrefs, audioTracks, subTracks, applySpeed, selectAudio, selectSub]);
+
   const jumpChapter = useCallback((time: number) => {
     seekTo(time);
     setMenu(null);
@@ -413,7 +459,7 @@ export function EmbeddedPlayer({
   const doClose = useCallback(() => {
     if (fullscreen) void getCurrentWindow().setFullscreen(false).catch(() => {});
     if (startedRef.current && durRef.current > 0) {
-      onProgress?.(posRef.current, durRef.current);
+      onProgress?.(posRef.current, durRef.current, prefsRef.current);
     }
     onClose();
   }, [onClose, onProgress, fullscreen]);

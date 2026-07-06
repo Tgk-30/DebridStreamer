@@ -182,6 +182,9 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   async recordHistory(entry: WatchHistoryUpsert): Promise<WatchHistoryRecord> {
     const episodeId = entry.episodeId ?? null;
     const id = historyKey(entry.mediaId, episodeId);
+    // `put` REPLACES the row, so a progress-only write must not wipe the
+    // remembered player prefs — carry the existing values forward when omitted.
+    const prev = await this.watchHistory.get(id);
     // Upsert by the derived key → exactly one row per (mediaId, episodeId),
     // newest wins (put replaces). Mirrors WatchHistory.save in GRDB.
     const record: WatchHistoryRecord = {
@@ -194,6 +197,11 @@ export class DexieStore extends Dexie implements Store, SecretStore {
       lastWatched: entry.lastWatched ?? nowISO(),
       streamQuality: entry.streamQuality ?? null,
       preview: entry.preview,
+      preferredAudioId: entry.preferredAudioId ?? prev?.preferredAudioId ?? null,
+      preferredAudioLang:
+        entry.preferredAudioLang ?? prev?.preferredAudioLang ?? null,
+      preferredSubId: entry.preferredSubId ?? prev?.preferredSubId ?? null,
+      playbackSpeed: entry.playbackSpeed ?? prev?.playbackSpeed ?? null,
     };
     await this.watchHistory.put(record);
     return record;

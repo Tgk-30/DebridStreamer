@@ -28,6 +28,7 @@ import { useScrubThumbnails } from "./player/useScrubThumbnails";
 import { ScrubBar } from "./player/ScrubBar";
 import { CaptionsMenu } from "./player/CaptionsMenu";
 import { EmbeddedPlayer } from "./EmbeddedPlayer";
+import type { PlaybackPrefs } from "../storage/models";
 import "./VideoPlayer.css";
 
 type Playability = "webview" | "external";
@@ -40,11 +41,17 @@ interface VideoPlayerProps {
   onClose: () => void;
   /** Reports playback progress (seconds watched + total duration) so the store
    * can persist a resume position. Called periodically and on close. */
-  onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
+  onProgress?: (
+    currentSeconds: number,
+    durationSeconds: number | null,
+    prefs?: PlaybackPrefs,
+  ) => void;
   /** Resume position (seconds) from the saved watch history. The in-webview
    * player seeks here once, on first metadata load — making cross-device resume
    * actually pick up where you left off. 0/undefined starts from the beginning. */
   startPositionSeconds?: number;
+  /** Remembered audio/subtitle/speed for this title (in-window player only). */
+  savedPrefs?: PlaybackPrefs | null;
   /** Subtitle source (local OpenSubtitles client or the Server-Mode client) when
    * available — powers subtitle search. Null disables the search UI. */
   subtitleClient?: SubtitleClient | null;
@@ -139,6 +146,7 @@ export function VideoPlayer({
   onClose,
   onProgress,
   startPositionSeconds,
+  savedPrefs,
   subtitleClient,
   translator,
   imdbId,
@@ -220,11 +228,14 @@ export function VideoPlayer({
         : null;
     return (
       <EmbeddedPlayer
+        savedPrefs={savedPrefs}
         url={url}
         title={title}
         subtitle={epLabel}
         startPositionSeconds={startPositionSeconds}
-        onProgress={(current, duration) => onProgress?.(current, duration)}
+        onProgress={(current, duration, prefs) =>
+          onProgress?.(current, duration, prefs)
+        }
         onPlayNext={upNext != null ? onPlayNext : undefined}
         nextLabel={upNext?.label ?? null}
         onClose={onClose}

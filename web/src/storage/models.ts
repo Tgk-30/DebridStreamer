@@ -37,6 +37,22 @@ export interface WatchHistoryRecord {
    * without a separate media-cache join. Not present in the Swift schema
    * (which joins media_cache); kept here so the web UI is self-contained. */
   preview: MediaPreview;
+  /** Remembered in-window-player preferences for this (media, episode), so the
+   * next play restores the viewer's choices. All optional (older rows lack them);
+   * non-indexed, so adding them needs no Dexie version bump. */
+  preferredAudioId?: string | null;
+  preferredAudioLang?: string | null;
+  /** Subtitle track id as a string, or "no" for explicitly off, or null/unset. */
+  preferredSubId?: string | null;
+  playbackSpeed?: number | null;
+}
+
+/** The in-window-player choices remembered per (media, episode). */
+export interface PlaybackPrefs {
+  preferredAudioId?: string | null;
+  preferredAudioLang?: string | null;
+  preferredSubId?: string | null;
+  playbackSpeed?: number | null;
 }
 
 /** Progress as a fraction 0..1. Mirrors `WatchHistory.progressPercent`. */

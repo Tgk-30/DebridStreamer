@@ -44,7 +44,11 @@ import {
   removeFromWatchlist as removeFromWatchlistStore,
   toggleWatchlist as toggleWatchlistStore,
 } from "../data/library";
-import type { CachedResolutionRecord, WatchHistoryRecord } from "../storage/models";
+import type {
+  CachedResolutionRecord,
+  PlaybackPrefs,
+  WatchHistoryRecord,
+} from "../storage/models";
 import { getStore } from "../storage";
 import { RemoteStore } from "../storage/RemoteStore";
 import { AutoResolveScheduler } from "../lib/autoResolve";
@@ -115,6 +119,7 @@ export interface AppStore {
     progressSeconds: number,
     durationSeconds: number | null,
     episodeId?: string | null,
+    prefs?: PlaybackPrefs,
   ) => void;
 }
 
@@ -425,6 +430,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       progressSeconds: number,
       durationSeconds: number | null,
       episodeId?: string | null,
+      prefs?: PlaybackPrefs,
     ) => {
       const completed =
         durationSeconds != null &&
@@ -435,6 +441,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         durationSeconds,
         completed,
         episodeId: episodeId ?? null,
+        preferredAudioId: prefs?.preferredAudioId,
+        preferredAudioLang: prefs?.preferredAudioLang,
+        preferredSubId: prefs?.preferredSubId,
+        playbackSpeed: prefs?.playbackSpeed,
       }).then(() => void refreshHistory());
     },
     [refreshHistory],

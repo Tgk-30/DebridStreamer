@@ -67,6 +67,10 @@ export async function recordHistory(
     completed?: boolean;
     streamQuality?: string | null;
     episodeId?: string | null;
+    preferredAudioId?: string | null;
+    preferredAudioLang?: string | null;
+    preferredSubId?: string | null;
+    playbackSpeed?: number | null;
   },
 ): Promise<MediaPreview[]> {
   const store = getStore();
@@ -92,6 +96,11 @@ export async function recordHistory(
     completed: opts?.completed ?? existing?.completed ?? false,
     streamQuality: opts?.streamQuality ?? existing?.streamQuality ?? null,
     preview: item,
+    // Player prefs (the store carries existing values forward when omitted).
+    preferredAudioId: opts?.preferredAudioId,
+    preferredAudioLang: opts?.preferredAudioLang,
+    preferredSubId: opts?.preferredSubId,
+    playbackSpeed: opts?.playbackSpeed,
   });
   return loadHistory();
 }

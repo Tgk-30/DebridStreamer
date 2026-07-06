@@ -128,6 +128,31 @@ describe("watch history", () => {
     expect(all).toHaveLength(2);
   });
 
+  it("remembers player prefs and preserves them across progress-only writes", async () => {
+    // First write sets the remembered audio/sub/speed.
+    await db.recordHistory({
+      mediaId: "tt1",
+      preview: preview("tt1"),
+      progressSeconds: 60,
+      preferredAudioId: "2",
+      preferredAudioLang: "eng",
+      preferredSubId: "no",
+      playbackSpeed: 1.5,
+    });
+    // A later progress-only write (no pref fields) must NOT wipe them.
+    await db.recordHistory({
+      mediaId: "tt1",
+      preview: preview("tt1"),
+      progressSeconds: 900,
+    });
+    const resume = await db.getResume("tt1");
+    expect(resume?.progressSeconds).toBe(900);
+    expect(resume?.preferredAudioId).toBe("2");
+    expect(resume?.preferredAudioLang).toBe("eng");
+    expect(resume?.preferredSubId).toBe("no");
+    expect(resume?.playbackSpeed).toBe(1.5);
+  });
+
   it("getResume returns the (media, episode) row", async () => {
     await db.recordHistory({
       mediaId: "tt1",

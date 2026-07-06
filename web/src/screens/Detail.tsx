@@ -46,6 +46,7 @@ import { getStore } from "../storage";
 import {
   hasResumePoint,
   watchProgressPercent,
+  type PlaybackPrefs,
   type TasteEventType,
 } from "../storage/models";
 import { rebuildTasteContext } from "../services/ai/TasteProfile";
@@ -94,6 +95,9 @@ interface ActivePlayer {
   external: boolean;
   /** Saved resume position (seconds) to seek to on load; 0 starts fresh. */
   startPositionSeconds: number;
+  /** Remembered audio/subtitle/speed for this (media, episode), snapshotted at
+   *  play time and restored by the in-window player once tracks load. */
+  savedPrefs: PlaybackPrefs | null;
   /** Episode context SNAPSHOTTED at play time (never the live picker
    *  selection) so progress writes + subtitle search track the episode that
    *  is actually playing. All null for movies. */
@@ -448,6 +452,24 @@ export function Detail() {
     return record != null && !record.completed ? record.progressSeconds : 0;
   }
 
+  /** Remembered audio/subtitle/speed for the title (movies) or SELECTED episode
+   * (series), read from the loaded history — restored by the in-window player. */
+  function prefsFor(): PlaybackPrefs | null {
+    if (detailItem == null) return null;
+    const wantedEpisodeId =
+      selected != null ? episodeIdFor(selected.season, selected.episode) : null;
+    const record = continueWatching.find(
+      (h) => h.mediaId === detailItem.id && h.episodeId === wantedEpisodeId,
+    );
+    if (record == null) return null;
+    return {
+      preferredAudioId: record.preferredAudioId,
+      preferredAudioLang: record.preferredAudioLang,
+      preferredSubId: record.preferredSubId,
+      playbackSpeed: record.playbackSpeed,
+    };
+  }
+
   /** Open the player, seeking to any saved resume position. Snapshots the
    * episode context so a picker change mid-playback can't retarget progress. */
   function openPlayer(url: string, title: string, external: boolean): void {
@@ -456,6 +478,7 @@ export function Detail() {
       title,
       external,
       startPositionSeconds: resumeSecondsFor(),
+      savedPrefs: prefsFor(),
       episodeId:
         selected != null ? episodeIdFor(selected.season, selected.episode) : null,
       season: selected?.season ?? null,
@@ -886,12 +909,14 @@ export function Detail() {
             preferredPlayer={settings.preferredExternalPlayer}
             useBuiltInPlayer={settings.builtInPlayer}
             startPositionSeconds={player.startPositionSeconds}
+            savedPrefs={player.savedPrefs}
             onClose={() => setPlayer(null)}
-            onProgress={(current, duration) => {
+            onProgress={(current, duration, prefs) => {
               // Persist a resume position against the title (movies) or the
               // SNAPSHOTTED episode (series) so Continue Watching resumes the
-              // right thing even if the picker changed mid-playback.
-              recordResume(detailItem, current, duration, player.episodeId);
+              // right thing even if the picker changed mid-playback. `prefs`
+              // carries the in-window player's audio/sub/speed for next time.
+              recordResume(detailItem, current, duration, player.episodeId, prefs);
             }}
             // Subtitle search/translate context. The client/config are null when
             // the OpenSubtitles key / AI provider aren't configured, so the

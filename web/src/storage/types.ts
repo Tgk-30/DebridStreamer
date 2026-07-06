@@ -167,6 +167,12 @@ export interface WatchHistoryUpsert {
   preview: MediaPreview;
   /** Override the watch timestamp (defaults to now). */
   lastWatched?: string;
+  /** Remembered in-window-player prefs (audio/sub track, speed). Optional; when
+   * omitted an existing row's values are preserved (not wiped). */
+  preferredAudioId?: string | null;
+  preferredAudioLang?: string | null;
+  preferredSubId?: string | null;
+  playbackSpeed?: number | null;
 }
 
 /** The fields a caller provides to upsert a library entry. */
