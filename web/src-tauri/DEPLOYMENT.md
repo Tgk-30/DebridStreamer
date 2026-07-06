@@ -142,6 +142,15 @@ confirmed on real Windows + Linux.
 ### Still TODO — ship the player in the real release
 
 `web-release.yml` still builds Windows/Linux with the libmpv-free **stub** (its
-Linux job is `ubuntu-22.04`, no libmpv provisioning). Porting the provisioning
-above into `web-release.yml` (and deciding the Linux glibc/libmpv baseline —
-bump to 24.04 vs. bundle libmpv on 22.04) is the remaining release-packaging work.
+Linux job is `ubuntu-22.04`, no libmpv provisioning). Since the Cargo change now
+makes the Linux binary link libmpv unconditionally, that job will FAIL to link on
+the next `v*-web` tag until the provisioning is ported.
+
+The clean, decision-free plan (no glibc-baseline tradeoff needed):
+- Windows job: add the same MSVC + mpv.lib(dumpbin+LIBRARY) + libmpv-2.dll steps.
+- Linux job: move to `ubuntu-24.04` + apt `libmpv-dev`, build **deb + AppImage**
+  (set `APPIMAGE_EXTRACT_AND_RUN=1`). The **.deb** targets 24.04+ (system libmpv2);
+  the **AppImage self-contains libmpv.so.2** (verified) so it runs on ANY distro,
+  INCLUDING < 24.04 — so there's no loss of reach and no baseline decision to make.
+  Drop the rpm target (or give it a libmpv Requires) since it isn't validated.
+- macOS is unchanged (Developer ID signing + per-arch libmpv relocation).
