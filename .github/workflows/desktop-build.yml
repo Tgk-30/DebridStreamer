@@ -1,0 +1,159 @@
+name: desktop-build
+
+# Blind desktop-build loop for the in-window player. Compiles + bundles the Tauri
+# app for Windows and Linux on every push to the player branches (NO signing, NO
+# release) and uploads the installers as workflow artifacts, so the mpv wid-embed
+# surfaces can be validated on real Windows/Linux hardware without cutting a
+# release. macOS ships via web-release.yml (it needs Developer ID signing + libmpv
+# relocation, which this fast loop deliberately skips).
+
+on:
+  push:
+    branches:
+      - "feat/v0.5-render-api"
+      - "feat/v0.6-**"
+    paths:
+      - "web/src-tauri/**"
+      - "web/src/**"
+      - "web/package.json"
+      - "web/package-lock.json"
+      - "server/**"
+      - "scripts/**"
+      - ".github/workflows/desktop-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes an in-flight build.
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            os: windows
+            node_runtime: win-x64
+            bundles: nsis
+            artifact_glob: web/src-tauri/target/release/bundle/nsis/*
+          # ubuntu-24.04 ships libmpv.so.2 (mpv 0.37) — the 2.x client API the
+          # libmpv2 crate needs. web-release.yml still builds the .deb on 22.04
+          # (broad glibc), so this validates the player surface, not the shipping
+          # deb's compat baseline.
+          - platform: ubuntu-24.04
+            os: linux
+            node_runtime: linux-x64
+            bundles: deb
+            artifact_glob: web/src-tauri/target/release/bundle/deb/*.deb
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "web/src-tauri -> target"
+
+      # ── Linux: Tauri (webkit2gtk) system deps + libmpv dev/runtime ──────────
+      - name: Install Linux dependencies
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libmpv-dev
+          echo "libmpv version:" && pkg-config --modversion mpv || true
+          ls -l /usr/lib/x86_64-linux-gnu/libmpv.so* || true
+
+      # ── Windows: MSVC env (for lib.exe) + libmpv import lib + runtime DLL ────
+      - name: Set up MSVC (lib.exe on PATH)
+        if: matrix.os == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Provision libmpv (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Latest shinchiro mpv-dev (single self-contained libmpv-2.dll + mpv.def).
+          $rel = gh api repos/shinchiro/mpv-winbuild-cmake/releases/latest | ConvertFrom-Json
+          $asset = $rel.assets | Where-Object { $_.name -like 'mpv-dev-x86_64-2*.7z' } | Select-Object -First 1
+          if (-not $asset) { throw "no mpv-dev-x86_64 asset in the latest release" }
+          Write-Host "Fetching $($asset.name)"
+          curl.exe -L -o mpv-dev.7z $asset.browser_download_url
+          $dest = "$env:RUNNER_TEMP\mpv"
+          7z x mpv-dev.7z -o"$dest" | Out-Null
+          # libmpv2-sys emits `-l mpv`, so the MSVC linker needs mpv.lib. Generate
+          # it from the shipped mpv.def and point build.rs at it via MPV_LIB_DIR.
+          $def = Get-ChildItem -Path $dest -Recurse -Filter mpv.def | Select-Object -First 1
+          if (-not $def) { throw "mpv.def not found in mpv-dev archive" }
+          lib /def:"$($def.FullName)" /out:"$dest\mpv.lib" /machine:x64
+          "MPV_LIB_DIR=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # Ship libmpv-2.dll with the app (bundled via `resources: lib/**/*`).
+          $dll = Get-ChildItem -Path $dest -Recurse -Include 'libmpv-2.dll','mpv-2.dll' | Select-Object -First 1
+          if (-not $dll) { throw "libmpv-2.dll not found in mpv-dev archive" }
+          New-Item -ItemType Directory -Force -Path web\src-tauri\lib | Out-Null
+          Copy-Item $dll.FullName web\src-tauri\lib\libmpv-2.dll -Force
+          Write-Host "MPV_LIB_DIR=$dest ; bundled $($dll.Name)"
+
+      # ── Frontend + server bundle so `resources/server/**` exists for bundling ─
+      - name: Install web deps
+        working-directory: web
+        run: npm ci
+
+      - name: Install server deps
+        working-directory: server
+        run: npm ci
+
+      - name: Build server bundle
+        working-directory: server
+        run: npm run build
+
+      - name: Build hosted PWA assets
+        working-directory: web
+        run: npm run build
+
+      - name: Prepare desktop server resources
+        run: node scripts/prepare_tauri_server_resources.mjs
+
+      - name: Bundle Node runtime
+        run: node scripts/download_tauri_node_runtime.mjs ${{ matrix.node_runtime }}
+
+      - name: Smoke desktop server resources
+        run: node scripts/smoke_tauri_server_bundle.mjs web/src-tauri/resources/server
+
+      # ── Build the desktop bundle (no updater signing, single bundle type) ────
+      - name: Tauri build
+        working-directory: web
+        run: npm run tauri -- build --bundles ${{ matrix.bundles }} --config src-tauri/tauri.ci.conf.json
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: debridstreamer-${{ matrix.os }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+          retention-days: 14
