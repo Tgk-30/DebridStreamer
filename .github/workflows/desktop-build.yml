@@ -98,7 +98,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
-          # Latest shinchiro mpv-dev (single self-contained libmpv-2.dll + mpv.def).
+          # Latest shinchiro mpv-dev (ships libmpv-2.dll + import lib + headers).
           $rel = gh api repos/shinchiro/mpv-winbuild-cmake/releases/latest | ConvertFrom-Json
           $asset = $rel.assets | Where-Object { $_.name -like 'mpv-dev-x86_64-2*.7z' } | Select-Object -First 1
           if (-not $asset) { throw "no mpv-dev-x86_64 asset in the latest release" }
@@ -106,18 +106,34 @@ jobs:
           curl.exe -L -o mpv-dev.7z $asset.browser_download_url
           $dest = "$env:RUNNER_TEMP\mpv"
           7z x mpv-dev.7z -o"$dest" | Out-Null
-          # libmpv2-sys emits `-l mpv`, so the MSVC linker needs mpv.lib. Generate
-          # it from the shipped mpv.def and point build.rs at it via MPV_LIB_DIR.
-          $def = Get-ChildItem -Path $dest -Recurse -Filter mpv.def | Select-Object -First 1
-          if (-not $def) { throw "mpv.def not found in mpv-dev archive" }
-          lib /def:"$($def.FullName)" /out:"$dest\mpv.lib" /machine:x64
+          Write-Host "--- mpv-dev archive contents ---"
+          Get-ChildItem -Path $dest -Recurse -File | ForEach-Object { $_.FullName.Substring($dest.Length) }
+          # Find the runtime DLL first — everything is derived from it.
+          $dll = Get-ChildItem -Path $dest -Recurse -Include 'libmpv-2.dll','mpv-2.dll','libmpv-1.dll' | Select-Object -First 1
+          if (-not $dll) { throw "libmpv-*.dll not found in mpv-dev archive" }
+          Write-Host "Found runtime DLL: $($dll.FullName)"
+          # libmpv2-sys emits `-l mpv`, so the MSVC linker needs mpv.lib. Prefer a
+          # shipped mpv.def; otherwise synthesise one from the DLL export table via
+          # dumpbin (robust to whatever the archive layout ships).
+          $def = Get-ChildItem -Path $dest -Recurse -Filter '*.def' | Select-Object -First 1
+          $defPath = if ($def) { $def.FullName } else { "$dest\mpv.def" }
+          if (-not $def) {
+            Write-Host "No .def shipped; generating from $($dll.Name) exports"
+            $exports = dumpbin /nologo /exports $dll.FullName
+            $names = $exports |
+              Select-String -Pattern '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)$' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value }
+            if (-not $names) { throw "no exports parsed from $($dll.Name)" }
+            Write-Host "Parsed $($names.Count) exports (e.g. $($names[0]))"
+            @("EXPORTS") + $names | Set-Content -Encoding ascii $defPath
+          }
+          lib /def:"$defPath" /out:"$dest\mpv.lib" /machine:x64
+          if (-not (Test-Path "$dest\mpv.lib")) { throw "lib.exe did not produce mpv.lib" }
           "MPV_LIB_DIR=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           # Ship libmpv-2.dll with the app (bundled via `resources: lib/**/*`).
-          $dll = Get-ChildItem -Path $dest -Recurse -Include 'libmpv-2.dll','mpv-2.dll' | Select-Object -First 1
-          if (-not $dll) { throw "libmpv-2.dll not found in mpv-dev archive" }
           New-Item -ItemType Directory -Force -Path web\src-tauri\lib | Out-Null
           Copy-Item $dll.FullName web\src-tauri\lib\libmpv-2.dll -Force
-          Write-Host "MPV_LIB_DIR=$dest ; bundled $($dll.Name)"
+          Write-Host "MPV_LIB_DIR=$dest ; bundled $($dll.Name) as libmpv-2.dll"
 
       # ── Frontend + server bundle so `resources/server/**` exists for bundling ─
       - name: Install web deps
