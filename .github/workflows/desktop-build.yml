@@ -48,8 +48,13 @@ jobs:
           - platform: ubuntu-24.04
             os: linux
             node_runtime: linux-x64
-            bundles: deb
-            artifact_glob: web/src-tauri/target/release/bundle/deb/*.deb
+            # AppImage too: a portable build for non-Debian distros, and it proves
+            # Tauri's linuxdeploy bundles libmpv.so.2 into the image (de-risks the
+            # eventual web-release AppImage).
+            bundles: deb,appimage
+            artifact_glob: |
+              web/src-tauri/target/release/bundle/deb/*.deb
+              web/src-tauri/target/release/bundle/appimage/*.AppImage
 
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 45
@@ -164,9 +169,13 @@ jobs:
       - name: Smoke desktop server resources
         run: node scripts/smoke_tauri_server_bundle.mjs web/src-tauri/resources/server
 
-      # ── Build the desktop bundle (no updater signing, single bundle type) ────
+      # ── Build the desktop bundle (no updater signing) ────────────────────────
       - name: Tauri build
         working-directory: web
+        # APPIMAGE_EXTRACT_AND_RUN lets appimagetool/linuxdeploy run without FUSE
+        # (ubuntu-24.04 has no libfuse2 by default); harmless on Windows.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
         run: npm run tauri -- build --bundles ${{ matrix.bundles }} --config src-tauri/tauri.ci.conf.json
 
       - name: Upload bundle
