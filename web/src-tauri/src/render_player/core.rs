@@ -253,12 +253,56 @@ pub struct PreInit {
     pub handle: usize,
 }
 
+/// Windows: `libmpv-2.dll` is DELAY-LOADED (build.rs) and ships in `resources/lib`,
+/// NOT next to the exe — so the loader can't find it on its own. Load it by full
+/// path here, ONCE, BEFORE any mpv FFI call. This is critical for safety: if the
+/// DLL is absent, letting mpv be touched would trip the delay-load helper's
+/// unhandled SEH exception and CRASH the process (an SEH, not a catchable Rust
+/// error). By loading + checking first we instead return a normal `Err`, so the
+/// webview shows the error card + the external-player fallback. Mirrors the macOS
+/// dlopen preload. No-op success on non-Windows.
+#[cfg(target_os = "windows")]
+fn ensure_libmpv_loaded<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::System::LibraryLoader::{
+        LoadLibraryExW, LOAD_WITH_ALTERED_SEARCH_PATH,
+    };
+    static LOADED: OnceLock<bool> = OnceLock::new();
+    let ok = *LOADED.get_or_init(|| {
+        let Ok(dir) = app.path().resource_dir() else {
+            return false;
+        };
+        let dll = dir.join("lib").join("libmpv-2.dll");
+        let wide: Vec<u16> = dll
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // LOAD_WITH_ALTERED_SEARCH_PATH also resolves the DLL's own deps from its
+        // dir. A non-null handle means every export is now resolvable, so the
+        // delay-load stubs bind on first use.
+        let h =
+            unsafe { LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), LOAD_WITH_ALTERED_SEARCH_PATH) };
+        !h.is_null()
+    });
+    if ok {
+        Ok(())
+    } else {
+        Err("the in-window player is unavailable: bundled libmpv-2.dll could not be loaded".into())
+    }
+}
+
 // ---- Player creation (mpv + surface + event thread; NO loadfile) ---------
 pub fn create_player<R: Runtime>(
     app: AppHandle<R>,
     options: HashMap<String, String>,
     observed: Vec<ObserveSpec>,
 ) -> Result<(), String> {
+    // Windows: guarantee libmpv is loaded before any mpv FFI, or bail cleanly
+    // (never crash via the delay-load SEH). No-op elsewhere.
+    #[cfg(target_os = "windows")]
+    ensure_libmpv_loaded(&app)?;
+
     let state = app.state::<PlayerState>();
     {
         let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;

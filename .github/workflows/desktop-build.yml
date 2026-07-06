@@ -127,7 +127,10 @@ jobs:
             $exports = dumpbin /nologo /exports $dll.FullName
             $names = $exports |
               Select-String -Pattern '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)$' |
-              ForEach-Object { $_.Matches[0].Groups[1].Value }
+              ForEach-Object { $_.Matches[0].Groups[1].Value } |
+              # Keep only real C identifiers — drops ordinal-only '(noname)' rows and
+              # any stray token that would make an invalid .def and fail lib.exe.
+              Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*$' }
             if (-not $names) { throw "no exports parsed from $($dll.Name)" }
             Write-Host "Parsed $($names.Count) exports (e.g. $($names[0]))"
             # The LIBRARY line makes the import records reference libmpv-2.dll (the

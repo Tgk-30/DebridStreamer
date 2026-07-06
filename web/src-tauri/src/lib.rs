@@ -138,33 +138,6 @@ fn open_in_external_player(url: String, preferred: Option<String>) -> Result<Str
     }
 }
 
-/// Preload the bundled `libmpv-2.dll` (shipped in `resources/lib`, not next to the
-/// exe) by FULL PATH, so the delay-loaded import of `libmpv-2.dll` binds to this
-/// module on the first mpv call. Mirrors the macOS dlopen preload. Best-effort: if
-/// the DLL is missing the app still runs, and only in-window playback is
-/// unavailable (the UI offers the external-player fallback).
-#[cfg(target_os = "windows")]
-fn preload_bundled_libmpv<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    use std::os::windows::ffi::OsStrExt;
-    use tauri::Manager;
-    use windows_sys::Win32::System::LibraryLoader::{
-        LoadLibraryExW, LOAD_WITH_ALTERED_SEARCH_PATH,
-    };
-    let Ok(dir) = app.path().resource_dir() else {
-        return;
-    };
-    let dll = dir.join("lib").join("libmpv-2.dll");
-    let wide: Vec<u16> = dll
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    // LOAD_WITH_ALTERED_SEARCH_PATH also resolves the DLL's own deps from its dir.
-    unsafe {
-        LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), LOAD_WITH_ALTERED_SEARCH_PATH);
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -193,13 +166,6 @@ pub fn run() {
     }
 
     builder
-        .setup(|app| {
-            // Windows: load the bundled libmpv before any player command runs.
-            #[cfg(target_os = "windows")]
-            preload_bundled_libmpv(app.handle());
-            let _ = &app;
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             open_in_external_player,
             list_external_players,

@@ -230,6 +230,9 @@ export function EmbeddedPlayer({
         unlisten = await observeProperties(
           OBSERVED,
           (ev: { name: string; data: unknown }) => {
+            // A late event can arrive after unmount (before unlisten lands) or
+            // after the guarded teardown — never touch state on a dead component.
+            if (cancelled) return;
             switch (ev.name) {
               case "pause":
                 setPaused(Boolean(ev.data));
@@ -529,8 +532,21 @@ export function EmbeddedPlayer({
               type="button"
               className="btn btn-prominent"
               onClick={() => {
-                void openInExternalPlayer(url).catch(() => {});
-                onClose();
+                void (async () => {
+                  try {
+                    await openInExternalPlayer(url);
+                    onClose(); // handed off — close the built-in player.
+                  } catch (err) {
+                    // The fallback failed too (no external player, not under
+                    // Tauri): keep the card open and tell the user, don't
+                    // silently vanish.
+                    setError(
+                      `No external player available either — install mpv or VLC. (${
+                        err instanceof Error ? err.message : String(err)
+                      })`,
+                    );
+                  }
+                })();
               }}
             >
               Open in external player
