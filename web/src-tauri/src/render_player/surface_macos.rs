@@ -27,7 +27,7 @@ use dispatch2::DispatchQueue;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
-use objc2_app_kit::{NSApplication, NSView, NSWindowOrderingMode};
+use objc2_app_kit::{NSApplication, NSView, NSWindow, NSWindowOrderingMode};
 use objc2_core_foundation::CFTimeInterval;
 use objc2_core_video::CVTimeStamp;
 use objc2_foundation::{NSPoint, NSRect, NSSize};
@@ -285,6 +285,31 @@ define_class!(
             // Resize the layer to the view + force CAOpenGLLayer to reallocate
             // its GL drawable at the new size (a plain setNeedsDisplay does not
             // reliably grow it). Wrapped so the geometry change doesn't animate.
+            let b = self.bounds();
+            layer.setFrame(b);
+            unsafe {
+                layer.setBounds(NSRect::new(NSPoint::new(0.0, 0.0), b.size));
+            };
+            unsafe { layer.display() };
+        }
+
+        // AppKit fires this whenever the backing SCALE FACTOR changes — most often
+        // when the window is dragged between a Retina (2x) and a non-Retina (1x)
+        // display. contentsScale is otherwise set ONCE at setup, so without this the
+        // CAOpenGLLayer keeps rendering at the launch display's pixel density:
+        // half-resolution (soft/blurry) on 1x→2x, or wastefully 2x on 2x→1x. Re-sync
+        // it and force a native-res re-render.
+        #[unsafe(method(viewDidChangeBackingProperties))]
+        fn view_did_change_backing_properties(&self) {
+            unsafe {
+                let _: () = msg_send![super(self), viewDidChangeBackingProperties];
+            }
+            let scale = self
+                .window()
+                .map(|w| w.backingScaleFactor())
+                .unwrap_or(1.0);
+            let layer = &self.ivars().layer;
+            unsafe { layer.setContentsScale(scale) };
             let b = self.bounds();
             layer.setFrame(b);
             unsafe {

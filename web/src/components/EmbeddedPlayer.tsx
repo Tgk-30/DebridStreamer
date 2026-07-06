@@ -57,7 +57,11 @@ const OBSERVED: readonly MpvObservableProperty[] = [
   ["pause", "flag"],
   ["time-pos", "double", "none"],
   ["duration", "double", "none"],
-  ["core-idle", "flag"],
+  // paused-for-cache is true ONLY when playback stalls waiting for the network
+  // cache (the real "debrid is buffering" signal). We deliberately do NOT observe
+  // core-idle: it's also true on every user pause + at EOF, which made the
+  // buffering spinner appear over paused frames.
+  ["paused-for-cache", "flag"],
   ["volume", "double", "none"],
   ["speed", "double", "none"],
   ["demuxer-cache-time", "double", "none"],
@@ -68,15 +72,13 @@ const OBSERVED: readonly MpvObservableProperty[] = [
 
 const MPV_CONFIG: MpvConfig = {
   initialOptions: {
-    // `vo` is chosen per-OS by the Rust core (best_in_class_options): libmpv on
-    // macOS (render API), gpu-next on Windows, gpu on Linux — so it's NOT set
-    // here (a JS override would fight the platform-correct default).
-    hwdec: "auto-safe", // hardware decode (HEVC/AV1) when safe
-    "keep-open": "yes", // don't tear down the render surface at EOF
-    cache: "yes",
-    "demuxer-max-bytes": "150MiB",
-    "sub-auto": "fuzzy", // pick up sidecar subs
-    "sub-font-size": 44,
+    // Video output, hardware decode, scaling, debanding, cache and subtitle
+    // pickup are all chosen PER-OS by the Rust core (best_in_class_options) — a JS
+    // override here would silently win over the platform-correct default (that's
+    // the bug that pinned macOS to auto-safe software decode + a 150MiB cache).
+    // Only set options the Rust side does NOT own:
+    "keep-open": "yes", // don't tear down the render surface at EOF (end card)
+    "sub-font-size": 44, // plain SRT/text subs; ASS keeps its own styling
     terminal: "no",
   },
   observedProperties: OBSERVED,
@@ -177,6 +179,9 @@ export function EmbeddedPlayer({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const startedRef = useRef(false);
+  // Cleared once the first frame is shown; until then the initial buffering=true
+  // (the debrid fetch) stays up, and an early paused-for-cache=false can't clear it.
+  const firstFrameRef = useRef(false);
   const lastReportRef = useRef(0);
   const posRef = useRef(0);
   const durRef = useRef(0);
@@ -218,6 +223,7 @@ export function EmbeddedPlayer({
   // ── libmpv lifecycle: init → observe → load; destroy on unmount ────────────
   useEffect(() => {
     let cancelled = false;
+    firstFrameRef.current = false; // new file: show the initial spinner again
     let unlisten: (() => void) | undefined;
     void (async () => {
       try {
@@ -238,13 +244,23 @@ export function EmbeddedPlayer({
                 setPaused(Boolean(ev.data));
                 break;
               case "time-pos":
-                if (typeof ev.data === "number") setPos(ev.data);
+                if (typeof ev.data === "number") {
+                  setPos(ev.data);
+                  // First position report ≈ first frame shown → drop the
+                  // initial-load spinner.
+                  if (!firstFrameRef.current) {
+                    firstFrameRef.current = true;
+                    setBuffering(false);
+                  }
+                }
                 break;
               case "duration":
                 if (typeof ev.data === "number") setDur(ev.data);
                 break;
-              case "core-idle":
-                setBuffering(Boolean(ev.data));
+              case "paused-for-cache":
+                // Only a real cache stall (after playback has started) toggles the
+                // spinner; before the first frame the initial spinner owns it.
+                if (firstFrameRef.current) setBuffering(Boolean(ev.data));
                 break;
               case "volume":
                 if (typeof ev.data === "number") setVolume(Math.round(ev.data));
@@ -576,7 +592,7 @@ export function EmbeddedPlayer({
         }}
       />
 
-      {buffering && !ended && (
+      {buffering && !ended && !paused && (
         <div className="embed-spinner" aria-label="Buffering">
           <span />
         </div>
