@@ -34,11 +34,8 @@ vi.mock("./RemoteStore", () => ({
   },
 }));
 
-vi.mock("./KeychainSecretStore", () => ({
-  KeychainSecretStore: class {
-    readonly kind = "keychain";
-    constructor(public readonly fallback: unknown) {}
-  },
+vi.mock("./keychainMigration", () => ({
+  migrateKeychainSecretsOnce: async () => {},
 }));
 
 async function freshIndex() {
@@ -89,13 +86,13 @@ describe("getSecretStore()", () => {
     expect(secret.kind).toBe("dexie");
   });
 
-  it("wraps Dexie in a KeychainSecretStore under Tauri", async () => {
+  it("uses a migration-gated LOCAL store under Tauri (no OS keychain)", async () => {
     tauri = true;
     const mod = await freshIndex();
-    const secret = mod.getSecretStore() as unknown as { kind: string; fallback: { kind: string } };
-    expect(secret.kind).toBe("keychain");
-    // The keychain store keeps the Dexie instance only for legacy migration.
-    expect(secret.fallback.kind).toBe("dexie");
+    const secret = mod.getSecretStore() as unknown as { dexie: { kind: string } };
+    // Desktop secrets live in the same Dexie store as the browser build; the
+    // wrapper only gates operations on the one-time keychain->local migration.
+    expect(secret.dexie.kind).toBe("dexie");
   });
 
   it("returns the RemoteStore itself as the SecretStore in Server Mode (write-only)", async () => {
@@ -120,13 +117,13 @@ describe("getSecretStore()", () => {
     expect(mod.getSecretStore()).toBe(mod.getSecretStore());
   });
 
-  it("shares one underlying Dexie instance between the store and the keychain fallback", async () => {
+  it("shares one underlying Dexie instance between the store and the secret store", async () => {
     tauri = true;
     const mod = await freshIndex();
     const store = mod.getStore();
-    const secret = mod.getSecretStore() as unknown as { fallback: unknown };
-    // getSecretStore's keychain fallback is the very same DexieStore getStore() returns.
-    expect(secret.fallback).toBe(store);
+    const secret = mod.getSecretStore() as unknown as { dexie: unknown };
+    // getSecretStore's backing Dexie is the very same instance getStore() returns.
+    expect(secret.dexie).toBe(store);
   });
 });
 
