@@ -58,6 +58,11 @@ export function Discover({ onSelect }: DiscoverProps) {
 
   return (
     <div className="discover">
+      {/* The hero lives OUTSIDE the capped content column so it can truly span
+          the window. Inside the column, its full-bleed negative margins could
+          never escape the 1440px cap — on wide windows the hero (and rails)
+          stopped short and the raw theme background filled the right side as a
+          hard seam (the "background color on the right" bug). */}
       {data.hero && (
         <HeroSpotlight
           items={[data.hero, ...data.trendingMovies, ...data.trendingTV]
@@ -81,6 +86,7 @@ export function Discover({ onSelect }: DiscoverProps) {
         />
       )}
 
+      <div className="discover-body">
       {resumable.length > 0 && (
         <ContinueWatchingRail records={resumable} onResume={openDetail} />
       )}
@@ -119,6 +125,7 @@ export function Discover({ onSelect }: DiscoverProps) {
         type: "movie",
         category: "upcoming",
       })}
+      </div>
     </div>
   );
 }
@@ -145,17 +152,19 @@ function RailSkeleton({ title }: { title: string }) {
 function DiscoverSkeleton() {
   return (
     <div className="discover">
-      <div className="skel-hero glass-rest" />
-      {[0, 1, 2].map((r) => (
-        <div className="skel-rail" key={r}>
-          <div className="skel-title" />
-          <div className="skel-cards">
-            {[0, 1, 2, 3, 4, 5].map((c) => (
-              <div className="skel-card glass-rest" key={c} />
-            ))}
+      <div className="discover-body">
+        <div className="skel-hero glass-rest" />
+        {[0, 1, 2].map((r) => (
+          <div className="skel-rail" key={r}>
+            <div className="skel-title" />
+            <div className="skel-cards">
+              {[0, 1, 2, 3, 4, 5].map((c) => (
+                <div className="skel-card glass-rest" key={c} />
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
