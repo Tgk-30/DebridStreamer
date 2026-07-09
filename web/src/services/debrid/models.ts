@@ -293,8 +293,11 @@ export const DebridServiceType = {
   premiumize: "premiumize" as DebridServiceType,
   torBox: "torbox" as DebridServiceType,
 
+  /** Canonical display + PRIORITY order (first = preferred): the pickers list
+   * services in this order and DebridManager registration sorts by it, so the
+   * first configured service here wins cache badges and stream resolution. */
   allCases(): DebridServiceType[] {
-    return ["real_debrid", "all_debrid", "premiumize", "torbox"];
+    return ["torbox", "real_debrid", "all_debrid", "premiumize"];
   },
 
   /** Mirrors `DebridServiceType.displayName`. */

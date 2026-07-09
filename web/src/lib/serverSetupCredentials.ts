@@ -48,16 +48,18 @@ export const SERVER_SETUP_KEY_FIELDS: ServerSetupKeyField[] = [
   },
 ];
 
+// TorBox first: canonical service order (matches DebridServiceType.allCases);
+// it is also the default provider (DEFAULT_DEBRID_PROVIDER = first entry).
 export const DEBRID_PROVIDER_OPTIONS: DebridProviderOption[] = [
-  {
-    provider: "real_debrid",
-    label: "Real-Debrid",
-    placeholder: "Real-Debrid API token",
-  },
   {
     provider: "torbox",
     label: "TorBox",
     placeholder: "TorBox API token",
+  },
+  {
+    provider: "real_debrid",
+    label: "Real-Debrid",
+    placeholder: "Real-Debrid API token",
   },
   {
     provider: "premiumize",

@@ -53,7 +53,7 @@ const FLOWS: Record<BuildProfile, Step[]> = {
     {
       video: "secure",
       title: "Bring your own keys",
-      body: "In Settings, add a free TMDB key (artwork + discovery) and your debrid account (Real-Debrid, AllDebrid, Premiumize, or TorBox) for streams. OMDb is optional for extra ratings.",
+      body: "In Settings, add a free TMDB key (artwork + discovery) and your debrid account (TorBox, Real-Debrid, AllDebrid, or Premiumize) for streams. OMDb is optional for extra ratings.",
     },
     {
       video: "cinema",

@@ -21,7 +21,7 @@ import { OMDBService } from "../services/metadata/OMDBService";
 import { embeddedOmdbKey } from "./embeddedOmdb";
 import { DebridManager } from "../services/debrid/DebridManager";
 import type { DebridService } from "../services/debrid/types";
-import type { DebridServiceType } from "../services/debrid/models";
+import { DebridServiceType } from "../services/debrid/models";
 import { RealDebridService } from "../services/debrid/RealDebridService";
 import { AllDebridService } from "../services/debrid/AllDebridService";
 import { PremiumizeService } from "../services/debrid/PremiumizeService";
@@ -1344,7 +1344,14 @@ function getOrBuildDebridManager(settings: AppSettings): DebridManager | null {
     return debridManagerCache.manager;
   }
   const manager = new DebridManager();
-  for (const s of services) manager.addService(s);
+  // Register in the canonical priority order (DebridServiceType.allCases:
+  // TorBox first), not token-entry order - insertion order IS the manager's
+  // priority, so this decides which service wins cache badges + resolution.
+  const priority = DebridServiceType.allCases();
+  const ranked = [...services].sort(
+    (a, b) => priority.indexOf(a.serviceType) - priority.indexOf(b.serviceType),
+  );
+  for (const s of ranked) manager.addService(s);
   debridManagerCache = { signature, manager };
   return manager;
 }

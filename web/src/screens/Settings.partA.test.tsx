@@ -279,9 +279,10 @@ describe("Settings · Providers (debrid)", () => {
     const user = userEvent.setup();
     const { container } = renderAt("debrid");
     const token = screen.getByPlaceholderText("API token");
-    await user.type(token, "rd-token");
-    // The priority chip list now lists Real-Debrid as #1.
-    expect(within(container).getByRole("button", { name: /1\. Real-Debrid/ })).toBeInTheDocument();
+    await user.type(token, "tb-token");
+    // The default selected service is TorBox (first in the canonical order),
+    // so the priority chip list now lists TorBox as #1.
+    expect(within(container).getByRole("button", { name: /1\. TorBox/ })).toBeInTheDocument();
   });
 
   it("renders existing tokens in priority order as chips", () => {
@@ -298,13 +299,13 @@ describe("Settings · Providers (debrid)", () => {
 
   it("clearing a token removes that service's entry", () => {
     renderAt("debrid", {
-      debridTokens: [{ service: "real_debrid", apiToken: "x" }],
+      debridTokens: [{ service: "torbox", apiToken: "x" }],
     });
     const token = screen.getByPlaceholderText("API token") as HTMLInputElement;
     expect(token.value).toBe("x");
-    // Real-Debrid is the default selected service; clearing the field drops it.
+    // TorBox is the default selected service; clearing the field drops it.
     fireEvent.change(token, { target: { value: "" } });
-    expect(screen.queryByRole("button", { name: /1\. Real-Debrid/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /1\. TorBox/ })).toBeNull();
   });
 
   it("clicking a priority chip selects that service and loads its token", async () => {
@@ -316,10 +317,10 @@ describe("Settings · Providers (debrid)", () => {
       ],
     });
     const token = screen.getByPlaceholderText("API token") as HTMLInputElement;
-    // Default selected = first option (real_debrid) → shows "rd".
-    expect(token.value).toBe("rd");
-    await user.click(screen.getByRole("button", { name: /2\. TorBox/ }));
-    expect((screen.getByPlaceholderText("API token") as HTMLInputElement).value).toBe("tb");
+    // Default selected = first canonical option (torbox) → shows "tb".
+    expect(token.value).toBe("tb");
+    await user.click(screen.getByRole("button", { name: /1\. Real-Debrid/ }));
+    expect((screen.getByPlaceholderText("API token") as HTMLInputElement).value).toBe("rd");
   });
 
   it("editing an existing token preserves its priority position (in-place update)", () => {

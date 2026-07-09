@@ -113,10 +113,10 @@ describe("CacheStatus", () => {
 describe("DebridServiceType accessors", () => {
   it("allCases lists every persisted raw value", () => {
     expect(DebridServiceType.allCases()).toEqual([
+      "torbox",
       "real_debrid",
       "all_debrid",
       "premiumize",
-      "torbox",
     ]);
   });
 

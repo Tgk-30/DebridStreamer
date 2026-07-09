@@ -148,7 +148,7 @@ describe("ServerSetupWizard", () => {
     render(<ServerSetupWizard onDone={() => {}} />);
     await gotoKeys(user);
     await user.type(
-      screen.getByPlaceholderText("Real-Debrid API token"),
+      screen.getByPlaceholderText("TorBox API token"),
       "rd-token",
     );
     await user.click(screen.getByRole("button", { name: "Save and continue" }));

@@ -12,7 +12,7 @@ export const CONCEPTS = {
   debrid: {
     term: "Debrid service",
     blurb:
-      "A subscription (Real-Debrid, TorBox, Premiumize or AllDebrid) that keeps popular releases ready and streams them to you as instant, direct links - no downloading or seeding.",
+      "A subscription (TorBox, Real-Debrid, Premiumize or AllDebrid) that keeps popular releases ready and streams them to you as instant, direct links - no downloading or seeding.",
   },
   source: {
     term: "Source",
