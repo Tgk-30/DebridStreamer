@@ -564,6 +564,15 @@ body,
   height: 100%;
 }
 
+html {
+  /* Opaque base under the body gradient. The desktop window is transparent (the
+     in-window player reveals a native video layer through the page), so any
+     unpainted or alpha region during startup showed the DESKTOP through the app
+     — the "wrong background color on launch" bug. html.mpv-active re-punches
+     this transparent while the player runs (EmbeddedPlayer.css, !important). */
+  background-color: var(--bg-1);
+}
+
 body {
   color: var(--text-primary);
   font-size: calc(16px * var(--text-scale));
