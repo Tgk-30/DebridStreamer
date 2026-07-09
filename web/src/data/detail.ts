@@ -72,7 +72,21 @@ async function loadLive(
   }
 
   // The detail id is an IMDb id (tt…) when TMDB had one, else a tmdb- fallback.
-  const imdbId = detail.id.startsWith("tt") ? detail.id : null;
+  let imdbId = detail.id.startsWith("tt") ? detail.id : null;
+  // Fallback: the detail payload's appended external_ids sometimes lacks
+  // imdb_id (notably TV) — try the dedicated external_ids endpoint before
+  // settling for null, because a null imdb id means the STREAM SEARCH NEVER
+  // RUNS for this title (the silent "no streams found" P0).
+  if (imdbId == null && tmdbId != null && !Number.isNaN(tmdbId)) {
+    try {
+      const ids = await service.getExternalIds(tmdbId, preview.type);
+      if (ids.imdbId != null && ids.imdbId.startsWith("tt")) {
+        imdbId = ids.imdbId;
+      }
+    } catch {
+      // Best-effort — the picker now tells the user when the id is missing.
+    }
+  }
 
   return { item: detail, cast, related, imdbId };
 }

@@ -12,7 +12,10 @@ import type { MediaType } from "../models/media";
 import type { DebridManager } from "../services/debrid/DebridManager";
 import type { DebridServiceType } from "../services/debrid/models";
 import { CacheStatus, matchEpisodeTag } from "../services/debrid/models";
-import type { IndexerManager } from "../services/indexers/IndexerManager";
+import type {
+  IndexerManager,
+  IndexerSearchError,
+} from "../services/indexers/IndexerManager";
 import { VideoQuality, type TorrentResult } from "../services/indexers/models";
 import type { AppSettings, StreamMaxQuality } from "./settings";
 import { fetchServerStreams } from "../lib/serverApi";
@@ -43,6 +46,13 @@ export interface StreamsState {
   hasIndexers: boolean;
   /** Whether any debrid service is configured (drives the cache badges). */
   hasDebrid: boolean;
+  /** True when the title has NO imdb id, so no search could run at all. The UI
+   * must say so — rendering the generic "No streams found" here was the silent
+   * P0 ("streams are not being found"): zero requests were ever made. */
+  missingImdbId: boolean;
+  /** Per-source failures from the last search. Empty ⇒ every source answered.
+   * Lets the empty state distinguish "nothing matched" from "sources down". */
+  sourceErrors: IndexerSearchError[];
 }
 
 const EMPTY: StreamsState = {
@@ -51,6 +61,8 @@ const EMPTY: StreamsState = {
   error: null,
   hasIndexers: false,
   hasDebrid: false,
+  missingImdbId: false,
+  sourceErrors: [],
 };
 
 function maxQualityOrder(maxQuality: StreamMaxQuality): number | null {
@@ -290,7 +302,15 @@ export function useStreams(
   const run = useCallback(
     async (signal: { cancelled: boolean }) => {
       if (imdbId == null || !hasIndexers) {
-        setState({ ...EMPTY, hasIndexers, hasDebrid, loading: false });
+        // HONEST idle: a null imdb id means NO search ever ran — say so instead
+        // of letting the UI render the generic "No streams found".
+        setState({
+          ...EMPTY,
+          hasIndexers,
+          hasDebrid,
+          missingImdbId: imdbId == null,
+          loading: false,
+        });
         return;
       }
       setState((s) => ({ ...s, loading: true, error: null, hasIndexers, hasDebrid }));
@@ -308,6 +328,8 @@ export function useStreams(
               error: null,
               hasIndexers: remote.hasIndexers,
               hasDebrid: remote.hasDebrid,
+              missingImdbId: false,
+              sourceErrors: [],
             });
           }
           return;
@@ -321,13 +343,45 @@ export function useStreams(
           indexers,
           debrid,
         );
+        // Per-source failures from the passes that just ran (both passes error
+        // on every source when the network path is down, so whichever pass
+        // recorded last still names them all).
+        const sourceErrors = indexers.lastSearchErrors;
+        if (
+          rows.length === 0 &&
+          indexers.activeIndexers.length > 0 &&
+          sourceErrors.length >= indexers.activeIndexers.length
+        ) {
+          // EVERY source failed — that's an outage, not "no results". Surface a
+          // real error instead of the misleading empty state (silent P0).
+          const detail = sourceErrors
+            .map((e) => `${e.indexer}: ${e.error}`)
+            .join(" · ");
+          throw new Error(`Couldn't reach any source — ${detail}`);
+        }
         if (!signal.cancelled) {
-          setState({ rows, loading: false, error: null, hasIndexers, hasDebrid });
+          setState({
+            rows,
+            loading: false,
+            error: null,
+            hasIndexers,
+            hasDebrid,
+            missingImdbId: false,
+            sourceErrors,
+          });
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (!signal.cancelled) {
-          setState({ rows: [], loading: false, error: message, hasIndexers, hasDebrid });
+          setState({
+            rows: [],
+            loading: false,
+            error: message,
+            hasIndexers,
+            hasDebrid,
+            missingImdbId: false,
+            sourceErrors: indexers.lastSearchErrors,
+          });
         }
       }
     },

@@ -305,6 +305,31 @@ function StreamBody({
     );
   }
 
+  if (state.missingImdbId) {
+    // No IMDb id ⇒ NO search ever ran. Never render "No streams found" here —
+    // that reads as an exhaustive search that came up empty, when in truth
+    // zero requests were made (the silent "streams are not being found" P0).
+    return (
+      <div className="streams-empty glass-rest">
+        <Icon name="info" size={22} className="t-warning" />
+        <p className="streams-empty-title">Can't search for this title yet</p>
+        <p className="t-secondary streams-empty-sub">
+          Sources are searched by IMDb id, and this title doesn't have one yet —
+          usually because the catalog lookup is incomplete or the TMDB key is
+          missing. Check Settings → Sources, then reopen this title.
+        </p>
+        {onOpenSettings && (
+          <div className="streams-empty-actions">
+            <button type="button" className="btn" onClick={onOpenSettings}>
+              <Icon name="settings" size={15} />
+              Open settings
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (rows.length === 0) {
     // Quality/codec chips combined to nothing (each chip alone always matches,
     // but a resolution+codec combination can be empty).
@@ -342,6 +367,16 @@ function StreamBody({
                     ? `The configured sources have no match for ${episodeLabel} yet — try another episode or add another source.`
                     : "The configured sources did not return a match for this title yet. Add another source or try a different release."}
         </p>
+        {/* Empty ≠ exhaustive when some sources failed: name them so the user
+            knows this result may be incomplete (network/mirror issues). */}
+        {!noDebrid && state.sourceErrors.length > 0 && (
+          <p className="t-secondary streams-empty-sub streams-source-errors">
+            {state.sourceErrors.length === 1 ? "One source" : `${state.sourceErrors.length} sources`}{" "}
+            couldn't be reached:{" "}
+            {state.sourceErrors.map((e) => e.indexer).join(", ")} — results may
+            be incomplete.
+          </p>
+        )}
         <div className="streams-empty-actions">
           {noDebrid && (
             <button

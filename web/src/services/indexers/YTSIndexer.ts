@@ -41,7 +41,11 @@ interface RawYTSTorrent {
 
 export class YTSIndexer implements TorrentIndexer {
   readonly name = "YTS";
-  private readonly baseURL = "https://yts.torrentbay.st/api/v2";
+  // Canonical domain. The previous mirror (yts.torrentbay.st) went permanently
+  // 403 for every client — and the failure was silently absorbed for months
+  // (nothing surfaced IndexerManager.lastSearchErrors until the honest empty
+  // states landed). If this dies too, the UI now SAYS so.
+  private readonly baseURL = "https://yts.mx/api/v2";
   private readonly fetchImpl: FetchImpl;
 
   constructor(fetchImpl: FetchImpl = defaultFetchImpl) {

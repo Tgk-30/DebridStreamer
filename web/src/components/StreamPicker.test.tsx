@@ -79,6 +79,8 @@ function baseState(over: Partial<StreamsState> = {}): StreamsState {
     error: null,
     hasIndexers: true,
     hasDebrid: true,
+    missingImdbId: false,
+    sourceErrors: [],
     ...over,
   };
 }
@@ -162,6 +164,42 @@ describe("StreamPicker", () => {
       />,
     );
     expect(screen.getByText("No streams found")).toBeInTheDocument();
+  });
+
+  it("says the search NEVER RAN when the title has no IMDb id (not 'No streams found')", () => {
+    // The silent P0: a null imdb id used to fall through to the generic empty
+    // state, reading as an exhaustive search that found nothing — when in truth
+    // zero requests were made.
+    render(
+      <StreamPicker
+        state={baseState({ rows: [], missingImdbId: true })}
+        resolveStream={neverResolve}
+        onPlay={noop}
+      />,
+    );
+    expect(screen.getByText("Can't search for this title yet")).toBeInTheDocument();
+    expect(screen.queryByText("No streams found")).toBeNull();
+  });
+
+  it("names failed sources under the empty state so empty ≠ exhaustive", () => {
+    render(
+      <StreamPicker
+        state={baseState({
+          rows: [],
+          sourceErrors: [
+            { indexer: "Torrentio", error: "timed out" },
+            { indexer: "EZTV", error: "dns" },
+          ],
+        })}
+        resolveStream={neverResolve}
+        onPlay={noop}
+      />,
+    );
+    expect(screen.getByText("No streams found")).toBeInTheDocument();
+    expect(
+      screen.getByText(/2 sources.*couldn't be reached/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Torrentio, EZTV/)).toBeInTheDocument();
   });
 
   it("tells the truth with no debrid service and routes to the guided setup", () => {

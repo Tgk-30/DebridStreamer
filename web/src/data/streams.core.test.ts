@@ -122,6 +122,11 @@ function fakeIndexers(opts: {
     get activeIndexers() {
       return opts.active ?? ["jackett"];
     },
+    // Read by useStreams after every search (honest empty states). A fake with
+    // no failures reports none.
+    get lastSearchErrors() {
+      return [];
+    },
     searchAll: opts.searchAll ?? (async () => [] as TorrentResult[]),
     searchByQuery: opts.searchByQuery ?? (async () => [] as TorrentResult[]),
   } as unknown as IndexerManager;
