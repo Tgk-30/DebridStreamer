@@ -55,7 +55,11 @@ jobs:
             rust_target: aarch64-apple-darwin
             node_runtime: darwin-arm64
             args: "--target aarch64-apple-darwin"
-          - platform: macos-13
+          # macos-13 was retired by GitHub in Dec 2025 (the job queued forever and
+          # blocked the release). macos-15-intel is the official Intel replacement
+          # (available until Aug 2027). Its Homebrew bottles carry minos 15.0 —
+          # handled by bundle-mpv-deps.sh's vtool min-OS rewrite.
+          - platform: macos-15-intel
             os: macos
             rust_target: x86_64-apple-darwin
             node_runtime: darwin-x64
