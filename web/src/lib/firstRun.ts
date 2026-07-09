@@ -2,7 +2,7 @@
 //
 // The wizard is a LOCAL-MODE concern: a server-pinned build (configured server
 // URL) goes straight to ServerModeGate's auth, never the wizard. We use a
-// dedicated `onboarding_completed` Store flag — NOT `storage_port_initialized`,
+// dedicated `onboarding_completed` Store flag - NOT `storage_port_initialized`,
 // which flips on the first settings load before the user has done anything.
 
 import { getStore } from "../storage";
@@ -21,7 +21,7 @@ export function devBypassesOnboarding(): boolean {
 
 /** The FORCED key gate: in Local Mode the app is unusable without a catalog
  *  key (TMDB or OMDb) and can't stream without a debrid token, so a launch
- *  missing either re-opens the wizard as mandatory — regardless of the
+ *  missing either re-opens the wizard as mandatory - regardless of the
  *  onboarding_completed flag. Pure so the rule is unit-testable; the caller
  *  supplies effective state (env-provided TMDB keys count via hasTmdb). */
 export function needsKeyOnboarding(input: {
@@ -54,6 +54,6 @@ export async function markOnboardingComplete(): Promise<void> {
   try {
     await getStore().setSetting(ONBOARDING_KEY, "true");
   } catch {
-    // Non-fatal — worst case the wizard shows again next launch.
+    // Non-fatal - worst case the wizard shows again next launch.
   }
 }

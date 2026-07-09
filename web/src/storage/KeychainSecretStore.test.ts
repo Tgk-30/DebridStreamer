@@ -157,7 +157,7 @@ describe("KeychainSecretStore", () => {
     await store.deleteSecret("debrid.debrid-real_debrid");
     expect(kc.has("debrid.debrid-real_debrid")).toBe(false);
 
-    // 3) the deleted secret must stay gone — no read-through resurrection
+    // 3) the deleted secret must stay gone - no read-through resurrection
     expect(await store.getSecret("debrid.debrid-real_debrid")).toBeNull();
   });
 });

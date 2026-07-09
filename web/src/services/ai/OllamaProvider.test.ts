@@ -1,4 +1,4 @@
-// Focused tests for OllamaProvider — covers the untested paths the shared
+// Focused tests for OllamaProvider - covers the untested paths the shared
 // ai.test.ts skips: request body shape (endpoint/model/messages/stream), the
 // custom-model constructor arg, analyzeTitle success, HTTP non-2xx mapping
 // (with body + empty-body fallback), malformed JSON bodies, and the
@@ -46,7 +46,7 @@ function makeMockFetch(status: number, body: string): MockFetch {
   };
 }
 
-/** A fetch stub whose text() rejects — exercises the `.catch(() => "")`
+/** A fetch stub whose text() rejects - exercises the `.catch(() => "")`
  * fallback on the error path. */
 function makeThrowingTextFetch(status: number): MockFetch {
   let count = 0;
@@ -85,7 +85,7 @@ const analysisBody = JSON.stringify({
   },
 });
 
-describe("OllamaProvider.recommend — request build", () => {
+describe("OllamaProvider.recommend - request build", () => {
   it("POSTs to the supplied endpoint with the default model, JSON content-type, no auth, and stream:false", async () => {
     const mock = makeMockFetch(200, recommendBody);
     const provider = new OllamaProvider(ENDPOINT, undefined, mock.fetchImpl);
@@ -123,7 +123,7 @@ describe("OllamaProvider.recommend — request build", () => {
   });
 });
 
-describe("OllamaProvider.recommend — success parse", () => {
+describe("OllamaProvider.recommend - success parse", () => {
   it("parses recommendations and fills heuristic usage with zero cost", async () => {
     const mock = makeMockFetch(200, recommendBody);
     const provider = new OllamaProvider(ENDPOINT, undefined, mock.fetchImpl);
@@ -147,7 +147,7 @@ describe("OllamaProvider.recommend — success parse", () => {
   });
 });
 
-describe("OllamaProvider.recommend — error / bad-response paths", () => {
+describe("OllamaProvider.recommend - error / bad-response paths", () => {
   it("maps a non-2xx response to an apiError carrying the body text", async () => {
     const mock = makeMockFetch(500, "model not found");
     const provider = new OllamaProvider(ENDPOINT, undefined, mock.fetchImpl);

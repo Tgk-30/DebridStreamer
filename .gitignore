@@ -38,7 +38,7 @@ conversation*.md
 .DS_Store
 **/.DS_Store
 
-# Build-generated encrypted embedded secrets (friends tier) — never commit.
+# Build-generated encrypted embedded secrets (friends tier) - never commit.
 server/embedded-secrets.json
 embedded-secrets.json
 

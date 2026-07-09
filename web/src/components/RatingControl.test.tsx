@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { RatingControl } from "./RatingControl";
 
-describe("RatingControl — 1–10 stars", () => {
+describe("RatingControl - 1–10 stars", () => {
   it("exposes radio semantics with one checked star and one tab stop", () => {
     render(<RatingControl scale="ten" value={7} onRate={() => {}} />);
     const group = screen.getByRole("radiogroup", { name: "Rate out of 10" });
@@ -77,7 +77,7 @@ describe("RatingControl — 1–10 stars", () => {
   });
 });
 
-describe("RatingControl — 0–100 slider", () => {
+describe("RatingControl - 0–100 slider", () => {
   it("commits only on release, and only when the value changed", () => {
     const onRate = vi.fn();
     render(<RatingControl scale="hundred" value={40} onRate={onRate} />);
@@ -128,7 +128,7 @@ describe("RatingControl — 0–100 slider", () => {
   });
 });
 
-describe("RatingControl — clear", () => {
+describe("RatingControl - clear", () => {
   it("shows Clear only when rated AND onClear is provided, and fires it", async () => {
     const onClear = vi.fn();
     const { rerender } = render(

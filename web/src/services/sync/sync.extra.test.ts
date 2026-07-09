@@ -52,7 +52,7 @@ describe("TraktSyncError static constructors", () => {
   });
 });
 
-describe("sync/types decoders — failure branches", () => {
+describe("sync/types decoders - failure branches", () => {
   it("asObject rejects a non-object (array) with decodingFailed", () => {
     expect(() => decodeDeviceCodeResponse([])).toThrowError(TraktSyncError);
     try {
@@ -188,7 +188,7 @@ describe("sync/models value types", () => {
   });
 });
 
-describe("IMDbCSVSyncService.parseCSV — RFC-4180 edge cases", () => {
+describe("IMDbCSVSyncService.parseCSV - RFC-4180 edge cases", () => {
   it("unescapes a doubled quote inside a quoted cell", () => {
     const service = new IMDbCSVSyncService();
     // A title with an embedded literal quote: 6"7 Movie -> stored as "6""7 Movie".

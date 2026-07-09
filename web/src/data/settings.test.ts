@@ -429,7 +429,7 @@ describe("redactSecrets", () => {
   });
 });
 
-describe("saveSettingsToStore — no plaintext secrets in the localStorage cache", () => {
+describe("saveSettingsToStore - no plaintext secrets in the localStorage cache", () => {
   it("redacts every credential before writing the bootstrap blob", async () => {
     const { map } = stubLocalStorage();
     await saveSettingsToStore({
@@ -461,7 +461,7 @@ describe("saveSettingsToStore — no plaintext secrets in the localStorage cache
 // loadSettingsFromStore (Store-backed)
 // =============================================================================
 
-describe("loadSettingsFromStore — first-run migration", () => {
+describe("loadSettingsFromStore - first-run migration", () => {
   it("seeds the Store from the legacy localStorage blob on first run", async () => {
     // No storage_port_initialized flag -> migration path.
     stubLocalStorage({
@@ -524,7 +524,7 @@ describe("loadSettingsFromStore — first-run migration", () => {
   it("does NOT replay over a populated Store, and preserves the legacy cache for recovery", async () => {
     // Interrupted migration: the legacy still holds a secret, but the Store
     // already has data (a partial signal). Replaying could overwrite newer Store
-    // values, so we SKIP — and must NOT scrub the legacy cache (it holds the
+    // values, so we SKIP - and must NOT scrub the legacy cache (it holds the
     // still-unmigrated secret, recoverable on the next steady-state load).
     const { map } = stubLocalStorage({
       [KEY]: JSON.stringify({ tmdbKey: "REAL_FROM_LEGACY", simpleMode: false }),
@@ -595,7 +595,7 @@ describe("loadSettingsFromStore — first-run migration", () => {
   it("never replays (so can't wipe) when there is no legacy blob but the Store has data", async () => {
     // No legacy blob at all + a Store that already holds a secret. Even if the
     // build has env-default keys, the absence of a RAW legacy blob means no
-    // replay — so the real Store secret can't be wiped.
+    // replay - so the real Store secret can't be wiped.
     vi.stubGlobal("localStorage", undefined);
     settingsMap.set("omdb_api_key", "secret:omdb_api_key");
     secretMap.set("omdb_api_key", "REAL_OMDB");
@@ -606,7 +606,7 @@ describe("loadSettingsFromStore — first-run migration", () => {
   });
 });
 
-describe("loadSettingsFromStore — established store", () => {
+describe("loadSettingsFromStore - established store", () => {
   beforeEach(() => {
     // Mark initialized so we take the normal (non-migration) read path.
     settingsMap.set("storage_port_initialized", "true");
@@ -794,7 +794,7 @@ describe("saveSettingsToStore", () => {
     expect(secretMap.get("debrid.debrid-real_debrid")).toBe("rd");
   });
 
-  it("reconciles debrid configs — removes stale entries no longer in settings", async () => {
+  it("reconciles debrid configs - removes stale entries no longer in settings", async () => {
     // Pre-existing stale config.
     debridConfigs = [
       { id: "debrid-premiumize", service: "premiumize", apiToken: "secret:debrid.debrid-premiumize", isActive: true, priority: 0 },
@@ -958,7 +958,7 @@ describe("saveSettingsToStore", () => {
       fakeSecrets.deleteSecret.mockRejectedValueOnce(new Error("keychain locked"));
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-      // Removal (no tokens) must NOT throw — the purge is best-effort.
+      // Removal (no tokens) must NOT throw - the purge is best-effort.
       await expect(
         saveSettingsToStore(
           settingsWith({

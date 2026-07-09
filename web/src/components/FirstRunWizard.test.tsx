@@ -57,11 +57,11 @@ const testTmdbKeyMock = vi.mocked(testTmdbKey);
 const testOmdbKeyMock = vi.mocked(testOmdbKey);
 const testDebridTokenMock = vi.mocked(testDebridToken);
 
-/** After the streaming step completes, the optional AI step appears — dismiss
+/** After the streaming step completes, the optional AI step appears - dismiss
  *  it so the wizard finishes (finishDevice runs on skip). */
 async function skipAi(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { name: "Add AI recommendations" });
-  await user.click(screen.getByRole("button", { name: /Skip — add AI later/ }));
+  await user.click(screen.getByRole("button", { name: /Skip - add AI later/ }));
 }
 
 /** Click through choose → catalog with a validated key, landing on streaming. */
@@ -99,7 +99,7 @@ describe("FirstRunWizard", () => {
     const onDone = vi.fn();
     render(<FirstRunWizard onDone={onDone} />);
     await user.click(screen.getByRole("button", { name: "Skip for now" }));
-    // Not skipped yet — an honest warning stands in the way.
+    // Not skipped yet - an honest warning stands in the way.
     expect(screen.getByText("Skip setup?")).toBeInTheDocument();
     expect(screen.getByText(/nothing will play/)).toBeInTheDocument();
     expect(onDone).not.toHaveBeenCalled();
@@ -140,7 +140,7 @@ describe("FirstRunWizard", () => {
     await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
     expect(
       screen.getByText(
-        "Add a catalog key to continue — TMDB (free) powers browsing, artwork & banners; OMDb adds richer ratings. Either one unlocks the app.",
+        "Add a catalog key to continue - TMDB (free) powers browsing, artwork & banners; OMDb adds richer ratings. Either one unlocks the app.",
       ),
     ).toBeInTheDocument();
     expect(testTmdbKeyMock).not.toHaveBeenCalled();
@@ -155,7 +155,7 @@ describe("FirstRunWizard", () => {
     await user.click(screen.getByRole("button", { name: "Test keys & continue" }));
     expect(
       await screen.findByText(
-        "TMDB rejected that key — double-check it (use the v3 API key).",
+        "TMDB rejected that key - double-check it (use the v3 API key).",
       ),
     ).toBeInTheDocument();
     // Still on the catalog step, button usable again.
@@ -240,7 +240,7 @@ describe("FirstRunWizard", () => {
     settings.debridTokens = [{ service: "premiumize", apiToken: "pm-token" }];
     const onDone = vi.fn();
     render(<FirstRunWizard onDone={onDone} />);
-    // Take the no-key escape through catalog too — worst case for clobbering.
+    // Take the no-key escape through catalog too - worst case for clobbering.
     await user.click(screen.getByText("Just watch on this device"));
     await user.click(
       screen.getByRole("button", { name: /Continue with the built-in catalog/ }),
@@ -267,7 +267,7 @@ describe("FirstRunWizard", () => {
     expect(
       await screen.findByRole("button", { name: /Save without testing/ }),
     ).toBeInTheDocument();
-    // Switching provider invalidates the failed check — the hatch must hide —
+    // Switching provider invalidates the failed check - the hatch must hide - 
     // and swaps the token field to that service's stored token (or empty).
     await user.selectOptions(screen.getByLabelText("Provider"), "real_debrid");
     expect(
@@ -310,7 +310,7 @@ describe("FirstRunWizard", () => {
     await user.click(screen.getByRole("button", { name: "Test token & finish" }));
     expect(
       await screen.findByText(
-        "Couldn't verify that token — it may be mistyped, or your browser may be blocked from reaching the provider.",
+        "Couldn't verify that token - it may be mistyped, or your browser may be blocked from reaching the provider.",
       ),
     ).toBeInTheDocument();
     expect(onDone).not.toHaveBeenCalled();
@@ -455,7 +455,7 @@ describe("FirstRunWizard", () => {
   });
 });
 
-describe("FirstRunWizard — forced key gate", () => {
+describe("FirstRunWizard - forced key gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isTauriMock.mockReturnValue(false);
@@ -481,7 +481,7 @@ describe("FirstRunWizard — forced key gate", () => {
     expect(
       screen.queryByRole("button", { name: /Continue with the built-in catalog/ }),
     ).not.toBeInTheDocument();
-    // Both catalog fields are present at once — OMDb is optional, not a toggle.
+    // Both catalog fields are present at once - OMDb is optional, not a toggle.
     expect(screen.getByLabelText("TMDB API key")).toBeInTheDocument();
     expect(screen.getByLabelText(/OMDb API key/)).toBeInTheDocument();
     expect(screen.getByText("Optional")).toBeInTheDocument();
@@ -577,7 +577,7 @@ describe("FirstRunWizard — forced key gate", () => {
   });
 });
 
-describe("FirstRunWizard — forced advanced/host route through keys", () => {
+describe("FirstRunWizard - forced advanced/host route through keys", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isTauriMock.mockReturnValue(false);
@@ -621,7 +621,7 @@ describe("FirstRunWizard — forced advanced/host route through keys", () => {
     render(<FirstRunWizard forced onDone={onDone} />);
     await user.click(screen.getByText("Host for my family"));
     await user.click(screen.getByRole("button", { name: "Open Settings" }));
-    // Still inside the wizard — keys come first.
+    // Still inside the wizard - keys come first.
     expect(
       screen.getByRole("heading", { name: "Connect your catalog" }),
     ).toBeInTheDocument();
@@ -635,7 +635,7 @@ describe("FirstRunWizard — forced advanced/host route through keys", () => {
   });
 });
 
-describe("FirstRunWizard — optional AI step", () => {
+describe("FirstRunWizard - optional AI step", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isTauriMock.mockReturnValue(false);
@@ -658,12 +658,12 @@ describe("FirstRunWizard — optional AI step", () => {
     await screen.findByRole("heading", { name: "Add AI recommendations" });
   }
 
-  it("is optional — Skip finishes without writing AI settings", async () => {
+  it("is optional - Skip finishes without writing AI settings", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
     render(<FirstRunWizard onDone={onDone} />);
     await reachAiStep(user);
-    await user.click(screen.getByRole("button", { name: /Skip — add AI later/ }));
+    await user.click(screen.getByRole("button", { name: /Skip - add AI later/ }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     // AI key left untouched (empty), and Save & finish was disabled while empty.
     expect(updateSettings).toHaveBeenCalledWith(

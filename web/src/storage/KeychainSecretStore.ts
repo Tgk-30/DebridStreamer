@@ -4,13 +4,13 @@
 // persists to the native OS keychain via the first-party Rust commands in
 // src-tauri/src/keychain.rs (Apple Keychain / Windows Credential Manager /
 // Secret Service). Selected over DexieStore inside getSecretStore() when
-// isTauri() is true (see storage/index.ts) — so this class is ONLY ever
+// isTauri() is true (see storage/index.ts) - so this class is ONLY ever
 // constructed on a real desktop build where the Tauri bridge is present.
 //
 // Security posture (this is the whole point of the keychain backend):
 //   - WRITES fail CLOSED. If a keychain set/delete fails (locked/denied keychain,
 //     Secret Service down, etc.) the error PROPAGATES. We never silently persist
-//     a credential as plaintext in IndexedDB as a "fallback" — that would defeat
+//     a credential as plaintext in IndexedDB as a "fallback" - that would defeat
 //     the keychain entirely precisely in the failure modes that matter.
 //   - READS degrade to null (+ a one-time warning) on a keychain error rather
 //     than rejecting (which would break settings hydration) or reading the
@@ -45,8 +45,8 @@ async function loadInvoke(): Promise<InvokeFn> {
 }
 
 /** True once any secret READ failed this session (locked keychain, denied,
- *  backend down). Consumers that would treat "no key" as actionable — like the
- *  forced key-onboarding gate — must stand down when this is set: the keys may
+ *  backend down). Consumers that would treat "no key" as actionable - like the
+ *  forced key-onboarding gate - must stand down when this is set: the keys may
  *  exist but be unreadable, and forcing re-entry would mislead (and any re-save
  *  would fail against the same broken keychain anyway). */
 let readFailures = 0;
@@ -67,7 +67,7 @@ function warnKeychain(op: string, key: string, err: unknown): void {
   warned.add(id);
   // eslint-disable-next-line no-console
   console.warn(
-    `[KeychainSecretStore] keychain ${op} failed for "${key}" — the secret is ` +
+    `[KeychainSecretStore] keychain ${op} failed for "${key}" - the secret is ` +
       `unavailable this session and was NOT stored in plaintext.`,
     err,
   );
@@ -75,7 +75,7 @@ function warnKeychain(op: string, key: string, err: unknown): void {
 
 export class KeychainSecretStore implements SecretStore {
   /** Dexie store, used ONLY as the migration source (reading a pre-keychain
-   *  plaintext secret) and to purge that legacy copy — never as a write target
+   *  plaintext secret) and to purge that legacy copy - never as a write target
    *  on keychain failure. */
   constructor(private readonly fallback: SecretStore) {}
 
@@ -98,7 +98,7 @@ export class KeychainSecretStore implements SecretStore {
       });
     } catch (err) {
       // Keychain READ failed (locked / denied / backend down). Treat as
-      // unavailable this session — do NOT reject (breaks hydration) and do NOT
+      // unavailable this session - do NOT reject (breaks hydration) and do NOT
       // read the plaintext legacy copy.
       warnKeychain("read", key, err);
       return null;
@@ -131,7 +131,7 @@ export class KeychainSecretStore implements SecretStore {
   }
 
   async setSecret(key: string, value: string): Promise<void> {
-    // Fail CLOSED: a keychain write failure propagates — we never silently
+    // Fail CLOSED: a keychain write failure propagates - we never silently
     // persist the secret as plaintext in IndexedDB.
     const invoke = await loadInvoke();
     await invoke<void>("keychain_set", {
@@ -150,7 +150,7 @@ export class KeychainSecretStore implements SecretStore {
       service: KEYCHAIN_SERVICE,
       key,
     });
-    // Also purge any legacy plaintext copy — otherwise the read-through migration
+    // Also purge any legacy plaintext copy - otherwise the read-through migration
     // would resurrect the deleted secret on the next get.
     await this.purgeLegacy(key);
   }

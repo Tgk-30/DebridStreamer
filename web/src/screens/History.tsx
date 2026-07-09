@@ -1,4 +1,4 @@
-// History screen — backed by the storage port.
+// History screen - backed by the storage port.
 //
 // Shows a "Continue Watching" rail (incomplete titles with a real resume
 // position, read from watch history) followed by the full recently-watched grid
@@ -28,7 +28,7 @@ export function History() {
     continueWatching,
   ]);
 
-  // ONE card per show in the rail — the newest incomplete episode/movie record
+  // ONE card per show in the rail - the newest incomplete episode/movie record
   // wins (per-episode records used to produce duplicate cards + duplicate React
   // keys for the same series). Newest-first ordering.
   const latestRecords = Object.values(latestResumeByMedia(continueWatching)).sort(

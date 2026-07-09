@@ -2,8 +2,8 @@
 //
 // A fetch-based Ollama chat provider. Mirrors the Swift struct: POSTs to the
 // caller-supplied endpoint with a non-streaming chat request, reads
-// `message.content` as the response text, and — because Ollama returns no token
-// usage — fills usage from the local heuristic token counter (estimatedCostUSD
+// `message.content` as the response text, and - because Ollama returns no token
+// usage - fills usage from the local heuristic token counter (estimatedCostUSD
 // is always 0 for a local model). No API key. The `fetch` implementation is
 // injectable so tests stub the network.
 
@@ -133,7 +133,7 @@ export class OllamaProvider implements AIAssistantProvider {
     }
 
     const analysis = parsePersonalizedAnalysis(content);
-    // Ollama returns no token usage — fill from the local heuristic counter
+    // Ollama returns no token usage - fill from the local heuristic counter
     // (estimatedCostUSD is always 0 for a local model). Mirrors recommend().
     const inputTokens = AIAssistantJSONParser.estimatedTokenCount(prompt);
     const outputTokens = AIAssistantJSONParser.estimatedTokenCount(content);

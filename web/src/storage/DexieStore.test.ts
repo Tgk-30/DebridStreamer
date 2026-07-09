@@ -1,4 +1,4 @@
-// DexieStore tests — run against fake-indexeddb (an in-memory, spec-compliant
+// DexieStore tests - run against fake-indexeddb (an in-memory, spec-compliant
 // IndexedDB) so the real Dexie code path is exercised without a browser.
 //
 // Mirrors the intent of the Swift DatabaseManager tests: settings get/set/all;
@@ -251,7 +251,7 @@ describe("library + folders", () => {
     expect(inFolder.map((e) => e.mediaId)).toEqual(["tt1"]);
   });
 
-  it("addToLibrary serializes concurrent adds — no duplicate rows (regression)", async () => {
+  it("addToLibrary serializes concurrent adds - no duplicate rows (regression)", async () => {
     await Promise.all([
       db.addToLibrary({ mediaId: "ttX", listType: "watchlist", preview: preview("ttX") }),
       db.addToLibrary({ mediaId: "ttX", listType: "watchlist", preview: preview("ttX") }),

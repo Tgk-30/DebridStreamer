@@ -1,4 +1,4 @@
-/* Persona first-run wizard — a centered glass card over the app background. */
+/* Persona first-run wizard - a centered glass card over the app background. */
 
 .first-run {
   position: fixed;
@@ -549,7 +549,7 @@
 
 /* ── Device-path key steps ──────────────────────────────────────────────── */
 
-/* Quiet escape under the step actions — honest, findable, not inviting. */
+/* Quiet escape under the step actions - honest, findable, not inviting. */
 .first-run-escape {
   align-self: center;
   min-height: 44px;
@@ -578,7 +578,7 @@
   opacity: 0.85;
 }
 
-/* Optional catalog field (OMDb) — labelled with a quiet "Optional" tag and a
+/* Optional catalog field (OMDb) - labelled with a quiet "Optional" tag and a
    little more breathing room from the primary TMDB field above it. */
 .first-run-field-optional {
   margin-top: 6px;

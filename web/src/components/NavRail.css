@@ -1,8 +1,8 @@
-/* NavRail — breakpoint-specific primary navigation. */
+/* NavRail - breakpoint-specific primary navigation. */
 
 /* Floating glass rail (Apple TV-style): a detached, rounded panel that hovers
    over full-bleed content. Its backdrop-filter frosts whatever scrolls behind it
-   — most visibly the hero banner — so the rail reads as a translucent reflection
+   - most visibly the hero banner - so the rail reads as a translucent reflection
    of the content rather than a solid gutter. Mobile overrides this to a bottom
    pill bar further down. */
 .nav-rail {
@@ -26,7 +26,7 @@
      WKWebView applies the -webkit- form; modern engines the unprefixed one.
      PERF: this rail floats over full-bleed content, so the compositor re-blurs
      the pixels behind it on EVERY scroll frame. Blur cost grows with radius²
-     and stacking a second filter (saturate) adds a full extra pass — the old
+     and stacking a second filter (saturate) adds a full extra pass - the old
      blur(44px) saturate(1.7) was a top profiled scroll-jank source. 24px reads
      nearly identical at a fraction of the cost; the tint is nudged up instead
      of the saturate pass. */
@@ -100,7 +100,7 @@
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
 }
-/* Tactile press feedback — the most-used control should match the press every
+/* Tactile press feedback - the most-used control should match the press every
    other button gives (.btn:active scale 0.97). */
 .nav-rail-btn:active {
   transform: scale(0.94);
@@ -154,7 +154,7 @@
   stroke-width: 0;
 }
 
-/* The selected state reads from the filled pill alone — no accent side-bar. */
+/* The selected state reads from the filled pill alone - no accent side-bar. */
 .nav-rail-more,
 .nav-rail-more-scrim,
 .nav-rail-more-sheet {

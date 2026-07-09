@@ -26,7 +26,7 @@ const OPENAI_MODELS = JSON.stringify({
   data: [{ id: "gpt-4o" }, { id: "gpt-4o-mini" }, { id: "gpt-4o" }, { id: "" }, { id: "o1" }],
 });
 
-describe("fetchAvailableModels — OpenAI-compatible", () => {
+describe("fetchAvailableModels - OpenAI-compatible", () => {
   it("GETs {baseURL}/models with Bearer auth and tidies the ids", async () => {
     const mock = makeMockFetch(200, OPENAI_MODELS);
     const models = await fetchAvailableModels({
@@ -95,7 +95,7 @@ describe("fetchAvailableModels — OpenAI-compatible", () => {
   });
 });
 
-describe("fetchAvailableModels — Anthropic", () => {
+describe("fetchAvailableModels - Anthropic", () => {
   it("GETs /v1/models with x-api-key + version header", async () => {
     const mock = makeMockFetch(
       200,
@@ -114,7 +114,7 @@ describe("fetchAvailableModels — Anthropic", () => {
   });
 });
 
-describe("fetchAvailableModels — Ollama", () => {
+describe("fetchAvailableModels - Ollama", () => {
   it("GETs {endpoint}/api/tags and reads model names", async () => {
     const mock = makeMockFetch(
       200,

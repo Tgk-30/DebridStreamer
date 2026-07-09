@@ -122,7 +122,7 @@ describe("GenreCatalogGrid", () => {
   // Regression: on a real boot the grid first mounts with tmdb=null (services
   // aren't built until the TMDB key hydrates from Dexie), then the prop flips to
   // a real provider. The effect's [type, tmdb] deps must re-fire on that flip so
-  // artwork actually loads — not stay blank because it only saw null at mount.
+  // artwork actually loads - not stay blank because it only saw null at mount.
   it("loads artwork after tmdb transitions from null to a real provider (boot path)", async () => {
     const preview = (backdropPath: string) => ({
       items: [{ id: "1", type: "movie" as const, title: "X", backdropPath }],

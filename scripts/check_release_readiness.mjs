@@ -65,7 +65,7 @@ check(
 );
 check(
   "Release workflow builds macOS, Linux, and Windows",
-  // A pinned stable macOS (macos-15/14/13) is REQUIRED — `macos-latest` moved to
+  // A pinned stable macOS (macos-15/14/13) is REQUIRED - `macos-latest` moved to
   // the macOS 26 beta, whose SDK/codesign makes bundles "damaged" on older macOS.
   /platform:\s*macos-\d+/.test(releaseWorkflow) &&
     /platform:\s*ubuntu-\d+\.\d+/.test(releaseWorkflow) &&
@@ -75,7 +75,7 @@ check(
 );
 check(
   "Release workflow builds per-arch macOS targets",
-  // macOS ships PER-ARCH now (native runners, each bundling its own libmpv) —
+  // macOS ships PER-ARCH now (native runners, each bundling its own libmpv) - 
   // no universal/lipo build. Verify both arch targets flow through matrix.args.
   /--target aarch64-apple-darwin/.test(releaseWorkflow) &&
     /--target x86_64-apple-darwin/.test(releaseWorkflow) &&
@@ -255,12 +255,12 @@ check(
     /public_repo_preflight\.mjs/.test(cloudflareDeployHelper),
   "scripts/deploy_website_cloudflare.mjs must run download, static, mounted-path, and public-repo checks before mutating Cloudflare",
 );
-// GitHub Pages (site.yml) was removed 2026-07 — Pages was never enabled and
+// GitHub Pages (site.yml) was removed 2026-07 - Pages was never enabled and
 // Cloudflare (cloudflare-site.yml, checked below) is the deploy that counts.
 check(
   "Legacy GitHub Pages workflow stays deleted",
   !existsSync(join(root, ".github/workflows/site.yml")),
-  ".github/workflows/site.yml is dead legacy — the Cloudflare workflow owns the site deploy",
+  ".github/workflows/site.yml is dead legacy - the Cloudflare workflow owns the site deploy",
 );
 check(
   "Cloudflare site workflow exists",

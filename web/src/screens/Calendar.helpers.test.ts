@@ -37,7 +37,7 @@ describe("relativeAir", () => {
   });
 
   it("returns null for a partial ISO date (would otherwise parse leniently)", () => {
-    // new Date("2026-07T00:00:00") parses to Jul 1 — the strict guard rejects it.
+    // new Date("2026-07T00:00:00") parses to Jul 1 - the strict guard rejects it.
     expect(relativeAir("2026-07", NOW)).toBeNull();
     expect(relativeAir("2026", NOW)).toBeNull();
   });

@@ -11,11 +11,11 @@ FROM node:24-bookworm-slim AS server-build
 WORKDIR /repo
 COPY server/package*.json ./server/
 RUN cd server && npm ci
-# The server bundles web TypeScript via esbuild — its runtime shims import from
+# The server bundles web TypeScript via esbuild - its runtime shims import from
 # web/src/{models,services/{ai,debrid,indexers,metadata,subtitles}}, and some of
 # that web code pulls 3rd-party npm deps (e.g. subsrt-ts) that esbuild resolves
 # from web/node_modules. So install web deps too, then copy the whole web/src so
-# every cross-import resolves. This is a build stage only — it never bloats the
+# every cross-import resolves. This is a build stage only - it never bloats the
 # runtime image (which copies just server/dist).
 COPY web/package*.json ./web/
 RUN cd web && npm ci

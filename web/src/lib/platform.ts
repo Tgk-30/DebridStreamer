@@ -1,5 +1,5 @@
 // Platform / install-surface detection, shared by the Settings Install tab
-// and the mobile InstallPrompt card. Moved verbatim from screens/Settings.tsx —
+// and the mobile InstallPrompt card. Moved verbatim from screens/Settings.tsx - 
 // the iPad-as-Mac detection via maxTouchPoints is intentional, do not "fix".
 
 export interface BeforeInstallPromptEvent extends Event {
@@ -38,7 +38,7 @@ export function isStandaloneDisplay(): boolean {
   );
 }
 
-/** A phone/tablet browser session — the only place the install card belongs. */
+/** A phone/tablet browser session - the only place the install card belongs. */
 export function isMobileBrowser(): boolean {
   const k = deviceKind();
   return k === "ios" || k === "android";

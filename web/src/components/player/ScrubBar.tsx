@@ -79,7 +79,7 @@ export function ScrubBar({
     [timeAtX, onSeek],
   );
 
-  // Keyboard seeking — a role="slider" must respond to arrows/Home/End (WCAG
+  // Keyboard seeking - a role="slider" must respond to arrows/Home/End (WCAG
   // 2.1). Arrows nudge ±5s, PageUp/Down ±60s, Home/End jump to the ends.
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {

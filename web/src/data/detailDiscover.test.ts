@@ -58,7 +58,7 @@ import {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function preview(partial: Partial<MediaPreview> = {}): MediaPreview {
   // Spread last so an explicit `null` (e.g. backdropPath: null) overrides the
-  // default — `?? `would swallow a deliberate null.
+  // default - `?? `would swallow a deliberate null.
   return {
     id: "tmdb-42",
     type: "movie",
@@ -116,7 +116,7 @@ beforeEach(() => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// detail.ts — useDetail
+// detail.ts - useDetail
 // ════════════════════════════════════════════════════════════════════════════
 describe("useDetail", () => {
   it("stays in the initial loading/fixtures state when preview is null", () => {
@@ -297,7 +297,7 @@ describe("useDetail", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// discover.ts — pure helpers
+// discover.ts - pure helpers
 // ════════════════════════════════════════════════════════════════════════════
 describe("loadLiveDiscover", () => {
   it("fetches all rails and unwraps .items; picks first trending movie w/ backdrop as hero", async () => {
@@ -366,7 +366,7 @@ describe("loadFixtureDiscover", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// discover.ts — useDiscover
+// discover.ts - useDiscover
 // ════════════════════════════════════════════════════════════════════════════
 describe("useDiscover", () => {
   it("loads live via the service and reports source=live", async () => {

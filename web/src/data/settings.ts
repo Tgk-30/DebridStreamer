@@ -126,7 +126,7 @@ const SECRET_KEYS = new Set<string>([
 /** A user-configured external indexer (Torznab/Jackett/Prowlarr/Stremio addon).
  * `type` is the storage-layer indexer type, which includes `stremio_addon`
  * (persisted faithfully even though the ported web IndexerManager cannot build
- * one yet — see buildIndexerConfigs, which skips types the web factory lacks). */
+ * one yet - see buildIndexerConfigs, which skips types the web factory lacks). */
 export interface SourceEntry {
   id: string;
   type: StoredIndexerType;
@@ -228,7 +228,7 @@ export interface AppSettings {
   streamMaxQuality: StreamMaxQuality;
   /** Maximum stream result size in GB; 0 disables the cap. */
   streamMaxSizeGB: number;
-  /** Master Data Saver — clamps the stream list AND automatic (watchlist)
+  /** Master Data Saver - clamps the stream list AND automatic (watchlist)
    *  playback to a bandwidth-friendly tier (≤720p, ≤5 GB) without transcoding. */
   dataSaver: boolean;
   /** Auto-play the next episode when a series episode ends (cached streams only). */
@@ -246,7 +246,7 @@ export interface AppSettings {
   preferredExternalPlayer: string;
   /** Desktop only, EXPERIMENTAL: play MKV/HEVC in the built-in libmpv window
    *  instead of handing off to an external player (VLC/mpv/IINA). Off by
-   *  default until native bundling is verified — see EMBEDDED_PLAYER.md. */
+   *  default until native bundling is verified - see EMBEDDED_PLAYER.md. */
   builtInPlayer: boolean;
   /** Local profile display name shown on the top-right avatar; "" = "You". */
   userName: string;
@@ -433,7 +433,7 @@ export function defaultSettings(): AppSettings {
     ratingScale: "ten",
     preferredExternalPlayer: "",
     // The in-window player is the DEFAULT on macOS (libmpv + its deps ship inside
-    // the .app — see scripts/bundle-mpv-deps.sh). Turn it off to hand off to an
+    // the .app - see scripts/bundle-mpv-deps.sh). Turn it off to hand off to an
     // external player (VLC/IINA/…) instead. macOS-only; VideoPlayer falls back to
     // the external hand-off on other platforms regardless.
     builtInPlayer: true,
@@ -506,7 +506,7 @@ const DESIGN_REFRESH_VERSION = "2026-07-premium";
 
 /** True while the one-time design refresh is still pending on this device.
  * False once it has been applied+persisted, or when localStorage is unavailable
- * (we can't track once-only there, so we skip rather than re-apply every load —
+ * (we can't track once-only there, so we skip rather than re-apply every load - 
  * SSR / private-mode / tests). */
 function isDesignRefreshPending(): boolean {
   try {
@@ -521,7 +521,7 @@ function isDesignRefreshPending(): boolean {
 /**
  * Record that the design refresh has been applied AND durably persisted, so it
  * never runs again on this device. Call this ONLY after the refreshed settings
- * have been successfully written to the Store — that ordering is what makes a
+ * have been successfully written to the Store - that ordering is what makes a
  * failed Store write retry on the next load instead of being lost forever (the
  * reset is idempotent, so at worst a re-apply is a no-op).
  */
@@ -530,7 +530,7 @@ export function markDesignRefreshApplied(): void {
     globalThis.localStorage?.setItem(DESIGN_REFRESH_KEY, DESIGN_REFRESH_VERSION);
   } catch {
     /* best-effort: if we can't record the marker, the refresh re-applies next
-       load — idempotent, so harmless. */
+       load - idempotent, so harmless. */
   }
 }
 
@@ -538,12 +538,12 @@ export function markDesignRefreshApplied(): void {
  * One-time redesign refresh: adopt the premium *spatial* appearance defaults
  * (spacing, text size, corner radius, hero scale, poster size, backdrop) for
  * installs that predate the redesign, so the new look isn't hidden behind a
- * saved "compact/small/sharp" profile. Deliberately narrow — it never touches
+ * saved "compact/small/sharp" profile. Deliberately narrow - it never touches
  * theme, accent, motion, keys, debrid, or sources, and is fully reversible via
  * Settings → Appearance. A no-op on fresh installs (their values already equal
  * the defaults) and once the refresh has been marked applied.
  *
- * Does NOT record completion — the caller marks it via markDesignRefreshApplied()
+ * Does NOT record completion - the caller marks it via markDesignRefreshApplied()
  * only after the result is durably persisted, so a failed persist retries next
  * load instead of losing the redesign. Returns the same reference when nothing
  * changes, so callers can skip a redundant persist with an identity check.
@@ -578,7 +578,7 @@ function readRawLegacyBlob(): Partial<AppSettings> | null {
 
 /** Has the Store already been written by a prior (possibly interrupted)
  * migration? ANY persisted KV key (other than the init flag) or ANY debrid/
- * indexer config row counts — so a partial Store of any shape isn't misread as
+ * indexer config row counts - so a partial Store of any shape isn't misread as
  * empty (which would let a redacted replay clear real data). */
 async function storeHasAnyData(): Promise<boolean> {
   const store = getStore();
@@ -602,7 +602,7 @@ export function saveSettings(settings: AppSettings): void {
 }
 
 /** A copy of settings with every credential field blanked. The localStorage
- * bootstrap cache must NEVER hold plaintext secrets — those live only in the
+ * bootstrap cache must NEVER hold plaintext secrets - those live only in the
  * SecretStore / OS keychain. localStorage is readable by any same-origin script
  * (XSS) and sits in plaintext on disk, so caching raw keys there would defeat
  * the SecretStore indirection. The synchronous bootstrap render only needs the
@@ -668,11 +668,11 @@ async function setStoredValue(
 }
 
 /** Best-effort secret deletion for the REMOVAL path. On the Tauri desktop build
- * `deleteSecret` fails CLOSED — it rejects if the OS keychain is locked/denied
+ * `deleteSecret` fails CLOSED - it rejects if the OS keychain is locked/denied
  * (see KeychainSecretStore). But by the time we call this we have already
  * cleared the owning KV marker / config row, so the secret is unreferenced
  * (load only follows live markers/rows). A keychain failure therefore means at
- * worst a harmless value lingers in the keychain — it must NOT propagate and
+ * worst a harmless value lingers in the keychain - it must NOT propagate and
  * abort the surrounding reconciliation (which would orphan the very row/marker
  * we just removed and leave the rest of the Save half-applied). Swallow + warn;
  * only the key NAME is logged, never a secret value. */
@@ -685,7 +685,7 @@ async function deleteSecretBestEffort(
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn(
-      `[settings] best-effort secret delete failed for "${key}" — the ` +
+      `[settings] best-effort secret delete failed for "${key}" - the ` +
         `credential is now unreferenced but may linger in the keychain.`,
       err,
     );
@@ -712,8 +712,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     const rawLegacy = readRawLegacyBlob();
     const storeHasData = await storeHasAnyData();
 
-    // Replay ONLY into a genuinely empty Store. Once the Store holds ANY data —
-    // an interrupted migration's own writes, OR the user's later changes — the
+    // Replay ONLY into a genuinely empty Store. Once the Store holds ANY data - 
+    // an interrupted migration's own writes, OR the user's later changes - the
     // migration must NOT replay: a stale/partial legacy blob (or its env-default
     // gaps) would overwrite newer Store credentials with old/blank values. The
     // decision uses the RAW blob's mere presence, never env-merged secrets.
@@ -965,7 +965,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
  *
  * `redactCache` (default true) controls the localStorage bootstrap-cache sync.
  * The first-run migration passes `false` so the legacy plaintext blob is NOT
- * redacted as part of the write — the migration only redacts after the Store
+ * redacted as part of the write - the migration only redacts after the Store
  * write fully succeeds AND the init flag is durable, so a failed migration leaves
  * the plaintext legacy intact for a retry. */
 export async function saveSettingsToStore(
@@ -976,11 +976,11 @@ export async function saveSettingsToStore(
   const store = getStore();
   const secrets = getSecretStore();
 
-  // Collected WRITE failures — a fail-closed keychain credential write OR a
+  // Collected WRITE failures - a fail-closed keychain credential write OR a
   // genuine KV/DB write error (quota, corruption, aborted txn). Either way the
   // value wasn't persisted and the user must be told. We persist everything we
-  // can FIRST — so one failure never leaves the KV / debrid / indexer tables
-  // half-reconciled — then surface them at the very end. (Kept deliberately
+  // can FIRST - so one failure never leaves the KV / debrid / indexer tables
+  // half-reconciled - then surface them at the very end. (Kept deliberately
   // generic: this bucket mixes secret writes and plain setSetting writes, so the
   // surfaced error must not claim every failure was a "secret" write.)
   const writeFailures: unknown[] = [];
@@ -1144,8 +1144,8 @@ export async function saveSettingsToStore(
       // Write the secret BEFORE the marker'd row. If the keychain write fails
       // closed (desktop), skip the row so we never persist a config pointing at
       // a secret we couldn't store (load would surface an empty token). Any
-      // existing row for this id stays put — id is already in keptDebridIds, so
-      // the removal sweep below won't delete it — and we record the failure so
+      // existing row for this id stays put - id is already in keptDebridIds, so
+      // the removal sweep below won't delete it - and we record the failure so
       // the whole Save still completes and then reports it.
       await secrets.setSecret(debridSecretKey(id), entry.apiToken);
     } catch (err) {
@@ -1217,7 +1217,7 @@ export async function saveSettingsToStore(
   }
 
   // Keep the legacy localStorage blob in sync as a belt-and-suspenders cache so
-  // the synchronous bootstrap render has a recent snapshot before hydration —
+  // the synchronous bootstrap render has a recent snapshot before hydration - 
   // but REDACTED: secrets live only in the SecretStore/keychain, never plaintext
   // in localStorage (see redactSecrets). The first-run migration opts out
   // (redactCache:false) so it can keep the legacy plaintext until the migration
@@ -1229,7 +1229,7 @@ export async function saveSettingsToStore(
   // Everything that COULD be persisted now has been (KV + debrid + indexer tables
   // are fully reconciled and the localStorage cache is in sync). If any write
   // failed (a fail-closed keychain credential write, or a KV/DB error), surface
-  // it now so the caller can tell the user their change wasn't fully saved —
+  // it now so the caller can tell the user their change wasn't fully saved - 
   // without having lost the rest of the Save to a mid-flight abort. The message
   // stays generic because the bucket mixes secret and plain settings writes; the
   // wrapped `errors` carry each underlying cause for real diagnostics.
@@ -1292,7 +1292,7 @@ export interface AppServices {
 /** Module-level cache for the built DebridManager, keyed by a signature of the
  * debrid config (service types + tokens). The manager's identity must stay
  * stable across UNRELATED settings edits (e.g. the instant theme save) so that
- * useDebridLibrary's effect — which depends on `services.debrid` identity —
+ * useDebridLibrary's effect - which depends on `services.debrid` identity - 
  * doesn't re-fetch the whole account on every save. Only when the debrid config
  * actually changes do we rebuild. */
 let debridManagerCache: { signature: string; manager: DebridManager } | null =
@@ -1350,7 +1350,7 @@ function getOrBuildDebridManager(settings: AppSettings): DebridManager | null {
 }
 
 /** Build (or reuse the cached) IndexerManager for the current settings. Keeps a
- * stable identity while the indexer config is unchanged — so an unrelated
+ * stable identity while the indexer config is unchanged - so an unrelated
  * settings save (e.g. a theme change) does NOT churn the manager's identity and
  * make the stream picker re-run a full indexer search + cache-check. Mirrors
  * getOrBuildDebridManager. */
@@ -1372,7 +1372,7 @@ function getOrBuildIndexerManager(settings: AppSettings): IndexerManager {
 
 /** Real delay for the debrid retry/poll loops. The services default their
  *  `sleep` to a test no-op; in production we MUST pass a real timer or uncached
- *  transfers and 5xx-retry backoffs spin with zero wait — hammering the service
+ *  transfers and 5xx-retry backoffs spin with zero wait - hammering the service
  *  and failing/rate-limiting instead of waiting for the torrent to cache. */
 const realSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -1460,7 +1460,7 @@ function buildAIProvider(settings: AppSettings): AIAssistantProvider | null {
     return new OllamaProvider(endpoint, modelArg, appFetch);
   }
   // Everything else is an OpenAI-compatible host (OpenAI, Gemini, OpenRouter,
-  // Groq, Mistral, DeepSeek, xAI) — one provider class, different base URL.
+  // Groq, Mistral, DeepSeek, xAI) - one provider class, different base URL.
   const compat = OPENAI_COMPATIBLE[kind];
   if (compat == null || key.length === 0) return null;
   return new OpenAIProvider(key, modelArg, appFetch, {
@@ -1486,8 +1486,8 @@ export function buildServices(settings: AppSettings): AppServices {
 
   // Prefer the user's saved TMDB key; fall back to a build-time VITE_TMDB_KEY.
   // Driving `services.tmdb` (used by Search/Browse AND now Discover) from this
-  // single source means saving a key in Settings lights up every screen — not
-  // just Search/Browse — without a reload.
+  // single source means saving a key in Settings lights up every screen - not
+  // just Search/Browse - without a reload.
   const effectiveTmdbKey = tmdbKey.length > 0 ? tmdbKey : readEnvTmdbKey();
   const tmdb = getOrBuildTmdb(effectiveTmdbKey);
   // OMDb key precedence: the user's own key (BYOK) → a build-time embedded key
@@ -1501,7 +1501,7 @@ export function buildServices(settings: AppSettings): AppServices {
   // Debrid: priority order = insertion order (entry order in settings). The
   // manager is cached by config signature so its identity is stable across
   // unrelated settings edits (avoids re-fetching the whole account on, e.g., a
-  // theme save) — only rebuilt when the debrid config actually changes.
+  // theme save) - only rebuilt when the debrid config actually changes.
   const debrid = getOrBuildDebridManager(settings);
 
   // Cached by indexer-config signature so its identity stays stable across

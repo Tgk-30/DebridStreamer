@@ -1,4 +1,4 @@
-// Extra metadata tests — targets branches the main suite leaves uncovered:
+// Extra metadata tests - targets branches the main suite leaves uncovered:
 //  - getUpcomingEpisodes' OUTER catch (getSeasons itself rejects), distinct from
 //    the per-season inner catch already covered.
 //  - resolveImdbId's "no tmdb id derivable after getDetail fails" early-out.
@@ -27,7 +27,7 @@ function season(n: number): Season {
   return { id: n, seasonNumber: n, name: `S${n}`, episodeCount: 1, airDate: null };
 }
 
-describe("tmdbIdOf — non-numeric id branches", () => {
+describe("tmdbIdOf - non-numeric id branches", () => {
   it("returns null for a non-numeric tmdb- suffix (NaN guard)", () => {
     expect(tmdbIdOf({ id: "tmdb-abc", type: "movie", title: "" })).toBeNull();
   });
@@ -37,7 +37,7 @@ describe("tmdbIdOf — non-numeric id branches", () => {
   });
 });
 
-describe("resolveImdbId — external_ids returns no imdb id", () => {
+describe("resolveImdbId - external_ids returns no imdb id", () => {
   it("returns null when getExternalIds resolves with a null imdbId (?? null)", async () => {
     const tmdb = stubTMDB({
       getDetail: async () => ({ id: "tmdb-1", type: "series" }) as MediaItem,
@@ -47,7 +47,7 @@ describe("resolveImdbId — external_ids returns no imdb id", () => {
   });
 });
 
-describe("getUpcomingEpisodes — outer fault tolerance", () => {
+describe("getUpcomingEpisodes - outer fault tolerance", () => {
   it("returns [] when getSeasons rejects (outer catch)", async () => {
     const tmdb = stubTMDB({
       getSeasons: async () => {
@@ -111,7 +111,7 @@ describe("getUpcomingEpisodes — outer fault tolerance", () => {
   });
 });
 
-describe("getUpcomingEpisodesForSeries — guards", () => {
+describe("getUpcomingEpisodesForSeries - guards", () => {
   it("returns [] when no TMDB service is configured", async () => {
     expect(
       await getUpcomingEpisodesForSeries([previewSeries("tmdb-1", 1)], null, NOW),
@@ -138,7 +138,7 @@ describe("getUpcomingEpisodesForSeries — guards", () => {
   });
 });
 
-describe("resolveImdbId — unresolved tmdb id after detail failure", () => {
+describe("resolveImdbId - unresolved tmdb id after detail failure", () => {
   it("returns null when getDetail fails and no numeric tmdb id is derivable", async () => {
     const tmdb = stubTMDB({
       getDetail: async () => {

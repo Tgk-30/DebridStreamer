@@ -50,7 +50,7 @@ jobs:
           # architecture's libmpv (no lipo across two Homebrew installs). PIN the
           # runners (NOT `macos-latest` = macOS 26, whose SDK/codesign produces
           # "damaged" bundles): macos-15 = Apple Silicon, macos-15-intel = Intel
-          # (macos-13 was retired by GitHub in Dec 2025 — it queues forever).
+          # (macos-13 was retired by GitHub in Dec 2025 - it queues forever).
           # Both runners' Homebrew bottles carry minos 15.0; bundle-mpv-deps.sh's
           # vtool min-OS rewrite makes the bundles load on macOS 11+.
           - platform: macos-15
@@ -63,7 +63,7 @@ jobs:
             rust_target: x86_64-apple-darwin
             node_runtime: darwin-x64
             args: "--target x86_64-apple-darwin"
-          # ubuntu-24.04 for libmpv.so.2 (mpv 0.37) — the 2.x client API the
+          # ubuntu-24.04 for libmpv.so.2 (mpv 0.37) - the 2.x client API the
           # libmpv2 crate needs. The .deb targets 24.04+ (system libmpv2); the
           # AppImage self-contains libmpv.so.2 so it runs on ANY distro (incl.
           # older ones), so there's no loss of reach. rpm is dropped (unvalidated

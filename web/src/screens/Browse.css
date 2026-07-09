@@ -1,4 +1,4 @@
-/* Browse screen — overlay surface (mirrors Detail) with a paginated grid. */
+/* Browse screen - overlay surface (mirrors Detail) with a paginated grid. */
 
 .browse {
   position: fixed;
@@ -140,7 +140,7 @@
   justify-self: center;
 }
 
-/* Skeleton card — a shimmering redacted 2:3 poster block that matches the real
+/* Skeleton card - a shimmering redacted 2:3 poster block that matches the real
  * MediaCard footprint so the grid doesn't shift when page 1 resolves. Reuses the
  * global @keyframes shimmer (defined in components/MediaCard.css). */
 .browse-skel {

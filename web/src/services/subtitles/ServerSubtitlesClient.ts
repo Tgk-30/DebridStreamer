@@ -1,7 +1,7 @@
 // Server-Mode subtitle source. Structurally a SubtitleClient, but every call
 // goes to the self-hosted server, which holds the OpenSubtitles key and does the
 // search + download + SRT->VTT decode. The player (useSubtitleTracks) treats this
-// exactly like the local OpenSubtitlesClient — it gets back search rows and raw
+// exactly like the local OpenSubtitlesClient - it gets back search rows and raw
 // (VTT) subtitle text, and builds its <track> blob as usual.
 
 import { searchServerSubtitles, fetchServerSubtitle } from "../../lib/serverApi";

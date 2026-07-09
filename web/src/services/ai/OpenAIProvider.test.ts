@@ -51,7 +51,7 @@ function makeMockFetch(status: number, body: string): MockFetch {
   };
 }
 
-/** A fetch stub whose `text()` rejects — mirrors a network/stream read failure
+/** A fetch stub whose `text()` rejects - mirrors a network/stream read failure
  * after a non-2xx status, exercising the `.catch(() => "")` branch. */
 function makeThrowingTextFetch(status: number): MockFetch {
   let count = 0;
@@ -410,7 +410,7 @@ describe("OpenAIProvider.recommend malformed bodies", () => {
     });
   });
 
-  it("does NOT throw for empty-string content — it parses to zero recommendations", async () => {
+  it("does NOT throw for empty-string content - it parses to zero recommendations", async () => {
     // "" is not null, so the content null-guard passes and the JSON parser runs
     // on an empty string, which yields no recommendations.
     const mock = makeMockFetch(200, okBody(""));

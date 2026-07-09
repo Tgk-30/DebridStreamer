@@ -1,4 +1,4 @@
-/* Continue Watching — wide 16:9 banner cards with a centered play button. */
+/* Continue Watching - wide 16:9 banner cards with a centered play button. */
 
 .cw-rail {
   display: flex;
@@ -83,7 +83,7 @@
   );
 }
 
-/* Centered play button — the card's signature affordance. */
+/* Centered play button - the card's signature affordance. */
 .cw-card-play {
   position: absolute;
   top: 50%;

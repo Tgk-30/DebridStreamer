@@ -1,4 +1,4 @@
-/* DetailHero — cinematic backdrop + poster + meta + actions. */
+/* DetailHero - cinematic backdrop + poster + meta + actions. */
 
 .detail-hero {
   position: relative;
@@ -198,7 +198,7 @@
   cursor: default;
 }
 
-/* Thumbs up / down — a subtle segmented glass control feeding the taste profile. */
+/* Thumbs up / down - a subtle segmented glass control feeding the taste profile. */
 .detail-taste {
   display: inline-flex;
   align-items: stretch;

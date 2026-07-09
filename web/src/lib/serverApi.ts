@@ -48,7 +48,7 @@ async function serverRequest<T>(
     try {
       parsed = JSON.parse(text) as JsonObject;
     } catch {
-      // Non-JSON body (e.g. an HTML 5xx page from a reverse proxy) — fall back to
+      // Non-JSON body (e.g. an HTML 5xx page from a reverse proxy) - fall back to
       // a status-based message rather than throwing a misleading parse error.
       parsed = {};
     }
@@ -80,7 +80,7 @@ export async function fetchServerStreams(input: {
   season?: number | null;
   episode?: number | null;
   /** Human title for the server's name-matching indexer pass (APIBay etc.),
-   *  which an imdb id alone can't reach. Optional — older servers ignore the
+   *  which an imdb id alone can't reach. Optional - older servers ignore the
    *  extra query param and fall back to the imdb-only search. */
   title?: string | null;
 }): Promise<{
@@ -114,7 +114,7 @@ export async function resolveServerStream(
   opts: {
     transcode?: boolean;
     media?: { id: string; type: MediaType };
-    /** Episode context (series) — steers season-pack file selection on the
+    /** Episode context (series) - steers season-pack file selection on the
      *  server. Omitted for movies / older servers (unknown fields ignored). */
     fileHint?: { season: number; episode: number } | null;
   } = {},
@@ -137,7 +137,7 @@ export async function resolveServerStream(
   );
   // When transcoding is requested, point the player at the session's HLS manifest
   // variant of the same playback URL. VideoPlayer sniffs the ".m3u8" suffix and
-  // plays it via hls.js — so no player change is needed.
+  // plays it via hls.js - so no player change is needed.
   const path = opts.transcode
     ? `${response.stream.streamURL}/index.m3u8`
     : response.stream.streamURL;
@@ -320,7 +320,7 @@ export async function createAccountProfile(input: {
   return serverRequest("POST", "/api/account/profiles", {
     displayName: input.displayName,
     avatarColor: input.avatarColor ?? null,
-    // Only send a password when one was actually entered — the server treats it
+    // Only send a password when one was actually entered - the server treats it
     // as optional for household viewer profiles.
     ...(input.password != null && input.password.length > 0
       ? { password: input.password }
@@ -342,7 +342,7 @@ export async function deleteAccountProfile(
   return serverRequest("DELETE", `/api/account/profiles/${encodeURIComponent(id)}`);
 }
 
-/** Owner/admin only. Sets kid mode + maturity cap together — the server rejects a
+/** Owner/admin only. Sets kid mode + maturity cap together - the server rejects a
  *  half-state (kid without a cap, or a cap without kid mode) with a 400. */
 export async function setProfileMaturity(
   id: string,
@@ -484,7 +484,7 @@ export async function fetchServerEpisodes(input: {
 
 /** Fetch OMDb ratings for an IMDb id via the server "hidden key" proxy. The
  *  server holds the key (profile / server / env) and returns only the parsed
- *  ratings — the key never reaches the client. Returns null when the server has
+ *  ratings - the key never reaches the client. Returns null when the server has
  *  no OMDb key for this profile. */
 export async function fetchServerOmdb(imdbId: string): Promise<OMDBRatings | null> {
   const res = await serverRequest<{ ratings: OMDBRatings | null }>(
@@ -515,7 +515,7 @@ export type ServerCredentialProvider =
   | "opensubtitles"
   | "trakt";
 
-/** Save (or overwrite) a SHARED server credential — same PUT the Server tab's
+/** Save (or overwrite) a SHARED server credential - same PUT the Server tab's
  *  "Save shared credential" button uses. Owner/admin only on the server. */
 export async function saveServerSharedCredential(input: {
   provider: ServerCredentialProvider;
@@ -534,7 +534,7 @@ export interface ServerInviteResult {
   invite: { id: string };
 }
 
-/** Create a household invite — same POST the Server tab's invite form uses. The
+/** Create a household invite - same POST the Server tab's invite form uses. The
  *  caller builds the shareable URL from the returned token. */
 export async function createServerInvite(input: {
   label?: string;

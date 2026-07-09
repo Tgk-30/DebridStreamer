@@ -73,7 +73,7 @@ struct AIAssistantView: View {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                     Text("Quick Prompts")
                         .font(.headline)
-                    // Even-width chips in a fixed 2-column grid — fills each cell so
+                    // Even-width chips in a fixed 2-column grid - fills each cell so
                     // widths are uniform instead of ragged text-sized capsules (L9).
                     LazyVGrid(
                         columns: [

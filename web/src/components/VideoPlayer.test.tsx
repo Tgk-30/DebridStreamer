@@ -35,7 +35,7 @@ vi.mock("hls.js", () => {
   return { default: FakeHls };
 });
 
-// Tauri bridge — start in the browser (not under Tauri) by default; individual
+// Tauri bridge - start in the browser (not under Tauri) by default; individual
 // tests flip isTauri.
 const isTauriMock = vi.fn(() => false);
 const playWithMpvMock = vi.fn(async (_url: string) => ({
@@ -51,7 +51,7 @@ vi.mock("../lib/tauri", () => ({
   mpvStop: () => mpvStopMock(),
 }));
 
-// Platform — the in-window player is macOS-gated; report mac so the built-in
+// Platform - the in-window player is macOS-gated; report mac so the built-in
 // player tests exercise it (external-handoff tests pass useBuiltInPlayer=false).
 const deviceKindMock = vi.fn<() => string>(() => "mac");
 vi.mock("../lib/platform", async (orig) => ({
@@ -59,13 +59,13 @@ vi.mock("../lib/platform", async (orig) => ({
   deviceKind: () => deviceKindMock(),
 }));
 
-// AppStore — VideoPlayer doesn't read it directly, but its captions menu does;
+// AppStore - VideoPlayer doesn't read it directly, but its captions menu does;
 // stub it so nothing transitively touches a real store.
 vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({}),
 }));
 
-// Subtitle hook — return a controllable shape; default = no tracks.
+// Subtitle hook - return a controllable shape; default = no tracks.
 const subsState: {
   tracks: Array<{
     id: string;
@@ -95,7 +95,7 @@ vi.mock("./player/useSubtitleTracks", () => ({
   }),
 }));
 
-// Scrub thumbnails — no hidden capture video.
+// Scrub thumbnails - no hidden capture video.
 vi.mock("./player/useScrubThumbnails", () => ({
   useScrubThumbnails: () => ({
     preview: null,
@@ -105,7 +105,7 @@ vi.mock("./player/useScrubThumbnails", () => ({
   }),
 }));
 
-// Child components we don't drive directly — render identifiable stubs.
+// Child components we don't drive directly - render identifiable stubs.
 vi.mock("./player/ScrubBar", () => ({
   ScrubBar: () => <div data-testid="scrub-bar" />,
 }));
@@ -122,7 +122,7 @@ vi.mock("./Icon", () => ({
   Icon: ({ name }: { name: string }) => <span data-icon={name} />,
 }));
 
-// Built-in libmpv player — a native surface that can't render in jsdom, so stub
+// Built-in libmpv player - a native surface that can't render in jsdom, so stub
 // it. These tests only assert WHICH path VideoPlayer chooses (embedded vs the
 // external hand-off), not the player internals (covered by its own concerns).
 vi.mock("./EmbeddedPlayer", () => ({
@@ -271,7 +271,7 @@ describe("WebviewPlayer", () => {
   });
 
   // Cross-device resume seeking. The interesting case is HLS, where `duration`
-  // is NaN at loadedmetadata and only becomes known on a later durationchange —
+  // is NaN at loadedmetadata and only becomes known on a later durationchange - 
   // the seek must be retried then rather than silently dropped.
   function instrumentVideo(video: HTMLVideoElement, duration: number) {
     let dur = duration;

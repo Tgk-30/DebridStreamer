@@ -198,7 +198,7 @@ describe("ServerSetupWizard", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create invite" })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Skip — I'll invite people later/ }),
+      screen.getByRole("button", { name: /Skip - I'll invite people later/ }),
     ).toBeInTheDocument();
   });
 
@@ -276,7 +276,7 @@ describe("ServerSetupWizard", () => {
     render(<ServerSetupWizard onDone={() => {}} />);
     await gotoInvite(user);
     await user.click(
-      screen.getByRole("button", { name: /Skip — I'll invite people later/ }),
+      screen.getByRole("button", { name: /Skip - I'll invite people later/ }),
     );
     expect(screen.getByText("You're all set")).toBeInTheDocument();
   });
@@ -297,7 +297,7 @@ describe("ServerSetupWizard", () => {
     render(<ServerSetupWizard onDone={onDone} />);
     await gotoInvite(user);
     await user.click(
-      screen.getByRole("button", { name: /Skip — I'll invite people later/ }),
+      screen.getByRole("button", { name: /Skip - I'll invite people later/ }),
     );
     // On the final step there is no Skip-setup affordance.
     expect(screen.queryByRole("button", { name: "Skip setup" })).toBeNull();

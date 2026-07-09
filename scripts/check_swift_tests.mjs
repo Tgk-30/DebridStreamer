@@ -12,7 +12,7 @@ const debugProducts = join(scratch, "out", "Products", "Debug");
 const packageFrameworks = join(debugProducts, "PackageFrameworks");
 const vlcFramework = join(debugProducts, "VLCKit.framework");
 const vlcFrameworkLink = join(packageFrameworks, "VLCKit.framework");
-// The vendored macOS slice of the VLCKit xcframework — used as a fallback when
+// The vendored macOS slice of the VLCKit xcframework - used as a fallback when
 // SwiftPM doesn't copy the binary framework into Products/Debug (its placement
 // of binary targets varies by Xcode/SwiftPM version).
 const vendorVlcFramework = join(
@@ -61,7 +61,7 @@ if (build.status !== 0) {
 }
 
 if (!existsSync(vlcFramework)) {
-  // SwiftPM didn't place the binary framework in Products/Debug — fall back to
+  // SwiftPM didn't place the binary framework in Products/Debug - fall back to
   // the vendored xcframework slice so the test runtime can load VLCKit.
   if (!existsSync(vendorVlcFramework)) {
     fail(

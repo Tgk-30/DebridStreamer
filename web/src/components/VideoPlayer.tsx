@@ -2,9 +2,9 @@
 //
 // Two-backend playback (the plan proven by poc-tauri):
 //   1. In-webview <video> for HLS (.m3u8, via hls.js when the browser lacks
-//      native HLS) and progressive MP4/WebM — the browser path.
+//      native HLS) and progressive MP4/WebM - the browser path.
 //   2. Desktop hand-off to a native player (VLC/mpv/IINA) for containers/codecs
-//      the webview can't decode (MKV / HEVC) — only when running under Tauri,
+//      the webview can't decode (MKV / HEVC) - only when running under Tauri,
 //      via the `open_in_external_player` Rust command. In a plain browser this
 //      path shows an "open externally" note instead.
 //
@@ -47,15 +47,15 @@ interface VideoPlayerProps {
     prefs?: PlaybackPrefs,
   ) => void;
   /** Resume position (seconds) from the saved watch history. The in-webview
-   * player seeks here once, on first metadata load — making cross-device resume
+   * player seeks here once, on first metadata load - making cross-device resume
    * actually pick up where you left off. 0/undefined starts from the beginning. */
   startPositionSeconds?: number;
   /** Remembered audio/subtitle/speed for this title (in-window player only). */
   savedPrefs?: PlaybackPrefs | null;
   /** Subtitle source (local OpenSubtitles client or the Server-Mode client) when
-   * available — powers subtitle search. Null disables the search UI. */
+   * available - powers subtitle search. Null disables the search UI. */
   subtitleClient?: SubtitleClient | null;
-  /** Subtitle translator (local or Server-Mode) when available — powers subtitle
+  /** Subtitle translator (local or Server-Mode) when available - powers subtitle
    * translation. Null hides the translate action. */
   translator?: Translator | null;
   /** Auto-seed context for the captions search. */
@@ -67,7 +67,7 @@ interface VideoPlayerProps {
   upNext?: { label: string } | null;
   /** Play the next episode (the card's action + the countdown target). */
   onPlayNext?: () => void;
-  /** Whether the card auto-plays after a countdown (false under Data Saver —
+  /** Whether the card auto-plays after a countdown (false under Data Saver - 
    *  nothing plays without a click). */
   autoCountdown?: boolean;
   /** Chosen external player name (Settings). Passed to the VLC/IINA/mpv hand-off
@@ -81,7 +81,7 @@ interface VideoPlayerProps {
 }
 
 /** Toggle fullscreen on an element, defensively (the APIs are absent in jsdom
- * and on some webviews — the optional calls then no-op rather than throw). */
+ * and on some webviews - the optional calls then no-op rather than throw). */
 function toggleFullscreen(el: HTMLElement): void {
   const d = document as Document & { webkitFullscreenElement?: Element | null };
   const active = document.fullscreenElement ?? d.webkitFullscreenElement ?? null;
@@ -106,7 +106,7 @@ function shouldIgnoreShortcut(
     tag === "INPUT" ||
     tag === "TEXTAREA" ||
     tag === "SELECT" ||
-    // A focused button/link owns Space/Enter — don't hijack it for play/pause.
+    // A focused button/link owns Space/Enter - don't hijack it for play/pause.
     tag === "BUTTON" ||
     tag === "A" ||
     el.isContentEditable
@@ -179,7 +179,7 @@ export function VideoPlayer({
   // Primary path is the BUNDLED mpv sidecar (shipped + app-controlled over IPC);
   // if mpv isn't available we fall back to the raw VLC/IINA hand-off. On macOS
   // mpv's `--wid` in-window embedding is unreliable, so mpv typically opens its
-  // own window — see src-tauri/src/player.rs. mpv is stopped when this closes.
+  // own window - see src-tauri/src/player.rs. mpv is stopped when this closes.
   const startedMpvRef = useRef(false);
   useEffect(() => {
     if (mode !== "external" || !underTauri || useEmbedded) return;
@@ -197,7 +197,7 @@ export function VideoPlayer({
         );
       })
       .catch(() => {
-        // mpv missing / failed to spawn — fall back to the VLC/IINA hand-off.
+        // mpv missing / failed to spawn - fall back to the VLC/IINA hand-off.
         if (cancelled) return;
         openInExternalPlayer(url, preferredPlayer)
           .then((status) => {
@@ -220,7 +220,7 @@ export function VideoPlayer({
   }, [mode, underTauri, url, preferredPlayer, useEmbedded]);
 
   // In-window native player takes over the whole window (transparent surface +
-  // hidden app chrome), so render it standalone — outside the modal frame.
+  // hidden app chrome), so render it standalone - outside the modal frame.
   if (useEmbedded) {
     const epLabel =
       season != null && episode != null
@@ -329,7 +329,7 @@ function WebviewPlayer({
   const [duration, setDuration] = useState(0);
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  // Set when the video reaches its natural end — drives the Up-next card.
+  // Set when the video reaches its natural end - drives the Up-next card.
   const [ended, setEnded] = useState(false);
 
   const subs = useSubtitleTracks(subtitleClient, translator);
@@ -349,7 +349,7 @@ function WebviewPlayer({
   // Stable ref for the HLS-unsupported callback so the source-attach effect does
   // NOT list a fresh inline arrow in its deps. Detail re-renders every ~5s (the
   // progress → recordResume → refreshHistory loop), and a changing callback
-  // identity would otherwise re-run that effect and reload video.src — restarting
+  // identity would otherwise re-run that effect and reload video.src - restarting
   // playback from 0 every few seconds.
   const onHlsUnsupportedRef = useRef(onHlsUnsupported);
   onHlsUnsupportedRef.current = onHlsUnsupported;
@@ -379,7 +379,7 @@ function WebviewPlayer({
     // meaningful offset and not basically at the end (so a finished item still
     // starts fresh). HLS reports `duration` AFTER loadedmetadata, so when the
     // duration isn't known yet we wait and let the durationchange handler retry
-    // — seeking into an unknown/zero seekable range just gets clamped to 0 and,
+    // - seeking into an unknown/zero seekable range just gets clamped to 0 and,
     // since we'd have marked it done, would never resume.
     const applyResume = () => {
       if (didSeekRef.current) return;
@@ -389,14 +389,14 @@ function WebviewPlayer({
         return;
       }
       const d = Number.isFinite(video.duration) ? video.duration : 0;
-      if (d <= 0) return; // duration unknown yet (HLS) — retry on durationchange
+      if (d <= 0) return; // duration unknown yet (HLS) - retry on durationchange
       if (start >= d - 10) {
-        didSeekRef.current = true; // basically finished — don't resume
+        didSeekRef.current = true; // basically finished - don't resume
         return;
       }
       try {
         video.currentTime = start;
-        // Only mark the resume done once the seek was accepted — if the element
+        // Only mark the resume done once the seek was accepted - if the element
         // rejects an early seek we leave the guard unset so a later canplay /
         // durationchange retries instead of silently dropping the resume.
         didSeekRef.current = true;
@@ -413,7 +413,7 @@ function WebviewPlayer({
       applyResume();
     };
     const onEnded = () => setEnded(true);
-    setEnded(false); // a new URL is a new playback — clear any stale end state
+    setEnded(false); // a new URL is a new playback - clear any stale end state
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMeta);
     video.addEventListener("durationchange", onDurationChange);
@@ -435,7 +435,7 @@ function WebviewPlayer({
     if (video == null) return;
 
     if (!isHls) {
-      // Only (re)assign on an actual URL change — reassigning the same src
+      // Only (re)assign on an actual URL change - reassigning the same src
       // invokes the media load algorithm and restarts playback from 0.
       if (video.src !== url) video.src = url;
       return;
@@ -466,7 +466,7 @@ function WebviewPlayer({
       const tt = list[i];
       if (tt.kind !== "subtitles") continue;
       const match = subs.tracks.find((t) => t.label === tt.label);
-      if (match == null) continue; // not one of ours (hls.js-injected) — leave it
+      if (match == null) continue; // not one of ours (hls.js-injected) - leave it
       tt.mode = match.id === subs.activeTrackId ? "showing" : "hidden";
     }
   }, [subs.tracks, subs.activeTrackId]);
@@ -650,7 +650,7 @@ function WebviewPlayer({
 }
 
 /** A small, dismissible reference for the player keyboard shortcuts. Surfaced
- * by the "?" key or the "?" OSD button — invisible otherwise. */
+ * by the "?" key or the "?" OSD button - invisible otherwise. */
 const SHORTCUTS: Array<[string, string]> = [
   ["Space / K", "Play / pause"],
   ["← / →", "Back / forward 5s"],
@@ -678,7 +678,7 @@ function UpNextOverlay({
   const [dismissed, setDismissed] = useState(false);
   const [remaining, setRemaining] = useState(10);
   // The countdown fires through a ref so re-renders during the countdown
-  // (polls, seasons landing) always reach the LATEST handler — an interval
+  // (polls, seasons landing) always reach the LATEST handler - an interval
   // closure would capture a stale one.
   const onPlayNextRef = useRef(onPlayNext);
   onPlayNextRef.current = onPlayNext;
@@ -694,7 +694,7 @@ function UpNextOverlay({
         return r - 1;
       });
     }, 1000);
-    // Cleared on unmount AND on the dismiss re-run — no timer leak, and a
+    // Cleared on unmount AND on the dismiss re-run - no timer leak, and a
     // dismissed card can never fire.
     return () => clearInterval(timer);
   }, [auto, dismissed]);

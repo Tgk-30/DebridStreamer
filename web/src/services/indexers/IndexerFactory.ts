@@ -22,7 +22,7 @@ import { YTSIndexer } from "./YTSIndexer";
 /** Torrentio's public endpoint, shipped as a built-in. It's a Stremio addon that
  * aggregates dozens of trackers (YTS, EZTV, RARBG mirrors, 1337x, ThePirateBay,
  * TorrentGalaxy, Nyaa, …) behind one IMDb-keyed API, so it returns far more (and
- * higher-quality) sources than the individual built-ins alone — the bare
+ * higher-quality) sources than the individual built-ins alone - the bare
  * endpoint uses its default broad provider set + quality/seeder sort. It's
  * IMDb-native (no free-text search), so it strengthens the imdb pass in both
  * Local and Server Mode and stays kid-safe (imdb-exact, bindable by the play
@@ -43,7 +43,7 @@ export const IndexerFactory = {
     const builtInConfig = configs.find((c) => c.type === "built_in");
     const builtInEnabled = builtInConfig?.isActive ?? true;
     if (builtInEnabled) {
-      // Torrentio first — the broadest, best-seeded source. APIBay/YTS/EZTV stay
+      // Torrentio first - the broadest, best-seeded source. APIBay/YTS/EZTV stay
       // as fallbacks and, for APIBay, the name-search that feeds the title pass
       // (Torrentio resolves by IMDb id only). Cross-source dupes collapse by
       // infoHash downstream, so the overlap costs nothing.

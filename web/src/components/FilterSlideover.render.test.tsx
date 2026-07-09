@@ -155,7 +155,7 @@ describe("FilterSlideover", () => {
   it("switching the media type clears selected genres in the payload", async () => {
     const user = userEvent.setup();
     const { onApply } = setup({ type: "movie" });
-    // Select a genre, then switch type — genres invalidate.
+    // Select a genre, then switch type - genres invalidate.
     await user.click(screen.getByRole("button", { name: "Action" }));
     await user.click(screen.getByRole("button", { name: "TV" }));
     await user.click(screen.getByRole("button", { name: "Apply filters" }));

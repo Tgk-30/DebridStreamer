@@ -23,7 +23,7 @@ actor APIBayIndexer: TorrentIndexer {
     }
 
     func search(imdbId: String, type: MediaType, season: Int?, episode: Int?) async throws -> [TorrentResult] {
-        // APIBay search endpoint — use IMDB ID as query
+        // APIBay search endpoint - use IMDB ID as query
         let cat = type == .movie ? Category.hdMovies.rawValue : Category.hdTV.rawValue
         let url = URL(string: "\(baseURL)/q.php?q=\(imdbId)&cat=\(cat)")!
 

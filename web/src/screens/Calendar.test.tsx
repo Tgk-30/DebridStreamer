@@ -72,7 +72,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("Calendar — non-loaded states", () => {
+describe("Calendar - non-loaded states", () => {
   it("renders the skeleton groups while loading", () => {
     calendarState = baseState({ loading: true });
     const { container } = render(<Calendar />);
@@ -114,7 +114,7 @@ describe("Calendar — non-loaded states", () => {
   });
 });
 
-describe("Calendar — loaded agenda", () => {
+describe("Calendar - loaded agenda", () => {
   it("renders grouped rows with code + air date and opens detail on click", async () => {
     const show = series("s1", "Severance", "/poster.jpg");
     calendarState = baseState({

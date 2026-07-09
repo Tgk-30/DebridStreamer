@@ -1,4 +1,4 @@
-// CommandPalette — a ⌘K / Ctrl+K quick switcher. It is hidden until invoked, so
+// CommandPalette - a ⌘K / Ctrl+K quick switcher. It is hidden until invoked, so
 // it adds power-user navigation speed across this feature-rich app (9 screens +
 // settings + themes) without adding any always-on UI. Composes existing store
 // actions only (navigate / search / theme), so there is no new state to maintain.

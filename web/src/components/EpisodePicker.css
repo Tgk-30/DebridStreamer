@@ -1,4 +1,4 @@
-/* EpisodePicker — season chips + episode list on a series' Detail screen. */
+/* EpisodePicker - season chips + episode list on a series' Detail screen. */
 
 .episode-picker {
   border-radius: var(--r-lg);
@@ -35,7 +35,7 @@
   color: var(--text-primary);
 }
 
-/* Compact season dropdown — shown when a show has many seasons so the head
+/* Compact season dropdown - shown when a show has many seasons so the head
    doesn't wrap into a huge chip block. */
 .episode-season-select {
   position: relative;
@@ -69,7 +69,7 @@
   outline-offset: 2px;
   border-radius: 6px;
 }
-/* Native option menu is OS-rendered (light) — keep its text legible there. */
+/* Native option menu is OS-rendered (light) - keep its text legible there. */
 .episode-season-select-input option {
   color: #12141f;
 }
@@ -106,7 +106,7 @@
   opacity: 0.72;
 }
 
-/* Mark-watched toggle — floats over the row's top-right corner. */
+/* Mark-watched toggle - floats over the row's top-right corner. */
 .episode-watched-btn {
   position: absolute;
   top: 10px;

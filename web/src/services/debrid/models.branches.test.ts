@@ -36,7 +36,7 @@ import {
 // debrid/models.ts
 // ============================================================================
 
-describe("VideoQuality.sortOrder (debrid) — full tier ladder", () => {
+describe("VideoQuality.sortOrder (debrid) - full tier ladder", () => {
   it("maps every quality tier to its weight", () => {
     expect(VideoQuality.sortOrder("4K")).toBe(5);
     expect(VideoQuality.sortOrder("1080p")).toBe(4);
@@ -179,7 +179,7 @@ describe("makeDebridConfig defaults", () => {
   });
 });
 
-describe("DebridFileSelector — codec & container scoring tiers", () => {
+describe("DebridFileSelector - codec & container scoring tiers", () => {
   function f(
     fileName: string,
     sizeBytes: number,
@@ -285,7 +285,7 @@ describe("DebridFileSelector — codec & container scoring tiers", () => {
 // indexers/models.ts
 // ============================================================================
 
-describe("VideoQuality.sortOrder (indexers) — full tier ladder", () => {
+describe("VideoQuality.sortOrder (indexers) - full tier ladder", () => {
   it("maps every quality tier to its weight", () => {
     expect(IdxVideoQuality.sortOrder("4K")).toBe(5);
     expect(IdxVideoQuality.sortOrder("1080p")).toBe(4);
@@ -296,7 +296,7 @@ describe("VideoQuality.sortOrder (indexers) — full tier ladder", () => {
   });
 });
 
-describe("indexers enum parsers — remaining branches", () => {
+describe("indexers enum parsers - remaining branches", () => {
   it("VideoQuality.parse covers 1080i, 480p and the SD-token fallback", () => {
     expect(IdxVideoQuality.parse("Film.1080i.mkv")).toBe("1080p");
     expect(IdxVideoQuality.parse("Film.480p.mkv")).toBe("480p");

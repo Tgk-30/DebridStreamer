@@ -2,7 +2,7 @@
 // one of four paths, or lets them skip past an honest warning. The "device"
 // path is a FORCED key-collection flow: the app can't search properly without
 // a TMDB key and can't play anything without a debrid token, so both are
-// collected (with live validation) before the wizard completes — each with an
+// collected (with live validation) before the wizard completes - each with an
 // explicit, honest escape rather than a silent skip. Mounted by FirstRunHost
 // (see App.tsx) when isFirstRun() is true.
 
@@ -38,7 +38,7 @@ const PERSONAS: Persona[] = [
   {
     id: "device",
     title: "Just watch on this device",
-    copy: "A quick two-step setup — a catalog key and your debrid service — and you're streaming. No account needed.",
+    copy: "A quick two-step setup - a catalog key and your debrid service - and you're streaming. No account needed.",
     icon: "play",
     badge: "Most popular",
   },
@@ -57,7 +57,7 @@ const PERSONAS: Persona[] = [
   {
     id: "advanced",
     title: "Advanced setup",
-    copy: "Skip the wizard and open full settings — every provider, source, and dial.",
+    copy: "Skip the wizard and open full settings - every provider, source, and dial.",
     icon: "sliders",
   },
 ];
@@ -91,7 +91,7 @@ export function FirstRunWizard({
 }: {
   onDone: () => void;
   /** Mandatory mode: the launch found no catalog key or no debrid token, so
-   *  skipping and the keyless escapes are hidden — the wizard only closes by
+   *  skipping and the keyless escapes are hidden - the wizard only closes by
    *  actually configuring the app (or picking the server paths, which supply
    *  keys from a server). */
   forced?: boolean;
@@ -115,7 +115,7 @@ export function FirstRunWizard({
   // the built-in-catalog escape (an existing key is never clobbered).
   const [collectedCatalog, setCollectedCatalog] = useState<CatalogKey | null>(null);
   // Which persona the key steps will exit into. In forced mode the advanced and
-  // host paths route THROUGH catalog+streaming first — otherwise they'd close
+  // host paths route THROUGH catalog+streaming first - otherwise they'd close
   // the mandatory wizard keyless and every next launch would re-trap the user.
   const [exitPersona, setExitPersona] = useState<"device" | "advanced" | "host">(
     "device",
@@ -163,7 +163,7 @@ export function FirstRunWizard({
     }
     updateSettings(next);
     await markOnboardingComplete();
-    // Advanced and host asked for Settings — land them there once keys are in.
+    // Advanced and host asked for Settings - land them there once keys are in.
     if (exitPersona !== "device") navigate("settings");
     onDone();
   }
@@ -174,7 +174,7 @@ export function FirstRunWizard({
       return setStep("catalog");
     }
     if (id === "advanced") {
-      // Forced: keys first, then the full settings they asked for — a keyless
+      // Forced: keys first, then the full settings they asked for - a keyless
       // finish would just re-trap them on the next launch.
       if (forced) {
         setExitPersona("advanced");
@@ -199,7 +199,7 @@ export function FirstRunWizard({
       <HostStep
         onBack={() => setStep("choose")}
         onContinue={() => {
-          // Forced: collect this device's keys before the hosting hand-off —
+          // Forced: collect this device's keys before the hosting hand-off - 
           // hosting setup lives in Settings, but the local client must not
           // leave the mandatory wizard unusable.
           if (forced) {
@@ -233,7 +233,7 @@ export function FirstRunWizard({
         forced={forced}
         onBack={() => setStep("catalog")}
         onDone={(entry) => {
-          // The debrid choice is made — offer the optional AI step before the
+          // The debrid choice is made - offer the optional AI step before the
           // single final settings write.
           setCollectedDebrid(entry);
           setStep("ai");
@@ -269,8 +269,8 @@ export function FirstRunWizard({
         <h1 className="first-run-title">How do you want to use DebridStreamer?</h1>
         <p className="first-run-sub">
           {forced
-            ? "The app needs its keys before it can search or stream — pick a path to set them up."
-            : "Pick one to get started — you can change anything later in Settings."}
+            ? "The app needs its keys before it can search or stream - pick a path to set them up."
+            : "Pick one to get started - you can change anything later in Settings."}
         </p>
         <div className="first-run-choices">
           {PERSONAS.map((p) => (
@@ -335,9 +335,9 @@ function DeviceProgress({ active }: { active: 1 | 2 }) {
   );
 }
 
-/** Device step 1 — the catalog keys. TMDB is the primary key (it alone
+/** Device step 1 - the catalog keys. TMDB is the primary key (it alone
  *  provides posters, backdrops/banners, search, and the episode guide). OMDb
- *  is an OPTIONAL companion for IMDb / Rotten Tomatoes ratings — worth adding
+ *  is an OPTIONAL companion for IMDb / Rotten Tomatoes ratings - worth adding
  *  if you have an OMDb Patreon (premium) plan, though TMDB still supplies the
  *  artwork either way. Both fields are validated live; only the ones you fill
  *  are checked, and at least one catalog key is required to continue (the
@@ -370,7 +370,7 @@ function CatalogStep({
     const o = omdb.trim();
     if (t.length === 0 && o.length === 0) {
       setError(
-        "Add a catalog key to continue — TMDB (free) powers browsing, artwork & banners; OMDb adds richer ratings. Either one unlocks the app.",
+        "Add a catalog key to continue - TMDB (free) powers browsing, artwork & banners; OMDb adds richer ratings. Either one unlocks the app.",
       );
       return;
     }
@@ -384,8 +384,8 @@ function CatalogStep({
       if (result !== "ok") {
         setError(
           result === "unauthorized"
-            ? "TMDB rejected that key — double-check it (use the v3 API key)."
-            : "Couldn't reach TMDB — check your connection and try again.",
+            ? "TMDB rejected that key - double-check it (use the v3 API key)."
+            : "Couldn't reach TMDB - check your connection and try again.",
         );
         setBusy(false);
         return;
@@ -397,8 +397,8 @@ function CatalogStep({
       if (result !== "ok") {
         setError(
           result === "unauthorized"
-            ? "OMDb rejected that key — double-check it (free keys need the activation link OMDb emails you)."
-            : "Couldn't reach OMDb — check your connection and try again.",
+            ? "OMDb rejected that key - double-check it (free keys need the activation link OMDb emails you)."
+            : "Couldn't reach OMDb - check your connection and try again.",
         );
         setBusy(false);
         return;
@@ -416,7 +416,7 @@ function CatalogStep({
         <p className="first-run-sub">
           Add a <b>TMDB</b> key for browsing, artwork &amp; banners, an <b>OMDb</b>{" "}
           key for richer IMDb / Rotten Tomatoes ratings, or both. Either one is
-          enough to get started — both are free.
+          enough to get started - both are free.
         </p>
         <form className="first-run-form" onSubmit={submit}>
           <label className="first-run-field">
@@ -461,7 +461,7 @@ function CatalogStep({
             <input
               value={omdb}
               onChange={(e) => setOmdb(e.target.value)}
-              placeholder="OMDb key — for IMDb & Rotten Tomatoes ratings"
+              placeholder="OMDb key - for IMDb & Rotten Tomatoes ratings"
               autoComplete="off"
               spellCheck={false}
             />
@@ -491,7 +491,7 @@ function CatalogStep({
           <p className="first-run-hint">
             OMDb adds IMDb &amp; Rotten Tomatoes ratings. The free tier (1,000
             lookups/day) suits most homes; an OMDb Patreon plan raises the limit
-            and is the richer ratings source — TMDB still supplies the artwork
+            and is the richer ratings source - TMDB still supplies the artwork
             and banners either way.
           </p>
 
@@ -515,7 +515,7 @@ function CatalogStep({
             className="first-run-escape"
             onClick={() => onNext(null)}
           >
-            Continue with the built-in catalog (limited — no search artwork, no
+            Continue with the built-in catalog (limited - no search artwork, no
             episode guide)
           </button>
         )}
@@ -527,7 +527,7 @@ function CatalogStep({
   );
 }
 
-/** Device step 2 — the streaming token. Passes with a verified debrid token,
+/** Device step 2 - the streaming token. Passes with a verified debrid token,
  *  an explicit save-without-testing (debrid hosts are CORS-blocked in plain
  *  browsers, so a valid token can fail the live check), or the honest
  *  add-later escape. */
@@ -554,7 +554,7 @@ function StreamingStep({
   const signup = signupUrl(DEBRID_SIGNUP_ID[service] ?? "");
   const setupVideo = setupVideoUrl(DEBRID_SIGNUP_ID[service] ?? "");
 
-  // A failed check only vouches for the exact service+token it ran against —
+  // A failed check only vouches for the exact service+token it ran against - 
   // any edit hides the save-without-testing hatch until the user tests again.
   function changeService(next: DebridServiceType) {
     setService(next);
@@ -573,7 +573,7 @@ function StreamingStep({
     if (trimmed.length === 0) {
       setError(
         forced
-          ? "Paste your API token — nothing can play without a debrid service."
+          ? "Paste your API token - nothing can play without a debrid service."
           : "Paste your API token, or choose Add later.",
       );
       return;
@@ -588,7 +588,7 @@ function StreamingStep({
     // Hedged on purpose: validateToken() can't distinguish a bad token from
     // an offline/CORS-blocked check.
     setError(
-      "Couldn't verify that token — it may be mistyped, or your browser may be blocked from reaching the provider.",
+      "Couldn't verify that token - it may be mistyped, or your browser may be blocked from reaching the provider.",
     );
     setUnverifiedOk(true);
     setBusy(false);
@@ -677,7 +677,7 @@ function StreamingStep({
             className="first-run-escape"
             onClick={() => onDone(null)}
           >
-            Add later — nothing will play until you do.
+            Add later - nothing will play until you do.
           </button>
         )}
       </div>
@@ -715,8 +715,8 @@ function SkipConfirmStep({
   );
 }
 
-/** Device step 3 (OPTIONAL) — AI recommendations. Never blocks onboarding:
- *  "Skip — add AI later" always completes. Cloud providers take an API key
+/** Device step 3 (OPTIONAL) - AI recommendations. Never blocks onboarding:
+ *  "Skip - add AI later" always completes. Cloud providers take an API key
  *  (with a working signup link); the local Ollama provider takes an endpoint.
  *  The provider list is data-driven, so new providers appear here for free. */
 function AiStep({
@@ -770,7 +770,7 @@ function AiStep({
         <h1 className="first-run-title">Add AI recommendations</h1>
         <p className="first-run-sub">
           Describe a vibe for a curated lineup and get a “would I like this?”
-          take on any title. Bring your own key, or point it at a local model —
+          take on any title. Bring your own key, or point it at a local model - 
           change this any time in Settings.
         </p>
         <form className="first-run-form" onSubmit={submit}>
@@ -784,7 +784,7 @@ function AiStep({
                 {AIProviderKind.allCases().map((p) => (
                   <option key={p} value={p}>
                     {AIProviderKind.displayName(p)}
-                    {p === AIProviderKind.ollama ? " — local" : ""}
+                    {p === AIProviderKind.ollama ? " - local" : ""}
                   </option>
                 ))}
               </select>
@@ -834,7 +834,7 @@ function AiStep({
           </div>
         </form>
         <button type="button" className="first-run-escape" onClick={onSkip}>
-          Skip — add AI later
+          Skip - add AI later
         </button>
       </div>
     </div>

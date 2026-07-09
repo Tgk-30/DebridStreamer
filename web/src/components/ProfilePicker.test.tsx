@@ -465,7 +465,7 @@ describe("ProfilePicker kid UnlockPrompt", () => {
     expect(screen.getByText(/required to leave a kids profile/)).toBeInTheDocument();
     // Target name shown in the copy.
     expect(screen.getByText("Alice")).toBeInTheDocument();
-    // No switch yet — gated on the password.
+    // No switch yet - gated on the password.
     expect(switchAccountProfile).not.toHaveBeenCalled();
   });
 

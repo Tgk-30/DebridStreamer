@@ -1,4 +1,4 @@
-// DetailAnalysis — the AI "Will I Like This?" card on the Detail screen.
+// DetailAnalysis - the AI "Will I Like This?" card on the Detail screen.
 //
 // Shown only when an AI provider is configured (the parent gates on it). It
 // offers a single "Will I like this?" button; on click it builds the user's

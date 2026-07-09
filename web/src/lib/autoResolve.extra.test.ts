@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// jsdom env so `window` exists — the defaultEnabled/isTauriSafe gate inspects
+// jsdom env so `window` exists - the defaultEnabled/isTauriSafe gate inspects
 // window globals (__TAURI_INTERNALS__ / __TAURI__). The rest of these tests are
 // pure logic that runs identically under jsdom.
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -70,7 +70,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("resolveOne — guards & error handling", () => {
+describe("resolveOne - guards & error handling", () => {
   it("returns null when debrid is null", async () => {
     const d = makeDeps({ debridNull: true });
     expect(await resolveOne(previewOf(), d)).toBeNull();
@@ -128,7 +128,7 @@ describe("resolveOne — guards & error handling", () => {
   });
 });
 
-describe("resolveOne — cached-source preference", () => {
+describe("resolveOne - cached-source preference", () => {
   it("prefers a cached candidate over the best-by-sort first row", async () => {
     // Best-by-sort is the 4K row, but only the 720p row is cached.
     const results = [
@@ -221,7 +221,7 @@ function freshRecord(now: number, ageMs: number): CachedResolutionRecord {
   } as unknown as CachedResolutionRecord;
 }
 
-describe("resolveWatchlistOnce — queueing & freshness", () => {
+describe("resolveWatchlistOnce - queueing & freshness", () => {
   it("no-ops with zero counts when debrid is null", async () => {
     const d = makeDeps({ debridNull: true });
     const res = await resolveWatchlistOnce([previewOf("tt1")], d);
@@ -295,7 +295,7 @@ describe("resolveWatchlistOnce — queueing & freshness", () => {
   });
 });
 
-describe("resolveWatchlistOnce — bounded concurrency", () => {
+describe("resolveWatchlistOnce - bounded concurrency", () => {
   it("never runs more than MAX_CONCURRENCY (3) resolves at once over a large queue", async () => {
     const total = 9;
     let active = 0;
@@ -334,7 +334,7 @@ describe("resolveWatchlistOnce — bounded concurrency", () => {
   });
 });
 
-describe("AutoResolveScheduler — gate, throttle, re-entrancy", () => {
+describe("AutoResolveScheduler - gate, throttle, re-entrancy", () => {
   function schedulerDeps(over: Partial<{
     listWatchlist: ReturnType<typeof vi.fn>;
     activeIndexers: string[];
@@ -477,7 +477,7 @@ describe("AutoResolveScheduler — gate, throttle, re-entrancy", () => {
   });
 });
 
-describe("AutoResolveScheduler — defaultEnabled gate (real Tauri check)", () => {
+describe("AutoResolveScheduler - defaultEnabled gate (real Tauri check)", () => {
   const W = window as unknown as Record<string, unknown>;
 
   afterEach(() => {

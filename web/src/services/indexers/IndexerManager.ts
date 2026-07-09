@@ -174,7 +174,7 @@ function deduplicateAndSort(results: TorrentResult[]): TorrentResult[] {
 
   const survivors: TorrentResult[] = [];
   for (const group of grouped.values()) {
-    // group.max(by: { $0.seeders < $1.seeders }) — keep the highest-seeder copy.
+    // group.max(by: { $0.seeders < $1.seeders }) - keep the highest-seeder copy.
     let best = group[0];
     for (const r of group) {
       if (best.seeders < r.seeders) best = r;

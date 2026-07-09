@@ -1,4 +1,4 @@
-// Library screen — backed by the storage port.
+// Library screen - backed by the storage port.
 //
 // Reads the durable library (the `favorites` list-type entries) and the folder
 // list from the Store. A folder strip filters the grid; "All saved" shows every
@@ -441,7 +441,7 @@ export function Library() {
         <>
           {showingWatchlistFallback && (
             <p className="lib-sub t-secondary">
-              Showing your watchlist — add favorites to build your library.
+              Showing your watchlist - add favorites to build your library.
             </p>
           )}
           <MediaGrid items={items} onSelect={openDetail} />

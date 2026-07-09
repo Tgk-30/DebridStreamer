@@ -66,11 +66,11 @@ export interface AIAssistantProvider {
     maxResults: number,
   ): Promise<AIProviderRecommendationResult>;
   /** Predict whether the user would like a specific title, personalized from a
-   * compact taste-profile context. Optional — callers gate on its presence. */
+   * compact taste-profile context. Optional - callers gate on its presence. */
   analyzeTitle?(input: AIAnalyzeTitleInput): Promise<AIProviderAnalysisResult>;
 }
 
-/** The result of a single provider's `analyzeTitle` call — the parsed analysis
+/** The result of a single provider's `analyzeTitle` call - the parsed analysis
  * plus the model id + raw text + usage so the caller can persist a usage record.
  * Mirrors the shape of `AIProviderRecommendationResult`. */
 export interface AIProviderAnalysisResult {
@@ -202,7 +202,7 @@ function hasBodyStream(
 }
 
 /** Resolves a usable fetch and ALWAYS bounds the response body when it's a real
- * streamed `Response` — whether the fetch was injected (production threads in
+ * streamed `Response` - whether the fetch was injected (production threads in
  * `appFetch`) or the global default. Caps at {@link MAX_AI_RESPONSE_BYTES} so an
  * untrusted/compromised provider can't OOM the renderer before parsing. The
  * small non-streamed test stubs pass through unchanged. */
@@ -239,7 +239,7 @@ interface RawRecommendation {
  * could return a multi-megabyte body, and JSON.parsing / brace-scanning the whole
  * thing would freeze or OOM the renderer. A legitimate recommendation/analysis
  * response is a few KB, so truncating at this cap only affects adversarial input
- * — and the parser already tolerates a truncated tail (salvage). */
+ * - and the parser already tolerates a truncated tail (salvage). */
 const MAX_AI_RESPONSE_CHARS = 200_000;
 
 /** Bound an untrusted model response to {@link MAX_AI_RESPONSE_CHARS} before parsing. */
@@ -276,7 +276,7 @@ export const AIAssistantJSONParser = {
       extractRecommendationObjects(fenceStripped);
     if (recs != null) {
       return recs
-        // Drop title-less entries BEFORE capping to maxResults — slicing first
+        // Drop title-less entries BEFORE capping to maxResults - slicing first
         // then filtering would return fewer than maxResults whenever an empty
         // title fell within the first maxResults items.
         .filter(
@@ -299,7 +299,7 @@ export const AIAssistantJSONParser = {
 
     // If the response was clearly JSON-shaped but unparseable (e.g. truncated
     // with no complete element to salvage), do NOT fall through to the line
-    // parser — it would emit the raw JSON blob as a single junk "title". Return
+    // parser - it would emit the raw JSON blob as a single junk "title". Return
     // nothing instead.
     if (/^\s*[[{]/.test(fenceStripped)) return [];
 
@@ -386,7 +386,7 @@ export function personalizedAnalysisPrompt(input: AIAnalyzeTitleInput): string {
 }
 
 /** The shape a personalized-analysis payload decodes into (all fields tolerant
- * of missing/extra keys — the parser supplies defaults + clamps). */
+ * of missing/extra keys - the parser supplies defaults + clamps). */
 interface RawAnalysisPayload {
   personalizedDescription?: unknown;
   predictedRating?: unknown;
@@ -426,7 +426,7 @@ const ANALYSIS_KEYS = [
 ] as const;
 
 /** Pick the analysis payload out of a model response. Scans the RAW text first
- * (so literal ``` inside string values survive — strippingCodeFences would
+ * (so literal ``` inside string values survive - strippingCodeFences would
  * delete them), then the fence-stripped text, and returns the FIRST balanced
  * object that actually decodes to an analysis-shaped payload (has an expected
  * key). Requiring a key prevents a stray example brace in surrounding prose
@@ -546,7 +546,7 @@ function extractRecommendationObjects(text: string): RawRecommendation[] | null 
  * Returns null when the value is none of these. */
 function recommendationsFromValue(value: unknown): RawRecommendation[] | null {
   // `typeof x === "object"` is true for arrays AND null, so each element guard
-  // must also exclude arrays — otherwise a nested array element (e.g. the model
+  // must also exclude arrays - otherwise a nested array element (e.g. the model
   // returned `[[{...}],{...}]`) would slip through as a "recommendation", lose
   // its (absent) title, and be silently dropped instead of skipped here.
   if (Array.isArray(value)) {
@@ -563,7 +563,7 @@ function recommendationsFromValue(value: unknown): RawRecommendation[] | null {
   return null;
 }
 
-/** A non-null, non-array object — the only shape a recommendation can take. */
+/** A non-null, non-array object - the only shape a recommendation can take. */
 function isRecommendationObject(v: unknown): v is RawRecommendation {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
@@ -571,8 +571,8 @@ function isRecommendationObject(v: unknown): v is RawRecommendation {
 /** Pulls every complete balanced `{...}` object out of the `recommendations`
  * array body (or a top-level array), parsing each independently so a truncated
  * final element doesn't discard the valid ones before it. Only runs in a genuine
- * recommendations context — a `"recommendations"` key is present, or the whole
- * payload is a bare array — so a stray `[` in unrelated content can't feed us
+ * recommendations context - a `"recommendations"` key is present, or the whole
+ * payload is a bare array - so a stray `[` in unrelated content can't feed us
  * objects from the wrong array. */
 function salvageRecommendationObjects(text: string): RawRecommendation[] {
   const recKey = text.indexOf('"recommendations"');
@@ -612,8 +612,8 @@ function strippingCodeFences(text: string): string {
   return result;
 }
 
-/** Returns the first complete, balanced top-level JSON container — `{...}` OR
- * `[...]`, whichever opens first — tracking depth while respecting string
+/** Returns the first complete, balanced top-level JSON container - `{...}` OR
+ * `[...]`, whichever opens first - tracking depth while respecting string
  * literals/escapes. Lets the recommendations parser accept both the requested
  * object wrapper and a bare top-level array. Returns null if none closes. */
 function firstBalancedJSONContainer(text: string): string | null {
@@ -662,7 +662,7 @@ function firstBalancedJSONContainer(text: string): string | null {
 
 /** Returns every complete, balanced top-level `{...}` object in `text`, in
  * order, resetting after each. Array brackets are ignored, so scanning the body
- * of `[{a},{b},{trunc` yields `[{a},{b}]` — the complete objects only — which is
+ * of `[{a},{b},{trunc` yields `[{a},{b}]` - the complete objects only - which is
  * how truncated recommendation arrays are salvaged. */
 function allBalancedJSONObjects(text: string): string[] {
   const out: string[] = [];

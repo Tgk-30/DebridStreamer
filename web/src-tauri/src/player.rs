@@ -7,12 +7,12 @@
 //
 // NOTE: the `externalBin` entry that would bundle the mpv binary was removed so
 // the cross-platform release matrix can package without the (gitignored,
-// un-provisioned) per-triple binaries — `sidecar("mpv")` therefore returns a
+// un-provisioned) per-triple binaries - `sidecar("mpv")` therefore returns a
 // clean "not bundled" error at runtime until provisioning + the shell capability
 // + `--wid` embedding are verified end-to-end (a tracked deferred item). The
 // in-webview HLS player remains the reliable cross-platform path regardless.
 //
-// === In-window embedding (`--wid`) — the known-risky part, READ THIS ===
+// === In-window embedding (`--wid`) - the known-risky part, READ THIS ===
 //
 // We ATTEMPT true in-window embedding by passing mpv `--wid=<NSView pointer>`
 // obtained from the Tauri window via `raw-window-handle` (the `AppKitWindowHandle`
@@ -21,7 +21,7 @@
 // backends do, and tend to spawn mpv's *own* window regardless. We therefore:
 //   1. Try `--wid` when we can read the NSView pointer (best-effort embedding), but
 //   2. ALWAYS pass `--force-window=yes` so that if `--wid` is ignored, mpv still
-//      opens its own window and plays — fully app-controlled over IPC.
+//      opens its own window and plays - fully app-controlled over IPC.
 // The caller is told which path was taken via the returned `embedded` flag, and
 // this is documented honestly in the handoff: on macOS, expect mpv's own window.
 //
@@ -58,7 +58,7 @@ pub struct MpvState(pub Mutex<Option<MpvInstance>>);
 #[derive(serde::Serialize)]
 pub struct MpvPlayResult {
     /// True iff we passed `--wid` to attempt in-window embedding. On macOS this
-    /// does NOT guarantee the video actually rendered inside the app window —
+    /// does NOT guarantee the video actually rendered inside the app window - 
     /// mpv may still use its own window. The frontend should treat mpv playback
     /// as "handled" either way and not show the in-webview <video>.
     pub embedded: bool,
@@ -150,7 +150,7 @@ pub fn mpv_play<R: Runtime>(
     ];
     if let Some(w) = wid {
         // Best-effort in-window embedding. On macOS mpv may ignore this and use
-        // its own window — that's the documented fallback, not an error.
+        // its own window - that's the documented fallback, not an error.
         args.push(format!("--wid={w}"));
     }
     // The stream URL last (positional).
@@ -185,7 +185,7 @@ pub fn mpv_play<R: Runtime>(
 /// mpv's `--input-ipc-server` is a unix domain socket on macOS/Linux and a named
 /// pipe on Windows; only the unix-socket path is implemented. The Unix-specific
 /// imports live INSIDE this `#[cfg(unix)]` body so the crate still compiles for
-/// `windows-latest` in the release matrix — see the non-unix stub below.
+/// `windows-latest` in the release matrix - see the non-unix stub below.
 #[cfg(unix)]
 fn ipc_request(ipc_path: &PathBuf, command: &Value) -> Result<Value, String> {
     use std::io::{Read, Write};

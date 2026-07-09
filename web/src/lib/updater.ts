@@ -2,12 +2,12 @@
 //
 // Runs on launch and then weekly for long-running instances (via the
 // UpdateBanner component, mounted from App.tsx). It
-// is a deliberate no-op in a plain browser — the updater plugin only exists in
-// the desktop Tauri shell — so it's guarded by `isTauri()` and never throws into
+// is a deliberate no-op in a plain browser - the updater plugin only exists in
+// the desktop Tauri shell - so it's guarded by `isTauri()` and never throws into
 // the UI. When running under Tauri it asks the updater plugin whether a newer
 // signed release is available (resolved from the `plugins.updater.endpoints`
 // `latest.json` in tauri.conf.json) and, when one is, surfaces a small
-// non-blocking glass banner ("Update vX.Y available — Install"). Installing
+// non-blocking glass banner ("Update vX.Y available - Install"). Installing
 // downloads + applies the update (with progress) then relaunches the app.
 //
 // Releases are signed with the updater keypair (public key in tauri.conf.json,
@@ -19,7 +19,7 @@ import { isTauri } from "./tauri";
 
 const LAST_CHECK_KEY = "ds_last_update_check";
 
-/** Record that an update check just ran — drives the weekly re-check cadence for
+/** Record that an update check just ran - drives the weekly re-check cadence for
  * long-running app instances (a fresh launch always checks regardless). */
 export function markUpdateChecked(now = Date.now()): void {
   try {
@@ -61,7 +61,7 @@ export interface PendingUpdate {
 }
 
 /** Check for an available desktop update. Resolves to a {@link PendingUpdate}
- * when a newer signed release is available, else `null`. Never throws — a flaky
+ * when a newer signed release is available, else `null`. Never throws - a flaky
  * network, a missing release, or running in a plain browser all resolve to
  * `null` (with a console warning) so launch is never degraded. */
 export async function checkForUpdates(): Promise<PendingUpdate | null> {

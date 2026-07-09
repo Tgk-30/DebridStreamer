@@ -5,12 +5,12 @@ or arm64). Docker is the easiest; the native and `.deb` paths are for hosts that
 prefer not to run Docker.
 
 All three serve the web app **and** API on one port (default `43110`) and keep
-state in a single SQLite database, so any device on your network — or a phone via
-the PWA — can connect to the same server.
+state in a single SQLite database, so any device on your network - or a phone via
+the PWA - can connect to the same server.
 
 ---
 
-## Option A — Docker Compose, prebuilt image (recommended)
+## Option A - Docker Compose, prebuilt image (recommended)
 
 No source build: pulls the multi-arch image published to GitHub Container
 Registry (`ghcr.io/tgk-30/debridstreamer:latest`, built for linux/amd64 +
@@ -46,7 +46,7 @@ To build the image from source instead of pulling it, use
 
 ---
 
-## Option B — Native Node + systemd (no Docker)
+## Option B - Native Node + systemd (no Docker)
 
 For a lightweight VPS. Requires **Node.js 24+** (the server bundle targets
 `node24` and uses the built-in `node:sqlite`).
@@ -89,16 +89,16 @@ The server now listens on `http://<server-ip>:43110`. Put a reverse proxy
 
 ---
 
-## Option C — Debian/Ubuntu package (`.deb`)
+## Option C - Debian/Ubuntu package (`.deb`)
 
 Each tagged release attaches `debridstreamer-server_all.deb` (Architecture:
-`all` — the server is a Node bundle + static assets, so one package runs on
+`all` - the server is a Node bundle + static assets, so one package runs on
 amd64 and arm64). It installs the built server + web app to
 `/opt/debridstreamer`, drops the env file at
 `/etc/debridstreamer/debridstreamer.env`, and registers the systemd service.
 
 ```bash
-# Requires Node.js 24+ (see Option B step 1 for NodeSource) — the package
+# Requires Node.js 24+ (see Option B step 1 for NodeSource) - the package
 # depends on `nodejs (>= 22)`.
 curl -fsSLO https://github.com/Tgk-30/DebridStreamer/releases/latest/download/debridstreamer-server_all.deb
 sudo apt-get install -y ./debridstreamer-server_all.deb

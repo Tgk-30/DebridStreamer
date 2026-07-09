@@ -192,7 +192,7 @@ export interface MetadataProvider {
 
   getRecommendations(tmdbId: number, type: MediaType): Promise<MediaPreview[]>;
 
-  /** The YouTube key of the title's best trailer, or null. Optional — callers
+  /** The YouTube key of the title's best trailer, or null. Optional - callers
    * gate on its presence (Server-Mode metadata providers may omit it). */
   getTrailer?(tmdbId: number, type: MediaType): Promise<string | null>;
 }

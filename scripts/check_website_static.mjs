@@ -9,7 +9,7 @@ const html = readFileSync(join(website, "index.html"), "utf8");
 const css = readFileSync(join(website, "styles.css"), "utf8");
 const js = readFileSync(join(website, "app.js"), "utf8");
 const failures = [];
-// Real app captures (pngquant-compressed), not drawn placeholders — byte
+// Real app captures (pngquant-compressed), not drawn placeholders - byte
 // ranges sized for photographic poster/backdrop content at the pinned dims.
 const expectedGeneratedMedia = {
   "media/discover-desktop.png": { width: 1440, height: 848, minBytes: 20_000, maxBytes: 360_000 },

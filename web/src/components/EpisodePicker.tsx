@@ -1,12 +1,12 @@
-// EpisodePicker — the season/episode browser on a series' Detail screen.
+// EpisodePicker - the season/episode browser on a series' Detail screen.
 //
-// Rich mode (an episode guide is available — local TMDB key or the Server-Mode
+// Rich mode (an episode guide is available - local TMDB key or the Server-Mode
 // metadata proxy): a season chip row plus an episode list with stills, titles,
 // air dates/runtimes, per-episode resume bars, and an accent ring on the
 // selected episode. Selecting an episode re-drives the stream search below.
 //
 // Degraded mode (no guide): a plain season/episode stepper so streaming still
-// works — "Episode guide unavailable — pick the season and episode to search."
+// works - "Episode guide unavailable - pick the season and episode to search."
 
 import { useEffect, useState } from "react";
 import type { TMDBService } from "../services/metadata/TMDBService";
@@ -76,7 +76,7 @@ export function EpisodePicker({
   const seasons = useSeasons(tmdbId, true, tmdb);
   const rich = seasons.source === "live";
 
-  // The season being BROWSED (chip row) — follows the selected episode's
+  // The season being BROWSED (chip row) - follows the selected episode's
   // season by default but browsing doesn't change the selection until an
   // episode is tapped.
   const [browseSeason, setBrowseSeason] = useState(selected.season);
@@ -131,7 +131,7 @@ export function EpisodePicker({
           <h3 className="episode-picker-title">Episodes</h3>
         </div>
         <p className="episode-picker-note t-secondary">
-          Episode guide unavailable — pick the season and episode to search.
+          Episode guide unavailable - pick the season and episode to search.
         </p>
         <div className="episode-stepper-row">
           {(["season", "episode"] as const).map((field) => (
@@ -247,7 +247,7 @@ export function EpisodePicker({
                         ? `Mark E${ep.episodeNumber} unwatched`
                         : `Mark E${ep.episodeNumber} watched`
                     }
-                    title={watched ? "Watched — click to unmark" : "Mark watched"}
+                    title={watched ? "Watched - click to unmark" : "Mark watched"}
                     onClick={() =>
                       onToggleWatched(
                         { season: ep.seasonNumber, episode: ep.episodeNumber },

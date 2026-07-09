@@ -1,4 +1,4 @@
-// useTrailer — loads the YouTube trailer key for a title from TMDB. Mirrors the
+// useTrailer - loads the YouTube trailer key for a title from TMDB. Mirrors the
 // useSeasons degrade-to-null contract: no tmdbId, no provider, no getTrailer
 // support, or any failure all resolve to `key: null` (the Detail screen simply
 // hides the "Watch trailer" button). Server Mode has no trailer endpoint yet, so

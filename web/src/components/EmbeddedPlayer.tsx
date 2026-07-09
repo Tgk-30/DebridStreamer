@@ -1,4 +1,4 @@
-// EmbeddedPlayer — the built-in libmpv player. Video renders on a native
+// EmbeddedPlayer - the built-in libmpv player. Video renders on a native
 // Metal/GL surface BEHIND the transparent webview; this component draws a
 // premium control layer on top and drives libmpv over IPC (tauri-plugin-libmpv).
 // Handles any container (MKV/HEVC/AV1) losslessly, unlike the <video> webview.
@@ -33,10 +33,10 @@ interface Props {
   startPositionSeconds?: number;
   /** Remembered audio/subtitle/speed for this title, restored after load. */
   savedPrefs?: PlaybackPrefs | null;
-  /** Throttled progress + the current player prefs — feeds Continue Watching and
+  /** Throttled progress + the current player prefs - feeds Continue Watching and
    * persists the audio/sub/speed choices for next time. */
   onProgress?: (current: number, duration: number, prefs?: PlaybackPrefs) => void;
-  /** Present for a series with a next episode — shows an "Up next" affordance. */
+  /** Present for a series with a next episode - shows an "Up next" affordance. */
   onPlayNext?: () => void;
   nextLabel?: string | null;
   onClose: () => void;
@@ -77,7 +77,7 @@ const OBSERVED: readonly MpvObservableProperty[] = [
 const MPV_CONFIG: MpvConfig = {
   initialOptions: {
     // Video output, hardware decode, scaling, debanding, cache and subtitle
-    // pickup are all chosen PER-OS by the Rust core (best_in_class_options) — a JS
+    // pickup are all chosen PER-OS by the Rust core (best_in_class_options) - a JS
     // override here would silently win over the platform-correct default (that's
     // the bug that pinned macOS to auto-safe software decode + a 150MiB cache).
     // Only set options the Rust side does NOT own:
@@ -89,7 +89,7 @@ const MPV_CONFIG: MpvConfig = {
 };
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3] as const;
-/** No reserved margin — the video fills edge-to-edge and centers; the control
+/** No reserved margin - the video fills edge-to-edge and centers; the control
  *  bar overlays it on a gradient scrim (like every modern streaming player). */
 const VIDEO_MARGIN_BOTTOM = 0;
 
@@ -213,7 +213,7 @@ export function EmbeddedPlayer({
       const raw = await getProperty("track-list", "node");
       setTracks(parseTracks(raw));
     } catch {
-      /* ignore — menu just shows "none" */
+      /* ignore - menu just shows "none" */
     }
   }, []);
   const refreshChapters = useCallback(async () => {
@@ -242,7 +242,7 @@ export function EmbeddedPlayer({
           OBSERVED,
           (ev: { name: string; data: unknown }) => {
             // A late event can arrive after unmount (before unlisten lands) or
-            // after the guarded teardown — never touch state on a dead component.
+            // after the guarded teardown - never touch state on a dead component.
             if (cancelled) return;
             switch (ev.name) {
               case "pause":
@@ -597,13 +597,13 @@ export function EmbeddedPlayer({
                 void (async () => {
                   try {
                     await openInExternalPlayer(url);
-                    onClose(); // handed off — close the built-in player.
+                    onClose(); // handed off - close the built-in player.
                   } catch (err) {
                     // The fallback failed too (no external player, not under
                     // Tauri): keep the card open and tell the user, don't
                     // silently vanish.
                     setError(
-                      `No external player available either — install mpv or VLC. (${
+                      `No external player available either - install mpv or VLC. (${
                         err instanceof Error ? err.message : String(err)
                       })`,
                     );
@@ -628,7 +628,7 @@ export function EmbeddedPlayer({
       onMouseMove={nudgeControls}
       onDoubleClick={toggleFullscreen}
     >
-      {/* Transparent stage — the native mpv surface shows through. Clicking it
+      {/* Transparent stage - the native mpv surface shows through. Clicking it
           (not the controls) toggles play/pause. */}
       <div
         className="embed-stage"

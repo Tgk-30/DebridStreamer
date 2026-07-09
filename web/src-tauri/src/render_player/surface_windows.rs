@@ -1,9 +1,9 @@
 // Windows video surface: mpv wid-embedding.
 //
-// We hand mpv the Tauri window's own HWND as `wid` (an init-only option — set in
+// We hand mpv the Tauri window's own HWND as `wid` (an init-only option - set in
 // surface_pre_init, applied inside Mpv::with_initializer). mpv then creates its
 // own render child window inside it and renders NATIVELY (vo=gpu-next +
-// gpu-context=d3d11 + hwdec=d3d11va — see core::best_in_class_options). This is
+// gpu-context=d3d11 + hwdec=d3d11va - see core::best_in_class_options). This is
 // the proven tauri-plugin-libmpv Windows approach and needs no `windows` crate:
 // raw-window-handle (already a dependency) yields the HWND value.
 //
@@ -11,7 +11,7 @@
 // hosting, so a transparent WebView2 does NOT reveal video behind it (airspace
 // rule). The web UI FRAMES the video region rather than glassing over full-frame
 // video. True video-behind-glass would require WebView2 composition hosting +
-// DirectComposition (forking Wry) — out of scope for v0.6.
+// DirectComposition (forking Wry) - out of scope for v0.6.
 
 use std::sync::Arc;
 

@@ -32,7 +32,7 @@ interface StreamPickerProps {
   /** Called with the resolved stream + the torrent (for codec/container info). */
   onPlay: (stream: StreamInfo, source: TorrentResult) => void;
   onOpenSettings?: () => void;
-  /** "S2 E5" when a series episode is selected — shown in the header so the
+  /** "S2 E5" when a series episode is selected - shown in the header so the
    *  user can see WHY the list is episode-scoped. Null for movies. */
   episodeLabel?: string | null;
   /** The selected episode, for tagging season-pack releases. Null for movies. */
@@ -41,7 +41,7 @@ interface StreamPickerProps {
 
 /** Bytes → "1.4 GB" style. */
 function formatSize(bytes: number): string {
-  if (bytes <= 0) return "—";
+  if (bytes <= 0) return " - ";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
   let unit = 0;
@@ -70,7 +70,7 @@ export function StreamPicker({
   // Clear the resolution/codec chips whenever the underlying results change
   // (a new title is opened). A stale value is already ignored if it no longer
   // appears, but if the next title HAPPENS to share that resolution/codec the
-  // old chip would silently pre-filter it — surprising the user. Resetting on
+  // old chip would silently pre-filter it - surprising the user. Resetting on
   // the rows identity keeps the picker unfiltered for each newly opened title.
   useEffect(() => {
     setResFilter(null);
@@ -124,7 +124,7 @@ export function StreamPicker({
   async function select(row: StreamRow) {
     if (!state.hasDebrid) {
       setResolveError(
-        "Add a debrid service in Settings to play — it turns a match into an instant stream.",
+        "Add a debrid service in Settings to play - it turns a match into an instant stream.",
       );
       return;
     }
@@ -277,7 +277,7 @@ function StreamBody({
         <p className="streams-empty-title">No sources yet</p>
         <p className="t-secondary streams-empty-sub">
           A source is where the app looks for releases. Turn on the built-in
-          scrapers, or add one (Torrentio, Jackett, Prowlarr…), in Settings —
+          scrapers, or add one (Torrentio, Jackett, Prowlarr…), in Settings - 
           then pair it with a debrid service to stream instantly.
         </p>
         {onOpenSettings && (
@@ -306,7 +306,7 @@ function StreamBody({
   }
 
   if (state.missingImdbId) {
-    // No IMDb id ⇒ NO search ever ran. Never render "No streams found" here —
+    // No IMDb id ⇒ NO search ever ran. Never render "No streams found" here - 
     // that reads as an exhaustive search that came up empty, when in truth
     // zero requests were made (the silent "streams are not being found" P0).
     return (
@@ -314,7 +314,7 @@ function StreamBody({
         <Icon name="info" size={22} className="t-warning" />
         <p className="streams-empty-title">Can't search for this title yet</p>
         <p className="t-secondary streams-empty-sub">
-          Sources are searched by IMDb id, and this title doesn't have one yet —
+          Sources are searched by IMDb id, and this title doesn't have one yet - 
           usually because the catalog lookup is incomplete or the TMDB key is
           missing. Check Settings → Sources, then reopen this title.
         </p>
@@ -336,7 +336,7 @@ function StreamBody({
     const chipsEmpty = chipFiltersActive && filteredCount > 0;
     const cachedOnlyEmpty = !chipsEmpty && cachedOnly && filteredCount > 0;
     const filtersEmpty = !chipsEmpty && state.rows.length > 0 && filteredCount === 0;
-    // With no debrid service there IS no playback path — saying "sources did
+    // With no debrid service there IS no playback path - saying "sources did
     // not return a match" would be false (nothing was searched for playback).
     // Tell the truth and route to the guided setup.
     const noDebrid = !state.hasDebrid;
@@ -345,7 +345,7 @@ function StreamBody({
       <div className="streams-empty glass-rest">
         <p className="streams-empty-title">
           {noDebrid
-            ? "Almost there — add a debrid service"
+            ? "Almost there - add a debrid service"
             : chipsEmpty
               ? "No streams match those filters"
               : cachedOnlyEmpty
@@ -364,7 +364,7 @@ function StreamBody({
                 : filtersEmpty
                   ? "Your quality or file-size limits removed the available results for this title."
                   : episodeLabel != null
-                    ? `The configured sources have no match for ${episodeLabel} yet — try another episode or add another source.`
+                    ? `The configured sources have no match for ${episodeLabel} yet - try another episode or add another source.`
                     : "The configured sources did not return a match for this title yet. Add another source or try a different release."}
         </p>
         {/* Empty ≠ exhaustive when some sources failed: name them so the user
@@ -373,7 +373,7 @@ function StreamBody({
           <p className="t-secondary streams-empty-sub streams-source-errors">
             {state.sourceErrors.length === 1 ? "One source" : `${state.sourceErrors.length} sources`}{" "}
             couldn't be reached:{" "}
-            {state.sourceErrors.map((e) => e.indexer).join(", ")} — results may
+            {state.sourceErrors.map((e) => e.indexer).join(", ")} - results may
             be incomplete.
           </p>
         )}

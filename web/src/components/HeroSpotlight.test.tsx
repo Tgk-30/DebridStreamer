@@ -10,7 +10,7 @@ import { createElement, forwardRef } from "react";
 import { HeroSpotlight } from "./HeroSpotlight";
 import type { MediaPreview } from "../models/media";
 
-// Smart-preload preference — toggled per test via the mock fn's return value.
+// Smart-preload preference - toggled per test via the mock fn's return value.
 const isSmartPreloadEnabled = vi.fn(() => true);
 vi.mock("../lib/smartPreload", () => ({
   isSmartPreloadEnabled: () => isSmartPreloadEnabled(),
@@ -307,7 +307,7 @@ describe("HeroSpotlight backdrop preload effect", () => {
 
   it("still preloads the next backdrop even when smart-preload is disabled", () => {
     // The next backdrop is a single image the carousel shows in ~7s regardless,
-    // so it's preloaded unconditionally (same bytes, a beat earlier) — only the
+    // so it's preloaded unconditionally (same bytes, a beat earlier) - only the
     // expensive code-chunk preloads stay gated on smart-preload.
     isSmartPreloadEnabled.mockReturnValue(false);
     render(<HeroSpotlight items={items} />);

@@ -201,7 +201,7 @@ async function resolveTitleToEntry(
     if (debrid != null && debrid.hasServices) {
       try {
         const merged = await debrid.checkCacheAll(results.map((r) => r.infoHash));
-        // checkCacheAll canonicalizes to lowercase — look up the same way.
+        // checkCacheAll canonicalizes to lowercase - look up the same way.
         const cached = results.find(
           (r) => merged[r.infoHash.toLowerCase()]?.status.kind === "cached",
         );

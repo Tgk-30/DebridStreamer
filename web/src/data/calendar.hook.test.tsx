@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Tests for the useCalendar React hook (calendar.ts) — the stateful piece the
+// Tests for the useCalendar React hook (calendar.ts) - the stateful piece the
 // pure calendar.extra.test.ts (collectSeries / groupEpisodes) doesn't reach:
 // the initial hasTMDB flag, the no-series + no-key empty states, the live
 // (TMDB) and Server Mode resolution paths, and the error fallback (Error +
@@ -83,7 +83,7 @@ beforeEach(() => {
   listWatchlist.mockResolvedValue([]);
 });
 
-describe("useCalendar — initial state", () => {
+describe("useCalendar - initial state", () => {
   it("reports hasTMDB true when a service is provided", () => {
     const { result } = renderHook(() => useCalendar(SVC));
     // Synchronous first render: still loading, hasTMDB seeded from the service.
@@ -97,7 +97,7 @@ describe("useCalendar — initial state", () => {
   });
 });
 
-describe("useCalendar — empty paths", () => {
+describe("useCalendar - empty paths", () => {
   it("resolves to an empty agenda with hasSeries false when no series exist", async () => {
     listLibrary.mockResolvedValue([]);
     listWatchlist.mockResolvedValue([]);
@@ -123,7 +123,7 @@ describe("useCalendar — empty paths", () => {
   });
 });
 
-describe("useCalendar — live resolution", () => {
+describe("useCalendar - live resolution", () => {
   it("resolves upcoming episodes via TMDB and groups them", async () => {
     listLibrary.mockResolvedValue([libEntry(preview("s1"))]);
     getUpcomingEpisodesForSeries.mockResolvedValue([todayEp()]);
@@ -141,7 +141,7 @@ describe("useCalendar — live resolution", () => {
   });
 });
 
-describe("useCalendar — server mode", () => {
+describe("useCalendar - server mode", () => {
   it("routes episode resolution through the server API when in server mode", async () => {
     isServerMode.mockReturnValue(true);
     listWatchlist.mockResolvedValue([watchRecord(preview("s2"))]);
@@ -158,7 +158,7 @@ describe("useCalendar — server mode", () => {
   });
 });
 
-describe("useCalendar — error fallback", () => {
+describe("useCalendar - error fallback", () => {
   it("surfaces an Error message and clears the agenda when resolution throws", async () => {
     listLibrary.mockResolvedValue([libEntry(preview("s1"))]);
     getUpcomingEpisodesForSeries.mockRejectedValue(new Error("tmdb down"));

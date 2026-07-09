@@ -1,4 +1,4 @@
-// App shell — mirrors Sources/.../Views/ContentView.swift (the Hybrid nav).
+// App shell - mirrors Sources/.../Views/ContentView.swift (the Hybrid nav).
 //
 // Aurora background + restrained glow, a slim glass NavRail on the left, a
 // content area that routes between screens via the app store, a floating
@@ -17,13 +17,13 @@ const TOUR_STEPS: TourStep[] = [
   {
     target: '[data-screen="discover"]',
     title: "Your home base",
-    body: "A cinematic hero plus your Top 10 and rails of trending, popular, and new releases — all pulled live.",
+    body: "A cinematic hero plus your Top 10 and rails of trending, popular, and new releases - all pulled live.",
     placement: "right",
   },
   {
     target: '[data-screen="search"]',
     title: "Find anything, instantly",
-    body: "Search any movie or show — results appear as you type, no Enter needed.",
+    body: "Search any movie or show - results appear as you type, no Enter needed.",
     placement: "right",
   },
   {
@@ -91,7 +91,7 @@ const Detail = lazy(() =>
 
 // Modal/overlay flows most returning users never open (onboarding wizards, the
 // command palette, the guide, the shortcuts sheet) are code-split too, so their
-// bytes — and ServerSetupWizard's QRCode dependency — stay out of first paint.
+// bytes - and ServerSetupWizard's QRCode dependency - stay out of first paint.
 // Each render site sits inside a <Suspense fallback={null}> (a modal appearing a
 // frame late is invisible). InstallPrompt stays eager: it shares a module with
 // the isInstallPromptEligible predicate used during render.
@@ -134,8 +134,8 @@ export function FirstRunHost() {
   const [firstRun, setFirstRun] = useState<boolean | null>(null);
   // The FORCED key gate: a Local-Mode launch without a catalog key or a debrid
   // token re-opens the wizard as mandatory, regardless of onboarding history.
-  // Latched ONCE per launch (after hydration) so completing the wizard — or
-  // deliberately clearing keys in Settings — doesn't re-trap mid-session; the
+  // Latched ONCE per launch (after hydration) so completing the wizard - or
+  // deliberately clearing keys in Settings - doesn't re-trap mid-session; the
   // next launch re-evaluates.
   const [keyGate, setKeyGate] = useState<boolean | null>(null);
   useEffect(() => {
@@ -144,7 +144,7 @@ export function FirstRunHost() {
       setKeyGate(false);
       return;
     }
-    // A locked/broken keychain hydrates secrets as null — the keys may exist
+    // A locked/broken keychain hydrates secrets as null - the keys may exist
     // but be unreadable. Never force onboarding on top of that.
     if (secretReadsFailedThisSession()) {
       setKeyGate(false);
@@ -271,7 +271,7 @@ export function App() {
         setWelcomeGuideOpen(true);
       }
     } catch {
-      // private mode — just skip the auto-tour
+      // private mode - just skip the auto-tour
     }
     const reopen = () => setWelcomeGuideOpen(true);
     window.addEventListener("ds:open-welcome-guide", reopen);
@@ -318,7 +318,7 @@ export function App() {
     return () => window.removeEventListener("ds:open-first-run", openWizard);
   }, []);
 
-  // App-wide keyboard-shortcuts reference, opened from ⌘K (no persistence — it's
+  // App-wide keyboard-shortcuts reference, opened from ⌘K (no persistence - it's
   // a reference, not a one-time greeting).
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useEffect(() => {
@@ -337,7 +337,7 @@ export function App() {
   }, []);
 
   // Contextual "finish setup" nudge (Local Mode only): a dismissible bar shown
-  // while the app can't stream yet — no debrid service, or no active source. It
+  // while the app can't stream yet - no debrid service, or no active source. It
   // auto-hides once setup is complete; dismissal is remembered so it never nags.
   const [nudgeDismissed, setNudgeDismissed] = useState(() => {
     try {
@@ -386,7 +386,7 @@ export function App() {
       // ignore (private mode)
     }
   };
-  // The setup nudge outranks it — one bottom card at a time.
+  // The setup nudge outranks it - one bottom card at a time.
   const showInstallPrompt =
     installEligible &&
     !installDismissed &&
@@ -478,7 +478,7 @@ export function App() {
           </ErrorBoundary>
         </div>
 
-        {/* Browse overlay — mounts over the current screen ("See all" +
+        {/* Browse overlay - mounts over the current screen ("See all" +
             advanced filters), below the Detail overlay. */}
         {browseContext != null && (
           <Suspense fallback={<Spinner variant="overlay" />}>
@@ -486,7 +486,7 @@ export function App() {
           </Suspense>
         )}
 
-        {/* Detail overlay — mounts over the current screen (and over Browse). */}
+        {/* Detail overlay - mounts over the current screen (and over Browse). */}
         {detailItem != null && (
           <Suspense fallback={<Spinner variant="overlay" />}>
             <Detail />
@@ -494,17 +494,17 @@ export function App() {
         )}
       </main>
 
-      {/* Lazily-loaded overlays — each chunk downloads only when first opened.
+      {/* Lazily-loaded overlays - each chunk downloads only when first opened.
           A null Suspense fallback is correct here: these are modals, so "nothing
           for a frame" is invisible until the chunk resolves. */}
       <Suspense fallback={null}>
-        {/* "Who's watching" picker overlay (Server Mode only) — mounts above
+        {/* "Who's watching" picker overlay (Server Mode only) - mounts above
             everything when opened from the rail's profile switcher. */}
         {profilePickerOpen && (
           <ProfilePicker onClose={() => setProfilePickerOpen(false)} />
         )}
 
-        {/* ⌘K quick switcher — self-contained; hidden until invoked. */}
+        {/* ⌘K quick switcher - self-contained; hidden until invoked. */}
         <CommandPalette />
 
         {/* First-run feature tour (and re-openable from Settings / ⌘K). */}
@@ -526,7 +526,7 @@ export function App() {
         )}
 
         {/* Re-run of the first-run persona wizard (full-screen; closes on done or
-            skip — the wizard persists its own onboarding_completed flag). */}
+            skip - the wizard persists its own onboarding_completed flag). */}
         {firstRunOpen && <FirstRunWizard onDone={() => setFirstRunOpen(false)} />}
 
         {showSetupNudge && (

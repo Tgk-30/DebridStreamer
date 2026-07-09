@@ -163,7 +163,7 @@ CREATE INDEX stream_sessions_created_idx ON stream_sessions(profile_id, created_
 `;
 
 // Household sub-profiles: a session now remembers WHICH of an account's profiles
-// is active ("who's watching"). Nullable + migration-safe — existing rows get
+// is active ("who's watching"). Nullable + migration-safe - existing rows get
 // NULL and readAuth falls back to the account's is_default profile, so a
 // single-profile deployment keeps working with zero manual steps. ON DELETE SET
 // NULL so deleting a profile (which cascades its data) cleanly drops the pointer

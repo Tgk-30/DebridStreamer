@@ -10,7 +10,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-/** One observed property: [name, format, fallback?] — matches the plugin shape. */
+/** One observed property: [name, format, fallback?] - matches the plugin shape. */
 export type MpvObservableProperty = readonly [string, string, ...string[]];
 
 export interface MpvConfig {

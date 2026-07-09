@@ -1,6 +1,6 @@
 // Episode-picker data layer.
 //
-// Loads a series' seasons and per-season episode lists — live via the shared
+// Loads a series' seasons and per-season episode lists - live via the shared
 // TMDBService when configured (Local Mode) or the server metadata proxy
 // (Server Mode), else a graceful `source: "none"` so the picker can fall back
 // to a plain season/episode stepper. Also home to the pure episode-id helpers
@@ -17,7 +17,7 @@ import { isServerMode } from "../lib/serverMode";
 // MARK: - Pure helpers
 
 /** Canonical per-episode id used in storage keys: `s2e5` (no zero-pad).
- * Opaque downstream — only ever produced here and parsed by parseEpisodeId. */
+ * Opaque downstream - only ever produced here and parsed by parseEpisodeId. */
 export function episodeIdFor(season: number, episode: number): string {
   return `s${season}e${episode}`;
 }
@@ -44,7 +44,7 @@ export function episodeLabel(season: number, episode: number): string {
  *    seasonNumber !== 0 (never advance INTO specials) and episodeCount > 0 → E1.
  *  - After the finale: null.
  *  - seasons.length === 0 (no TMDB key / source "none"): blind within-season
- *    increment, NEVER crosses seasons — a past-the-finale target is harmless
+ *    increment, NEVER crosses seasons - a past-the-finale target is harmless
  *    because auto-play requires a cached row and the picker's episode-scoped
  *    empty state is honest. */
 export function nextEpisodeFor(
@@ -66,7 +66,7 @@ export function nextEpisodeFor(
 
 /** The episode Detail should preselect for a series: the most recently
  * watched episode with a parseable episode id, else S1E1. Sorts by
- * `lastWatched` itself — never trusts the caller's array order. */
+ * `lastWatched` itself - never trusts the caller's array order. */
 export function defaultSelectionFor(
   mediaId: string,
   records: WatchHistoryRecord[],
@@ -98,7 +98,7 @@ const NO_EPISODES: EpisodesState = { episodes: [], loading: false, source: "none
 
 /** Load the seasons list for a series. `enabled` gates the fetch (pass
  * `type === "series"`); errors and missing tmdbId/service degrade to
- * `source: "none"` — this hook never throws. */
+ * `source: "none"` - this hook never throws. */
 export function useSeasons(
   tmdbId: number | null,
   enabled: boolean,
@@ -126,7 +126,7 @@ export function useSeasons(
           setState(NO_SEASONS);
           return;
         }
-        // Season 0 is "Specials" — outside the picker's scope this round.
+        // Season 0 is "Specials" - outside the picker's scope this round.
         const seasons = raw.filter((s) => s.seasonNumber > 0);
         setState({
           seasons,

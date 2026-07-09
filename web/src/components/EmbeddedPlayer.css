@@ -1,4 +1,4 @@
-/* EmbeddedPlayer — premium control layer over the native libmpv surface.
+/* EmbeddedPlayer - premium control layer over the native libmpv surface.
 
    The video renders on a native Metal/GL layer BEHIND the transparent webview.
    While `.mpv-active` is on <html> the page is punched transparent and the rest

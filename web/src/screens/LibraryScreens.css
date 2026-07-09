@@ -181,7 +181,7 @@
   margin-bottom: var(--sp-md);
 }
 
-/* Organize mode — one manageable row per saved title. */
+/* Organize mode - one manageable row per saved title. */
 .lib-org-list {
   list-style: none;
   margin: 0;

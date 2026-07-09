@@ -43,7 +43,7 @@ struct SetupView: View {
                 .padding(.top, AppTheme.Spacing.xxxl)
                 .padding(.bottom, AppTheme.Spacing.xxl)
 
-                // Steps — using Group+switch instead of TabView to avoid focus issues
+                // Steps - using Group+switch instead of TabView to avoid focus issues
                 Group {
                     switch step {
                     case 1: tmdbStep

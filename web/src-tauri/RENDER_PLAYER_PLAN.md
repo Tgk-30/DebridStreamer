@@ -2,17 +2,17 @@ All versions confirmed. I have complete ground truth: real repo at `/Users/brend
 
 ---
 
-# mpv Render-API In-Window Player — Concrete Implementation Plan
+# mpv Render-API In-Window Player - Concrete Implementation Plan
 
 ## Ground truth verified on this machine (so the plan targets reality, not the reports)
 
-- **Real active repo:** `/Users/brendan/Developer/DebridStreamer` (the `~/Desktop/DebridStreamer` iCloud copy is dataless — only `web/src`, no git, no `src-tauri`). All paths below are under `web/src-tauri/`.
-- **Current branch state** (`dc91762`): the player is `src/player.rs` — a **sidecar + `--wid`** design, *not* the `tauri-plugin-libmpv` you referenced. There is **no vendored plugin** and **no `libmpv2` dep** on this branch (that was branch `feat/v0.5-player`). So the render-API work is a **new module that replaces `player.rs`**, and the "replace tauri-plugin-libmpv IPC" instruction actually means "replace the `mpv_*` JSON-IPC commands."
-- **`tauri.conf.json` has NO `transparent` / `macOSPrivateApi` yet** — must be added (they exist only on the other branch).
+- **Real active repo:** `/Users/brendan/Developer/DebridStreamer` (the `~/Desktop/DebridStreamer` iCloud copy is dataless - only `web/src`, no git, no `src-tauri`). All paths below are under `web/src-tauri/`.
+- **Current branch state** (`dc91762`): the player is `src/player.rs` - a **sidecar + `--wid`** design, *not* the `tauri-plugin-libmpv` you referenced. There is **no vendored plugin** and **no `libmpv2` dep** on this branch (that was branch `feat/v0.5-player`). So the render-API work is a **new module that replaces `player.rs`**, and the "replace tauri-plugin-libmpv IPC" instruction actually means "replace the `mpv_*` JSON-IPC commands."
+- **`tauri.conf.json` has NO `transparent` / `macOSPrivateApi` yet** - must be added (they exist only on the other branch).
 - libmpv **0.41.0** at `/opt/homebrew/lib/libmpv.2.dylib`; `_mpv_render_context_create` / `_render` symbols present. Render API is fully available on-device.
 - Crates confirmed on crates.io: `libmpv2 = 6.0.0`, `objc2 = 0.6` family with `objc2-quartz-core/app-kit/foundation = 0.3.2`, `objc2-core-video = 0.3.2`, `raw-window-handle = 0.6` (already a dep). rustc 1.95.
 
-> One correction to the render-API report before you code from it: the `libmpv2` 6.0.0 `RenderContext::render(fbo, w, h, flip)` **owns the FBO/flip params internally** — you do *not* also pass a `RenderParam::FBO`. And `OpenGLInitParams.get_proc_address` is a plain `fn` pointer (not a closure) — capture-free. Both matter for the code below.
+> One correction to the render-API report before you code from it: the `libmpv2` 6.0.0 `RenderContext::render(fbo, w, h, flip)` **owns the FBO/flip params internally** - you do *not* also pass a `RenderParam::FBO`. And `OpenGLInitParams.get_proc_address` is a plain `fn` pointer (not a closure) - capture-free. Both matter for the code below.
 
 ---
 
@@ -32,7 +32,7 @@ This keeps every mpv call on our CV thread, every AppKit hierarchy mutation on m
 
 ## Implement-first order
 
-### Stage 0 — Deps + config (30 min, must compile before anything else)
+### Stage 0 - Deps + config (30 min, must compile before anything else)
 
 `web/src-tauri/Cargo.toml`, add under `[target.'cfg(target_os = "macos")'.dependencies]` (macOS-gate everything so the Windows/Linux release matrix is untouched):
 
@@ -48,9 +48,9 @@ objc2-core-video = { version = "0.3", features = ["CVDisplayLink", "CVBase", "CV
 libc = "0.2"        # dlopen/dlsym for get_proc_address
 ```
 
-**Conflict check:** none. `raw-window-handle 0.6` is already in the tree and is what Tauri 2 exposes; `objc2 0.6` is compatible with the `objc2-* 0.3.2` framework crates (they depend on `objc2 ^0.6`). `libmpv2 6.0.0` pulls `libmpv2-sys` which links `libmpv` — but you'll load it at runtime via the bundled dylib, not link-time (see Stage 4 packaging); for dev, brew's `libmpv.2.dylib` on the default dylib path satisfies the linker. `core-video`/`core-video-sys` are NOT needed — use `objc2-core-video` (typed, same objc2 family) to avoid a second FFI style.
+**Conflict check:** none. `raw-window-handle 0.6` is already in the tree and is what Tauri 2 exposes; `objc2 0.6` is compatible with the `objc2-* 0.3.2` framework crates (they depend on `objc2 ^0.6`). `libmpv2 6.0.0` pulls `libmpv2-sys` which links `libmpv` - but you'll load it at runtime via the bundled dylib, not link-time (see Stage 4 packaging); for dev, brew's `libmpv.2.dylib` on the default dylib path satisfies the linker. `core-video`/`core-video-sys` are NOT needed - use `objc2-core-video` (typed, same objc2 family) to avoid a second FFI style.
 
-`tauri.conf.json` — add to the single window object and enable private API:
+`tauri.conf.json` - add to the single window object and enable private API:
 
 ```jsonc
 "windows": [{ "title": "DebridStreamer", "width": 1280, "height": 860,
@@ -67,7 +67,7 @@ And `web/src/index.css` (or the root style): `html, body, #root { background: tr
 
 ---
 
-### Stage 1 — MINIMAL FIRST PROOF: one video frame inside the window (the make-or-break)
+### Stage 1 - MINIMAL FIRST PROOF: one video frame inside the window (the make-or-break)
 
 New file **`web/src-tauri/src/render_player.rs`**. This stage does the absolute minimum: hardcode a test URL, no controls, no observe. Goal: prove `mpv → NSOpenGLContext → visible in the app window behind the webview`.
 
@@ -100,18 +100,18 @@ New file **`web/src-tauri/src/render_player.rs`**. This stage does the absolute 
 Why this never deadlocks the way `--wid` / the CAOpenGLLayer path did:
 
 - The **GL context is made current on the CV thread only** and never touched from main after step 5 hands it off. (Call `[ctx clearCurrentContext]` at the end of the main-thread block so ownership transfers cleanly.)
-- **No mpv API call ever happens inside the update callback** — it only flips an `AtomicBool`. The actual `update()`/`render()` run on the CV thread.
+- **No mpv API call ever happens inside the update callback** - it only flips an `AtomicBool`. The actual `update()`/`render()` run on the CV thread.
 - Main thread never *blocks waiting* on the render thread. `run_on_main_thread` is fire-and-forget for the loop; `player_load` returns as soon as setup is queued.
-- `CVDisplayLink` callback is a C `extern "C"` fn on a CV-owned thread — it must not call back into AppKit. It only does GL + mpv render.
+- `CVDisplayLink` callback is a C `extern "C"` fn on a CV-owned thread - it must not call back into AppKit. It only does GL + mpv render.
 
 **Key implementation specifics for Stage 1:**
 
-- **`get_proc_address`** must be a bare `fn(&(), &str) -> *mut c_void)` (no captures). Implement it with `dlopen("/System/Library/Frameworks/OpenGL.framework/OpenGL", RTLD_LAZY)` cached in a `once_cell`/`OnceLock`, then `dlsym`. (The macOS-surface report's snippet is correct; just cache the handle.) Add `-DGL_SILENCE_DEPRECATION` concerns don't apply to Rust — you're calling C symbols by name, deprecation is compile-time only.
+- **`get_proc_address`** must be a bare `fn(&(), &str) -> *mut c_void)` (no captures). Implement it with `dlopen("/System/Library/Frameworks/OpenGL.framework/OpenGL", RTLD_LAZY)` cached in a `once_cell`/`OnceLock`, then `dlsym`. (The macOS-surface report's snippet is correct; just cache the handle.) Add `-DGL_SILENCE_DEPRECATION` concerns don't apply to Rust - you're calling C symbols by name, deprecation is compile-time only.
 - **Pixel format:** `NSOpenGLPixelFormat` with `NSOpenGLPFAOpenGLProfile = NSOpenGLProfileVersion3_2Core`, `NSOpenGLPFADoubleBuffer`, `NSOpenGLPFAAccelerated`, `NSOpenGLPFAColorSize 24`, `NSOpenGLPFAAlphaSize 8`. Core profile 3.2 is what libmpv's `gpu`/`gpu-next` GL backend wants.
 - **FBO = 0**, width/height in **backing pixels** (`[glview convertRectToBacking:bounds]` → Retina-correct; wrong scale = video renders in a corner quarter). `flip = true` (GL origin bottom-left vs mpv top-left).
-- **`RenderState` struct** (heap-boxed, pointer handed to CVDisplayLink as its `userInfo`): holds `RenderContext<'static>` (leak the `Mpv` with `Box::leak` or store both in the same struct so lifetimes hold), the `NSOpenGLContext` (Retained), the `AtomicBool`, and current `(w,h)`. **`RenderContext` is `!Send`** — so it must be *created on and only touched by the CV thread*. That means: create `Mpv` on main, but **create the render context inside the first CV tick** (or on a dedicated thread you spawn and then attach the CVDisplayLink to). Simplest correct ordering: create `Mpv` on main (Send), move it into the `RenderState`, and do `create_render_context` + `set_update_callback` **lazily on the first CVDisplayLink callback**, so the render context is born on the render thread it's bound to.
+- **`RenderState` struct** (heap-boxed, pointer handed to CVDisplayLink as its `userInfo`): holds `RenderContext<'static>` (leak the `Mpv` with `Box::leak` or store both in the same struct so lifetimes hold), the `NSOpenGLContext` (Retained), the `AtomicBool`, and current `(w,h)`. **`RenderContext` is `!Send`** - so it must be *created on and only touched by the CV thread*. That means: create `Mpv` on main, but **create the render context inside the first CV tick** (or on a dedicated thread you spawn and then attach the CVDisplayLink to). Simplest correct ordering: create `Mpv` on main (Send), move it into the `RenderState`, and do `create_render_context` + `set_update_callback` **lazily on the first CVDisplayLink callback**, so the render context is born on the render thread it's bound to.
 
-- **mpv init options for Stage 1:** `vo=libmpv`, `hwdec=no` (turn hwdec ON only after a frame shows — hwdec + GL interop is a second failure surface), `terminal=yes`, `msg-level=all=status,vo=v` so mpv's `[vo/gpu-next] … reconfig to WxH … Video display` lines hit stderr → the `tauri dev` log, giving you headless proof a frame rendered even before you eyeball it.
+- **mpv init options for Stage 1:** `vo=libmpv`, `hwdec=no` (turn hwdec ON only after a frame shows - hwdec + GL interop is a second failure surface), `terminal=yes`, `msg-level=all=status,vo=v` so mpv's `[vo/gpu-next] … reconfig to WxH … Video display` lines hit stderr → the `tauri dev` log, giving you headless proof a frame rendered even before you eyeball it.
 
 **Test:** `npm run tauri dev`, `player_load("https://media.w3.org/2010/05/sintel/trailer.mp4")` from a temporary devtools button. Success = Sintel visible **inside** the app window (no separate mpv titlebar) + stderr shows `Video display`. (Use `dangerouslyDisableSandbox` for the build per the sandbox-taint memory.)
 
@@ -119,7 +119,7 @@ Why this never deadlocks the way `--wid` / the CAOpenGLLayer path did:
 
 ---
 
-### Stage 2 — Full command surface + wire the webview
+### Stage 2 - Full command surface + wire the webview
 
 Flesh out `render_player.rs` into the 7 commands the task specifies, replacing the `player::mpv_*` set in `lib.rs`:
 
@@ -127,7 +127,7 @@ Flesh out `render_player.rs` into the 7 commands the task specifies, replacing t
 |---|---|
 | `player_load(url)` | the Stage-1 setup (idempotent: reuse the view/context if already created; else create). Then `mpv.command(["loadfile", url])`. |
 | `player_command(name, args)` | thin passthrough → `mpv.command(&[name, ...args])` (covers seek, playlist, cycle, sub-add, etc.) |
-| `player_set(prop, value)` | `mpv.set_property(prop, value)` — value as `serde_json::Value`, dispatch to string/bool/f64/i64 |
+| `player_set(prop, value)` | `mpv.set_property(prop, value)` - value as `serde_json::Value`, dispatch to string/bool/f64/i64 |
 | `player_get(prop) -> Value` | `mpv.get_property(prop)` |
 | `player_observe(props: [{name,format}]) -> ()` | register mpv property observers; forward events to the webview via `window.emit("player-event", {...})` from mpv's event thread (Mpv event loop runs on a spawned std::thread that calls `mpv.wait_event`, then `window.emit`) |
 | `player_destroy()` | stop CVDisplayLink, `clearCurrentContext`, drop RenderContext + Mpv, and on **main thread** `[glview removeFromSuperview]`; restore `html.mpv-active` off |
@@ -135,7 +135,7 @@ Flesh out `render_player.rs` into the 7 commands the task specifies, replacing t
 
 **State:** `.manage(render_player::PlayerState::default())` in `lib.rs`; register the 7 commands; **remove** the old `player::mpv_*` from `invoke_handler` and the `MpvState` manage (keep `player.rs` around as the fallback external-player path if you like, or delete). Keep `open_in_external_player` as the ultimate fallback.
 
-**Webview side** — in `web/src/components/`, create/replace `EmbeddedPlayer.tsx` to call the new commands (memory says a rich `EmbeddedPlayer.tsx` exists on `feat/v0.5-player`; port it and swap its IPC layer):
+**Webview side** - in `web/src/components/`, create/replace `EmbeddedPlayer.tsx` to call the new commands (memory says a rich `EmbeddedPlayer.tsx` exists on `feat/v0.5-player`; port it and swap its IPC layer):
 
 ```ts
 import { invoke } from "@tauri-apps/api/core";
@@ -158,7 +158,7 @@ audio/sub:  invoke("player_set", { prop:"aid"/"sid", value })
 await invoke("player_destroy"); un(); document.documentElement.classList.remove("mpv-active");
 ```
 
-`VideoPlayer.tsx` routes the external/MKV path to `EmbeddedPlayer` when the `builtInPlayer` setting is on (that setting + routing already exists on the other branch — port it).
+`VideoPlayer.tsx` routes the external/MKV path to `EmbeddedPlayer` when the `builtInPlayer` setting is on (that setting + routing already exists on the other branch - port it).
 
 Also reserve control-bar space so subtitles/video aren't hidden behind controls: `mpv.set_property("video-margin-ratio-bottom", 0.18)` (the render API respects it same as `setVideoMarginRatio` did).
 
@@ -166,26 +166,26 @@ Also reserve control-bar space so subtitles/video aren't hidden behind controls:
 
 ---
 
-### Stage 3 — hwdec + polish
+### Stage 3 - hwdec + polish
 
 - Turn on `hwdec=videotoolbox` (macOS) now that base GL works. If it corrupts/blackscreens, fall back to `hwdec=no`. VideoToolbox → GL interop is the most common breakage; keep it a runtime-switchable option.
 - Handle **resize/Retina scale-factor changes** (move between displays): re-read `convertRectToBacking` on `windowDidChangeBackingProperties`; you can observe via a lightweight main-thread notification or just re-fetch backing size each CV tick (cheap).
 - **Pause efficiency:** when mpv is paused and no frame pending, `CVDisplayLinkStop`; restart on the next update-callback. Prevents idle GPU churn (the perf-fix memory shows this matters).
-- Track pickers (audio/sub/chapter) from `track-list`, fullscreen, keyboard — port from the existing rich `EmbeddedPlayer.tsx`.
+- Track pickers (audio/sub/chapter) from `track-list`, fullscreen, keyboard - port from the existing rich `EmbeddedPlayer.tsx`.
 
 ---
 
-### Stage 4 — Packaging (already 90% solved per memory; re-apply)
+### Stage 4 - Packaging (already 90% solved per memory; re-apply)
 
 The dylib discovery + signing story is fully worked out in memory (`debridstreamer-embedded-player.md`). But note **this branch does not use the vendored plugin**, so you're loading libmpv via `libmpv2`/`libmpv2-sys` directly, which `dlopen`s by the linked install-name. Reuse the proven recipe:
 
 1. Bundle `libmpv.2.dylib` into the app: add `"lib/**/*"` to `bundle.resources` and place `libmpv.2.dylib` (copied `-L` from brew) there.
-2. `install_name_tool -id "@rpath/libmpv.2.dylib" lib/libmpv.2.dylib` (or leaf name) **then** `codesign --force --sign - lib/libmpv.2.dylib` — **install_name_tool invalidates the signature → dlopen SIGKILLs; re-sign after.** (The confirmed crash root cause from memory.)
+2. `install_name_tool -id "@rpath/libmpv.2.dylib" lib/libmpv.2.dylib` (or leaf name) **then** `codesign --force --sign - lib/libmpv.2.dylib` - **install_name_tool invalidates the signature → dlopen SIGKILLs; re-sign after.** (The confirmed crash root cause from memory.)
 3. `preload_bundled_libmpv()` in `.setup()`: `libc::dlopen(resource_dir/lib/libmpv.2.dylib, RTLD_NOW|RTLD_GLOBAL)` **before** `libmpv2` first touches mpv, so its leaf-name resolution binds to the bundled copy on a brew-less Mac.
 4. `entitlements.plist` with `com.apple.security.cs.disable-library-validation` + `allow-jit`, wired via `bundle.macOS.entitlements`.
 5. Pin `macos-15` runner in CI (not `macos-latest` = beta SDK) per the release-verification memory; fetch the dylib in CI (not committed; `lib/*.dylib` gitignored).
 
-For **dev on this Mac**, none of this is needed — brew's dylib on the default path is found automatically.
+For **dev on this Mac**, none of this is needed - brew's dylib on the default path is found automatically.
 
 ---
 
@@ -222,13 +222,13 @@ web/src-tauri/Cargo.toml       ← macOS-gated crates + tauri macos-private-api 
 
 2. **`RenderContext` `!Send` vs. where it's created.** If you accidentally create it on main and use it on the CV thread you get UB/panic. **Mitigation (already baked in above):** create the render context lazily inside the first CVDisplayLink callback so it's born on its render thread. This is the single most important correctness detail.
 
-3. **VideoToolbox↔OpenGL interop black/green frames.** Common on macOS. **Fallback:** `hwdec=no` (SW decode, GL upload) — proven to work in the POC. Make hwdec a runtime option, default `no` until validated.
+3. **VideoToolbox↔OpenGL interop black/green frames.** Common on macOS. **Fallback:** `hwdec=no` (SW decode, GL upload) - proven to work in the POC. Make hwdec a runtime option, default `no` until validated.
 
-4. **CAOpenGLLayer temptation / main-thread deadlock recurrence.** Explicitly avoided by not using the CA async draw callback at all. If you ever *must* (e.g. NSOpenGLView deprecation on a future macOS), the CVDisplayLink+explicit-context pattern still holds — just render into a CAOpenGLLayer's FBO from *your* thread with `asynchronous=false` and `setNeedsDisplay`, never inside CA's callback.
+4. **CAOpenGLLayer temptation / main-thread deadlock recurrence.** Explicitly avoided by not using the CA async draw callback at all. If you ever *must* (e.g. NSOpenGLView deprecation on a future macOS), the CVDisplayLink+explicit-context pattern still holds - just render into a CAOpenGLLayer's FBO from *your* thread with `asynchronous=false` and `setNeedsDisplay`, never inside CA's callback.
 
-5. **SW-render fallback if CAOpenGLLayer/GL integration fails entirely.** libmpv2 6.0.0's safe wrapper does **not** expose the SW render path — you'd drop to `libmpv2-sys` raw FFI: `MPV_RENDER_API_TYPE_SW` + `MPV_RENDER_PARAM_SW_SIZE`/`SW_FORMAT`/`SW_STRIDE`/`SW_POINTER`, render into a `Vec<u8>` RGBA buffer on the CV thread, wrap it as a `CGImage` (`CGBitmapContext`) and set it as a plain `CALayer.contents` on the main thread. ~2-3× the CPU, but no GL context needed and immune to all GL-interop breakage. Keep this documented as the escape hatch; don't build it unless GL fails.
+5. **SW-render fallback if CAOpenGLLayer/GL integration fails entirely.** libmpv2 6.0.0's safe wrapper does **not** expose the SW render path - you'd drop to `libmpv2-sys` raw FFI: `MPV_RENDER_API_TYPE_SW` + `MPV_RENDER_PARAM_SW_SIZE`/`SW_FORMAT`/`SW_STRIDE`/`SW_POINTER`, render into a `Vec<u8>` RGBA buffer on the CV thread, wrap it as a `CGImage` (`CGBitmapContext`) and set it as a plain `CALayer.contents` on the main thread. ~2-3× the CPU, but no GL context needed and immune to all GL-interop breakage. Keep this documented as the escape hatch; don't build it unless GL fails.
 
-6. **OpenGL deprecation on macOS 26+.** OpenGL.framework still ships and `dlsym` still resolves (verified pattern), but it's living on borrowed time. Long-term the modern path is Metal via `MPV_RENDER_API_TYPE_SW` isn't it — mpv's Metal render backend is immature. For now GL is correct; revisit only if a future SDK drops OpenGL.framework.
+6. **OpenGL deprecation on macOS 26+.** OpenGL.framework still ships and `dlsym` still resolves (verified pattern), but it's living on borrowed time. Long-term the modern path is Metal via `MPV_RENDER_API_TYPE_SW` isn't it - mpv's Metal render backend is immature. For now GL is correct; revisit only if a future SDK drops OpenGL.framework.
 
 7. **Update callback firing before render context fully constructed.** `set_update_callback` fires immediately. Register it only *after* the render context exists and the AtomicBool is in place (it is, in the lazy-first-tick ordering).
 

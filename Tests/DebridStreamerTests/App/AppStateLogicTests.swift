@@ -31,7 +31,7 @@ struct AppStateLogicTests {
         #expect(appState.activePlayerSession == nil)
         #expect(appState.activePlayerIsFullscreen == false)
 
-        // Open then close, then close again — second close is a no-op.
+        // Open then close, then close again - second close is a no-op.
         let request = Self.makeRequest()
         appState.openPlayer(request)
         #expect(appState.activePlayerSession?.id == request.id)

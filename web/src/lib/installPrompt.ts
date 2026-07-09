@@ -1,5 +1,5 @@
 // Early beforeinstallprompt capture, module-cached. The browser fires the
-// event once, often BEFORE React commits App — so main.tsx registers this at
+// event once, often BEFORE React commits App - so main.tsx registers this at
 // module eval and consumers read/subscribe to the cache instead of racing to
 // add their own listeners.
 

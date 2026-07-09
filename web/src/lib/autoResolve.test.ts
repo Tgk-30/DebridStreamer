@@ -38,7 +38,7 @@ function deps(over: {
   };
 }
 
-describe("resolveOne — data-saver-aware auto-pick", () => {
+describe("resolveOne - data-saver-aware auto-pick", () => {
   // Quality-sorted best-first, as the indexers return them.
   const results = [
     torrent("4k", VideoQuality.uhd4k, 60),
@@ -47,7 +47,7 @@ describe("resolveOne — data-saver-aware auto-pick", () => {
 
   it("picks the within-cap source when Data Saver clamps quality (the bug fix)", async () => {
     const record = await resolveOne(preview, deps({ results, settings: settings({ dataSaver: true }) }));
-    // Not the over-cap 4K, even though it's first/best — auto-pick now respects the cap.
+    // Not the over-cap 4K, even though it's first/best - auto-pick now respects the cap.
     expect(record?.infoHash).toBe("720p");
   });
 

@@ -1,4 +1,4 @@
-// Bulk watchlist import — pure parsing + match logic.
+// Bulk watchlist import - pure parsing + match logic.
 //
 // Accepts three shapes and normalises them to ImportEntry rows:
 //   • IMDb CSV export     (header has a "Title Type" / "Const" column)

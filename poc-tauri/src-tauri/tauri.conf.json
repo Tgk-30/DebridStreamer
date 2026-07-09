@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "DebridStreamer — Tauri player POC",
+        "title": "DebridStreamer - Tauri player POC",
         "width": 1100,
         "height": 780
       }

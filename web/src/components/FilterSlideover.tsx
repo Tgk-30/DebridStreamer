@@ -1,4 +1,4 @@
-// FilterSlideover — the advanced Browse filter panel.
+// FilterSlideover - the advanced Browse filter panel.
 //
 // A glass panel that slides in from the right to refine Browse results. Edits a
 // DRAFT copy of the filters (a BrowseFilters) so changing controls does not
@@ -271,7 +271,7 @@ export function FilterSlideover({
             </div>
           </FilterGroup>
 
-          {/* Runtime (movies only — TMDB with_runtime applies to movies) */}
+          {/* Runtime (movies only - TMDB with_runtime applies to movies) */}
           {draftType === "movie" && (
             <FilterGroup label="Max runtime">
               <div className="fs-row fs-wrap">
@@ -358,7 +358,7 @@ function FilterGroup({
 
 /** Sanitize a draft before it's committed as the live filters: drop an
  * implausible/partial year (the permissive input may hold "20" mid-type) so the
- * applied filters never carry a year that buildDiscoverParams would clamp away —
+ * applied filters never carry a year that buildDiscoverParams would clamp away - 
  * which would otherwise show a "From 20" chip that doesn't actually filter. */
 export function sanitizeFilters(draft: BrowseFilters): BrowseFilters {
   return {

@@ -134,7 +134,7 @@ function statsFixture(over: Partial<WatchStats> = {}): WatchStats {
   };
 }
 
-describe("History — watch stats card", () => {
+describe("History - watch stats card", () => {
   it("is hidden when the setting is off", () => {
     mockSettings = { showWatchStats: false };
     mockStats = statsFixture();
@@ -159,7 +159,7 @@ describe("History — watch stats card", () => {
   });
 });
 
-describe("History — empty", () => {
+describe("History - empty", () => {
   it("renders the empty-state with Browse + Search CTAs when nothing watched", async () => {
     render(<History />);
     expect(screen.getByText("Nothing here yet")).toBeInTheDocument();
@@ -178,7 +178,7 @@ describe("History — empty", () => {
   });
 });
 
-describe("History — grid", () => {
+describe("History - grid", () => {
   it("renders the history grid and opens detail on select", async () => {
     mockHistory = [preview("m1", "Heat"), preview("m2", "Drive")];
     render(<History />);
@@ -193,13 +193,13 @@ describe("History — grid", () => {
   });
 });
 
-describe("History — Continue Watching rail", () => {
+describe("History - Continue Watching rail", () => {
   it("surfaces only records with a resume point and passes their progress fraction", async () => {
     mockHistory = [preview("m1", "Heat")];
     mockContinueWatching = [
-      record("m1", "Heat", 1800, 3600), // 50% — resumable
-      record("m2", "Tooearly", 10, 3600), // ~0.3% — below floor, dropped
-      record("m3", "Almostdone", 3500, 3600), // ~97% — above ceiling, dropped
+      record("m1", "Heat", 1800, 3600), // 50% - resumable
+      record("m2", "Tooearly", 10, 3600), // ~0.3% - below floor, dropped
+      record("m3", "Almostdone", 3500, 3600), // ~97% - above ceiling, dropped
     ];
     render(<History />);
 

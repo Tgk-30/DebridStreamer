@@ -9,7 +9,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 
 export interface Transcoder {
   /** Resolves true iff `ffmpeg -version` exits 0 within a short timeout. Run once
-   *  at boot and cached — never per request. */
+   *  at boot and cached - never per request. */
   detect(): Promise<boolean>;
   /** Spawn an ffmpeg process for the given argv (which encodes the HLS output
    *  paths). Returns the child handle so the registry can manage its lifecycle. */

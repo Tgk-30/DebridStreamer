@@ -282,7 +282,7 @@ export async function searchServerStreams(db, config, profileId, input) {
 
   // Two complementary passes, merged identically to Local Mode via the shared
   // combineStreamResults: the imdb-native search (YTS/EZTV accept an imdb id) AND
-  // a title/name query — APIBay-style indexers match torrent TITLES, so a bare
+  // a title/name query - APIBay-style indexers match torrent TITLES, so a bare
   // imdb id returns nothing there and without this they never contribute (one
   // dead imdb indexer would then empty every series). The title pass is
   // best-effort: a failure there must NOT empty the imdb results, and it is only
@@ -295,7 +295,7 @@ export async function searchServerStreams(db, config, profileId, input) {
   // The title pass runs on its OWN IndexerManager. Both passes call the manager's
   // collect(), which OVERWRITES lastSearchErrors; sharing one manager across the
   // concurrent Promise.all would let whichever pass finished last clobber the
-  // imdb pass's errors — and indexerErrors below reads exactly those. Isolating
+  // imdb pass's errors - and indexerErrors below reads exactly those. Isolating
   // the title pass keeps indexerErrors deterministic (= the imdb pass), and the
   // title pass's own failures stay swallowed (best-effort, mirroring Local Mode).
   const titleIndexers = titleQuery != null ? buildIndexerManager(db, profileId) : null;
@@ -369,7 +369,7 @@ export async function resolveServerStream(db, config, profileId, input) {
 // It deliberately bypasses searchServerStreams' profileStreamFilters (cachedOnly
 // / maxQuality / maxSizeGB) and the debrid cache lookup: membership is about
 // whether the hash is a real SOURCE of the title, not whether it passes the
-// profile's quality/cache preferences — filtering there would falsely block a
+// profile's quality/cache preferences - filtering there would falsely block a
 // legitimate in-cap movie. Fail-closed (false) on no imdbId / no indexers / no
 // matching source.
 export async function titleHasInfoHash(db, config, profileId, mediaId, mediaType, infoHash) {

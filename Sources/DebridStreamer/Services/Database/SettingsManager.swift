@@ -72,7 +72,7 @@ actor SettingsManager {
 
         for key in secretKeys {
             guard let stored = try await database.getSetting(key: key) else { continue }
-            // Already a keychain reference — nothing to migrate.
+            // Already a keychain reference - nothing to migrate.
             if SecretReference.decode(stored) != nil { continue }
 
             let migratedKey = SecretKey.setting(key)

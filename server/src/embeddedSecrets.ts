@@ -1,4 +1,4 @@
-// Build-time embedded provider secrets (the "friends" self-host tier — they run
+// Build-time embedded provider secrets (the "friends" self-host tier - they run
 // a server with some keys baked in: omdb / tmdb / real_debrid / all_debrid /
 // premiumize / torbox, per build).
 //
@@ -9,20 +9,20 @@
 // once, using DS_EMBED_PASSPHRASE.
 //
 // ─────────────────────────────────────────────────────────────────────────────
-// ⚠️  SECURITY REALITY — read before trusting it.
+// ⚠️  SECURITY REALITY - read before trusting it.
 //
 // Encryption-at-rest in a build can only protect secrets from people who do NOT
 // control the machine that runs it (the friend-operator's own users, and casual
 // `strings`/grep inspection). It CANNOT protect them from the operator who runs
 // the server: to use a key the server must decrypt it, so whoever controls the
 // server can recover it (read process memory, attach a debugger, or watch the
-// outbound request — the key rides in the URL/headers). No cipher changes this.
+// outbound request - the key rides in the URL/headers). No cipher changes this.
 //   • DS_EMBED_PASSPHRASE supplied at RUNTIME (e.g. delivered by a broker you
 //     control, and revocable) → the blob is useless without a passphrase you
 //     never bake in. This is the strong option.
 //   • The baked DEFAULT passphrase (opt-in only) → BEST-EFFORT obfuscation: the
 //     shipped files alone decrypt it. A determined operator extracts the keys.
-// For keys that must be unrecoverable by the recipient, don't ship them — proxy
+// For keys that must be unrecoverable by the recipient, don't ship them - proxy
 // those calls through infrastructure you control. See docs/KEYS.md.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ export interface EncryptedSecrets {
   data: string; // base64 AES-256-GCM ciphertext of JSON {provider: key}
 }
 
-/** Reject out-of-range KDF params — guards against a tampered/swapped blob that
+/** Reject out-of-range KDF params - guards against a tampered/swapped blob that
  *  sets a DoS-grade `N` (memory/CPU exhaustion) or a trivially-weak one. */
 function validateKdf(kdf: KdfParams): void {
   const { N, r, p } = kdf ?? {};
@@ -167,7 +167,7 @@ function warnOnce(message: string): void {
 }
 
 /** Load + decrypt the embedded secrets once. Returns {} (and a null profile)
- *  when no blob is present (the default / public build) or on any error — the
+ *  when no blob is present (the default / public build) or on any error - the
  *  server simply behaves as if nothing was embedded, and logs a sanitized
  *  warning so a misconfiguration is visible without leaking the key. */
 export function loadEmbeddedSecrets(): { secrets: Record<string, string>; profile: string | null } {

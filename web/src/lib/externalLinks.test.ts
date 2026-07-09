@@ -56,7 +56,7 @@ describe("installExternalLinkHandler", () => {
 
   it("routes modified clicks too under Tauri (no new-tab in the desktop webview)", () => {
     // In a browser Cmd/Ctrl-click opens a new tab, but the Tauri webview has no
-    // such concept — the click would otherwise be swallowed and do nothing, so
+    // such concept - the click would otherwise be swallowed and do nothing, so
     // it must still reach the OS browser.
     clickAnchor("https://alldebrid.com/apikeys", { metaKey: true });
     expect(openExternalURL).toHaveBeenCalledWith("https://alldebrid.com/apikeys");

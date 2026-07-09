@@ -1,9 +1,9 @@
-// InstallPrompt — dismissible "add to home screen" card, shown ONLY in a
+// InstallPrompt - dismissible "add to home screen" card, shown ONLY in a
 // mobile browser session (never Tauri, never once installed/standalone).
 // Android/Chromium: a real one-tap Install via the captured
 // beforeinstallprompt; where the event never fires (iOS always, Firefox,
 // unmet PWA criteria, dev builds) the card still renders platform-specific
-// manual steps — that copy is the only guidance those environments get.
+// manual steps - that copy is the only guidance those environments get.
 
 import { useEffect, useRef, useState } from "react";
 import { deviceKind, isMobileBrowser, isStandaloneDisplay } from "../lib/platform";
@@ -47,7 +47,7 @@ export function InstallPrompt({ onDismiss }: { onDismiss: () => void }) {
       await prompt.prompt();
       outcome = (await prompt.userChoice).outcome;
     } catch {
-      // Event already used or invalidated — consume it and fall back to the
+      // Event already used or invalidated - consume it and fall back to the
       // menu copy rather than leaving a dead Install button.
     } finally {
       consumeInstallPrompt();
@@ -84,7 +84,7 @@ export function InstallPrompt({ onDismiss }: { onDismiss: () => void }) {
           </ol>
         ) : prompt != null ? (
           <span className="t-secondary">
-            Add it to your home screen — full screen, no browser bars.
+            Add it to your home screen - full screen, no browser bars.
           </span>
         ) : (
           <span className="t-secondary">

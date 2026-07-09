@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// TOMBSTONE — do not regenerate placeholders over real captures.
+// TOMBSTONE - do not regenerate placeholders over real captures.
 //
 // website/media/*.png used to be drawn placeholder mockups produced by this
 // script. As of 2026-07 they are REAL screenshots of the running app
@@ -14,7 +14,7 @@
 // keep scripts/check_website_static.mjs byte pins satisfied.
 
 console.error(
-  "website/media now holds REAL app screenshots — refusing to overwrite them" +
+  "website/media now holds REAL app screenshots - refusing to overwrite them" +
     " with drawn placeholders. Use scripts/capture_website_media.mjs instead.",
 );
 process.exit(1);

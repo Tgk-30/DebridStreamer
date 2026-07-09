@@ -149,7 +149,7 @@ function WelcomeStep({ onContinue }: { onContinue: () => void }) {
     <>
       <h1 className="first-run-title">Your server is live</h1>
       <p className="first-run-sub">
-        Nice — the owner account is set up. A few quick steps and your household
+        Nice - the owner account is set up. A few quick steps and your household
         can sign in from any device. You can skip and do all of this later in
         Settings → Server.
       </p>
@@ -169,7 +169,7 @@ function WelcomeStep({ onContinue }: { onContinue: () => void }) {
 
 /** API-keys step. Saves each non-empty field through the SHARED credential PUT
  *  (the same path the Server tab uses), so they apply server-wide. Empty fields
- *  are skipped. Failures are surfaced but never block continuing — the owner can
+ *  are skipped. Failures are surfaced but never block continuing - the owner can
  *  finish a key later in Settings. */
 function KeysStep({
   onBack,
@@ -200,7 +200,7 @@ function KeysStep({
     });
 
     if (pending.length === 0) {
-      // Nothing entered — let the owner move on and add keys later.
+      // Nothing entered - let the owner move on and add keys later.
       onContinue();
       return;
     }
@@ -235,7 +235,7 @@ function KeysStep({
       <h1 className="first-run-title">Add your API keys</h1>
       <p className="first-run-sub">
         These are stored as shared server credentials, so every profile uses
-        them. Add what you have now — TMDB and one debrid provider are the
+        them. Add what you have now - TMDB and one debrid provider are the
         essentials.
       </p>
       <div className="server-setup-fields">
@@ -335,7 +335,7 @@ function AccessStep({
         {baseURL != null ? <code>{baseURL}</code> : "your local network"}.{" "}
         <strong>Only watching on your home Wi-Fi? You can skip this.</strong> To
         also use it from phones and tablets <em>away</em> from home, expose it
-        with a tunnel — no ports to open, traffic stays encrypted.
+        with a tunnel - no ports to open, traffic stays encrypted.
       </p>
       <div className="server-setup-access">
         <a
@@ -544,7 +544,7 @@ function InviteStep({
           className="server-setup-skip-inline"
           onClick={onContinue}
         >
-          Skip — I'll invite people later
+          Skip - I'll invite people later
         </button>
       )}
     </>

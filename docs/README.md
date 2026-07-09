@@ -28,6 +28,6 @@ how to use it and how to run your own server.
 
 These describe how the project is built (for contributors, not end users):
 
-- [`SELF_HOSTING_DESIGN.md`](SELF_HOSTING_DESIGN.md) — design and status.
-- [`DOCKER.md`](DOCKER.md) — Docker server reference.
-- [`RELEASE_AND_UPDATES.md`](RELEASE_AND_UPDATES.md) — desktop OTA updates.
+- [`SELF_HOSTING_DESIGN.md`](SELF_HOSTING_DESIGN.md) - design and status.
+- [`DOCKER.md`](DOCKER.md) - Docker server reference.
+- [`RELEASE_AND_UPDATES.md`](RELEASE_AND_UPDATES.md) - desktop OTA updates.

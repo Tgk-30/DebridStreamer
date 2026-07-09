@@ -1,4 +1,4 @@
-// WatchlistImportDialog — bulk-import titles into the watchlist from an IMDb /
+// WatchlistImportDialog - bulk-import titles into the watchlist from an IMDb /
 // Letterboxd CSV export or a pasted title list. Each parsed entry is resolved to
 // a real title via TMDB search (Local Mode) or the server (Server Mode), skipped
 // if already on the watchlist, then added. Shows live progress and an
@@ -59,14 +59,14 @@ export function WatchlistImportDialog({ onClose }: { onClose: () => void }) {
   async function readFile(file: File) {
     try {
       // Read at most MAX_TEXT bytes so a hostile multi-GB file can't be pulled
-      // into memory — slice the Blob BEFORE reading rather than after.
+      // into memory - slice the Blob BEFORE reading rather than after.
       const oversize = file.size > MAX_TEXT;
       const content = await (oversize ? file.slice(0, MAX_TEXT) : file).text();
       setText(content);
       setSummary(null);
       setError(
         oversize
-          ? "That file was large — only the first part was imported."
+          ? "That file was large - only the first part was imported."
           : null,
       );
     } catch {

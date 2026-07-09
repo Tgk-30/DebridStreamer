@@ -3,7 +3,7 @@
 /* Full-width shell: the HERO renders outside the capped column so it can span
    the true window width, and `.discover-body` carries the content cap. The old
    design capped + left-pinned the WHOLE screen, so the hero's negative-margin
-   breakout could never escape the 1440px box — on wide windows everything
+   breakout could never escape the 1440px box - on wide windows everything
    stopped short and the raw theme background filled the right side as a hard
    seam (the "background color on the right" bug). */
 .discover {

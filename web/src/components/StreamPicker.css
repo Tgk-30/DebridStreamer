@@ -1,4 +1,4 @@
-/* StreamPicker — rows of cached/will-cache torrents. */
+/* StreamPicker - rows of cached/will-cache torrents. */
 
 .streams {
   display: flex;
@@ -53,7 +53,7 @@
   padding: 4px 10px;
 }
 
-/* "· S2 E5" scope suffix in the header — quieter than the title itself. */
+/* "· S2 E5" scope suffix in the header - quieter than the title itself. */
 .streams-episode-label {
   font-weight: 500;
 }
@@ -110,7 +110,7 @@
     transform 0.14s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Loading skeleton — shimmer rows shaped exactly like the loaded .stream-row
+/* Loading skeleton - shimmer rows shaped exactly like the loaded .stream-row
    (same container, padding, gap and heights) so real results swap in with no
    layout shift. Reuses the global @keyframes shimmer from MediaCard.css. */
 .skel {
@@ -246,7 +246,7 @@
   border-radius: var(--r-pill);
   white-space: nowrap;
 }
-/* Green "Instant · RD" — cached on debrid. */
+/* Green "Instant · RD" - cached on debrid. */
 .stream-badge.is-cached {
   color: var(--success);
   background: rgba(92, 217, 140, 0.16);
@@ -254,14 +254,14 @@
   box-shadow: 0 0 14px -2px rgba(92, 217, 140, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
-/* Grey "Will cache" — not yet cached. */
+/* Grey "Will cache" - not yet cached. */
 .stream-badge.is-cache {
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.05);
   border: 0.75px solid var(--glass-border);
 }
 
-/* Resolving state — a small spinner + label replaces the badge while we ask the
+/* Resolving state - a small spinner + label replaces the badge while we ask the
    debrid service to unrestrict the stream. Keeps the row stable (no opacity dip). */
 .stream-badge.is-resolving {
   color: var(--accent);

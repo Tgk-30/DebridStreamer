@@ -41,7 +41,7 @@ jobs:
             node_runtime: win-x64
             bundles: nsis
             artifact_glob: web/src-tauri/target/release/bundle/nsis/*
-          # ubuntu-24.04 ships libmpv.so.2 (mpv 0.37) — the 2.x client API the
+          # ubuntu-24.04 ships libmpv.so.2 (mpv 0.37) - the 2.x client API the
           # libmpv2 crate needs. web-release.yml still builds the .deb on 22.04
           # (broad glibc), so this validates the player surface, not the shipping
           # deb's compat baseline.
@@ -113,7 +113,7 @@ jobs:
           7z x mpv-dev.7z -o"$dest" | Out-Null
           Write-Host "--- mpv-dev archive contents ---"
           Get-ChildItem -Path $dest -Recurse -File | ForEach-Object { $_.FullName.Substring($dest.Length) }
-          # Find the runtime DLL first — everything is derived from it.
+          # Find the runtime DLL first - everything is derived from it.
           $dll = Get-ChildItem -Path $dest -Recurse -Include 'libmpv-2.dll','mpv-2.dll','libmpv-1.dll' | Select-Object -First 1
           if (-not $dll) { throw "libmpv-*.dll not found in mpv-dev archive" }
           Write-Host "Found runtime DLL: $($dll.FullName)"
@@ -128,13 +128,13 @@ jobs:
             $names = $exports |
               Select-String -Pattern '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)$' |
               ForEach-Object { $_.Matches[0].Groups[1].Value } |
-              # Keep only real C identifiers — drops ordinal-only '(noname)' rows and
+              # Keep only real C identifiers - drops ordinal-only '(noname)' rows and
               # any stray token that would make an invalid .def and fail lib.exe.
               Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*$' }
             if (-not $names) { throw "no exports parsed from $($dll.Name)" }
             Write-Host "Parsed $($names.Count) exports (e.g. $($names[0]))"
             # The LIBRARY line makes the import records reference libmpv-2.dll (the
-            # real runtime DLL) — without it, lib.exe names the DLL after the .def
+            # real runtime DLL) - without it, lib.exe names the DLL after the .def
             # basename and the exe would look for the wrong module at load/delay-load.
             @("LIBRARY libmpv-2", "EXPORTS") + $names | Set-Content -Encoding ascii $defPath
           }

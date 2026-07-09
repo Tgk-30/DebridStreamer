@@ -1,4 +1,4 @@
-// MediaGrid — a responsive grid of MediaCards. Used by Search, Watchlist,
+// MediaGrid - a responsive grid of MediaCards. Used by Search, Watchlist,
 // History, and Library. Renders an optional empty state when there are no items.
 
 import type { MediaPreview } from "../models/media";
@@ -9,7 +9,7 @@ interface MediaGridProps {
   items: MediaPreview[];
   onSelect?: (item: MediaPreview) => void;
   empty?: React.ReactNode;
-  /** Optional resume-progress fractions (0..1) keyed by media id — renders a
+  /** Optional resume-progress fractions (0..1) keyed by media id - renders a
    * "Continue Watching" bar on matching cards. Omit to show no bars. */
   progress?: Record<string, number>;
 }

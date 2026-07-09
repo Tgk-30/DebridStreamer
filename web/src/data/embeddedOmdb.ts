@@ -1,4 +1,4 @@
-// Build-time embedded OMDb key (Mode 3 — serverless limited distribution).
+// Build-time embedded OMDb key (Mode 3 - serverless limited distribution).
 //
 // `OMDB_EMBED_KEY` (a NON-VITE build env, so Vite does NOT auto-inline it as a
 // plaintext string) is XOR'd + base64'd at build time by vite.config.ts into the
@@ -7,7 +7,7 @@
 //
 // ⚠️ SECURITY REALITY: this only defeats casual bundle inspection. A client that
 // calls OMDb directly still sends the key in the request URL, so anyone who can
-// watch the client's own network traffic can recover it — embedding a key in a
+// watch the client's own network traffic can recover it - embedding a key in a
 // client build is NEVER truly untrackable. For a key that genuinely cannot be
 // extracted, run the self-hosted server with DS_SERVER_OMDB_API_KEY and ship
 // Server-Mode clients: the server makes the OMDb request and the key never

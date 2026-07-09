@@ -69,7 +69,7 @@ export class DebridManager {
         // Torrent infoHashes are case-insensitive hex, but providers echo them
         // in different cases (Real-Debrid tends uppercase, others lowercase).
         // Canonicalize to lowercase so (a) the caller's lookup can't miss on a
-        // case mismatch — which made cached streams read as uncached — and
+        // case mismatch - which made cached streams read as uncached - and
         // (b) the same torrent from two providers merges instead of splitting.
         const hash = rawHash.toLowerCase();
         const existing = results[hash];

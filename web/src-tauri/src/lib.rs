@@ -1,7 +1,7 @@
-// DebridStreamer — Tauri player POC.
+// DebridStreamer - Tauri player POC.
 //
 // Proves the two-backend player plan from COMPETITION_AND_ARCHITECTURE.md:
-//   1. In-webview playback (hls.js / native <video>) for HLS/MP4 — the browser path.
+//   1. In-webview playback (hls.js / native <video>) for HLS/MP4 - the browser path.
 //   2. Desktop hand-off to a native player (VLC/mpv) for MKV/HEVC the webview can't decode.
 // This command is the desktop direct-play seam: hand a Real-Debrid direct link to a
 // native player. On macOS we try VLC, then mpv/IINA as fallbacks.
@@ -14,7 +14,7 @@ mod player;
 
 // In-window mpv render-API player (v0.5): drives mpv's render API into our own
 // NSOpenGLView composited behind the transparent webview. The real "beyond IINA"
-// in-window path — see render_player.rs (macOS) + RENDER_PLAYER_PLAN.md.
+// in-window path - see render_player.rs (macOS) + RENDER_PLAYER_PLAN.md.
 mod render_player;
 
 // OS-keychain SecretStore backend (keychain_get / keychain_set / keychain_delete).
@@ -61,7 +61,7 @@ fn list_external_players() -> Vec<String> {
             .filter(|app| **app == "mpv" || macos_app_installed(app))
             .map(|s| s.to_string())
             .collect();
-        // mpv is often a CLI-only Homebrew install (no .app) — keep it only if
+        // mpv is often a CLI-only Homebrew install (no .app) - keep it only if
         // actually present.
         found.retain(|p| p != "mpv" || cli_on_path("mpv"));
         found
@@ -140,12 +140,12 @@ fn open_in_external_player(url: String, preferred: Option<String>) -> Result<Str
 
 /// macOS: the window is created `transparent: true` (the in-window player reveals
 /// a native video layer through the transparent webview). But a fully transparent
-/// window shows THE DESKTOP through any not-yet-painted region — so for the first
+/// window shows THE DESKTOP through any not-yet-painted region - so for the first
 /// ~1s after launch the app was see-through wherever the webview hadn't painted
 /// (the "wrong background color on launch" bug), and the window server pays a
 /// desktop-blend compositing cost on every frame forever.
 /// Fix: give the NSWindow an OPAQUE background in the app's base color and mark it
-/// opaque. The player is unaffected — the video view lives INSIDE the window
+/// opaque. The player is unaffected - the video view lives INSIDE the window
 /// (above its background, below the webview); only the WEBVIEW needs transparency,
 /// which wry configures independently of window opacity.
 #[cfg(target_os = "macos")]
@@ -159,7 +159,7 @@ fn opaque_window_background<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     // Setup runs on the main thread; NSWindow properties must be set there.
     let ns_window: &NSWindow = unsafe { &*(ns as *const NSWindow) };
     unsafe {
-        // --bg-1 (rgb 13,15,26) — the app's base background.
+        // --bg-1 (rgb 13,15,26) - the app's base background.
         let color = NSColor::colorWithSRGBRed_green_blue_alpha(
             13.0 / 255.0,
             15.0 / 255.0,

@@ -16,6 +16,6 @@ src-tauri/gen/
 # than committed. CI must run `brew install mpv` (or build mpv) and copy the
 # binary to src-tauri/binaries/mpv-<target-triple> (e.g.
 # mpv-aarch64-apple-darwin) before `tauri build`; see src-tauri/src/player.rs.
-# NOTE: the brew mpv links Homebrew dylibs under /opt/homebrew/opt/** — for a
+# NOTE: the brew mpv links Homebrew dylibs under /opt/homebrew/opt/** - for a
 # distributable bundle those must also be relocated/bundled (e.g. dylibbundler).
 src-tauri/binaries/

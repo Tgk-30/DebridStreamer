@@ -1,4 +1,4 @@
-// Built-in profile avatars — self-contained SVG data URLs (a gradient + a
+// Built-in profile avatars - self-contained SVG data URLs (a gradient + a
 // centered emoji), so a user can pick a fun avatar without uploading a photo.
 // No binary assets: each is an inline SVG encoded as a data: URL and stored in
 // the same `userAvatar` settings string an uploaded photo uses, so every render

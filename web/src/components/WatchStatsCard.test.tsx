@@ -59,6 +59,6 @@ describe("WatchStatsCard", () => {
     render(
       <WatchStatsCard stats={stats({ streakDays: 0, streakOngoing: false })} />,
     );
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
   });
 });

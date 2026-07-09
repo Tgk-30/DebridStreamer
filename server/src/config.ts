@@ -84,7 +84,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     allowRawStreamUrls:
       overrides.allowRawStreamUrls ??
       boolEnv("DS_SERVER_ALLOW_RAW_STREAM_URLS", process.env.NODE_ENV !== "production"),
-    // Hard-default OFF in every environment (incl. dev) — transcoding is a
+    // Hard-default OFF in every environment (incl. dev) - transcoding is a
     // deliberate operator opt-in, not a dev convenience.
     enableTranscode:
       overrides.enableTranscode ?? boolEnv("DS_SERVER_ENABLE_TRANSCODE", false),
@@ -97,7 +97,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     corsOrigin: overrides.corsOrigin ?? process.env.DS_SERVER_CORS_ORIGIN ?? null,
     logger: overrides.logger ?? boolEnv("DS_SERVER_LOGGER", process.env.NODE_ENV === "production"),
     // Server-held OMDb key (the "hidden key" distribution path). Never exposed
-    // to clients — used only by the /api/omdb proxy. An encrypted server-scoped
+    // to clients - used only by the /api/omdb proxy. An encrypted server-scoped
     // OMDb credential in the DB works too; this env is the convenient default
     // for a baked limited-distribution server image.
     omdbApiKey:

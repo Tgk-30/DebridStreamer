@@ -1,4 +1,4 @@
-/* Settings screen — tabbed config. */
+/* Settings screen - tabbed config. */
 
 .settings-screen {
   display: flex;
@@ -1899,7 +1899,7 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Appearance tab — theme picker (a grid of preview swatch cards). The active
+ * Appearance tab - theme picker (a grid of preview swatch cards). The active
  * card uses the accent (accent-for-active-only), matching the glass design.
  * ------------------------------------------------------------------------- */
 .theme-grid {

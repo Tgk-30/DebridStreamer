@@ -5,7 +5,7 @@
 // Aurora-glass dark default); a `[data-theme="…"]` block there retunes accent +
 // background + glass tints for each alternative skin. This module is the pure
 // SOURCE OF TRUTH for the theme list (ids, labels, swatch colors) plus the
-// apply/persist logic — all unit-tested without a DOM.
+// apply/persist logic - all unit-tested without a DOM.
 //
 // Adding a theme = add an entry here + a matching `[data-theme="id"]` block in
 // theme.css. The default ("aurora") intentionally has NO override block so it
@@ -105,7 +105,7 @@ export function themeById(id: string | null | undefined): ThemeDef {
 /** Apply a theme to a document root by setting `data-theme` (and the
  * `color-scheme` hint so native form controls match). The default theme removes
  * the attribute so the base theme.css values apply unchanged. DOM side effect
- * only — the id resolution is the pure `resolveThemeId`. Accepts any
+ * only - the id resolution is the pure `resolveThemeId`. Accepts any
  * `Element & { style }`-ish root so tests can pass a stub. */
 export function applyTheme(
   id: string | null | undefined,

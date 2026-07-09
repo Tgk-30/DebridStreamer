@@ -1,4 +1,4 @@
-// Discover screen — mirrors Sources/.../Views/Catalog/DiscoverView.swift.
+// Discover screen - mirrors Sources/.../Views/Catalog/DiscoverView.swift.
 //
 // Layout (top → bottom): cinematic HeroSpotlight (first trending item with a
 // backdrop) → Continue Watching banner rail → horizontal poster Rails (Top 10
@@ -24,7 +24,7 @@ export function Discover({ onSelect }: DiscoverProps) {
   const { services, openBrowse, openDetail, continueWatching } = useAppStore();
   const { data, loading, railsLoading } = useDiscover(services.tmdb);
 
-  // Continue Watching — resumable history (>2% and <95%) surfaced at the top of
+  // Continue Watching - resumable history (>2% and <95%) surfaced at the top of
   // the home as wide banner cards. Only renders when there's something to resume,
   // so it never clutters a fresh install.
   const resumable = continueWatching.filter(hasResumePoint);
@@ -60,7 +60,7 @@ export function Discover({ onSelect }: DiscoverProps) {
     <div className="discover">
       {/* The hero lives OUTSIDE the capped content column so it can truly span
           the window. Inside the column, its full-bleed negative margins could
-          never escape the 1440px cap — on wide windows the hero (and rails)
+          never escape the 1440px cap - on wide windows the hero (and rails)
           stopped short and the raw theme background filled the right side as a
           hard seam (the "background color on the right" bug). */}
       {data.hero && (
@@ -130,7 +130,7 @@ export function Discover({ onSelect }: DiscoverProps) {
   );
 }
 
-/** A single titled skeleton rail — placeholder for a category still streaming in
+/** A single titled skeleton rail - placeholder for a category still streaming in
  * during the progressive load, so the row's spot is held (no pop-in shift). */
 function RailSkeleton({ title }: { title: string }) {
   return (

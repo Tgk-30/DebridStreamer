@@ -146,7 +146,7 @@ export interface DebridService {
   getAccountInfo(): Promise<DebridAccountInfo>;
 
   /** List the account's torrents/transfers (the Debrid Library manager source).
-   * Optional — not every service implements it yet; the manager treats a missing
+   * Optional - not every service implements it yet; the manager treats a missing
    * method as "this service contributes no rows". */
   listTorrents?(): Promise<DebridTorrent[]>;
 

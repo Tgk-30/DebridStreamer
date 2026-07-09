@@ -202,7 +202,7 @@ export class RemoteStore implements Store, SecretStore {
   private readonly api: ServerAPI;
   private settingsCache: Record<string, string> | null = null;
   // Bumped on every settings mutation. allSettings() captures it before its
-  // fetch and only caches the response if it hasn't changed since — so a
+  // fetch and only caches the response if it hasn't changed since - so a
   // setSetting() that lands while a fetch is in flight can't be silently
   // clobbered by the fetch caching a pre-mutation snapshot (lost update).
   private settingsGen = 0;
@@ -338,7 +338,7 @@ export class RemoteStore implements Store, SecretStore {
       lastWatched,
     });
     // The PUT is authoritative; build the record locally instead of re-fetching
-    // up to 500 history rows to re-find the row we just wrote — that read-back
+    // up to 500 history rows to re-find the row we just wrote - that read-back
     // could page the new row out (when >500 newer rows exist) and spuriously
     // throw even though the write succeeded.
     return {
@@ -365,7 +365,7 @@ export class RemoteStore implements Store, SecretStore {
     mediaId: string,
     episodeId?: string | null,
   ): Promise<WatchHistoryRecord | null> {
-    // Exact keyed lookup — NOT a windowed list scan — so the viewed-only merge
+    // Exact keyed lookup - NOT a windowed list scan - so the viewed-only merge
     // (data/library.ts) reads the real resume position for any history size
     // (scanning only the newest 500 could miss it and zero the row).
     const query =
@@ -380,7 +380,7 @@ export class RemoteStore implements Store, SecretStore {
 
   async continueWatching(limit = 20): Promise<WatchHistoryRecord[]> {
     // Widen the fetch window (the server caps at 500), then filter to resumable
-    // rows BEFORE slicing — both so completed titles don't push older resumables
+    // rows BEFORE slicing - both so completed titles don't push older resumables
     // out of the window, AND so zero-progress "viewed" rows don't fill the limit
     // and crowd genuinely resumable titles out (parity with DexieStore).
     const rows = await this.listHistory(Math.max(limit, 500));
@@ -501,7 +501,7 @@ export class RemoteStore implements Store, SecretStore {
     const token =
       secretKey != null ? this.pendingSecrets.get(secretKey) : config.apiToken;
     if (token == null || token.trim().length === 0) {
-      // Nothing to send — but still drop any transient (e.g. empty) pending entry.
+      // Nothing to send - but still drop any transient (e.g. empty) pending entry.
       if (secretKey != null) this.pendingSecrets.delete(secretKey);
       return;
     }
@@ -515,7 +515,7 @@ export class RemoteStore implements Store, SecretStore {
         isActive: config.isActive,
       });
     } finally {
-      // Clear the transient plaintext secret whether or not the PUT succeeded —
+      // Clear the transient plaintext secret whether or not the PUT succeeded - 
       // a failed save must not leave a credential sitting in memory until the
       // next profile switch or restart. A retry re-populates it via setSecret().
       if (secretKey != null) this.pendingSecrets.delete(secretKey);

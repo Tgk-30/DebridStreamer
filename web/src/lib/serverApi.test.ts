@@ -74,7 +74,7 @@ afterEach(() => {
   notifyUnauthorized.mockReset();
 });
 
-describe("serverApi — request building (via serverRequest)", () => {
+describe("serverApi - request building (via serverRequest)", () => {
   it("builds a GET with credentials:'include' and no content-type / csrf header", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ genres: [] }) as never);
     await api.fetchServerGenres("movie");
@@ -137,7 +137,7 @@ describe("serverApi — request building (via serverRequest)", () => {
 
   it("throws when Server Mode is not configured (null base URL)", async () => {
     configuredServerURL.mockReturnValue(null);
-    // Note: no fetch response is queued here — serverBaseURL throws before fetch
+    // Note: no fetch response is queued here - serverBaseURL throws before fetch
     // is reached, and a queued mockResolvedValueOnce would otherwise leak into
     // the next test's fetch call.
     await expect(api.fetchServerGenres("movie")).rejects.toThrow(
@@ -147,7 +147,7 @@ describe("serverApi — request building (via serverRequest)", () => {
   });
 });
 
-describe("serverApi — JSON parsing & error handling", () => {
+describe("serverApi - JSON parsing & error handling", () => {
   it("returns {} (parsed) for an empty 2xx body", async () => {
     fetchMock.mockResolvedValueOnce(rawResponse("") as never);
     // revokeServerStreamSession returns void; it must resolve, not throw.

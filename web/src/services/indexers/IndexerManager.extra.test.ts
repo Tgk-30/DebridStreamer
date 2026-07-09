@@ -143,7 +143,7 @@ describe("IndexerManager errorMessage branches", () => {
     try {
       const hung: TorrentIndexer = {
         name: "Hung",
-        // Never resolves — simulates a stalled indexer server/socket.
+        // Never resolves - simulates a stalled indexer server/socket.
         search: () => new Promise<never>(() => {}),
         async searchByQuery() {
           return [];

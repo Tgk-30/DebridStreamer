@@ -132,7 +132,7 @@ export interface RawTraktPushNotFoundIDs {
 // Each mirrors a Swift `Decodable` conformance: it asserts the *required* keys
 // (the non-optional Swift properties) are present and of the right type, then
 // maps. A missing/mismatched required key throws `TraktSyncError.decodingFailed`
-// — the TS analogue of JSONDecoder throwing — so a 200 body of the wrong shape
+// - the TS analogue of JSONDecoder throwing - so a 200 body of the wrong shape
 // surfaces `decodingFailed`, never `invalidResponse`.
 
 function asObject(raw: unknown, what: string): Record<string, unknown> {

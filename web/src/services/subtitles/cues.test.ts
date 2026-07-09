@@ -1,4 +1,4 @@
-// Pure subtitle cue logic — parse, VTT convert, delay shift, AI-translation
+// Pure subtitle cue logic - parse, VTT convert, delay shift, AI-translation
 // batching + reply stitching. No network, no DOM.
 
 import { describe, expect, it } from "vitest";

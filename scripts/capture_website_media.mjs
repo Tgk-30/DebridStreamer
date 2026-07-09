@@ -66,7 +66,7 @@ await sleep(400);
 await page.screenshot({ path: `${OUT}discover-desktop.png` });
 console.log("shot: discover-desktop");
 
-// Tablet Discover — same state, narrower viewport.
+// Tablet Discover - same state, narrower viewport.
 await page.setViewportSize({ width: 768, height: 1196 });
 await sleep(2500);
 await page.screenshot({ path: `${OUT}discover-tablet.png` });

@@ -4,15 +4,15 @@
 //   * A `CAOpenGLLayer` subclass (VideoLayer) hosts the GL surface. CoreAnimation
 //     owns the context + backbuffer and calls our draw callback on its render
 //     thread; we render an mpv frame into the bound FBO there. Being LAYER-BACKED,
-//     it survives window occlusion/activation/Space changes — unlike a bare
+//     it survives window occlusion/activation/Space changes - unlike a bare
 //     NSOpenGLContext+NSView, which detaches (goes black) on those events.
 //   * The layer is hosted in a plain NSView inserted below the WKWebView.
 //   * mpv (vo=libmpv) + an `mpv_render_context` (OpenGL) drive the pixels; mpv's
 //     render-update callback pokes the layer (`setNeedsDisplay`) when a new frame
-//     is ready — CoreAnimation then calls our draw callback.
+//     is ready - CoreAnimation then calls our draw callback.
 //
 // This file owns ONLY the surface; the mpv lifecycle lives in `core.rs`. It
-// implements the `VideoSurface` trait (set_rect is a no-op — the host view
+// implements the `VideoSurface` trait (set_rect is a no-op - the host view
 // autoresizes with the content view; detach performs the ordered teardown).
 
 use std::ffi::{c_void, CString};
@@ -172,7 +172,7 @@ define_class!(
             unsafe { CGLLockContext(ctx) };
 
             let ivars = self.ivars();
-            // Teardown has started — do not touch mpv/render at all.
+            // Teardown has started - do not touch mpv/render at all.
             if ivars.dead.load(Ordering::Acquire) {
                 unsafe { CGLUnlockContext(ctx) };
                 unsafe {
@@ -205,7 +205,7 @@ define_class!(
                 ) {
                     Ok(mut rc) => {
                         // When mpv has a new frame, poke the layer to redraw
-                        // (on the main thread — CALayer.setNeedsDisplay).
+                        // (on the main thread - CALayer.setNeedsDisplay).
                         let layer_ptr = self as *const VideoLayer as usize;
                         rc.set_update_callback(move || {
                             DispatchQueue::main().exec_async(move || {
@@ -262,7 +262,7 @@ impl VideoLayer {
 // The video layer autoresizes to fill this view, but CAOpenGLLayer only
 // reallocates its GL drawable + re-renders when explicitly asked. Overriding
 // setFrameSize (called by AppKit on every resize step) to poke the layer makes
-// the video re-render at the new native resolution — even while paused/ended —
+// the video re-render at the new native resolution - even while paused/ended - 
 // instead of stretching a stale texture.
 struct HostIvars {
     layer: Retained<VideoLayer>,
@@ -293,7 +293,7 @@ define_class!(
             unsafe { layer.display() };
         }
 
-        // AppKit fires this whenever the backing SCALE FACTOR changes — most often
+        // AppKit fires this whenever the backing SCALE FACTOR changes - most often
         // when the window is dragged between a Retina (2x) and a non-Retina (1x)
         // display. contentsScale is otherwise set ONCE at setup, so without this the
         // CAOpenGLLayer keeps rendering at the launch display's pixel density:
@@ -352,7 +352,7 @@ impl VideoSurface for MacosSurface {
         // ORDERED teardown, SYNCHRONOUS on the main thread: mark the layer dead
         // (draw callback becomes a no-op), remove the host view (CA stops drawing),
         // then FREE the mpv render context. This must complete before the shared
-        // `Arc<Mpv>` drops and destroys mpv — freeing the render context after mpv
+        // `Arc<Mpv>` drops and destroys mpv - freeing the render context after mpv
         // is destroyed is a use-after-free (the "back button crashes" bug).
         // exec_sync (not async) guarantees the ordering; detach is only ever called
         // off the main thread, so no dispatch_sync self-deadlock.
@@ -401,7 +401,7 @@ pub fn surface_attach<R: Runtime>(
         .map_err(|_| "timed out setting up the video surface".to_string())??;
 
     // Wait for the CA layer's first draw to create the mpv RenderContext BEFORE we
-    // return — so mpv's vo=libmpv finds it the moment a file is loaded. Without
+    // return - so mpv's vo=libmpv finds it the moment a file is loaded. Without
     // this, `create_player` returns and the caller loads a file before the async
     // first draw runs → mpv opens vo=libmpv with "No render context set" → the
     // video output fails permanently (black). We run off the main thread, so the
@@ -470,7 +470,7 @@ fn setup_on_main(mpv: Arc<Mpv>) -> Result<(usize, usize), String> {
     let layer = VideoLayer::new(mpv);
     unsafe { layer.setContentsScale(backing_scale) };
     // Draw only when there's a new frame (mpv's update callback pokes
-    // setNeedsDisplay) or the bounds change — not 60fps continuously. This also
+    // setNeedsDisplay) or the bounds change - not 60fps continuously. This also
     // makes CA reallocate the GL drawable to the new size on resize, so the
     // video always renders at native resolution instead of a stretched texture.
     layer.setAsynchronous(false);

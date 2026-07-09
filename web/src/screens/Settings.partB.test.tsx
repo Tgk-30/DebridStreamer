@@ -60,7 +60,7 @@ vi.mock("../lib/serverApi", () => ({
   setProfileMaturity: (id: string, body: unknown) => setProfileMaturity(id, body),
 }));
 
-// AppStore — only the slice Settings reads.
+// AppStore - only the slice Settings reads.
 let mockSettings: AppSettings;
 const updateSettings = vi.fn();
 let mockSimpleMode = false;

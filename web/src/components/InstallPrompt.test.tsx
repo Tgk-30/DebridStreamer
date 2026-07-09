@@ -83,7 +83,7 @@ describe("InstallPrompt", () => {
     expect(screen.getByText("Install DebridStreamer")).toBeInTheDocument();
     expect(screen.getByText(/Tap the Share button/)).toBeInTheDocument();
     expect(screen.getByText("Add to Home Screen")).toBeInTheDocument();
-    // No one-tap install on iOS — Safari has no beforeinstallprompt.
+    // No one-tap install on iOS - Safari has no beforeinstallprompt.
     expect(
       screen.queryByRole("button", { name: "Install" }),
     ).not.toBeInTheDocument();

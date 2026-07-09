@@ -1,4 +1,4 @@
-// Watchlist + History persistence — backed by the storage port (Dexie/IndexedDB).
+// Watchlist + History persistence - backed by the storage port (Dexie/IndexedDB).
 //
 // The native app stores these in GRDB. The storage port replaces the old
 // localStorage stopgap with the typed cross-platform `Store` (IndexedDB via
@@ -11,7 +11,7 @@ import type { MediaPreview } from "../models/media";
 import { getStore } from "../storage";
 import type { WatchHistoryRecord } from "../storage/models";
 
-/** Whether an item is in the (in-memory) watchlist array. Pure — no I/O. */
+/** Whether an item is in the (in-memory) watchlist array. Pure - no I/O. */
 export function isInWatchlist(items: MediaPreview[], id: string): boolean {
   return items.some((i) => i.id === id);
 }
@@ -77,8 +77,8 @@ export async function recordHistory(
   const episodeId = opts?.episodeId ?? null;
 
   // A plain "viewed" event (opening Detail) carries no progress fields. Because
-  // the store does a full-record REPLACE keyed by (mediaId, episodeId) — not a
-  // merge — writing zeros here would wipe an existing resume position. So for a
+  // the store does a full-record REPLACE keyed by (mediaId, episodeId) - not a
+  // merge - writing zeros here would wipe an existing resume position. So for a
   // viewed-only event, preserve the existing row's progress and only bump
   // recency (lastWatched defaults to now in the store). Real playback events
   // (recordResume) pass progress fields and overwrite as before.

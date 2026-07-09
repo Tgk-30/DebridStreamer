@@ -2,8 +2,8 @@
 
 When you open DebridStreamer from a self-hosted server (in a browser or as an
 installed PWA), you're in **Server Mode**. It runs the **same UI** as the
-desktop app, but the heavy lifting — catalog lookups, search, debrid resolution,
-AI, subtitles — happens on the server using the server's stored credentials, and
+desktop app, but the heavy lifting - catalog lookups, search, debrid resolution,
+AI, subtitles - happens on the server using the server's stored credentials, and
 playback is proxied through the server.
 
 This page lists what works in Server Mode and the current limitations.
@@ -26,10 +26,10 @@ metadata key configured, a built-in catalog is used.
 
 ### Your library and viewing data (per profile)
 
-- **Watchlist** — add/remove, kept separate per profile.
-- **History** and **resume points** — "Continue Watching" with real resume
+- **Watchlist** - add/remove, kept separate per profile.
+- **History** and **resume points** - "Continue Watching" with real resume
   positions, recorded as you watch.
-- **Library** with **folders** — create, rename, delete folders and organize
+- **Library** with **folders** - create, rename, delete folders and organize
   saved titles.
 
 All of this is **profile-scoped**: each person's data is private to them. See
@@ -37,7 +37,7 @@ All of this is **profile-scoped**: each person's data is private to them. See
 
 ### AI assistant + mood curate
 
-- The **Assistant** screen works in Server Mode (it is no longer hidden) — it
+- The **Assistant** screen works in Server Mode (it is no longer hidden) - it
   routes to the server, which uses the stored AI provider key.
 - **Discover → "Describe a vibe"** mood curation also runs server-side: the AI
   recommends titles, and the server resolves each one to a real catalog item to
@@ -46,13 +46,13 @@ All of this is **profile-scoped**: each person's data is private to them. See
 The server picks the first configured AI provider in this order: **Anthropic,
 OpenAI, then Ollama.** For Anthropic/OpenAI the credential is an API key; for
 Ollama it's the endpoint URL. (A local Ollama endpoint only works when the
-operator has enabled raw/private URLs — see
+operator has enabled raw/private URLs - see
 [Self-hosting](self-hosting.md#about-ds_server_allow_raw_stream_urls).)
 
 ### Subtitles (search, download, AI translate)
 
 - **Search** subtitles via OpenSubtitles using the server's stored key.
-- **Download** a chosen subtitle — the server decodes it to WebVTT and hands it
+- **Download** a chosen subtitle - the server decodes it to WebVTT and hands it
   to the player.
 - **AI-translate** a subtitle track into another language, reusing the profile's
   AI credential, preserving timing.
@@ -85,7 +85,7 @@ filters, not server-side transcoding.)
 
 - Login/logout, per-device **session listing and revocation**, self-service
   **password change**.
-- **Household sub-profiles** — one account can keep several viewer profiles (kids,
+- **Household sub-profiles** - one account can keep several viewer profiles (kids,
   guests, a shared TV) with separate history/watchlist/library, and switch between
   them with the **"Who's watching?"** picker without re-signing-in. See
   [Multi-user & profiles](multi-user-and-profiles.md#household-sub-profiles-whos-watching).
@@ -110,7 +110,7 @@ The hosted app is installable on iPhone, iPad, Android, and desktop browsers via
   (plus Data Saver) shape bandwidth by *choosing a smaller source*. An operator
   who runs `DS_SERVER_ENABLE_TRANSCODE=true` on a box with **ffmpeg** installed
   unlocks a "Reduce playback bitrate (server transcode)" toggle (Settings →
-  Playback) that re-encodes playback to a 720p HLS stream — true bitrate
+  Playback) that re-encodes playback to a 720p HLS stream - true bitrate
   reduction, at the cost of server CPU. Not recommended on a Raspberry Pi; left
   off by default. Multi-rendition adaptive bitrate + hardware encoding are future
   work.
@@ -122,7 +122,7 @@ The hosted app is installable on iPhone, iPad, Android, and desktop browsers via
 - **Some Simple-mode hiding still applies.** Assistant and Calendar are hidden in
   Simple mode regardless of Server Mode; switch to Advanced to reveal them (see
   [Skill tiers](skill-tiers.md)).
-- **Hard per-profile bandwidth budgets** are not enforced yet — usage is recorded
+- **Hard per-profile bandwidth budgets** are not enforced yet - usage is recorded
   and visible, but not capped.
 
 ---

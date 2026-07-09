@@ -46,7 +46,7 @@ function makeUpdate(
 beforeEach(() => {
   checkForUpdates.mockReset();
   // A working in-memory localStorage so the weekly-check gate (markUpdateChecked
-  // / updateCheckAgeMs) actually persists — the default test stub no-ops setItem.
+  // / updateCheckAgeMs) actually persists - the default test stub no-ops setItem.
   const store = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (k: string) => store.get(k) ?? null,

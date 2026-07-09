@@ -73,7 +73,7 @@
   color: var(--danger);
 }
 
-/* Active-search skeleton — mirrors the .media-grid results layout (same
+/* Active-search skeleton - mirrors the .media-grid results layout (same
    columns + gap) so real posters swap in with no layout shift. */
 .search-skel-grid {
   display: grid;
@@ -133,7 +133,7 @@
   display: none;
 }
 
-/* Results header — title + "See all" → deepen into Browse. */
+/* Results header - title + "See all" → deepen into Browse. */
 .search-results-head {
   display: flex;
   align-items: baseline;

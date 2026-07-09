@@ -46,17 +46,17 @@ enum AppTheme {
 
     // MARK: Brand + semantic colors (adaptive)
 
-    /// Primary accent — a vibrant indigo/violet that reads as "cinematic".
+    /// Primary accent - a vibrant indigo/violet that reads as "cinematic".
     static let accent = Color.adaptive(
         light: Color(red: 0.36, green: 0.34, blue: 0.86),
         dark: Color(red: 0.55, green: 0.52, blue: 0.98)
     )
-    /// Secondary accent for gradients — a cyan/blue companion.
+    /// Secondary accent for gradients - a cyan/blue companion.
     static let accentSecondary = Color.adaptive(
         light: Color(red: 0.20, green: 0.55, blue: 0.90),
         dark: Color(red: 0.36, green: 0.74, blue: 0.98)
     )
-    /// Tertiary accent — magenta/pink, used sparingly in hero gradients.
+    /// Tertiary accent - magenta/pink, used sparingly in hero gradients.
     static let accentTertiary = Color.adaptive(
         light: Color(red: 0.85, green: 0.35, blue: 0.62),
         dark: Color(red: 0.98, green: 0.46, blue: 0.74)
@@ -106,7 +106,7 @@ enum AppTheme {
     }
 
     /// Soft colored glow overlaid on the background for aurora depth. Deliberately
-    /// restrained — two faint orbs (V2) rather than three loud ones, so foreground
+    /// restrained - two faint orbs (V2) rather than three loud ones, so foreground
     /// glass stays legible (the "background restraint" rule).
     static var auroraGlow: some View {
         GeometryReader { proxy in
@@ -223,12 +223,12 @@ extension View {
             .overlay(Capsule().strokeBorder(AppTheme.glassBorder, lineWidth: 0.75))
     }
 
-    /// Back-compat alias — existing call sites keep working, now with the unified look.
+    /// Back-compat alias - existing call sites keep working, now with the unified look.
     func glassSurface() -> some View {
         glassCard()
     }
 
-    /// Coordinated-elevation glass surface (V2). Prefer this for new components —
+    /// Coordinated-elevation glass surface (V2). Prefer this for new components - 
     /// material + tint + stroke + shadow all move together per tier, so depth comes
     /// from the contrast *between* tiers rather than ad-hoc per-call opacity.
     func glassElevation(_ elevation: GlassElevation = .raised,
@@ -241,14 +241,14 @@ extension View {
 // MARK: - Glass elevation (coordinated depth tiers)
 
 /// Three coordinated elevation tiers. Premium feel comes from the contrast
-/// *between* tiers — material, tint, stroke width, and shadow are chosen together —
+/// *between* tiers - material, tint, stroke width, and shadow are chosen together - 
 /// not from stacking opacity per call site. A single source of elevation truth.
 enum GlassElevation {
     /// Inline surfaces: chips, list rows, controls that sit *in* the page.
     case rest
     /// Cards and panels that lift off the background.
     case raised
-    /// Spotlights and the focused modal — the top of the stack.
+    /// Spotlights and the focused modal - the top of the stack.
     case hero
 
     var material: Material {
@@ -364,7 +364,7 @@ extension ButtonStyle where Self == GlassButtonStyle {
 
 // MARK: - Page header
 
-/// Consistent page header for detail panes — with the hidden title bar, screens
+/// Consistent page header for detail panes - with the hidden title bar, screens
 /// otherwise have no visible name (L24).
 struct PageHeader: View {
     let title: String

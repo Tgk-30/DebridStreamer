@@ -1,7 +1,7 @@
 // Detail-screen data layer.
 //
 // Loads the full MediaItem (overview/genres/runtime/imdb id), the cast, and the
-// "more like this" recommendations for a selected MediaPreview — live via the
+// "more like this" recommendations for a selected MediaPreview - live via the
 // shared TMDBService when configured, else a graceful fixtures/empty fallback so
 // the Detail screen still renders for a screenshot without a key. Imports the
 // ported TMDBService READ-ONLY.
@@ -16,7 +16,7 @@ export interface DetailData {
   item: MediaItem | null;
   cast: CastMember[];
   related: MediaPreview[];
-  /** IMDb id (tt…) when known — needed by the indexer search. */
+  /** IMDb id (tt…) when known - needed by the indexer search. */
   imdbId: string | null;
 }
 
@@ -74,7 +74,7 @@ async function loadLive(
   // The detail id is an IMDb id (tt…) when TMDB had one, else a tmdb- fallback.
   let imdbId = detail.id.startsWith("tt") ? detail.id : null;
   // Fallback: the detail payload's appended external_ids sometimes lacks
-  // imdb_id (notably TV) — try the dedicated external_ids endpoint before
+  // imdb_id (notably TV) - try the dedicated external_ids endpoint before
   // settling for null, because a null imdb id means the STREAM SEARCH NEVER
   // RUNS for this title (the silent "no streams found" P0).
   if (imdbId == null && tmdbId != null && !Number.isNaN(tmdbId)) {
@@ -84,7 +84,7 @@ async function loadLive(
         imdbId = ids.imdbId;
       }
     } catch {
-      // Best-effort — the picker now tells the user when the id is missing.
+      // Best-effort - the picker now tells the user when the id is missing.
     }
   }
 
@@ -141,7 +141,7 @@ export function useDetail(
                 item: previewToItem(currentPreview),
                 cast: [],
                 related: [],
-                // Catalog previews are often IMDb-rooted (tt…) — pass the id
+                // Catalog previews are often IMDb-rooted (tt…) - pass the id
                 // through so series/stream search works without TMDB.
                 imdbId: currentPreview.id.startsWith("tt") ? currentPreview.id : null,
               },

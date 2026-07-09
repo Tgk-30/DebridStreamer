@@ -1,4 +1,4 @@
-/* Detail screen — overlay surface that scrolls over the app content. */
+/* Detail screen - overlay surface that scrolls over the app content. */
 
 /* Fixed over the content viewport (to the right of the 78px nav rail) so it
  * fully covers the screen behind it regardless of the underlying scroll. */
@@ -20,7 +20,7 @@
   backdrop-filter: blur(28px) saturate(1.25);
   -webkit-backdrop-filter: blur(28px) saturate(1.25);
 }
-/* The container takes programmatic focus on open (a11y) — no ring on the
+/* The container takes programmatic focus on open (a11y) - no ring on the
    surface itself; interactive children keep their own focus-visible rings. */
 .detail:focus {
   outline: none;
@@ -72,7 +72,7 @@
   }
 }
 
-/* ── Episode streams page — a dedicated view for a series' episode streams,
+/* ── Episode streams page - a dedicated view for a series' episode streams,
       opened from the episode picker instead of loading inline at the bottom. */
 .episode-streams {
   position: fixed;
@@ -138,7 +138,7 @@
   white-space: nowrap;
 }
 
-/* "Watch trailer" affordance — sits between the hero and the ratings/analysis. */
+/* "Watch trailer" affordance - sits between the hero and the ratings/analysis. */
 .detail-trailer-btn {
   display: inline-flex;
   align-items: center;

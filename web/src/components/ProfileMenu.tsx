@@ -1,8 +1,8 @@
-// ProfileMenu — the top-right avatar. Shows the user's photo (or their initial)
+// ProfileMenu - the top-right avatar. Shows the user's photo (or their initial)
 // and opens a small popover to customize their name + avatar image. In Server
 // Mode it also offers "Switch profile" (the existing ProfilePicker). The avatar
 // image is resized client-side to a small square data: URL and stored locally in
-// settings — nothing leaves the device.
+// settings - nothing leaves the device.
 
 import { useRef, useState } from "react";
 import { useAppStore } from "../store/AppStore";
@@ -66,7 +66,7 @@ export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
       const dataUrl = await fileToAvatarDataURL(file);
       updateSettings({ ...settings, userAvatar: dataUrl });
     } catch {
-      /* ignore — keep the previous avatar */
+      /* ignore - keep the previous avatar */
     } finally {
       setBusy(false);
     }

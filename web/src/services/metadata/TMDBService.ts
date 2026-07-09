@@ -64,7 +64,7 @@ interface RawExternalIds {
   tvdb_id?: number | null;
 }
 
-// /movie/{id}/release_dates — per-country release dates, each carrying a
+// /movie/{id}/release_dates - per-country release dates, each carrying a
 // certification (the US entry is what `getCertification` reads).
 interface RawReleaseDates {
   results: Array<{
@@ -73,13 +73,13 @@ interface RawReleaseDates {
   }>;
 }
 
-// /tv/{id}/content_ratings — per-country TV content rating (the US `rating`).
+// /tv/{id}/content_ratings - per-country TV content rating (the US `rating`).
 interface RawContentRatings {
   results: Array<{ iso_3166_1: string; rating?: string | null }>;
 }
 
 // US maturity ranking, mirroring the server's MATURITY_RANK ladder. Used only to
-// pick the MOST RESTRICTIVE certification when a movie carries several — the
+// pick the MOST RESTRICTIVE certification when a movie carries several - the
 // server remains the authority for the cap comparison.
 const CERT_RANK: Readonly<Record<string, number>> = {
   G: 0,
@@ -289,7 +289,7 @@ export class TMDBService implements MetadataProvider {
   private readonly fetchImpl: FetchImpl;
 
   // Bounded TTL cache of already-DECODED read responses, keyed by
-  // `path + sorted query params`. Only successful reads are cached — errors
+  // `path + sorted query params`. Only successful reads are cached - errors
   // are never stored, so a failure is always retried.
   private responseCache = new Map<string, CacheEntry>();
   private readonly cacheCapacity = 256;
@@ -468,7 +468,7 @@ export class TMDBService implements MetadataProvider {
   /** Like `discover`, but takes the full raw `/discover` query-param map so the
    * advanced Browse filter slideover can use TMDB params beyond the core
    * `DiscoverFilters` (multi-genre, year range, vote_count, runtime, original
-   * language). Additive — the Discover screen still uses `discover()`. `api_key`
+   * language). Additive - the Discover screen still uses `discover()`. `api_key`
    * is appended by `request`; pass everything else (page/sort_by/language/…). */
   async discoverWithParams(
     type: MediaType,
@@ -582,7 +582,7 @@ export class TMDBService implements MetadataProvider {
   /** The US maturity certification for a title, or null when TMDB has none.
    * Movies read `/movie/{id}/release_dates` (the first non-empty US
    * certification); series read `/tv/{id}/content_ratings` (the US `rating`).
-   * Cached with the long TTL — certifications effectively never change. The
+   * Cached with the long TTL - certifications effectively never change. The
    * server's kid play-block treats a null return as "unknown" → fail-closed. */
   async getCertification(
     tmdbId: number,
@@ -597,7 +597,7 @@ export class TMDBService implements MetadataProvider {
         // A title can carry multiple US certifications (theatrical R, edited-for-TV
         // PG-13, an NC-17 director's cut, …) across its release_dates, in no
         // guaranteed order. Return the MOST RESTRICTIVE so the kid play-block stays
-        // fail-safe — an unrecognized cert ranks highest so it blocks rather than
+        // fail-safe - an unrecognized cert ranks highest so it blocks rather than
         // slips through.
         const certs = us.release_dates
           .map((d) => d.certification)

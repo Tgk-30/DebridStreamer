@@ -15,7 +15,7 @@ function row(quality: string, sizeGB: number, cachedOn: string | null = "real_de
   return { result: { quality, sizeBytes: sizeGB * 1024 * 1024 * 1024 }, cachedOn };
 }
 
-describe("withDataSaverClamp (server — must mirror client effectiveDataSaver)", () => {
+describe("withDataSaverClamp (server - must mirror client effectiveDataSaver)", () => {
   it("is a no-op when Data Saver is off", () => {
     const f: Filters = { cachedOnly: false, maxQuality: "4K", maxSizeGB: 50 };
     expect(withDataSaverClamp(f, false)).toBe(f);
@@ -63,7 +63,7 @@ function tr(infoHash: string, title: string, seeders: number, quality = "1080p")
   return { infoHash, title, seeders, quality };
 }
 
-describe("combineStreamResults (server dual-search merge — mirrors client)", () => {
+describe("combineStreamResults (server dual-search merge - mirrors client)", () => {
   it("adds title-pass results the imdb pass missed (the whole point of the pass)", () => {
     const byImdb = [tr("aaa", "The Bear S01E06 1080p", 100)];
     const byTitle = [tr("bbb", "The Bear S01E06 APIBay 720p", 50, "720p")];
@@ -77,7 +77,7 @@ describe("combineStreamResults (server dual-search merge — mirrors client)", (
       tr("ccc", "Yellowstone S01E06 1080p", 80), // shares no title word
       tr("ddd", "The Adventures Of Paddington Bear S01E06", 70), // shares "the"+"bear"
     ];
-    // Only the exact-phrase "The Bear" release survives — the title pass is a
+    // Only the exact-phrase "The Bear" release survives - the title pass is a
     // contiguous whole-word match, not a loose all-words-present match.
     const merged = combineStreamResults(byImdb, byTitle, "The Bear");
     expect(merged.map((r) => r.infoHash)).toEqual(["aaa"]);

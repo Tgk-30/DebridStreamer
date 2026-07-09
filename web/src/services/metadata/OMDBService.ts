@@ -16,7 +16,7 @@
  * Aggregated ratings parsed from an OMDB lookup (B1).
  *
  * Every field is optional and defensively `undefined` when OMDB returns "N/A"
- * or an unparseable value — callers can surface whatever is present without
+ * or an unparseable value - callers can surface whatever is present without
  * crashing. Mirrors Swift `OMDBRatings` (Swift `nil` -> TS `undefined`).
  */
 export interface OMDBRatings {

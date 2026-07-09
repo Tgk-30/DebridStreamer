@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
 // Public test streams that stand in for a Real-Debrid direct/HLS link.
-// (RD returns CORS-friendly HTTPS — MP4 plays natively; its /streaming/transcode
+// (RD returns CORS-friendly HTTPS - MP4 plays natively; its /streaming/transcode
 //  endpoint returns HLS, which hls.js plays in any webview.)
 const PRESETS: { label: string; url: string; kind: string }[] = [
   { label: "HLS stream (Mux test)", kind: "HLS", url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8" },
@@ -16,7 +16,7 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [url, setUrl] = useState(PRESETS[0].url);
-  const [status, setStatus] = useState("Idle — load a stream to prove in-webview playback.");
+  const [status, setStatus] = useState("Idle - load a stream to prove in-webview playback.");
   const [handoff, setHandoff] = useState<string | null>(null);
 
   function loadInApp(target: string) {
@@ -33,7 +33,7 @@ export default function App() {
       hls.loadSource(target);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setStatus("HLS manifest parsed via hls.js — playing in the webview. ✅");
+        setStatus("HLS manifest parsed via hls.js - playing in the webview. ✅");
         video.play().catch(() => {});
       });
       hls.on(Hls.Events.ERROR, (_e, data) => {

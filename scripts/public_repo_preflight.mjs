@@ -151,7 +151,7 @@ const credentialLiteralPattern =
 
 // Obvious NON-secret test fixtures that happen to pattern-match the generic
 // name=value heuristic (mixed-case, hyphenated strings ≥16 chars). Allowlisted
-// by exact value so both the working tree AND historical blobs pass — the string
+// by exact value so both the working tree AND historical blobs pass - the string
 // is a deliberate, self-labelled placeholder, never a real credential.
 const allowlistedLiterals = new Set([
   "omdb-secret-key-DO-NOT-LEAK-xyz",

@@ -12,7 +12,7 @@ import { installExternalLinkHandler } from "./lib/externalLinks";
 // Park all CSS animations whenever the window is hidden/minimized/covered.
 installSuspendOnHidden();
 
-// Capture beforeinstallprompt before React mounts — Chromium can fire it
+// Capture beforeinstallprompt before React mounts - Chromium can fire it
 // before the first component effect runs.
 initInstallPromptCapture();
 
@@ -28,7 +28,7 @@ try {
     document.documentElement.dataset.navCollapsed = "true";
   }
 } catch {
-  /* no localStorage (SSR/private mode) — NavRail's effect still applies it */
+  /* no localStorage (SSR/private mode) - NavRail's effect still applies it */
 }
 
 createRoot(document.getElementById("root")!).render(

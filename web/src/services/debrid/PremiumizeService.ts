@@ -167,7 +167,7 @@ export class PremiumizeService implements DebridService {
   }
 
   async unrestrict(link: string): Promise<string> {
-    // Premiumize doesn't have a separate unrestrict — directdl handles it.
+    // Premiumize doesn't have a separate unrestrict - directdl handles it.
     if (!isAbsoluteURL(link)) throw DebridError.downloadFailed("Invalid link");
     return link;
   }

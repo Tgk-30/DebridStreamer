@@ -1,4 +1,4 @@
-// App store — the single source of truth for routing, the Detail overlay, the
+// App store - the single source of truth for routing, the Detail overlay, the
 // shared service instances, and the persisted settings / watchlist / history.
 // Implemented as a small React context + provider (no extra deps), with a
 // `useAppStore()` hook plus a couple of focused selector hooks.
@@ -153,7 +153,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     void (async () => {
       // Hydrate each slice independently: a single failing Store read (IndexedDB
       // blocked/corrupt, or a transient RemoteStore network error in Server Mode)
-      // must degrade that one slice to a safe default — never reject the whole
+      // must degrade that one slice to a safe default - never reject the whole
       // Promise.all and leave `hydrated` false forever (a permanent blank screen).
       const [loadedSettings, wl, hist, cw, cached] = await Promise.all([
         loadSettingsFromStore().catch(() => loadSettings()),
@@ -176,7 +176,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             /* leave the marker unset so the refresh retries next load */
           });
       }
-      // Land on the user's chosen default tab. Only here, on first hydration —
+      // Land on the user's chosen default tab. Only here, on first hydration - 
       // the app is still gated behind the wizard/hydration, so this can't stomp
       // a mid-session navigation. If the chosen tab is hidden under the active
       // modes, App's redirect effect sends it back to Discover.
@@ -237,7 +237,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setCachedResolutions((prev) => {
         // The 30s badge poll almost always returns an identical set. Replacing
         // the map with a fresh object each tick changes the context value's
-        // identity and re-renders EVERY useAppStore() consumer — expensive idle
+        // identity and re-renders EVERY useAppStore() consumer - expensive idle
         // churn. Bail out (return the same reference) unless a resolution
         // actually changed, comparing only the scalar identity fields (`stream`
         // is a freshly-built object every fetch, so it can't be compared by ref).
@@ -347,7 +347,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const updateSettings = useCallback((next: AppSettings) => {
     // Optimistically update in-memory (rebuilds services immediately), then
     // persist to the durable Store. Persisting can reject if a keychain write
-    // fails closed (desktop) — surface it to the console rather than leaving an
+    // fails closed (desktop) - surface it to the console rather than leaving an
     // unhandled rejection; the in-memory value is still usable for the session.
     setSettings(next);
     void saveSettingsToStore(next).catch((err) => {
@@ -460,7 +460,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   // PERF: memoize the context value. Every member below is already referentially
   // stable between unrelated updates (useCallback/useState); without useMemo the
-  // provider handed out a FRESH object on every render — so each 30s badge poll
+  // provider handed out a FRESH object on every render - so each 30s badge poll
   // re-rendered every `useAppStore()` consumer in the app.
   const value: AppStore = useMemo(
     () => ({

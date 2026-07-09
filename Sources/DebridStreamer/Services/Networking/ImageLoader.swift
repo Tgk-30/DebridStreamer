@@ -8,7 +8,7 @@ import AppKit
 /// re-download every time you scroll back up a Discover rail. This actor keeps a
 /// bounded in-memory set of decoded `NSImage`s keyed by URL, owns its *own* disk-
 /// backed `URLSession` (separate from API traffic), and **coalesces** concurrent
-/// requests for the same URL — a poster that appears in Trending *and* Popular is
+/// requests for the same URL - a poster that appears in Trending *and* Popular is
 /// fetched and decoded exactly once.
 actor ImageLoader {
     static let shared = ImageLoader()
@@ -91,7 +91,7 @@ struct CachedAsyncImage<Content: View>: View {
 
     @State private var phase: AsyncImagePhase = .empty
     /// The URL that produced the current `phase`. Used so the "already resolved"
-    /// short-circuit only fires for the SAME url — otherwise a recycled view
+    /// short-circuit only fires for the SAME url - otherwise a recycled view
     /// (hero after a catalog reload, or a card whose posterPath changed) would
     /// keep showing the previous image because its prior `.success` matched.
     @State private var loadedURL: URL?

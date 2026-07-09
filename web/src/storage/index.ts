@@ -1,4 +1,4 @@
-// Storage entry point — the singleton accessor the app uses.
+// Storage entry point - the singleton accessor the app uses.
 //
 // `getStore()` returns one process-wide storage backend. Local Mode uses the
 // Dexie/IndexedDB store in both a browser and the Tauri webview. Server Mode
@@ -12,7 +12,7 @@
 //   - Server Mode -> RemoteStore (secret values are write-only from the browser;
 //     the server owns encrypted credential storage).
 //   - Plain browser -> IndexedDB via DexieStore (origin-scoped, unencrypted at
-//     rest — the documented local web-build model).
+//     rest - the documented local web-build model).
 // getSecretStore() below performs that selection (isTauri()). Only secret VALUES
 // move to the keychain; the `secret:<key>` marker and all other data stay in
 // Dexie. Keep credentialed reads/writes routed through `SecretStore` so the
@@ -42,7 +42,7 @@ export function getStore(): Store {
  * (KeychainSecretStore -> Rust keychain_* commands); in a plain browser they
  * stay in IndexedDB via the same DexieStore. The keychain store holds the Dexie
  * instance ONLY as the source for the one-time read-through migration of
- * pre-keychain secrets (and to purge that legacy copy) — it does NOT fall back to
+ * pre-keychain secrets (and to purge that legacy copy) - it does NOT fall back to
  * plaintext IndexedDB on a keychain failure; keychain writes fail closed.
  *
  * Note: only secret VALUES move to the keychain. The `secret:<key>` marker and

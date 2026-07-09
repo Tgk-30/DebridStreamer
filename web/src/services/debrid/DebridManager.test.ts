@@ -504,7 +504,7 @@ describe("DebridManager checkCacheAll aggregation", () => {
   it("merges the same torrent echoed in different cases to one lowercase key", async () => {
     // Providers return infoHashes in different cases (RD tends uppercase). The
     // same torrent from two providers must merge under one canonical lowercase
-    // key — not split in two — or the caller's lookup misses and a cached
+    // key - not split in two - or the caller's lookup misses and a cached
     // stream reads as uncached.
     const upper = new StubDebridService({
       serviceType: DebridServiceTypeNS.allDebrid,

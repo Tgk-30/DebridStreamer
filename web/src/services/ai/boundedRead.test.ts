@@ -48,7 +48,7 @@ describe("boundedReadText", () => {
 
   it("caps exactly at maxBytes even when a chunk straddles the boundary", async () => {
     // Ten 1KB chunks = 10KB total, cap at 2KB. The crossing chunk is sliced, so
-    // the result is EXACTLY 2KB — never over-allocated past the ceiling.
+    // the result is EXACTLY 2KB - never over-allocated past the ceiling.
     const chunks = Array.from({ length: 10 }, () => chunk(1000));
     const text = await boundedReadText(fakeResponse(chunks), 2000);
     expect(text.length).toBe(2000);

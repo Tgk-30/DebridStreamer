@@ -1,4 +1,4 @@
-// useTheme — applies the persisted theme id to the document root.
+// useTheme - applies the persisted theme id to the document root.
 //
 // The chosen theme lives in the settings Store (loaded into AppStore). This hook
 // reflects it onto `<html data-theme="…">` whenever it changes, so the

@@ -1,8 +1,8 @@
-// Detail screen — the showcase, fully wired.
+// Detail screen - the showcase, fully wired.
 //
 // Renders for the currently-selected MediaPreview (from the app store):
 //   • DetailHero (backdrop + title/meta/overview + Play + Watchlist toggle)
-//   • StreamPicker — the cached-on-debrid stream list (green Instant · RD vs grey
+//   • StreamPicker - the cached-on-debrid stream list (green Instant · RD vs grey
 //     Will cache), resolving a stream via DebridManager and launching the player.
 //   • CastRail (TMDBService.getCast)
 //   • "More like this" Rail (TMDBService.getRecommendations) → opens that detail.
@@ -148,7 +148,7 @@ export function Detail() {
 
   // Series episode selection: a user's explicit pick (persisted per title so
   // "I was browsing S3" survives a restart) wins; otherwise default to the
-  // most recently watched episode, else S1E1. Movies stay null throughout —
+  // most recently watched episode, else S1E1. Movies stay null throughout - 
   // zero behavior change.
   const [episodeOverrides, setEpisodeOverrides] = useState<
     Record<string, { season: number; episode: number }>
@@ -158,7 +158,7 @@ export function Detail() {
       const merged = { ...m, [id]: next };
       // Bound the map so storage never balloons. String-key insertion order is
       // spec-guaranteed (media ids are "tmdb-…"/"tt…", never integer-like, so
-      // no numeric reordering) — slice(-80) keeps the most recent entries.
+      // no numeric reordering) - slice(-80) keeps the most recent entries.
       const keys = Object.keys(merged);
       const bounded =
         keys.length > 80
@@ -170,7 +170,7 @@ export function Detail() {
           JSON.stringify(bounded),
         );
       } catch {
-        // private mode — session-only is fine
+        // private mode - session-only is fine
       }
       return bounded;
     });
@@ -314,7 +314,7 @@ export function Detail() {
       selected.season !== autoPlayPending.season ||
       selected.episode !== autoPlayPending.episode
     ) {
-      // The user retargeted before the advanced episode's rows landed — the
+      // The user retargeted before the advanced episode's rows landed - the
       // auto-play intent is stale; cancel it instead of leaving it armed.
       setAutoPlayPending(null);
       return;
@@ -325,13 +325,13 @@ export function Detail() {
     );
     setAutoPlayPending(null);
     if (row == null) {
-      // Nothing instant for the next episode — land the user on the honest,
+      // Nothing instant for the next episode - land the user on the honest,
       // episode-scoped stream list instead of auto-playing something uncached.
       revealStreams();
       return;
     }
     autoPlayBusy.current = true;
-    // Pass the target EXPLICITLY as the file hint — no reliance on which
+    // Pass the target EXPLICITLY as the file hint - no reliance on which
     // render's `selected` the resolver closure captured.
     resolveSelectedStream(row, target)
       .then((s) => {
@@ -440,7 +440,7 @@ export function Detail() {
 
   /** Resume position (seconds) for the title (movies) or the SELECTED episode
    * (series), read from the already-loaded Continue Watching list
-   * (cross-device synced in Server Mode) — 0 when there's no in-progress
+   * (cross-device synced in Server Mode) - 0 when there's no in-progress
    * record or it's completed. */
   function resumeSecondsFor(): number {
     if (detailItem == null) return 0;
@@ -453,7 +453,7 @@ export function Detail() {
   }
 
   /** Remembered audio/subtitle/speed for the title (movies) or SELECTED episode
-   * (series), read from the loaded history — restored by the in-window player. */
+   * (series), read from the loaded history - restored by the in-window player. */
   function prefsFor(): PlaybackPrefs | null {
     if (detailItem == null) return null;
     const wantedEpisodeId =
@@ -491,7 +491,7 @@ export function Detail() {
    * assembler can derive liked/disliked genres without a media-cache join. The
    * 24h taste-context cache is rebuilt so the next analysis reflects the change.
    *
-   * Tapping the active thumb again toggles it off — recorded as a
+   * Tapping the active thumb again toggles it off - recorded as a
    * "not_interested" event so a re-read of the newest signal clears the control
    * (the taste-context assembler ignores not_interested, so it neutralizes the
    * prior like/dislike). */
@@ -556,7 +556,7 @@ export function Detail() {
   }
 
   /** Remove a previously-given rating. Taste events are append-only, so we record
-   * a newest "rated" event with NO norm — the Detail load reads it as "unrated"
+   * a newest "rated" event with NO norm - the Detail load reads it as "unrated"
    * and the taste profile (newest-per-media) contributes nothing for it, which
    * also suppresses the older score. */
   function clearRating(): void {
@@ -611,7 +611,7 @@ export function Detail() {
   ): Promise<StreamInfo> {
     // Episode context (series only): steers season-pack torrents to the exact
     // episode's file. Exact single-episode torrents either match (same pick)
-    // or carry no tag (fallback to the default pick) — always safe to pass.
+    // or carry no tag (fallback to the default pick) - always safe to pass.
     // The auto-advance effect passes its target explicitly (hintOverride) so
     // the hint can never depend on which render's `selected` was captured.
     const fileHint =
@@ -648,7 +648,7 @@ export function Detail() {
   }
 
   /** File a Server-Mode title request for the current item. The detailItem is a
-   *  MediaPreview — the same minimal shape watchlist add uses — so it's passed
+   *  MediaPreview - the same minimal shape watchlist add uses - so it's passed
    *  straight through. A 409 means the title already has a live pending request. */
   async function requestTitle() {
     if (detailItem == null || requestState !== "idle") return;
@@ -663,8 +663,8 @@ export function Detail() {
   }
 
   /** Advance to the next episode (the Up-next card's action). Closes the
-   * player, moves the (persisted) selection — which re-drives the stream
-   * search — and queues the auto-play attempt for when the new rows land. */
+   * player, moves the (persisted) selection - which re-drives the stream
+   * search - and queues the auto-play attempt for when the new rows land. */
   function handlePlayNext() {
     if (upNextTarget == null || detailItem == null) return;
     setPlayer(null);
@@ -675,7 +675,7 @@ export function Detail() {
   async function handlePlay(stream: StreamInfo, source: TorrentResult) {
     const title = stream.fileName || source.title;
 
-    // Browser-playable (MP4/WebM/H.264) — play the direct link in-webview.
+    // Browser-playable (MP4/WebM/H.264) - play the direct link in-webview.
     if (!needsTranscodeOrExternal(stream, source)) {
       openPlayer(stream.streamURL, title, false);
       return;
@@ -742,11 +742,11 @@ export function Detail() {
       )}
 
       {/* No-metadata-key hint: the hero renders from the catalog preview alone
-          (no overview/genres) — say why, and where to fix it, instead of just
+          (no overview/genres) - say why, and where to fix it, instead of just
           looking sparse. Local Mode only; Server Mode proxies the server key. */}
       {item && detail.source === "fixtures" && !detail.loading && !isServerMode() && (
         <p className="detail-nokey-hint t-secondary">
-          Showing basic info — add a free TMDB key for the full details:
+          Showing basic info - add a free TMDB key for the full details:
           overview, genres, and the episode guide.
           <button
             type="button"
@@ -774,7 +774,7 @@ export function Detail() {
         </button>
       )}
 
-      {/* External ratings (IMDb / Rotten Tomatoes / Metacritic) via OMDb —
+      {/* External ratings (IMDb / Rotten Tomatoes / Metacritic) via OMDb - 
           from the user's own key (local BYOK) or the server "hidden key" proxy.
           Renders nothing when no key is available. */}
       <OmdbRatings imdbId={detail.data.imdbId} />
@@ -794,7 +794,7 @@ export function Detail() {
         />
       )}
 
-      {/* AI "Would I Like This?" — only when a local AI provider is configured.
+      {/* AI "Would I Like This?" - only when a local AI provider is configured.
           analyzeTitle is the local-Dexie path; Server-Mode parity is out of scope. */}
       {item && services.ai?.analyzeTitle != null && (
         <DetailAnalysis item={item} provider={services.ai} />
@@ -866,7 +866,7 @@ export function Detail() {
           className="episode-streams"
           role="dialog"
           aria-modal="true"
-          aria-label={`Streams — ${episodeLabel(selected.season, selected.episode)}`}
+          aria-label={`Streams - ${episodeLabel(selected.season, selected.episode)}`}
         >
           <div className="episode-streams-panel">
             <div className="episode-streams-head">

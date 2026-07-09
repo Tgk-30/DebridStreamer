@@ -1,4 +1,4 @@
-// Watch-stats aggregation — pure functions over the durable history + taste
+// Watch-stats aggregation - pure functions over the durable history + taste
 // events, powering the opt-in insights card on the History screen.
 //
 // History records (WatchHistoryRecord, from getStore().listHistory()) carry the

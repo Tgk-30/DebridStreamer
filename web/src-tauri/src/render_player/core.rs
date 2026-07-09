@@ -7,7 +7,7 @@
 // `VideoSurface` + an `attach_surface()` constructor; `mod.rs` selects one by cfg.
 //
 // The mpv lifecycle logic was lifted verbatim from the original macOS-only
-// `render_player.rs` — see `surface_macos.rs` for the macOS render surface.
+// `render_player.rs` - see `surface_macos.rs` for the macOS render surface.
 
 use std::collections::HashMap;
 use std::ffi::{c_void, CStr};
@@ -53,7 +53,7 @@ pub trait VideoSurface: Send {
     /// DOM-rect child reposition (SetWindowPos / XConfigureWindow).
     fn set_rect(&self, x: i32, y: i32, w: i32, h: i32);
 
-    /// ORDERED teardown — the single most bug-prone invariant. Each surface MUST:
+    /// ORDERED teardown - the single most bug-prone invariant. Each surface MUST:
     /// stop its redraws, free any `mpv_render_context` (or DestroyWindow) BEFORE
     /// the shared `Arc<Mpv>` drops and destroys mpv (freeing a render context after
     /// mpv is destroyed is a use-after-free = the historical "back button crash"),
@@ -169,16 +169,16 @@ unsafe fn prop_data_to_json(format: libmpv2_sys::mpv_format, data: *mut c_void) 
     }
 }
 
-/// Best-in-class mpv options applied to EVERY player before user overrides —
+/// Best-in-class mpv options applied to EVERY player before user overrides - 
 /// the same engine mpv/IINA use, tuned for high-quality scaling, debanding,
 /// hardware decode, and streaming-cache "debrid feel". Per-platform decode +
 /// output are selected by `cfg!(target_os)`:
 ///   * macOS/Linux use the OpenGL render API → `vo=libmpv` is MANDATORY; the
 ///     quality options below still tune the gpu renderer the render API drives.
-///     (gpu-next-as-a-vo does not apply under the render API — see the memory.)
+///     (gpu-next-as-a-vo does not apply under the render API - see the memory.)
 ///   * Windows wid-embeds mpv → it owns a native `vo=gpu-next` + d3d11.
 /// hwdec is per-OS: zero-copy `videotoolbox` on macOS, `d3d11va` on Windows,
-/// `auto-copy` (vaapi/nvdec) on Linux — all fall back to software automatically,
+/// `auto-copy` (vaapi/nvdec) on Linux - all fall back to software automatically,
 /// so they can't break playback. It is set ONLY here (the webview no longer
 /// overrides it).
 pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
@@ -201,7 +201,7 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
         ("dither-depth", "auto"),
         ("dither", "error-diffusion"),
         ("error-diffusion", "sierra-lite"),
-        // Streaming cache — the debrid-feel levers (instant seek both directions).
+        // Streaming cache - the debrid-feel levers (instant seek both directions).
         ("cache", "yes"),
         // 256MiB forward buffer absorbs debrid latency spikes on 4K HEVC/AV1
         // (~40-80 Mbit/s fills 150MiB in ~15-30s); 50MiB back-buffer = instant
@@ -214,7 +214,7 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
         // immediately stalling on a cold debrid cache.
         ("cache-pause-initial", "yes"),
         // Only re-wake the network once the cache drains ~10s below full, instead
-        // of on every tiny dip — steadier throughput, fewer stalls.
+        // of on every tiny dip - steadier throughput, fewer stalls.
         ("demuxer-hysteresis-secs", "10"),
         ("hls-bitrate", "max"),
         // Subtitles (libass; per-style props are driven live by the app UI).
@@ -233,7 +233,7 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
     {
         o.push(("vo", "libmpv")); // render API requires vo=libmpv
         // ZERO-COPY VideoToolbox: the IOSurface stays on the GPU and is sampled
-        // directly by mpv's GL renderer (no GPU→CPU→GPU round-trip) — ~2x the
+        // directly by mpv's GL renderer (no GPU→CPU→GPU round-trip) - ~2x the
         // throughput and a fraction of the memory of copy mode on 4K HEVC/AV1
         // 10-bit, with no green/black-frame issues under this OpenGL render path.
         // hwdec is single-sourced HERE (the webview no longer overrides it).
@@ -248,7 +248,7 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
         // auto picks x11egl/x11 and honours the quality options above.
         o.push(("vo", "gpu"));
         o.push(("gpu-context", "auto"));
-        // Copy-mode vaapi/nvdec, SW fallback — can't break playback.
+        // Copy-mode vaapi/nvdec, SW fallback - can't break playback.
         o.push(("hwdec", "auto-copy"));
         o.push(("ao", "pipewire,pulse,alsa"));
     }
@@ -274,7 +274,7 @@ pub struct PreInit {
 }
 
 /// Windows: `libmpv-2.dll` is DELAY-LOADED (build.rs) and ships in `resources/lib`,
-/// NOT next to the exe — so the loader can't find it on its own. Load it by full
+/// NOT next to the exe - so the loader can't find it on its own. Load it by full
 /// path here, ONCE, BEFORE any mpv FFI call. This is critical for safety: if the
 /// DLL is absent, letting mpv be touched would trip the delay-load helper's
 /// unhandled SEH exception and CRASH the process (an SEH, not a catchable Rust
@@ -337,7 +337,7 @@ pub fn create_player<R: Runtime>(
 
     let mpv = Mpv::with_initializer(|init| {
         // Best-in-class defaults first, then the surface's pre-init options, then
-        // user options override — except `vo` on macOS (render API), which MUST
+        // user options override - except `vo` on macOS (render API), which MUST
         // stay libmpv or the render context can't bind.
         for (k, v) in best_in_class_options() {
             if let Err(e) = init.set_option(k, v) {
@@ -555,8 +555,8 @@ mod tests {
     use super::best_in_class_options;
     use std::collections::HashMap;
 
-    /// The best-in-class defaults are stable + platform-correct. Pure/headless —
-    /// no GPU, no mpv instance — so it runs on every CI runner.
+    /// The best-in-class defaults are stable + platform-correct. Pure/headless - 
+    /// no GPU, no mpv instance - so it runs on every CI runner.
     #[test]
     fn best_in_class_options_are_quality_and_platform_correct() {
         let opts = best_in_class_options();

@@ -1,16 +1,16 @@
 // @vitest-environment jsdom
 //
-// partC — the Local-Mode "Install & setup" + "Updates" tabs, which partA/partB
+// partC - the Local-Mode "Install & setup" + "Updates" tabs, which partA/partB
 // never visit. Targets the previously-uncovered subtrees:
-//   • InstallTab — setup-path picker (device/connect/downloads/deploy),
+//   • InstallTab - setup-path picker (device/connect/downloads/deploy),
 //     beforeinstallprompt/appinstalled wiring, promptInstall().
-//   • DesktopHostPanel — only mounts under Tauri (isTauri() === true here):
+//   • DesktopHostPanel - only mounts under Tauri (isTauri() === true here):
 //     status load, QR generation, start/stop/openServer/share/copy handlers,
 //     LAN/setup-URL hints.
-//   • ServerConnectionPanel.connect — inferServerURL() scheme inference, the
+//   • ServerConnectionPanel.connect - inferServerURL() scheme inference, the
 //     /api/health probe (success + failure), saveServerURL + reload.
-//   • RemoteAccessPanel — Tailscale ↔ Cloudflare track switch.
-//   • UpdatesTab — the two auto-update toggles + the disable-cascade.
+//   • RemoteAccessPanel - Tailscale ↔ Cloudflare track switch.
+//   • UpdatesTab - the two auto-update toggles + the disable-cascade.
 //
 // Local Mode (isServerMode() === false) so the non-server tabs are the focus.
 // Tauri is mocked TRUE so DesktopHostPanel renders (partA mocks it false).
@@ -201,7 +201,7 @@ describe("Settings · Updates", () => {
 });
 
 // ============================================================================
-// InstallTab — setup-path picker + PWA install prompt
+// InstallTab - setup-path picker + PWA install prompt
 // ============================================================================
 
 describe("Settings · Install (setup paths)", () => {
@@ -283,7 +283,7 @@ describe("Settings · Install (setup paths)", () => {
 });
 
 // ============================================================================
-// DesktopHostPanel — Tauri-only host controls
+// DesktopHostPanel - Tauri-only host controls
 // ============================================================================
 
 describe("Settings · DesktopHostPanel", () => {
@@ -497,7 +497,7 @@ describe("Settings · DesktopHostPanel", () => {
 });
 
 // ============================================================================
-// ServerConnectionPanel — connect probe + inferServerURL
+// ServerConnectionPanel - connect probe + inferServerURL
 // ============================================================================
 
 describe("Settings · ServerConnectionPanel connect", () => {
@@ -538,7 +538,7 @@ describe("Settings · ServerConnectionPanel connect", () => {
     );
     expect(await screen.findByText(/Sign in will open next/)).toBeInTheDocument();
     // The success path schedules a window.location.reload after 350ms (real
-    // timers — waitFor's 1s window catches it).
+    // timers - waitFor's 1s window catches it).
     await waitFor(() => expect(reload).toHaveBeenCalled());
   });
 

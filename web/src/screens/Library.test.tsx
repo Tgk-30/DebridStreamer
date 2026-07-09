@@ -150,7 +150,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("Library — loading + empty", () => {
+describe("Library - loading + empty", () => {
   it("shows a loading line first, then resolves", async () => {
     let resolve!: (v: LibraryEntryRecord[]) => void;
     const pending = new Promise<LibraryEntryRecord[]>((r) => (resolve = r));
@@ -179,7 +179,7 @@ describe("Library — loading + empty", () => {
   });
 });
 
-describe("Library — error", () => {
+describe("Library - error", () => {
   it("renders the error empty-state with the failure note", async () => {
     listLibraryImpl = async () => {
       throw new Error("disk gone");
@@ -192,7 +192,7 @@ describe("Library — error", () => {
   });
 });
 
-describe("Library — folders + grid filtering", () => {
+describe("Library - folders + grid filtering", () => {
   it("renders a chip per non-root folder and filters the grid by folder", async () => {
     listFoldersImpl = async () => [
       folder("__root__", "Root", "system_root"),
@@ -229,7 +229,7 @@ describe("Library — folders + grid filtering", () => {
   });
 });
 
-describe("Library — watchlist fallback", () => {
+describe("Library - watchlist fallback", () => {
   it("falls back to the watchlist with a hint when the library is empty", async () => {
     mockWatchlist = [preview("w1", "Tenet")];
     render(<Library />);
@@ -240,7 +240,7 @@ describe("Library — watchlist fallback", () => {
   });
 });
 
-describe("Library — requested rail (Server Mode)", () => {
+describe("Library - requested rail (Server Mode)", () => {
   it("does not fetch or show the rail in local mode", async () => {
     mockServerMode = false;
     render(<Library />);
@@ -269,7 +269,7 @@ describe("Library — requested rail (Server Mode)", () => {
   });
 });
 
-describe("Library — folder management", () => {
+describe("Library - folder management", () => {
   const withEntries = () => {
     listFoldersImpl = async () => [
       folder("__root__", "Root", "system_root"),

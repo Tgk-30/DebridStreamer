@@ -2,7 +2,7 @@
 //
 // Unlike the sibling firstRun.test.ts (which exercises the real DexieStore via
 // fake-indexeddb), this suite mocks the `../storage` and `./serverMode` modules
-// so we can drive every branch in isolation — including the DEV qa-skip bypass,
+// so we can drive every branch in isolation - including the DEV qa-skip bypass,
 // the configured-server-URL short-circuit, and the store-read/-write error
 // paths that swallow exceptions.
 
@@ -78,7 +78,7 @@ describe("isFirstRun", () => {
     expect(getSetting).not.toHaveBeenCalled();
   });
 
-  it("still gates (server URL null) — empty-string URL counts as configured only if non-null", async () => {
+  it("still gates (server URL null) - empty-string URL counts as configured only if non-null", async () => {
     // configuredServerURL returns a string for any configured value, including "".
     configuredServerURL.mockReturnValue("");
     await expect(isFirstRun()).resolves.toBe(false);

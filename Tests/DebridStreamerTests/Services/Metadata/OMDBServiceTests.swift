@@ -149,7 +149,7 @@ private let omdbFullBody = """
 """
 
 /// Same shape, but every value OMDB can return as missing is "N/A", empty, or
-/// non-numeric garbage — all must defensively decode to nil.
+/// non-numeric garbage - all must defensively decode to nil.
 private let omdbNAValuesBody = """
 {
   "Title": "Some Obscure Short",

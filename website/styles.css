@@ -1,8 +1,8 @@
-/* DebridStreamer site — composed from the app's own design system.
+/* DebridStreamer site - composed from the app's own design system.
    Tokens are ported 1:1 from web/src/theme/theme.css (midnight theme): the
-   page is built to read as a screen OF the app — the hero is the app's
+   page is built to read as a screen OF the app - the hero is the app's
    Discover spotlight, features are a poster rail, and the download list is
-   the app's stream picker. Static aurora (no looping animations — same
+   the app's stream picker. Static aurora (no looping animations - same
    idle-cost discipline as the app). */
 
 :root {
@@ -42,7 +42,7 @@
 
   --focus-ring: 0 0 0 3px rgba(140, 133, 250, 0.5);
 
-  /* Type — the app speaks system display; the site adds a mono utility voice
+  /* Type - the app speaks system display; the site adds a mono utility voice
      for the things self-hosters actually read: versions, sizes, commands. */
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui,
     "Segoe UI", Roboto, sans-serif;
@@ -86,7 +86,7 @@ body {
   overflow-x: clip;
 }
 
-/* Static aurora orbs — identical treatment to the app's .aurora-glow. */
+/* Static aurora orbs - identical treatment to the app's .aurora-glow. */
 body::before,
 body::after {
   content: "";
@@ -150,7 +150,7 @@ code {
   box-shadow: var(--focus-ring);
 }
 
-/* ── Header — the app's glass top bar ─────────────────────────────────────── */
+/* ── Header - the app's glass top bar ─────────────────────────────────────── */
 
 .site-header {
   position: sticky;
@@ -241,7 +241,7 @@ code {
   transform: translateY(-6px) rotate(-45deg);
 }
 
-/* ── Hero — the app's Discover spotlight, featuring the app itself ────────── */
+/* ── Hero - the app's Discover spotlight, featuring the app itself ────────── */
 
 .hero {
   position: relative;
@@ -399,7 +399,7 @@ code {
   color: var(--text-2);
 }
 
-/* The product stage — one real app frame, two companion devices. */
+/* The product stage - one real app frame, two companion devices. */
 .product-stage {
   position: relative;
   margin-top: clamp(36px, 5vw, 64px);
@@ -473,7 +473,7 @@ code {
   transform: rotate(4deg);
 }
 
-/* ── Proof strip — the app's chip row ─────────────────────────────────────── */
+/* ── Proof strip - the app's chip row ─────────────────────────────────────── */
 
 .proof-strip {
   position: relative;
@@ -565,7 +565,7 @@ code {
   text-decoration: underline;
 }
 
-/* ── Features — a poster rail, like the app's Trending row ───────────────── */
+/* ── Features - a poster rail, like the app's Trending row ───────────────── */
 
 .rail-track {
   display: grid;
@@ -638,7 +638,7 @@ code {
   color: var(--text-2);
 }
 
-/* ── Download — the app's stream picker (the signature) ──────────────────── */
+/* ── Download - the app's stream picker (the signature) ──────────────────── */
 
 .picker {
   border-radius: var(--r-lg);
@@ -898,7 +898,7 @@ code {
   color: rgba(220, 224, 255, 0.9);
 }
 
-/* ── Household — profile cards, like the app's profile picker ────────────── */
+/* ── Household - profile cards, like the app's profile picker ────────────── */
 
 .hosting-grid {
   display: grid;
@@ -1069,7 +1069,7 @@ code {
   }
 }
 
-/* The mobile menu breakpoint MUST stay 640px — app.js gates its open/close
+/* The mobile menu breakpoint MUST stay 640px - app.js gates its open/close
    behavior on matchMedia("(max-width: 640px)"). */
 @media (max-width: 640px) {
   body.menu-ready .menu-toggle {
@@ -1079,7 +1079,7 @@ code {
     position: fixed;
     inset: 61px 12px auto;
     z-index: 60;
-    /* Stable 3-column pill grid — link labels can't reflow the sheet. */
+    /* Stable 3-column pill grid - link labels can't reflow the sheet. */
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
@@ -1143,7 +1143,7 @@ code {
   }
 }
 
-/* ── Boot — a restrained page-load rise (JS-gated via .js-boot;
+/* ── Boot - a restrained page-load rise (JS-gated via .js-boot;
       prefers-reduced-motion collapses every animation to instant, and the
       page is fully visible without JS). ────────────────────────────────── */
 
@@ -1213,7 +1213,7 @@ code {
   }
 }
 
-/* ── Scroll reveals — content rises in as playback advances. ─────────────── */
+/* ── Scroll reveals - content rises in as playback advances. ─────────────── */
 
 .js-boot .reveal {
   opacity: 0;
@@ -1225,7 +1225,7 @@ code {
   transform: none;
 }
 
-/* ── Pointer tilt — the hero window leans toward the cursor (desktop only,
+/* ── Pointer tilt - the hero window leans toward the cursor (desktop only,
       set from JS; coarse pointers and reduced motion never enable it). ───── */
 
 .js-boot .product-stage {
@@ -1237,7 +1237,7 @@ code {
   will-change: transform;
 }
 
-/* ── The scrubline — a hairline playback indicator across the top of the
+/* ── The scrubline - a hairline playback indicator across the top of the
       viewport. It reads as a player scrub bar (the app's language) but is
       position: fixed and animates WIDTH ONLY, so it can never influence
       layout or cause horizontal overflow. JS sets --scrub (0–1). ─────────── */
@@ -1274,12 +1274,12 @@ code {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   POLISH LAYER (v2026-07-04) — depth on the hero spotlight, structural
+   POLISH LAYER (v2026-07-04) - depth on the hero spotlight, structural
    rhythm between sections, and refined rail/eyebrow detailing. Purely
    additive; touches no QA-pinned tokens, breakpoints, or hooks.
    ════════════════════════════════════════════════════════════════════════ */
 
-/* Hero spotlight — give the product stage real depth: a warmer, wider halo
+/* Hero spotlight - give the product stage real depth: a warmer, wider halo
    behind it and a soft "floor" glow the window appears to sit on. */
 .halo {
   inset: -12% -16%;
@@ -1309,7 +1309,7 @@ code {
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
-/* Eyebrow — a short accent tick before the label ties every section to the
+/* Eyebrow - a short accent tick before the label ties every section to the
    brand and reads as a designed mark rather than plain caps text. */
 .eyebrow {
   display: inline-flex;
@@ -1325,7 +1325,7 @@ code {
   background: linear-gradient(90deg, var(--accent), rgba(var(--accent-rgb), 0));
 }
 
-/* Chapter rhythm — a centered hairline that fades in from nothing above each
+/* Chapter rhythm - a centered hairline that fades in from nothing above each
    major section, giving the long scroll a sense of movements without loud
    dividers. Not on the first section (it follows the proof strip). */
 #download::before,
@@ -1339,13 +1339,13 @@ code {
   width: min(100%, 100px);
   margin: 0 0 clamp(40px, 6vw, 72px);
   background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.6), rgba(255, 255, 255, 0.02));
-  /* The split sections (self-host, updates) are 2-col grids — span the whole
+  /* The split sections (self-host, updates) are 2-col grids - span the whole
      row so the hairline is its own line and never steals a column. Ignored on
      the non-grid block sections. */
   grid-column: 1 / -1;
 }
 
-/* Feature rail — the trailing card no longer reads as "cut off": a firmer edge
+/* Feature rail - the trailing card no longer reads as "cut off": a firmer edge
    fade plus a persistent hint that the row scrolls. */
 .rail-track {
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 80px), transparent);
@@ -1355,7 +1355,7 @@ code {
   content: " →";
 }
 
-/* Primary action — a touch more presence and a live sheen on hover. */
+/* Primary action - a touch more presence and a live sheen on hover. */
 .primary-action {
   position: relative;
   overflow: hidden;
@@ -1378,7 +1378,7 @@ code {
   }
 }
 
-/* Section headings — tighten the optical scale and let them breathe. */
+/* Section headings - tighten the optical scale and let them breathe. */
 .section-head h2,
 .split h2 {
   text-wrap: balance;

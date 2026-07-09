@@ -44,7 +44,7 @@ interface StremioStreamResponse {
 }
 
 const INFO_HASH_RE = /^[A-Fa-f0-9]{40}$/;
-// A 40-hex run that is a complete token (not flanked by more hex) — so a longer
+// A 40-hex run that is a complete token (not flanked by more hex) - so a longer
 // hex blob in the URL (e.g. a 64-char sha256) isn't truncated to a wrong "hash".
 const FIRST_HEX_40_RE = /(?<![A-Fa-f0-9])[A-Fa-f0-9]{40}(?![A-Fa-f0-9])/;
 
@@ -55,7 +55,7 @@ const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 /** Read a fetch response's body as text, refusing to buffer past `maxBytes`. The
  * FetchImpl type only promises `text()`, but the real Response also exposes a
- * byte stream — prefer it so we can stop early; fall back to `text()` (capped)
+ * byte stream - prefer it so we can stop early; fall back to `text()` (capped)
  * for test stubs / non-standard fetches that don't provide one. */
 async function readCappedText(
   response: { text(): Promise<string> },
@@ -274,7 +274,7 @@ function extractInfoHashFromMagnet(urlString: string): string | null {
       }
     }
   } catch {
-    // Not a parseable URL — fall through to the regex scan.
+    // Not a parseable URL - fall through to the regex scan.
   }
   // Fall back to the first 40-hex run anywhere in the string.
   const match = FIRST_HEX_40_RE.exec(urlString);

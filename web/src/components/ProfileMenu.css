@@ -154,7 +154,7 @@
   flex: 1 1 100%;
 }
 
-/* Built-in preset avatars — a quick alternative to uploading a photo. */
+/* Built-in preset avatars - a quick alternative to uploading a photo. */
 .profile-menu-presets {
   display: flex;
   flex-direction: column;

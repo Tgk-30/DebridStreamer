@@ -20,11 +20,11 @@ release_build() {
   return "${PIPESTATUS[0]}"
 }
 if ! release_build; then
-  echo "    release build failed — cleaning Release intermediates and retrying once..."
+  echo "    release build failed - cleaning Release intermediates and retrying once..."
   rm -rf /tmp/ds-scratch/out/Intermediates.noindex/DebridStreamer.build/Release \
          /tmp/ds-scratch/out/Products/Release
   if ! release_build; then
-    echo "    release build still failing after clean — aborting (not shipping stale binary)." >&2
+    echo "    release build still failing after clean - aborting (not shipping stale binary)." >&2
     exit 1
   fi
 fi

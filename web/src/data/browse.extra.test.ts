@@ -1,4 +1,4 @@
-// Extra tests for the Browse data layer — covers loadServerBrowsePage, the
+// Extra tests for the Browse data layer - covers loadServerBrowsePage, the
 // Server Mode page loader the browse.test.ts pure suite and the browse.hook
 // test (which only exercises the `category` server route) leave untouched:
 // the `genre`, `search`, and `discover` server routes plus their param wiring.

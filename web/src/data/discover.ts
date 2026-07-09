@@ -34,7 +34,7 @@ export interface DiscoverState {
   loading: boolean;
   /** True until the secondary (category) rails have all settled. The hero +
    *  Top 10 paint as soon as `loading` clears (after the two trending fetches);
-   *  category rails show a skeleton while this is true, then fill in — or, if
+   *  category rails show a skeleton while this is true, then fill in - or, if
    *  genuinely empty, hide. Non-progressive paths (server/fixtures) never set
    *  it true. */
   railsLoading: boolean;
@@ -152,7 +152,7 @@ export function useDiscover(tmdb: TMDBService | null): DiscoverState {
       // Driven by the shared, settings-derived TMDB service (which already folds
       // in the VITE_TMDB_KEY fallback). When the user saves a key in Settings the
       // service identity changes and this effect re-runs, lighting up the catalog
-      // without a reload — matching Search/Browse.
+      // without a reload - matching Search/Browse.
       //
       // PROGRESSIVE: paint the hero + Top 10 as soon as the two trending fetches
       // resolve (first paint no longer waits on all six requests), then fill the

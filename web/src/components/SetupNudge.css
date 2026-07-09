@@ -1,4 +1,4 @@
-/* SetupNudge — dismissible "finish setup" bar, fixed to the bottom so it never
+/* SetupNudge - dismissible "finish setup" bar, fixed to the bottom so it never
    shifts page layout. */
 .setup-nudge {
   position: fixed;

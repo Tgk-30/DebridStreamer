@@ -1,4 +1,4 @@
-// Hash-list import/share — a compact, shareable encoding of a set of torrent
+// Hash-list import/share - a compact, shareable encoding of a set of torrent
 // infoHashes (+ optional names) so a user can hand another user (or themselves
 // on another machine) a single string that bulk-hydrates onto their debrid.
 //
@@ -145,7 +145,7 @@ export function decodeHashList(encoded: string): HashListEntry[] {
 /** Best-effort parse of free-text pasted input into entries: first tries the
  * compact `dshl1:` format, then falls back to scanning the text for raw 40-hex
  * infoHashes (one per line / whitespace-separated). Returns [] when nothing
- * usable is found (never throws — the dialog drives the error copy). */
+ * usable is found (never throws - the dialog drives the error copy). */
 export function parseHashListInput(input: string): HashListEntry[] {
   const trimmed = input.trim();
   if (trimmed.length === 0) return [];

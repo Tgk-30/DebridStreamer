@@ -34,7 +34,7 @@ export const SERVER_SETUP_INVITE_PRESETS: ServerSetupInvitePreset[] = [
     inviteLabel: "Power user",
     simpleMode: false,
     description:
-      "The full interface — can manage sources, indexers, and settings. For whoever helps you run the server.",
+      "The full interface - can manage sources, indexers, and settings. For whoever helps you run the server.",
   },
 ];
 

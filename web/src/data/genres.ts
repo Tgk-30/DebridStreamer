@@ -59,7 +59,7 @@ export function fallbackGenres(type: MediaType): Genre[] {
   return type === "movie" ? MOVIE_GENRES : TV_GENRES;
 }
 
-/** Resolve the genre name for an id within a type's list (live OR fallback) —
+/** Resolve the genre name for an id within a type's list (live OR fallback) - 
  * used to label active-filter chips. Falls back to "Genre {id}" if unknown. */
 export function genreName(genres: Genre[], id: number): string {
   return genres.find((g) => g.id === id)?.name ?? `Genre ${id}`;

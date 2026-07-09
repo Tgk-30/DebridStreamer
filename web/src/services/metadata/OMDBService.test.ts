@@ -66,7 +66,7 @@ const omdbFullBody = JSON.stringify({
 });
 
 /** Same shape, but every value OMDB can return as missing is "N/A", empty, or
- * non-numeric garbage — all must defensively decode to undefined. Verbatim from
+ * non-numeric garbage - all must defensively decode to undefined. Verbatim from
  * Swift `omdbNAValuesBody`. */
 const omdbNAValuesBody = JSON.stringify({
   Title: "Some Obscure Short",

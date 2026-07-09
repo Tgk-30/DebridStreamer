@@ -1,16 +1,16 @@
 // Linux video surface: mpv X11 wid-embedding.
 //
-// We hand mpv the Tauri window's X11 window id as `wid` (an init-only option — set
+// We hand mpv the Tauri window's X11 window id as `wid` (an init-only option - set
 // in surface_pre_init, applied inside Mpv::with_initializer). mpv then creates its
 // own render child window inside it and renders NATIVELY (vo=gpu + gpu-context=auto
-// picks x11egl/x11, hwdec=auto-copy engages vaapi/nvdec copy — see
+// picks x11egl/x11, hwdec=auto-copy engages vaapi/nvdec copy - see
 // core::best_in_class_options). This mirrors the Windows wid-embed and is the
 // battle-tested way mpv embeds into GTK/Qt hosts; it needs no `gtk`/`x11` crate:
 // raw-window-handle (already a dependency) yields the XID.
 //
 // SESSION CAVEAT (verified by a human on real hardware): mpv `wid` embedding is an
 // X11 mechanism. Under a native Wayland session Tauri hands back a Wayland handle,
-// not an XID — so surface_pre_init returns an error and the app falls back to the
+// not an XID - so surface_pre_init returns an error and the app falls back to the
 // external player. Running the app under XWayland (GDK_BACKEND=x11) makes the
 // in-window player available on Wayland desktops too.
 //
@@ -18,7 +18,7 @@
 // native surface, so a transparent WebKitGTK does not reveal video behind it
 // (X11 airspace rule). The web UI FRAMES the video region rather than glassing over
 // full-frame video. True video-behind-glass would need a GtkGLArea render-API
-// surface sharing WebKitGTK's GL context — a later refinement (v0.6 Phase 3b).
+// surface sharing WebKitGTK's GL context - a later refinement (v0.6 Phase 3b).
 
 use std::sync::Arc;
 

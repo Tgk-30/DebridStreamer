@@ -7,7 +7,7 @@
 // bucket (so re-hovering nearby is instant) and generation is throttled so a
 // fast scrub doesn't queue dozens of seeks.
 //
-// This is gated to the in-webview `<video>` path by the caller — there is no
+// This is gated to the in-webview `<video>` path by the caller - there is no
 // frame source for the external mpv/VLC hand-off, so the tooltip is hidden
 // there. Cross-origin debrid streams may taint the canvas (a SecurityError on
 // export); we catch that and simply show the time label without an image.
@@ -39,7 +39,7 @@ export interface UseScrubThumbnails {
 
 /**
  * @param sourceUrl The video src to capture from (same as the main player).
- * @param enabled   Gate — pass false for the external player path so no hidden
+ * @param enabled   Gate - pass false for the external player path so no hidden
  *                  video is created and `available` is false.
  */
 export function useScrubThumbnails(
@@ -121,7 +121,7 @@ export function useScrubThumbnails(
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       image = canvas.toDataURL("image/jpeg", 0.6);
     } catch {
-      // Cross-origin taint — show the time label without an image.
+      // Cross-origin taint - show the time label without an image.
       image = null;
     }
     const bucket = Math.round(video.currentTime / BUCKET_SECONDS);
@@ -139,7 +139,7 @@ export function useScrubThumbnails(
         pendingTimeRef.current = t; // coalesce while a seek is in flight
         return;
       }
-      // If we're already at this frame, no 'seeked' event would fire — capture
+      // If we're already at this frame, no 'seeked' event would fire - capture
       // directly so the preview doesn't stall on a no-op seek.
       if (Math.abs(t - video.currentTime) < 0.05) {
         captureCurrentFrame();

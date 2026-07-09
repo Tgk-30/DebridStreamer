@@ -21,7 +21,7 @@ SQLite** backend. It:
   so providers see only the server's IP (see
   [Remote access](remote-access.md)).
 
-You do **not** need a server to use DebridStreamer — a single user can run the
+You do **not** need a server to use DebridStreamer - a single user can run the
 desktop app entirely on-device. A server is for sharing across people and
 devices.
 
@@ -38,7 +38,7 @@ app, go to **Settings → Install & setup → Host from this desktop**. The app
 starts the server, shows you the local URL, a LAN address, a QR code for phones,
 and copy/share controls.
 
-Best for: "I already leave my Mac/PC on — let my family use it." No terminal
+Best for: "I already leave my Mac/PC on - let my family use it." No terminal
 required.
 
 ### 2. Docker on a NAS or VPS
@@ -68,7 +68,7 @@ See [`DOCKER.md`](DOCKER.md) for the full Docker reference.
 ### 3. Raspberry Pi
 
 A Raspberry Pi (ARM64, e.g. Pi 4 / Pi 5 running 64-bit Raspberry Pi OS) works
-the same way as Docker above — the container is published for `linux/arm64`, so
+the same way as Docker above - the container is published for `linux/arm64`, so
 `docker compose up -d` pulls the right architecture automatically.
 
 Best for: a cheap, low-power, always-on box for a small household.
@@ -108,7 +108,7 @@ served from the **same** origin, so you just open the server URL directly.
 
 ## Configuration (environment variables)
 
-All settings are optional — the defaults work for local use. Set them as
+All settings are optional - the defaults work for local use. Set them as
 environment variables (or in your Docker `.env`).
 
 | Variable | Default | Purpose |
@@ -123,7 +123,7 @@ environment variables (or in your Docker `.env`).
 | `DS_SERVER_SESSION_TTL_SECONDS` | 30 days | How long a sign-in lasts. |
 | `DS_SERVER_TRUST_PROXY` | `false` | Set `true` behind a trusted reverse proxy / tunnel. |
 | `DS_SERVER_CORS_ORIGIN` | unset | Comma-separated browser origins allowed to call the API with cookies. Usually leave blank when the server also serves the web app. |
-| `DS_SERVER_ALLOW_RAW_STREAM_URLS` | off in production | Lets the server fetch raw upstream URLs, **including private/LAN/loopback addresses**. Keep **disabled** on any public deployment — see warning below. |
+| `DS_SERVER_ALLOW_RAW_STREAM_URLS` | off in production | Lets the server fetch raw upstream URLs, **including private/LAN/loopback addresses**. Keep **disabled** on any public deployment - see warning below. |
 
 ### About `DS_SERVER_SECRET_KEY`
 
@@ -143,7 +143,7 @@ openssl rand -base64 32
 
 This is a development convenience. When **off** (the production default), the
 server refuses to fetch private, loopback, or reserved IP addresses for streams,
-AI (Ollama), and subtitle downloads — protecting your internal network from
+AI (Ollama), and subtitle downloads - protecting your internal network from
 being probed (SSRF protection). Turn it on only on a trusted local box where you
 need, for example, a localhost Ollama endpoint. **Never enable it on a public
 server.**
@@ -161,7 +161,7 @@ The first person to open a fresh server creates the **owner** account:
 
 After setup, add at least one **metadata provider** (a TMDB key for the live
 catalog) and a **debrid provider** so streams can resolve. Then create profiles
-or invite links for everyone else — see
+or invite links for everyone else - see
 [Multi-user & profiles](multi-user-and-profiles.md).
 
 ---
@@ -171,11 +171,11 @@ or invite links for everyone else — see
 Everything persists under the **data directory** (`DS_SERVER_DATA_DIR`, default
 `server/data/`, mounted as `/data` in Docker):
 
-- `debridstreamer.sqlite` — accounts, profiles, watchlists, history, library,
+- `debridstreamer.sqlite` - accounts, profiles, watchlists, history, library,
   settings, encrypted credentials, audit log.
-- `server.key` — the encryption key (unless you set `DS_SERVER_SECRET_KEY`).
+- `server.key` - the encryption key (unless you set `DS_SERVER_SECRET_KEY`).
 
-This directory is **gitignored** — it is your private data and never committed.
+This directory is **gitignored** - it is your private data and never committed.
 
 ### Backup
 
@@ -193,7 +193,7 @@ Restoring the database without the matching key leaves credentials undecryptable
 After the server is up:
 
 - Open the URL in a browser and complete owner setup.
-- From a phone on the same network (or over a tunnel — see
+- From a phone on the same network (or over a tunnel - see
   [Remote access](remote-access.md)), open the same URL and install it to the
   home screen.
-- Sign in, pick a title, and play — the video streams **through** the server.
+- Sign in, pick a title, and play - the video streams **through** the server.

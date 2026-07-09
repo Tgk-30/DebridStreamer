@@ -59,7 +59,7 @@ function renderPicker(over: Partial<Parameters<typeof EpisodePicker>[0]> = {}) {
   return props;
 }
 
-describe("EpisodePicker — rich mode", () => {
+describe("EpisodePicker - rich mode", () => {
   it("renders season chips + episode rows and marks the selection", () => {
     mockUseSeasons.mockReturnValue({
       seasons: [season(1), season(2)],
@@ -134,7 +134,7 @@ describe("EpisodePicker — rich mode", () => {
       source: "live",
     });
     renderPicker();
-    // No chip buttons past the threshold — a proper season selector instead.
+    // No chip buttons past the threshold - a proper season selector instead.
     expect(screen.queryByRole("button", { name: "Season 2" })).toBeNull();
     const select = screen.getByRole("combobox", { name: "Season" });
     expect(select).toHaveValue("1");
@@ -212,7 +212,7 @@ describe("EpisodePicker — rich mode", () => {
   });
 });
 
-describe("EpisodePicker — degraded stepper", () => {
+describe("EpisodePicker - degraded stepper", () => {
   function mockNoGuide() {
     mockUseSeasons.mockReturnValue({ seasons: [], loading: false, source: "none" });
     mockUseEpisodes.mockReturnValue({ episodes: [], loading: false, source: "none" });
@@ -225,7 +225,7 @@ describe("EpisodePicker — degraded stepper", () => {
 
     expect(
       screen.getByText(
-        "Episode guide unavailable — pick the season and episode to search.",
+        "Episode guide unavailable - pick the season and episode to search.",
       ),
     ).toBeInTheDocument();
 

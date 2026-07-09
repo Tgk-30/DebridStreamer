@@ -135,7 +135,7 @@ const patchProfileSchema = z.object({
 
 // Household sub-profile ("who's watching") schemas. Distinct from the account
 // schemas above: a sub-profile is a viewer within ONE account, not a separate
-// login — so no username, and the password is OPTIONAL (kid/guest profiles).
+// login - so no username, and the password is OPTIONAL (kid/guest profiles).
 // avatarColor is a short style token (hex or keyword) the picker renders as a
 // tint behind the display-name initial.
 const avatarColorSchema = z.string().trim().min(1).max(32);
@@ -267,7 +267,7 @@ const subtitleSearchBodySchema = z
 
 const subtitleFetchBodySchema = z.object({
   fileId: z.string().trim().min(1).max(64),
-  // The title being watched — required for a kid so the maturity cap can be
+  // The title being watched - required for a kid so the maturity cap can be
   // enforced on the fetched dialogue (search is gated the same way).
   imdbId: z.string().trim().max(32).nullish(),
 });
@@ -311,7 +311,7 @@ const streamSearchQuerySchema = z.object({
   // older client that omits it still works (imdb-only). Bounded to the same 300
   // chars as a media title. NO `.min(1)`: a blank `title=` must be accepted and
   // treated as "no title pass" (searchServerStreams only runs the pass when the
-  // trimmed title is non-empty) — rejecting it would 400 a direct/older client.
+  // trimmed title is non-empty) - rejecting it would 400 a direct/older client.
   title: z.string().trim().max(300).optional(),
 });
 
@@ -356,7 +356,7 @@ const mediaSeasonsQuerySchema = z.object({
 
 const mediaEpisodesQuerySchema = z.object({
   tmdbId: z.coerce.number().int().min(1),
-  // Realistic ceiling — the longest-running shows are well under 100 seasons;
+  // Realistic ceiling - the longest-running shows are well under 100 seasons;
   // anything bigger is abuse probing and is rejected before TMDB is contacted.
   season: z.coerce.number().int().min(0).max(200),
 });
@@ -394,10 +394,10 @@ const resolveStreamSchema = z.object({
   // Media identity, carried so a maturity-capped (kid) profile can be checked
   // against the title's certification before the stream is resolved. Optional
   // for back-compat + raw sessions; their absence on a capped profile is itself
-  // a block (fail-closed) — see the resolve route.
+  // a block (fail-closed) - see the resolve route.
   mediaId: z.string().trim().min(1).max(256).optional(),
   mediaType: z.enum(["movie", "series"]).optional(),
-  // Episode context (series only) — steers multi-file season-pack torrents to
+  // Episode context (series only) - steers multi-file season-pack torrents to
   // the exact episode's file. Optional for back-compat; omitted → the default
   // largest-file pick, exactly today's behavior.
   season: z.number().int().min(1).max(200).nullable().optional(),
@@ -412,7 +412,7 @@ const profileSettingSchema = z.object({
 // Profile-settings keys written server-side that must never be read back by, or
 // be writable from, the generic /api/settings/profile surface (it round-trips
 // arbitrary client key/values). Currently the optional sub-profile password hash
-// is the only such key — it's write-only by design (reserved for a future PIN).
+// is the only such key - it's write-only by design (reserved for a future PIN).
 const PROTECTED_PROFILE_SETTING_KEYS: ReadonlySet<string> = new Set([
   "profile_password_hash",
 ]);
@@ -436,7 +436,7 @@ function createRateLimiter() {
   ): void => {
     const now = Date.now();
     // Opportunistically evict expired buckets (at most once a minute, driven by
-    // request activity — no dangling timer). Without this the map grows
+    // request activity - no dangling timer). Without this the map grows
     // unbounded from high-cardinality pre-auth keys (per-username login,
     // per-invite-token, per-IP), since entries were only ever inserted.
     if (now - lastSweep > 60_000) {
@@ -1007,7 +1007,7 @@ function readAuth(db: AppDatabase, request: FastifyRequest): AuthContext | null 
         isKid: number;
       })
     | undefined;
-  // simple_mode / is_kid are INTEGER columns — map to real booleans (a raw cast
+  // simple_mode / is_kid are INTEGER columns - map to real booleans (a raw cast
   // would leak a number, defeating `=== true` / `?? true` checks downstream).
   if (row == null) return null;
   return { ...row, simpleMode: row.simpleMode === 1, isKid: row.isKid === 1 };
@@ -1275,7 +1275,7 @@ function resolveOmdbKey(
   return embeddedSecret("omdb");
 }
 
-/** The broker/server's OWN OMDb key — a SERVER-scoped credential → env →
+/** The broker/server's OWN OMDb key - a SERVER-scoped credential → env →
  *  embedded build key. Never a profile credential, so the broker can never use a
  *  consumer's personal key (no sentinel-profileId convention needed). */
 function resolveServerOmdbKey(db: AppDatabase, config: ServerConfig): string | null {
@@ -1299,7 +1299,7 @@ function resolveServerOmdbKey(db: AppDatabase, config: ServerConfig): string | n
   return embeddedSecret("omdb");
 }
 
-/** Broker mode is active only when BOTH a URL and a non-empty token are set — so
+/** Broker mode is active only when BOTH a URL and a non-empty token are set - so
  *  a half-configured broker falls through to local key resolution instead of
  *  silently returning nothing. */
 function brokerConfigured(config: ServerConfig): boolean {
@@ -1310,7 +1310,7 @@ function brokerConfigured(config: ServerConfig): boolean {
   );
 }
 
-/** A profile's OWN OMDb key (scope='profile' only), decrypted — used so a user's
+/** A profile's OWN OMDb key (scope='profile' only), decrypted - used so a user's
  *  personal key (BYOK) takes precedence over a broker or shared key. Null when
  *  the profile has none. */
 function profileScopedOmdbKey(
@@ -1335,7 +1335,7 @@ function profileScopedOmdbKey(
 }
 
 /** Whether the server can provide OMDb ratings for a profile (drives the client
- *  capability flag, without revealing the key) — a resolvable key OR a broker. */
+ *  capability flag, without revealing the key) - a resolvable key OR a broker. */
 function omdbAvailableFor(db: AppDatabase, config: ServerConfig, profileId: string): boolean {
   return brokerConfigured(config) || resolveOmdbKey(db, config, profileId) != null;
 }
@@ -1350,7 +1350,7 @@ function isValidBrokerToken(config: ServerConfig, presented: string | null): boo
   let ok = false;
   for (const token of config.brokerTokens) {
     const b = createHash("sha256").update(token).digest();
-    if (timingSafeEqual(a, b)) ok = true; // no early return — keep it constant-time
+    if (timingSafeEqual(a, b)) ok = true; // no early return - keep it constant-time
   }
   return ok;
 }
@@ -1861,10 +1861,10 @@ function registerRoutes(
       // ffmpeg present at boot), so the client only offers it when it'll work.
       transcodeAvailable: transcode.ready,
       // Whether the server can supply OMDb ratings for this profile (a profile,
-      // server, or env OMDb key is configured). The key itself is never sent —
+      // server, or env OMDb key is configured). The key itself is never sent - 
       // the client only learns that the /api/omdb proxy will return ratings.
       omdbProxy: auth != null && omdbAvailableFor(db, config, auth.profileId),
-      // Distribution tier — drives which onboarding flow the client shows.
+      // Distribution tier - drives which onboarding flow the client shows.
       buildProfile: config.buildProfile,
     };
   });
@@ -1946,7 +1946,7 @@ function registerRoutes(
 
     if (row == null) {
       // Run a dummy verify so an unknown username takes the same time as a known
-      // one — otherwise response timing reveals which usernames exist.
+      // one - otherwise response timing reveals which usernames exist.
       await verifyDummyPassword(body.password);
       throw httpError(401, "Invalid username or password.");
     }
@@ -2386,7 +2386,7 @@ function registerRoutes(
     // A household viewer profile is NOT a login: it has no username and its
     // password is optional (kid/guest profiles switch without one). When a
     // password is supplied we hash it for parity with accounts, but it is not
-    // used as a credential yet — switching is gated by account ownership, not a
+    // used as a credential yet - switching is gated by account ownership, not a
     // per-profile password. Profile data is isolated by profile_id as usual.
     const password = (request.body as { password?: unknown })?.password;
     if (password != null) passwordSchema.parse(password);
@@ -2454,7 +2454,7 @@ function registerRoutes(
     requireNotRestricted(auth);
     const id = accountProfileIdParamSchema.parse((request.params as { id: string }).id);
     const body = parseBody(patchAccountProfileSchema, request.body);
-    // Ownership check makes rename/recolor IDOR-safe — another account's id 404s.
+    // Ownership check makes rename/recolor IDOR-safe - another account's id 404s.
     if (ownedLiveProfile(auth.userId, id) == null) {
       throw httpError(404, "Profile not found.");
     }
@@ -2478,7 +2478,7 @@ function registerRoutes(
     return { ok: true, profiles: listAccountProfiles(db, auth.userId) };
   });
 
-  // Kid/maturity gating is set HERE, behind requireAdmin — deliberately NOT on
+  // Kid/maturity gating is set HERE, behind requireAdmin - deliberately NOT on
   // the PATCH route above (which is requireNotRestricted), so a kid can never
   // lift their own cap by editing their profile. Household-scoped via
   // ownedLiveProfile. Setting both fields together keeps the play-block
@@ -2526,13 +2526,13 @@ function registerRoutes(
     db.transaction(() => {
       // Audit BEFORE the delete: the actor's active profile may BE the one being
       // removed (you can delete the profile you're currently watching as), and
-      // audit_log.actor_profile_id FKs profiles(id) — inserting after the delete
+      // audit_log.actor_profile_id FKs profiles(id) - inserting after the delete
       // would violate it. The target id is still captured in the row.
       audit(db, auth, "account.profile.delete", "profile", id);
       // Explicitly clear any session pointing at this profile. The
       // sessions.active_profile_id FK is declared ON DELETE SET NULL, but it was
       // added via ALTER TABLE ADD COLUMN and SQLite does not enforce that action
-      // for ALTER-added columns — so without this the FK would BLOCK the delete.
+      // for ALTER-added columns - so without this the FK would BLOCK the delete.
       // Nulling here is correct regardless: those sessions transparently fall
       // back to the default profile on their next readAuth.
       db.sqlite
@@ -2773,7 +2773,7 @@ function registerRoutes(
     return { request: mapRequestRow(row) };
   });
 
-  // The caller's OWN requests (any status), newest first — IDOR-safe by profile.
+  // The caller's OWN requests (any status), newest first - IDOR-safe by profile.
   app.get("/api/library/requests", async (request) => {
     const auth = requireAuth(db, request);
     const query = parseBody(requestStatusQuerySchema, request.query);
@@ -2899,7 +2899,7 @@ function registerRoutes(
 
   // Exact-key resume lookup. The list endpoint is windowed (≤500), so a client
   // merge that reads the existing resume position must not depend on scanning it
-  // — otherwise an older title (beyond the window) would read back as absent and
+  // - otherwise an older title (beyond the window) would read back as absent and
   // a viewed-only write would zero its progress. This is an O(1) keyed lookup.
   app.get("/api/history/:mediaId", async (request) => {
     const auth = requireAuth(db, request);
@@ -3074,7 +3074,7 @@ function registerRoutes(
       throw httpError(404, "Folder not found.");
     }
     if (existing.is_system === 1) throw httpError(400, "System folders cannot be edited.");
-    // A re-parent must point at one of THIS profile's folders — else the raw FK
+    // A re-parent must point at one of THIS profile's folders - else the raw FK
     // would 500 on a dangling id, or (worse) accept another profile's folder id
     // (the FK checks existence, not ownership). Mirrors the createFolder guard.
     if (body.parentId != null && !folderExistsForProfile(db, auth.profileId, body.parentId)) {
@@ -3231,7 +3231,7 @@ function registerRoutes(
 
   app.get("/api/search", async (request) => {
     const auth = requireAuth(db, request);
-    // Kid profiles have no free-text search — only the curated, cert-capped
+    // Kid profiles have no free-text search - only the curated, cert-capped
     // browse surfaces. Blocking here keeps a kid from typing past the cap.
     if (auth.isKid) throw httpError(403, "Search is disabled on this profile.");
     const query = parseBody(mediaSearchQuerySchema, request.query);
@@ -3299,7 +3299,7 @@ function registerRoutes(
     const auth = requireAuth(db, request);
     requireCsrf(request);
     // AI discovery is a free-text recommendation surface that can name over-cap
-    // titles — the same class as /api/search. Kids get curated browse only.
+    // titles - the same class as /api/search. Kids get curated browse only.
     if (auth.isKid) throw httpError(403, "AI discovery is not available on this profile.");
     const body = parseBody(aiRecommendBodySchema, request.body);
     const result = await recommendServerAI(db, config, auth.profileId, body);
@@ -3334,7 +3334,7 @@ function registerRoutes(
     rateLimit(request, `subtitles:search:${auth.profileId}`, 60, 60 * 1000);
     const body = parseBody(subtitleSearchBodySchema, request.body);
     // Subtitle search is a discovery surface (free text + imdbId). For a kid it is
-    // limited to a cert-gated lookup of their own within-cap MOVIE titles — no
+    // limited to a cert-gated lookup of their own within-cap MOVIE titles - no
     // free-text, no over-cap title (which would leak the film's full dialogue).
     if (auth.isKid) {
       if (body.imdbId == null || body.imdbId.length === 0) {
@@ -3344,9 +3344,9 @@ function registerRoutes(
     }
     const results = await searchServerSubtitles(db, config, auth.profileId, body);
     audit(db, auth, "subtitles.search", "subtitle", undefined, {
-      imdbId: body.imdbId ?? null, // media id — safe to log
-      languages: body.languages ?? ["en"], // lang codes — safe
-      freeText: (body.query?.length ?? 0) > 0, // boolean only — NOT the query text
+      imdbId: body.imdbId ?? null, // media id - safe to log
+      languages: body.languages ?? ["en"], // lang codes - safe
+      freeText: (body.query?.length ?? 0) > 0, // boolean only - NOT the query text
       results: results.length,
     });
     return { results };
@@ -3399,7 +3399,7 @@ function registerRoutes(
     type: "movie" | "series",
   ): Promise<void> {
     if (!auth.isKid && auth.maturityMax == null) return;
-    // A kid's world is movie-only — TV ratings ride a different ladder and series
+    // A kid's world is movie-only - TV ratings ride a different ladder and series
     // are never curated to them, so refuse non-movie lookups outright rather than
     // try to rank a TV rating against a movie cap.
     if (auth.isKid && type !== "movie") {
@@ -3426,7 +3426,7 @@ function registerRoutes(
   });
 
   // Episode-picker metadata (series only). Kid browse is movie-only, so a kid
-  // has no business enumerating arbitrary series seasons/episodes — block
+  // has no business enumerating arbitrary series seasons/episodes - block
   // outright (mirrors /api/calendar/upcoming); the client degrades to its
   // stepper fallback. Rate-limited per profile (mirrors /api/omdb) so an
   // authed user can't hammer TMDB through these proxies, and TMDB failures
@@ -3464,7 +3464,7 @@ function registerRoutes(
     }
   });
 
-  // OMDb ratings proxy — the "hidden key" path. The key is resolved server-side
+  // OMDb ratings proxy - the "hidden key" path. The key is resolved server-side
   // (profile credential → server credential → env → embedded build key) and used
   // to call OMDb here; the client receives only parsed ratings, never the key and
   // never the OMDb request. { ratings: null } when no key is configured.
@@ -3522,7 +3522,7 @@ function registerRoutes(
     return { ratings };
   });
 
-  // Broker endpoint — answers OMDb lookups for friend ("consumer") servers that
+  // Broker endpoint - answers OMDb lookups for friend ("consumer") servers that
   // present a valid broker token. The broker holds the real key (its own
   // server/env/embedded key) and returns ONLY ratings; the consumer never
   // receives the key, so the key is never on the friend's machine and the token
@@ -3543,7 +3543,7 @@ function registerRoutes(
       .regex(/^tt\d+$/)
       .parse((request.params as { imdbId: string }).imdbId);
     // The broker uses its OWN key only (server-scoped credential / env / embedded
-    // — never a consumer's profile credential).
+    // - never a consumer's profile credential).
     const key = resolveServerOmdbKey(db, config);
     if (key == null) {
       reply.code(503);
@@ -3561,13 +3561,13 @@ function registerRoutes(
       .max(64)
       .parse((request.params as { imdbId: string }).imdbId);
     const query = parseBody(streamSearchQuerySchema, request.query);
-    // Over-cap source enumeration is blocked for kids — both an info leak and the
+    // Over-cap source enumeration is blocked for kids - both an info leak and the
     // supply of infoHashes the resolve path would otherwise have to defend alone.
     await requireTitleWithinCap(auth, imdbId, query.type);
     // The name-matching title pass is deliberately SUPPRESSED for kid/capped
     // profiles: it can surface loosely-name-matched (e.g. APIBay) sources that
     // the fail-closed play-block (titleHasInfoHash, imdb-EXACT) would then refuse
-    // to bind — a legit stream a kid couldn't play — and widening that gate to
+    // to bind - a legit stream a kid couldn't play - and widening that gate to
     // accept name-matched hashes would weaken the child-safety guarantee. So kids
     // stay imdb-exact end-to-end; only normal profiles get the extra pass.
     const capped = auth.isKid || auth.maturityMax != null;
@@ -3585,7 +3585,7 @@ function registerRoutes(
     requireCsrf(request);
     rateLimit(request, `streams:resolve:${auth.profileId}`, 120, 60 * 1000);
     const body = parseBody(resolveStreamSchema, request.body);
-    // Kid play-block — the authoritative content gate, FAIL-CLOSED. A capped/kid
+    // Kid play-block - the authoritative content gate, FAIL-CLOSED. A capped/kid
     // profile may resolve a title only when (a) it declares its media identity,
     // (b) the title is a MOVIE within the cap, and (c) the infoHash is genuinely a
     // source of that title. (c) is the crucial binding: the cert is checked
@@ -3665,7 +3665,7 @@ function registerRoutes(
     const auth = requireAuth(db, request);
     requireCsrf(request);
     rateLimit(request, `streams:raw:${auth.profileId}`, 120, 60 * 1000);
-    // A raw session plays an arbitrary upstream URL — there is no media identity
+    // A raw session plays an arbitrary upstream URL - there is no media identity
     // to certify, so it can never be made cap-safe. Refuse it outright for any
     // kid/capped profile (this is checked BEFORE the allowRawStreamUrls/admin
     // gate, which keys off the account role and would otherwise let a kid under
@@ -3818,7 +3818,7 @@ function registerRoutes(
 
   // --- Server-side transcoding (Phase 3b, opt-in) ----------------------------
   // When transcoding isn't available (flag off OR ffmpeg absent), both routes
-  // 404 — indistinguishable from "not found" — and nothing above changes.
+  // 404 - indistinguishable from "not found" - and nothing above changes.
 
   /** Load + ownership-validate a stream session (same scoping as the proxy). */
   const loadTranscodeSession = (
@@ -3851,7 +3851,7 @@ function registerRoutes(
     // addresses blocked unless the operator opted into raw URLs). Residual,
     // accepted for now (consistent with the DNS-rebinding note in ssrf.ts): ffmpeg
     // follows its OWN HTTP redirects, which are not re-validated per hop like the
-    // proxy's fetchUpstreamSafely does. Low risk in practice — the only upstreams
+    // proxy's fetchUpstreamSafely does. Low risk in practice - the only upstreams
     // are trusted debrid CDNs and admin-only raw sessions; a pre-resolve of the
     // terminal URL is deferred because it would re-fetch (and could consume)
     // single-use debrid links. Hardening follow-up: resolve+pin the final hop.

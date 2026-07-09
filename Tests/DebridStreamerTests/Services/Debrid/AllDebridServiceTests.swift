@@ -105,7 +105,7 @@ struct AllDebridServiceTests {
         let session = makeMockSession(sessionID: sessionID)
 
         MockURLProtocol.setHandler({ request in
-            // "Error" is a terminal state — the loop stops immediately, no sleep.
+            // "Error" is a terminal state - the loop stops immediately, no sleep.
             let body = #"{"data":{"magnets":{"status":"Error","links":[]}}}"#
             return try adMakeResponse(for: request, statusCode: 200, body: body)
         }, for: sessionID)

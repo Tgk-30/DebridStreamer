@@ -1,4 +1,4 @@
-// Continue Watching — a rail of wide 16:9 banner cards (backdrop + centered play
+// Continue Watching - a rail of wide 16:9 banner cards (backdrop + centered play
 // button) that jump straight back into a title at its saved episode + timestamp.
 // Clicking a card opens the title primed to resume (Detail auto-selects the
 // resume episode and the player seeks to the saved position on play).

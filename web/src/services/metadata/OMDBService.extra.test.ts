@@ -1,4 +1,4 @@
-// Extra coverage for src/services/metadata/OMDBService.ts — the defensive parse
+// Extra coverage for src/services/metadata/OMDBService.ts - the defensive parse
 // branches and error mappings the primary OMDBService.test.ts doesn't reach:
 //  - parseDouble rejecting a value with trailing junk ("8x") via isFullNumber,
 //  - parseIntStrict rejecting a non-integer literal ("8.5", "12abc"),

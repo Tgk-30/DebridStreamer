@@ -1,4 +1,4 @@
-// Extra tests for the calendar data layer — covers branches the original
+// Extra tests for the calendar data layer - covers branches the original
 // calendar.test.ts does not: collectSeries (store-backed dedup / type-filter /
 // fault tolerance) plus additional groupEpisodes edge cases.
 
@@ -148,7 +148,7 @@ describe("groupEpisodes (additional edge cases)", () => {
   });
 
   it("drops a stale/past air date instead of mis-bucketing it as 'week' (regression)", () => {
-    // A date before 'today' has already aired — it must not show as upcoming.
+    // A date before 'today' has already aired - it must not show as upcoming.
     const groups = groupEpisodes([ep("2026-06-10", 1)], NOW);
     expect(groups).toEqual([]);
   });

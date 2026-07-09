@@ -1,4 +1,4 @@
-/* Rail — bold title + horizontally scrolling track with a trailing-edge fade. */
+/* Rail - bold title + horizontally scrolling track with a trailing-edge fade. */
 
 .rail {
   display: flex;
@@ -20,7 +20,7 @@
   letter-spacing: -0.015em;
 }
 
-/* "See all" — a quiet text affordance; accent only on hover. */
+/* "See all" - a quiet text affordance; accent only on hover. */
 .rail-see-all {
   display: inline-flex;
   align-items: center;

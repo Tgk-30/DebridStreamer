@@ -1,4 +1,4 @@
-// Shared onboarding help — plain-language definitions of the app's core concepts
+// Shared onboarding help - plain-language definitions of the app's core concepts
 // and pointers to where a new user gets each key. Kept as data (no UI, no deps)
 // so onboarding, Settings, and the empty states can all speak with one voice.
 
@@ -12,7 +12,7 @@ export const CONCEPTS = {
   debrid: {
     term: "Debrid service",
     blurb:
-      "A subscription (Real-Debrid, TorBox, Premiumize or AllDebrid) that keeps popular releases ready and streams them to you as instant, direct links — no downloading or seeding.",
+      "A subscription (Real-Debrid, TorBox, Premiumize or AllDebrid) that keeps popular releases ready and streams them to you as instant, direct links - no downloading or seeding.",
   },
   source: {
     term: "Source",
@@ -22,7 +22,7 @@ export const CONCEPTS = {
   cached: {
     term: "Cached stream",
     blurb:
-      "A release your debrid service already has ready — it plays in seconds. A green “Instant” badge marks these; the rest cache on demand.",
+      "A release your debrid service already has ready - it plays in seconds. A green “Instant” badge marks these; the rest cache on demand.",
   },
   tmdb: {
     term: "TMDB key",
@@ -140,7 +140,7 @@ export const SIGNUP_LINKS: readonly SignupLink[] = [
 ];
 
 /** DebridServiceType value → SIGNUP_LINKS id. (Settings.tsx and
- *  ServerSetupWizard.tsx carry local copies today — dedupe onto this later.) */
+ *  ServerSetupWizard.tsx carry local copies today - dedupe onto this later.) */
 export const DEBRID_SIGNUP_ID: Record<string, string> = {
   real_debrid: "realDebrid",
   all_debrid: "allDebrid",

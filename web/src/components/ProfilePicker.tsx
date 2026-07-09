@@ -181,7 +181,7 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
       const result = await switchAccountProfile(profile.id, password);
       // Load the new profile's data BEFORE flipping the UI session. If the
       // refetch fails we stay on the old profile (the catch re-throws), instead
-      // of leaving the new — possibly kid — session over the old profile's
+      // of leaving the new - possibly kid - session over the old profile's
       // already-rendered (possibly over-cap) rails. The server has already
       // switched the session cookie, so these loaders return the new profile's data.
       await reloadProfileData();
@@ -389,7 +389,7 @@ function profileToAccount(p: ServerProfileSummary): AccountProfile {
 }
 
 /** Parental-lock prompt shown when leaving a kid profile: the account password
- *  is required before the switch. A 403 means a wrong/missing password — we show
+ *  is required before the switch. A 403 means a wrong/missing password - we show
  *  "Incorrect password" and let the user retry without closing. */
 function UnlockPrompt({
   target,

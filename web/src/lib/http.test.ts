@@ -57,7 +57,7 @@ async function loadHttp() {
   return await import("./http");
 }
 
-describe("appFetch — non-Tauri (browser) path", () => {
+describe("appFetch - non-Tauri (browser) path", () => {
   it("delegates to the global fetch and returns its Response", async () => {
     const res = fakeResponse(200, "ok");
     globalFetch.mockResolvedValue(res);
@@ -128,7 +128,7 @@ describe("appFetch — non-Tauri (browser) path", () => {
   });
 });
 
-describe("appFetch — Tauri path", () => {
+describe("appFetch - Tauri path", () => {
   it("routes through the plugin fetch (not the global) when under Tauri", async () => {
     isTauri.mockReturnValue(true);
     const res = fakeResponse(200, "native");
@@ -197,7 +197,7 @@ describe("appFetch — Tauri path", () => {
   });
 });
 
-describe("appFetch — isTauri gating", () => {
+describe("appFetch - isTauri gating", () => {
   it("evaluates isTauri() on every call (re-checks environment)", async () => {
     globalFetch.mockResolvedValue(fakeResponse(200, "a"));
     const { appFetch } = await loadHttp();

@@ -14,11 +14,11 @@ import {
 import "./NavRail.css";
 
 // Screens with no working backend in Server Mode (Debrid Library is Tauri-only).
-// The AI Assistant DOES work in Server Mode — it routes to /api/ai/recommend,
-// which uses the server's stored provider key — so it is no longer hidden here.
+// The AI Assistant DOES work in Server Mode - it routes to /api/ai/recommend,
+// which uses the server's stored provider key - so it is no longer hidden here.
 const SERVER_MODE_HIDDEN: ReadonlySet<string> = new Set(["debrid"]);
 // Power-user destinations hidden in Simple mode (progressive disclosure). The
-// essentials — discover/search/library/watchlist/history/settings — always show;
+// essentials - discover/search/library/watchlist/history/settings - always show;
 // Settings must never hide (it hosts the Simple/Advanced toggle).
 const SIMPLE_MODE_HIDDEN: ReadonlySet<string> = new Set([
   "assistant",
@@ -122,7 +122,7 @@ const NAV_COLLAPSED_KEY = "ds_nav_collapsed";
 
 export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
-  // Collapsed (icons-only) side rail — an ephemeral UI preference persisted to
+  // Collapsed (icons-only) side rail - an ephemeral UI preference persisted to
   // localStorage. Reflected on the root so the layout var + content inset track.
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
@@ -153,7 +153,7 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
   const moreItems = visibleNavItems(MOBILE_MORE_ITEMS, { serverMode, simpleMode });
   const moreSelected = moreItems.some((item) => item.id === selected);
   // Show the switcher only in Server Mode with a handler AND more than one
-  // profile — a single-profile account has no one to switch to (no forced
+  // profile - a single-profile account has no one to switch to (no forced
   // picker, per the spec).
   const showProfileSwitch = shouldShowProfileSwitch({
     serverMode,
@@ -196,7 +196,7 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
       )}
 
       {/* Skip groups with nothing to show (e.g. Tools when every tool is
-          gated off) — an orphaned section label reads as a broken menu. The
+          gated off) - an orphaned section label reads as a broken menu. The
           Account group also hosts the profile switcher, which isn't a navItem. */}
       {GROUPS.filter(
         (group) =>

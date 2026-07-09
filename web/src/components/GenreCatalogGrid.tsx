@@ -2,7 +2,7 @@
 //
 // A deterministic, fast genre entry point: tap a tile to open a Browse pre-set
 // to that genre (the `kind:"genre"` browse context) or, for the two special
-// tiles, a category Browse (New Releases / Coming Soon). Pure presentational —
+// tiles, a category Browse (New Releases / Coming Soon). Pure presentational - 
 // the caller passes the active media type and the store's `openBrowse`.
 
 import { useEffect, useState } from "react";

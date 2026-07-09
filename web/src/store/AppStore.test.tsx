@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Component/hook tests for the AppStore provider — the single source of truth for
+// Component/hook tests for the AppStore provider - the single source of truth for
 // routing, the Detail/Browse overlays, the shared services, and the persisted
 // settings / watchlist / history.
 //

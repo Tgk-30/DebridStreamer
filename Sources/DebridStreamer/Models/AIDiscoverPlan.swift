@@ -32,7 +32,7 @@ struct AIDiscoverPlan: Sendable, Equatable {
     }
 
     /// True when the plan carries no actual constraint (model returned nothing
-    /// usable) — the view can fall back to a plain popularity browse + a note.
+    /// usable) - the view can fall back to a plain popularity browse + a note.
     var isEmpty: Bool {
         genreIds.isEmpty && keywordIds.isEmpty && yearGTE == nil && yearLTE == nil && minRating == nil
     }

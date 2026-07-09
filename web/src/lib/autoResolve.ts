@@ -1,4 +1,4 @@
-// Watchlist auto-resolve — a background pre-resolve job.
+// Watchlist auto-resolve - a background pre-resolve job.
 //
 // For each watchlisted title it walks IndexerManager.searchAll -> DebridManager
 // (cached-first) and stores the best ready-to-play resolution in the Store's
@@ -7,7 +7,7 @@
 // playback (skipping the indexer + debrid round-trip).
 //
 // This ONLY runs under Tauri (isTauri) and only when debrid + indexers are
-// configured — debrid/indexer hosts are CORS-blocked in a plain browser, so the
+// configured - debrid/indexer hosts are CORS-blocked in a plain browser, so the
 // job is a no-op there. It is non-blocking, fault-tolerant (one title failing
 // never stops the rest), and throttled (a minimum interval between full passes,
 // plus a bounded concurrency so we don't hammer the indexers).
@@ -37,11 +37,11 @@ export interface AutoResolveDeps {
   indexers: IndexerManager;
   debrid: DebridManager | null;
   store: Store;
-  /** Current settings — so automatic selection honors the data-saver caps. */
+  /** Current settings - so automatic selection honors the data-saver caps. */
   settings: AppSettings;
 }
 
-/** Outcome of a single pass — handy for diagnostics + tests. */
+/** Outcome of a single pass - handy for diagnostics + tests. */
 export interface AutoResolveResult {
   /** Titles we attempted to resolve (had no fresh cached resolution). */
   attempted: number;
@@ -87,14 +87,14 @@ export async function resolveOne(
 
     // 3. Cache-check across debrid, then pick the best ready (cached) source so
     //    playback is instant. The pick must respect the same data-saver caps the
-    //    manual picker applies — otherwise a 720p-capped user could still get a
+    //    manual picker applies - otherwise a 720p-capped user could still get a
     //    4K/huge source pre-cached. Build StreamRow-shaped candidates and filter.
     const hashes = results.map((r) => r.infoHash);
     const merged: Record<string, MergedCacheEntry> = await debrid
       .checkCacheAll(hashes)
       .catch(() => ({}));
     const rows: StreamRow[] = results.map((result) => {
-      // checkCacheAll canonicalizes to lowercase — match it so a case
+      // checkCacheAll canonicalizes to lowercase - match it so a case
       // difference can't make a cached title read as uncached.
       const entry = merged[result.infoHash.toLowerCase()];
       const cachedOn =
@@ -108,10 +108,10 @@ export async function resolveOne(
       pickFrom = allowed;
     } else if (effectiveDataSaver(settings).cachedOnly) {
       // Cached-only is a hard constraint: nothing instant fits the caps, so don't
-      // pre-cache a download-triggering source — leave it for manual play.
+      // pre-cache a download-triggering source - leave it for manual play.
       return null;
     } else {
-      // Only the quality/size caps emptied the set — pre-cache the best available
+      // Only the quality/size caps emptied the set - pre-cache the best available
       // anyway (a ready badge beats none); the user can still override at play.
       pickFrom = rows;
     }
@@ -207,7 +207,7 @@ export class AutoResolveScheduler {
     private readonly getDeps: () => AutoResolveDeps,
     /** Minimum gap between passes (throttle). Default 5 minutes. */
     private readonly intervalMs: number = 5 * 60 * 1000,
-    /** Gate predicate — overridable in tests; defaults to the Tauri check. */
+    /** Gate predicate - overridable in tests; defaults to the Tauri check. */
     private readonly enabled: () => boolean = defaultEnabled,
   ) {}
 

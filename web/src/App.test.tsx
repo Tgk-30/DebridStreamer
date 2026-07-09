@@ -360,7 +360,7 @@ describe("Setup nudge", () => {
       services: { debrid: null, indexers: { activeIndexers: [{}] } },
     });
     render(<App />);
-    // SetupNudge is code-split (React.lazy) — resolve its chunk before asserting.
+    // SetupNudge is code-split (React.lazy) - resolve its chunk before asserting.
     expect(await screen.findByText("Let's get you streaming")).toBeInTheDocument();
   });
 
@@ -464,7 +464,7 @@ describe("ProfilePicker gating", () => {
   it("opens the picker from the rail and closes it via onClose", async () => {
     render(<App />);
     fireEvent.click(screen.getByTestId("nav-switch-profile"));
-    // ProfilePicker is code-split (React.lazy) — await its chunk.
+    // ProfilePicker is code-split (React.lazy) - await its chunk.
     expect(await screen.findByTestId("profile-picker")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("profile-picker"));
     expect(screen.queryByTestId("profile-picker")).not.toBeInTheDocument();
@@ -492,7 +492,7 @@ describe("WelcomeGuide auto-tour", () => {
   it("auto-opens when the seen flag is absent", async () => {
     globalThis.localStorage.removeItem("ds_welcome_guide_seen");
     render(<App />);
-    // WelcomeGuide is code-split (React.lazy) — await its chunk on first mount.
+    // WelcomeGuide is code-split (React.lazy) - await its chunk on first mount.
     expect(await screen.findByTestId("welcome-guide")).toBeInTheDocument();
   });
 
@@ -553,7 +553,7 @@ describe("smart preload effect", () => {
 });
 
 // -----------------------------------------------------------------------
-// FirstRunHost — the async wizard gate that decides between TierOnboarding,
+// FirstRunHost - the async wizard gate that decides between TierOnboarding,
 // FirstRunWizard, ServerSetupWizard, and the App itself. It returns null until
 // BOTH the relevant async gate AND store hydration resolve, so most assertions
 // use findBy* / waitFor to let the effects settle.

@@ -5,8 +5,8 @@ struct DiscoverView: View {
     @State private var selectedItem: MediaPreview?
     @State private var showPersonalizationPrompt = false
     @State private var feedbackViewModel = DiscoverFeedbackViewModel()
-    /// Drives the tasteful staggered appear of the rails. Latches `true` once — on
-    /// the first load that actually has rails to show — and stays true for the
+    /// Drives the tasteful staggered appear of the rails. Latches `true` once - on
+    /// the first load that actually has rails to show - and stays true for the
     /// view's lifetime (`triggerAppear()` is a no-op thereafter).
     @State private var appeared = false
 
@@ -35,7 +35,7 @@ struct DiscoverView: View {
             syncFeedbackVisibility()
             // Only reveal once there are rails to stagger. With no TMDB key the
             // flag must NOT latch true here, or the stagger would never run after
-            // the user later adds a key — the catalogRevision onChange handles that.
+            // the user later adds a key - the catalogRevision onChange handles that.
             if appState.metadataService != nil {
                 triggerAppear()
             }
@@ -91,7 +91,7 @@ struct DiscoverView: View {
 
     // MARK: - Cold-start detection
 
-    /// True only when nothing has loaded yet — used to gate the skeleton so a
+    /// True only when nothing has loaded yet - used to gate the skeleton so a
     /// refresh never flashes the screen empty (content stays put while reloading).
     private var isColdStart: Bool {
         !store.isLoaded
@@ -121,7 +121,7 @@ struct DiscoverView: View {
             refreshingChip
         }
 
-        // AI mood/keyword discovery — describe a vibe, get a curated lineup.
+        // AI mood/keyword discovery - describe a vibe, get a curated lineup.
         MoodDiscoveryView()
             .railAppear(appeared: appeared, index: 1)
 
@@ -396,7 +396,7 @@ struct DiscoverView: View {
     }
 
     /// Shared "watched" path: open the rating sheet when the scale mode needs it,
-    /// otherwise submit immediately — identical semantics to the prior button.
+    /// otherwise submit immediately - identical semantics to the prior button.
     private func markWatched(_ recommendation: AIMovieRecommendation) async {
         let mode = await feedbackViewModel.beginWatchedFlow(
             recommendation: recommendation,
@@ -636,7 +636,7 @@ struct DiscoverView: View {
         return nil
     }
 
-    /// All previews currently surfaced across the page — used for hidden-state
+    /// All previews currently surfaced across the page - used for hidden-state
     /// reconciliation and local Detail resolution.
     private var allDiscoverPreviews: [MediaPreview] {
         var items: [MediaPreview] = store.continueWatching.map(\.preview)
@@ -670,7 +670,7 @@ struct DiscoverView: View {
 
 private extension View {
     /// Tasteful staggered appear: fade + slight slide-up, delay growing with rail
-    /// index (capped). Cheap and purely cosmetic — does not affect layout/scroll.
+    /// index (capped). Cheap and purely cosmetic - does not affect layout/scroll.
     func railAppear(appeared: Bool, index: Int) -> some View {
         let delay = min(0.04 + Double(index) * 0.06, 0.6)
         return self

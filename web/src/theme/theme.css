@@ -103,7 +103,7 @@
   --lh-heading: 1.08;
   --lh-body: 1.5;
 
-  /* ---- Content-aware title accent — set per-title by the hero color extractor;
+  /* ---- Content-aware title accent - set per-title by the hero color extractor;
      falls back to the global accent. Drives hero/detail chrome glows. ---- */
   --title-accent-rgb: var(--accent-rgb);
 
@@ -190,7 +190,7 @@
  * LIGHT theme can flip them to dark-on-glass without touching markup.
  * ------------------------------------------------------------------------- */
 
-/* Glass tint variables — defaulted here so the dark tiers below can reference
+/* Glass tint variables - defaulted here so the dark tiers below can reference
  * them; the Light theme overrides them to dark-on-glass. */
 :root {
   --glass-tint-rest: rgba(255, 255, 255, 0.05);
@@ -219,7 +219,7 @@
   --nav-mobile-active-border: rgba(var(--accent-rgb), 0.48);
 }
 
-/* Daybreak — bright frosted glass. Dark text, dark-on-glass tints, a deeper
+/* Daybreak - bright frosted glass. Dark text, dark-on-glass tints, a deeper
  * accent so it stays legible on a light field. */
 :root[data-theme="light"] {
   color-scheme: light;
@@ -277,7 +277,7 @@
   --nav-mobile-active-border: rgba(var(--accent-rgb), 0.38);
 }
 
-/* Midnight — near-black, low-saturation, minimal glow. */
+/* Midnight - near-black, low-saturation, minimal glow. */
 :root[data-theme="midnight"] {
   --accent: rgb(120, 176, 224);
   --accent-secondary: rgb(140, 150, 170);
@@ -311,7 +311,7 @@
   --glass-tint-control-hover: rgba(255, 255, 255, 0.09);
 }
 
-/* Sunset — warm amber/rose aurora over a dark plum field. */
+/* Sunset - warm amber/rose aurora over a dark plum field. */
 :root[data-theme="sunset"] {
   --accent: rgb(250, 138, 92);
   --accent-secondary: rgb(250, 100, 138);
@@ -568,7 +568,7 @@ html {
   /* Opaque base under the body gradient. The desktop window is transparent (the
      in-window player reveals a native video layer through the page), so any
      unpainted or alpha region during startup showed the DESKTOP through the app
-     — the "wrong background color on launch" bug. html.mpv-active re-punches
+     - the "wrong background color on launch" bug. html.mpv-active re-punches
      this transparent while the player runs (EmbeddedPlayer.css, !important). */
   background-color: var(--bg-1);
 }
@@ -577,7 +577,7 @@ body {
   color: var(--text-primary);
   font-size: calc(16px * var(--text-scale));
   line-height: var(--lh-body);
-  /* AppTheme.background — diagonal aurora gradient (topLeading→bottomTrailing). */
+  /* AppTheme.background - diagonal aurora gradient (topLeading→bottomTrailing). */
   background: linear-gradient(
     135deg,
     var(--bg-1) 0%,
@@ -594,7 +594,7 @@ textarea::placeholder {
 }
 
 /* ---------------------------------------------------------------------------
- * Aurora glow — AppTheme.auroraGlow. Two restrained blurred orbs (accent +
+ * Aurora glow - AppTheme.auroraGlow. Two restrained blurred orbs (accent +
  * accentSecondary) for depth without overwhelming the foreground glass.
  * ------------------------------------------------------------------------- */
 .aurora-glow {
@@ -628,7 +628,7 @@ textarea::placeholder {
 }
 /* PERF: the orbs used to drift via a 26s/32s infinite `transform: translate+scale`
    animation. The scale() forced WebKit to re-rasterize these giant 150-160px-blurred
-   layers and re-run full-tree compositing analysis EVERY FRAME, forever — measured
+   layers and re-run full-tree compositing analysis EVERY FRAME, forever - measured
    at 14-16% renderer CPU with the app fully idle. The drift was imperceptible at
    those cycle times, so the orbs are now static: identical look, ~zero idle cost. */
 
@@ -663,7 +663,7 @@ textarea::placeholder {
 }
 
 /* ---------------------------------------------------------------------------
- * Glass surfaces — the three coordinated GlassElevation tiers from AppTheme.
+ * Glass surfaces - the three coordinated GlassElevation tiers from AppTheme.
  * Each tier moves material(blur)+tint+stroke+shadow together; depth comes from
  * the contrast BETWEEN tiers, not ad-hoc per-element opacity.
  * ------------------------------------------------------------------------- */
@@ -721,7 +721,7 @@ textarea::placeholder {
 }
 
 /* ---------------------------------------------------------------------------
- * Buttons — ports of GlassButtonStyle (.glass and .glassProminent).
+ * Buttons - ports of GlassButtonStyle (.glass and .glassProminent).
  * ------------------------------------------------------------------------- */
 .btn {
   display: inline-flex;
@@ -886,8 +886,8 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 /* Glass controls need a stronger focus ring: the plain outline above has too
    little contrast against the translucent, accent-tinted control fill (and can
    be clipped by a rounded ancestor), so keyboard focus was effectively
-   invisible. A high-contrast DOUBLE box-shadow ring — a 2px separator in the
-   page background plus a 2px accent ring — reads unmistakably on every theme. */
+   invisible. A high-contrast DOUBLE box-shadow ring - a 2px separator in the
+   page background plus a 2px accent ring - reads unmistakably on every theme. */
 .btn:focus-visible,
 .chip:focus-visible,
 .dl-icon-btn:focus-visible,
@@ -902,7 +902,7 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 }
 
 /* Slim glass scrollbars (thumb color is theme-aware: a light thumb on the dark
-   themes, a dark thumb on light — see --scrollbar-thumb in the theme blocks). */
+   themes, a dark thumb on light - see --scrollbar-thumb in the theme blocks). */
 * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
 *::-webkit-scrollbar { width: 11px; height: 11px; }
 *::-webkit-scrollbar-track { background: transparent; }

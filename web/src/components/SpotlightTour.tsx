@@ -87,7 +87,7 @@ export function SpotlightTour({
   const back = useCallback(() => setI((n) => Math.max(n - 1, 0)), []);
 
   // Keyboard: → next, ← back, Esc skip. (Enter is NOT hijacked, so it activates
-  // whichever tour button — Back/Next/Skip — the user has focused.)
+  // whichever tour button - Back/Next/Skip - the user has focused.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -113,7 +113,7 @@ export function SpotlightTour({
     if (rect == null) {
       return { left: vp.w / 2 - w / 2, top: vp.h / 2 - 90, width: w, arrow: "none" as const };
     }
-    // Which sides actually have room. `placement` is a PREFERENCE — used only if
+    // Which sides actually have room. `placement` is a PREFERENCE - used only if
     // that side fits, else we flip to the first side that does.
     const fits = {
       right: vp.w - (rect.left + rect.width) >= w + GAP + 8,

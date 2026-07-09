@@ -1,4 +1,4 @@
-// EmptyState — a centered on-brand empty/placeholder block used across the
+// EmptyState - a centered on-brand empty/placeholder block used across the
 // structural screens (Watchlist, History, Library) and as a search idle hint.
 
 import { Icon, type IconName } from "./Icon";

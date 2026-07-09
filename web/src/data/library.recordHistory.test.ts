@@ -12,7 +12,7 @@ const { store } = vi.hoisted(() => {
       rows,
       key,
       async recordHistory(entry: Record<string, unknown>) {
-        // Full REPLACE keyed by (mediaId, episodeId) — mirrors DexieStore.
+        // Full REPLACE keyed by (mediaId, episodeId) - mirrors DexieStore.
         const id = key(entry.mediaId as string, entry.episodeId as string | null);
         const rec = {
           id,
@@ -41,7 +41,7 @@ function movie(id = "tt1") {
   return { id, type: "movie" as const, title: "X" };
 }
 
-describe("recordHistory — resume preservation", () => {
+describe("recordHistory - resume preservation", () => {
   afterEach(() => store.rows.clear());
 
   it("preserves an existing resume position when Detail is opened (viewed-only)", async () => {

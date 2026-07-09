@@ -1,7 +1,7 @@
 // App-wide external-link fix for the Tauri desktop app.
 //
 // A plain <a href="https://…" target="_blank"> is swallowed by the Tauri
-// webview — the click does nothing (it won't navigate the app window, and no
+// webview - the click does nothing (it won't navigate the app window, and no
 // OS browser opens). That silently broke every signup / "Get a key" / docs
 // link across onboarding and Settings. Rather than convert each anchor, a
 // single delegated click listener routes any external http(s) link through the
@@ -35,7 +35,7 @@ export function installExternalLinkHandler(): void {
       if (!/^https?:\/\//i.test(href)) return; // external links only
 
       // NB: no modifier/button gating here. In a browser those open a new
-      // tab/window natively, but the desktop webview has no such concept — a
+      // tab/window natively, but the desktop webview has no such concept - a
       // Cmd/Ctrl/middle-click would just fall through to the swallowed
       // target="_blank" and do nothing. Route every external click to the OS
       // browser instead.

@@ -1,4 +1,4 @@
-// Extra coverage for src/services/ai/TasteProfile.ts — the cache + rebuild paths
+// Extra coverage for src/services/ai/TasteProfile.ts - the cache + rebuild paths
 // that the primary TasteProfile.test.ts skips (it always passes useCache:false):
 //  - buildTasteContext with the default useCache:true round-trips through the
 //    settings KV (readCache miss -> assemble -> writeCache, then a cache hit),

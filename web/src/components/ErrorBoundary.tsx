@@ -11,7 +11,7 @@ interface Props {
   /** Shown in the console log + used to distinguish boundaries. */
   label?: string;
   /** When provided, the card offers "Go home" (this callback) in addition to a
-   *  full reload — for a per-screen boundary. Omit for the top-level boundary. */
+   *  full reload - for a per-screen boundary. Omit for the top-level boundary. */
   onGoHome?: () => void;
   /** Changing this value clears a caught error (e.g. pass the route so
    *  navigating away from a crashed screen recovers automatically). */

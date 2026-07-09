@@ -161,7 +161,7 @@ export function CaptionsMenu({
         </div>
       )}
 
-      {/* Subtitle appearance (font size / color / background — persisted) */}
+      {/* Subtitle appearance (font size / color / background - persisted) */}
       <div className="captions-section captions-appearance">
         <span className="t-secondary">Appearance</span>
         <div className="captions-appearance-row">

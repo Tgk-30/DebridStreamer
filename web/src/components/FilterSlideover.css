@@ -1,4 +1,4 @@
-/* FilterSlideover — right-anchored glass panel that slides in over Browse. */
+/* FilterSlideover - right-anchored glass panel that slides in over Browse. */
 
 .fs-scrim {
   position: fixed;
@@ -104,7 +104,7 @@
   min-width: 68px;
 }
 
-/* Active chip — accent for selection only (matches Search/Settings chips). */
+/* Active chip - accent for selection only (matches Search/Settings chips). */
 .fs-chip-active {
   color: var(--accent);
   background: rgba(var(--accent-rgb), 0.16);

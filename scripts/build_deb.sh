@@ -4,7 +4,7 @@
 #   scripts/build_deb.sh <version>
 #
 # The server ships as a Node bundle (server/dist/index.cjs) plus the static web
-# app (web/dist) — no native code — so the package is Architecture: all: one
+# app (web/dist) - no native code - so the package is Architecture: all: one
 # .deb runs on amd64 and arm64 alike (it just Depends on nodejs). Run
 # `(cd web && npm ci && npm run build)` and `(cd server && npm ci && npm run
 # build)` first; this script only packages the already-built output. Needs
@@ -15,8 +15,8 @@ VERSION="${1:?usage: build_deb.sh <version>}"
 PKG="debridstreamer-server"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-[ -f "${ROOT}/server/dist/index.cjs" ] || { echo "server/dist/index.cjs missing — run the server build first." >&2; exit 1; }
-[ -d "${ROOT}/web/dist" ] || { echo "web/dist missing — run the web build first." >&2; exit 1; }
+[ -f "${ROOT}/server/dist/index.cjs" ] || { echo "server/dist/index.cjs missing - run the server build first." >&2; exit 1; }
+[ -d "${ROOT}/web/dist" ] || { echo "web/dist missing - run the web build first." >&2; exit 1; }
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "${STAGE}"' EXIT

@@ -1,4 +1,4 @@
-// SettingsSearch — a "jump to a setting" box above the Settings tabs. Settings
+// SettingsSearch - a "jump to a setting" box above the Settings tabs. Settings
 // has grown large; this is a navigation aid, NOT an in-place field filter (that
 // would risk the layout the Settings tests assert). Type a term, pick a match,
 // and it switches to that setting's tab. The index is a hand-authored list of

@@ -77,7 +77,7 @@ describe("defaultSelectionFor", () => {
   it("picks the most recently watched parseable episode, sorting itself", () => {
     const records = [
       record({ id: "a", episodeId: "s1e3", lastWatched: "2026-01-01T00:00:00Z" }),
-      // Newest — but listed FIRST to prove array order is not trusted… wait,
+      // Newest - but listed FIRST to prove array order is not trusted… wait,
       // newest must win regardless of position; put it in the middle.
       record({ id: "b", episodeId: "s2e7", lastWatched: "2026-03-01T00:00:00Z" }),
       record({ id: "c", episodeId: "s2e6", lastWatched: "2026-02-01T00:00:00Z" }),
@@ -197,7 +197,7 @@ describe("nextEpisodeFor", () => {
   });
 
   it("never advances into specials (season 0)", () => {
-    // From S1's finale the next is S2 — not S0.
+    // From S1's finale the next is S2 - not S0.
     expect(nextEpisodeFor({ season: 1, episode: 3 }, seasons)).toEqual({
       season: 2,
       episode: 1,

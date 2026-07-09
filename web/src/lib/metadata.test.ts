@@ -99,13 +99,13 @@ describe("getUpcomingEpisodes", () => {
       getEpisodes: async (_id: number, s: number) => {
         if (s === 2) {
           return [
-            episode(2, 1, "2026-05-01"), // past — dropped
-            episode(2, 2, "2026-06-20"), // future — kept
-            episode(2, 3, null), // no date — dropped
+            episode(2, 1, "2026-05-01"), // past - dropped
+            episode(2, 2, "2026-06-20"), // future - kept
+            episode(2, 3, null), // no date - dropped
           ];
         }
         if (s === 1) {
-          return [episode(1, 1, "2026-07-10")]; // future — kept
+          return [episode(1, 1, "2026-07-10")]; // future - kept
         }
         return [];
       },

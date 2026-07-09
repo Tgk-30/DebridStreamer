@@ -25,7 +25,7 @@ export async function openInExternalPlayer(
   preferred?: string | null,
 ): Promise<string> {
   if (!isTauri()) {
-    throw new Error("Not running under Tauri — no native player available.");
+    throw new Error("Not running under Tauri - no native player available.");
   }
   // Imported dynamically so the browser bundle never tries to resolve the Tauri
   // runtime at module-eval time (it's only present in the desktop webview).
@@ -51,7 +51,7 @@ export async function listExternalPlayers(): Promise<string[]> {
 
 /** Result of {@link playWithMpv}: whether mpv attempted in-window embedding and
  * a human-readable status. On macOS `embedded` being true does NOT guarantee the
- * video rendered inside the app window — mpv often falls back to its own window
+ * video rendered inside the app window - mpv often falls back to its own window
  * (the `--wid` embedding caveat, documented in src-tauri/src/player.rs). */
 export interface MpvPlayResult {
   embedded: boolean;
@@ -63,11 +63,11 @@ export interface MpvPlayResult {
  * This is the primary lossless / non-Real-Debrid MKV path: mpv is shipped with
  * the app and fully controlled over IPC (pause/seek/position/stop), unlike the
  * raw VLC hand-off (which relies on a user-installed VLC). Throws if not under
- * Tauri or if the sidecar isn't bundled / fails to spawn — callers should fall
+ * Tauri or if the sidecar isn't bundled / fails to spawn - callers should fall
  * back to {@link openInExternalPlayer} (VLC) in that case. */
 export async function playWithMpv(url: string): Promise<MpvPlayResult> {
   if (!isTauri()) {
-    throw new Error("Not running under Tauri — no bundled mpv available.");
+    throw new Error("Not running under Tauri - no bundled mpv available.");
   }
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<MpvPlayResult>("mpv_play", { url });
@@ -120,7 +120,7 @@ export interface DesktopServerStatus {
 
 export async function desktopServerStatus(): Promise<DesktopServerStatus> {
   if (!isTauri()) {
-    throw new Error("Not running under Tauri — no desktop server supervisor.");
+    throw new Error("Not running under Tauri - no desktop server supervisor.");
   }
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<DesktopServerStatus>("desktop_server_status");
@@ -128,7 +128,7 @@ export async function desktopServerStatus(): Promise<DesktopServerStatus> {
 
 export async function startDesktopServer(): Promise<DesktopServerStatus> {
   if (!isTauri()) {
-    throw new Error("Not running under Tauri — no desktop server supervisor.");
+    throw new Error("Not running under Tauri - no desktop server supervisor.");
   }
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<DesktopServerStatus>("desktop_server_start");
@@ -136,7 +136,7 @@ export async function startDesktopServer(): Promise<DesktopServerStatus> {
 
 export async function stopDesktopServer(): Promise<DesktopServerStatus> {
   if (!isTauri()) {
-    throw new Error("Not running under Tauri — no desktop server supervisor.");
+    throw new Error("Not running under Tauri - no desktop server supervisor.");
   }
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<DesktopServerStatus>("desktop_server_stop");

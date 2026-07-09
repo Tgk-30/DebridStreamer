@@ -1,7 +1,7 @@
 # Multi-User & Profiles
 
 A DebridStreamer server is built for a household: multiple people, each with
-their own sign-in and their own private history — while sharing one set of
+their own sign-in and their own private history - while sharing one set of
 provider credentials and one debrid-facing IP.
 
 This guide covers how accounts, roles, and credentials fit together.
@@ -15,8 +15,8 @@ There are two related ideas:
 - An **account** is a sign-in: a username, a password, and a role. The first
   account is the owner; others join by invite or are created by an admin.
 - A **profile** is a viewer that owns a private set of data. Every account has at
-  least one profile, and an account can add more **household sub-profiles** — for
-  kids, guests, or a shared living-room TV — that switch _without re-signing-in_.
+  least one profile, and an account can add more **household sub-profiles** - for
+  kids, guests, or a shared living-room TV - that switch _without re-signing-in_.
   See [Household sub-profiles](#household-sub-profiles-whos-watching) below.
 
 Each profile keeps these **separate**:
@@ -35,7 +35,7 @@ One profile never sees another profile's history, watchlist, or library.
 ## Household sub-profiles ("Who's watching?")
 
 Within a single account you can keep several **viewer profiles** that share the
-sign-in but not the data — the same idea as the profile row on a streaming
+sign-in but not the data - the same idea as the profile row on a streaming
 service. Each sub-profile has its own history, watchlist, library, and
 Simple/Advanced tier.
 
@@ -43,18 +43,18 @@ Simple/Advanced tier.
   avatar is generated from the name). The original profile is the default and
   can't be removed; an account always keeps at least one.
 - **Switch** with the **"Who's watching?"** picker. Picking a profile changes the
-  active viewer for the session and instantly reloads that profile's data — no
+  active viewer for the session and instantly reloads that profile's data - no
   password and no re-sign-in. The switcher only appears once an account has more
   than one profile.
 - A sub-profile is a **viewer, not a login**: it has no separate username, and an
   optional profile password is reserved for a future per-profile PIN (it isn't
-  required to switch today — switching is allowed because you're already signed
+  required to switch today - switching is allowed because you're already signed
   in to the account).
 - Sub-profiles **inherit the account's role and credentials.** They're for
   separating *viewing*, not for granting different permissions; use separate
   accounts (with roles) when you need different privileges.
 
-> Household sub-profiles are a **Server Mode** feature — they live on the
+> Household sub-profiles are a **Server Mode** feature - they live on the
 > self-hosted server, which is what stores each profile's separate data.
 
 ---
@@ -68,7 +68,7 @@ Every account has a role that controls what it can do:
 | **Owner** | The first account created at setup. Full control: manage everyone, shared credentials, admin invites, diagnostics. Cannot be disabled. |
 | **Admin** | Manage profiles, invites, shared credentials, and view usage/diagnostics. (Only the **owner** can create *admin*-level accounts or invites.) |
 | **Member** | A normal household user: their own history, watchlist, library, settings, and optional personal overrides. |
-| **Restricted** | A view-only household user. Can browse, search, watch, and keep their own history/watchlist/library + per-profile settings (and change their own password), but **cannot manage anything** — no credential changes, no creating/renaming/deleting profiles or sub-profiles, no invites, no admin/diagnostics. Strictly less than a Member. Use it for kids or guests who should watch but not reconfigure the server. The limits are enforced on the **server**, not just hidden in the UI. |
+| **Restricted** | A view-only household user. Can browse, search, watch, and keep their own history/watchlist/library + per-profile settings (and change their own password), but **cannot manage anything** - no credential changes, no creating/renaming/deleting profiles or sub-profiles, no invites, no admin/diagnostics. Strictly less than a Member. Use it for kids or guests who should watch but not reconfigure the server. The limits are enforced on the **server**, not just hidden in the UI. |
 
 ---
 
@@ -100,18 +100,18 @@ role + default tier). Useful when you'd rather set the account up yourself.
 
 This is the key concept for a household.
 
-### Shared (server) credentials — the default
+### Shared (server) credentials - the default
 
-The owner/admin stores credentials **once, on the server** — debrid tokens, a
+The owner/admin stores credentials **once, on the server** - debrid tokens, a
 TMDB key, an AI provider key, an OpenSubtitles key, etc. These are encrypted at
 rest. **Every profile uses them by default**, so family members can stream, get
 recommendations, and fetch subtitles **without ever seeing or entering a token.**
 
-### Personal (profile) overrides — optional
+### Personal (profile) overrides - optional
 
 Any user can save their **own** credential for a provider in
 **Settings → Server**, without admin involvement. When a profile has its own
-credential for a provider, it is used **instead of** the shared one — but only
+credential for a provider, it is used **instead of** the shared one - but only
 for that profile.
 
 The server resolves credentials in this order, per provider, per profile:
@@ -132,10 +132,10 @@ own AI key, or their own subtitle key, while still sharing everything else.
 
 Owners/admins get diagnostics in **Settings → Server**:
 
-- **Usage:** per-profile bandwidth served by the proxy — who is using the hosted
+- **Usage:** per-profile bandwidth served by the proxy - who is using the hosted
   network path, and how much.
 - **Active streams:** which profiles are streaming right now, bytes sent, HTTP
-  status, and expiry. An admin can **Terminate** any active stream — this revokes
+  status, and expiry. An admin can **Terminate** any active stream - this revokes
   its proxy session immediately, so the next request for it is refused (useful to
   cut off a stuck or unwanted stream).
 - **Health & warnings:** session counts, configuration flags (HTTPS cookies,
@@ -144,7 +144,7 @@ Owners/admins get diagnostics in **Settings → Server**:
 
 Privacy notes baked into the design:
 
-- Credential **values** are never shown back or logged — only redacted status.
+- Credential **values** are never shown back or logged - only redacted status.
 - Subtitle searches log language codes and whether free text was used, but
   **not the search text** itself.
 
@@ -156,7 +156,7 @@ Privacy notes baked into the design:
 2. Owner adds shared credentials once: a TMDB key + a debrid provider (and
    optionally AI + OpenSubtitles keys).
 3. Owner creates an **invite link** per family member and shares it.
-4. Each member opens the link, sets their own password, and starts watching —
+4. Each member opens the link, sets their own password, and starts watching - 
    with their own history and watchlist, using the shared credentials, all
    egressing from the single server IP.
 5. Anyone who wants to bring their own debrid/AI/subtitle account adds a

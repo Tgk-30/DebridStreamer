@@ -1,10 +1,10 @@
-// Storage port — the cross-platform persistence contract.
+// Storage port - the cross-platform persistence contract.
 //
 // `Store` is the typed interface the UI calls; `DexieStore` implements it on
 // IndexedDB (works in a plain browser AND the Tauri webview). The interface is
 // deliberately backend-agnostic so a native backend (Tauri SQLite + an OS
 // keychain behind SecretStore) can be swapped in later without touching any
-// caller — the screens and AppStore depend only on these method signatures.
+// caller - the screens and AppStore depend only on these method signatures.
 //
 // The method contracts mirror what the native DatabaseManager / SettingsManager
 // expose to the UI (media cache, watch history incl. resume/progress, library +
@@ -37,7 +37,7 @@ export interface SecretStore {
 
 /** The typed, cross-platform persistence interface the UI depends on. */
 export interface Store {
-  // MARK: Settings (key-value) — mirrors app_settings + SettingsManager.
+  // MARK: Settings (key-value) - mirrors app_settings + SettingsManager.
 
   /** Read a setting, or null when unset. */
   getSetting(key: string): Promise<string | null>;
@@ -46,7 +46,7 @@ export interface Store {
   /** All settings as a plain object (for bulk hydration on startup). */
   allSettings(): Promise<Record<string, string>>;
 
-  // MARK: Watchlist — keyed by mediaId, no duplicates.
+  // MARK: Watchlist - keyed by mediaId, no duplicates.
 
   /** Add to the watchlist (no-op if already present, refreshes addedAt). */
   addToWatchlist(preview: MediaPreview): Promise<void>;
@@ -57,7 +57,7 @@ export interface Store {
   /** Whether a media id is on the watchlist. */
   isInWatchlist(mediaId: string): Promise<boolean>;
 
-  // MARK: Watch history / resume — one row per (mediaId, episodeId).
+  // MARK: Watch history / resume - one row per (mediaId, episodeId).
 
   /** Upsert a watch-history entry (one row per (mediaId, episodeId); newest
    * wins). Mirrors `DatabaseManager.saveWatchHistory`. */
@@ -75,7 +75,7 @@ export interface Store {
    * `fetchRecentWatchHistory` (the "Continue Watching" rail). */
   continueWatching(limit?: number): Promise<WatchHistoryRecord[]>;
 
-  // MARK: Library + folders — mirrors user_library / library_folders.
+  // MARK: Library + folders - mirrors user_library / library_folders.
 
   /** Upsert a library entry (one per (mediaId, folderId/listType)). */
   addToLibrary(entry: LibraryEntryUpsert): Promise<LibraryEntryRecord>;
@@ -101,7 +101,7 @@ export interface Store {
   /** Ensure the per-list-type system root folders exist. */
   ensureSystemFolders(): Promise<void>;
 
-  // MARK: Indexer configs — mirrors indexer_configs.
+  // MARK: Indexer configs - mirrors indexer_configs.
 
   /** Upsert an indexer config. */
   saveIndexerConfig(config: IndexerConfigRecord): Promise<void>;
@@ -111,7 +111,7 @@ export interface Store {
   /** Delete an indexer config by id. */
   deleteIndexerConfig(id: string): Promise<void>;
 
-  // MARK: Debrid configs — mirrors debrid_configs.
+  // MARK: Debrid configs - mirrors debrid_configs.
 
   /** Upsert a debrid config. */
   saveDebridConfig(config: DebridConfigRecord): Promise<void>;
@@ -121,7 +121,7 @@ export interface Store {
   /** Delete a debrid config by id. */
   deleteDebridConfig(id: string): Promise<void>;
 
-  // MARK: Taste events — mirrors taste_events.
+  // MARK: Taste events - mirrors taste_events.
 
   /** Append a taste event. Mirrors `saveTasteEvent`. */
   addTasteEvent(event: TasteEventRecord): Promise<void>;
@@ -135,14 +135,14 @@ export interface Store {
   /** The running total estimated AI cost (USD) across all recorded calls. */
   totalAIUsageCostUSD(): Promise<number>;
 
-  // MARK: Media cache (optional) — mirrors media_cache.
+  // MARK: Media cache (optional) - mirrors media_cache.
 
   /** Cache a MediaItem by id. Mirrors `saveMedia`. */
   putMedia(item: MediaItem): Promise<void>;
   /** Fetch a cached MediaItem by id, or null. Mirrors `fetchMedia`. */
   getMedia(id: string): Promise<MediaCacheRecord | null>;
 
-  // MARK: Cached resolutions — watchlist auto-resolve / pre-resolve.
+  // MARK: Cached resolutions - watchlist auto-resolve / pre-resolve.
 
   /** Upsert the best ready-to-play resolution for a media id (newest wins). */
   putCachedResolution(record: CachedResolutionRecord): Promise<void>;

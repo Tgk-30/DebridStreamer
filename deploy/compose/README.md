@@ -4,7 +4,7 @@ This runs Server Mode and serves the built PWA from the same container.
 
 ## Quick Start
 
-### Recommended — prebuilt image (no source build)
+### Recommended - prebuilt image (no source build)
 
 Pulls the published multi-arch image (linux/amd64 + linux/arm64) from GHCR, so
 an Ubuntu VPS / home server just needs Docker. Uses `docker-compose.ghcr.yml`.
@@ -23,7 +23,7 @@ docker compose -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
-### Alternative — build from source
+### Alternative - build from source
 
 Uses `docker-compose.yml` to build the image locally from this checkout.
 

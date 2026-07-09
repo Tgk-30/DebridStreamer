@@ -35,7 +35,7 @@ describe("buildTitleQuery", () => {
   });
 });
 
-describe("filterResultsByTitle — contiguous whole-word phrase", () => {
+describe("filterResultsByTitle - contiguous whole-word phrase", () => {
   it("keeps releases that lead with the title regardless of separators/case", () => {
     const kept = filterResultsByTitle(
       [

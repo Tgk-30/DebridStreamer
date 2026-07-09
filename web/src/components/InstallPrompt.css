@@ -1,4 +1,4 @@
-/* InstallPrompt — fixed bottom glass card, mobile browsers only (mirrors
+/* InstallPrompt - fixed bottom glass card, mobile browsers only (mirrors
    SetupNudge). Bottom offset respects the iOS Safari toolbar safe area. */
 .install-prompt {
   position: fixed;
@@ -29,7 +29,7 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  /* basis 0 so long copy never drives a wrap — the text column shrinks and
+  /* basis 0 so long copy never drives a wrap - the text column shrinks and
      wraps internally instead of pushing the icon/dismiss onto their own rows */
   flex: 1 1 0;
   font-size: 13px;

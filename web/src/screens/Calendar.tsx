@@ -1,4 +1,4 @@
-// Calendar screen — upcoming episode air dates for the user's TV series.
+// Calendar screen - upcoming episode air dates for the user's TV series.
 //
 // For every TV series in the Library + Watchlist it shows the next/unaired
 // episodes grouped by Today / This week / Upcoming. Each row is a show + S/E +
@@ -23,7 +23,7 @@ function episodeCode(ep: UpcomingEpisode): string {
   return `S${s}E${e}`;
 }
 
-/** "Mon, Jun 23" style date — air dates are date-only (YYYY-MM-DD). */
+/** "Mon, Jun 23" style date - air dates are date-only (YYYY-MM-DD). */
 function formatAirDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00`);
   if (Number.isNaN(d.getTime())) return iso;
@@ -35,7 +35,7 @@ function formatAirDate(iso: string): string {
 }
 
 /** A friendly countdown for near-term air dates: "Today", "Tomorrow", or
- * "In N days" (within a week). Returns null further out — the absolute date
+ * "In N days" (within a week). Returns null further out - the absolute date
  * carries it. Date-only inputs are parsed at LOCAL midnight to match
  * formatAirDate, so the "today" boundary is the user's local day. Exported for
  * unit tests (with an injectable `now`). */
@@ -55,10 +55,10 @@ export function relativeAir(iso: string, now = Date.now()): string | null {
   return null;
 }
 
-/** "August 2026" — the month sub-header label for the Upcoming bucket. Null for
+/** "August 2026" - the month sub-header label for the Upcoming bucket. Null for
  * an unparseable date, so we never render a garbage month divider. */
 function monthLabel(iso: string): string | null {
-  // Strict full-date check — a partial ISO ("2026-07") parses leniently and
+  // Strict full-date check - a partial ISO ("2026-07") parses leniently and
   // would render a garbage/misleading month divider.
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
   const d = new Date(`${iso}T00:00:00`);

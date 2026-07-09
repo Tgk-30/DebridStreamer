@@ -158,7 +158,7 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-describe("Search — idle state", () => {
+describe("Search - idle state", () => {
   it("shows categories + trending starters when no query has run", () => {
     render(<Search />);
     expect(screen.getByRole("heading", { name: "Search" })).toBeInTheDocument();
@@ -185,7 +185,7 @@ describe("Search — idle state", () => {
   });
 });
 
-describe("Search — type filter chips", () => {
+describe("Search - type filter chips", () => {
   it("highlights the active filter; All is default", async () => {
     render(<Search />);
     expect(screen.getByRole("button", { name: "All" }).className).toContain(
@@ -203,10 +203,10 @@ describe("Search — type filter chips", () => {
   });
 });
 
-describe("Search — running a search", () => {
+describe("Search - running a search", () => {
   it("live-searches as you type (no Enter needed)", async () => {
     render(<Search />);
-    // Type without pressing Enter — the debounced effect runs the search.
+    // Type without pressing Enter - the debounced effect runs the search.
     await userEvent.type(fieldInput(), "dune");
     await waitFor(() => expect(tmdbSearch).toHaveBeenCalledWith("dune", null), {
       timeout: 2000,
@@ -275,7 +275,7 @@ describe("Search — running a search", () => {
   });
 });
 
-describe("Search — clear", () => {
+describe("Search - clear", () => {
   it("clears the query and results, returning to idle", async () => {
     render(<Search />);
     const input = fieldInput();
@@ -290,7 +290,7 @@ describe("Search — clear", () => {
   });
 });
 
-describe("Search — error path", () => {
+describe("Search - error path", () => {
   it("renders the error message and an empty results grid", async () => {
     tmdbSearch.mockRejectedValue(new Error("boom"));
     render(<Search />);
@@ -303,7 +303,7 @@ describe("Search — error path", () => {
   });
 });
 
-describe("Search — pending search handoff", () => {
+describe("Search - pending search handoff", () => {
   it("runs a pending query from the global field and consumes it", async () => {
     mockPendingSearch = "matrix";
     render(<Search />);
@@ -315,7 +315,7 @@ describe("Search — pending search handoff", () => {
   });
 });
 
-describe("Search — no TMDB key fallback", () => {
+describe("Search - no TMDB key fallback", () => {
   it("filters the bundled starters locally when there is no tmdb service", async () => {
     mockServices = { tmdb: null, ai: null };
     render(<Search />);
@@ -331,7 +331,7 @@ describe("Search — no TMDB key fallback", () => {
   });
 });
 
-describe("Search — server mode", () => {
+describe("Search - server mode", () => {
   it("searches via the server proxy when in server mode", async () => {
     mockServerMode = true;
     mockServices = { tmdb: null, ai: null };
@@ -353,7 +353,7 @@ describe("Search — server mode", () => {
   });
 });
 
-describe("Search — Describe a vibe (mood)", () => {
+describe("Search - Describe a vibe (mood)", () => {
   it("falls back to a filter-based browse when no AI provider", async () => {
     mockServices = { tmdb: null, ai: null };
     render(<Search />);

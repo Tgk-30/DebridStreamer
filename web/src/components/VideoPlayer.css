@@ -1,4 +1,4 @@
-/* In-app player overlay — a centered glass panel over a dimmed backdrop. */
+/* In-app player overlay - a centered glass panel over a dimmed backdrop. */
 
 .player-backdrop {
   position: fixed;
@@ -74,7 +74,7 @@
   display: block;
 }
 
-/* Subtitle appearance — driven by the --sub-* CSS vars set in useTheme from the
+/* Subtitle appearance - driven by the --sub-* CSS vars set in useTheme from the
  * persisted subtitle settings (font scale, text color, caption bg opacity). */
 .player-video::cue {
   font-size: calc(1em * var(--sub-font-scale, 1));
@@ -484,7 +484,7 @@
 /* ── Up next (auto-advance) ──────────────────────────────────────────────────
    End-of-episode card on the shortcuts scrim: next-episode label, an optional
    numeric countdown (suppressed under Data Saver), Play now / Dismiss. Static
-   by design — no looping animation (idle-CPU discipline). */
+   by design - no looping animation (idle-CPU discipline). */
 .player-upnext {
   display: flex;
   flex-direction: column;

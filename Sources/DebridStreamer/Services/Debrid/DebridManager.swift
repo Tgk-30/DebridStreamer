@@ -172,7 +172,7 @@ actor DebridManager {
     /// Services are validated concurrently (mirroring `checkCacheAll`) instead of
     /// in a serial loop, so total latency is bounded by the slowest service rather
     /// than their sum. Each task carries its `services` index so the returned array
-    /// preserves the original service order regardless of completion order — the
+    /// preserves the original service order regardless of completion order - the
     /// return shape/semantics are unchanged from the serial version.
     func validateAll() async -> [(DebridServiceType, Bool)] {
         var collected: [(index: Int, serviceType: DebridServiceType, valid: Bool)] = []

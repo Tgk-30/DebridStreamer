@@ -1,4 +1,4 @@
-// Search screen — fully wired (mirrors the native Search).
+// Search screen - fully wired (mirrors the native Search).
 //
 // A query field + a movie/tv/all type filter. Submitting (or arriving from the
 // global search field via the store's pendingSearch) runs TMDBService.search and
@@ -25,7 +25,7 @@ import "./Search.css";
 
 type TypeFilter = "all" | "movie" | "series";
 
-/** Map a natural-language vibe to TMDB genre/year filters — the fallback when no
+/** Map a natural-language vibe to TMDB genre/year filters - the fallback when no
  * AI provider is configured (relocated here with "Describe a vibe" from Discover). */
 function moodBrowseFilters(vibe: string): BrowseFilters {
   const text = vibe.toLowerCase();
@@ -73,7 +73,7 @@ function fixtureStarters(): MediaPreview[] {
 /**
  * Poster-grid skeleton shown while a search is in flight. Mirrors the
  * `.media-grid` results container (same columns/gap) with 2:3 shimmer tiles so
- * real results swap in with no layout shift. Self-contained — not shared.
+ * real results swap in with no layout shift. Self-contained - not shared.
  */
 function SearchSkeleton() {
   return (
@@ -220,7 +220,7 @@ export function Search() {
   // response guard; mirrors useBrowse).
   const runIdRef = useRef(0);
 
-  // Live search — results update as you type (debounced), and re-run when the
+  // Live search - results update as you type (debounced), and re-run when the
   // type filter changes. Enter fires an immediate search via the input handler
   // AND cancels this pending timer (debounceRef) so it can't double-fetch.
   const debounceRef = useRef<number | undefined>(undefined);

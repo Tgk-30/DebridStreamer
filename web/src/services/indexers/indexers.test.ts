@@ -488,7 +488,7 @@ describe("parseTorznabFeed", () => {
   it("does not discard the whole feed on an out-of-range numeric entity (regression)", () => {
     const xml =
       "<rss><channel><item>" +
-      "<title>Bad &#1114112; Title</title>" + // > 0x10FFFF — must not throw
+      "<title>Bad &#1114112; Title</title>" + // > 0x10FFFF - must not throw
       "<size>500</size>" +
       "</item></channel></rss>";
     let items: ReturnType<typeof parseTorznabFeed> = [];

@@ -278,7 +278,7 @@ describe("useScrubThumbnails", () => {
         act(() => v.__fire("seeked"));
         expect(v.__currentTimeSets).toEqual([100, 300]);
         resolve();
-      }, 250); // > THROTTLE_MS (120) with margin — de-flake under load
+      }, 250); // > THROTTLE_MS (120) with margin - de-flake under load
     });
   });
 

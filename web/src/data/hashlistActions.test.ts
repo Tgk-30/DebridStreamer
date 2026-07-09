@@ -184,7 +184,7 @@ describe("exportHashList", () => {
     ] as never;
 
     // encodeHashList of an empty list produces a string that decodes to no
-    // valid hashes — decodeHashList throws on that. The export itself does not
+    // valid hashes - decodeHashList throws on that. The export itself does not
     // throw (it builds the string), but the round-trip proves it carries nothing.
     const encoded = exportHashList(torrents);
     expect(encoded.startsWith("dshl1:")).toBe(true);

@@ -82,7 +82,7 @@ actor AllDebridService: DebridServiceProtocol {
             magnets = magnet
             let status = (magnet["status"] as? String) ?? ""
             if status == "Ready" { break }
-            // Terminal failure states — stop polling early.
+            // Terminal failure states - stop polling early.
             if status == "Error" || status.lowercased().contains("error") {
                 throw DebridError.downloadFailed("AllDebrid reported status: \(status)")
             }

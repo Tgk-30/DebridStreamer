@@ -6,10 +6,10 @@
 // decode/error-mapping (httpStatus vs decodingFailed). The `fetch`
 // implementation is injectable so tests can stub the network (the Swift code
 // injects a URLSession instead). There is no caching in the Swift service, so
-// — unlike the TMDB template — there is no TTL cache here.
+// - unlike the TMDB template - there is no TTL cache here.
 //
 // Note on decodingFailed: Swift's JSONDecoder throws when a *structurally*
-// invalid body (valid JSON, wrong shape — e.g. `{"unexpected":true}`) is fed to
+// invalid body (valid JSON, wrong shape - e.g. `{"unexpected":true}`) is fed to
 // a Decodable with required keys. `JSON.parse` does NOT throw for that, so each
 // strongly-typed decode runs an explicit shape `decode` callback; any throw
 // inside it (parse failure OR missing required field) is mapped to

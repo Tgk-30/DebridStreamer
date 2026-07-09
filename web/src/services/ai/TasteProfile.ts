@@ -1,11 +1,11 @@
-// TasteProfile — assembles a short plain-text "taste profile" from the user's
+// TasteProfile - assembles a short plain-text "taste profile" from the user's
 // own local signals (recent taste events incl. like/dislike, watch history, and
 // watchlist), to personalize the "Would I Like This?" analysis.
 //
 // Ported from VPStudio's AssistantContextAssembler (the context-notes half): it
 // applies a ~90-day linear recency decay (floored at 0.1) so recent signals
 // dominate, then emits a compact, plain-text context the AI prompt prefixes onto
-// the title being analyzed. When there is no signal at all it returns "" — the
+// the title being analyzed. When there is no signal at all it returns "" - the
 // caller still works (the analysis is then non-personalized).
 //
 // Where VPStudio reads a denormalized UserTasteProfile (liked/disliked genres),
@@ -19,7 +19,7 @@
 import type { Store } from "../../storage/types";
 import type { TasteEventRecord } from "../../storage/models";
 
-/** Recency-decay window (days) — signals older than this floor at the minimum
+/** Recency-decay window (days) - signals older than this floor at the minimum
  * weight. Mirrors VPStudio's `recencyWindowDays`. */
 const RECENCY_WINDOW_DAYS = 90;
 /** The minimum recency weight, so old signals still count a little. Mirrors
@@ -32,7 +32,7 @@ const MAX_CONTEXT_CHARS = 1500;
 /** Settings KV key the assembled context is cached under (value is a JSON
  * `{ context, builtAt }` envelope). */
 const CACHE_KEY = "tasteContextCache";
-/** Cache TTL — 24h. */
+/** Cache TTL - 24h. */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** A cached taste-context envelope persisted in the settings KV table. */
@@ -184,7 +184,7 @@ async function assembleTasteContext(store: Store, now: number): Promise<string> 
       // Dedupe by the stable media id (falling back to title) so two different
       // titles that happen to share a name don't collide, and a re-rate of the
       // SAME media is superseded by its newest event. The seen-check comes FIRST
-      // (before reading norm) so a newest "cleared" rating — one with no norm —
+      // (before reading norm) so a newest "cleared" rating - one with no norm - 
       // still suppresses an older score for that media instead of letting it leak.
       const key =
         event.mediaId != null && event.mediaId.length > 0
@@ -193,7 +193,7 @@ async function assembleTasteContext(store: Store, now: number): Promise<string> 
             ? `t:${title.toLowerCase()}`
             : null;
       if (key != null) {
-        if (ratedSeen.has(key)) continue; // older duplicate — newest already decided
+        if (ratedSeen.has(key)) continue; // older duplicate - newest already decided
         ratedSeen.add(key);
       }
       // metadata.norm is the rating on a [0,1] scale, so it feeds the profile the
@@ -225,7 +225,7 @@ async function assembleTasteContext(store: Store, now: number): Promise<string> 
     }
   }
 
-  // Recently-watched titles (newest first) — already recency-ordered by the
+  // Recently-watched titles (newest first) - already recency-ordered by the
   // Store, so just take the display titles off the previews.
   const recentlyWatched: string[] = [];
   const watchedSeen = new Set<string>();

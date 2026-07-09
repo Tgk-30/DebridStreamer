@@ -1,6 +1,6 @@
 // libmpv-free stub for platforms without an in-window surface yet (Windows/Linux
 // until v0.6 Phases 2/3). Provides the same Tauri command surface as `core.rs`,
-// but returns errors instead of touching libmpv — so the crate links on every OS
+// but returns errors instead of touching libmpv - so the crate links on every OS
 // without needing libmpv on runners that don't yet ship a surface.
 
 use std::collections::HashMap;

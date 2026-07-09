@@ -1,8 +1,8 @@
-// SetupNudge — the "get started" card shown (Local Mode only) while the app
+// SetupNudge - the "get started" card shown (Local Mode only) while the app
 // isn't ready to stream yet: no debrid service, or no active source. The
-// primary action re-runs the guided first-run wizard — the clear onboarding
+// primary action re-runs the guided first-run wizard - the clear onboarding
 // path even when the original first-run flags were consumed long ago (webview
-// storage survives app updates) — and the secondary opens the welcome tour.
+// storage survives app updates) - and the secondary opens the welcome tour.
 // The card vanishes on its own once setup is complete; dismissal is remembered
 // so it never nags.
 
@@ -27,7 +27,7 @@ export function SetupNudge({
         <strong>Let&apos;s get you streaming</strong>
         <span className="t-secondary">
           A two-minute guided setup: pick how you&apos;ll use the app, then add
-          the two things streaming needs — a debrid service and a source.
+          the two things streaming needs - a debrid service and a source.
         </span>
       </div>
       <div className="setup-nudge-actions">

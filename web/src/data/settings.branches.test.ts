@@ -7,7 +7,7 @@
 // paths, and the pure-testable buildServices() construction matrix (Local vs
 // Server mode, every AI/debrid/subtitle branch). All real service classes are
 // pure constructors (they only stash args), so buildServices is exercised
-// without mocking services — only the storage port and isServerMode are mocked.
+// without mocking services - only the storage port and isServerMode are mocked.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -122,11 +122,11 @@ afterEach(() => {
 });
 
 // =============================================================================
-// loadSettingsFromStore — the "valid value" arm of every appearance normalizer
+// loadSettingsFromStore - the "valid value" arm of every appearance normalizer
 // (settings.test.ts only exercises the invalid->default arms via the store).
 // =============================================================================
 
-describe("loadSettingsFromStore — appearance normalizers keep valid stored values", () => {
+describe("loadSettingsFromStore - appearance normalizers keep valid stored values", () => {
   beforeEach(() => {
     settingsMap.set("storage_port_initialized", "true");
   });
@@ -212,12 +212,12 @@ describe("loadSettingsFromStore — appearance normalizers keep valid stored val
 });
 
 // =============================================================================
-// saveSettingsToStore — reconcile branches not covered by settings.test.ts:
+// saveSettingsToStore - reconcile branches not covered by settings.test.ts:
 // UPDATE-in-place of an existing debrid row, and the built-in disable row
 // removal sweep (kept vs removed).
 // =============================================================================
 
-describe("saveSettingsToStore — debrid reconcile update path", () => {
+describe("saveSettingsToStore - debrid reconcile update path", () => {
   it("UPDATES an existing debrid row in place rather than duplicating it", async () => {
     // A row for the SAME stable id already exists (id = debrid-<service>).
     debridConfigs = [
@@ -263,7 +263,7 @@ describe("saveSettingsToStore — debrid reconcile update path", () => {
   });
 });
 
-describe("saveSettingsToStore — built-in indexer disable row reconcile", () => {
+describe("saveSettingsToStore - built-in indexer disable row reconcile", () => {
   it("removes a previously-written built-in disable row when scrapers are re-enabled", async () => {
     // A leftover disable row from a prior save where built-ins were OFF.
     indexerConfigs = [
@@ -364,11 +364,11 @@ describe("saveSettingsToStore — built-in indexer disable row reconcile", () =>
 });
 
 // =============================================================================
-// buildServices — pure construction matrix. Real service classes only stash
+// buildServices - pure construction matrix. Real service classes only stash
 // their args, so no service mocks are needed; only isServerMode is mocked.
 // =============================================================================
 
-describe("buildServices — Local Mode", () => {
+describe("buildServices - Local Mode", () => {
   it("builds nothing when no keys/tokens are configured", () => {
     const svc = buildServices(
       settingsWith({
@@ -551,7 +551,7 @@ describe("buildServices — Local Mode", () => {
   });
 });
 
-describe("buildServices — Server Mode", () => {
+describe("buildServices - Server Mode", () => {
   beforeEach(() => {
     isServerModeMock.mockReturnValue(true);
   });

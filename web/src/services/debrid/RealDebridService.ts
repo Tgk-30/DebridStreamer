@@ -63,7 +63,7 @@ export class RealDebridService implements DebridService {
 
   async checkCache(hashes: string[]): Promise<Record<string, CacheStatus>> {
     if (hashes.length === 0) return {};
-    // RD disabled /torrents/instantAvailability — return .unknown for all.
+    // RD disabled /torrents/instantAvailability - return .unknown for all.
     const results: Record<string, CacheStatus> = {};
     for (const hash of hashes) {
       results[hash.toLowerCase()] = CacheStatus.unknown;
@@ -278,7 +278,7 @@ export class RealDebridService implements DebridService {
    *
    * `GET /streaming/transcode/{id}` returns a map of streaming formats:
    *   { apple: {...}, dash: {...}, liveMP4: {...}, h264WebM: {...} }
-   * where `apple` is the HLS (M3U8) format — a quality-keyed map (e.g. `full`,
+   * where `apple` is the HLS (M3U8) format - a quality-keyed map (e.g. `full`,
    * `1080p`, `720p`, `480p`) whose values are `.m3u8` URLs. We prefer the
    * highest-quality variant (`full` if present, else the highest resolution,
    * else any HLS URL), so an MKV/HEVC source can be played in-webview by hls.js.
@@ -297,7 +297,7 @@ export class RealDebridService implements DebridService {
   }
 
   /** Fetch Real-Debrid media info (`GET /streaming/mediaInfos/{id}`) for an
-   * unrestrict `id` — codec/format/duration details. Returned as the raw parsed
+   * unrestrict `id` - codec/format/duration details. Returned as the raw parsed
    * object (the shape is large and only loosely documented); null on parse
    * failure. Currently informational; the transcode path keys off the filename
    * codec, but this lets callers double-check container/codec at resolve time. */
@@ -319,7 +319,7 @@ export class RealDebridService implements DebridService {
     const lowerHash = hash.toLowerCase();
     const pageSize = 100;
     const maxPages = 20;
-    // Paginate like listTorrents — a single page=1 fetch silently misses an
+    // Paginate like listTorrents - a single page=1 fetch silently misses an
     // already-downloaded torrent on accounts with >100 torrents, forcing a
     // duplicate re-add instead of instantly reusing the cached one.
     for (let page = 1; page <= maxPages; page += 1) {
@@ -478,7 +478,7 @@ function parseJSONArray(text: string): Record<string, unknown>[] | null {
 
 function isValidURL(value: string): boolean {
   try {
-    // Mirrors `URL(string:)` — requires an absolute URL.
+    // Mirrors `URL(string:)` - requires an absolute URL.
     new URL(value);
     return true;
   } catch {

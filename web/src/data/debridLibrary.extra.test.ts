@@ -180,9 +180,9 @@ describe("markDuplicates (edges)", () => {
 
 describe("formatSize (boundaries)", () => {
   it("renders the em-dash sentinel for zero and negative byte counts", () => {
-    expect(formatSize(0)).toBe("—");
-    expect(formatSize(-1)).toBe("—");
-    expect(formatSize(-1024 * 1024)).toBe("—");
+    expect(formatSize(0)).toBe(" - ");
+    expect(formatSize(-1)).toBe(" - ");
+    expect(formatSize(-1024 * 1024)).toBe(" - ");
   });
 
   it("uses whole numbers for bytes (unit 0) regardless of magnitude", () => {

@@ -1,4 +1,4 @@
-/* HeroSpotlight — cinematic auto-rotating billboard. */
+/* HeroSpotlight - cinematic auto-rotating billboard. */
 
 .hero {
   position: relative;
@@ -161,7 +161,7 @@
 }
 
 /* Bar indicators. */
-/* Carousel pager — bare expanding dots at the hero's bottom-right (away from the
+/* Carousel pager - bare expanding dots at the hero's bottom-right (away from the
    top-right search/avatar). The active dot stretches into an accent pill. */
 .hero-dots {
   position: absolute;

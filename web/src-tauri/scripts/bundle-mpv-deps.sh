@@ -3,7 +3,7 @@
 # luajit, …) into an output dir, relocated so every dylib references its siblings
 # via @rpath. The app is then linked against the relocated libmpv (whose id is
 # @rpath/libmpv.2.dylib) and carries an rpath of @executable_path/../Frameworks
-# (see build.rs), so on a clean Mac it loads these bundled copies — no Homebrew.
+# (see build.rs), so on a clean Mac it loads these bundled copies - no Homebrew.
 #
 # Usage:  bundle-mpv-deps.sh <path-to-libmpv.2.dylib> <output-dir>
 # CI runs this per-arch before the Tauri build, then points bundle.macOS.frameworks
@@ -30,8 +30,8 @@ realpath_f() { python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' 
 deps_of() { otool -L "$1" | awk 'NR>1{print $1}' | grep -E '^/opt/homebrew/|^/usr/local/' || true; }
 
 # ---- 1. BFS the transitive dependency set (by resolved real path) -------------
-# Keep this bash-3.2 compatible: macOS's system bash — and the CI mac runners'
-# default `/usr/bin/env bash` — is 3.2, which has no `declare -A`. Track seen
+# Keep this bash-3.2 compatible: macOS's system bash - and the CI mac runners'
+# default `/usr/bin/env bash` - is 3.2, which has no `declare -A`. Track seen
 # basenames in a newline-delimited string set instead of an associative array.
 LF=$'\n'
 seen="$LF"

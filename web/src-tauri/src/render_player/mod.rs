@@ -1,11 +1,11 @@
 // In-window mpv player, split into a platform-agnostic core + a per-OS surface.
 //
-//   core.rs           — shared mpv lifecycle, event loop, commands, the
+//   core.rs           - shared mpv lifecycle, event loop, commands, the
 //                       `VideoSurface` trait + `PreInit` (the platform seam).
-//   surface_macos.rs  — macOS render-API surface (CAOpenGLLayer).
-//   surface_windows.rs— Windows wid-embed surface (mpv renders into the HWND).
-//   surface_linux.rs  — Linux X11 wid-embed surface (mpv renders into the XID).
-//   stub.rs           — libmpv-free error stubs for platforms without a surface
+//   surface_macos.rs  - macOS render-API surface (CAOpenGLLayer).
+//   surface_windows.rs - Windows wid-embed surface (mpv renders into the HWND).
+//   surface_linux.rs  - Linux X11 wid-embed surface (mpv renders into the XID).
+//   stub.rs           - libmpv-free error stubs for platforms without a surface
 //                       yet, so the crate still links on every OS.
 //
 // The real (libmpv-linked) core is compiled only where a surface + libmpv linkage

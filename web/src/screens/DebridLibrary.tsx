@@ -1,4 +1,4 @@
-// Debrid Library screen — manage the account's torrents/files.
+// Debrid Library screen - manage the account's torrents/files.
 //
 // Renders a searchable, filterable table of the user's debrid torrents (name,
 // size, status, added, host, cached/duplicate), with single + bulk delete, a
@@ -38,9 +38,9 @@ function isReady(status: string): boolean {
 }
 
 function formatAdded(iso: string | null): string {
-  if (iso == null) return "—";
+  if (iso == null) return " - ";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return " - ";
   return d.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -333,8 +333,8 @@ export function DebridLibrary() {
                   visible.length > 0 &&
                   visible.every((r) => selected.has(r.torrent.id))
                 }
-                // Show the partial (indeterminate) state when some — but not
-                // all — visible rows are selected. `indeterminate` is a DOM
+                // Show the partial (indeterminate) state when some - but not
+                // all - visible rows are selected. `indeterminate` is a DOM
                 // property, not an attribute, so it must be set via a ref.
                 ref={(el) => {
                   if (el) {
@@ -388,7 +388,7 @@ export function DebridLibrary() {
                 </span>
               </span>
               <span className="dl-col-added">{formatAdded(row.torrent.addedAt)}</span>
-              <span className="dl-col-host">{row.torrent.host ?? "—"}</span>
+              <span className="dl-col-host">{row.torrent.host ?? " - "}</span>
               <span className="dl-col-actions">
                 <button
                   type="button"

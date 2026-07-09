@@ -6,14 +6,14 @@ struct StreamListView: View {
     let mediaItem: MediaItem
     let torrents: [TorrentResult]
     let cacheResults: [String: (service: DebridServiceType, status: CacheStatus)]
-    /// True while the batch debrid availability check is still in flight — rows whose
+    /// True while the batch debrid availability check is still in flight - rows whose
     /// status hasn't arrived yet show an inline "checking" spinner instead of a badge.
     var isCheckingCache: Bool = false
     let onPlay: (StreamInfo) -> Void
 
     @State private var resolvingHash: String?
     @State private var resolveError: String?
-    /// "Cached only" filter — when on, only torrents cached on the active debrid show.
+    /// "Cached only" filter - when on, only torrents cached on the active debrid show.
     @State private var cachedOnly = false
 
     private var hasDebrid: Bool {
@@ -46,7 +46,7 @@ struct StreamListView: View {
 
                 Spacer()
 
-                // "Cached only" filter toggle — only meaningful with a debrid configured.
+                // "Cached only" filter toggle - only meaningful with a debrid configured.
                 if hasDebrid && !torrents.isEmpty {
                     cachedOnlyToggle
                 }
@@ -273,7 +273,7 @@ struct StreamRow: View {
                 // Quality badge
                 qualityBadge
 
-                // Cached-on-debrid badge sits right next to the quality chip — the
+                // Cached-on-debrid badge sits right next to the quality chip - the
                 // category-defining "Instant vs. Will cache" signal.
                 cacheBadge
 
@@ -371,7 +371,7 @@ struct StreamRow: View {
             .padding(.vertical, AppTheme.Spacing.xs)
             .background(Capsule().fill(AppTheme.success))
             .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 0.5))
-            .help("Cached on \(info.service.displayName) — streams instantly")
+            .help("Cached on \(info.service.displayName) - streams instantly")
         } else if isCheckingCache {
             HStack(spacing: AppTheme.Spacing.xxs) {
                 ProgressView().controlSize(.mini)
@@ -389,9 +389,9 @@ struct StreamRow: View {
             .padding(.vertical, AppTheme.Spacing.xs)
             .background(Capsule().fill(.gray.opacity(0.18)))
             .overlay(Capsule().strokeBorder(AppTheme.glassBorder, lineWidth: 0.5))
-            .help("Not yet cached — the debrid will download it first, then stream")
+            .help("Not yet cached - the debrid will download it first, then stream")
         } else {
-            // .unknown or no result yet (check skipped) — neutral, no badge.
+            // .unknown or no result yet (check skipped) - neutral, no badge.
             EmptyView()
         }
     }

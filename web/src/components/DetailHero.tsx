@@ -1,4 +1,4 @@
-// DetailHero — cinematic top of the Detail screen.
+// DetailHero - cinematic top of the Detail screen.
 //
 // Full-bleed backdrop with a slow Ken Burns drift + layered scrim/vignette, then
 // poster + large title, a dotted meta row, genre chips, the overview, and the
@@ -21,7 +21,7 @@ interface DetailHeroProps {
   onPlay: () => void;
   onToggleWatchlist: () => void;
   onClose: () => void;
-  /** Server Mode only — file a title request for this item. Omitted (and the
+  /** Server Mode only - file a title request for this item. Omitted (and the
    *  button hidden) in Local Mode. */
   onRequest?: () => void;
   /** Drives the Request button label/disabled state: idle → "Request",
@@ -32,7 +32,7 @@ interface DetailHeroProps {
   /** Record (or toggle off) a like/dislike taste signal for this title. */
   onTasteSignal?: (signal: "liked" | "disliked") => void;
   /** When set, Play is disabled and this explains why (e.g. no debrid service
-   *  configured yet) — an honest gate instead of a click that goes nowhere. */
+   *  configured yet) - an honest gate instead of a click that goes nowhere. */
   playDisabledReason?: string | null;
 }
 

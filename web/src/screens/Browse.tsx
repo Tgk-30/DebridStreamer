@@ -1,9 +1,9 @@
-// Browse screen — paginated "See all" grid + advanced filters.
+// Browse screen - paginated "See all" grid + advanced filters.
 //
 // Mounts as an overlay (like Detail) whenever the store has a `browseContext`.
-// Renders a MediaCard grid for the active context — a category (trending/
+// Renders a MediaCard grid for the active context - a category (trending/
 // popular/top-rated/…), a single genre, a free-text search, or a full
-// `discover` filter set — with load-more / infinite scroll (append pages until
+// `discover` filter set - with load-more / infinite scroll (append pages until
 // totalPages), loading/empty states, and tapping a card opens its Detail.
 //
 // The "Filters" button opens the FilterSlideover. Applying refines the context
@@ -168,7 +168,7 @@ function BrowseInner({
 
         {state.source === "fixtures" && ctx.kind === "genre" && (
           <p className="browse-fixture-note t-secondary">
-            Showing sample titles — genre filtering needs a TMDB key (Settings →
+            Showing sample titles - genre filtering needs a TMDB key (Settings →
             API keys).
           </p>
         )}

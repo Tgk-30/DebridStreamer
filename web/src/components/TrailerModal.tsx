@@ -1,4 +1,4 @@
-// TrailerModal — a full-screen glass overlay that embeds a YouTube trailer.
+// TrailerModal - a full-screen glass overlay that embeds a YouTube trailer.
 //
 // Uses youtube-nocookie.com (privacy-preserving, no tracking cookie until play)
 // in a 16:9 responsive iframe. The desktop app's CSP allowlists that frame host.
@@ -39,7 +39,7 @@ export function TrailerModal({ videoKey, title, onClose }: TrailerModalProps) {
         aria-label={`Trailer: ${title}`}
       >
         <div className="trailer-head">
-          <span className="trailer-title">{title} — Trailer</span>
+          <span className="trailer-title">{title} - Trailer</span>
           <button
             type="button"
             className="trailer-close"

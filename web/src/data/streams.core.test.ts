@@ -1,4 +1,4 @@
-// Core coverage for the stream-RESOLUTION layer of streams.ts — the part that
+// Core coverage for the stream-RESOLUTION layer of streams.ts - the part that
 // the existing two suites deliberately skip.
 //
 //   - streams.test.ts        → happy paths of the pure filter/quality exports.
@@ -194,7 +194,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("useStreams — idle / no-imdb / no-indexer guards", () => {
+describe("useStreams - idle / no-imdb / no-indexer guards", () => {
   it("is idle (not loading, empty) when imdbId is null", async () => {
     const indexers = fakeIndexers({ active: ["jackett"] });
     const { state } = await renderStreams(null, "movie", indexers, null);
@@ -217,7 +217,7 @@ describe("useStreams — idle / no-imdb / no-indexer guards", () => {
   });
 });
 
-describe("useStreams — Local resolve path (resolveStreams)", () => {
+describe("useStreams - Local resolve path (resolveStreams)", () => {
   it("returns empty rows (no debrid call) when searchAll yields nothing", async () => {
     const checkCacheAll = vi.fn(async () => ({}));
     const indexers = fakeIndexers({ searchAll: async () => [] });
@@ -364,13 +364,13 @@ describe("useStreams — Local resolve path (resolveStreams)", () => {
     const debrid = fakeDebrid({ hasServices: true, checkCacheAll });
     const { state } = await renderStreams("tt1", "movie", indexers, debrid);
     // The try/catch inside resolveStreams turns the cache failure into "all
-    // uncached" — it is NOT surfaced as a top-level error.
+    // uncached" - it is NOT surfaced as a top-level error.
     expect(state.error).toBeNull();
     expect(state.rows.map((r) => r.cachedOn)).toEqual([null, null]);
   });
 });
 
-describe("useStreams — error path", () => {
+describe("useStreams - error path", () => {
   it("surfaces a searchAll Error message into state.error", async () => {
     const indexers = fakeIndexers({
       searchAll: async () => {
@@ -395,7 +395,7 @@ describe("useStreams — error path", () => {
   });
 });
 
-describe("useStreams — cancellation", () => {
+describe("useStreams - cancellation", () => {
   it("does not commit results after the effect is torn down (cancelled)", async () => {
     let resolveSearch: (v: TorrentResult[]) => void = () => {};
     const indexers = fakeIndexers({
@@ -418,7 +418,7 @@ describe("useStreams — cancellation", () => {
   });
 });
 
-describe("useStreams — Server mode", () => {
+describe("useStreams - Server mode", () => {
   beforeEach(() => {
     mockConfiguredServerURL.mockReturnValue("https://srv.example");
   });
@@ -457,7 +457,7 @@ describe("useStreams — Server mode", () => {
       hasDebrid: true,
     });
     const indexers = fakeIndexers({ active: [] });
-    // series + season/episode + title — the exact context the server needs to
+    // series + season/episode + title - the exact context the server needs to
     // build "The Bear S01E06" for its APIBay-style name-matching pass.
     await renderStreams("tt5", "series", indexers, null, 1, 6, "The Bear");
     expect(mockFetchServerStreams).toHaveBeenCalledWith({

@@ -1,8 +1,8 @@
 // Metadata helpers shared by the Calendar + watchlist auto-resolve features.
 //
 // These build on the ported TMDBService (read-only) without modifying it:
-//  - `resolveImdbId`     — derive the IMDb id (tt…) an indexer search needs.
-//  - `getUpcomingEpisodes` — find a series' unaired / upcoming episodes by
+//  - `resolveImdbId`     - derive the IMDb id (tt…) an indexer search needs.
+//  - `getUpcomingEpisodes` - find a series' unaired / upcoming episodes by
 //    walking seasons -> episodes and filtering by air date.
 //
 // Everything is fault-tolerant (a TMDB failure yields null / [] rather than
@@ -65,7 +65,7 @@ export interface UpcomingEpisode {
 /** A timestamp as a LOCAL `YYYY-MM-DD` string. TMDB air dates are bare
  * date-only strings with no timezone, so they must be compared against the
  * user's *local* calendar day. Using the UTC date (toISOString) misclassifies
- * by a day for non-UTC users in evening/early-morning windows — dropping
+ * by a day for non-UTC users in evening/early-morning windows - dropping
  * tonight's premiere as "already aired" or labeling tomorrow's as "Today". */
 export function localISODate(now: number): string {
   const d = new Date(now);
@@ -82,7 +82,7 @@ function todayISODate(now: number): string {
 /** Find a series' upcoming (today-or-later) episodes by walking TMDB seasons ->
  * episodes. Only TV series are considered; movies and no-key states yield [].
  *
- * To stay cheap and fault-tolerant we only inspect the LATEST season(s) — most
+ * To stay cheap and fault-tolerant we only inspect the LATEST season(s) - most
  * unaired episodes live in the current/last season. We look at the highest one
  * or two real seasons (skipping season 0 "specials"), pull their episodes, and
  * keep those with an air date >= today. Bounded so a series with many seasons
@@ -107,7 +107,7 @@ export async function getUpcomingEpisodes(
       .sort((a, b) => b.seasonNumber - a.seasonNumber);
     if (realSeasons.length === 0) return [];
 
-    // Inspect at most the latest two seasons — enough to catch a season that has
+    // Inspect at most the latest two seasons - enough to catch a season that has
     // started airing plus the next one, without fanning out across the whole run.
     const candidates = realSeasons.slice(0, 2);
 

@@ -26,7 +26,7 @@ describe("parseCsvLine", () => {
   });
 });
 
-describe("parseImportEntries — IMDb CSV", () => {
+describe("parseImportEntries - IMDb CSV", () => {
   it("maps Title / Year / Title Type columns and normalises the type", () => {
     const csv = [
       "Const,Title,Year,Title Type",
@@ -40,7 +40,7 @@ describe("parseImportEntries — IMDb CSV", () => {
   });
 });
 
-describe("parseImportEntries — Letterboxd CSV", () => {
+describe("parseImportEntries - Letterboxd CSV", () => {
   it("maps Name / Year and leaves the type unset", () => {
     const csv = [
       "Date,Name,Year,Letterboxd URI",
@@ -52,7 +52,7 @@ describe("parseImportEntries — Letterboxd CSV", () => {
   });
 });
 
-describe("parseImportEntries — plain list", () => {
+describe("parseImportEntries - plain list", () => {
   it("parses '(year)', ', year', and bare titles, de-duplicating", () => {
     const text = ["The Matrix (1999)", "Dune", "Parasite, 2019", "Dune"].join("\n");
     expect(parseImportEntries(text)).toEqual([

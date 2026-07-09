@@ -1,7 +1,7 @@
 // Per-provider cache of the live model list, so the Settings model picker shows
 // the provider's real catalog instantly (and offline) instead of only after a
 // manual Refresh. Mirrors the TasteProfile KV-cache pattern (a JSON envelope in
-// the Store's settings table). 24h TTL — a warm cache paints immediately while a
+// the Store's settings table). 24h TTL - a warm cache paints immediately while a
 // background revalidation runs; a cache PAST its TTL is still returned (marked
 // stale) so a failed live refresh falls back to "last known" rather than nothing.
 
@@ -23,7 +23,7 @@ export interface ModelCacheEntry {
   models: string[];
   /** Epoch ms of the cached fetch. */
   fetchedAt: number;
-  /** True once past the TTL — still usable as a last-known fallback. */
+  /** True once past the TTL - still usable as a last-known fallback. */
   stale: boolean;
 }
 

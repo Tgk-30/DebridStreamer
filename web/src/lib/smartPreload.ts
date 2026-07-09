@@ -1,4 +1,4 @@
-// Smart preloading — a per-device performance preference (NOT synced to server
+// Smart preloading - a per-device performance preference (NOT synced to server
 // profiles, since preloading is inherently device/connection-specific).
 //
 // When on (the default), the app does invisible background work the user never
@@ -8,7 +8,7 @@
 
 const KEY = "ds_smart_preload";
 
-/** Default ON — most users are on unmetered connections and want it snappy. */
+/** Default ON - most users are on unmetered connections and want it snappy. */
 export function isSmartPreloadEnabled(): boolean {
   try {
     return globalThis.localStorage?.getItem(KEY) !== "0";
@@ -21,7 +21,7 @@ export function setSmartPreloadEnabled(enabled: boolean): void {
   try {
     globalThis.localStorage?.setItem(KEY, enabled ? "1" : "0");
   } catch {
-    // private mode — preference just won't persist
+    // private mode - preference just won't persist
   }
 }
 

@@ -3,7 +3,7 @@
 // The indexer/debrid/AI/sync services all take an injectable `fetchImpl` of the
 // shape `(url, init?: { method?, headers?, body? }) => Promise<{ status, text() }>`
 // (a subset of the DOM `fetch`). In a plain browser, the global `fetch` is the
-// right implementation — but indexer/debrid/addon hosts are third-party origins
+// right implementation - but indexer/debrid/addon hosts are third-party origins
 // that don't send CORS headers, so a browser request to them is blocked.
 //
 // Inside the Tauri desktop webview we route those requests through the Rust side
@@ -64,7 +64,7 @@ export const appFetch: FetchImpl = async (url, init) => {
       const tauriFetch = await loadTauriFetch();
       return await tauriFetch(url, requestInit);
     } catch {
-      // Plugin unavailable — degrade to the global fetch (which may CORS-fail,
+      // Plugin unavailable - degrade to the global fetch (which may CORS-fail,
       // but that's the same behavior as a non-Tauri browser).
       return fetch(url, requestInit);
     }

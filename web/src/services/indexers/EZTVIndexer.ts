@@ -36,7 +36,7 @@ const MAX_PAGES = 3;
 export class EZTVIndexer implements TorrentIndexer {
   readonly name = "EZTV";
   // eztvx.to went dark (connections hang); eztv.wf is the live API mirror that
-  // still serves the same get-torrents JSON. EZTV domains rotate often — the
+  // still serves the same get-torrents JSON. EZTV domains rotate often - the
   // title-query path (APIBay) in data/streams.ts keeps series working even if
   // this one dies again.
   private readonly baseURL = "https://eztv.wf/api";

@@ -1,4 +1,4 @@
-/* MediaCard — premium poster with motion-driven hover lift + cinematic reveal.
+/* MediaCard - premium poster with motion-driven hover lift + cinematic reveal.
    Transform/scale are driven by `motion` (variants); CSS handles the look. */
 
 .media-card {
@@ -17,7 +17,7 @@
   cursor: pointer;
   color: var(--text-primary);
   /* Isolate each card's layout so one card's internal changes (shimmer, reveal,
-     progress) don't reflow the whole grid. NOT `paint` here — the card lifts +
+     progress) don't reflow the whole grid. NOT `paint` here - the card lifts +
      scales past its box on hover and paint containment would clip that. */
   contain: layout;
 }
@@ -59,7 +59,7 @@
 }
 
 /* ── "Top 10" ranked treatment ────────────────────────────────────────────
-   A small GOLD-metallic rank numeral in the poster's TOP-LEFT corner —
+   A small GOLD-metallic rank numeral in the poster's TOP-LEFT corner - 
    contained inside the poster, a gold gradient fill with a lower sheen band,
    dark edge for legibility over any art, and a soft gold glow. */
 .media-card-rank {
@@ -103,7 +103,7 @@
   display: block;
 }
 
-/* Continue Watching progress bar — pinned to the poster's bottom edge, above the
+/* Continue Watching progress bar - pinned to the poster's bottom edge, above the
    hover reveal so it stays visible while scanning the row. */
 .media-card-progress {
   position: absolute;
@@ -133,7 +133,7 @@
     rgba(255, 255, 255, 0.03) 70%
   );
   background-size: 200% 100%;
-  /* PERF: bounded, not `infinite` — lazy posters below the fold never fire
+  /* PERF: bounded, not `infinite` - lazy posters below the fold never fire
      onLoad, so their shimmers used to animate forever offscreen. 12 cycles
      (~17s) covers any realistic load; afterwards the gradient's first stop
      reads as a normal static placeholder. */
@@ -232,8 +232,8 @@
   background: rgba(255, 255, 255, 0.26);
 }
 
-/* "Ready to play" badge — a cached resolution exists (auto-resolve). */
-/* Corner label ("S2 E5") — a quiet glass chip opposite the ready badge. */
+/* "Ready to play" badge - a cached resolution exists (auto-resolve). */
+/* Corner label ("S2 E5") - a quiet glass chip opposite the ready badge. */
 .media-card-corner-label {
   position: absolute;
   top: 7px;

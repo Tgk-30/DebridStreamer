@@ -1,5 +1,5 @@
 // Live key validation for the first-run wizard. Both checks construct
-// throwaway clients — nothing here persists anything; the wizard saves once
+// throwaway clients - nothing here persists anything; the wizard saves once
 // at the end via updateSettings.
 
 import { TMDBService } from "../services/metadata/TMDBService";
@@ -38,7 +38,7 @@ export async function testOmdbKey(key: string): Promise<OmdbTestResult> {
     if (typeof json.Error === "string" && /key/i.test(json.Error)) {
       return "unauthorized";
     }
-    // Reached OMDb and the key wasn't rejected — treat other API quirks
+    // Reached OMDb and the key wasn't rejected - treat other API quirks
     // (e.g. temporary lookup errors) as a working key.
     return "ok";
   } catch {
@@ -46,7 +46,7 @@ export async function testOmdbKey(key: string): Promise<OmdbTestResult> {
   }
 }
 
-/** true = verified. false = rejected OR unreachable — validateToken() is a
+/** true = verified. false = rejected OR unreachable - validateToken() is a
  *  catch-all boolean, so callers must hedge their copy (and offer a
  *  save-without-testing path: debrid hosts are CORS-blocked in plain
  *  browsers, where a valid token still fails this check). */

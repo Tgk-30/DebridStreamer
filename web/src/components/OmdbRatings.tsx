@@ -2,9 +2,9 @@
 //
 // Two key sources, chosen by mode (the user never has to think about it):
 //   • Local / public: the user's own OMDb key (Settings → OMDB) builds
-//     services.omdb (an OMDBService that calls OMDb directly — BYOK).
+//     services.omdb (an OMDBService that calls OMDb directly - BYOK).
 //   • Server "hidden key": when no client key is set and the server advertises
-//     the OMDb proxy, fetch via /api/omdb — the server holds the key (a baked
+//     the OMDb proxy, fetch via /api/omdb - the server holds the key (a baked
 //     limited-distribution key or a per-profile/server credential) and returns
 //     only the parsed ratings, so the key is never shipped to or sniffable from
 //     the client.

@@ -1,11 +1,11 @@
-// UpdateBanner — the in-app auto-update prompt.
+// UpdateBanner - the in-app auto-update prompt.
 //
 // Mounted once from App.tsx. On mount it runs the launch-time update check
 // (checkForUpdates), which is a no-op in a plain browser (isTauri-gated inside
-// updater.ts) — so in the browser this component renders nothing and has no
+// updater.ts) - so in the browser this component renders nothing and has no
 // effect. Under the desktop Tauri shell, when a newer signed release is
 // available it slides a small non-blocking glass toast in from the bottom-right
-// ("Update vX.Y available — Install"). Installing downloads + applies the update
+// ("Update vX.Y available - Install"). Installing downloads + applies the update
 // (showing a determinate progress bar, or an indeterminate one when the server
 // didn't send a content length) and then relaunches the app. Failures surface a
 // dismissible "Update failed" state; the user can dismiss at any point.
@@ -26,7 +26,7 @@ type Phase = "idle" | "installing" | "error";
 // How often the running app re-evaluates whether a weekly check is due. The
 // actual network check is gated on WEEKLY_UPDATE_CHECK_MS having elapsed, so
 // this poll interval only bounds how promptly a long-running instance notices
-// the week has passed — it does not itself hit the network every 6h.
+// the week has passed - it does not itself hit the network every 6h.
 const UPDATE_POLL_MS = 6 * 60 * 60 * 1000;
 
 export function UpdateBanner({
@@ -41,7 +41,7 @@ export function UpdateBanner({
   /** 0..1 install fraction, or null for an indeterminate (unknown-size) bar. */
   const [progress, setProgress] = useState<number | null>(0);
 
-  // The version the user dismissed this session — so the weekly re-check doesn't
+  // The version the user dismissed this session - so the weekly re-check doesn't
   // re-surface the SAME version, but a LATER one still gets through. A ref (not
   // state) so the check closure reads the current value without re-running.
   const dismissedVersionRef = useRef<string | null>(null);
@@ -78,7 +78,7 @@ export function UpdateBanner({
 
     // Weekly cadence: poll periodically but only actually hit the network when
     // the window is visible, nothing is already pending, and a week has elapsed
-    // since the last check. Robust to timer drift/suspend — the elapsed-time
+    // since the last check. Robust to timer drift/suspend - the elapsed-time
     // gate is the real control, not the interval.
     const poll = setInterval(() => {
       if (

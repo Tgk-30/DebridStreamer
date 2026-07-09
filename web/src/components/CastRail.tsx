@@ -1,4 +1,4 @@
-// CastRail — a horizontally scrolling row of cast members (photo + name +
+// CastRail - a horizontally scrolling row of cast members (photo + name +
 // character). Mirrors the native detail cast strip. Renders nothing when empty.
 
 import type { CastMember } from "../models/media";
@@ -28,7 +28,7 @@ export function CastRail({ cast, onSelect }: CastRailProps) {
               type="button"
               className="cast-card"
               onClick={() => onSelect?.(member)}
-              title={`${member.name}${member.character ? ` — ${member.character}` : ""}`}
+              title={`${member.name}${member.character ? ` - ${member.character}` : ""}`}
             >
               <div className="cast-photo">
                 {member.profileURL ? (

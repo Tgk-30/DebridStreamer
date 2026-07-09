@@ -1,10 +1,10 @@
-// Subtitle cue parsing / conversion — PURE, no network, no DOM.
+// Subtitle cue parsing / conversion - PURE, no network, no DOM.
 //
 // Wraps `subsrt-ts` (parse/build/detect/resync) behind a small, typed surface so
 // the player can: parse a downloaded SRT/SSA/VTT blob into cues, render those
 // cues to a WebVTT string (for a Blob-URL `<track>`), shift timing (per-track
 // delay), and batch cue text for AI translation while preserving the original
-// timing. Everything here is deterministic and unit-tested — the player wires
+// timing. Everything here is deterministic and unit-tested - the player wires
 // these into the DOM, but the logic lives here so it can be exercised without a
 // browser.
 

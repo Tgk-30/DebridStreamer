@@ -1,6 +1,6 @@
 // Live model discovery for the Settings "Model" picker. Given a provider kind
 // and its credential, this queries the provider's own model-list endpoint so the
-// dropdown reflects what the account can actually use today — no hardcoded list
+// dropdown reflects what the account can actually use today - no hardcoded list
 // to go stale. OpenAI-compatible hosts share `GET {baseURL}/models`; Anthropic
 // and Ollama have their own shapes. Errors surface to the caller to display.
 
@@ -23,7 +23,7 @@ interface OllamaTagsResponse {
   models?: Array<{ name?: string | null }> | null;
 }
 
-// A model-list endpoint (Groq, xAI, OpenAI) returns more than chat models —
+// A model-list endpoint (Groq, xAI, OpenAI) returns more than chat models - 
 // speech-to-text, TTS, embeddings, moderation, image generation. These would
 // fail a /chat/completions call, so drop the obvious non-chat ids. Conservative
 // by design: only clear-cut modalities are removed; anything ambiguous stays.

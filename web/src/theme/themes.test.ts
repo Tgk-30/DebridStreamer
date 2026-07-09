@@ -1,4 +1,4 @@
-// Pure theme-list + apply/persist logic tests (no DOM — applyTheme takes a stub
+// Pure theme-list + apply/persist logic tests (no DOM - applyTheme takes a stub
 // root so the attribute/style side effects are observable without a browser).
 
 import { describe, expect, it } from "vitest";

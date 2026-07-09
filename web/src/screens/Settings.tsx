@@ -1,10 +1,10 @@
-// Settings screen — on-brand tabbed config, persisted through the app store.
+// Settings screen - on-brand tabbed config, persisted through the app store.
 //
 // Three tabs:
-//   • API keys — TMDB / OMDB metadata keys + the AI provider (kind, key, model).
-//   • Debrid — per-service tokens (Real-Debrid / AllDebrid / Premiumize / TorBox),
+//   • API keys - TMDB / OMDB metadata keys + the AI provider (kind, key, model).
+//   • Debrid - per-service tokens (Real-Debrid / AllDebrid / Premiumize / TorBox),
 //     in priority order.
-//   • Sources — the built-in scrapers toggle + a list of external indexers
+//   • Sources - the built-in scrapers toggle + a list of external indexers
 //     (Torznab / Jackett / Prowlarr / Zilean / Stremio add-ons).
 //
 // Saving writes through the store (updateSettings → saveSettings), which rebuilds
@@ -566,7 +566,7 @@ async function serverRequest<T>(
   if (body !== undefined) headers["content-type"] = "application/json";
   if (method !== "GET" && method !== "HEAD") {
     // Canonical CSRF source: prefers the in-memory token captured at bootstrap
-    // and only falls back to document.cookie same-origin — a cross-origin
+    // and only falls back to document.cookie same-origin - a cross-origin
     // (pasted remote URL) client can't read the server origin's ds_csrf cookie.
     const csrf = readCsrfToken();
     if (csrf != null) headers["x-csrf-token"] = csrf;
@@ -583,7 +583,7 @@ async function serverRequest<T>(
     try {
       parsed = JSON.parse(text) as Record<string, unknown>;
     } catch {
-      // Non-JSON body (e.g. a reverse-proxy 5xx) — fall through to a status error.
+      // Non-JSON body (e.g. a reverse-proxy 5xx) - fall through to a status error.
     }
   }
   if (!response.ok) {
@@ -602,7 +602,7 @@ export function Settings() {
   const serverSession = useServerSession();
   const setServerSession = useSetServerSession();
   // Land where the user's next step is: an unconfigured profile (no debrid
-  // token yet) opens on Install & setup — the critical path — instead of the
+  // token yet) opens on Install & setup - the critical path - instead of the
   // Appearance dial-park. Configured profiles keep the familiar default.
   const [tab, setTab] = useState<Tab>(() =>
     settings.debridTokens.some((t) => t.apiToken.trim().length > 0)
@@ -626,7 +626,7 @@ export function Settings() {
   function applyAppearance(next: Partial<AppSettings>) {
     // Appearance controls are instant-apply. Reflect the change in the preview
     // draft, but PERSIST only the appearance change layered on the last-SAVED
-    // settings — NOT the whole draft. Persisting the draft would silently commit
+    // settings - NOT the whole draft. Persisting the draft would silently commit
     // unsaved edits from other tabs (e.g. a half-typed API key or debrid token)
     // and wrongly clear the "unsaved changes" indicator on a mere theme nudge.
     setDraft((d) => ({ ...d, ...next }));
@@ -867,7 +867,7 @@ function UpdatesTab({ draft, patch }: TabProps) {
           <strong>Check for desktop updates automatically</strong>
           <span className="t-secondary">
             {" "}
-            — on launch and weekly; shows a signed update prompt.
+            - on launch and weekly; shows a signed update prompt.
           </span>
         </span>
       </label>
@@ -881,7 +881,7 @@ function UpdatesTab({ draft, patch }: TabProps) {
         />
         <span>
           <strong>Install signed desktop updates automatically</strong>
-          <span className="t-secondary"> — downloads, applies, and relaunches.</span>
+          <span className="t-secondary"> - downloads, applies, and relaunches.</span>
         </span>
       </label>
     </div>
@@ -956,7 +956,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
             <strong>Built-in player</strong>
             <span className="t-secondary">
               {" "}
-              — play MKV / HEVC right inside the window (native libmpv). On by
+              - play MKV / HEVC right inside the window (native libmpv). On by
               default; turn it off to open your chosen external player below
               instead. Works on macOS, Windows, and Linux (X11).
             </span>
@@ -970,7 +970,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
             <strong>External player</strong>
             <span className="t-secondary">
               {" "}
-              — which app opens MKV / 4K&nbsp;HEVC streams when the built-in
+              - which app opens MKV / 4K&nbsp;HEVC streams when the built-in
               player is off (or as a fallback). Detected on this machine.
             </span>
           </span>
@@ -998,7 +998,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
         />
         <span>
           <strong>Data Saver</strong>
-          <span className="t-secondary"> — prefer smaller, lower-resolution streams (≤720p, ≤5&nbsp;GB) to use less bandwidth, including for instant/watchlist playback. No re-encoding.</span>
+          <span className="t-secondary"> - prefer smaller, lower-resolution streams (≤720p, ≤5&nbsp;GB) to use less bandwidth, including for instant/watchlist playback. No re-encoding.</span>
         </span>
       </label>
 
@@ -1011,7 +1011,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
           />
           <span>
             <strong>Reduce playback bitrate (server transcode)</strong>
-            <span className="t-secondary"> — the server re-encodes playback to a 720p stream to use less bandwidth (uses more server CPU). Complements Data Saver, which only caps the source file picked.</span>
+            <span className="t-secondary"> - the server re-encodes playback to a 720p stream to use less bandwidth (uses more server CPU). Complements Data Saver, which only caps the source file picked.</span>
           </span>
         </label>
       )}
@@ -1024,7 +1024,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
         />
         <span>
           <strong>Show cached streams only</strong>
-          <span className="t-secondary"> — avoids streams that need to be cached first.</span>
+          <span className="t-secondary"> - avoids streams that need to be cached first.</span>
         </span>
       </label>
 
@@ -1036,7 +1036,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
         />
         <span>
           <strong>Auto-play next episode</strong>
-          <span className="t-secondary"> — when a series episode ends, play the next one automatically if an instant (cached) stream is available. Otherwise you're taken to the stream list.</span>
+          <span className="t-secondary"> - when a series episode ends, play the next one automatically if an instant (cached) stream is available. Otherwise you're taken to the stream list.</span>
         </span>
       </label>
 
@@ -1053,7 +1053,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
         />
       </div>
 
-      {/* Quality + size caps are power-user filters — hidden in Simple mode,
+      {/* Quality + size caps are power-user filters - hidden in Simple mode,
           which keeps "cached only" as the one safe, essential toggle. */}
       <AdvancedOnly>
         <Field
@@ -1662,7 +1662,7 @@ function ServerConnectionPanel() {
 
 // Static guided setup for exposing a self-hosted server off the local network.
 // Two tabbed tracks (Tailscale / Cloudflare Tunnel) with official links and the
-// where-to-paste-the-URL note. No live integration — this is documentation that
+// where-to-paste-the-URL note. No live integration - this is documentation that
 // ships with the app so the owner doesn't have to leave to find it. The persona
 // + server-setup wizards point here ("Settings → Server → Remote access").
 
@@ -1703,7 +1703,7 @@ const CLOUDFLARE_STEPS: RemoteAccessStep[] = [
   {
     title: "Route a hostname to the server",
     detail:
-      "Add a public hostname (e.g. stream.yourdomain.com) and point it at http://localhost:<port> — the local DebridStreamer server port shown above.",
+      "Add a public hostname (e.g. stream.yourdomain.com) and point it at http://localhost:<port> - the local DebridStreamer server port shown above.",
   },
   {
     title: "Run the connector",
@@ -1733,7 +1733,7 @@ function RemoteAccessPanel() {
       </div>
       <p className="settings-hint t-secondary">
         Expose this self-hosted server to phones and tablets off your network
-        with a tunnel — no router ports to open, and traffic stays encrypted.
+        with a tunnel - no router ports to open, and traffic stays encrypted.
       </p>
 
       <div className="settings-source-row">
@@ -1783,7 +1783,7 @@ function RemoteAccessPanel() {
       </div>
       <p className="settings-hint t-secondary">
         Once you have the public URL, paste it into <strong>Connect to a
-        server</strong> above. The desktop host can also show it automatically —
+        server</strong> above. The desktop host can also show it automatically - 
         launch with <code>DEBRIDSTREAMER_DESKTOP_SHARE_URL</code> set.
       </p>
     </div>
@@ -2002,7 +2002,7 @@ function ServerTab() {
   }
 
   async function saveSharedCredential() {
-    // Same double-submit guard + busy state as its siblings below — this one
+    // Same double-submit guard + busy state as its siblings below - this one
     // was missing it, so a double-click could double-PUT with no feedback.
     if (saving != null) return;
     setMessage(null);
@@ -2767,7 +2767,7 @@ function RequestQueuePanel({
                 )}
                 <span className="t-secondary">
                   {" "}
-                  — {request.requestedByDisplayName ?? "Someone"}
+                  - {request.requestedByDisplayName ?? "Someone"}
                 </span>
               </span>
               <span className="settings-profile-meta t-secondary">
@@ -2968,7 +2968,7 @@ function KidsProfilesPanel() {
         <div className="settings-usage-list">
           {manageable.map((profile) => {
             const busy = busyId === profile.id;
-            // When kid mode is off there's no cap to show — default the picker to
+            // When kid mode is off there's no cap to show - default the picker to
             // PG-13 so turning it on has a sensible starting cap.
             const cap = profile.maturityMax ?? DEFAULT_MATURITY_CAP;
             return (
@@ -3271,7 +3271,7 @@ function AppearanceTab({
   const currentAccent =
     ACCENTS.find((accent) => accent.id === draft.appearanceAccent) ?? ACCENTS[0];
   // Smart preloading is a per-device preference (localStorage), not a synced
-  // AppSettings field — toggled here with local mirror state.
+  // AppSettings field - toggled here with local mirror state.
   const [smartPreload, setSmartPreload] = useState(isSmartPreloadEnabled());
 
   return (
@@ -3569,7 +3569,7 @@ function AppearanceTab({
           <strong>Start on</strong>
           <span className="t-secondary">
             {" "}
-            — the screen the app opens to at launch.
+            - the screen the app opens to at launch.
           </span>
         </span>
         <select
@@ -4031,7 +4031,7 @@ function KeysTab({ draft, patch }: TabProps) {
               />
             </Field>
 
-            {/* OMDB is optional enrichment on top of TMDB — an Advanced extra. */}
+            {/* OMDB is optional enrichment on top of TMDB - an Advanced extra. */}
             <AdvancedOnly>
               <Field label="OMDB API key" hint="Optional IMDb / Rotten Tomatoes enrichment.">
                 <SecretInput
@@ -4084,7 +4084,7 @@ function KeysTab({ draft, patch }: TabProps) {
                 </select>
               </Field>
 
-              {/* The explicit model override is an Advanced dial — Simple mode
+              {/* The explicit model override is an Advanced dial - Simple mode
                   sticks with the recommended provider default. */}
               <AdvancedOnly>
                 <ModelSelectField draft={draft} patch={patch} />

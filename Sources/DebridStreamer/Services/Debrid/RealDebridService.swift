@@ -26,7 +26,7 @@ actor RealDebridService: DebridServiceProtocol {
         guard !hashes.isEmpty else { return [:] }
 
         // RD has disabled /torrents/instantAvailability (error_code 37).
-        // Instead, we return .unknown for all hashes — the resolve flow
+        // Instead, we return .unknown for all hashes - the resolve flow
         // handles both cached and uncached torrents correctly.
         // Cached torrents become "downloaded" almost instantly after addMagnet + selectFiles.
         var results: [String: CacheStatus] = [:]
@@ -80,12 +80,12 @@ actor RealDebridService: DebridServiceProtocol {
 
         // selectFiles returns 204 No Content on success; requestRaw already maps 204
         // to empty Data and returns it, so a successful call never throws. Any non-2xx
-        // status is a real failure and must surface — don't swallow it.
+        // status is a real failure and must surface - don't swallow it.
         _ = try await requestRaw(path: "/torrents/selectFiles/\(torrentId)", method: "POST", body: body)
     }
 
     func getStreamURL(torrentId: String) async throws -> StreamInfo {
-        // Poll for torrent status — cached torrents become "downloaded" almost instantly
+        // Poll for torrent status - cached torrents become "downloaded" almost instantly
         var status = ""
         var json: [String: Any] = [:]
         // Capped backoff between polls (seconds): start tight so cached torrents
@@ -236,7 +236,7 @@ actor RealDebridService: DebridServiceProtocol {
         // resolve. RD returns torrents newest-first, and a just-resolved torrent is
         // among the most recent, so the first page comfortably covers the realistic
         // "is this already here" case. A miss only costs a redundant addMagnet (which
-        // RD dedups server-side), so correctness holds — this is purely an
+        // RD dedups server-side), so correctness holds - this is purely an
         // optimization on the GET payload size.
         let data = try await requestRaw(path: "/torrents?limit=100&page=1", method: "GET")
         guard let torrents = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {

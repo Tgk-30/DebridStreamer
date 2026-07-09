@@ -199,7 +199,7 @@ describe("Discover loaded", () => {
     const { container } = render(<Discover />);
     // A skeleton placeholder (titled, with skel cards) holds Popular's row.
     expect(container.querySelectorAll(".skel-card").length).toBeGreaterThan(0);
-    // It's a skeleton, not the (mocked) Rail — so no rail-title for Popular yet,
+    // It's a skeleton, not the (mocked) Rail - so no rail-title for Popular yet,
     // while a populated category still renders its real rail.
     const railTitles = screen.getAllByTestId("rail-title").map((n) => n.textContent);
     expect(railTitles).not.toContain("Popular Movies");
@@ -239,7 +239,7 @@ describe("Discover loaded", () => {
   it("keeps a movie and a TV title that share a numeric id (dedupe by type+id)", () => {
     const data = fullData();
     data.hero = preview("hero1", { backdropPath: "/h.jpg", type: "movie" });
-    // A TV title with the SAME id as the hero movie — must not be deduped away.
+    // A TV title with the SAME id as the hero movie - must not be deduped away.
     data.trendingTV = [
       preview("hero1", { backdropPath: "/tv.jpg", type: "series" }),
     ];
@@ -269,7 +269,7 @@ describe("Discover loaded", () => {
 
   it("keeps the true chart (incl. hero) in the ranked Top 10 rail", () => {
     const data = fullData();
-    // The hero also tops the trending chart — the Top 10 rail must still show it
+    // The hero also tops the trending chart - the Top 10 rail must still show it
     // as #1 (a real chart), unlike the withoutHero rails.
     data.trendingMovies = [
       preview("hero1", { backdropPath: "/bd.jpg" }),

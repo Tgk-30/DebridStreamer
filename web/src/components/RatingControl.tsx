@@ -1,4 +1,4 @@
-// The numeric rating controls for Detail — 1–10 pips or a 0–100 slider. The
+// The numeric rating controls for Detail - 1–10 pips or a 0–100 slider. The
 // thumbs option lives in the hero; this renders when the user's chosen scale
 // (Settings → Appearance) is "ten" or "hundred". `value` is the user's current
 // saved rating on that scale (null = not rated yet); `onRate` persists a pick.
@@ -139,11 +139,11 @@ function HundredScale({
   // write a taste event per pixel. `dirty` guards against committing an unchanged
   // value (e.g. a Tab keyup or a release with no move) or re-persisting on blur.
   const [draft, setDraft] = useState(value ?? 50);
-  // Whether a drag/keyboard adjust is in progress but not yet committed — drives
+  // Whether a drag/keyboard adjust is in progress but not yet committed - drives
   // the "release to save" affordance so it's clear the value isn't saved mid-drag.
   const [dragging, setDragging] = useState(false);
   const dirty = useRef(false);
-  // Resync when the saved value changes OR clears — falling back to 50 so an
+  // Resync when the saved value changes OR clears - falling back to 50 so an
   // unrated title never shows (or commits) the previous title's slider position.
   useEffect(() => {
     setDraft(value ?? 50);

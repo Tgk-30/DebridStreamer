@@ -168,7 +168,7 @@ describe("StreamPicker", () => {
 
   it("says the search NEVER RAN when the title has no IMDb id (not 'No streams found')", () => {
     // The silent P0: a null imdb id used to fall through to the generic empty
-    // state, reading as an exhaustive search that found nothing — when in truth
+    // state, reading as an exhaustive search that found nothing - when in truth
     // zero requests were made.
     render(
       <StreamPicker
@@ -213,10 +213,10 @@ describe("StreamPicker", () => {
           onPlay={noop}
         />,
       );
-      // NOT the misleading "sources did not return a match" copy — nothing was
+      // NOT the misleading "sources did not return a match" copy - nothing was
       // searched for playback without a debrid service.
       expect(
-        screen.getByText("Almost there — add a debrid service"),
+        screen.getByText("Almost there - add a debrid service"),
       ).toBeInTheDocument();
       expect(screen.queryByText("No streams found")).toBeNull();
       fireEvent.click(screen.getByRole("button", { name: "Run guided setup" }));
@@ -502,7 +502,7 @@ describe("StreamPicker", () => {
     fireEvent.click(chip4k);
     expect(chip4k).toHaveAttribute("aria-pressed", "true");
 
-    // A different title resolves (new rows identity) that also has a 4K option —
+    // A different title resolves (new rows identity) that also has a 4K option - 
     // the old 4K chip must NOT carry over and silently pre-filter it.
     const rowsB = [
       makeRow({ hash: "C", title: "Title B 2160p x265", cachedOn: null }),

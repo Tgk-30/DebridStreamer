@@ -2,7 +2,7 @@ fn main() {
     // libmpv2-sys emits `cargo:rustc-link-lib=mpv` but no search path, so the
     // linker can't find libmpv on its own. Point it at the system/Homebrew mpv
     // (dev) or the CI-fetched copy. At runtime the bundled dylib is used instead
-    // (see render_player.rs / Stage 4 packaging) — this is link-time only.
+    // (see render_player.rs / Stage 4 packaging) - this is link-time only.
     #[cfg(target_os = "macos")]
     {
         emit_mpv_link_search();
@@ -44,7 +44,7 @@ fn main() {
     }
 
     // Linux: `libmpv-dev` puts libmpv.so on the default linker path (usually
-    // /usr/lib/<triple>), so `-lmpv` resolves without help — but pin the exact
+    // /usr/lib/<triple>), so `-lmpv` resolves without help - but pin the exact
     // libdir via pkg-config when available so an out-of-tree mpv (e.g. a PPA or a
     // bundled tree pointed at by MPV_LIB_DIR) is found too.
     #[cfg(target_os = "linux")]

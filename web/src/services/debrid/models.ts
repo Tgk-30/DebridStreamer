@@ -225,7 +225,7 @@ export interface StreamInfo {
    * the direct `download` URL; it's the key for the `/streaming/transcode/{id}`
    * and `/streaming/mediaInfos/{id}` endpoints, which let the app transcode an
    * MKV/HEVC source to in-webview-playable HLS. Optional and only set by
-   * RealDebridService — other services leave it undefined. */
+   * RealDebridService - other services leave it undefined. */
   restrictedId?: string;
 }
 
@@ -343,7 +343,7 @@ export const DebridServiceType = {
 // MARK: - DebridConfig (mirror DebridConfig.swift)
 
 /** User's debrid service configuration. Mirrors Swift `DebridConfig` (the value
- * fields — the GRDB persistence plumbing is not ported here). */
+ * fields - the GRDB persistence plumbing is not ported here). */
 export interface DebridConfig {
   id: string;
   service: DebridServiceType;
@@ -386,7 +386,7 @@ export interface DebridAccountInfo {
 /** One torrent/transfer in a user's debrid account, as surfaced by the Debrid
  * Library manager. Normalized across services (Real-Debrid `/torrents`,
  * AllDebrid `/magnet/status`, etc.) into a single display shape. Not present in
- * the Swift app (which has no library-manager screen) — a web-only addition. */
+ * the Swift app (which has no library-manager screen) - a web-only addition. */
 export interface DebridTorrent {
   /** Service-native id used for delete (`/torrents/delete/{id}`, etc.). */
   id: string;
@@ -547,7 +547,7 @@ function normalizedName(candidate: DebridFileCandidate): string {
       return fromLink;
     }
   } catch {
-    // Not an absolute URL — fall through, mirroring a nil URL(string:).
+    // Not an absolute URL - fall through, mirroring a nil URL(string:).
   }
 
   return trimmed.length === 0 ? candidate.link : trimmed;
@@ -602,7 +602,7 @@ export interface EpisodeFileHint {
 }
 
 /** Extract an exact episode tag (S02E05 / S2 E5 / 2x05 …) from UPPERCASED
- * text. These two regexes are THE canonical patterns — classifyRowForEpisode
+ * text. These two regexes are THE canonical patterns - classifyRowForEpisode
  * in data/streams.ts consumes this same function for its exact-match branch,
  * so release ranking and pack file-picking can never diverge. */
 export function matchEpisodeTag(
@@ -613,7 +613,7 @@ export function matchEpisodeTag(
     return { season: parseInt(se[1], 10), episode: parseInt(se[2], 10) };
   }
   // NxNN format. The negative lookahead blocks the ubiquitous audio+codec
-  // adjacency in release names — "DD5.1.x264" uppercases to "1X264", which
+  // adjacency in release names - "DD5.1.x264" uppercases to "1X264", which
   // would otherwise parse as season 1 episode 264 and get right-season packs
   // dropped as mismatches. A genuine episode 264 of a season is expressed as
   // SxxExxx by every real indexer, so nothing of value is lost.
@@ -643,7 +643,7 @@ export function fileMatchesEpisode(
  *
  * With an episode hint (season packs), the ranking runs over the files whose
  * names carry that exact episode tag; when nothing matches (single-file
- * torrents, odd naming), it falls back to the full set — today's behavior. */
+ * torrents, odd naming), it falls back to the full set - today's behavior. */
 export const DebridFileSelector = {
   selectBest(
     candidates: DebridFileCandidate[],

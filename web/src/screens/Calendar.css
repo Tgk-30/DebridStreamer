@@ -1,4 +1,4 @@
-/* Calendar agenda — grouped upcoming-episode rows. */
+/* Calendar agenda - grouped upcoming-episode rows. */
 
 .cal-groups {
   display: flex;
@@ -165,7 +165,7 @@
   border-radius: var(--r-md);
 }
 
-/* Group heading placeholder — sized like .cal-group-label's line. */
+/* Group heading placeholder - sized like .cal-group-label's line. */
 .cal-skel-label {
   width: 96px;
   height: 13px;

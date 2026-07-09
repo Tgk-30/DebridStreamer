@@ -2,13 +2,13 @@
 // Build-time embedded-secrets generator (the "friends" self-host tier).
 //
 // Encrypts the provider keys you want baked into a friends build (omdb / tmdb /
-// real_debrid / all_debrid / premiumize / torbox — whichever you provide) into
+// real_debrid / all_debrid / premiumize / torbox - whichever you provide) into
 // server/embedded-secrets.json using AES-256-GCM with an scrypt-derived key. The
 // PLAINTEXT keys are read from env and never written to disk or printed. The
 // runtime (server/src/embeddedSecrets.ts) decrypts the blob in memory using the
 // SAME passphrase.
 //
-// Usage (friends build — strong: a real passphrase, ideally delivered to the
+// Usage (friends build - strong: a real passphrase, ideally delivered to the
 // friend's server at runtime, not baked into the image):
 //   DS_BUILD_PROFILE=friends \
 //   DS_EMBED_PASSPHRASE='a-strong-passphrase-you-keep' \
@@ -18,7 +18,7 @@
 //
 // Without DS_EMBED_PASSPHRASE the script refuses to bake keys unless you opt into
 // the weak baked-default passphrase with DS_EMBED_ALLOW_DEFAULT_PASSPHRASE=1
-// (best-effort obfuscation only — see docs/KEYS.md). `public`/`family` profiles
+// (best-effort obfuscation only - see docs/KEYS.md). `public`/`family` profiles
 // embed nothing.
 
 import { createCipheriv, randomBytes, scryptSync } from "node:crypto";
@@ -74,10 +74,10 @@ const allowDefault = process.env.DS_EMBED_ALLOW_DEFAULT_PASSPHRASE === "1";
 if ((envPass == null || envPass.length === 0) && !allowDefault) {
   console.error(
     "embed_secrets: refusing to bake keys without DS_EMBED_PASSPHRASE.\n" +
-      "  Set a strong DS_EMBED_PASSPHRASE (recommended — and supply it to the\n" +
+      "  Set a strong DS_EMBED_PASSPHRASE (recommended - and supply it to the\n" +
       "  friend's server at runtime, not baked into the image), or explicitly\n" +
       "  opt into the weak baked-default passphrase with\n" +
-      "  DS_EMBED_ALLOW_DEFAULT_PASSPHRASE=1 (best-effort only — see docs/KEYS.md).",
+      "  DS_EMBED_ALLOW_DEFAULT_PASSPHRASE=1 (best-effort only - see docs/KEYS.md).",
   );
   process.exit(1);
 }
@@ -108,7 +108,7 @@ console.log(
 );
 if (usingDefault) {
   console.warn(
-    "embed_secrets: WARNING — baked DEFAULT passphrase. Best-effort obfuscation only; the shipped files alone decrypt this. Set DS_EMBED_PASSPHRASE for real protection. See docs/KEYS.md.",
+    "embed_secrets: WARNING - baked DEFAULT passphrase. Best-effort obfuscation only; the shipped files alone decrypt this. Set DS_EMBED_PASSPHRASE for real protection. See docs/KEYS.md.",
   );
 } else {
   console.log(

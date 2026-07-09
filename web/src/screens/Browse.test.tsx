@@ -130,7 +130,7 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-describe("Browse — gating", () => {
+describe("Browse - gating", () => {
   it("renders nothing when there is no browse context", () => {
     mockBrowseContext = null;
     const { container } = render(<Browse />);
@@ -138,7 +138,7 @@ describe("Browse — gating", () => {
   });
 });
 
-describe("Browse — header + results", () => {
+describe("Browse - header + results", () => {
   beforeEach(() => {
     mockBrowseContext = { kind: "category", type: "movie", category: "popular" };
   });
@@ -179,7 +179,7 @@ describe("Browse — header + results", () => {
   });
 });
 
-describe("Browse — loading / empty", () => {
+describe("Browse - loading / empty", () => {
   beforeEach(() => {
     mockBrowseContext = { kind: "category", type: "movie", category: "popular" };
   });
@@ -199,7 +199,7 @@ describe("Browse — loading / empty", () => {
   });
 });
 
-describe("Browse — load more", () => {
+describe("Browse - load more", () => {
   beforeEach(() => {
     mockBrowseContext = { kind: "category", type: "movie", category: "popular" };
   });
@@ -235,7 +235,7 @@ describe("Browse — load more", () => {
   });
 });
 
-describe("Browse — fixture genre note", () => {
+describe("Browse - fixture genre note", () => {
   it("shows the no-key note for a fixtures-sourced genre browse", () => {
     mockBrowseContext = {
       kind: "genre",
@@ -265,7 +265,7 @@ describe("Browse — fixture genre note", () => {
   });
 });
 
-describe("Browse — filters button + slideover", () => {
+describe("Browse - filters button + slideover", () => {
   beforeEach(() => {
     mockBrowseContext = { kind: "category", type: "movie", category: "popular" };
   });
@@ -280,7 +280,7 @@ describe("Browse — filters button + slideover", () => {
   });
 });
 
-describe("Browse — active filter chips", () => {
+describe("Browse - active filter chips", () => {
   const discoverCtx: BrowseContext = {
     kind: "discover",
     type: "movie",

@@ -389,7 +389,7 @@ describe("TMDBService getRecommendations", () => {
 // MARK: - TTL response cache (TMDBServiceResponseCacheTests)
 
 describe("TMDBService TTL response cache", () => {
-  it("getCast memoizes within TTL — second read served from cache, no extra network hit", async () => {
+  it("getCast memoizes within TTL - second read served from cache, no extra network hit", async () => {
     // First hit returns valid credits; any subsequent hit returns a 500 that
     // would throw if a second network read actually occurred.
     const mock = makeMockFetch(() =>
@@ -407,7 +407,7 @@ describe("TMDBService TTL response cache", () => {
     expect(second[0].name).toBe("Edward Norton");
   });
 
-  it("getRecommendations memoizes within TTL — cached value persists when stub later errors", async () => {
+  it("getRecommendations memoizes within TTL - cached value persists when stub later errors", async () => {
     const mock = makeMockFetch(() =>
       mock.hits() === 1 ? ok(recommendationsBody) : serverError("{}"),
     );
@@ -423,7 +423,7 @@ describe("TMDBService TTL response cache", () => {
     expect(second[0].title).toBe("Se7en");
   });
 
-  it("is keyed per request — distinct tmdbIds each hit the network", async () => {
+  it("is keyed per request - distinct tmdbIds each hit the network", async () => {
     const mock = makeMockFetch(() => ok(JSON.stringify({ id: 0, cast: [] })));
     const service = new TMDBService("tmdb-key", mock.fetchImpl);
 
@@ -598,7 +598,7 @@ describe("TMDBService HTTP error mapping", () => {
     await expect(service.getCast(1, "movie")).rejects.toThrow();
   });
 
-  it("does not cache a failed read — a later success is fetched and served", async () => {
+  it("does not cache a failed read - a later success is fetched and served", async () => {
     // First call 500s (not cached), second call returns valid genres.
     const genresBody = JSON.stringify({ genres: [{ id: 1, name: "Action" }] });
     const mock = makeMockFetch(() =>

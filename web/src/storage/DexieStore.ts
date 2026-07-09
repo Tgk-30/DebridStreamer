@@ -1,4 +1,4 @@
-// DexieStore — the IndexedDB-backed implementation of `Store` + `SecretStore`.
+// DexieStore - the IndexedDB-backed implementation of `Store` + `SecretStore`.
 //
 // IndexedDB works in BOTH a plain browser AND the Tauri webview, so a single
 // implementation covers web and desktop with no Rust/SQLite plugin. Dexie gives
@@ -104,7 +104,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     });
 
     // v3: adds the local AI usage ledger (one row per AI call, indexed by
-    // createdAt for recency ordering). Local-only — the "Would I Like This?"
+    // createdAt for recency ordering). Local-only - the "Would I Like This?"
     // analysis writes a record here on each call so a running cost estimate can
     // be shown. Dexie carries the prior stores forward; only the new one is here.
     this.version(3).stores({
@@ -183,7 +183,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     const episodeId = entry.episodeId ?? null;
     const id = historyKey(entry.mediaId, episodeId);
     // `put` REPLACES the row, so a progress-only write must not wipe the
-    // remembered player prefs — carry the existing values forward when omitted.
+    // remembered player prefs - carry the existing values forward when omitted.
     const prev = await this.watchHistory.get(id);
     // Upsert by the derived key → exactly one row per (mediaId, episodeId),
     // newest wins (put replaces). Mirrors WatchHistory.save in GRDB.
@@ -225,7 +225,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async continueWatching(limit = 20): Promise<WatchHistoryRecord[]> {
-    // Rows with a real resume point, newest first — mirrors fetchRecentWatchHistory.
+    // Rows with a real resume point, newest first - mirrors fetchRecentWatchHistory.
     // Filter to resumable BEFORE slicing: zero-progress "viewed" rows (written
     // when a Detail opens) would otherwise fill the limit and crowd genuinely
     // resumable titles out of Continue Watching.
@@ -329,7 +329,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     const rows = listType
       ? await this.folders.where("listType").equals(listType).toArray()
       : await this.folders.toArray();
-    // System folders first, then by name — mirrors fetchAllLibraryFolders.
+    // System folders first, then by name - mirrors fetchAllLibraryFolders.
     return rows.sort((a, b) => {
       if (a.isSystem !== b.isSystem) return a.isSystem ? -1 : 1;
       return a.name.localeCompare(b.name);
@@ -359,7 +359,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
       }
     }
     // Re-parent child folders to the root (parentId: null) rather than leaving
-    // dangling parentId references — mirrors the server's ON DELETE SET NULL so
+    // dangling parentId references - mirrors the server's ON DELETE SET NULL so
     // a subtree stays reachable after its parent is deleted.
     const children = await this.folders.where("parentId").equals(id).toArray();
     for (const child of children) {
@@ -385,7 +385,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
         });
       }
     }
-    // Behavior folders under the favorites (Library) root — Watched / Release Wait.
+    // Behavior folders under the favorites (Library) root - Watched / Release Wait.
     const libraryRoot = systemFolderID("favorites");
     const behaviors: { id: string; name: string; kind: FolderKind }[] = [
       { id: "system-favorites-watched", name: "Watched", kind: "watched" },

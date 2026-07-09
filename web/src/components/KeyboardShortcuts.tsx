@@ -1,4 +1,4 @@
-// KeyboardShortcuts — an app-wide reference of every keyboard shortcut, opened
+// KeyboardShortcuts - an app-wide reference of every keyboard shortcut, opened
 // from the ⌘K command palette ("Keyboard shortcuts"). Complements the player's
 // in-context "?" overlay by gathering the global + palette + player keys in one
 // place. Pure reference: no state beyond the modal's own dismissal.

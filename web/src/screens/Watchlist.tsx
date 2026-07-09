@@ -1,4 +1,4 @@
-// Watchlist screen — backed by the storage port (Dexie/IndexedDB).
+// Watchlist screen - backed by the storage port (Dexie/IndexedDB).
 //
 // Shows the saved titles as a MediaCard grid that opens Detail; each card can be
 // removed from the watchlist. Persistence is the durable Store (works in browser

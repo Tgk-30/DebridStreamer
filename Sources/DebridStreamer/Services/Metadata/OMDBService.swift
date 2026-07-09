@@ -3,7 +3,7 @@ import Foundation
 /// Aggregated ratings parsed from an OMDB lookup (B1).
 ///
 /// Every field is optional and defensively `nil` when OMDB returns "N/A" or an
-/// unparseable value — callers can surface whatever is present without crashing.
+/// unparseable value - callers can surface whatever is present without crashing.
 struct OMDBRatings: Sendable, Equatable {
     var imdbRating: Double?
     var rtPercent: Int?

@@ -297,7 +297,7 @@ describe("Detail base render", () => {
     mockDetailItem = preview("s1", { type: "series", title: "The Series", tmdbId: 200 });
     mockDetail = detailState({ item: mediaItem({ type: "series", id: "s1", tmdbId: 200 }) });
     render(<Detail />);
-    // For a series the picker is NOT inline — it lives on its own page.
+    // For a series the picker is NOT inline - it lives on its own page.
     expect(screen.queryByTestId("streampicker")).not.toBeInTheDocument();
     // Picking an episode opens the dedicated streams page.
     await userEvent.click(screen.getByTestId("pick-episode"));

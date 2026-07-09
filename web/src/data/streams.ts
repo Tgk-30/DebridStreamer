@@ -47,7 +47,7 @@ export interface StreamsState {
   /** Whether any debrid service is configured (drives the cache badges). */
   hasDebrid: boolean;
   /** True when the title has NO imdb id, so no search could run at all. The UI
-   * must say so — rendering the generic "No streams found" here was the silent
+   * must say so - rendering the generic "No streams found" here was the silent
    * P0 ("streams are not being found"): zero requests were ever made. */
   missingImdbId: boolean;
   /** Per-source failures from the last search. Empty ⇒ every source answered.
@@ -75,7 +75,7 @@ export const DATA_SAVER_MAX_SIZE_GB = 5;
 
 /** Effective stream caps for a profile, applying the master Data Saver clamp.
  *
- * Data Saver only ever TIGHTENS (a `min` over quality + size) — it never loosens
+ * Data Saver only ever TIGHTENS (a `min` over quality + size) - it never loosens
  * a stricter explicit cap, so a user who already set 480p / 2 GB keeps those. The
  * cached-only constraint is left to its own explicit toggle. Off → the raw three
  * fields, so existing behavior is unchanged when Data Saver is off. */
@@ -128,8 +128,8 @@ export function filterStreamRows(rows: StreamRow[], settings: AppSettings): Stre
 
 /** Collapse cross-indexer duplicates: the SAME torrent (infoHash) is often
  * returned by several indexers, swamping the stream list with identical entries.
- * Keep one row per infoHash — the most useful variant (prefer a cached copy,
- * then more seeders) — preserving each release's first-seen slot. Pure +
+ * Keep one row per infoHash - the most useful variant (prefer a cached copy,
+ * then more seeders) - preserving each release's first-seen slot. Pure +
  * automatic (no information is lost: it's the same torrent). */
 export function dedupeStreamRows(rows: StreamRow[]): StreamRow[] {
   const byHash = new Map<string, StreamRow>();
@@ -168,7 +168,7 @@ export type EpisodeMatch = "exact" | "pack" | "unknown" | "mismatch";
  *   otherwise mismatch.
  * - Season-only tags (`S02`, `SEASON 2`) → a season pack: right season keeps
  *   it as "pack", wrong season is a mismatch. A bare `COMPLETE` is a pack too.
- * - No recognizable tag → "unknown" (kept — some indexers strip tags).
+ * - No recognizable tag → "unknown" (kept - some indexers strip tags).
  */
 export function classifyRowForEpisode(
   row: StreamRow,
@@ -220,7 +220,7 @@ async function resolveStreams(
   debrid: DebridManager | null,
 ): Promise<StreamRow[]> {
   // Two complementary passes, merged: the imdb-based search (YTS/EZTV are
-  // imdb-native) AND a title-based query — APIBay and other name-matching
+  // imdb-native) AND a title-based query - APIBay and other name-matching
   // indexers return nothing for a bare imdb id, so without this they never
   // contribute and a single dead imdb indexer (e.g. EZTV) empties every series.
   const query =
@@ -231,7 +231,7 @@ async function resolveStreams(
     // searchAll errors still surface (state.error); IndexerManager already
     // absorbs per-indexer failures internally, so a throw here is catastrophic.
     indexers.searchAll(imdbId, type, season, episode),
-    // The title pass is best-effort — a failure there must NOT empty the imdb
+    // The title pass is best-effort - a failure there must NOT empty the imdb
     // results, so it degrades to an empty set.
     query != null
       ? indexers.searchByQuery(query, type).catch(() => [] as TorrentResult[])
@@ -302,7 +302,7 @@ export function useStreams(
   const run = useCallback(
     async (signal: { cancelled: boolean }) => {
       if (imdbId == null || !hasIndexers) {
-        // HONEST idle: a null imdb id means NO search ever ran — say so instead
+        // HONEST idle: a null imdb id means NO search ever ran - say so instead
         // of letting the UI render the generic "No streams found".
         setState({
           ...EMPTY,
@@ -352,12 +352,12 @@ export function useStreams(
           indexers.activeIndexers.length > 0 &&
           sourceErrors.length >= indexers.activeIndexers.length
         ) {
-          // EVERY source failed — that's an outage, not "no results". Surface a
+          // EVERY source failed - that's an outage, not "no results". Surface a
           // real error instead of the misleading empty state (silent P0).
           const detail = sourceErrors
             .map((e) => `${e.indexer}: ${e.error}`)
             .join(" · ");
-          throw new Error(`Couldn't reach any source — ${detail}`);
+          throw new Error(`Couldn't reach any source - ${detail}`);
         }
         if (!signal.cancelled) {
           setState({

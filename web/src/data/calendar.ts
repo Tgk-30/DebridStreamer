@@ -1,4 +1,4 @@
-// Calendar data layer — upcoming episode air dates for the user's TV series.
+// Calendar data layer - upcoming episode air dates for the user's TV series.
 //
 // Gathers every TV series across the Library (favorites) + Watchlist from the
 // Store, then concurrently resolves each series' upcoming/unaired episodes via
@@ -20,7 +20,7 @@ import { isServerMode } from "../lib/serverMode";
 
 /** A date-keyed group of upcoming episodes. */
 export interface CalendarGroup {
-  /** One of "today" | "week" | "later" — drives the section heading. */
+  /** One of "today" | "week" | "later" - drives the section heading. */
   bucket: "today" | "week" | "later";
   label: string;
   episodes: UpcomingEpisode[];
@@ -75,7 +75,7 @@ export function groupEpisodes(
   const laterEps: UpcomingEpisode[] = [];
   for (const ep of episodes) {
     // Defensive lower bound: a stale/past air date (already aired) is not
-    // "upcoming" — drop it rather than mis-bucketing it as "This week". ISO
+    // "upcoming" - drop it rather than mis-bucketing it as "This week". ISO
     // YYYY-MM-DD strings compare lexicographically.
     if (ep.airDate < today) continue;
     if (ep.airDate === today) todayEps.push(ep);

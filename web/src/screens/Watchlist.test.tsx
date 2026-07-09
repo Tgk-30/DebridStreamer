@@ -84,7 +84,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("Watchlist — empty", () => {
+describe("Watchlist - empty", () => {
   it("renders the empty-state with Browse + Search CTAs", async () => {
     render(<Watchlist />);
     expect(screen.getByText("Your watchlist is empty")).toBeInTheDocument();
@@ -107,7 +107,7 @@ describe("Watchlist — empty", () => {
   });
 });
 
-describe("Watchlist — populated", () => {
+describe("Watchlist - populated", () => {
   it("renders a card per item and opens detail on select", async () => {
     mockWatchlist = [preview("m1", "Tenet"), preview("m2", "Dune")];
     render(<Watchlist />);

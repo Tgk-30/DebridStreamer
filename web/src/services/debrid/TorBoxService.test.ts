@@ -1,4 +1,4 @@
-// Tests for TorBoxService — the fetchImpl-injection mock pattern mirrors
+// Tests for TorBoxService - the fetchImpl-injection mock pattern mirrors
 // AllDebridService.test.ts. The TorBox client uses a Bearer-only auth header,
 // the /torrents/checkcached cache check (hash-keyed object response, chunked at
 // 100), /torrents/createtorrent add, the /torrents/mylist snapshot + best-file
@@ -115,7 +115,7 @@ describe("TorBoxService checkCache", () => {
   it("leaves the chunk's results unwritten when data is [] (asObject returns null)", async () => {
     // TorBox can return `data: []` (an array) when nothing is cached. asObject
     // returns null for an array, so the inner loop never runs and no keys are
-    // written for that chunk — the returned map is empty.
+    // written for that chunk - the returned map is empty.
     const mock = makeMockFetch(() => ok(JSON.stringify({ data: [] })));
     const service = new TorBoxService("tb-token", mock.fetchImpl);
     const result = await service.checkCache(["aaa", "bbb"]);

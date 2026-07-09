@@ -3,14 +3,14 @@
 // These back the two-pass stream search (an imdb-native pass + a title/name
 // pass) in BOTH Local Mode (web/src/data/streams.ts) and Server Mode
 // (server/src/media-runtime.js). They live in one module, imported by both, so
-// the two modes can never drift into showing different lists — the same class
+// the two modes can never drift into showing different lists - the same class
 // of bug the Data Saver clamp comment warns about. Nothing here touches React
 // or the DOM, so the server bundles it cleanly.
 
 import { VideoQuality, type TorrentResult } from "../services/indexers/models";
 
 /** The human-title query for the NAME-matching indexers (APIBay etc.). They
- * search torrent titles, so an imdb id returns nothing there — an episode needs
+ * search torrent titles, so an imdb id returns nothing there - an episode needs
  * the `Title SxxEyy` form and a movie just the title. */
 export function buildTitleQuery(
   title: string,
@@ -28,7 +28,7 @@ export function buildTitleQuery(
 /** Lowercase, fold the "&"/"and" connector, strip everything non-alphanumeric to
  * spaces, collapse. The "&" → "and" fold (applied to BOTH the title and the
  * release name) keeps the contiguous-phrase match in filterResultsByTitle from
- * dropping a valid release that spells the connector out — e.g. title
+ * dropping a valid release that spells the connector out - e.g. title
  * "Dungeons & Dragons" vs release "Dungeons.and.Dragons…", or "Tom & Jerry" vs
  * "Tom.and.Jerry…". */
 export function normalizeForMatch(s: string): string {
@@ -43,7 +43,7 @@ export function normalizeForMatch(s: string): string {
 /** Keep only title-pass results whose release name contains the requested title
  * as a CONTIGUOUS whole-word phrase. The name-matching indexers (APIBay) do a
  * loose substring search, so requiring only that each title word appear somewhere
- * lets a different show leak in — e.g. "The Bear" would match
+ * lets a different show leak in - e.g. "The Bear" would match
  * "The Adventures of Paddington Bear" because both "the" and "bear" are present.
  * Requiring the whole normalized title (" the bear ") as an adjacent run of whole
  * words rejects those cross-show matches while still tolerating the release's

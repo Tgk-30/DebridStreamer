@@ -37,7 +37,7 @@ vi.mock("../lib/tauri", () => ({
 
 vi.mock("../data/debridLibrary", () => ({
   useDebridLibrary: () => ({ state: mockState, reload }),
-  formatSize: (bytes: number) => (bytes <= 0 ? "—" : `${bytes}B`),
+  formatSize: (bytes: number) => (bytes <= 0 ? " - " : `${bytes}B`),
 }));
 
 // The lazy dialog: a simple stub that exposes Close / Imported so we can verify
@@ -107,7 +107,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("DebridLibrary — gated states", () => {
+describe("DebridLibrary - gated states", () => {
   it("shows the desktop-only state when not running under Tauri", () => {
     mockTauri = false;
     render(<DebridLibrary />);
@@ -133,7 +133,7 @@ describe("DebridLibrary — gated states", () => {
   });
 });
 
-describe("DebridLibrary — loading / empty / error", () => {
+describe("DebridLibrary - loading / empty / error", () => {
   it("renders a busy skeleton table while loading", () => {
     mockState = baseState({ loading: true });
     render(<DebridLibrary />);
@@ -163,7 +163,7 @@ describe("DebridLibrary — loading / empty / error", () => {
   });
 });
 
-describe("DebridLibrary — table render + filters", () => {
+describe("DebridLibrary - table render + filters", () => {
   function rowsState(): DebridLibraryState {
     return baseState({
       rows: [
@@ -221,7 +221,7 @@ describe("DebridLibrary — table render + filters", () => {
   });
 });
 
-describe("DebridLibrary — select-all + delete", () => {
+describe("DebridLibrary - select-all + delete", () => {
   function twoRows(): DebridLibraryState {
     return baseState({
       rows: [
@@ -298,7 +298,7 @@ describe("DebridLibrary — select-all + delete", () => {
   });
 });
 
-describe("DebridLibrary — header actions + dialog", () => {
+describe("DebridLibrary - header actions + dialog", () => {
   it("the header Refresh button calls reload", async () => {
     mockState = baseState({
       rows: [makeRow({ id: "1", name: "Alpha" })],

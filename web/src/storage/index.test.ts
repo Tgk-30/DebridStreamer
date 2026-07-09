@@ -1,4 +1,4 @@
-// storage/index — getStore() / getSecretStore() backend selection.
+// storage/index - getStore() / getSecretStore() backend selection.
 //
 // index.ts holds process-wide singletons, so each test resets the module
 // registry (vi.resetModules) and re-imports a fresh copy after configuring the
@@ -102,7 +102,7 @@ describe("getSecretStore()", () => {
     serverURL = "http://srv";
     const mod = await freshIndex();
     const secret = mod.getSecretStore() as unknown as { kind: string };
-    // Same instance as the store — RemoteStore implements both interfaces.
+    // Same instance as the store - RemoteStore implements both interfaces.
     expect(secret).toBe(mod.getStore());
     expect(secret.kind).toBe("remote");
   });

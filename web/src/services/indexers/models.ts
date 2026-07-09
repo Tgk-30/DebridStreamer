@@ -225,7 +225,7 @@ export const SourceType = {
  * (the Swift type is `Int64`; torrent sizes fit comfortably in a double).
  */
 export interface TorrentResult {
-  /** Equals `infoHash` — mirrors the Swift `id` computed property. */
+  /** Equals `infoHash` - mirrors the Swift `id` computed property. */
   readonly id: string;
   infoHash: string;
   title: string;
@@ -248,7 +248,7 @@ export interface TorrentResult {
 export const TorrentResult = {
   /**
    * Build a TorrentResult, parsing quality/codec/audio/source from the title.
-   * Mirrors `TorrentResult.fromSearch` — note infoHash is lowercased here.
+   * Mirrors `TorrentResult.fromSearch` - note infoHash is lowercased here.
    */
   fromSearch(args: {
     infoHash: string;

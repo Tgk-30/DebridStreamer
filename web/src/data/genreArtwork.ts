@@ -1,7 +1,7 @@
 // Live artwork for the "Browse categories" tiles. For each genre/category tile
 // it pulls several of the most popular titles' 16:9 backdrops from TMDB and
 // caches them, so a tile shows a real, representative still behind its gradient
-// scrim — and the grid rotates gently through them so the tiles refresh over
+// scrim - and the grid rotates gently through them so the tiles refresh over
 // time. Purely decorative: if TMDB isn't configured or a lookup fails, the tile
 // falls back to the gradient and nothing breaks.
 
@@ -13,7 +13,7 @@ import { catalogTilesFor, tileGenreId, type GenreCatalogTile } from "./genreCata
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 // Cache entries live 30 min, so artwork refreshes within a long session (and a
-// cached null — a genre with no usable backdrop — stops blocking a later retry).
+// cached null - a genre with no usable backdrop - stops blocking a later retry).
 const ARTWORK_TTL_MS = 30 * 60 * 1000;
 // Cap parallel TMDB lookups so opening Search doesn't fire ~15 requests at once
 // (which can trip the free-tier rate limit and blank every tile).
@@ -134,7 +134,7 @@ async function runPool<T>(
 }
 
 /** Backdrop URL lists for every tile of a media type, keyed by tile id. Missing
- * keys (or empty lists) mean "no artwork — use the gradient". Fetches lazily and
+ * keys (or empty lists) mean "no artwork - use the gradient". Fetches lazily and
  * fills in as results arrive. The map is type-scoped: after a movie↔series
  * switch it returns empty until this type's artwork resolves, so a shared genre
  * id (e.g. "action") never briefly shows the other type's backdrop. */

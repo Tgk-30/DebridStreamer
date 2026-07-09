@@ -1,7 +1,7 @@
 [package]
 name = "debridstreamer"
 version = "0.5.0"
-description = "DebridStreamer — debrid streaming desktop app"
+description = "DebridStreamer - debrid streaming desktop app"
 authors = ["tgk30"]
 edition = "2021"
 
@@ -49,7 +49,7 @@ getrandom = "0.2"
 tauri-plugin-updater = "2"
 
 # OS-keychain backend for the SecretStore commands (src/keychain.rs).
-# keyring v3 ships NO default credential store — each platform MUST enable its
+# keyring v3 ships NO default credential store - each platform MUST enable its
 # own backend feature or it silently falls back to an in-memory mock (secrets
 # would not persist). Target-gated so each OS pulls only its own backend and a
 # bad feature combo can't break another platform's release build.
@@ -61,16 +61,16 @@ keyring = { version = "3", features = ["apple-native"] }
 libmpv2 = "5"
 # Raw mpv FFI for the event loop: libmpv2's safe wait_event panics (unreachable!)
 # on MPV_FORMAT_NONE property changes (a property becoming unavailable), which is
-# routine — so we pull events via libmpv2-sys and handle NONE ourselves.
+# routine - so we pull events via libmpv2-sys and handle NONE ourselves.
 libmpv2-sys = "4"
 libc = "0.2"
-# Grand Central Dispatch — hop AppKit setup onto the main thread reliably
+# Grand Central Dispatch - hop AppKit setup onto the main thread reliably
 # (Tauri's run_on_main_thread proxy doesn't drain while the loop is idle).
 dispatch2 = "0.3"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
-# CAOpenGLLayer (layer-backed GL surface — survives window occlusion/activation,
+# CAOpenGLLayer (layer-backed GL surface - survives window occlusion/activation,
 # unlike a bare NSOpenGLContext+NSView) needs the GL/CV/CF interop features.
 objc2-quartz-core = { version = "0.3", features = [
     "CAOpenGLLayer",
@@ -88,7 +88,7 @@ keyring = { version = "3", features = ["windows-native"] }
 # core links libmpv; the Windows surface hands mpv the window's HWND (read via
 # raw-window-handle) as `wid` and mpv renders natively (vo=gpu-next + d3d11).
 # libmpv-2.dll is delay-loaded (build.rs) and LoadLibrary'd from resources/lib at
-# startup (lib.rs preload_bundled_libmpv) — see windows-sys below.
+# startup (lib.rs preload_bundled_libmpv) - see windows-sys below.
 libmpv2 = "5"
 libmpv2-sys = "4"
 libc = "0.2"
@@ -100,7 +100,7 @@ windows-sys = { version = "0.59", features = [
 ] }
 
 # Linux: Secret Service over D-Bus (sync), pure-Rust crypto (no OpenSSL system
-# dep), vendored libdbus (no system build dep) — headless-CI-friendly.
+# dep), vendored libdbus (no system build dep) - headless-CI-friendly.
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"] }
 # In-window mpv wid-embed player (render_player/surface_linux.rs): the shared core

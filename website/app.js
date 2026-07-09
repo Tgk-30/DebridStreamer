@@ -65,7 +65,7 @@ function isInstallerAsset(asset) {
   return !/\.(sig|sha256|sha512|blockmap)$/i.test(asset.name) &&
     !/latest\.json$/i.test(asset.name) &&
     // The headless self-host server package (debridstreamer-server_*.deb) is not
-    // a desktop-app download — keep it out of the platform pickers so a Linux
+    // a desktop-app download - keep it out of the platform pickers so a Linux
     // visitor can't grab the server by mistake. It's fetched from the Ubuntu
     // guide instead.
     !/^debridstreamer-server[_-]/i.test(asset.name);
@@ -103,7 +103,7 @@ function bestAsset(release, platform) {
   return platformAssets(release, platform)[0] ?? null;
 }
 
-// macOS ships PER-ARCH (two DMGs) — an arm64-only build won't launch on an Intel
+// macOS ships PER-ARCH (two DMGs) - an arm64-only build won't launch on an Intel
 // Mac and vice-versa. Resolve each arch's best asset by its Tauri filename
 // (aarch64 vs x64) so the picker can offer both explicitly. Falls back to null
 // when that arch isn't present (e.g. an older single-arch release).
@@ -398,7 +398,7 @@ function initScrubline() {
   update();
 }
 
-/* Scroll reveals — sections rise in on first view. FAILSAFE: the content is
+/* Scroll reveals - sections rise in on first view. FAILSAFE: the content is
    visible by default (no .reveal class = no opacity:0); the class is only added
    when we can also arm an observer to un-hide it, AND a load/timeout backstop
    reveals everything unconditionally, so content can never get stuck hidden. */
@@ -439,7 +439,7 @@ function initReveals() {
   });
 }
 
-/* The hero window leans toward the cursor — fine pointers only, never under
+/* The hero window leans toward the cursor - fine pointers only, never under
    reduced motion. Pure transform, rAF-throttled. */
 function initTilt() {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;

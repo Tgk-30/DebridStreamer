@@ -1002,7 +1002,7 @@ describe("DebridStreamer server", () => {
       payload: { provider: "opensubtitles", value: "os-key", label: "OS" },
     });
 
-    // A real local server serving a GZIPPED SRT — proves undici auto-decompresses
+    // A real local server serving a GZIPPED SRT - proves undici auto-decompresses
     // before .text(), then subsrt-ts parses and cuesToVTT runs under Node.
     const srt = "1\n00:00:01,000 --> 00:00:02,000\nHello world\n";
     upstream = createServer((_req, res) => {
@@ -1054,7 +1054,7 @@ describe("DebridStreamer server", () => {
         return new Response(JSON.stringify({ link: "https://dl.opensubtitles.example/garbage" }), { status: 200 });
       }
       if (u.startsWith("https://dl.opensubtitles.example/")) {
-        return new Response("not a subtitle file — no timestamps here", { status: 200 });
+        return new Response("not a subtitle file - no timestamps here", { status: 200 });
       }
       return originalFetch(url, init);
     }) as typeof fetch;
@@ -1290,7 +1290,7 @@ describe("DebridStreamer server", () => {
     ).toBe(true);
   });
 
-  it("kids maturity: hardened lockdown — admin-only, parental switch lock, fail-closed bound play-block, gated browse", async () => {
+  it("kids maturity: hardened lockdown - admin-only, parental switch lock, fail-closed bound play-block, gated browse", async () => {
     const BOUND_HASH = "c".repeat(40); // the within-cap title's one indexer source
     const owner = await setupOwner(app);
     await request(owner, {
@@ -1309,7 +1309,7 @@ describe("DebridStreamer server", () => {
       await request(owner, { method: "POST", url: "/api/account/profiles", csrf: true, payload: { displayName: "Kiddo" } }),
     ).profile.id;
 
-    // FixF: is_kid and the cap are strictly coupled — neither half-state persists.
+    // FixF: is_kid and the cap are strictly coupled - neither half-state persists.
     expect(
       (await request(owner, { method: "POST", url: `/api/account/profiles/${kid}/maturity`, csrf: true, payload: { isKid: true, maturityMax: null } })).statusCode,
     ).toBe(400);
@@ -1415,7 +1415,7 @@ describe("DebridStreamer server", () => {
       // series (kid browse is movie-only)
       expect((await resolve({ infoHash: BOUND_HASH, mediaId: "tmdb-600", mediaType: "series" })).statusCode).toBe(403);
       // FixC: a within-cap mediaId paired with an UNBOUND (over-cap) infoHash is
-      // refused — the infoHash must be a real source of the certified title.
+      // refused - the infoHash must be a real source of the certified title.
       expect((await resolve({ infoHash: "a".repeat(40), mediaId: "tmdb-600", mediaType: "movie" })).statusCode).toBe(403);
       // Legitimate within-cap play: cert G ✓ AND infoHash is the title's source ✓,
       // so it clears the gate and reaches the debrid check (400, no debrid here).
@@ -2132,7 +2132,7 @@ describe("DebridStreamer server", () => {
       payload: { preview: { id: "tt-default", title: "Default pick" } },
     });
 
-    // Switch to the kid profile — session + active scope follow it.
+    // Switch to the kid profile - session + active scope follow it.
     const switched = json<{ session: { profileId: string }; profiles: ProfileState }>(
       await switchProfile(owner, kidId),
     );
@@ -2156,7 +2156,7 @@ describe("DebridStreamer server", () => {
     );
     expect(kidAfter.items.map((i) => i.mediaId)).toEqual(["tt-kid"]);
 
-    // Switch back to the default — its original item is intact, the kid's is not.
+    // Switch back to the default - its original item is intact, the kid's is not.
     await switchProfile(owner, defaultId);
     const defaultAfter = json<{ items: Array<{ mediaId: string }> }>(
       await request(owner, { method: "GET", url: "/api/library/watchlist" }),

@@ -1,6 +1,6 @@
 // Premium poster card: a 2:3 poster that lifts + scales on hover (spring) and
 // reveals a cinematic info layer (title, year·rating, quick Play/Info) sliding up
-// from a gradient scrim — the "expand-on-hover" feel of Netflix/Apple TV+, done
+// from a gradient scrim - the "expand-on-hover" feel of Netflix/Apple TV+, done
 // in place (no neighbor-overlap clipping). Poster fades in on load with a shimmer
 // placeholder. Motion via `motion`.
 
@@ -14,23 +14,23 @@ import "./MediaCard.css";
 interface MediaCardProps {
   item: MediaPreview;
   onSelect?: (item: MediaPreview) => void;
-  /** Quick-play affordance (optional) — falls back to onSelect. */
+  /** Quick-play affordance (optional) - falls back to onSelect. */
   onPlay?: (item: MediaPreview) => void;
   /** Green "Ready to play" badge (a cached resolution exists). */
   ready?: boolean;
-  /** Resume progress as a fraction 0..1 — renders a bottom "Continue Watching"
+  /** Resume progress as a fraction 0..1 - renders a bottom "Continue Watching"
    * progress bar on the poster. Omit (or 0) to hide it. */
   progress?: number;
   /** Small glass chip in the poster corner (e.g. "S2 E5" on a series' Continue
    * Watching card). Rendered only when present. */
   cornerLabel?: string;
-  /** 1-based rank — renders a large ghosted numeral to the left of the poster
+  /** 1-based rank - renders a large ghosted numeral to the left of the poster
    * (the Apple TV "Top 10" treatment). Omit for an ordinary card. */
   rank?: number;
 }
 
 // Animation objects are hoisted to module scope so they're referentially stable
-// across every card render — motion never re-reconciles them, and they don't add
+// across every card render - motion never re-reconciles them, and they don't add
 // per-render allocation on grids of 100+ cards.
 const SPRING = { type: "spring", stiffness: 380, damping: 30, mass: 0.7 } as const;
 const WHILE_TAP = { scale: 0.98 } as const;
@@ -130,7 +130,7 @@ export const MediaCard = memo(function MediaCard({
           <span className="media-card-corner-label">{cornerLabel}</span>
         )}
 
-        {/* Cinematic reveal layer — fades/slides in on hover. */}
+        {/* Cinematic reveal layer - fades/slides in on hover. */}
         <motion.div
           className="media-card-reveal"
           variants={REVEAL_VARIANTS}

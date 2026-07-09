@@ -13,7 +13,7 @@ interface RailProps {
   /** When provided, render a "See all" affordance in the header that opens the
    * full paginated Browse for this rail's exact category/genre. */
   onSeeAll?: () => void;
-  /** Resume progress (0..1) keyed by item id — renders a Continue Watching
+  /** Resume progress (0..1) keyed by item id - renders a Continue Watching
    * progress bar on the matching cards. */
   progressById?: Record<string | number, number>;
   /** Optional corner label per item id (e.g. "S2 E5" on a series card). */

@@ -37,7 +37,7 @@ export interface MediaPreview {
   posterPath?: string | null;
   imdbRating?: number | null;
   tmdbId?: number | null;
-  /** Optional 16:9 backdrop path — populated for hero/spotlight surfaces. */
+  /** Optional 16:9 backdrop path - populated for hero/spotlight surfaces. */
   backdropPath?: string | null;
 }
 
@@ -118,7 +118,7 @@ export const MediaItem = {
 
 /**
  * A single cast member for a movie or TV show. Mirrors Swift `CastMember`.
- * Display-only — never persisted. `profileURL` is a derived w185 image URL.
+ * Display-only - never persisted. `profileURL` is a derived w185 image URL.
  */
 export interface CastMember {
   id: number;

@@ -128,7 +128,7 @@ describe("Settings shell", () => {
       debridTokens: [{ service: "real_debrid", apiToken: "tok" }],
     };
     renderAt();
-    // Appearance is the default tab — its quick-profile card renders.
+    // Appearance is the default tab - its quick-profile card renders.
     expect(screen.getByText("Quick profile")).toBeInTheDocument();
     // Sources tab chip is present in advanced mode.
     expect(document.querySelector('button[data-tab="sources"]')).not.toBeNull();
@@ -169,7 +169,7 @@ describe("Settings shell", () => {
   it("Experience segmented control flips Local Mode simpleMode through updateSettings", async () => {
     const user = userEvent.setup();
     renderAt();
-    // Currently advanced — click "Simple".
+    // Currently advanced - click "Simple".
     const simpleBtn = screen.getByRole("radio", { name: "Simple" });
     await user.click(simpleBtn);
     expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ simpleMode: true }));
@@ -177,7 +177,7 @@ describe("Settings shell", () => {
 });
 
 // ============================================================================
-// Keys tab — catalog + assistant credentials
+// Keys tab - catalog + assistant credentials
 // ============================================================================
 
 describe("Settings · API keys (catalog)", () => {
@@ -226,7 +226,7 @@ describe("Settings · API keys (catalog)", () => {
 });
 
 // ============================================================================
-// SecretInput behaviour (reveal / copy) — used across Keys/Debrid/Sources
+// SecretInput behaviour (reveal / copy) - used across Keys/Debrid/Sources
 // ============================================================================
 
 describe("Settings · SecretInput", () => {
@@ -271,7 +271,7 @@ describe("Settings · SecretInput", () => {
 });
 
 // ============================================================================
-// Debrid (Providers) tab — token add / edit / clear, priority list
+// Debrid (Providers) tab - token add / edit / clear, priority list
 // ============================================================================
 
 describe("Settings · Providers (debrid)", () => {
@@ -338,7 +338,7 @@ describe("Settings · Providers (debrid)", () => {
 });
 
 // ============================================================================
-// Sources tab — built-in toggle + external indexer CRUD
+// Sources tab - built-in toggle + external indexer CRUD
 // ============================================================================
 
 describe("Settings · Sources", () => {
@@ -477,7 +477,7 @@ describe("Settings · Sources", () => {
 });
 
 // ============================================================================
-// Appearance tab — instant-apply controls call applyAppearance/updateSettings
+// Appearance tab - instant-apply controls call applyAppearance/updateSettings
 // ============================================================================
 
 describe("Settings · Appearance", () => {
@@ -566,7 +566,7 @@ describe("Settings · Appearance", () => {
 });
 
 // ============================================================================
-// Playback tab — non-server caps (advanced-gated) + data saver toggle
+// Playback tab - non-server caps (advanced-gated) + data saver toggle
 // ============================================================================
 
 describe("Settings · Playback (local caps)", () => {

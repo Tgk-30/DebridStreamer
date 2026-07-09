@@ -1,6 +1,6 @@
 // Unit tests for the pure filename/quality parsers and the file selector in the
 // debrid models. These classify untrusted torrent filenames (quality, codec,
-// audio, source) and pick which file to actually stream — core domain logic that
+// audio, source) and pick which file to actually stream - core domain logic that
 // was largely untested.
 
 import { describe, expect, it } from "vitest";
@@ -97,7 +97,7 @@ describe("lastPathComponent", () => {
   it("strips a trailing slash before taking the segment", () => {
     expect(lastPathComponent("/a/b/")).toBe("b");
     // Degenerate root "/" (never a real debrid file path): the trailing-slash
-    // strip is guarded by length>1, so it yields "" — documented, not relied on.
+    // strip is guarded by length>1, so it yields "" - documented, not relied on.
     expect(lastPathComponent("/")).toBe("");
   });
 });
@@ -200,7 +200,7 @@ describe("DebridFileSelector.selectBest with an episode hint", () => {
 
   it("falls back to the default pick when no file matches the hint", () => {
     const best = DebridFileSelector.selectBest(pack, { season: 9, episode: 9 });
-    expect(best?.link).toBe("4"); // largest video — exactly the unhinted behavior
+    expect(best?.link).toBe("4"); // largest video - exactly the unhinted behavior
   });
 
   it("behaves identically to the unhinted call for null hints", () => {
@@ -210,7 +210,7 @@ describe("DebridFileSelector.selectBest with an episode hint", () => {
   });
 });
 
-describe("matchEpisodeTag — codec-adjacency guard", () => {
+describe("matchEpisodeTag - codec-adjacency guard", () => {
   it("does not parse DD5.1.x264 / 7.1.x265 audio+codec strings as episode tags", () => {
     expect(matchEpisodeTag("SHOW.S02.COMPLETE.DD5.1.X264-GROUP")).toBeNull();
     expect(matchEpisodeTag("SHOW.SEASON.2.DDP7.1.X265")).toBeNull();

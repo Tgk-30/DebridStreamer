@@ -25,7 +25,7 @@ export interface SubtitleSearchResult {
   language: string;
   /** Human file/release name for the picker. */
   release: string;
-  /** Download count (popularity) — used to sort. */
+  /** Download count (popularity) - used to sort. */
   downloadCount: number;
   /** Whether the uploader flagged it as hearing-impaired. */
   hearingImpaired: boolean;
@@ -55,7 +55,7 @@ export interface SubtitleClient {
   /** Whether searches can run (a key is configured, here or server-side). */
   readonly hasKey: boolean;
   search(params: SubtitleSearchParams): Promise<SubtitleSearchResult[]>;
-  /** Resolve a file id to raw subtitle text (SRT/VTT — parseSubtitles handles both).
+  /** Resolve a file id to raw subtitle text (SRT/VTT - parseSubtitles handles both).
    *  `imdbId` (the title being watched) lets a Server-Mode client enforce the
    *  maturity cap on the fetched dialogue; the local client ignores it. */
   download(fileId: string, imdbId?: string | null): Promise<string>;
