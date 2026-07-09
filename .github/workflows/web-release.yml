@@ -49,13 +49,16 @@ jobs:
           # macOS is built PER-ARCH on native runners so each bundles its own
           # architecture's libmpv (no lipo across two Homebrew installs). PIN the
           # runners (NOT `macos-latest` = macOS 26, whose SDK/codesign produces
-          # "damaged" bundles): macos-15 = Apple Silicon, macos-13 = Intel.
+          # "damaged" bundles): macos-15 = Apple Silicon, macos-15-intel = Intel
+          # (macos-13 was retired by GitHub in Dec 2025 — it queues forever).
+          # Both runners' Homebrew bottles carry minos 15.0; bundle-mpv-deps.sh's
+          # vtool min-OS rewrite makes the bundles load on macOS 11+.
           - platform: macos-15
             os: macos
             rust_target: aarch64-apple-darwin
             node_runtime: darwin-arm64
             args: "--target aarch64-apple-darwin"
-          - platform: macos-13
+          - platform: macos-15-intel
             os: macos
             rust_target: x86_64-apple-darwin
             node_runtime: darwin-x64
