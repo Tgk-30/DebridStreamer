@@ -27,7 +27,7 @@
 mod imp {
     use std::ffi::{c_void, CStr, CString};
     use std::ptr::NonNull;
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex, OnceLock};
     use std::thread::JoinHandle;
 
@@ -137,12 +137,20 @@ mod imp {
     struct SendRender(RenderContext);
     unsafe impl Send for SendRender {}
 
+    /// Send-safe state shared with mpv's render-update callback. The callback
+    /// must never capture or dereference an Objective-C object off-main: it can
+    /// run concurrently with `mpv_render_context_free` during teardown.
+    struct RenderCallbackState {
+        layer_ptr: AtomicUsize,
+        dead: AtomicBool,
+        update_count: AtomicU64,
+    }
+
     struct VideoLayerIvars {
         mpv: Arc<Mpv>,
         render: Mutex<Option<SendRender>>,
-        dead: AtomicBool,
+        callback: Arc<RenderCallbackState>,
         draw_count: AtomicU64,
-        update_count: AtomicU64,
     }
 
     define_class!(
@@ -205,7 +213,7 @@ mod imp {
 
                 let ivars = self.ivars();
                 // Teardown has started — do not touch mpv/render at all.
-                if ivars.dead.load(Ordering::Acquire) {
+                if ivars.callback.dead.load(Ordering::Acquire) {
                     unsafe { CGLUnlockContext(ctx) };
                     unsafe {
                         let _: () = msg_send![super(self),
@@ -219,7 +227,7 @@ mod imp {
                 if render_slot.is_none() {
                     // Re-check dead now that we hold the lock (teardown may have run
                     // between the check above and acquiring the lock).
-                    if ivars.dead.load(Ordering::Acquire) {
+                    if ivars.callback.dead.load(Ordering::Acquire) {
                         drop(render_slot);
                         unsafe { CGLUnlockContext(ctx) };
                         return;
@@ -238,22 +246,35 @@ mod imp {
                         Ok(mut rc) => {
                             // When mpv has a new frame, poke the layer to redraw
                             // (on the main thread — CALayer.setNeedsDisplay).
-                            let layer_ptr = self as *const VideoLayer as usize;
+                            // mpv may invoke this callback while the render context
+                            // is being freed. Capture only send-safe state here; a
+                            // raw VideoLayer pointer caused a reproducible UAF.
+                            let callback = ivars.callback.clone();
                             rc.set_update_callback(move || {
-                                let layer: &VideoLayer =
-                                    unsafe { &*(layer_ptr as *const VideoLayer) };
-                                let update = layer
-                                    .ivars()
+                                if callback.dead.load(Ordering::Acquire) {
+                                    return;
+                                }
+                                let update = callback
                                     .update_count
                                     .fetch_add(1, Ordering::Relaxed)
                                     + 1;
                                 if update <= 3 {
                                     rp_log(&format!("VideoLayer.update #{update}"));
                                 }
+                                let redraw = callback.clone();
                                 DispatchQueue::main().exec_async(move || {
-                                    let layer: &VideoLayer =
-                                        unsafe { &*(layer_ptr as *const VideoLayer) };
-                                    layer.setNeedsDisplay();
+                                    // Teardown and this closure both serialize on
+                                    // the main queue. Re-check the flag because the
+                                    // redraw may have been queued before teardown.
+                                    if redraw.dead.load(Ordering::Acquire) {
+                                        return;
+                                    }
+                                    let ptr = redraw.layer_ptr.load(Ordering::Acquire);
+                                    if ptr != 0 {
+                                        let layer: &VideoLayer =
+                                            unsafe { &*(ptr as *const VideoLayer) };
+                                        layer.setNeedsDisplay();
+                                    }
                                 });
                             });
                             rp_log("VideoLayer.draw: RenderContext created");
@@ -292,14 +313,23 @@ mod imp {
 
     impl VideoLayer {
         fn new(mpv: Arc<Mpv>) -> Retained<Self> {
+            let callback = Arc::new(RenderCallbackState {
+                layer_ptr: AtomicUsize::new(0),
+                dead: AtomicBool::new(false),
+                update_count: AtomicU64::new(0),
+            });
             let this = Self::alloc().set_ivars(VideoLayerIvars {
                 mpv,
                 render: Mutex::new(None),
-                dead: AtomicBool::new(false),
+                callback: callback.clone(),
                 draw_count: AtomicU64::new(0),
-                update_count: AtomicU64::new(0),
             });
-            unsafe { msg_send![super(this), init] }
+            let layer: Retained<Self> = unsafe { msg_send![super(this), init] };
+            callback.layer_ptr.store(
+                Retained::as_ptr(&layer) as usize,
+                Ordering::Release,
+            );
+            layer
         }
     }
 
@@ -381,14 +411,18 @@ mod imp {
             let teardown = move || {
                 if layer != 0 {
                     let l: &VideoLayer = unsafe { &*(layer as *const VideoLayer) };
-                    l.ivars().dead.store(true, Ordering::Release);
+                    l.ivars().callback.dead.store(true, Ordering::Release);
+                    // Free mpv_render_context while the host hierarchy still
+                    // retains the layer. Dropping it unregisters/waits for the
+                    // update callback, which now touches only send-safe state.
+                    // Removing the host first released the final Objective-C
+                    // owner and left both this code and the old `vo` callback
+                    // with dangling raw pointers.
+                    drop(l.ivars().render.lock().unwrap().take());
                     if host != 0 {
                         let v: &NSView = unsafe { &*(host as *const NSView) };
                         v.removeFromSuperview();
                     }
-                    // Frees mpv_render_context (Drop). Uncontended: draws see `dead`
-                    // and skip before locking.
-                    let _ = l.ivars().render.lock().unwrap().take();
                 } else if host != 0 {
                     let v: &NSView = unsafe { &*(host as *const NSView) };
                     v.removeFromSuperview();
@@ -425,13 +459,14 @@ mod imp {
         stop: Arc<AtomicBool>,
     ) -> JoinHandle<()> {
         std::thread::spawn(move || {
-            let client = match mpv.create_client(Some("dsevents")) {
-                Ok(c) => c,
-                Err(e) => {
-                    rp_log(&format!("event thread: create_client failed: {e}"));
-                    return;
-                }
-            };
+            // The primary handle already has its own event queue and libmpv's
+            // client API is thread-safe. Do not create a secondary client here:
+            // libmpv2 5.0.3 wraps a possibly-null mpv_create_client result with
+            // NonNull::new_unchecked, which aborts the process under a rapid
+            // create/destroy race instead of returning an error.
+            if stop.load(Ordering::Acquire) {
+                return;
+            }
             for (i, spec) in observed.iter().enumerate() {
                 let fmt = match spec.format.as_str() {
                     "flag" => Format::Flag,
@@ -439,9 +474,10 @@ mod imp {
                     "int64" => Format::Int64,
                     _ => Format::String,
                 };
-                let _ = client.observe_property(&spec.name, fmt, i as u64);
+                let _ = mpv.observe_property(&spec.name, fmt, i as u64);
             }
-            let ctx = client.ctx.as_ptr();
+            let ctx = mpv.ctx.as_ptr();
+            let mut property_events = 0u64;
             while !stop.load(Ordering::Acquire) {
                 let ev = unsafe { &*libmpv2_sys::mpv_wait_event(ctx, 0.25) };
                 match ev.event_id {
@@ -456,10 +492,17 @@ mod imp {
                     }
                     libmpv2_sys::mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
                         let prop = unsafe { &*(ev.data as *mut libmpv2_sys::mpv_event_property) };
+                        if prop.name.is_null() {
+                            continue;
+                        }
                         let name = unsafe { CStr::from_ptr(prop.name) }
                             .to_string_lossy()
                             .into_owned();
                         let data = unsafe { prop_data_to_json(prop.format, prop.data) };
+                        property_events += 1;
+                        if property_events <= 3 {
+                            rp_log(&format!("event thread: property {name}"));
+                        }
                         let _ = app.emit("player-event", json!({ "name": name, "data": data }));
                     }
                     _ => {}
@@ -681,12 +724,54 @@ mod imp {
     /// requiring a configured debrid account.
     #[cfg(debug_assertions)]
     pub fn debug_smoke_load<R: Runtime>(app: AppHandle<R>, url: &str) -> Result<(), String> {
-        create_player(app.clone(), std::collections::HashMap::new(), Vec::new())?;
+        // Mirror EmbeddedPlayer's production configuration and observations. An
+        // empty setup misses failures in option parsing and the event bridge.
+        let options = std::collections::HashMap::from([
+            ("vo".to_string(), "gpu-next".to_string()),
+            ("hwdec".to_string(), "auto-safe".to_string()),
+            ("keep-open".to_string(), "yes".to_string()),
+            ("cache".to_string(), "yes".to_string()),
+            ("demuxer-max-bytes".to_string(), "150MiB".to_string()),
+            ("sub-auto".to_string(), "fuzzy".to_string()),
+            ("sub-font-size".to_string(), "44".to_string()),
+            ("terminal".to_string(), "no".to_string()),
+        ]);
+        let observed = [
+            ("pause", "flag"),
+            ("time-pos", "double"),
+            ("duration", "double"),
+            ("core-idle", "flag"),
+            ("volume", "double"),
+            ("speed", "double"),
+            ("demuxer-cache-time", "double"),
+            ("aid", "string"),
+            ("sid", "string"),
+            ("eof-reached", "flag"),
+        ]
+        .into_iter()
+        .map(|(name, format)| ObserveSpec {
+            name: name.to_string(),
+            format: format.to_string(),
+        })
+        .collect();
+        create_player(app.clone(), options, observed)?;
         let args = vec!["loadfile".to_string(), url.to_string()];
         std::thread::spawn(move || {
             match command_when_ready(&app, &args) {
                 Ok(()) => rp_log("DS_PLAYER_SMOKE loadfile succeeded"),
                 Err(error) => rp_log(&format!("DS_PLAYER_SMOKE loadfile failed: {error}")),
+            }
+            if let Ok(delay) = std::env::var("DS_PLAYER_SMOKE_DESTROY_MS") {
+                if let Ok(delay) = delay.parse::<u64>() {
+                    std::thread::sleep(std::time::Duration::from_millis(delay));
+                    match player_destroy(app.clone()) {
+                        Ok(()) => rp_log("DS_PLAYER_SMOKE destroy succeeded"),
+                        Err(error) => rp_log(&format!("DS_PLAYER_SMOKE destroy failed: {error}")),
+                    }
+                    if std::env::var_os("DS_PLAYER_SMOKE_EXIT").is_some() {
+                        app.exit(0);
+                    }
+                }
             }
         });
         Ok(())
