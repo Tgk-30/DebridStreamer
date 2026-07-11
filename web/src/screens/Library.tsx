@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "../store/AppStore";
-import { MediaGrid } from "../components/MediaGrid";
+import { MediaCard } from "../components/MediaCard";
 import { Rail } from "../components/Rail";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
@@ -19,6 +19,8 @@ import type { LibraryEntryRecord, LibraryFolderRecord } from "../storage/models"
 import type { MediaPreview } from "../models/media";
 import { isServerMode } from "../lib/serverMode";
 import { listRequested } from "../lib/serverApi";
+import { useWatchedIds } from "../data/useWatchedIds";
+import "../components/MediaGrid.css";
 import "./LibraryScreens.css";
 
 const ALL = "__all__";
@@ -188,6 +190,8 @@ export function Library() {
   const items = visiblePreviews.length > 0 ? visiblePreviews : watchlist;
   const showingWatchlistFallback = visiblePreviews.length === 0 && watchlist.length > 0;
   const hasEntries = entries.length > 0;
+  // Finished-title check badges on the grid, from one batched history lookup.
+  const watchedIds = useWatchedIds(entries);
 
   return (
     <div className="lib-screen">
@@ -444,7 +448,16 @@ export function Library() {
               Showing your watchlist - add favorites to build your library.
             </p>
           )}
-          <MediaGrid items={items} onSelect={openDetail} />
+          <div className="media-grid">
+            {items.map((item) => (
+              <MediaCard
+                key={item.id}
+                item={item}
+                onSelect={openDetail}
+                watched={watchedIds.has(item.id)}
+              />
+            ))}
+          </div>
         </>
       )}
     </div>

@@ -72,16 +72,27 @@ vi.mock("../lib/serverApi", () => ({
   listRequested: () => listRequested(),
 }));
 
-vi.mock("../components/MediaGrid", () => ({
-  MediaGrid: (props: { items: MediaPreview[]; onSelect?: (i: MediaPreview) => void }) => (
-    <div data-testid="media-grid">
-      {props.items.map((i) => (
-        <button key={i.id} type="button" onClick={() => props.onSelect?.(i)}>
-          grid:{i.title}
-        </button>
-      ))}
-    </div>
+// The favorites grid is now inlined with MediaCard directly (so it can carry the
+// watched badge); stub the card to assert on the item lists + the watched prop.
+vi.mock("../components/MediaCard", () => ({
+  MediaCard: (props: {
+    item: MediaPreview;
+    onSelect?: (i: MediaPreview) => void;
+    watched?: boolean;
+  }) => (
+    <button
+      type="button"
+      data-watched={props.watched ? "yes" : "no"}
+      onClick={() => props.onSelect?.(props.item)}
+    >
+      card:{props.item.title}
+    </button>
   ),
+}));
+
+let mockWatchedIds = new Set<string>();
+vi.mock("../data/useWatchedIds", () => ({
+  useWatchedIds: () => mockWatchedIds,
 }));
 
 vi.mock("../components/Rail", () => ({
@@ -141,6 +152,7 @@ beforeEach(() => {
   listRequested.mockClear();
   mockWatchlist = [];
   mockServerMode = false;
+  mockWatchedIds = new Set<string>();
   listFoldersImpl = async () => [];
   listLibraryImpl = async () => [];
   listRequested.mockResolvedValue({ items: [] });
@@ -206,8 +218,8 @@ describe("Library - folders + grid filtering", () => {
     render(<Library />);
 
     // All saved shows both; root folder chip is filtered out.
-    await screen.findByText("grid:Die Hard");
-    expect(screen.getByText("grid:Blade Runner")).toBeInTheDocument();
+    await screen.findByText("card:Die Hard");
+    expect(screen.getByText("card:Blade Runner")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Root" }),
     ).not.toBeInTheDocument();
@@ -215,17 +227,31 @@ describe("Library - folders + grid filtering", () => {
 
     // Selecting "Sci-Fi" narrows to that folder's entries.
     await userEvent.click(screen.getByRole("button", { name: "Sci-Fi" }));
-    expect(screen.getByText("grid:Blade Runner")).toBeInTheDocument();
-    expect(screen.queryByText("grid:Die Hard")).not.toBeInTheDocument();
+    expect(screen.getByText("card:Blade Runner")).toBeInTheDocument();
+    expect(screen.queryByText("card:Die Hard")).not.toBeInTheDocument();
   });
 
   it("clicking a grid card opens the detail", async () => {
     listLibraryImpl = async () => [entry("e1", null, preview("m1", "Heat"))];
     render(<Library />);
-    await userEvent.click(await screen.findByText("grid:Heat"));
+    await userEvent.click(await screen.findByText("card:Heat"));
     expect(openDetail).toHaveBeenCalledWith(
       expect.objectContaining({ id: "m1", title: "Heat" }),
     );
+  });
+
+  it("marks finished titles watched from the batched history lookup", async () => {
+    listLibraryImpl = async () => [
+      entry("e1", null, preview("m1", "Heat")),
+      entry("e2", null, preview("m2", "Drive")),
+    ];
+    mockWatchedIds = new Set<string>(["m1"]);
+    render(<Library />);
+    expect(await screen.findByText("card:Heat")).toHaveAttribute(
+      "data-watched",
+      "yes",
+    );
+    expect(screen.getByText("card:Drive")).toHaveAttribute("data-watched", "no");
   });
 });
 
@@ -233,7 +259,7 @@ describe("Library - watchlist fallback", () => {
   it("falls back to the watchlist with a hint when the library is empty", async () => {
     mockWatchlist = [preview("w1", "Tenet")];
     render(<Library />);
-    expect(await screen.findByText("grid:Tenet")).toBeInTheDocument();
+    expect(await screen.findByText("card:Tenet")).toBeInTheDocument();
     expect(
       screen.getByText(/Showing your watchlist/i),
     ).toBeInTheDocument();
@@ -284,7 +310,7 @@ describe("Library - folder management", () => {
   it("creates a folder from the inline creator", async () => {
     withEntries();
     render(<Library />);
-    await screen.findByText("grid:Heat");
+    await screen.findByText("card:Heat");
     await userEvent.click(screen.getByRole("button", { name: /new folder/i }));
     await userEvent.type(screen.getByPlaceholderText("Folder name"), "Comedy");
     await userEvent.click(screen.getByRole("button", { name: "Create" }));
@@ -325,7 +351,7 @@ describe("Library - folder management", () => {
   it("moves a title to another folder in Organize mode", async () => {
     withEntries();
     render(<Library />);
-    await screen.findByText("grid:Heat");
+    await screen.findByText("card:Heat");
     await userEvent.click(screen.getByRole("button", { name: /organize/i }));
     // Heat lives in root → move it into the Action folder.
     const selects = await screen.findAllByRole("combobox");
@@ -343,7 +369,7 @@ describe("Library - folder management", () => {
   it("removes a title from the library in Organize mode", async () => {
     withEntries();
     render(<Library />);
-    await screen.findByText("grid:Heat");
+    await screen.findByText("card:Heat");
     await userEvent.click(screen.getByRole("button", { name: /organize/i }));
     const removeButtons = await screen.findAllByRole("button", { name: /remove/i });
     await userEvent.click(removeButtons[0]);

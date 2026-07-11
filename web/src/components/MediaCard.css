@@ -251,6 +251,23 @@
   -webkit-backdrop-filter: blur(8px);
 }
 
+/* "Watched" check - a finished title. Top-right so it never collides with the
+   top-left "Ready" badge (a watchlisted title can be both). */
+.media-card-watched {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  color: #07210f;
+  background: rgba(var(--success-rgb, 92, 217, 140), 0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
 .media-card-ready {
   position: absolute;
   top: 7px;

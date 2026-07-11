@@ -7,7 +7,7 @@
 // so resume positions survive reloads.
 
 import { useAppStore } from "../store/AppStore";
-import { MediaGrid } from "../components/MediaGrid";
+import { MediaCard } from "../components/MediaCard";
 import { Rail } from "../components/Rail";
 import { EmptyState } from "../components/EmptyState";
 import { WatchStatsCard } from "../components/WatchStatsCard";
@@ -15,6 +15,8 @@ import { latestResumeByMedia, watchProgressMap } from "../storage/models";
 import { episodeLabel, parseEpisodeId } from "../data/episodes";
 import { useWatchStats } from "../data/useWatchStats";
 import { hasWatchStats } from "../data/watchStats";
+import { useWatchedIds } from "../data/useWatchedIds";
+import "../components/MediaGrid.css";
 
 export function History() {
   const { history, continueWatching, openDetail, openBrowse, navigate, settings } =
@@ -46,6 +48,9 @@ export function History() {
   // Shared progress map (same helper the Watchlist uses) so the rail, the rail's
   // bars, and the full grid below stay in lockstep instead of diverging.
   const resumableProgress = watchProgressMap(continueWatching);
+  // Finished-title check badges on the grid. One batched history lookup (the
+  // resume list excludes completed rows, so watched titles are read separately).
+  const watchedIds = useWatchedIds(continueWatching);
 
   return (
     <div className="lib-screen">
@@ -90,11 +95,17 @@ export function History() {
           }
         />
       ) : (
-        <MediaGrid
-          items={history}
-          onSelect={openDetail}
-          progress={resumableProgress}
-        />
+        <div className="media-grid">
+          {history.map((item) => (
+            <MediaCard
+              key={item.id}
+              item={item}
+              onSelect={openDetail}
+              progress={resumableProgress[item.id]}
+              watched={watchedIds.has(item.id)}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

@@ -46,16 +46,23 @@ vi.mock("../components/MediaCard", () => ({
     onSelect?: (i: MediaPreview) => void;
     ready?: boolean;
     progress?: number;
+    watched?: boolean;
   }) => (
     <button
       type="button"
       data-ready={props.ready ? "yes" : "no"}
       data-progress={props.progress ?? ""}
+      data-watched={props.watched ? "yes" : "no"}
       onClick={() => props.onSelect?.(props.item)}
     >
       card:{props.item.title}
     </button>
   ),
+}));
+
+let mockWatchedIds = new Set<string>();
+vi.mock("../data/useWatchedIds", () => ({
+  useWatchedIds: () => mockWatchedIds,
 }));
 
 import { Watchlist } from "./Watchlist";
@@ -78,6 +85,7 @@ beforeEach(() => {
   mockWatchlist = [];
   mockCachedResolutions = {};
   mockContinueWatching = [];
+  mockWatchedIds = new Set<string>();
 });
 
 afterEach(() => {
@@ -128,6 +136,15 @@ describe("Watchlist - populated", () => {
     expect(screen.getByText(/1 ready to play instantly/i)).toBeInTheDocument();
     expect(screen.getByText("card:Tenet")).toHaveAttribute("data-ready", "yes");
     expect(screen.getByText("card:Dune")).toHaveAttribute("data-ready", "no");
+  });
+
+  it("flags watched titles from the batched history lookup", () => {
+    mockWatchlist = [preview("m1", "Tenet"), preview("m2", "Dune")];
+    mockWatchedIds = new Set<string>(["m2"]);
+    render(<Watchlist />);
+
+    expect(screen.getByText("card:Tenet")).toHaveAttribute("data-watched", "no");
+    expect(screen.getByText("card:Dune")).toHaveAttribute("data-watched", "yes");
   });
 
   it("removes an item via its Remove button", async () => {

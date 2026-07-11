@@ -93,10 +93,12 @@ const addTasteEvent = vi.fn<(...a: any[]) => Promise<void>>(async () => {});
 const rebuildTasteContext = vi.fn<(...a: any[]) => Promise<string>>(
   async () => "ctx",
 );
+const getResume = vi.fn<(...a: any[]) => Promise<any>>(async () => null);
 vi.mock("../storage", () => ({
   getStore: () => ({
     recentTasteEvents,
     addTasteEvent,
+    getResume,
   }),
 }));
 vi.mock("../services/ai/TasteProfile", () => ({
@@ -314,10 +316,17 @@ describe("Detail base render", () => {
     expect(screen.getByTestId("analysis")).toBeInTheDocument();
   });
 
-  it("omits the AI analysis when no analyzeTitle provider is configured", () => {
+  it("omits the AI analysis but shows an honest Settings hint when no analyzeTitle provider is configured", () => {
     mockServices.ai = null;
     render(<Detail />);
     expect(screen.queryByTestId("analysis")).toBeNull();
+    // Never a silently-absent feature: a quiet hint + a link into Settings.
+    expect(
+      screen.getByText(/Add an AI provider in Settings/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open Settings" }),
+    ).toBeInTheDocument();
   });
 
   it("reflects watchlist membership in the hero", () => {
@@ -482,6 +491,8 @@ describe("Detail numeric rating", () => {
   it("records a 1–10 pick as a normalized 'rated' taste event", async () => {
     mockSettings.ratingScale = "ten";
     render(<Detail />);
+    // The stars sit behind an explicit "Rate" button now.
+    await userEvent.click(await screen.findByRole("button", { name: "Rate" }));
     await userEvent.click(await screen.findByLabelText("8 out of 10"));
     await waitFor(() => expect(addTasteEvent).toHaveBeenCalled());
     const evt = addTasteEvent.mock.calls[0][0] as any;
@@ -505,6 +516,11 @@ describe("Detail numeric rating", () => {
       },
     ]);
     render(<Detail />);
+    // Collapsed, the saved score shows on the Rate button; revealing it seeds
+    // the stars from that value.
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Your rating: 7/10" }),
+    );
     expect(await screen.findByText("7/10")).toBeTruthy();
     expect(
       screen.getByLabelText("7 out of 10").getAttribute("aria-checked"),
@@ -514,6 +530,7 @@ describe("Detail numeric rating", () => {
   it("commits a 0–100 rating only on release", async () => {
     mockSettings.ratingScale = "hundred";
     render(<Detail />);
+    await userEvent.click(await screen.findByRole("button", { name: "Rate" }));
     const slider = await screen.findByLabelText("Rate out of 100");
     fireEvent.change(slider, { target: { value: "90" } });
     expect(addTasteEvent).not.toHaveBeenCalled();

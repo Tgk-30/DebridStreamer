@@ -11,6 +11,7 @@ import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { WatchlistImportDialog } from "../components/WatchlistImportDialog";
 import { watchProgressMap } from "../storage/models";
+import { useWatchedIds } from "../data/useWatchedIds";
 import "./LibraryScreens.css";
 
 export function Watchlist() {
@@ -30,6 +31,9 @@ export function Watchlist() {
   ).length;
   // Show a resume bar on any watchlisted title that's already in progress.
   const progress = watchProgressMap(continueWatching);
+  // A single batched history lookup drives the "watched" check badge (finished
+  // titles aren't in the resume list, so this reads them from full history).
+  const watchedIds = useWatchedIds(continueWatching);
 
   return (
     <div className="lib-screen">
@@ -94,6 +98,7 @@ export function Watchlist() {
                 onSelect={openDetail}
                 ready={cachedResolutions[item.id] != null}
                 progress={progress[item.id]}
+                watched={watchedIds.has(item.id)}
               />
               <button
                 type="button"

@@ -27,6 +27,10 @@ interface MediaCardProps {
   /** 1-based rank - renders a large ghosted numeral to the left of the poster
    * (the Apple TV "Top 10" treatment). Omit for an ordinary card. */
   rank?: number;
+  /** Finished-watching indicator - renders a small check badge on the poster.
+   * Mutually exclusive with the in-progress bar in practice (a watched title has
+   * no resume point). Omit (or false) to hide it. */
+  watched?: boolean;
 }
 
 // Animation objects are hoisted to module scope so they're referentially stable
@@ -57,6 +61,7 @@ export const MediaCard = memo(function MediaCard({
   progress,
   cornerLabel,
   rank,
+  watched = false,
 }: MediaCardProps) {
   const poster = MediaPreviewNS.posterURL(item);
   const rating = MediaPreviewNS.ratingString(item);
@@ -128,6 +133,12 @@ export const MediaCard = memo(function MediaCard({
 
         {cornerLabel != null && (
           <span className="media-card-corner-label">{cornerLabel}</span>
+        )}
+
+        {watched && (
+          <span className="media-card-watched" title="Watched" aria-label="Watched">
+            <Icon name="check" size={11} />
+          </span>
         )}
 
         {/* Cinematic reveal layer - fades/slides in on hover. */}

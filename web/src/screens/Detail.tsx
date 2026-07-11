@@ -25,7 +25,7 @@ import {
 import { filterStreamRows } from "../data/streams";
 import { EpisodePicker } from "../components/EpisodePicker";
 import { DetailHero, type TasteSignal } from "../components/DetailHero";
-import { RatingControl } from "../components/RatingControl";
+import { RatingReveal } from "../components/RatingReveal";
 import { DetailAnalysis } from "../components/DetailAnalysis";
 import { OmdbRatings } from "../components/OmdbRatings";
 import { StreamPicker } from "../components/StreamPicker";
@@ -49,6 +49,7 @@ import {
   type PlaybackPrefs,
   type TasteEventType,
 } from "../storage/models";
+import { watchedStateForRecord, type WatchedState } from "../data/watchedState";
 import { rebuildTasteContext } from "../services/ai/TasteProfile";
 import "./Detail.css";
 
@@ -428,6 +429,29 @@ export function Detail() {
     };
   }, [detailId]);
 
+  // Title-level watched state (movies only): the (mediaId, null) history row is
+  // read straight from the Store so a completed title reads as "Watched" even
+  // though the Continue Watching list excludes finished rows. Series show their
+  // watched/in-progress state per episode in the picker instead.
+  const detailType = detailItem?.type ?? null;
+  const [watchedState, setWatchedState] = useState<WatchedState>("unwatched");
+  useEffect(() => {
+    setWatchedState("unwatched");
+    if (detailId == null || detailType !== "movie") return;
+    let cancelled = false;
+    void getStore()
+      .getResume(detailId, null)
+      .then((rec) => {
+        if (!cancelled) setWatchedState(watchedStateForRecord(rec));
+      })
+      .catch(() => {
+        if (!cancelled) setWatchedState("unwatched");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailId, detailType]);
+
   if (detailItem == null) return null;
 
   const item = detail.data.item;
@@ -741,6 +765,15 @@ export function Detail() {
         />
       )}
 
+      {/* Finished-watching marker (movies) - an honest state near the title.
+          Series surface watched/in-progress per episode in the picker. */}
+      {detailItem.type === "movie" && watchedState === "watched" && (
+        <span className="detail-watched">
+          <Icon name="check" size={13} />
+          Watched
+        </span>
+      )}
+
       {/* No-metadata-key hint: the hero renders from the catalog preview alone
           (no overview/genres) - say why, and where to fix it, instead of just
           looking sparse. Local Mode only; Server Mode proxies the server key. */}
@@ -779,10 +812,13 @@ export function Detail() {
           Renders nothing when no key is available. */}
       <OmdbRatings imdbId={detail.data.imdbId} />
 
-      {/* Your own rating (1–10 pips or a 0–100 slider). Thumbs mode keeps the
-          like/dislike control in the hero instead. */}
+      {/* Your own rating (1–10 pips or a 0–100 slider), collapsed behind an
+          explicit "Rate" button so the stars don't sit out permanently. Thumbs
+          mode keeps the like/dislike control in the hero instead. The key resets
+          the reveal to collapsed when the title changes. */}
       {settings.ratingScale !== "thumbs" && (
-        <RatingControl
+        <RatingReveal
+          key={detailItem.id}
           scale={settings.ratingScale}
           value={
             ratingNorm != null
@@ -794,11 +830,30 @@ export function Detail() {
         />
       )}
 
-      {/* AI "Would I Like This?" - only when a local AI provider is configured.
-          analyzeTitle is the local-Dexie path; Server-Mode parity is out of scope. */}
-      {item && services.ai?.analyzeTitle != null && (
-        <DetailAnalysis item={item} provider={services.ai} />
-      )}
+      {/* AI "Will I like this?" - always present, honestly gated. With a local AI
+          provider it renders the verdict card; without one it shows a quiet hint
+          and a link into Settings rather than silently vanishing. Server-Mode
+          analyzeTitle parity is out of scope (local-Dexie path only). */}
+      {item &&
+        (services.ai?.analyzeTitle != null ? (
+          <DetailAnalysis item={item} provider={services.ai} />
+        ) : (
+          <p className="detail-ai-hint t-secondary">
+            <Icon name="sparkles" size={14} className="t-accent" />
+            Add an AI provider in Settings to get a personal verdict on whether
+            you'd like this.
+            <button
+              type="button"
+              className="detail-ai-hint-link"
+              onClick={() => {
+                closeDetail();
+                navigate("settings");
+              }}
+            >
+              Open Settings
+            </button>
+          </p>
+        ))}
 
       {/* Season/episode picker (series only). Selecting an episode re-drives
           the stream search below; falls back to a plain stepper without TMDB. */}

@@ -38,3 +38,18 @@ describe("MediaCard a11y", () => {
     expect(onSelect).toHaveBeenCalledWith(item);
   });
 });
+
+describe("MediaCard watched badge", () => {
+  it("renders a Watched badge only when watched is set", () => {
+    const { rerender } = render(<MediaCard item={item} onSelect={() => {}} />);
+    expect(screen.queryByLabelText("Watched")).toBeNull();
+
+    rerender(<MediaCard item={item} onSelect={() => {}} watched />);
+    expect(screen.getByLabelText("Watched")).toBeInTheDocument();
+  });
+
+  it("keeps the card a single button when the badge is shown (badge is not interactive)", () => {
+    render(<MediaCard item={item} onSelect={() => {}} watched />);
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+});
