@@ -60,6 +60,27 @@ mod imp {
     // 3.2 Core profile value for kCGLPFAOpenGLProfile.
     const CGL_OGLP_VERSION_3_2_CORE: u32 = 0x3200;
 
+    /// Options owned by the native renderer. Frontend-supplied values must not
+    /// override these because they are required for correctness and safety.
+    const FORCED_MPV_OPTIONS: &[(&str, &str)] = &[
+        ("vo", "libmpv"),
+        ("hwdec", "auto-copy"),
+        ("load-scripts", "no"),
+        ("load-auto-profiles", "no"),
+        ("load-commands", "no"),
+        ("load-console", "no"),
+        ("load-context-menu", "no"),
+        ("load-positioning", "no"),
+        ("load-select", "no"),
+        ("load-stats-overlay", "no"),
+        ("osc", "no"),
+        ("ytdl", "no"),
+    ];
+
+    fn is_forced_mpv_option(name: &str) -> bool {
+        FORCED_MPV_OPTIONS.iter().any(|(forced, _)| *forced == name)
+    }
+
     // Trace log for diagnosing the player, OFF unless `DS_MPV_DEBUG` is set (GUI-app
     // stderr is unreliable in `tauri dev`, so this appends to a file when enabled).
     fn rp_log(msg: &str) {
@@ -631,10 +652,17 @@ mod imp {
         let mpv = Mpv::with_initializer(|init| {
             // The render API requires vo=libmpv. Copy-mode VideoToolbox works with
             // the OpenGL render API and safely falls back to software decoding.
-            let _ = init.set_option("vo", "libmpv");
-            let _ = init.set_option("hwdec", "auto-copy");
+            // The app drives mpv entirely through libmpv and does not use mpv's
+            // Lua scripts. Homebrew's arm64 mpv bundles LuaJIT; on newer macOS,
+            // Hardened Runtime rejects the executable pages LuaJIT creates while
+            // loading built-ins such as stats/console and kills the signed app
+            // with CODESIGNING/Invalid Page. `load-scripts=no` only disables user
+            // scripts in mpv 0.41, so every built-in script switch must be off.
+            for &(name, value) in FORCED_MPV_OPTIONS {
+                init.set_option(name, value)?;
+            }
             for (k, v) in &options {
-                if k == "vo" || k == "hwdec" {
+                if is_forced_mpv_option(k) {
                     continue;
                 }
                 if let Err(e) = init.set_option(k.as_str(), v.as_str()) {
@@ -670,6 +698,19 @@ mod imp {
         });
         rp_log("create_player: ready");
         Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::is_forced_mpv_option;
+
+        #[test]
+        fn frontend_cannot_override_native_player_safety_options() {
+            for &(name, _) in super::FORCED_MPV_OPTIONS {
+                assert!(is_forced_mpv_option(name), "{name} must stay forced");
+            }
+            assert!(!is_forced_mpv_option("cache"));
+        }
     }
 
     fn command_when_ready<R: Runtime>(app: &AppHandle<R>, args: &[String]) -> Result<(), String> {
