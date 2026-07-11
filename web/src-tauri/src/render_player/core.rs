@@ -104,13 +104,14 @@ fn spawn_event_thread<R: Runtime>(
     stop: Arc<AtomicBool>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
-        let client = match mpv.create_client(Some("dsevents")) {
-            Ok(c) => c,
-            Err(e) => {
-                rp_log(&format!("event thread: create_client failed: {e}"));
-                return;
-            }
-        };
+        // The primary handle already has its own event queue and libmpv's client
+        // API is thread-safe. Do NOT create a secondary client here: libmpv2 5.0.3
+        // wraps a possibly-null mpv_create_client result with NonNull::new_unchecked,
+        // which aborts the process under a rapid create/destroy race instead of
+        // returning an error.
+        if stop.load(Ordering::Acquire) {
+            return;
+        }
         for (i, spec) in observed.iter().enumerate() {
             let fmt = match spec.format.as_str() {
                 "flag" => Format::Flag,
@@ -118,9 +119,9 @@ fn spawn_event_thread<R: Runtime>(
                 "int64" => Format::Int64,
                 _ => Format::String,
             };
-            let _ = client.observe_property(&spec.name, fmt, i as u64);
+            let _ = mpv.observe_property(&spec.name, fmt, i as u64);
         }
-        let ctx = client.ctx.as_ptr();
+        let ctx = mpv.ctx.as_ptr();
         while !stop.load(Ordering::Acquire) {
             let ev = unsafe { &*libmpv2_sys::mpv_wait_event(ctx, 0.25) };
             match ev.event_id {
@@ -135,6 +136,9 @@ fn spawn_event_thread<R: Runtime>(
                 }
                 libmpv2_sys::mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
                     let prop = unsafe { &*(ev.data as *mut libmpv2_sys::mpv_event_property) };
+                    if prop.name.is_null() {
+                        continue;
+                    }
                     let name = unsafe { CStr::from_ptr(prop.name) }
                         .to_string_lossy()
                         .into_owned();
@@ -169,7 +173,36 @@ unsafe fn prop_data_to_json(format: libmpv2_sys::mpv_format, data: *mut c_void) 
     }
 }
 
-/// Best-in-class mpv options applied to EVERY player before user overrides - 
+/// Options OWNED by the native renderer that frontend-supplied values must never
+/// override, because they are required for safety. The app drives mpv entirely
+/// through libmpv and does not use mpv's built-in Lua scripts; Homebrew's arm64
+/// mpv bundles LuaJIT, and on newer macOS the Hardened Runtime rejects the
+/// executable pages LuaJIT creates while loading built-ins such as stats/console
+/// and kills the signed app with CODESIGNING/Invalid Page. `load-scripts=no` alone
+/// only disables USER scripts in mpv 0.41, so every built-in script switch must be
+/// turned off explicitly. Applied at init on macOS only (the crash is macOS-
+/// specific and some switches need mpv >= 0.40), but the frontend-override block
+/// in `create_player` uses this list on every platform. (vo/hwdec are deliberately
+/// NOT here: they are single-sourced per-platform in `best_in_class_options` and
+/// guarded separately in `create_player`.)
+const FORCED_MPV_OPTIONS: &[(&str, &str)] = &[
+    ("load-scripts", "no"),
+    ("load-auto-profiles", "no"),
+    ("load-commands", "no"),
+    ("load-console", "no"),
+    ("load-context-menu", "no"),
+    ("load-positioning", "no"),
+    ("load-select", "no"),
+    ("load-stats-overlay", "no"),
+    ("osc", "no"),
+    ("ytdl", "no"),
+];
+
+fn is_forced_mpv_option(name: &str) -> bool {
+    FORCED_MPV_OPTIONS.iter().any(|(forced, _)| *forced == name)
+}
+
+/// Best-in-class mpv options applied to EVERY player before user overrides -
 /// the same engine mpv/IINA use, tuned for high-quality scaling, debanding,
 /// hardware decode, and streaming-cache "debrid feel". Per-platform decode +
 /// output are selected by `cfg!(target_os)`:
@@ -337,11 +370,23 @@ pub fn create_player<R: Runtime>(
 
     let mpv = Mpv::with_initializer(|init| {
         // Best-in-class defaults first, then the surface's pre-init options, then
-        // user options override - except `vo` on macOS (render API), which MUST
-        // stay libmpv or the render context can't bind.
+        // user options override - except `vo`/`hwdec` (Rust-owned on every
+        // platform) and the forced safety options below.
         for (k, v) in best_in_class_options() {
             if let Err(e) = init.set_option(k, v) {
                 rp_log(&format!("create_player: default {k}={v} ERR {e}"));
+            }
+        }
+        // Apply the renderer-owned safety options next, macOS ONLY: they defend
+        // against the LuaJIT Hardened Runtime crash (see FORCED_MPV_OPTIONS),
+        // which is macOS-specific, and two of the switches (load-console,
+        // load-commands) only exist on mpv >= 0.40 - an older Linux system libmpv
+        // must not fail player creation over an unknown option. Non-fatal: an
+        // option the local mpv rejects is logged and skipped, like the defaults.
+        #[cfg(target_os = "macos")]
+        for &(name, value) in FORCED_MPV_OPTIONS {
+            if let Err(e) = init.set_option(name, value) {
+                rp_log(&format!("create_player: forced {name}={value} ERR {e}"));
             }
         }
         for (k, v) in &pre.options {
@@ -350,10 +395,15 @@ pub fn create_player<R: Runtime>(
             }
         }
         for (k, v) in &options {
-            // Protect the render-API `vo=libmpv` on macOS only; the wid-embed
-            // platforms (Windows/Linux) let mpv own a native vo the user may tune.
-            #[cfg(target_os = "macos")]
-            if k == "vo" {
+            // vo and hwdec are Rust-owned on EVERY platform (single-sourced
+            // per-OS in `best_in_class_options`); a frontend value must not
+            // override either - vo=libmpv is a render-API mandate on macOS, and
+            // hwdec is a stability/perf decision the webview no longer makes.
+            if k == "vo" || k == "hwdec" {
+                continue;
+            }
+            // Never let a frontend value re-enable a renderer-owned safety option.
+            if is_forced_mpv_option(k) {
                 continue;
             }
             if let Err(e) = init.set_option(k.as_str(), v.as_str()) {
@@ -553,7 +603,18 @@ fn build_chapter_list(mpv: &Mpv) -> Value {
 #[cfg(test)]
 mod tests {
     use super::best_in_class_options;
+    use super::is_forced_mpv_option;
     use std::collections::HashMap;
+
+    /// A frontend option must never be able to re-enable the renderer-owned safety
+    /// switches that keep mpv's built-in Lua scripts (LuaJIT) from loading.
+    #[test]
+    fn frontend_cannot_override_native_player_safety_options() {
+        for &(name, _) in super::FORCED_MPV_OPTIONS {
+            assert!(is_forced_mpv_option(name), "{name} must stay forced");
+        }
+        assert!(!is_forced_mpv_option("cache"));
+    }
 
     /// The best-in-class defaults are stable + platform-correct. Pure/headless - 
     /// no GPU, no mpv instance - so it runs on every CI runner.

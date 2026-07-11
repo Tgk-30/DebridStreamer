@@ -17,7 +17,7 @@
 
 use std::ffi::{c_void, CString};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use libmpv2::render::{OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType};
@@ -107,10 +107,19 @@ fn gl_viewport_size() -> (i32, i32) {
 struct SendRender(RenderContext);
 unsafe impl Send for SendRender {}
 
+/// Send-safe state shared with mpv's render-update callback. The callback must
+/// never capture or dereference an Objective-C object off-main: it can run
+/// concurrently with `mpv_render_context_free` during teardown. Holding only this
+/// Arc (a raw layer pointer plus the `dead` flag) is what keeps it sound.
+struct RenderCallbackState {
+    layer_ptr: AtomicUsize,
+    dead: AtomicBool,
+}
+
 struct VideoLayerIvars {
     mpv: Arc<Mpv>,
     render: Mutex<Option<SendRender>>,
-    dead: AtomicBool,
+    callback: Arc<RenderCallbackState>,
 }
 
 define_class!(
@@ -173,7 +182,7 @@ define_class!(
 
             let ivars = self.ivars();
             // Teardown has started - do not touch mpv/render at all.
-            if ivars.dead.load(Ordering::Acquire) {
+            if ivars.callback.dead.load(Ordering::Acquire) {
                 unsafe { CGLUnlockContext(ctx) };
                 unsafe {
                     let _: () = msg_send![super(self),
@@ -187,7 +196,7 @@ define_class!(
             if render_slot.is_none() {
                 // Re-check dead now that we hold the lock (teardown may have run
                 // between the check above and acquiring the lock).
-                if ivars.dead.load(Ordering::Acquire) {
+                if ivars.callback.dead.load(Ordering::Acquire) {
                     drop(render_slot);
                     unsafe { CGLUnlockContext(ctx) };
                     return;
@@ -204,14 +213,30 @@ define_class!(
                     ],
                 ) {
                     Ok(mut rc) => {
-                        // When mpv has a new frame, poke the layer to redraw
-                        // (on the main thread - CALayer.setNeedsDisplay).
-                        let layer_ptr = self as *const VideoLayer as usize;
+                        // When mpv has a new frame, poke the layer to redraw (on the
+                        // main thread - CALayer.setNeedsDisplay). mpv may invoke this
+                        // callback while the render context is being freed, so capture
+                        // only send-safe state: a raw VideoLayer pointer here caused a
+                        // reproducible use-after-free during teardown.
+                        let callback = ivars.callback.clone();
                         rc.set_update_callback(move || {
+                            if callback.dead.load(Ordering::Acquire) {
+                                return;
+                            }
+                            let redraw = callback.clone();
                             DispatchQueue::main().exec_async(move || {
-                                let layer: &VideoLayer =
-                                    unsafe { &*(layer_ptr as *const VideoLayer) };
-                                layer.setNeedsDisplay();
+                                // Teardown and this closure both serialize on the main
+                                // queue. Re-check the flag because the redraw may have
+                                // been queued before teardown ran.
+                                if redraw.dead.load(Ordering::Acquire) {
+                                    return;
+                                }
+                                let ptr = redraw.layer_ptr.load(Ordering::Acquire);
+                                if ptr != 0 {
+                                    let layer: &VideoLayer =
+                                        unsafe { &*(ptr as *const VideoLayer) };
+                                    layer.setNeedsDisplay();
+                                }
                             });
                         });
                         rp_log("VideoLayer.draw: RenderContext created");
@@ -245,16 +270,23 @@ define_class!(
 
 impl VideoLayer {
     fn new(mpv: Arc<Mpv>) -> Retained<Self> {
+        let callback = Arc::new(RenderCallbackState {
+            layer_ptr: AtomicUsize::new(0),
+            dead: AtomicBool::new(false),
+        });
         let this = Self::alloc().set_ivars(VideoLayerIvars {
             mpv,
             render: Mutex::new(None),
-            dead: AtomicBool::new(false),
+            callback: callback.clone(),
         });
-        unsafe { msg_send![super(this), init] }
-    }
-
-    fn set_needs_display(&self) {
-        self.setNeedsDisplay();
+        let layer: Retained<Self> = unsafe { msg_send![super(this), init] };
+        // Publish the real layer pointer only after init, for the send-safe
+        // render-update callback to reach the layer without capturing a raw
+        // Objective-C pointer of its own.
+        callback
+            .layer_ptr
+            .store(Retained::as_ptr(&layer) as usize, Ordering::Release);
+        layer
     }
 }
 
@@ -350,28 +382,39 @@ impl VideoSurface for MacosSurface {
         let host = self.host_view_ptr;
         let layer = self.layer_ptr;
         // ORDERED teardown, SYNCHRONOUS on the main thread: mark the layer dead
-        // (draw callback becomes a no-op), remove the host view (CA stops drawing),
-        // then FREE the mpv render context. This must complete before the shared
-        // `Arc<Mpv>` drops and destroys mpv - freeing the render context after mpv
-        // is destroyed is a use-after-free (the "back button crashes" bug).
-        // exec_sync (not async) guarantees the ordering; detach is only ever called
-        // off the main thread, so no dispatch_sync self-deadlock.
-        DispatchQueue::main().exec_sync(move || {
+        // (draw callback becomes a no-op), FREE the mpv render context WHILE the
+        // host hierarchy still retains the layer, then remove the host view. This
+        // must complete before the shared `Arc<Mpv>` drops and destroys mpv -
+        // freeing the render context after mpv is destroyed is a use-after-free
+        // (the "back button crashes" bug).
+        let teardown = move || {
             if layer != 0 {
                 let l: &VideoLayer = unsafe { &*(layer as *const VideoLayer) };
-                l.ivars().dead.store(true, Ordering::Release);
+                l.ivars().callback.dead.store(true, Ordering::Release);
+                // Free mpv_render_context while the host hierarchy still retains
+                // the layer. Dropping it unregisters/waits for the update callback,
+                // which now touches only send-safe state. Removing the host first
+                // released the final Objective-C owner and left both this code and
+                // the old `vo` callback with dangling raw pointers.
+                drop(l.ivars().render.lock().unwrap().take());
                 if host != 0 {
                     let v: &NSView = unsafe { &*(host as *const NSView) };
                     v.removeFromSuperview();
                 }
-                // Frees mpv_render_context (Drop). Uncontended: draws see `dead`
-                // and skip before locking.
-                let _ = l.ivars().render.lock().unwrap().take();
             } else if host != 0 {
                 let v: &NSView = unsafe { &*(host as *const NSView) };
                 v.removeFromSuperview();
             }
-        });
+        };
+        // detach normally runs off the main thread (async commands / Player drop);
+        // exec_sync onto the main queue preserves the ordering there. If a future
+        // caller is already ON the main thread, run inline instead - dispatch_sync
+        // onto the queue we are running on would self-deadlock.
+        if MainThreadMarker::new().is_some() {
+            teardown();
+        } else {
+            DispatchQueue::main().exec_sync(teardown);
+        }
     }
 }
 
