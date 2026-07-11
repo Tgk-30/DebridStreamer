@@ -94,6 +94,7 @@ const release = {
     asset("DebridStreamer_0.1.0_aarch64.dmg.sig", "sig"),
     asset("DebridStreamer_0.1.0_aarch64.app.zip", "appzip"),
     asset("DebridStreamer_0.1.0_aarch64.dmg", "dmg"),
+    asset("DebridStreamer_0.1.0_x64.dmg", "intel-dmg"),
     asset("DebridStreamer_0.1.0_x64-setup.exe", "exe"),
     asset("DebridStreamer_0.1.0_x64_en-US.msi", "msi"),
     asset("DebridStreamer_0.1.0_amd64.AppImage", "appimage"),
@@ -104,6 +105,22 @@ const release = {
 };
 
 check("mac best asset prefers dmg", site.bestAsset(release, "mac")?.browser_download_url === "dmg");
+check(
+  "mac Apple Silicon asset is selected explicitly",
+  site.bestMacAsset(release, "arm64")?.browser_download_url === "dmg",
+);
+check(
+  "mac Intel asset is selected explicitly",
+  site.bestMacAsset(release, "x64")?.browser_download_url === "intel-dmg",
+);
+check(
+  "Apple Silicon architecture is recognized",
+  site.macArchitecture(asset("DebridStreamer_0.1.0_aarch64.dmg")) === "arm64",
+);
+check(
+  "Intel architecture is recognized",
+  site.macArchitecture(asset("DebridStreamer_0.1.0_x64.dmg")) === "x64",
+);
 check("windows best asset prefers msi", site.bestAsset(release, "windows")?.browser_download_url === "msi");
 check("linux best asset prefers AppImage", site.bestAsset(release, "linux")?.browser_download_url === "appimage");
 check(

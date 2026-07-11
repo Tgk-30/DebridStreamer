@@ -103,6 +103,19 @@ function bestAsset(release, platform) {
   return platformAssets(release, platform)[0] ?? null;
 }
 
+function macArchitecture(asset) {
+  const name = asset?.name ?? "";
+  if (/(?:^|[_-])(?:aarch64|arm64)(?:[_.-]|$)/i.test(name)) return "arm64";
+  if (/(?:^|[_-])(?:x64|x86_64|amd64)(?:[_.-]|$)/i.test(name)) return "x64";
+  return null;
+}
+
+function bestMacAsset(release, architecture) {
+  return platformAssets(release, "mac").find(
+    (asset) => macArchitecture(asset) === architecture,
+  ) ?? null;
+}
+
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "";
   const units = ["B", "KB", "MB", "GB"];
@@ -207,7 +220,24 @@ async function hydrateDownloads() {
       return res.json();
     });
 
-    for (const key of ["mac", "windows", "linux"]) {
+    // macOS releases are per-architecture, not universal. Safari reports
+    // navigator.platform="MacIntel" on both Intel and Apple Silicon, so silently
+    // guessing here sends Intel users the arm64 DMG. Keep the generic mac links
+    // on this chooser and wire the two explicit downloads independently.
+    const macArm = bestMacAsset(release, "arm64");
+    const macIntel = bestMacAsset(release, "x64");
+    if (macArm?.browser_download_url) {
+      setLink('[data-download="mac-arm64"]', macArm.browser_download_url);
+    }
+    if (macIntel?.browser_download_url) {
+      setLink('[data-download="mac-x64"]', macIntel.browser_download_url);
+    }
+    setMeta("mac-arm64", macArm);
+    setMeta("mac-x64", macIntel);
+    setLink('[data-download="mac"]', "#download");
+    setMeta("mac", null);
+
+    for (const key of ["windows", "linux"]) {
       const asset = bestAsset(release, key);
       if (asset?.browser_download_url) {
         setLink(`[data-download="${key}"]`, asset.browser_download_url);
@@ -215,10 +245,13 @@ async function hydrateDownloads() {
       setMeta(key, asset);
     }
 
-    const asset = bestAsset(release, platform);
+    const asset = platform === "mac" ? null : bestAsset(release, platform);
     if (smart && asset?.browser_download_url) {
       smart.setAttribute("href", asset.browser_download_url);
       smart.textContent = `${labelFor(platform)} ${release.tag_name ?? ""}`.trim();
+    } else if (smart && platform === "mac") {
+      smart.setAttribute("href", "#download");
+      smart.textContent = "Choose a macOS build";
     }
     if (note) {
       setDownloadNote(note, `Latest release: ${release.tag_name ?? "available on"}`);
@@ -446,9 +479,11 @@ function initTilt() {
 if (typeof window !== "undefined") {
   window.DebridStreamerWebsite = {
     bestAsset,
+    bestMacAsset,
     detectPlatform,
     isInstallerAsset,
     labelFor,
+    macArchitecture,
     platformAssets,
     scoreAsset,
   };

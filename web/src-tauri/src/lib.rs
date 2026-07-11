@@ -166,6 +166,18 @@ pub fn run() {
     }
 
     builder
+        .setup(|app| {
+            // Opt-in development smoke test for the complete native player path.
+            // Debug-only: this code and environment hook are absent from releases.
+            #[cfg(all(debug_assertions, target_os = "macos"))]
+            if let Ok(url) = std::env::var("DS_PLAYER_SMOKE") {
+                if let Err(error) = render_player::debug_smoke_load(app.handle().clone(), &url) {
+                    eprintln!("DS_PLAYER_SMOKE failed: {error}");
+                }
+            }
+            let _ = app;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             open_in_external_player,
             list_external_players,
@@ -176,7 +188,6 @@ pub fn run() {
             player::mpv_get_position,
             player::mpv_stop,
             render_player::player_init,
-            render_player::player_load,
             render_player::player_command,
             render_player::player_set_property,
             render_player::player_get_property,

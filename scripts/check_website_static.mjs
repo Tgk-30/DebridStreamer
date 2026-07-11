@@ -143,7 +143,15 @@ for (const button of tags("button")) {
 
 for (const key of ["mac", "windows", "linux"]) {
   check(html.includes(`data-download="${key}"`), `missing ${key} download link hook`);
-  check(html.includes(`data-download-meta="${key}"`), `missing ${key} download metadata hook`);
+  if (key === "mac") {
+    check(
+      html.includes('data-download-meta="mac-arm64"') &&
+        html.includes('data-download-meta="mac-x64"'),
+      "missing per-architecture mac download metadata hooks",
+    );
+  } else {
+    check(html.includes(`data-download-meta="${key}"`), `missing ${key} download metadata hook`);
+  }
   check(js.includes(`${key}: {`), `missing ${key} platform config in app.js`);
 }
 

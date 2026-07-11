@@ -18,7 +18,8 @@
 //   * `RenderContext` is `!Send` → created LAZILY inside the draw callback, so it
 //     is born on the CA render thread that is the only thread to touch it.
 //   * AppKit view/layer setup is hopped to the main thread via GCD
-//     (dispatch2) — Tauri's `run_on_main_thread` proxy does not drain while idle.
+//     synchronously by Tauri on the AppKit thread; render-update redraws use
+//     dispatch2 after the surface exists.
 //   * The content view is taken from `NSApplication` (not Tauri's window handle,
 //     which dispatch_sync-deadlocks off-main).
 
@@ -26,7 +27,7 @@
 mod imp {
     use std::ffi::{c_void, CStr, CString};
     use std::ptr::NonNull;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex, OnceLock};
     use std::thread::JoinHandle;
 
@@ -51,7 +52,7 @@ mod imp {
 
     use serde::Deserialize;
     use serde_json::{json, Value};
-    use tauri::{AppHandle, Emitter, Manager, Runtime, State, Window};
+    use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
     // GL enum constants we need (not worth a GL crate).
     const GL_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
@@ -140,6 +141,8 @@ mod imp {
         mpv: Arc<Mpv>,
         render: Mutex<Option<SendRender>>,
         dead: AtomicBool,
+        draw_count: AtomicU64,
+        update_count: AtomicU64,
     }
 
     define_class!(
@@ -237,6 +240,16 @@ mod imp {
                             // (on the main thread — CALayer.setNeedsDisplay).
                             let layer_ptr = self as *const VideoLayer as usize;
                             rc.set_update_callback(move || {
+                                let layer: &VideoLayer =
+                                    unsafe { &*(layer_ptr as *const VideoLayer) };
+                                let update = layer
+                                    .ivars()
+                                    .update_count
+                                    .fetch_add(1, Ordering::Relaxed)
+                                    + 1;
+                                if update <= 3 {
+                                    rp_log(&format!("VideoLayer.update #{update}"));
+                                }
                                 DispatchQueue::main().exec_async(move || {
                                     let layer: &VideoLayer =
                                         unsafe { &*(layer_ptr as *const VideoLayer) };
@@ -256,6 +269,11 @@ mod imp {
                 if let Some(sr) = render_slot.as_ref() {
                     if let Err(e) = sr.0.render::<()>(fbo, w, h, true) {
                         rp_log(&format!("VideoLayer.draw: render failed: {e}"));
+                    } else {
+                        let draw = ivars.draw_count.fetch_add(1, Ordering::Relaxed) + 1;
+                        if draw <= 5 {
+                            rp_log(&format!("VideoLayer.draw #{draw} ({w}x{h})"));
+                        }
                     }
                 }
                 drop(render_slot);
@@ -278,12 +296,10 @@ mod imp {
                 mpv,
                 render: Mutex::new(None),
                 dead: AtomicBool::new(false),
+                draw_count: AtomicU64::new(0),
+                update_count: AtomicU64::new(0),
             });
             unsafe { msg_send![super(this), init] }
-        }
-
-        fn set_needs_display(&self) {
-            self.setNeedsDisplay();
         }
     }
 
@@ -360,9 +376,9 @@ mod imp {
             // drawing), then FREE the mpv render context. This must complete before
             // `self.mpv` (Arc) drops and destroys mpv — freeing the render context
             // after mpv is destroyed is a use-after-free (the "back button crashes"
-            // bug). exec_sync (not async) guarantees the ordering; shutdown is only
-            // ever called off the main thread, so no dispatch_sync self-deadlock.
-            DispatchQueue::main().exec_sync(move || {
+            // bug). Main-thread commands tear down inline; defensive off-main
+            // callers use exec_sync to preserve the same ordering.
+            let teardown = move || {
                 if layer != 0 {
                     let l: &VideoLayer = unsafe { &*(layer as *const VideoLayer) };
                     l.ivars().dead.store(true, Ordering::Release);
@@ -377,7 +393,16 @@ mod imp {
                     let v: &NSView = unsafe { &*(host as *const NSView) };
                     v.removeFromSuperview();
                 }
-            });
+            };
+            // Synchronous Tauri player commands run on AppKit's main thread.
+            // Tear down directly in that case; dispatch_sync to the queue we are
+            // already on would deadlock. Keep the off-main path for defensive use
+            // by debug tooling or a future non-command caller.
+            if MainThreadMarker::new().is_some() {
+                teardown();
+            } else {
+                DispatchQueue::main().exec_sync(teardown);
+            }
         }
     }
 
@@ -532,8 +557,14 @@ mod imp {
             );
         }
 
-        layer.set_needs_display();
-        rp_log("setup_on_main: layer host inserted below webview");
+        // Ask Core Animation for its first draw now. Some macOS versions complete
+        // it immediately; others do it on the next event-loop turn. `loadfile`
+        // waits off-main for the render slot below, so both behaviours are safe.
+        layer.display();
+        rp_log(&format!(
+            "setup_on_main: layer host inserted below webview; render_ready={}",
+            layer.ivars().render.lock().map(|g| g.is_some()).unwrap_or(false)
+        ));
         Ok((
             Retained::as_ptr(&host) as usize,
             Retained::as_ptr(&layer) as usize,
@@ -555,10 +586,10 @@ mod imp {
         }
 
         let mpv = Mpv::with_initializer(|init| {
-            // The render API REQUIRES vo=libmpv; hwdec stays SW for now (videotoolbox
-            // GL interop is a later hardening item). Both override any config value.
+            // The render API requires vo=libmpv. Copy-mode VideoToolbox works with
+            // the OpenGL render API and safely falls back to software decoding.
             let _ = init.set_option("vo", "libmpv");
-            let _ = init.set_option("hwdec", "no");
+            let _ = init.set_option("hwdec", "auto-copy");
             for (k, v) in &options {
                 if k == "vo" || k == "hwdec" {
                     continue;
@@ -573,15 +604,11 @@ mod imp {
         let mpv = Arc::new(mpv);
         rp_log("create_player: mpv created");
 
-        let (tx, rx) = std::sync::mpsc::channel::<Result<(usize, usize), String>>();
-        let m2 = mpv.clone();
-        DispatchQueue::main().exec_async(move || {
-            let _ = tx.send(setup_on_main(m2));
-        });
-        let (host_view_ptr, layer_ptr) = rx
-            .recv_timeout(std::time::Duration::from_secs(8))
-            .map_err(|_| "timed out setting up the video surface".to_string())??;
-
+        // `player_init` is intentionally synchronous, so Tauri invokes this on
+        // the AppKit thread. Build the native surface directly there instead of
+        // sending a closure across a queue and blocking on a channel. The queued
+        // version could remain undrained on another Mac and time out/crash.
+        let (host_view_ptr, layer_ptr) = setup_on_main(mpv.clone())?;
         let event_stop = Arc::new(AtomicBool::new(false));
         let event_thread = Some(spawn_event_thread(
             app.clone(),
@@ -602,6 +629,44 @@ mod imp {
         Ok(())
     }
 
+    fn command_when_ready<R: Runtime>(app: &AppHandle<R>, args: &[String]) -> Result<(), String> {
+        let state = app.state::<PlayerState>();
+        // Keep the state guard for the bounded wait so rapid close/reopen cannot
+        // destroy the layer behind this raw pointer.
+        let guard = state.0.lock().map_err(|_| "player state poisoned")?;
+        let player = guard.as_ref().ok_or("no player running")?;
+        let (name, rest) = args.split_first().ok_or("empty command")?;
+
+        if name == "loadfile" {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            loop {
+                let layer: &VideoLayer = unsafe { &*(player.layer_ptr as *const VideoLayer) };
+                let ready = layer
+                    .ivars()
+                    .render
+                    .lock()
+                    .map(|slot| slot.is_some())
+                    .unwrap_or(false);
+                if ready {
+                    rp_log("loadfile: render context ready");
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err("timed out creating the video render context".to_string());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(15));
+            }
+        }
+
+        let rest_refs: Vec<&str> = rest.iter().map(String::as_str).collect();
+        let result = player
+            .mpv
+            .command(name, &rest_refs)
+            .map_err(|e| format!("mpv command failed: {e}"));
+        rp_log(&format!("cmd {name} {rest:?} -> {result:?}"));
+        result
+    }
+
     fn with_player<T>(
         state: &State<'_, PlayerState>,
         f: impl FnOnce(&Player) -> Result<T, String>,
@@ -611,17 +676,31 @@ mod imp {
         f(p)
     }
 
+    /// Debug-only end-to-end smoke hook. It exercises the same mpv creation,
+    /// native surface, render context, and loadfile path as the frontend without
+    /// requiring a configured debrid account.
+    #[cfg(debug_assertions)]
+    pub fn debug_smoke_load<R: Runtime>(app: AppHandle<R>, url: &str) -> Result<(), String> {
+        create_player(app.clone(), std::collections::HashMap::new(), Vec::new())?;
+        let args = vec!["loadfile".to_string(), url.to_string()];
+        std::thread::spawn(move || {
+            match command_when_ready(&app, &args) {
+                Ok(()) => rp_log("DS_PLAYER_SMOKE loadfile succeeded"),
+                Err(error) => rp_log(&format!("DS_PLAYER_SMOKE loadfile failed: {error}")),
+            }
+        });
+        Ok(())
+    }
+
     // ---- Tauri commands ------------------------------------------------------
 
     /// Create the player (mpv + layer surface + event thread). Loading a file is a
     /// separate `player_command("loadfile", [url])`.
     ///
-    /// MUST be `async`: create_player blocks on a channel while the AppKit surface
-    /// is built on the main thread (via GCD). A SYNC Tauri command runs ON the main
-    /// thread, which would deadlock (it blocks the very thread that must build the
-    /// surface). Async commands run on the async runtime, off the main thread.
+    /// Deliberately synchronous: Tauri runs sync commands on the main thread,
+    /// which is exactly where the AppKit/CAOpenGLLayer surface must be created.
     #[tauri::command]
-    pub async fn player_init<R: Runtime>(
+    pub fn player_init<R: Runtime>(
         app: AppHandle<R>,
         options: std::collections::HashMap<String, String>,
         observed: Vec<ObserveSpec>,
@@ -629,34 +708,14 @@ mod imp {
         create_player(app, options, observed)
     }
 
-    /// Convenience: create with defaults + load a URL (used by the dev autostart).
     #[tauri::command]
-    pub async fn player_load<R: Runtime>(
+    pub async fn player_command<R: Runtime>(
         app: AppHandle<R>,
-        _window: Window<R>,
-        url: String,
+        args: Vec<String>,
     ) -> Result<(), String> {
-        create_player(app.clone(), std::collections::HashMap::new(), Vec::new())?;
-        let state = app.state::<PlayerState>();
-        with_player(&state, |p| {
-            p.mpv
-                .command("loadfile", &[&url])
-                .map_err(|e| format!("loadfile failed: {e}"))
-        })
-    }
-
-    #[tauri::command]
-    pub fn player_command(state: State<'_, PlayerState>, args: Vec<String>) -> Result<(), String> {
-        with_player(&state, |p| {
-            let (name, rest) = args.split_first().ok_or("empty command")?;
-            let rest_refs: Vec<&str> = rest.iter().map(|s| s.as_str()).collect();
-            let r = p
-                .mpv
-                .command(name, &rest_refs)
-                .map_err(|e| format!("mpv command failed: {e}"));
-            rp_log(&format!("cmd {name} {rest:?} -> {r:?}"));
-            r
-        })
+        tauri::async_runtime::spawn_blocking(move || command_when_ready(&app, &args))
+            .await
+            .map_err(|e| format!("player command task failed: {e}"))?
     }
 
     #[tauri::command]
@@ -707,7 +766,7 @@ mod imp {
     }
 
     #[tauri::command]
-    pub async fn player_destroy<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    pub fn player_destroy<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
         let state = app.state::<PlayerState>();
         let taken = {
             let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
@@ -762,7 +821,7 @@ pub use imp::*;
 #[cfg(not(target_os = "macos"))]
 mod stub {
     use std::sync::Mutex;
-    use tauri::{AppHandle, Runtime, State, Window};
+    use tauri::{AppHandle, Runtime, State};
 
     use std::collections::HashMap;
 
@@ -782,16 +841,6 @@ mod stub {
     pub fn player_set_video_margin(
         _state: State<'_, PlayerState>,
         _bottom: f64,
-    ) -> Result<(), String> {
-        Err("the in-window player is only available on macOS".into())
-    }
-
-    #[tauri::command]
-    pub fn player_load<R: Runtime>(
-        _app: AppHandle<R>,
-        _window: Window<R>,
-        _state: State<'_, PlayerState>,
-        _url: String,
     ) -> Result<(), String> {
         Err("the in-window player is only available on macOS".into())
     }

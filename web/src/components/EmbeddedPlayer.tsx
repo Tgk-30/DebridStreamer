@@ -20,6 +20,7 @@ import {
   type MpvObservableProperty,
 } from "../lib/renderPlayer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openInExternalPlayer } from "../lib/tauri";
 import { Icon } from "./Icon";
 import "./EmbeddedPlayer.css";
 
@@ -227,6 +228,7 @@ export function EmbeddedPlayer({
         unlisten = await observeProperties(
           OBSERVED,
           (ev: { name: string; data: unknown }) => {
+            if (cancelled) return;
             switch (ev.name) {
               case "pause":
                 setPaused(Boolean(ev.data));
@@ -519,11 +521,33 @@ export function EmbeddedPlayer({
         <div className="embed-stage" />
         <div className="embed-error" role="alert">
           <Icon name="info" size={26} className="t-warning" />
-          <p>Couldn’t play this stream.</p>
+          <p>Couldn’t play this stream in the built-in player.</p>
           <p className="embed-error-detail">{error}</p>
-          <button type="button" className="btn btn-prominent" onClick={onClose}>
-            Close
-          </button>
+          <div className="embed-error-actions">
+            <button
+              type="button"
+              className="btn btn-prominent"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    await openInExternalPlayer(url);
+                    onClose();
+                  } catch (err) {
+                    setError(
+                      `No external player is available either. Install IINA or VLC. (${
+                        err instanceof Error ? err.message : String(err)
+                      })`,
+                    );
+                  }
+                })();
+              }}
+            >
+              Open in external player
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
       </div>
     );
