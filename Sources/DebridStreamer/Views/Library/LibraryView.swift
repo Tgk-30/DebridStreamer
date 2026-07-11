@@ -43,8 +43,16 @@ struct HistoryView: View {
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                                Text(item.media.title)
-                                    .fontWeight(.semibold)
+                                HStack(spacing: AppTheme.Spacing.xs) {
+                                    Text(item.media.title)
+                                        .fontWeight(.semibold)
+                                    if WatchedStatus.derive(history: item.history, watchedState: nil).isWatched {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.caption)
+                                            .foregroundStyle(AppTheme.success)
+                                            .help("Watched")
+                                    }
+                                }
                                 Text(item.history.progressString)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -465,6 +473,13 @@ private struct LibraryMediaCard: View {
     let onOpen: () -> Void
     let onRemove: () -> Void
 
+    /// Derived from the already-loaded playback history. Manual "mark watched"
+    /// (no playback) surfaces via the Watched folder; the badge here reflects
+    /// finished or in-progress playback.
+    private var watchedStatus: WatchedStatus {
+        WatchedStatus.derive(history: item.history, watchedState: nil)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             Button(action: onOpen) {
@@ -492,6 +507,18 @@ private struct LibraryMediaCard: View {
                     .buttonStyle(.plain)
                     .padding(AppTheme.Spacing.sm)
                 }
+                .overlay(alignment: .topLeading) {
+                    if watchedStatus.isWatched {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(AppTheme.success)
+                            .frame(width: 26, height: 26)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.75))
+                            .padding(AppTheme.Spacing.sm)
+                            .help("Watched")
+                    }
+                }
             }
             .buttonStyle(.plain)
 
@@ -516,7 +543,7 @@ private struct LibraryMediaCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-                if let history = item.history, history.hasResumePoint {
+                if watchedStatus.isInProgress, let history = item.history {
                     Text("Continue: \(history.progressString)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)

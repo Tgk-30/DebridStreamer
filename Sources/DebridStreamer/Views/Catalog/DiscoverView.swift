@@ -413,78 +413,28 @@ struct DiscoverView: View {
     }
 
     private func watchedFeedbackSheet(pending: DiscoverFeedbackViewModel.PendingFeedback) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            Text("Rate Watched Title")
-                .font(.title3.weight(.semibold))
-            Text(pending.recommendation.title + (pending.recommendation.year.map { " (\($0))" } ?? ""))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            Group {
-                switch pending.mode {
-                case .none:
-                    EmptyView()
-                case .likeDislike:
-                    Picker("Feedback", selection: Binding(
-                        get: { (feedbackViewModel.pendingFeedback?.value ?? 1) >= 0.5 ? "like" : "dislike" },
-                        set: { newValue in
-                            feedbackViewModel.pendingFeedback?.value = newValue == "like" ? 1 : 0
-                        }
-                    )) {
-                        Text("Like").tag("like")
-                        Text("Dislike").tag("dislike")
-                    }
-                    .pickerStyle(.segmented)
-                case .scale1to10:
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                        Text("Rating: \(Int((feedbackViewModel.pendingFeedback?.value ?? 8).rounded())) / 10")
-                            .font(.caption)
-                        Slider(
-                            value: Binding(
-                                get: { feedbackViewModel.pendingFeedback?.value ?? 8 },
-                                set: { feedbackViewModel.pendingFeedback?.value = $0.rounded() }
-                            ),
-                            in: 1...10,
-                            step: 1
-                        )
-                    }
-                case .scale1to100:
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                        Text("Rating: \(Int((feedbackViewModel.pendingFeedback?.value ?? 80).rounded())) / 100")
-                            .font(.caption)
-                        Slider(
-                            value: Binding(
-                                get: { feedbackViewModel.pendingFeedback?.value ?? 80 },
-                                set: { feedbackViewModel.pendingFeedback?.value = $0.rounded() }
-                            ),
-                            in: 1...100,
-                            step: 1
-                        )
-                    }
+        RatingFeedbackSheet(
+            title: pending.recommendation.title + (pending.recommendation.year.map { " (\($0))" } ?? ""),
+            mode: pending.mode,
+            value: Binding(
+                get: { feedbackViewModel.pendingFeedback?.value },
+                set: { feedbackViewModel.pendingFeedback?.value = $0 }
+            ),
+            onCancel: {
+                feedbackViewModel.dismissPendingFeedback()
+            },
+            onSave: {
+                guard let pending = feedbackViewModel.pendingFeedback else { return }
+                Task {
+                    await feedbackViewModel.submitWatched(
+                        recommendation: pending.recommendation,
+                        mode: pending.mode,
+                        value: pending.value,
+                        service: appState.userFeedbackService
+                    )
                 }
             }
-
-            Spacer()
-            HStack {
-                Button("Cancel") {
-                    feedbackViewModel.dismissPendingFeedback()
-                }
-                Spacer()
-                Button("Save Feedback") {
-                    guard let pending = feedbackViewModel.pendingFeedback else { return }
-                    Task {
-                        await feedbackViewModel.submitWatched(
-                            recommendation: pending.recommendation,
-                            mode: pending.mode,
-                            value: pending.value,
-                            service: appState.userFeedbackService
-                        )
-                    }
-                }
-                .buttonStyle(.glassProminent)
-            }
-        }
-        .padding(AppTheme.Spacing.lg)
+        )
     }
 
     // MARK: - Poster catalog rails

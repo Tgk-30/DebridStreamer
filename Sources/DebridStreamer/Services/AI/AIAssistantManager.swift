@@ -11,6 +11,11 @@ actor AIAssistantManager {
     private let cacheTTL: TimeInterval = 60 * 30
     private let cacheCapacity = 200
 
+    /// Small in-memory cache for "Would I like this?" verdicts, keyed by media id
+    /// + personalization flag. Shares the recommendation cache's 30-minute TTL and
+    /// capacity so a repeat tap within the window returns instantly.
+    private var affinityCache: [String: (expiresAt: Date, result: AIAffinityVerdict)] = [:]
+
     init(
         providers: [AIProviderKind: any AIAssistantProvider],
         database: DatabaseManager?,
@@ -139,6 +144,130 @@ actor AIAssistantManager {
             sortBy: sort,
             summary: summary
         )
+    }
+
+    // MARK: - "Would I like this?" affinity verdict
+
+    enum AffinityError: LocalizedError {
+        case noProvider
+
+        var errorDescription: String? {
+            switch self {
+            case .noProvider: return "No AI provider is configured. Add one in Settings."
+            }
+        }
+    }
+
+    /// Produce a yes / maybe / no verdict (with confidence + reasoning) for a
+    /// single title. Mirrors `discoverFilters`: honest `.noProvider` error when
+    /// unconfigured, taste context from the shared assembler, per-item watched /
+    /// rating extras, a single-shot `complete` call, usage recording, then a
+    /// tolerant parse. Verdicts are cached in-memory per media id + personalization
+    /// flag for the shared TTL so a repeat tap returns instantly.
+    func predictAffinity(for item: MediaItem) async throws -> AIAffinityVerdict {
+        guard let kind = availableProviders.first, let provider = providers[kind] else {
+            throw AffinityError.noProvider
+        }
+
+        // Cheap key/value read first so a cache hit avoids full context assembly.
+        var personalizationEnabled = false
+        if let database {
+            personalizationEnabled = ((try? await database.getSetting(key: SettingsKeys.personalizationEnabled)) ?? nil) == "true"
+        }
+
+        let cacheKey = "\(item.id)|\(personalizationEnabled)"
+        if let cached = affinityCache[cacheKey], cached.expiresAt > Date() {
+            return cached.result
+        }
+
+        // Taste summary via the shared assembler (it re-checks personalization and
+        // gates the taste-derived notes accordingly). Only surface those notes when
+        // personalization is on, so the honesty path fires whenever it is off.
+        let context = await contextAssembler.buildContext(prompt: "Would I like \(item.title)?", folderId: nil)
+        let contextNotes = personalizationEnabled ? context.contextNotes : []
+        let alreadyWatchedNote = await affinityAlreadyWatchedNote(for: item)
+
+        let prompt = AIAffinityParser.prompt(
+            title: item.title,
+            year: item.year,
+            genres: item.genres,
+            overview: item.overview,
+            contextNotes: contextNotes,
+            alreadyWatchedNote: alreadyWatchedNote
+        )
+
+        let raw = try await provider.complete(prompt: prompt)
+        await recordUsage(AIUsageMetrics(
+            inputTokens: AIAssistantJSONParser.estimatedTokenCount(for: prompt),
+            outputTokens: AIAssistantJSONParser.estimatedTokenCount(for: raw),
+            totalTokens: nil,
+            estimatedCostUSD: nil
+        ))
+
+        let verdict = try AIAffinityParser.parse(raw)
+        storeInAffinityCache(cacheKey, (expiresAt: Date().addingTimeInterval(cacheTTL), result: verdict))
+        return verdict
+    }
+
+    /// A short factual note describing whether the user has already watched or
+    /// rated this exact title, for the prompt to factor in. Independent of the
+    /// personalization opt-in (it is per-item, not aggregate profiling). Returns
+    /// nil when there is nothing to report or no database.
+    private func affinityAlreadyWatchedNote(for item: MediaItem) async -> String? {
+        guard let database else { return nil }
+        var parts: [String] = []
+
+        let watchedEvent = (try? await database.fetchLatestWatchedState(mediaId: item.id)) ?? nil
+        if let watchedEvent, let state = watchedEvent.watchedState {
+            switch state {
+            case .watched: parts.append("they marked it watched")
+            case .notWatched: parts.append("they marked it as not watched")
+            }
+            if let value = watchedEvent.feedbackValue, let scale = watchedEvent.feedbackScale {
+                parts.append("their recorded rating was \(affinityRatingPhrase(value, scale: scale))")
+            }
+        }
+
+        let history = (try? await database.fetchWatchHistory(mediaId: item.id)) ?? nil
+        if let history {
+            let percent = Int((history.progressPercent * 100).rounded())
+            if history.completed || percent >= 95 {
+                parts.append("they have finished watching it")
+            } else if percent >= 2 {
+                parts.append("they are about \(percent)% through it")
+            }
+        }
+
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: ", ") + "."
+    }
+
+    /// Human-readable phrase for a recorded rating, per feedback scale.
+    private func affinityRatingPhrase(_ value: Double, scale: FeedbackScaleMode) -> String {
+        switch scale {
+        case .likeDislike: return value >= 0.5 ? "a thumbs up" : "a thumbs down"
+        case .scale1to10: return "\(Int(value.rounded())) out of 10"
+        case .scale1to100: return "\(Int(value.rounded())) out of 100"
+        case .none: return "recorded"
+        }
+    }
+
+    /// Bounded insert for the affinity cache, mirroring `storeInCache`: sweep
+    /// expired entries, then evict the soonest-to-expire if at capacity.
+    private func storeInAffinityCache(_ key: String, _ entry: (expiresAt: Date, result: AIAffinityVerdict)) {
+        let now = Date()
+        affinityCache = affinityCache.filter { $0.value.expiresAt > now }
+        if affinityCache.count >= cacheCapacity {
+            let overflow = affinityCache.count - (cacheCapacity - 1)
+            let victims = affinityCache
+                .sorted { $0.value.expiresAt < $1.value.expiresAt }
+                .prefix(overflow)
+                .map(\.key)
+            for victim in victims {
+                affinityCache.removeValue(forKey: victim)
+            }
+        }
+        affinityCache[key] = entry
     }
 
     func recommend(request: AIAssistantRequest) async -> AICompareResult {
