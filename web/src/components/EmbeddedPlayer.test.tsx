@@ -32,6 +32,7 @@ vi.mock("./Icon", () => ({
 }));
 
 import { EmbeddedPlayer } from "./EmbeddedPlayer";
+import { fitVideoRect } from "../lib/videoRect";
 
 afterEach(() => {
   cleanup();
@@ -76,5 +77,24 @@ describe("EmbeddedPlayer control geometry", () => {
     expect(css).toContain(
       "grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);",
     );
+  });
+});
+
+describe("control overlay aligns to the rendered video frame", () => {
+  it("pins to the letterboxed frame for a wide video in a tall window", () => {
+    // 16:9 video inside a square window: full width, bars top and bottom.
+    const rect = fitVideoRect({ width: 1920, height: 1080 }, { width: 1000, height: 1000 });
+    expect(rect).toEqual({ left: 0, top: 218.75, width: 1000, height: 562.5 });
+  });
+
+  it("pins to the pillarboxed frame for a tall video in a wide window", () => {
+    // 9:16 video inside a 16:9 window: full height, bars left and right.
+    const rect = fitVideoRect({ width: 1080, height: 1920 }, { width: 1600, height: 900 });
+    expect(rect).toEqual({ left: 546.875, top: 0, width: 506.25, height: 900 });
+  });
+
+  it("falls back to the full window when dimensions are unknown", () => {
+    // Before the first frame or for audio-only: no rect, controls span the window.
+    expect(fitVideoRect({ width: 0, height: 0 }, { width: 1280, height: 720 })).toBeNull();
   });
 });

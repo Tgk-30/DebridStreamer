@@ -21,6 +21,7 @@ import {
 } from "../lib/renderPlayer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openInExternalPlayer } from "../lib/tauri";
+import { fitVideoRect } from "../lib/videoRect";
 import type { PlaybackPrefs } from "../storage/models";
 import { Icon } from "./Icon";
 import "./EmbeddedPlayer.css";
@@ -72,6 +73,12 @@ const OBSERVED: readonly MpvObservableProperty[] = [
   ["aid", "string", "none"],
   ["sid", "string", "none"],
   ["eof-reached", "flag"],
+  // Aspect-corrected display size of the decoded frame. We fit this against the
+  // window to know where the native layer letterboxes the video, so the control
+  // overlay pins to the real frame instead of the black bars. (video-params is a
+  // node - not observable via the scalar-only bridge - but dwidth/dheight are.)
+  ["dwidth", "int64", "none"],
+  ["dheight", "int64", "none"],
 ];
 
 const MPV_CONFIG: MpvConfig = {
@@ -182,6 +189,14 @@ export function EmbeddedPlayer({
   const [ended, setEnded] = useState(false);
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Aspect-corrected frame size (0 until the first frame / for audio-only) and
+  // the current surface size, used to align the controls with the video frame.
+  const [videoW, setVideoW] = useState(0);
+  const [videoH, setVideoH] = useState(0);
+  const [surface, setSurface] = useState<{ width: number; height: number }>(() => ({
+    width: typeof window === "undefined" ? 0 : window.innerWidth,
+    height: typeof window === "undefined" ? 0 : window.innerHeight,
+  }));
 
   const startedRef = useRef(false);
   // Cleared once the first frame is shown; until then the initial buffering=true
@@ -207,6 +222,17 @@ export function EmbeddedPlayer({
     return () => document.documentElement.classList.remove("mpv-active");
   }, []);
 
+  // Track the surface size. `.embed-player` is fixed inset:0, so it matches the
+  // viewport, which matches the native mpv surface; a plain resize listener keeps
+  // the fitted video rect current (including on the fullscreen resize).
+  useEffect(() => {
+    const measure = () =>
+      setSurface({ width: window.innerWidth, height: window.innerHeight });
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
   // Refresh the track + chapter lists from mpv (after load, and on menu open).
   const refreshTracks = useCallback(async () => {
     try {
@@ -229,6 +255,8 @@ export function EmbeddedPlayer({
   useEffect(() => {
     let cancelled = false;
     firstFrameRef.current = false; // new file: show the initial spinner again
+    setVideoW(0); // and drop the prior file's aspect until the new frame lands
+    setVideoH(0);
     let unlisten: (() => void) | undefined;
     void (async () => {
       try {
@@ -284,6 +312,12 @@ export function EmbeddedPlayer({
                 break;
               case "eof-reached":
                 if (ev.data === true) setEnded(true);
+                break;
+              case "dwidth":
+                if (typeof ev.data === "number") setVideoW(ev.data);
+                break;
+              case "dheight":
+                if (typeof ev.data === "number") setVideoH(ev.data);
                 break;
             }
           },
@@ -581,6 +615,22 @@ export function EmbeddedPlayer({
 
   const pct = (v: number) => (dur > 0 ? Math.min(100, Math.max(0, (v / dur) * 100)) : 0);
 
+  // Constrain the control overlay to the fitted video frame so the top/bottom
+  // bars ride the real picture, not the letterbox bars. Falls back to the full
+  // surface (undefined style → CSS inset:0) until dimensions are known.
+  const videoRect = useMemo(
+    () => fitVideoRect({ width: videoW, height: videoH }, surface),
+    [videoW, videoH, surface],
+  );
+  const controlsStyle: React.CSSProperties | undefined = videoRect
+    ? {
+        left: videoRect.left,
+        top: videoRect.top,
+        width: videoRect.width,
+        height: videoRect.height,
+      }
+    : undefined;
+
   if (error) {
     return (
       <div className="embed-player show-controls">
@@ -668,7 +718,7 @@ export function EmbeddedPlayer({
         </div>
       )}
 
-      <div className="embed-controls">
+      <div className="embed-controls" style={controlsStyle}>
         {/* Top bar */}
         <div className="embed-top">
           <button
@@ -751,54 +801,10 @@ export function EmbeddedPlayer({
             <span className="embed-time">-{fmt(Math.max(0, dur - pos))}</span>
           </div>
 
-          {/* Buttons row */}
+          {/* Buttons row: equal flexible side columns keep the transport group
+              (center) centered on the frame regardless of side widths. */}
           <div className="embed-buttons">
             <div className="embed-buttons-left">
-              <button
-                type="button"
-                className="embed-play-btn"
-                onClick={togglePause}
-                aria-label={paused ? "Play" : "Pause"}
-              >
-                {paused || ended ? (
-                  <Icon name="play" size={26} filled />
-                ) : (
-                  <span className="embed-pause-glyph" aria-hidden>
-                    <i />
-                    <i />
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                className="embed-icon-btn"
-                onClick={() => relSeek(-10)}
-                aria-label="Back 10 seconds"
-              >
-                <Icon name="refresh" size={20} />
-                <span className="embed-skip-num">10</span>
-              </button>
-              <button
-                type="button"
-                className="embed-icon-btn"
-                onClick={() => relSeek(10)}
-                aria-label="Forward 10 seconds"
-              >
-                <Icon name="refresh" size={20} className="embed-flip" />
-                <span className="embed-skip-num">10</span>
-              </button>
-              {onPlayNext != null && (
-                <button
-                  type="button"
-                  className="embed-icon-btn"
-                  onClick={onPlayNext}
-                  aria-label="Next episode"
-                  title={nextLabel ? `Next: ${nextLabel}` : "Next episode"}
-                >
-                  <Icon name="play" size={17} />
-                  <Icon name="play" size={17} className="embed-next-2" />
-                </button>
-              )}
               <div className="embed-volume">
                 <button
                   type="button"
@@ -821,7 +827,55 @@ export function EmbeddedPlayer({
               </div>
             </div>
 
+            <div className="embed-buttons-center">
+              <button
+                type="button"
+                className="embed-icon-btn"
+                onClick={() => relSeek(-10)}
+                aria-label="Back 10 seconds"
+              >
+                <Icon name="refresh" size={20} />
+                <span className="embed-skip-num">10</span>
+              </button>
+              <button
+                type="button"
+                className="embed-play-btn"
+                onClick={togglePause}
+                aria-label={paused ? "Play" : "Pause"}
+              >
+                {paused || ended ? (
+                  <Icon name="play" size={26} filled />
+                ) : (
+                  <span className="embed-pause-glyph" aria-hidden>
+                    <i />
+                    <i />
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                className="embed-icon-btn"
+                onClick={() => relSeek(10)}
+                aria-label="Forward 10 seconds"
+              >
+                <Icon name="refresh" size={20} className="embed-flip" />
+                <span className="embed-skip-num">10</span>
+              </button>
+            </div>
+
             <div className="embed-buttons-right">
+              {onPlayNext != null && (
+                <button
+                  type="button"
+                  className="embed-icon-btn"
+                  onClick={onPlayNext}
+                  aria-label="Next episode"
+                  title={nextLabel ? `Next: ${nextLabel}` : "Next episode"}
+                >
+                  <Icon name="play" size={17} />
+                  <Icon name="play" size={17} className="embed-next-2" />
+                </button>
+              )}
               <MenuButton
                 label="Speed"
                 active={menu === "speed"}
