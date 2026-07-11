@@ -262,16 +262,28 @@ html.mpv-active .embed-player * {
 
 /* Buttons row */
 .embed-buttons {
-  display: flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
 .embed-buttons-left,
+.embed-buttons-center,
 .embed-buttons-right {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+.embed-buttons-left {
+  justify-self: start;
+}
+.embed-buttons-center {
+  justify-self: center;
+}
+.embed-buttons-right {
+  justify-self: end;
 }
 
 .embed-icon-btn {
