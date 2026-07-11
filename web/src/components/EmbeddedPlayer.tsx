@@ -685,51 +685,6 @@ export function EmbeddedPlayer({
           {/* Buttons row */}
           <div className="embed-buttons">
             <div className="embed-buttons-left">
-              <button
-                type="button"
-                className="embed-play-btn"
-                onClick={togglePause}
-                aria-label={paused ? "Play" : "Pause"}
-              >
-                {paused || ended ? (
-                  <Icon name="play" size={26} filled />
-                ) : (
-                  <span className="embed-pause-glyph" aria-hidden>
-                    <i />
-                    <i />
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                className="embed-icon-btn"
-                onClick={() => relSeek(-10)}
-                aria-label="Back 10 seconds"
-              >
-                <Icon name="refresh" size={20} />
-                <span className="embed-skip-num">10</span>
-              </button>
-              <button
-                type="button"
-                className="embed-icon-btn"
-                onClick={() => relSeek(10)}
-                aria-label="Forward 10 seconds"
-              >
-                <Icon name="refresh" size={20} className="embed-flip" />
-                <span className="embed-skip-num">10</span>
-              </button>
-              {onPlayNext != null && (
-                <button
-                  type="button"
-                  className="embed-icon-btn"
-                  onClick={onPlayNext}
-                  aria-label="Next episode"
-                  title={nextLabel ? `Next: ${nextLabel}` : "Next episode"}
-                >
-                  <Icon name="play" size={17} />
-                  <Icon name="play" size={17} className="embed-next-2" />
-                </button>
-              )}
               <div className="embed-volume">
                 <button
                   type="button"
@@ -752,7 +707,55 @@ export function EmbeddedPlayer({
               </div>
             </div>
 
+            <div className="embed-buttons-center">
+              <button
+                type="button"
+                className="embed-icon-btn"
+                onClick={() => relSeek(-10)}
+                aria-label="Back 10 seconds"
+              >
+                <Icon name="refresh" size={20} />
+                <span className="embed-skip-num">10</span>
+              </button>
+              <button
+                type="button"
+                className="embed-play-btn"
+                onClick={togglePause}
+                aria-label={paused ? "Play" : "Pause"}
+              >
+                {paused || ended ? (
+                  <Icon name="play" size={26} filled />
+                ) : (
+                  <span className="embed-pause-glyph" aria-hidden>
+                    <i />
+                    <i />
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                className="embed-icon-btn"
+                onClick={() => relSeek(10)}
+                aria-label="Forward 10 seconds"
+              >
+                <Icon name="refresh" size={20} className="embed-flip" />
+                <span className="embed-skip-num">10</span>
+              </button>
+            </div>
+
             <div className="embed-buttons-right">
+              {onPlayNext != null && (
+                <button
+                  type="button"
+                  className="embed-icon-btn"
+                  onClick={onPlayNext}
+                  aria-label="Next episode"
+                  title={nextLabel ? `Next: ${nextLabel}` : "Next episode"}
+                >
+                  <Icon name="play" size={17} />
+                  <Icon name="play" size={17} className="embed-next-2" />
+                </button>
+              )}
               <MenuButton
                 label="Speed"
                 active={menu === "speed"}
