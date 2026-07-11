@@ -26,6 +26,11 @@ final class PlayerViewModel {
     var vlcSession: (any VLCPlaybackSession)?
     var selectedEngine: PlayerEngineKind?
     var playbackRate: Float = 1.0
+    /// Intrinsic size of the decoded video, published once VLC reports it so the
+    /// player can align its controls overlay with the rendered picture. `.zero`
+    /// means "unknown" (pre-first-frame or audio-only) and keeps the full-window
+    /// layout.
+    var videoSize: CGSize = .zero
     var controlsVisible = true
     var isFullscreenActive = false
     var isFullscreenTransitioning = false
@@ -391,6 +396,19 @@ final class PlayerViewModel {
         scheduleControlsAutoHideIfNeeded()
     }
 
+    /// Polls the active session's intrinsic video size and publishes it once it
+    /// becomes known. VLC only reports a non-zero size after the first frame decodes,
+    /// so this is driven from the progress loop; the size resets to `.zero` when
+    /// playback stops or new media is prepared.
+    func refreshVideoSize() {
+        guard let session = vlcSession else { return }
+        let size = session.videoSize
+        guard size.width > 0, size.height > 0 else { return }
+        if size != videoSize {
+            videoSize = size
+        }
+    }
+
     func refreshTrackOptions() {
         guard let session = vlcSession else {
             availableAudioTracks = []
@@ -480,6 +498,7 @@ final class PlayerViewModel {
         cancelFullscreenTransitionTask()
         vlcSession?.stop()
         vlcSession = nil
+        videoSize = .zero
         availableAudioTracks = []
         availableSubtitleTracks = []
         selectedAudioTrackID = nil

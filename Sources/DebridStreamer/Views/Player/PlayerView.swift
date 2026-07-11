@@ -27,18 +27,12 @@ struct PlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            playbackSurface
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    viewModel.registerUserInteraction()
-                }
+            videoFrame
 
             MouseMoveMonitor {
                 viewModel.registerUserInteraction()
             }
             .allowsHitTesting(false)
-
-            controlsLayer
 
             if viewModel.isLoading {
                 loadingOverlay
@@ -79,6 +73,32 @@ struct PlayerView: View {
         }
         .onDisappear {
             teardownPlayer(notifyParent: false)
+        }
+    }
+
+    /// Wraps the playback surface and the controls overlay in a shared container.
+    /// Once the intrinsic video size is known, the container is constrained to the
+    /// picture's aspect ratio and centered in the window, so the status pills and
+    /// control panel hug the rendered frame instead of floating on the letterbox or
+    /// pillarbox bars. Before the first frame (or for audio-only media) the container
+    /// fills the window exactly as before, so nothing regresses.
+    @ViewBuilder
+    private var videoFrame: some View {
+        let frameContent = ZStack {
+            playbackSurface
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    viewModel.registerUserInteraction()
+                }
+
+            controlsLayer
+        }
+
+        if let ratio = PlayerVideoFrameLayout.aspectRatio(for: viewModel.videoSize) {
+            frameContent
+                .aspectRatio(ratio, contentMode: .fit)
+        } else {
+            frameContent
         }
     }
 
@@ -434,6 +454,7 @@ struct PlayerView: View {
     private func syncProgressLoop() async {
         while !Task.isCancelled {
             _ = viewModel.applyPendingResumeIfPossible()
+            viewModel.refreshVideoSize()
             let current = viewModel.currentTimeSeconds
             let total = viewModel.durationSeconds ?? 0
 

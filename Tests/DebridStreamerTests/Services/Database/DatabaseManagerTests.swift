@@ -593,7 +593,12 @@ struct DatabaseDebridConfigTests {
 
         // Verify via fetchAll
         let saved = try await db.fetchAllDebridConfigs()
-        #expect(saved.contains(where: { $0.service == .realDebrid && $0.apiToken == "my-secret-token-123" }))
+        // Hoisted out of the #expect macro: the compound closure inside the
+        // macro expansion tripped the type-checker's "reasonable time" limit.
+        let hasSavedToken = saved.contains { config in
+            config.service == .realDebrid && config.apiToken == "my-secret-token-123"
+        }
+        #expect(hasSavedToken)
     }
 
     @Test("Update debrid config token")

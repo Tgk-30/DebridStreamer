@@ -30,6 +30,16 @@ struct DetailView: View {
     @State private var libraryActionStatus: String?
     @State private var availableFolders: [LibraryFolder] = []
 
+    // Watched indicator + rating flow (mirrors Discover's mark-watched path).
+    @State private var watchedStatus: WatchedStatus = .unwatched
+    @State private var pendingRating: PendingRating?
+
+    // "Would I like this?" inline AI verdict.
+    @State private var affinityVerdict: AIAffinityVerdict?
+    @State private var isPredictingAffinity = false
+    @State private var affinityError: String?
+    @State private var showAffinityUnavailable = false
+
     // L23 - cast / related / technical details
     @State private var cast: [CastMember] = []
     @State private var related: [MediaPreview] = []
@@ -88,6 +98,22 @@ struct DetailView: View {
         .sheet(item: $selectedPerson) { member in
             PersonView(personId: member.id, initialName: member.name)
                 .frame(minWidth: 820, idealWidth: 900, minHeight: 560)
+        }
+        .sheet(item: $pendingRating) { pending in
+            RatingFeedbackSheet(
+                title: ratingTitle,
+                mode: pending.mode,
+                value: Binding(
+                    get: { pendingRating?.value },
+                    set: { pendingRating?.value = $0 }
+                ),
+                onCancel: { pendingRating = nil },
+                onSave: {
+                    guard let pending = pendingRating else { return }
+                    Task { await submitRating(mode: pending.mode, value: pending.value) }
+                }
+            )
+            .frame(minWidth: 420, minHeight: 260)
         }
     }
 
@@ -156,6 +182,18 @@ struct DetailView: View {
                             .background(.ultraThinMaterial)
                             .clipShape(Capsule())
                             .padding(.leading, AppTheme.Spacing.xs)
+
+                        if watchedStatus.isWatched {
+                            HStack(spacing: AppTheme.Spacing.xxs) {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("Watched")
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, AppTheme.Spacing.sm)
+                            .padding(.vertical, 2)
+                            .background(AppTheme.success.opacity(0.9), in: Capsule())
+                        }
                     }
                     .font(.subheadline)
                 }
@@ -240,6 +278,13 @@ struct DetailView: View {
                 }
                 .buttonStyle(.glass)
 
+                Button {
+                    Task { await beginRating(detail) }
+                } label: {
+                    Label(watchedStatus.isWatched ? "Rate Again" : "Rate", systemImage: "star")
+                }
+                .buttonStyle(.glass)
+
                 Button("Ask AI") {
                     let genres = detail.genres.joined(separator: ", ")
                     appState.assistantDraftPrompt = "Recommend \(detail.type == .movie ? "movies" : "series") similar to \(detail.title). Genres: \(genres)."
@@ -248,6 +293,28 @@ struct DetailView: View {
                     dismiss()
                 }
                 .buttonStyle(.glassProminent)
+
+                Button {
+                    if appState.aiAssistantHasProvider {
+                        Task { await predictAffinity(detail) }
+                    } else {
+                        // Never a dead button: reveal the quiet unavailable hint.
+                        showAffinityUnavailable = true
+                        affinityVerdict = nil
+                        affinityError = nil
+                    }
+                } label: {
+                    if isPredictingAffinity {
+                        HStack(spacing: AppTheme.Spacing.xs) {
+                            ProgressView().controlSize(.small)
+                            Text("Would I like this?")
+                        }
+                    } else {
+                        Text("Would I like this?")
+                    }
+                }
+                .buttonStyle(.glass)
+                .disabled(isPredictingAffinity)
 
                 if !availableFolders.isEmpty {
                     // Glass-styled to match the action pills (L4) instead of a stock Menu.
@@ -285,6 +352,136 @@ struct DetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            affinitySection
+        }
+    }
+
+    // MARK: - "Would I like this?" inline verdict
+
+    /// Renders under the action bar: the gated unavailable hint, a provider error,
+    /// or the verdict card. Nothing shows until the user taps the button.
+    @ViewBuilder
+    private var affinitySection: some View {
+        if !appState.aiAssistantHasProvider, showAffinityUnavailable {
+            affinityUnavailableHint
+        } else if let affinityError {
+            affinityErrorCard(affinityError)
+        } else if let affinityVerdict {
+            affinityResultCard(affinityVerdict)
+        }
+    }
+
+    private var affinityUnavailableHint: some View {
+        HStack(spacing: AppTheme.Spacing.sm) {
+            Image(systemName: "key.fill")
+                .foregroundStyle(.secondary)
+            Text("Add an AI provider (OpenAI, Anthropic, or Ollama) to get a personal verdict.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Open settings") {
+                appState.openSettings(tab: .aiSync)
+            }
+            .buttonStyle(.glass)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .padding(.vertical, AppTheme.Spacing.sm)
+        .frame(maxWidth: 580, alignment: .leading)
+        .glassElevation(.rest, radius: AppTheme.Radius.md)
+    }
+
+    private func affinityErrorCard(_ message: String) -> some View {
+        HStack(spacing: AppTheme.Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(AppTheme.warning)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                affinityError = nil
+            } label: {
+                Image(systemName: "xmark.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(AppTheme.Spacing.md)
+        .frame(maxWidth: 580, alignment: .leading)
+        .glassCard(radius: AppTheme.Radius.md)
+    }
+
+    private func affinityResultCard(_ verdict: AIAffinityVerdict) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Image(systemName: affinityIcon(verdict.verdict))
+                    .font(.title3)
+                    .foregroundStyle(affinityTint(verdict.verdict))
+                Text(affinityHeadline(verdict.verdict))
+                    .font(.headline)
+                Text("\(verdict.confidencePercent)% confidence")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    affinityVerdict = nil
+                } label: {
+                    Image(systemName: "xmark.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+            Text(verdict.reasoning)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: 580, alignment: .leading)
+        .padding(AppTheme.Spacing.md)
+        .glassCard(radius: AppTheme.Radius.md, tint: affinityTint(verdict.verdict))
+    }
+
+    private func affinityIcon(_ verdict: AIAffinityVerdict.Verdict) -> String {
+        switch verdict {
+        case .yes: return "checkmark.circle.fill"
+        case .maybe: return "questionmark.circle.fill"
+        case .no: return "xmark.circle.fill"
+        }
+    }
+
+    private func affinityTint(_ verdict: AIAffinityVerdict.Verdict) -> Color {
+        switch verdict {
+        case .yes: return AppTheme.success
+        case .maybe: return AppTheme.warning
+        case .no: return AppTheme.danger
+        }
+    }
+
+    private func affinityHeadline(_ verdict: AIAffinityVerdict.Verdict) -> String {
+        switch verdict {
+        case .yes: return "Likely yes"
+        case .maybe: return "Maybe"
+        case .no: return "Probably not"
+        }
+    }
+
+    private func predictAffinity(_ detail: MediaItem) async {
+        guard let assistant = appState.aiAssistantManager else {
+            affinityError = "AI is unavailable. Check Settings."
+            return
+        }
+        showAffinityUnavailable = false
+        affinityError = nil
+        affinityVerdict = nil
+        isPredictingAffinity = true
+        defer { isPredictingAffinity = false }
+        do {
+            affinityVerdict = try await assistant.predictAffinity(for: detail)
+        } catch {
+            affinityError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 
@@ -780,6 +977,11 @@ struct DetailView: View {
         guard let db = appState.databaseManager else { return }
         isInWatchlist = (try? await db.isInLibrary(mediaId: detail.id, listType: .watchlist)) ?? false
         isInFavorites = (try? await db.isInLibrary(mediaId: detail.id, listType: .favorites)) ?? false
+        // Watched indicator: combine playback progress with the latest explicit
+        // watched state the user set through the rating flow.
+        let history = (try? await db.fetchWatchHistory(mediaId: detail.id)) ?? nil
+        let watchedState = ((try? await db.fetchLatestWatchedState(mediaId: detail.id)) ?? nil)?.watchedState
+        watchedStatus = WatchedStatus.derive(history: history, watchedState: watchedState)
     }
 
     private func loadAvailableFolders() async {
@@ -842,6 +1044,80 @@ struct DetailView: View {
             libraryActionStatus = "Added to \"\(folder.name)\"."
         } catch {
             libraryActionStatus = "Add to folder failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Rating flow (shared with Discover's mark-watched path)
+
+    /// A pending rating awaiting the user's input in the shared sheet.
+    struct PendingRating: Identifiable {
+        let id = UUID()
+        let mode: FeedbackScaleMode
+        var value: Double?
+    }
+
+    /// Sheet header title for the current detail (with year suffix when known).
+    private var ratingTitle: String {
+        guard let detail = mediaDetail else { return mediaPreview.title }
+        return detail.title + (detail.year.map { " (\($0))" } ?? "")
+    }
+
+    /// Open the rating sheet when the scale mode needs input, otherwise submit
+    /// immediately, with identical semantics to Discover's "Mark watched".
+    private func beginRating(_ detail: MediaItem) async {
+        let mode = (try? await appState.settingsManager?.getFeedbackScaleMode()) ?? .likeDislike
+        if mode == .none {
+            await submitRating(mode: .none, value: nil)
+        } else {
+            pendingRating = PendingRating(mode: mode, value: defaultRatingValue(for: mode))
+        }
+    }
+
+    private func submitRating(mode: FeedbackScaleMode, value: Double?) async {
+        pendingRating = nil
+        guard let detail = mediaDetail else { return }
+        guard let service = appState.userFeedbackService else {
+            libraryActionStatus = "Feedback service unavailable."
+            return
+        }
+
+        let recommendation = AIMovieRecommendation(
+            title: detail.title,
+            year: detail.year,
+            reason: "Rated from Detail",
+            score: detail.imdbRating ?? 0,
+            mediaId: detail.id,
+            mediaType: detail.type,
+            posterPath: detail.posterPath
+        )
+        let outcome = await service.recordRecommendationFeedback(
+            recommendation: recommendation,
+            watchedState: .watched,
+            feedbackScaleMode: mode,
+            feedbackValue: value,
+            source: .manual
+        )
+        if outcome.addedToReleaseWait {
+            libraryActionStatus = "Marked watched and added to Release Wait."
+        } else if outcome.addedToWatchedFolder {
+            libraryActionStatus = "Marked watched and added to Watched."
+        } else {
+            libraryActionStatus = "Marked watched."
+        }
+        // Reflect the new watched state on the chip.
+        await refreshLibraryFlags(for: detail)
+    }
+
+    private func defaultRatingValue(for mode: FeedbackScaleMode) -> Double? {
+        switch mode {
+        case .none:
+            return nil
+        case .likeDislike:
+            return 1
+        case .scale1to10:
+            return 8
+        case .scale1to100:
+            return 80
         }
     }
 }

@@ -90,6 +90,10 @@ protocol VLCPlaybackSession: AnyObject {
     var availableSubtitleTracks: [VLCTrackOption] { get }
     var selectedAudioTrackID: Int32? { get }
     var selectedSubtitleTrackID: Int32? { get }
+    /// Intrinsic size of the decoded video in pixels, or `.zero` until the first
+    /// frame is available (and for audio-only media). Used to align the controls
+    /// overlay with the rendered picture rather than the window bounds.
+    var videoSize: CGSize { get }
     func makeVideoView() -> NSView
     func seek(to seconds: Double)
     func refreshTrackOptions()
@@ -98,6 +102,13 @@ protocol VLCPlaybackSession: AnyObject {
     func play()
     func pause()
     func stop()
+}
+
+extension VLCPlaybackSession {
+    /// Sessions that cannot report an intrinsic size (audio-only media, the AVPlayer
+    /// path, and test doubles) fall back to `.zero`, which keeps the full-window
+    /// controls layout unchanged.
+    var videoSize: CGSize { .zero }
 }
 
 #if canImport(VLCKit)
@@ -190,6 +201,13 @@ final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
 
     var selectedSubtitleTrackID: Int32? {
         mediaPlayer.currentVideoSubTitleIndex
+    }
+
+    var videoSize: CGSize {
+        // VLCMediaPlayer only reports a non-zero size once the first frame has been
+        // decoded; before that (and for audio-only media) it is `.zero`, which the
+        // player treats as "unknown" and falls back to the full-window layout.
+        mediaPlayer.videoSize
     }
 
     func makeVideoView() -> NSView {
