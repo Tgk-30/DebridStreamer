@@ -270,13 +270,25 @@ jobs:
         if: matrix.os == 'macos'
         run: node scripts/download_tauri_node_runtime.mjs ${{ matrix.node_runtime }}
 
+      - name: Bundle ffmpeg (macOS)
+        if: matrix.os == 'macos'
+        run: node scripts/download_ffmpeg.mjs ${{ matrix.node_runtime }}
+
       - name: Bundle Node runtime for Linux
         if: matrix.os == 'linux'
         run: node scripts/download_tauri_node_runtime.mjs linux-x64
 
+      - name: Bundle ffmpeg for Linux
+        if: matrix.os == 'linux'
+        run: node scripts/download_ffmpeg.mjs linux-x64
+
       - name: Bundle Node runtime for Windows
         if: matrix.os == 'windows'
         run: node scripts/download_tauri_node_runtime.mjs win-x64
+
+      - name: Bundle ffmpeg for Windows
+        if: matrix.os == 'windows'
+        run: node scripts/download_ffmpeg.mjs win-x64
 
       - name: Smoke desktop server resources
         run: node scripts/smoke_tauri_server_bundle.mjs web/src-tauri/resources/server
