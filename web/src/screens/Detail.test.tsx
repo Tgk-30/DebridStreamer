@@ -530,6 +530,38 @@ describe("Detail play", () => {
     // RD HLS is lazy recovery only. It must not run before native has failed.
     expect(getTranscodeHLS).not.toHaveBeenCalled();
   });
+
+  it("keeps a browser-playable H264 MP4 in the webview even on desktop", async () => {
+    // The structural guarantee behind routing: the browser-playable check runs
+    // BEFORE isTauri(), so a container/codec the webview can decode never gets
+    // upgraded to native mpv just because we're on desktop. Pinned here because
+    // the existing webview-direct test runs in a browser session (isTauri=false);
+    // this exercises the desktop branch to prove it still yields webview-direct.
+    tauriState.on = true;
+    const getTranscodeHLS = vi.fn(async () => "https://cdn/lossy.m3u8");
+    mockServices.debrid = { getTranscodeHLS };
+    mockSettings = {
+      ...mockSettings,
+      builtInPlayer: true,
+      preferredExternalPlayer: "IINA",
+    };
+    mockCached = {
+      stream: {
+        fileName: "movie.mp4",
+        streamURL: "https://cdn/movie.mp4",
+        codec: "H.264",
+      },
+    };
+
+    render(<Detail />);
+    await userEvent.click(screen.getByText("play"));
+    const player = await screen.findByTestId("player");
+
+    expect(player).toHaveAttribute("data-engine", "webview-direct");
+    // Never routed to native and never asked RD to transcode - it just plays.
+    expect(player).not.toHaveAttribute("data-engine", "native-mpv");
+    expect(getTranscodeHLS).not.toHaveBeenCalled();
+  });
 });
 
 describe("Detail taste signal", () => {
