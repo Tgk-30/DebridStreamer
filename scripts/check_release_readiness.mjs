@@ -164,6 +164,24 @@ check(
   ".github/workflows/web-release.yml must bundle a win-x64 Node runtime for the Windows desktop app",
 );
 check(
+  "Release workflow bundles ffmpeg binaries",
+  // The optimize/remux engine shells out to bundled ffmpeg/ffprobe, so every
+  // desktop target must fetch them exactly like the Node runtime above: macOS
+  // per-arch via matrix.node_runtime, Linux and Windows literally.
+  /download_ffmpeg\.mjs \$\{\{ matrix\.node_runtime \}\}/.test(releaseWorkflow) &&
+    /download_ffmpeg\.mjs\s+linux-x64/.test(releaseWorkflow) &&
+    /download_ffmpeg\.mjs\s+win-x64/.test(releaseWorkflow),
+  ".github/workflows/web-release.yml must fetch ffmpeg/ffprobe for macOS (per-arch), Linux, and Windows before packaging",
+);
+check(
+  "Tauri bundles ffmpeg resources",
+  // Fetching the binaries is not enough - tauri.conf.json must ship them so
+  // they are present in the packaged app next to the Node runtime.
+  Array.isArray(tauri.bundle?.resources) &&
+    tauri.bundle.resources.includes("resources/ffmpeg/**/*"),
+  "web/src-tauri/tauri.conf.json must recursively include resources/ffmpeg so bundled ffmpeg/ffprobe binaries ship with the app",
+);
+check(
   "Local package script bundles current-platform Node",
   /download_tauri_node_runtime\.mjs/.test(read("scripts/package_tauri_local.mjs")) &&
     /nodeRuntimePlatform/.test(read("scripts/package_tauri_local.mjs")),

@@ -40,7 +40,11 @@ function showTitle(record: DownloadRecord): string {
 
 function extensionFor(record: DownloadRecord, sourceFilename: string | null): string {
   if (record.mode === "full") return sourceExtension(sourceFilename);
-  return record.optimizeProfile === "h265" ? "mp4" : "mkv";
+  // Optimized output is always .mkv, for both remux and h265. mkv legally holds
+  // copied MKV subtitle codecs (SRT/ASS/PGS); .mp4 cannot, so remuxing or
+  // transcoding into .mp4 with `-c:s copy` makes ffmpeg fail. Keeping a single
+  // container avoids that and must stay in lockstep with optimizedOutputPath.
+  return "mkv";
 }
 
 /** The final organized path promised to the user. */
@@ -80,11 +84,12 @@ export function rawDownloadPath(
   return finalPath.replace(/\.[^.]+$/, `.source.${ext}`);
 }
 
-/** Infer the completed optimized sibling from its temporary source path. */
+/** Infer the completed optimized sibling from its temporary source path. Both
+ * optimize profiles emit .mkv; see extensionFor for why .mp4 is unsafe. The
+ * profile is retained for call-site symmetry but no longer changes the suffix. */
 export function optimizedOutputPath(
   rawPath: string,
-  profile: "remux" | "h265",
+  _profile: "remux" | "h265",
 ): string {
-  const outputExtension = profile === "h265" ? "mp4" : "mkv";
-  return rawPath.replace(/\.source\.[^.]+$/i, `.${outputExtension}`);
+  return rawPath.replace(/\.source\.[^.]+$/i, ".mkv");
 }

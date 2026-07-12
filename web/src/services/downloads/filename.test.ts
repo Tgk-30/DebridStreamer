@@ -46,11 +46,11 @@ describe("download filename foldering", () => {
     );
   });
 
-  it("uses source extensions for full jobs and fixed extensions for optimized profiles", () => {
+  it("uses source extensions for full jobs and always .mkv for optimized profiles", () => {
     const remux = record({ mode: "optimized", optimizeProfile: "remux" });
     const h265 = record({ mode: "optimized", optimizeProfile: "h265" });
     expect(downloadDestinationPath("/Downloads", remux, "source.avi")).toMatch(/\.mkv$/);
-    expect(downloadDestinationPath("/Downloads", h265, "source.avi")).toMatch(/\.mp4$/);
+    expect(downloadDestinationPath("/Downloads", h265, "source.avi")).toMatch(/\.mkv$/);
     expect(sourceExtension("folder/UPPER.MP4?token=1")).toBe("mp4");
     expect(sourceExtension("no-extension")).toBe("mkv");
   });
@@ -63,7 +63,7 @@ describe("download filename foldering", () => {
       "/Downloads/Inception (2010)/Inception (2010).mkv",
     );
     expect(optimizedOutputPath(raw, "h265")).toBe(
-      "/Downloads/Inception (2010)/Inception (2010).mp4",
+      "/Downloads/Inception (2010)/Inception (2010).mkv",
     );
   });
 });

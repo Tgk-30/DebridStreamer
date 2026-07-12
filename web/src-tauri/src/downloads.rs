@@ -1,9 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::fs;
+use std::io::SeekFrom;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -16,7 +17,7 @@ use reqwest::header::{
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
@@ -154,6 +155,26 @@ fn finish_if_current<R: Runtime>(
     }
 }
 
+/// Reject a filesystem target that is not absolute or that escapes its
+/// directory through a `..` component. Paths arrive over the IPC boundary, so
+/// this keeps a hostile `destPath`/`outputPath` from writing outside the
+/// downloads folder even though the caller supplies the base directory.
+fn validate_confined_path(path: &str, label: &str) -> Result<(), String> {
+    let path = Path::new(path);
+    if !path.is_absolute() {
+        return Err(format!("{label} must be absolute."));
+    }
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(format!(
+            "{label} must not contain parent-directory (..) segments."
+        ));
+    }
+    Ok(())
+}
+
 fn validate_download_args(args: &DownloadStartArgs) -> Result<(), String> {
     if args.job_id.trim().is_empty() {
         return Err("jobId must not be empty.".to_string());
@@ -161,9 +182,7 @@ fn validate_download_args(args: &DownloadStartArgs) -> Result<(), String> {
     if args.url.trim().is_empty() {
         return Err("url must not be empty.".to_string());
     }
-    if !Path::new(&args.dest_path).is_absolute() {
-        return Err("destPath must be absolute.".to_string());
-    }
+    validate_confined_path(&args.dest_path, "destPath")?;
     Ok(())
 }
 
@@ -247,9 +266,11 @@ pub fn download_start<R: Runtime>(
     args: DownloadStartArgs,
 ) -> Result<(), String> {
     validate_download_args(&args)?;
-    let offset = fs::metadata(&args.dest_path).map(|m| m.len()).unwrap_or(0);
-    let last_done = Arc::new(AtomicU64::new(offset));
-    insert_download_job(app, &state, args, offset, last_done)
+    // A start is always fresh: truncate from offset 0 so a stale or unrelated
+    // file already at destPath can never be appended onto or falsely completed.
+    // Continuing a partial transfer is the exclusive job of download_resume.
+    let last_done = Arc::new(AtomicU64::new(0));
+    insert_download_job(app, &state, args, 0, last_done)
 }
 
 #[tauri::command]
@@ -367,6 +388,43 @@ async fn remove_partial_file(path: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// Strip the query string, fragment, and any embedded credentials from a URL.
+/// Resolved debrid links can carry a secret in the query (for example TorBox's
+/// `?token=`), so this keeps a token out of any error message, log line, or
+/// `download-progress` event.
+fn redact_url(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(mut parsed) => {
+            parsed.set_query(None);
+            parsed.set_fragment(None);
+            let _ = parsed.set_username("");
+            let _ = parsed.set_password(None);
+            parsed.to_string()
+        }
+        // Not a parseable absolute URL: drop everything from the first `?`/`#`.
+        Err(_) => url
+            .split(|c| c == '?' || c == '#')
+            .next()
+            .unwrap_or("")
+            .to_string(),
+    }
+}
+
+/// Format a reqwest failure without leaking the request URL's query/credentials.
+/// reqwest's own `Display` appends the full URL, so the error is never formatted
+/// directly — only its redacted URL and underlying transport cause (which does
+/// not carry the URL) are surfaced.
+fn redact_reqwest_error(context: &str, error: &reqwest::Error) -> String {
+    let mut message = context.to_string();
+    if let Some(url) = error.url() {
+        message.push_str(&format!(" for {}", redact_url(url.as_str())));
+    }
+    if let Some(source) = std::error::Error::source(error) {
+        message.push_str(&format!(": {source}"));
+    }
+    message
+}
+
 async fn transfer_download<R: Runtime>(
     app: &AppHandle<R>,
     args: &DownloadStartArgs,
@@ -403,7 +461,7 @@ async fn transfer_download<R: Runtime>(
         .headers(headers)
         .send()
         .await
-        .map_err(|e| format!("Download request failed: {e}"))?;
+        .map_err(|e| redact_reqwest_error("Download request failed", &e))?;
     let status = response.status();
     if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
         let total = response
@@ -441,11 +499,19 @@ async fn transfer_download<R: Runtime>(
     let mut file = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
-        .append(append)
-        .truncate(!append)
+        .truncate(offset == 0)
         .open(dest)
         .await
         .map_err(|e| format!("Failed to open download destination: {e}"))?;
+    // Positioned writes (seek to the resume offset) rather than O_APPEND: if a
+    // just-paused worker races one final chunk past cooperative abort while a
+    // resumed worker is running, both write the same bytes at the same offsets,
+    // so the file can never be corrupted by interleaved appends.
+    if offset > 0 {
+        file.seek(SeekFrom::Start(offset))
+            .await
+            .map_err(|e| format!("Failed to seek download destination: {e}"))?;
+    }
     let mut stream = response.bytes_stream();
     let mut bytes_done = offset;
     last_done.store(bytes_done, Ordering::Relaxed);
@@ -453,7 +519,7 @@ async fn transfer_download<R: Runtime>(
     let mut last_emit_bytes = bytes_done;
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Download stream failed: {e}"))?;
+        let chunk = chunk.map_err(|e| redact_reqwest_error("Download stream failed", &e))?;
         file.write_all(&chunk)
             .await
             .map_err(|e| format!("Failed to write download: {e}"))?;
@@ -806,9 +872,8 @@ pub fn transcode_start<R: Runtime>(
     if args.job_id.trim().is_empty() {
         return Err("jobId must not be empty.".to_string());
     }
-    if !Path::new(&args.input_path).is_absolute() || !Path::new(&args.output_path).is_absolute() {
-        return Err("inputPath and outputPath must be absolute.".to_string());
-    }
+    validate_confined_path(&args.input_path, "inputPath")?;
+    validate_confined_path(&args.output_path, "outputPath")?;
     let generation = state.generation();
     let (abort, registration) = AbortHandle::new_pair();
     let last_done = Arc::new(AtomicU64::new(0));
