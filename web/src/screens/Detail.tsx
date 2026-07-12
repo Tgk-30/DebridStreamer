@@ -288,9 +288,10 @@ export function Detail() {
   // Modal behavior for the episode-streams page: Escape closes it first
   // (capture phase, before Detail's own Escape), focus moves into the page and
   // the detail content behind is inerted so keyboard users can't reach covered
-  // controls; focus is restored to the opener on close.
+  // controls; focus is restored to the opener on close. While a player is
+  // mounted, Escape belongs to the player and this modal behavior is suspended.
   useEffect(() => {
-    if (!streamsPageOpen) return;
+    if (!streamsPageOpen || player != null) return;
     const opener = document.activeElement as HTMLElement | null;
     const inner = rootRef.current?.querySelector<HTMLElement>(".detail-inner");
     inner?.setAttribute("inert", "");
@@ -307,7 +308,7 @@ export function Detail() {
       inner?.removeAttribute("inert");
       opener?.focus?.();
     };
-  }, [streamsPageOpen]);
+  }, [player, streamsPageOpen]);
   useEffect(() => {
     if (autoPlayPending == null || streams.loading || autoPlayBusy.current) return;
     if (
