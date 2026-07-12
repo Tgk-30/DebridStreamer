@@ -674,17 +674,6 @@ export function Settings() {
   );
 
   const selectedTab = tabs.find((t) => t.id === tab) ?? tabs[0];
-  const selectedProfile =
-    APPEARANCE_PROFILES.find((profile) => appearanceProfileMatches(draft, profile)) ??
-    null;
-  const configuredDebridCount = draft.debridTokens.filter(
-    (entry) => entry.apiToken.trim().length > 0,
-  ).length;
-  const activeSourceCount =
-    draft.sources.filter((source) => source.isActive).length +
-    (draft.builtInIndexersEnabled ? 1 : 0);
-  const metadataState =
-    draft.tmdbKey.trim().length > 0 ? "Live catalog" : "Built-in catalog";
   const hasUnsavedChanges = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(settings),
     [draft, settings],
@@ -706,50 +695,6 @@ export function Settings() {
           <p className="settings-subtitle t-secondary">
             {selectedTab.label} controls for this profile, device, and server session.
           </p>
-          <div className="settings-insight-grid" aria-label="Settings summary">
-            <button
-              type="button"
-              className="settings-insight"
-              onClick={() => setTab("appearance")}
-              title="Open Appearance settings"
-            >
-              <span>Appearance</span>
-              <strong>{selectedProfile?.label ?? "Custom current"}</strong>
-            </button>
-            <button
-              type="button"
-              className="settings-insight"
-              onClick={() => setTab("keys")}
-              title="Open API keys settings"
-            >
-              <span>Catalog</span>
-              <strong>{metadataState}</strong>
-            </button>
-            <button
-              type="button"
-              className="settings-insight"
-              onClick={() => setTab("debrid")}
-              title="Open Providers settings"
-            >
-              <span>Providers</span>
-              <strong>
-                {configuredDebridCount === 0
-                  ? "No stream provider"
-                  : `${configuredDebridCount} provider${configuredDebridCount === 1 ? "" : "s"}`}
-              </strong>
-            </button>
-            <button
-              type="button"
-              className="settings-insight"
-              onClick={() => setTab("sources")}
-              title="Open Sources settings"
-            >
-              <span>Sources</span>
-              <strong>
-                {activeSourceCount} source{activeSourceCount === 1 ? "" : "s"}
-              </strong>
-            </button>
-          </div>
         </div>
 
         {tab !== "install" && (

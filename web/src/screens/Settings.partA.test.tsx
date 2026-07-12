@@ -559,11 +559,6 @@ describe("Settings · Appearance", () => {
     window.removeEventListener("ds:open-welcome-guide", handler);
   });
 
-  it("shows the matched quick-profile label in the hero insight when the draft matches a preset", () => {
-    // The default settings match the 'Cinema room' (default-cinema) profile.
-    renderAt();
-    expect(screen.getAllByText("Cinema room").length).toBeGreaterThan(0);
-  });
 });
 
 // ============================================================================
