@@ -26,7 +26,9 @@ export interface Rect {
 export function fitVideoRect(video: Size, container: Size): Rect | null {
   const { width: vw, height: vh } = video;
   const { width: cw, height: ch } = container;
-  if (!(vw > 0) || !(vh > 0) || !(cw > 0) || !(ch > 0)) return null;
+  if (![vw, vh, cw, ch].every((dimension) => Number.isFinite(dimension) && dimension > 0)) {
+    return null;
+  }
 
   const videoAspect = vw / vh;
   const containerAspect = cw / ch;

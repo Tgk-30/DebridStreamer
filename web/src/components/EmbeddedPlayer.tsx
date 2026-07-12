@@ -8,6 +8,7 @@
 // subtitle + audio sync, real fullscreen, gestures, and a full keyboard map.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   init,
   destroy,
@@ -632,7 +633,7 @@ export function EmbeddedPlayer({
     : undefined;
 
   if (error) {
-    return (
+    return createPortal(
       <div className="embed-player show-controls">
         <div className="embed-stage" />
         <div className="embed-error" role="alert">
@@ -668,11 +669,14 @@ export function EmbeddedPlayer({
             </button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body,
     );
   }
 
-  return (
+  // This is a full-window layer, so keep it outside filtered, inset, or scrolled
+  // app overlays that would otherwise become its fixed-position containing block.
+  return createPortal(
     <div
       className={`embed-player${controlsVisible || menu != null ? " show-controls" : ""}`}
       onMouseMove={nudgeControls}
@@ -1059,7 +1063,8 @@ export function EmbeddedPlayer({
       </div>
 
       {shortcutsOpen && <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

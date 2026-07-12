@@ -26,6 +26,11 @@ describe("fitVideoRect", () => {
     expect(fitVideoRect({ width: 1920, height: 0 }, { width: 1280, height: 720 })).toBeNull();
   });
 
+  it("waits for both dimension events before fitting", () => {
+    expect(fitVideoRect({ width: 1920, height: 0 }, { width: 1440, height: 900 })).toBeNull();
+    expect(fitVideoRect({ width: 0, height: 1080 }, { width: 1440, height: 900 })).toBeNull();
+  });
+
   it("returns null when the container has not been measured yet", () => {
     expect(fitVideoRect({ width: 1920, height: 1080 }, { width: 0, height: 0 })).toBeNull();
   });
@@ -33,5 +38,16 @@ describe("fitVideoRect", () => {
   it("ignores negative or non-finite dimensions", () => {
     expect(fitVideoRect({ width: -1920, height: 1080 }, { width: 1280, height: 720 })).toBeNull();
     expect(fitVideoRect({ width: 1920, height: 1080 }, { width: Number.NaN, height: 720 })).toBeNull();
+    expect(fitVideoRect({ width: Number.POSITIVE_INFINITY, height: 1080 }, { width: 1280, height: 720 })).toBeNull();
+    expect(fitVideoRect({ width: 1920, height: 1080 }, { width: 1280, height: Number.POSITIVE_INFINITY })).toBeNull();
+  });
+
+  it("uses Retina-sized video dimensions only for their aspect ratio", () => {
+    expect(fitVideoRect({ width: 3840, height: 2160 }, { width: 1440, height: 900 })).toEqual({
+      left: 0,
+      top: 45,
+      width: 1440,
+      height: 810,
+    });
   });
 });
