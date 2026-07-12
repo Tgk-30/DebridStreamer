@@ -109,8 +109,8 @@ check("mac best asset prefers dmg", site.bestAsset(release, "mac")?.browser_down
 // Mac never gets the arm64 DMG (and vice-versa).
 const perArchMac = {
   assets: [
-    asset("DebridStreamer_0.5.6_aarch64.dmg", "arm-dmg"),
-    asset("DebridStreamer_0.5.6_x64.dmg", "intel-dmg"),
+    asset("DebridStreamer_0.6.0_aarch64.dmg", "arm-dmg"),
+    asset("DebridStreamer_0.6.0_x64.dmg", "intel-dmg"),
   ],
 };
 check(
@@ -123,7 +123,7 @@ check(
 );
 check(
   "mac intel arch is null when only an arm64 build exists",
-  site.macAssetForArch({ assets: [asset("DebridStreamer_0.5.6_aarch64.dmg", "arm-dmg")] }, "intel") === null,
+  site.macAssetForArch({ assets: [asset("DebridStreamer_0.6.0_aarch64.dmg", "arm-dmg")] }, "intel") === null,
 );
 check("windows best asset prefers msi", site.bestAsset(release, "windows")?.browser_download_url === "msi");
 check("linux best asset prefers AppImage", site.bestAsset(release, "linux")?.browser_download_url === "appimage");
