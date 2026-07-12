@@ -274,6 +274,22 @@ jobs:
         if: matrix.os == 'macos'
         run: node scripts/download_ffmpeg.mjs ${{ matrix.node_runtime }}
 
+      # Notarization rejects the app if any nested executable is unsigned, so the
+      # fetched ffmpeg/ffprobe must be Developer ID signed with hardened runtime
+      # BEFORE tauri-action bundles and signs the app (same treatment as the mpv
+      # dylibs above). Must run after the Import Developer ID certificate step.
+      - name: Sign bundled ffmpeg (macOS)
+        if: matrix.os == 'macos'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          find web/src-tauri/resources/ffmpeg -type f \( -name 'ffmpeg' -o -name 'ffprobe' \) -print0 | while IFS= read -r -d '' f; do
+            codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$f"
+            codesign --verify --strict "$f"
+          done
+
       - name: Bundle Node runtime for Linux
         if: matrix.os == 'linux'
         run: node scripts/download_tauri_node_runtime.mjs linux-x64
