@@ -391,6 +391,41 @@ export interface AIUsageRecord {
   createdAt: string;
 }
 
+// MARK: - Downloads (local desktop only)
+
+/** A durable native desktop download job. The browser never executes these
+ * records, while the Tauri app can recover its queue after a restart. */
+export interface DownloadRecord {
+  /** Caller-generated UUID and native progress-event correlation id. */
+  jobId: string;
+  mediaId: string;
+  episodeId: string | null;
+  title: string;
+  season: number | null;
+  episode: number | null;
+  infoHash: string;
+  fileHint: string | null;
+  mode: "full" | "optimized";
+  optimizeProfile: "remux" | "h265" | null;
+  keepAudioLangs: string[];
+  keepSubLangs: string[];
+  status:
+    | "queued"
+    | "resolving"
+    | "downloading"
+    | "optimizing"
+    | "completed"
+    | "failed"
+    | "canceled"
+    | "paused";
+  bytesDone: number;
+  bytesTotal: number | null;
+  destPath: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // MARK: - Settings / secrets key-value
 
 /** A plain key-value app setting. Mirrors the `app_settings` table. */

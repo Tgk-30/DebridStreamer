@@ -16,7 +16,7 @@ import "./NavRail.css";
 // Screens with no working backend in Server Mode (Debrid Library is Tauri-only).
 // The AI Assistant DOES work in Server Mode - it routes to /api/ai/recommend,
 // which uses the server's stored provider key - so it is no longer hidden here.
-const SERVER_MODE_HIDDEN: ReadonlySet<string> = new Set(["debrid"]);
+const SERVER_MODE_HIDDEN: ReadonlySet<string> = new Set(["debrid", "downloads"]);
 // Power-user destinations hidden in Simple mode (progressive disclosure). The
 // essentials - discover/search/library/watchlist/history/settings - always show;
 // Settings must never hide (it hosts the Simple/Advanced toggle).
@@ -65,6 +65,7 @@ export type ScreenId =
   | "history"
   | "assistant"
   | "debrid"
+  | "downloads"
   | "settings";
 
 interface RailItem {
@@ -97,6 +98,7 @@ const NAV_ITEMS: RailItem[] = [
   },
   { id: "calendar", icon: "calendar", label: "Calendar", group: "Library" },
   { id: "history", icon: "history", label: "History", group: "Library" },
+  { id: "downloads", icon: "debrid", label: "Downloads", group: "Library" },
   { id: "assistant", icon: "assistant", label: "Assistant", group: "Tools" },
   { id: "debrid", icon: "debrid", label: "Debrid", group: "Tools" },
   { id: "settings", icon: "settings", label: "Settings", group: "Account" },

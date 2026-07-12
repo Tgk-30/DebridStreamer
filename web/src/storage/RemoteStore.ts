@@ -3,6 +3,7 @@ import type {
   AIUsageRecord,
   CachedResolutionRecord,
   DebridConfigRecord,
+  DownloadRecord,
   IndexerConfigRecord,
   FolderKind,
   LibraryEntryRecord,
@@ -571,5 +572,30 @@ export class RemoteStore implements Store, SecretStore {
 
   async deleteCachedResolution(_mediaId: string): Promise<void> {
     // No local cache to delete in Server Mode.
+  }
+
+  // ---- Desktop downloads ---------------------------------------------------
+
+  async saveDownload(_record: DownloadRecord): Promise<void> {
+    throw unsupportedRemoteWrite("saveDownload");
+  }
+
+  async updateDownload(
+    _jobId: string,
+    _changes: Partial<Omit<DownloadRecord, "jobId" | "createdAt">>,
+  ): Promise<DownloadRecord | null> {
+    throw unsupportedRemoteWrite("updateDownload");
+  }
+
+  async deleteDownload(_jobId: string): Promise<void> {
+    throw unsupportedRemoteWrite("deleteDownload");
+  }
+
+  async listDownloads(): Promise<DownloadRecord[]> {
+    return [];
+  }
+
+  subscribeDownloads(_listener: (records: DownloadRecord[]) => void): () => void {
+    return () => {};
   }
 }

@@ -86,6 +86,11 @@ import {
   stopDesktopServer,
   type DesktopServerStatus,
 } from "../lib/tauri";
+import { getDownloadsBridge } from "../lib/downloadsBridge";
+import {
+  DOWNLOADS_DIRECTORY_SETTING,
+  downloadsDirectory,
+} from "../services/downloads";
 import "./Settings.css";
 
 /** The selectable external-source types. */
@@ -935,6 +940,8 @@ function PlaybackTab({ draft, patch }: TabProps) {
         </label>
       )}
 
+      <DownloadsFolderSetting />
+
       <label className="settings-toggle-row">
         <input
           type="checkbox"
@@ -1065,6 +1072,63 @@ function PlaybackTab({ draft, patch }: TabProps) {
       </Field>
       </AdvancedOnly>
     </div>
+  );
+}
+
+/** Native downloads intentionally keep their folder independent from the
+ * settings draft: changing it should not rebuild every streaming service. */
+function DownloadsFolderSetting() {
+  const tauri = isTauri();
+  const [folder, setFolder] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tauri) return;
+    let alive = true;
+    void downloadsDirectory(getStore(), getDownloadsBridge())
+      .then((path) => {
+        if (alive) setFolder(path);
+      })
+      .catch(() => {
+        if (alive) setError("Could not read the desktop downloads folder.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [tauri]);
+
+  if (!tauri) return null;
+  return (
+    <label className="settings-field">
+      <span className="settings-field-label">
+        <strong>Downloads folder</strong>
+        <span className="t-secondary">
+          {" "}
+          - full-size and optimized downloads are organized here on this desktop.
+        </span>
+      </span>
+      <input
+        type="text"
+        value={folder}
+        placeholder="Loading default folder…"
+        onChange={(event) => {
+          setFolder(event.target.value);
+          setError(null);
+        }}
+        onBlur={() => {
+          const next = folder.trim();
+          if (next.length === 0) {
+            setError("Enter a folder path for downloads.");
+            return;
+          }
+          void getStore()
+            .setSetting(DOWNLOADS_DIRECTORY_SETTING, next)
+            .catch(() => setError("Could not save the downloads folder."));
+        }}
+        aria-label="Downloads folder"
+      />
+      {error != null && <span className="settings-field-hint dl-error">{error}</span>}
+    </label>
   );
 }
 

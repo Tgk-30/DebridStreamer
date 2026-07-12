@@ -52,6 +52,12 @@ import { isSmartPreloadEnabled, whenIdle } from "./lib/smartPreload";
 import { useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
 import { isServerMode } from "./lib/serverMode";
+import { isTauri } from "./lib/tauri";
+import { getStore } from "./storage";
+import {
+  startDownloadsRuntime,
+  stopDownloadsRuntime,
+} from "./services/downloads";
 import { devBypassesOnboarding, isFirstRun, needsKeyOnboarding } from "./lib/firstRun";
 import { secretReadsFailedThisSession } from "./storage/KeychainSecretStore";
 import { shouldShowServerSetup } from "./lib/serverSetup";
@@ -78,6 +84,9 @@ const Calendar = lazy(() =>
 );
 const DebridLibrary = lazy(() =>
   import("./screens/DebridLibrary").then((m) => ({ default: m.DebridLibrary })),
+);
+const Downloads = lazy(() =>
+  import("./screens/Downloads").then((m) => ({ default: m.Downloads })),
 );
 const Settings = lazy(() =>
   import("./screens/Settings").then((m) => ({ default: m.Settings })),
@@ -413,6 +422,15 @@ export function App() {
   // startup once the Store hydrates the saved choice).
   useTheme(settings);
 
+  // The native executor is durable but its event subscription is not. Start
+  // one local-mode runtime at app launch so interrupted jobs are recovered even
+  // before the user opens the Downloads screen.
+  useEffect(() => {
+    if (!isTauri() || isServerMode()) return;
+    const manager = startDownloadsRuntime(getStore(), services.debrid);
+    return () => stopDownloadsRuntime(manager);
+  }, [services.debrid]);
+
   // If the current screen is hidden under the active modes (e.g. the user flips
   // to Simple while on Assistant/Debrid, or is in Server Mode), redirect to
   // Discover so they're never stranded on a now-unreachable screen.
@@ -430,6 +448,7 @@ export function App() {
     route !== "search" &&
     route !== "calendar" &&
     route !== "debrid" &&
+    route !== "downloads" &&
     route !== "assistant" &&
     detailItem == null &&
     browseContext == null;
@@ -567,6 +586,8 @@ export function App() {
         return <Assistant />;
       case "debrid":
         return <DebridLibrary />;
+      case "downloads":
+        return <Downloads />;
       case "settings":
         return <Settings />;
     }

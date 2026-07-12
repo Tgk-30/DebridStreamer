@@ -15,6 +15,7 @@ import {
   type AIUsageRecord,
   type CachedResolutionRecord,
   type DebridConfigRecord,
+  type DownloadRecord,
   type TasteEventRecord,
 } from "./models";
 import type { MediaPreview } from "../models/media";
@@ -65,6 +66,57 @@ describe("settings", () => {
     await db.setSetting("a", "1");
     await db.setSetting("b", "2");
     expect(await db.allSettings()).toEqual({ a: "1", b: "2" });
+  });
+});
+
+// ---- Desktop downloads -----------------------------------------------------
+
+function download(jobId: string): DownloadRecord {
+  return {
+    jobId,
+    mediaId: "tmdb-1",
+    episodeId: null,
+    title: "Movie (2024)",
+    season: null,
+    episode: null,
+    infoHash: "abc",
+    fileHint: null,
+    mode: "full",
+    optimizeProfile: null,
+    keepAudioLangs: [],
+    keepSubLangs: [],
+    status: "queued",
+    bytesDone: 0,
+    bytesTotal: null,
+    destPath: null,
+    error: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+}
+
+describe("desktop downloads", () => {
+  it("saves, updates, lists, and deletes queue records", async () => {
+    await db.saveDownload(download("job-1"));
+    await db.updateDownload("job-1", { status: "paused", bytesDone: 50 });
+    expect(await db.listDownloads()).toMatchObject([
+      { jobId: "job-1", status: "paused", bytesDone: 50 },
+    ]);
+    await db.deleteDownload("job-1");
+    expect(await db.listDownloads()).toEqual([]);
+  });
+
+  it("notifies download subscribers when the queue changes", async () => {
+    const changed = new Promise<DownloadRecord[]>((resolve) => {
+      const unsubscribe = db.subscribeDownloads((records) => {
+        if (records.some((record) => record.jobId === "job-sub")) {
+          unsubscribe();
+          resolve(records);
+        }
+      });
+    });
+    await db.saveDownload(download("job-sub"));
+    await expect(changed).resolves.toMatchObject([{ jobId: "job-sub" }]);
   });
 });
 

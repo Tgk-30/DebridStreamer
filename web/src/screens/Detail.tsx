@@ -20,6 +20,7 @@ import {
   episodeIdFor,
   episodeLabel,
   nextEpisodeFor,
+  useEpisodes,
   useSeasons,
 } from "../data/episodes";
 import { filterStreamRows } from "../data/streams";
@@ -41,6 +42,12 @@ import type { TorrentResult } from "../services/indexers/models";
 import type { StreamRow } from "../data/streams";
 import { createRequest, resolveServerStream } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
+import { isTauri } from "../lib/tauri";
+import { getDownloadsBridge } from "../lib/downloadsBridge";
+import {
+  startDownloadsRuntime,
+  type EnqueueDownloadInput,
+} from "../services/downloads";
 import { useTranscodeAvailable } from "../lib/ServerSessionContext";
 import { getStore } from "../storage";
 import {
@@ -224,6 +231,29 @@ export function Detail() {
   // list since they have no episode step.
   const isSeries = detailItem?.type === "series";
   const [streamsPageOpen, setStreamsPageOpen] = useState(false);
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
+  const [downloadMode, setDownloadMode] = useState<"full" | "optimized">("full");
+  const [ffmpegAvailable, setFfmpegAvailable] = useState<boolean | null>(null);
+  const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isTauri() || isServerMode()) {
+      setFfmpegAvailable(false);
+      return;
+    }
+    let cancelled = false;
+    void getDownloadsBridge()
+      .downloadsFfmpegAvailable()
+      .then((available) => {
+        if (!cancelled) setFfmpegAvailable(available);
+      })
+      .catch(() => {
+        if (!cancelled) setFfmpegAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // The title's YouTube trailer (null while loading / when TMDB has none). Kept
   // above the early return so hook order stays stable.
@@ -244,6 +274,11 @@ export function Detail() {
   const seasonsState = useSeasons(
     detail.data.item?.tmdbId ?? detailItem?.tmdbId ?? null,
     detailItem?.type === "series",
+    services.tmdb,
+  );
+  const selectedSeasonEpisodes = useEpisodes(
+    detail.data.item?.tmdbId ?? detailItem?.tmdbId ?? null,
+    selected?.season ?? null,
     services.tmdb,
   );
   const upNextTarget = useMemo(
@@ -456,6 +491,7 @@ export function Detail() {
   if (detailItem == null) return null;
 
   const item = detail.data.item;
+  const currentDetailItem = detailItem;
   const inWatchlist = isInWatchlist(watchlist, detailItem.id);
   // A pre-resolved, ready-to-play stream from the watchlist auto-resolve job.
   // Movie-only: the cache is keyed per TITLE, so instant-playing it for a
@@ -721,6 +757,137 @@ export function Detail() {
     openPlayer(stream.streamURL, title, true);
   }
 
+  const downloadDisabledReason =
+    !isTauri()
+      ? "Open the desktop app to download files."
+      : isServerMode()
+        ? "Downloads are available in Local Mode in the desktop app."
+        : services.debrid == null || !services.debrid.hasServices
+          ? "Add a debrid service in Settings to download."
+          : services.indexers == null
+            ? "Add a source in Settings to download."
+            : null;
+
+  function downloadInput(
+    source: TorrentResult,
+    episodeContext: { season: number; episode: number; title?: string } | null,
+  ): EnqueueDownloadInput {
+    const show = item?.title ?? currentDetailItem.title;
+    const year = item?.year != null ? ` (${item.year})` : "";
+    const episodeTitle = episodeContext?.title?.trim();
+    const title =
+      episodeContext == null
+        ? `${show}${year}`
+        : `${show} S${String(episodeContext.season).padStart(2, "0")}E${String(episodeContext.episode).padStart(2, "0")}${episodeTitle ? ` - ${episodeTitle}` : ""}`;
+    return {
+      mediaId: currentDetailItem.id,
+      episodeId:
+        episodeContext == null
+          ? null
+          : episodeIdFor(episodeContext.season, episodeContext.episode),
+      title,
+      season: episodeContext?.season ?? null,
+      episode: episodeContext?.episode ?? null,
+      infoHash: source.infoHash,
+      fileHint:
+        episodeContext == null
+          ? null
+          : episodeIdFor(episodeContext.season, episodeContext.episode),
+      mode: downloadMode,
+      optimizeProfile: downloadMode === "optimized" ? "remux" : null,
+      // Stream rows do not expose track metadata. Empty means keep all tracks,
+      // which is the honest fallback until the native ffprobe pass reports them.
+      keepAudioLangs: [],
+      keepSubLangs: [],
+    };
+  }
+
+  async function enqueueCurrentDownload(): Promise<void> {
+    const source = filterStreamRows(streams.rows, settings)[0]?.result;
+    if (source == null) {
+      setDownloadNotice("Find a stream for this title before adding it to the queue.");
+      return;
+    }
+    const episodeContext =
+      selected == null ? null : { season: selected.season, episode: selected.episode };
+    await startDownloadsRuntime(getStore(), services.debrid).enqueue(
+      downloadInput(source, episodeContext),
+    );
+    setDownloadNotice("Added to Downloads.");
+    setDownloadMenuOpen(false);
+  }
+
+  async function enqueueEpisodeBatch(
+    episodes: Array<{ season: number; episode: number; title?: string }>,
+    label: string,
+  ): Promise<void> {
+    if (services.indexers == null || detail.data.imdbId == null) {
+      setDownloadNotice("Add a source and metadata key before creating a batch.");
+      return;
+    }
+    setDownloadNotice(`Finding sources for ${label}…`);
+    const matches = await Promise.all(
+      episodes.map(async (episode) => {
+        const results = await services.indexers!.searchAll(
+          detail.data.imdbId!,
+          "series",
+          episode.season,
+          episode.episode,
+        );
+        const source = results[0];
+        return source == null ? null : downloadInput(source, episode);
+      }),
+    );
+    const inputs = matches.filter((input): input is EnqueueDownloadInput => input != null);
+    if (inputs.length === 0) {
+      setDownloadNotice(`No sources were found for ${label}.`);
+      return;
+    }
+    await startDownloadsRuntime(getStore(), services.debrid).enqueueSeason(inputs);
+    const skipped = episodes.length - inputs.length;
+    setDownloadNotice(
+      skipped > 0
+        ? `Added ${inputs.length}; ${skipped} episode${skipped === 1 ? "" : "s"} had no source.`
+        : `Added ${inputs.length} episode${inputs.length === 1 ? "" : "s"} to Downloads.`,
+    );
+    setDownloadMenuOpen(false);
+  }
+
+  function enqueueCurrentSeason(): void {
+    if (selected == null || selectedSeasonEpisodes.loading) {
+      setDownloadNotice("The season guide is still loading.");
+      return;
+    }
+    void enqueueEpisodeBatch(
+      selectedSeasonEpisodes.episodes.map((episode) => ({
+        season: episode.seasonNumber,
+        episode: episode.episodeNumber,
+        title: episode.title ?? undefined,
+      })),
+      `Season ${selected.season}`,
+    );
+  }
+
+  function enqueueWholeShow(): void {
+    if (services.tmdb == null || item?.tmdbId == null || seasonsState.seasons.length === 0) {
+      setDownloadNotice("Load the episode guide before downloading the whole show.");
+      return;
+    }
+    setDownloadNotice("Loading the episode guide…");
+    void Promise.all(
+      seasonsState.seasons.map((season) => services.tmdb!.getEpisodes(item.tmdbId!, season.seasonNumber)),
+    ).then((groups) =>
+      enqueueEpisodeBatch(
+        groups.flat().map((episode) => ({
+          season: episode.seasonNumber,
+          episode: episode.episodeNumber,
+          title: episode.title ?? undefined,
+        })),
+        "the whole show",
+      ),
+    ).catch(() => setDownloadNotice("The episode guide could not be loaded."));
+  }
+
   return (
     <div className="detail" ref={rootRef} tabIndex={-1}>
       <div className="detail-inner">
@@ -741,6 +908,15 @@ export function Detail() {
               ? "Add a debrid service in Settings to play"
               : null
           }
+          onDownload={
+            isTauri() && !isServerMode()
+              ? () => {
+                  setDownloadNotice(null);
+                  setDownloadMenuOpen((open) => !open);
+                }
+              : undefined
+          }
+          downloadDisabledReason={downloadDisabledReason}
           onPlay={() => {
             // Instant play: if the auto-resolve job pre-cached a ready stream
             // for this title, play it immediately instead of re-walking the
@@ -764,6 +940,86 @@ export function Detail() {
             });
           }}
         />
+      )}
+
+      {downloadMenuOpen && (
+        <section className="detail-download-menu glass-raised" aria-label="Download options">
+          <div className="detail-download-menu-head">
+            <div>
+              <strong>{isSeries ? "Download episodes" : "Download movie"}</strong>
+              <p className="t-secondary">
+                {isSeries
+                  ? "Queue the selected episode, season, or show. Each episode resolves its own source."
+                  : "The best currently listed source is added to your desktop queue."}
+              </p>
+            </div>
+            <button type="button" className="dl-icon-btn" onClick={() => setDownloadMenuOpen(false)} aria-label="Close download options">
+              <Icon name="xmark" size={15} />
+            </button>
+          </div>
+          <div className="detail-download-modes" role="group" aria-label="Download format">
+            <button
+              type="button"
+              className={`chip${downloadMode === "full" ? " is-active dl-chip-active" : ""}`}
+              onClick={() => setDownloadMode("full")}
+            >
+              Full size
+            </button>
+            <button
+              type="button"
+              className={`chip${downloadMode === "optimized" ? " is-active dl-chip-active" : ""}`}
+              onClick={() => setDownloadMode("optimized")}
+              disabled={ffmpegAvailable !== true}
+              title={ffmpegAvailable === false ? "FFmpeg is unavailable on this desktop." : "Checking FFmpeg…"}
+            >
+              Optimized · remux
+            </button>
+          </div>
+          {downloadMode === "optimized" && (
+            <p className="detail-download-track-note t-secondary">
+              Track languages are not available in stream results, so this remux keeps all audio and subtitle tracks.
+            </p>
+          )}
+          {ffmpegAvailable === false && (
+            <p className="detail-download-track-note t-secondary">
+              Optimized downloads need FFmpeg. Choose Full size or install the desktop build with FFmpeg.
+            </p>
+          )}
+          <div className="detail-download-actions">
+            <button
+              type="button"
+              className="btn btn-prominent"
+              onClick={() => void enqueueCurrentDownload()}
+              disabled={filterStreamRows(streams.rows, settings).length === 0}
+            >
+              <Icon name="debrid" size={15} />
+              {isSeries && selected != null
+                ? `This episode (${episodeLabel(selected.season, selected.episode)})`
+                : "Download movie"}
+            </button>
+            {isSeries && (
+              <>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={enqueueCurrentSeason}
+                  disabled={selected == null || selectedSeasonEpisodes.loading || selectedSeasonEpisodes.episodes.length === 0}
+                >
+                  Season {selected?.season ?? ""}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={enqueueWholeShow}
+                  disabled={seasonsState.loading || seasonsState.seasons.length === 0}
+                >
+                  Whole show
+                </button>
+              </>
+            )}
+          </div>
+          {downloadNotice != null && <p className="detail-download-notice" role="status">{downloadNotice}</p>}
+        </section>
       )}
 
       {/* Finished-watching marker (movies) - an honest state near the title.

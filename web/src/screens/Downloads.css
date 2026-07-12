@@ -1,0 +1,105 @@
+.downloads-note {
+  margin: var(--sp-sm) 0 0;
+  font-size: 13px;
+}
+
+.downloads-table {
+  min-width: 0;
+}
+
+.downloads-row {
+  display: grid;
+  grid-template-columns: 32px minmax(150px, 1fr) 118px minmax(160px, 1fr) 108px 92px;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+}
+.downloads-row:not(.downloads-row-head):hover {
+  background: var(--glass-tint-control-hover);
+}
+.downloads-row-head {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.downloads-title,
+.downloads-progress {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+.downloads-title strong,
+.downloads-progress small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.downloads-progress small,
+.downloads-mode {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.downloads-progress-track {
+  display: block;
+  height: 5px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--glass-tint-control);
+}
+.downloads-progress-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+.downloads-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.downloads-cancel:hover {
+  background: rgba(var(--danger-rgb), 0.12);
+  color: var(--danger);
+}
+.downloads-status-completed {
+  background: rgba(var(--accent-secondary-rgb), 0.16);
+  color: var(--accent-secondary);
+}
+.downloads-status-failed,
+.downloads-status-canceled {
+  background: rgba(var(--danger-rgb), 0.13);
+  color: var(--danger);
+}
+.downloads-status-paused {
+  background: rgba(var(--warning-rgb), 0.14);
+  color: var(--warning);
+}
+
+@media (max-width: 760px) {
+  .downloads-row {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: var(--sp-xs) var(--sp-sm);
+  }
+  .downloads-row-head {
+    display: none;
+  }
+  .downloads-title {
+    grid-column: 2;
+  }
+  .downloads-mode,
+  .downloads-progress,
+  .downloads-row > span:nth-child(5) {
+    grid-column: 2;
+  }
+  .downloads-actions {
+    grid-column: 3;
+    grid-row: 1 / span 3;
+    align-self: center;
+  }
+}

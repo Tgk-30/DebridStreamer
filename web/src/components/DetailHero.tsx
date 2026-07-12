@@ -34,6 +34,10 @@ interface DetailHeroProps {
   /** When set, Play is disabled and this explains why (e.g. no debrid service
    *  configured yet) - an honest gate instead of a click that goes nowhere. */
   playDisabledReason?: string | null;
+  /** Local desktop-only download action, rendered beside Play when supplied. */
+  onDownload?: () => void;
+  /** Honest explanation for a disabled download action. */
+  downloadDisabledReason?: string | null;
 }
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -49,6 +53,8 @@ export function DetailHero({
   tasteSignal = null,
   onTasteSignal,
   playDisabledReason = null,
+  onDownload,
+  downloadDisabledReason = null,
 }: DetailHeroProps) {
   const backdrop = MediaItemNS.backdropURL(item);
   const [backdropFailed, setBackdropFailed] = useState(false);
@@ -153,6 +159,18 @@ export function DetailHero({
               <Icon name="play" size={16} />
               Play
             </button>
+            {onDownload && (
+              <button
+                type="button"
+                className="btn detail-download"
+                onClick={onDownload}
+                disabled={downloadDisabledReason != null}
+                title={downloadDisabledReason ?? "Download"}
+              >
+                <Icon name="debrid" size={16} />
+                Download
+              </button>
+            )}
             <button
               type="button"
               className={`btn detail-watch${inWatchlist ? " is-on" : ""}`}

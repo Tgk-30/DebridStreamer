@@ -11,12 +11,13 @@
 // Tests run this against `fake-indexeddb` (see DexieStore.test.ts), which
 // provides a spec-compliant in-memory IndexedDB.
 
-import Dexie, { type Table } from "dexie";
+import Dexie, { liveQuery, type Table } from "dexie";
 import type { MediaItem, MediaPreview } from "../models/media";
 import {
   type AIUsageRecord,
   type CachedResolutionRecord,
   type DebridConfigRecord,
+  type DownloadRecord,
   type FolderKind,
   hasResumePoint,
   type IndexerConfigRecord,
@@ -75,6 +76,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   private mediaCache!: Table<MediaCacheRecord, string>;
   private cachedResolutions!: Table<CachedResolutionRecord, string>;
   private aiUsage!: Table<AIUsageRecord, string>;
+  private downloads!: Table<DownloadRecord, string>;
 
   constructor(name = "debridstreamer") {
     super(name);
@@ -109,6 +111,12 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     // be shown. Dexie carries the prior stores forward; only the new one is here.
     this.version(3).stores({
       aiUsage: "id, createdAt",
+    });
+
+    // v4: durable desktop download queue. jobId is both the primary key and
+    // the native executor's progress-event correlation id.
+    this.version(4).stores({
+      downloads: "jobId, status, updatedAt, createdAt, mediaId, episodeId",
     });
   }
 
@@ -515,5 +523,45 @@ export class DexieStore extends Dexie implements Store, SecretStore {
 
   async deleteCachedResolution(mediaId: string): Promise<void> {
     await this.cachedResolutions.delete(mediaId);
+  }
+
+  // ---- Desktop downloads ---------------------------------------------------
+
+  async saveDownload(record: DownloadRecord): Promise<void> {
+    await this.downloads.put(record);
+  }
+
+  async updateDownload(
+    jobId: string,
+    changes: Partial<Omit<DownloadRecord, "jobId" | "createdAt">>,
+  ): Promise<DownloadRecord | null> {
+    const current = await this.downloads.get(jobId);
+    if (current == null) return null;
+    const next: DownloadRecord = {
+      ...current,
+      ...changes,
+      jobId,
+      createdAt: current.createdAt,
+      updatedAt: changes.updatedAt ?? nowISO(),
+    };
+    await this.downloads.put(next);
+    return next;
+  }
+
+  async deleteDownload(jobId: string): Promise<void> {
+    await this.downloads.delete(jobId);
+  }
+
+  async listDownloads(): Promise<DownloadRecord[]> {
+    const rows = await this.downloads.toArray();
+    return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  subscribeDownloads(listener: (records: DownloadRecord[]) => void): () => void {
+    const subscription = liveQuery(() => this.listDownloads()).subscribe({
+      next: listener,
+      error: () => listener([]),
+    });
+    return () => subscription.unsubscribe();
   }
 }

@@ -15,6 +15,7 @@ import type {
   AIUsageRecord,
   CachedResolutionRecord,
   DebridConfigRecord,
+  DownloadRecord,
   IndexerConfigRecord,
   LibraryEntryRecord,
   LibraryFolderRecord,
@@ -152,6 +153,17 @@ export interface Store {
   listCachedResolutions(): Promise<CachedResolutionRecord[]>;
   /** Drop a cached resolution by media id (e.g. when removed from watchlist). */
   deleteCachedResolution(mediaId: string): Promise<void>;
+
+  // MARK: Desktop downloads (Local Mode / Tauri only).
+
+  saveDownload(record: DownloadRecord): Promise<void>;
+  updateDownload(
+    jobId: string,
+    changes: Partial<Omit<DownloadRecord, "jobId" | "createdAt">>,
+  ): Promise<DownloadRecord | null>;
+  deleteDownload(jobId: string): Promise<void>;
+  listDownloads(): Promise<DownloadRecord[]>;
+  subscribeDownloads(listener: (records: DownloadRecord[]) => void): () => void;
 }
 
 /** The fields a caller provides to upsert a watch-history row. `id` is derived
