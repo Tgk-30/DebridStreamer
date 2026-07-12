@@ -533,7 +533,7 @@ define_class!(
             let _keep_alive: Option<Retained<HostView>> = unsafe {
                 Retained::retain(self as *const HostView as *mut HostView)
             };
-            teardown_surface_on_main(&surface, "window-close");
+            teardown_surface_on_main(&surface, "window-close", false);
         }
     }
 );
@@ -789,50 +789,90 @@ fn bounded_minimum(minimum: NSSize, maximum: NSSize) -> NSSize {
     )
 }
 
-/// The first wrap keeps the entire new window inside the current content
-/// footprint. If that exact-aspect fit would cross either declared minimum, use
-/// the minimum rectangle and let mpv letterbox internally.
+fn aspect_preserving_screen_clamp(size: NSSize, maximum: NSSize) -> NSSize {
+    let scale = (maximum.width.max(1.0) / size.width.max(1.0))
+        .min(maximum.height.max(1.0) / size.height.max(1.0))
+        .min(1.0);
+    NSSize::new(size.width * scale, size.height * scale)
+}
+
+fn exact_size_or_letterbox(
+    exact: NSSize,
+    minimum: NSSize,
+    maximum: NSSize,
+) -> (NSSize, bool) {
+    let fitted = aspect_preserving_screen_clamp(exact, maximum);
+    if fitted.width + 0.01 >= minimum.width.max(1.0)
+        && fitted.height + 0.01 >= minimum.height.max(1.0)
+    {
+        (fitted, false)
+    } else {
+        // The visible screen cannot contain this aspect at or above both
+        // content minimums. This is the only path that permits letterboxing.
+        (bounded_minimum(minimum, maximum), true)
+    }
+}
+
+/// Preserve width, but grow it when the resulting exact-aspect height would
+/// violate the content minimum. Any screen clamp scales both axes together.
+fn width_based_wrap_size(
+    current: NSSize,
+    aspect: f64,
+    minimum: NSSize,
+    maximum: NSSize,
+) -> (NSSize, bool) {
+    let mut width = current.width.max(minimum.width).max(1.0);
+    let mut height = width / aspect;
+    if height + 0.01 < minimum.height.max(1.0) {
+        height = minimum.height.max(1.0);
+        width = height * aspect;
+    }
+    exact_size_or_letterbox(NSSize::new(width, height), minimum, maximum)
+}
+
+/// Preserve height for tall content, growing it when the resulting exact-aspect
+/// width would violate the content minimum. The final clamp stays exact-aspect.
+fn height_based_wrap_size(
+    current: NSSize,
+    aspect: f64,
+    minimum: NSSize,
+    maximum: NSSize,
+) -> (NSSize, bool) {
+    let mut height = current.height.max(minimum.height).max(1.0);
+    let mut width = height * aspect;
+    if width + 0.01 < minimum.width.max(1.0) {
+        width = minimum.width.max(1.0);
+        height = width / aspect;
+    }
+    exact_size_or_letterbox(NSSize::new(width, height), minimum, maximum)
+}
+
+/// The first wrap follows the content axis: wide video preserves width and tall
+/// video preserves height. Both paths grow the preserved axis to satisfy the
+/// other minimum before applying an aspect-preserving screen clamp.
 fn first_wrap_size(
     current: NSSize,
     aspect: f64,
     minimum: NSSize,
     maximum: NSSize,
 ) -> (NSSize, bool) {
-    let available = NSSize::new(
-        current.width.min(maximum.width),
-        current.height.min(maximum.height),
-    );
-    let fitted = if available.width / available.height > aspect {
-        NSSize::new(available.height * aspect, available.height)
+    if aspect >= 1.0 {
+        width_based_wrap_size(current, aspect, minimum, maximum)
     } else {
-        NSSize::new(available.width, available.width / aspect)
-    };
-    if fitted.width + 0.01 < minimum.width || fitted.height + 0.01 < minimum.height {
-        (bounded_minimum(minimum, maximum), true)
-    } else {
-        (fitted, false)
+        height_based_wrap_size(current, aspect, minimum, maximum)
     }
 }
 
-/// Later aspect changes preserve the current content width whenever an exact
-/// video-aspect size exists between the content minimum and screen maximum.
+/// Later aspect changes keep the established width-preserving behavior, with
+/// the same minimum-driven growth and exact-aspect screen clamp as a wide first
+/// wrap.
 fn width_preserving_wrap_size(
     current: NSSize,
     aspect: f64,
     minimum: NSSize,
     maximum: NSSize,
 ) -> (NSSize, bool) {
-    let minimum_exact_width = minimum.width.max(minimum.height * aspect);
-    let maximum_exact_width = maximum.width.min(maximum.height * aspect);
-    if minimum_exact_width <= maximum_exact_width {
-        let width = current
-            .width
-            .max(minimum_exact_width)
-            .min(maximum_exact_width);
-        (NSSize::new(width, width / aspect), false)
-    } else {
-        (bounded_minimum(minimum, maximum), true)
-    }
+    width_based_wrap_size(current, aspect, minimum, maximum)
 }
 
 fn centered_frame_within_visible(
@@ -869,32 +909,70 @@ fn save_pre_wrap_frame_on_main(surface: &SurfaceState, window: &NSWindow) -> boo
     true
 }
 
-fn restore_pre_wrap_frame_on_main(surface: &SurfaceState, reason: &str) {
-    surface
-        .wrap_restore_pending
-        .store(false, Ordering::Release);
+/// AppKit owns the window frame for the complete fullscreen transition. Frame
+/// changes, and applying a new nonzero aspect, stay suspended until did-exit.
+/// Clearing the aspect to zero is safe because it does not move the window.
+fn window_wrap_mutation_allowed_on_main(
+    surface: &SurfaceState,
+    window: &NSWindow,
+) -> bool {
+    !surface.fullscreen_suspended.load(Ordering::Acquire)
+        && !window.styleMask().contains(NSWindowStyleMask::FullScreen)
+}
+
+fn restore_pre_wrap_frame_on_main(surface: &SurfaceState, reason: &str) -> bool {
     let saved = surface
         .pre_wrap_frame
         .lock()
         .ok()
         .and_then(|frame| *frame);
     let Some(saved) = saved else {
-        return;
+        surface
+            .wrap_restore_pending
+            .store(false, Ordering::Release);
+        return false;
     };
+    if surface.window_ptr == 0 {
+        surface
+            .wrap_restore_pending
+            .store(true, Ordering::Release);
+        return false;
+    }
     let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
+    if !window_wrap_mutation_allowed_on_main(surface, window) {
+        surface
+            .wrap_restore_pending
+            .store(true, Ordering::Release);
+        log_geometry_on_main(
+            "window-wrap",
+            surface,
+            &format!("action=defer-session-frame-restore reason={reason}"),
+        );
+        return false;
+    }
     window.setFrame_display(saved.as_rect(), true);
+    if let Ok(mut saved_frame) = surface.pre_wrap_frame.lock() {
+        *saved_frame = None;
+    }
+    surface
+        .wrap_restore_pending
+        .store(false, Ordering::Release);
     log_geometry_on_main(
         "window-wrap",
         surface,
         &format!("action=restore-session-frame reason={reason}"),
     );
+    true
 }
 
-fn clear_window_aspect_on_main(surface: &SurfaceState, reason: &str) {
+fn clear_window_aspect_on_main(surface: &SurfaceState, reason: &str) -> bool {
     if surface.window_ptr == 0 {
-        return;
+        return false;
     }
     let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
+    // Removing the constraint does not change the frame or AppKit's saved
+    // fullscreen transition geometry, so teardown must be allowed to do this
+    // even after its did-exit observer is about to be removed.
     window.setContentAspectRatio(NSSize::new(0.0, 0.0));
     surface
         .wrap_constraint_applied
@@ -904,9 +982,13 @@ fn clear_window_aspect_on_main(surface: &SurfaceState, reason: &str) {
         surface,
         &format!("action=clear reason={reason}"),
     );
+    true
 }
 
 fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
+    if surface.dead.load(Ordering::Acquire) {
+        return;
+    }
     if surface
         .wrap_reconciling
         .swap(true, Ordering::AcqRel)
@@ -923,23 +1005,21 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
             surface
                 .fullscreen_suspended
                 .store(true, Ordering::Release);
-            clear_window_aspect_on_main(surface, "fullscreen");
             return;
         }
         // A will-enter/will-exit notification keeps this true throughout the
         // transition, even during frames where AppKit has already toggled the
         // style-mask bit. did-exit is the sole resume point.
         if surface.fullscreen_suspended.load(Ordering::Acquire) {
-            clear_window_aspect_on_main(surface, "fullscreen-transition");
             return;
         }
-        let restored = surface.wrap_restore_pending.load(Ordering::Acquire);
-        if restored {
+        let restore_pending = surface.wrap_restore_pending.load(Ordering::Acquire);
+        if restore_pending {
             clear_window_aspect_on_main(surface, "playback-ended");
             restore_pre_wrap_frame_on_main(surface, "playback-ended");
         }
         if !surface.wrap_active.load(Ordering::Acquire) {
-            if !restored {
+            if !restore_pending {
                 clear_window_aspect_on_main(surface, "inactive");
             }
             return;
@@ -976,12 +1056,20 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
                 let old_frame = window.frame();
                 let centered =
                     centered_frame_within_visible(window, old_frame, fitted, visible_frame);
+                if !window_wrap_mutation_allowed_on_main(surface, window) {
+                    surface.wrap_needs_resize.store(true, Ordering::Release);
+                    return;
+                }
                 window.setFrame_display(centered, true);
                 resized = true;
             }
         }
 
         let aspect = normalized_aspect(width, height);
+        if !window_wrap_mutation_allowed_on_main(surface, window) {
+            surface.wrap_needs_resize.store(true, Ordering::Release);
+            return;
+        }
         window.setContentAspectRatio(aspect);
         surface
             .wrap_constraint_applied
@@ -996,7 +1084,15 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
                     "action=apply ratio={:.0}x{:.0} policy={} resized={} internal_letterbox={} content_before={:.2}x{:.2} content_after={:.2}x{:.2} content_min={:.2}x{:.2}",
                     aspect.width,
                     aspect.height,
-                    if first_wrap { "first-inside-fit" } else { "width-preserving" },
+                    if first_wrap {
+                        if width >= height {
+                            "first-wide-width"
+                        } else {
+                            "first-tall-height"
+                        }
+                    } else {
+                        "width-preserving"
+                    },
                     resized,
                     internal_letterbox,
                     before.width,
@@ -1037,14 +1133,31 @@ fn suspend_window_wrap_on_main(surface: &SurfaceState, reason: &str) {
     surface
         .fullscreen_suspended
         .store(true, Ordering::Release);
-    clear_window_aspect_on_main(surface, reason);
+    log_geometry_on_main(
+        "window-wrap",
+        surface,
+        &format!("action=suspend reason={reason}"),
+    );
 }
 
 fn resume_window_wrap_on_main(surface: &SurfaceState) {
+    if surface.dead.load(Ordering::Acquire) || surface.window_ptr == 0 {
+        return;
+    }
+    let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
+    if window.styleMask().contains(NSWindowStyleMask::FullScreen) {
+        surface
+            .fullscreen_suspended
+            .store(true, Ordering::Release);
+        return;
+    }
     surface
         .fullscreen_suspended
         .store(false, Ordering::Release);
     if surface.wrap_active.load(Ordering::Acquire) {
+        // Fullscreen entry could not safely clear the old native constraint.
+        // Remove it now so a changed video aspect cannot distort this refit.
+        clear_window_aspect_on_main(surface, "did-exit-fullscreen");
         surface.wrap_needs_resize.store(true, Ordering::Release);
     }
     reconcile_window_wrap_on_main(surface);
@@ -1091,7 +1204,11 @@ fn remove_window_observers(host: &HostView) {
     unsafe { center.removeObserver(host) };
 }
 
-fn teardown_surface_on_main(surface: &Arc<SurfaceState>, reason: &str) {
+fn teardown_surface_on_main(
+    surface: &Arc<SurfaceState>,
+    reason: &str,
+    restore_window_frame: bool,
+) {
     if surface.dead.swap(true, Ordering::AcqRel) {
         return;
     }
@@ -1105,7 +1222,25 @@ fn teardown_surface_on_main(surface: &Arc<SurfaceState>, reason: &str) {
     }
 
     clear_window_aspect_on_main(surface, reason);
-    restore_pre_wrap_frame_on_main(surface, reason);
+    if restore_window_frame {
+        restore_pre_wrap_frame_on_main(surface, reason);
+    }
+
+    // A destroyed surface cannot receive the later did-exit notification. If
+    // fullscreen blocked frame restoration, discard it rather than touching
+    // AppKit's transition state. A closing window also has no useful frame to
+    // restore.
+    surface.wrap_needs_resize.store(false, Ordering::Release);
+    surface
+        .wrap_constraint_applied
+        .store(false, Ordering::Release);
+    surface.wrap_has_applied.store(false, Ordering::Release);
+    surface
+        .wrap_restore_pending
+        .store(false, Ordering::Release);
+    if let Ok(mut saved) = surface.pre_wrap_frame.lock() {
+        *saved = None;
+    }
 
     if host_ptr != 0 {
         let host: &HostView = unsafe { &*(host_ptr as *const HostView) };
@@ -1142,6 +1277,13 @@ impl VideoSurface for MacosSurface {
         self.state.dwidth.store(0, Ordering::Release);
         self.state.dheight.store(0, Ordering::Release);
         self.state.wrap_active.store(false, Ordering::Release);
+        self.state
+            .wrap_restore_pending
+            .store(false, Ordering::Release);
+        self.state.wrap_has_applied.store(false, Ordering::Release);
+        if let Ok(mut saved) = self.state.pre_wrap_frame.lock() {
+            *saved = None;
+        }
         self.state
             .wrap_needs_resize
             .store(true, Ordering::Release);
@@ -1189,7 +1331,7 @@ impl VideoSurface for MacosSurface {
 
     fn detach(&self) {
         let state = self.state.clone();
-        let teardown = move || teardown_surface_on_main(&state, "detach");
+        let teardown = move || teardown_surface_on_main(&state, "detach", true);
         // detach normally runs off the main thread (async commands / Player drop);
         // exec_sync onto the main queue preserves the ordering there. If a future
         // caller is already ON the main thread, run inline instead - dispatch_sync
