@@ -22,9 +22,14 @@ import {
 } from "../lib/renderPlayer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openInExternalPlayer } from "../lib/tauri";
-import { fitVideoRect } from "../lib/videoRect";
+import {
+  currentViewportPixelSize,
+  type PixelSize,
+  type PlaybackEngine,
+} from "../lib/playbackEngine";
 import type { PlaybackPrefs } from "../storage/models";
 import { Icon } from "./Icon";
+import { PlayerInfoPopover } from "./player/PlayerInfoPopover";
 import "./EmbeddedPlayer.css";
 
 interface Props {
@@ -41,6 +46,11 @@ interface Props {
   /** Present for a series with a next episode - shows an "Up next" affordance. */
   onPlayNext?: () => void;
   nextLabel?: string | null;
+  /** Renderer identity shown in the permanent playback-info popover. */
+  engine?: PlaybackEngine;
+  /** Give the parent one chance to switch to a compatible webview source when
+   * native initialization or loading fails. Returning true means it recovered. */
+  onPlaybackError?: (error: Error) => boolean | Promise<boolean>;
   onClose: () => void;
 }
 
@@ -74,10 +84,10 @@ const OBSERVED: readonly MpvObservableProperty[] = [
   ["aid", "string", "none"],
   ["sid", "string", "none"],
   ["eof-reached", "flag"],
-  // Aspect-corrected display size of the decoded frame. We fit this against the
-  // window to know where the native layer letterboxes the video, so the control
-  // overlay pins to the real frame instead of the black bars. (video-params is a
-  // node - not observable via the scalar-only bridge - but dwidth/dheight are.)
+  // Raw decoded dimensions power the permanent diagnostics. dwidth/dheight are
+  // retained as a fallback for mpv builds that do not emit video-params subkeys.
+  ["video-params/w", "int64", "none"],
+  ["video-params/h", "int64", "none"],
   ["dwidth", "int64", "none"],
   ["dheight", "int64", "none"],
 ];
@@ -166,6 +176,8 @@ export function EmbeddedPlayer({
   onProgress,
   onPlayNext,
   nextLabel,
+  engine = "native-mpv",
+  onPlaybackError,
   onClose,
 }: Props) {
   const [error, setError] = useState<string | null>(null);
@@ -190,14 +202,17 @@ export function EmbeddedPlayer({
   const [ended, setEnded] = useState(false);
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  // Aspect-corrected frame size (0 until the first frame / for audio-only) and
-  // the current surface size, used to align the controls with the video frame.
+  const [infoOpen, setInfoOpen] = useState(false);
+  // Source dimensions are diagnostic only. Player chrome is deliberately never
+  // fitted to this rectangle: it belongs to the window, while mpv owns genuine
+  // source-aspect letterboxing inside its full-window native surface.
+  const [sourceW, setSourceW] = useState(0);
+  const [sourceH, setSourceH] = useState(0);
   const [videoW, setVideoW] = useState(0);
   const [videoH, setVideoH] = useState(0);
-  const [surface, setSurface] = useState<{ width: number; height: number }>(() => ({
-    width: typeof window === "undefined" ? 0 : window.innerWidth,
-    height: typeof window === "undefined" ? 0 : window.innerHeight,
-  }));
+  const [displaySize, setDisplaySize] = useState<PixelSize | null>(() =>
+    currentViewportPixelSize(),
+  );
 
   const startedRef = useRef(false);
   // Cleared once the first frame is shown; until then the initial buffering=true
@@ -206,10 +221,12 @@ export function EmbeddedPlayer({
   const lastReportRef = useRef(0);
   const posRef = useRef(0);
   const durRef = useRef(0);
+  const onPlaybackErrorRef = useRef(onPlaybackError);
+  onPlaybackErrorRef.current = onPlaybackError;
   const hideTimer = useRef<number | undefined>(undefined);
   const scrubRef = useRef<HTMLDivElement | null>(null);
   const menuOpenRef = useRef(false);
-  menuOpenRef.current = menu != null || shortcutsOpen;
+  menuOpenRef.current = menu != null || shortcutsOpen || infoOpen;
 
   posRef.current = pos;
   durRef.current = dur;
@@ -223,12 +240,10 @@ export function EmbeddedPlayer({
     return () => document.documentElement.classList.remove("mpv-active");
   }, []);
 
-  // Track the surface size. `.embed-player` is fixed inset:0, so it matches the
-  // viewport, which matches the native mpv surface; a plain resize listener keeps
-  // the fitted video rect current (including on the fullscreen resize).
+  // Track the full-window native surface for the diagnostic popover. Backing
+  // pixels make this directly comparable to mpv's decoded source dimensions.
   useEffect(() => {
-    const measure = () =>
-      setSurface({ width: window.innerWidth, height: window.innerHeight });
+    const measure = () => setDisplaySize(currentViewportPixelSize());
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
@@ -256,7 +271,9 @@ export function EmbeddedPlayer({
   useEffect(() => {
     let cancelled = false;
     firstFrameRef.current = false; // new file: show the initial spinner again
-    setVideoW(0); // and drop the prior file's aspect until the new frame lands
+    setSourceW(0);
+    setSourceH(0);
+    setVideoW(0);
     setVideoH(0);
     let unlisten: (() => void) | undefined;
     void (async () => {
@@ -314,6 +331,12 @@ export function EmbeddedPlayer({
               case "eof-reached":
                 if (ev.data === true) setEnded(true);
                 break;
+              case "video-params/w":
+                if (typeof ev.data === "number") setSourceW(ev.data);
+                break;
+              case "video-params/h":
+                if (typeof ev.data === "number") setSourceH(ev.data);
+                break;
               case "dwidth":
                 if (typeof ev.data === "number") setVideoW(ev.data);
                 break;
@@ -339,7 +362,16 @@ export function EmbeddedPlayer({
           }
         }, 700);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        const playbackError = e instanceof Error ? e : new Error(String(e));
+        let recovered = false;
+        if (onPlaybackErrorRef.current != null) {
+          try {
+            recovered = (await onPlaybackErrorRef.current(playbackError)) === true;
+          } catch {
+            // The normal native error card remains the terminal fallback.
+          }
+        }
+        if (!cancelled && !recovered) setError(playbackError.message);
       }
     })();
     return () => {
@@ -583,6 +615,7 @@ export function EmbeddedPlayer({
           break;
         case "Escape":
           if (shortcutsOpen) setShortcutsOpen(false);
+          else if (infoOpen) setInfoOpen(false);
           else if (menu != null) setMenu(null);
           else if (fullscreen) toggleFullscreen();
           else doClose();
@@ -599,7 +632,7 @@ export function EmbeddedPlayer({
   }, [
     togglePause, relSeek, changeVolume, volume, toggleMute, toggleFullscreen,
     applySpeed, speed, doClose, seekTo, nudgeControls, menu, fullscreen,
-    shortcutsOpen, refreshTracks,
+    shortcutsOpen, infoOpen, refreshTracks,
   ]);
 
   // Scrub-bar pointer → time (used for both seek and hover preview).
@@ -615,22 +648,11 @@ export function EmbeddedPlayer({
   );
 
   const pct = (v: number) => (dur > 0 ? Math.min(100, Math.max(0, (v / dur) * 100)) : 0);
-
-  // Constrain the control overlay to the fitted video frame so the top/bottom
-  // bars ride the real picture, not the letterbox bars. Falls back to the full
-  // surface (undefined style → CSS inset:0) until dimensions are known.
-  const videoRect = useMemo(
-    () => fitVideoRect({ width: videoW, height: videoH }, surface),
-    [videoW, videoH, surface],
-  );
-  const controlsStyle: React.CSSProperties | undefined = videoRect
-    ? {
-        left: videoRect.left,
-        top: videoRect.top,
-        width: videoRect.width,
-        height: videoRect.height,
-      }
-    : undefined;
+  const nativeSourceSize = useMemo<PixelSize | null>(() => {
+    const width = sourceW > 0 ? sourceW : videoW;
+    const height = sourceH > 0 ? sourceH : videoH;
+    return width > 0 && height > 0 ? { width, height } : null;
+  }, [sourceW, sourceH, videoW, videoH]);
 
   if (error) {
     return createPortal(
@@ -688,6 +710,7 @@ export function EmbeddedPlayer({
         className="embed-stage"
         onClick={() => {
           if (menu != null) setMenu(null);
+          else if (infoOpen) setInfoOpen(false);
           else togglePause();
         }}
       />
@@ -722,7 +745,7 @@ export function EmbeddedPlayer({
         </div>
       )}
 
-      <div className="embed-controls" style={controlsStyle}>
+      <div className="embed-controls">
         {/* Top bar */}
         <div className="embed-top">
           <button
@@ -742,13 +765,28 @@ export function EmbeddedPlayer({
           <button
             type="button"
             className="embed-icon-btn embed-top-help"
-            onClick={() => setShortcutsOpen((o) => !o)}
-            aria-label="Keyboard shortcuts"
-            title="Keyboard shortcuts (?)"
+            onClick={() => setInfoOpen((o) => !o)}
+            aria-label="Playback information"
+            aria-haspopup="dialog"
+            aria-expanded={infoOpen}
+            title="Playback information"
           >
             <Icon name="info" size={18} />
           </button>
         </div>
+
+        {infoOpen && (
+          <PlayerInfoPopover
+            engine={engine}
+            sourceSize={nativeSourceSize}
+            displaySize={displaySize}
+            onClose={() => setInfoOpen(false)}
+            onShowShortcuts={() => {
+              setInfoOpen(false);
+              setShortcutsOpen(true);
+            }}
+          />
+        )}
 
         {/* Bottom control bar */}
         <div className="embed-bottom">

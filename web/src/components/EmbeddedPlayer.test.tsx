@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { readFileSync } from "node:fs";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const renderPlayerMock = vi.hoisted(() => ({
@@ -37,7 +37,6 @@ vi.mock("./Icon", () => ({
 }));
 
 import { EmbeddedPlayer } from "./EmbeddedPlayer";
-import { fitVideoRect } from "../lib/videoRect";
 
 const initialViewport = {
   width: window.innerWidth,
@@ -120,12 +119,12 @@ describe("EmbeddedPlayer control geometry", () => {
   });
 });
 
-describe("control overlay aligns to the rendered video frame", () => {
-  it("escapes the inset, scrolled Detail containing block before applying the Retina rect", async () => {
+describe("window-anchored controls and playback diagnostics", () => {
+  it("escapes an inset Detail block and stays window-anchored after dimensions arrive", async () => {
     // This is the shipped sequence: Detail starts 244 CSS px from the left at
     // desktop width and has scrolled to its movie stream picker. Its backdrop
-    // filter makes it a containing block for fixed descendants. A 2x 16:9 frame
-    // then reports 3840 and 2160 in separate mpv property events.
+    // filter makes it a containing block for fixed descendants. Source-dimension
+    // events must never turn into inline control geometry.
     setViewport(1440, 900, 2);
     const detail = document.createElement("div");
     detail.className = "detail";
@@ -156,21 +155,16 @@ describe("control overlay aligns to the rendered video frame", () => {
     expect(controls).not.toHaveAttribute("style");
 
     emitProperty("dwidth", 3840);
-    // Partial dimensions must retain the safe full-viewport fallback.
     expect(controls).not.toHaveAttribute("style");
 
     emitProperty("dheight", 2160);
-    // Retina-sized video dimensions contribute only their aspect. The fitted
-    // overlay remains in CSS pixels: 1440 x 810, centered 45 px from the top.
-    expect(controls).toHaveStyle({
-      left: "0px",
-      top: "45px",
-      width: "1440px",
-      height: "810px",
-    });
+    expect(controls).not.toHaveAttribute("style");
+
+    const css = readFileSync("src/components/EmbeddedPlayer.css", "utf8");
+    expect(css).toMatch(/\.embed-controls\s*\{[^}]*inset:\s*0;/s);
   });
 
-  it("uses the full viewport before the first frame and for audio-only media", async () => {
+  it("keeps the full-window contract before the first frame and for audio-only media", async () => {
     render(
       <EmbeddedPlayer
         url="https://example.test/audio.mka"
@@ -188,7 +182,8 @@ describe("control overlay aligns to the rendered video frame", () => {
     expect(controls).not.toHaveAttribute("style");
   });
 
-  it("does not fit a rect until both dimension events are valid", async () => {
+  it("shows the native engine plus source and backing-display dimensions", async () => {
+    setViewport(1000, 700, 2);
     render(
       <EmbeddedPlayer
         url="https://example.test/movie.mkv"
@@ -198,38 +193,13 @@ describe("control overlay aligns to the rendered video frame", () => {
     );
 
     await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
-    const controls = document.querySelector<HTMLElement>(".embed-controls");
+    emitProperty("video-params/w", 3840);
+    emitProperty("video-params/h", 2160);
 
-    emitProperty("dwidth", 1920);
-    emitProperty("dheight", 0);
-    expect(controls).not.toHaveAttribute("style");
-
-    emitProperty("dheight", Number.NaN);
-    expect(controls).not.toHaveAttribute("style");
-
-    emitProperty("dheight", 1080);
-    expect(controls).toHaveStyle({
-      left: "0px",
-      top: "96px",
-      width: "1024px",
-      height: "576px",
-    });
-  });
-
-  it("pins to the letterboxed frame for a wide video in a tall window", () => {
-    // 16:9 video inside a square window: full width, bars top and bottom.
-    const rect = fitVideoRect({ width: 1920, height: 1080 }, { width: 1000, height: 1000 });
-    expect(rect).toEqual({ left: 0, top: 218.75, width: 1000, height: 562.5 });
-  });
-
-  it("pins to the pillarboxed frame for a tall video in a wide window", () => {
-    // 9:16 video inside a 16:9 window: full height, bars left and right.
-    const rect = fitVideoRect({ width: 1080, height: 1920 }, { width: 1600, height: 900 });
-    expect(rect).toEqual({ left: 546.875, top: 0, width: 506.25, height: 900 });
-  });
-
-  it("falls back to the full window when dimensions are unknown", () => {
-    // Before the first frame or for audio-only: no rect, controls span the window.
-    expect(fitVideoRect({ width: 0, height: 0 }, { width: 1280, height: 720 })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Playback information" }));
+    const dialog = screen.getByRole("dialog", { name: "Playback information" });
+    expect(dialog).toHaveTextContent("Native mpv");
+    expect(dialog).toHaveTextContent("3840 × 2160 px");
+    expect(dialog).toHaveTextContent("2000 × 1400 px");
   });
 });

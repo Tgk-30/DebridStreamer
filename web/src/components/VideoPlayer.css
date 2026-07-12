@@ -1,15 +1,12 @@
-/* In-app player overlay - a centered glass panel over a dimmed backdrop. */
+/* In-app player overlay. The playback surface and every chrome edge are tied to
+ * the WINDOW, never to a modal card or a computed video rectangle. */
 
 .player-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: var(--sp-xl);
-  background: rgba(2, 3, 8, 0.86);
-  backdrop-filter: blur(18px) saturate(120%);
-  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  padding: 0;
+  background: #000;
   animation: playerFadeIn 0.32s ease-out;
 }
 @keyframes playerFadeIn {
@@ -18,29 +15,30 @@
 }
 
 .player {
-  width: min(1180px, 100%);
-  max-height: 92vh;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-height: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: var(--r-lg);
+  border-radius: 0;
   background: #07080e;
-  box-shadow: 0 40px 100px -24px rgba(0, 0, 0, 0.85),
-    0 0 0 1px rgba(255, 255, 255, 0.06);
-  animation: playerRise 0.42s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes playerRise {
-  from { opacity: 0; transform: scale(0.96) translateY(16px); }
-  to { opacity: 1; transform: none; }
+  box-shadow: none;
 }
 
 .player-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 12;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-md);
-  padding: var(--sp-md) var(--sp-lg);
-  border-bottom: 0.75px solid var(--glass-border);
+  padding: 18px 24px 48px;
+  border: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent);
+  pointer-events: none;
 }
 .player-title {
   font-size: 15px;
@@ -48,8 +46,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
 }
-.player-close {
+.player-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  pointer-events: auto;
+}
+.player-close,
+.player-info-button {
   display: inline-grid;
   place-items: center;
   width: 32px;
@@ -61,15 +68,20 @@
   cursor: pointer;
   flex: 0 0 auto;
 }
-.player-close:hover {
+.player-close:hover,
+.player-info-button:hover {
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.1);
 }
 
 .player-video {
   width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: 78vh;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
+  object-fit: contain;
+  object-position: center;
   background: #000;
   display: block;
 }
@@ -84,9 +96,11 @@
 }
 
 .player-external {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--sp-md);
   text-align: center;
   padding: var(--sp-xxxl) var(--sp-xl);
@@ -117,24 +131,36 @@
  * controls) + the captions OSD button + the captions menu popover.
  * ------------------------------------------------------------------------- */
 .webview-player {
-  position: relative;
-  display: flex;
-  flex-direction: column;
+  position: absolute;
+  inset: 0;
+  background: #000;
 }
 .player-stage {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: #000;
 }
 
 .player-osd {
+  position: absolute;
+  inset: auto 0 54px;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: var(--sp-xs);
-  padding: var(--sp-sm) var(--sp-md) var(--sp-md);
+  padding: 42px 24px 10px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.68), transparent);
+  pointer-events: none;
 }
 .player-osd-row {
   display: flex;
   align-items: center;
   gap: var(--sp-sm);
+  pointer-events: auto;
+}
+.player-osd .scrubbar-wrap {
+  pointer-events: auto;
 }
 .captions-active-dot {
   width: 6px;

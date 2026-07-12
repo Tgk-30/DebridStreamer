@@ -43,6 +43,7 @@ import type { StreamRow } from "../data/streams";
 import { createRequest, resolveServerStream } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 import { isTauri } from "../lib/tauri";
+import type { PlaybackEngine } from "../lib/playbackEngine";
 import { getDownloadsBridge } from "../lib/downloadsBridge";
 import {
   startDownloadsRuntime,
@@ -99,8 +100,12 @@ function loadEpisodeOverrides(): Record<string, { season: number; episode: numbe
 interface ActivePlayer {
   url: string;
   title: string;
-  /** Force the external path for MKV/HEVC. */
-  external: boolean;
+  /** Exact renderer selected for this source. Never infer this from the URL in
+   * diagnostics: a debrid direct link often has no useful extension. */
+  engine: PlaybackEngine;
+  /** Original unsupported source used only if native libmpv fails and asks for
+   * the safe RD HLS fallback. Null for direct/HLS playback. */
+  fallbackStream: StreamInfo | null;
   /** Saved resume position (seconds) to seek to on load; 0 starts fresh. */
   startPositionSeconds: number;
   /** Remembered audio/subtitle/speed for this (media, episode), snapshotted at
@@ -119,7 +124,7 @@ interface ActivePlayer {
  * (in-window) or a native-player hand-off. */
 function needsTranscodeOrExternal(
   stream: StreamInfo,
-  source: TorrentResult,
+  source?: TorrentResult,
 ): boolean {
   const name = stream.fileName.toLowerCase();
   const badContainer =
@@ -128,11 +133,14 @@ function needsTranscodeOrExternal(
     name.endsWith(".ts") ||
     name.endsWith(".wmv") ||
     name.endsWith(".flv");
+  const parsedCodec = VideoCodec.parse(stream.fileName);
   const badCodec =
     stream.codec === VideoCodec.h265 ||
     stream.codec === VideoCodec.av1 ||
-    source.codec === VideoCodec.h265 ||
-    source.codec === VideoCodec.av1;
+    parsedCodec === VideoCodec.h265 ||
+    parsedCodec === VideoCodec.av1 ||
+    (source != null &&
+      (source.codec === VideoCodec.h265 || source.codec === VideoCodec.av1));
   return badContainer || badCodec;
 }
 
@@ -533,11 +541,17 @@ export function Detail() {
 
   /** Open the player, seeking to any saved resume position. Snapshots the
    * episode context so a picker change mid-playback can't retarget progress. */
-  function openPlayer(url: string, title: string, external: boolean): void {
+  function openPlayer(
+    url: string,
+    title: string,
+    engine: PlaybackEngine,
+    fallbackStream: StreamInfo | null = null,
+  ): void {
     setPlayer({
       url,
       title,
-      external,
+      engine,
+      fallbackStream,
       startPositionSeconds: resumeSecondsFor(),
       savedPrefs: prefsFor(),
       episodeId:
@@ -641,29 +655,39 @@ export function Detail() {
       });
   }
 
-  /** Play an already-resolved StreamInfo directly (the instant-play path for a
-   * cached resolution). Mirrors handlePlay's container/codec routing but without
-   * a TorrentResult to cross-check, so it keys off the stream alone. */
-  async function playStream(stream: StreamInfo, title: string) {
-    const name = stream.fileName.toLowerCase();
-    const badContainer =
-      name.endsWith(".mkv") ||
-      name.endsWith(".avi") ||
-      name.endsWith(".ts") ||
-      name.endsWith(".wmv") ||
-      name.endsWith(".flv");
-    const badCodec =
-      stream.codec === VideoCodec.h265 || stream.codec === VideoCodec.av1;
-    if (!badContainer && !badCodec) {
-      openPlayer(stream.streamURL, title, false);
+  /** Route one resolved file without hiding the selected engine. Desktop sends
+   * unsupported containers/codecs straight to native mpv, preserving 4K DV/HDR
+   * and avoiding a lossy RD transcode. Browser sessions still use RD HLS. If the
+   * built-in native renderer later fails, VideoPlayer requests HLS lazily using
+   * fallbackStream, then retains its external-player error action as the end of
+   * the chain. The built-in-player setting remains authoritative inside
+   * VideoPlayer: off means native external hand-off, never a silent webview swap. */
+  async function playResolvedStream(
+    stream: StreamInfo,
+    title: string,
+    source?: TorrentResult,
+  ): Promise<void> {
+    if (!needsTranscodeOrExternal(stream, source)) {
+      openPlayer(stream.streamURL, title, "webview-direct");
       return;
     }
+
+    if (isTauri()) {
+      openPlayer(stream.streamURL, title, "native-mpv", stream);
+      return;
+    }
+
     const hlsUrl = await services.debrid?.getTranscodeHLS(stream).catch(() => null);
     if (hlsUrl != null) {
-      openPlayer(hlsUrl, title, false);
+      openPlayer(hlsUrl, title, "webview-hls-transcode");
       return;
     }
-    openPlayer(stream.streamURL, title, true);
+    openPlayer(stream.streamURL, title, "native-mpv");
+  }
+
+  /** Play an already-resolved StreamInfo (the instant-play path). */
+  async function playStream(stream: StreamInfo, title: string) {
+    await playResolvedStream(stream, title);
   }
 
   async function resolveSelectedStream(
@@ -735,26 +759,7 @@ export function Detail() {
 
   async function handlePlay(stream: StreamInfo, source: TorrentResult) {
     const title = stream.fileName || source.title;
-
-    // Browser-playable (MP4/WebM/H.264) - play the direct link in-webview.
-    if (!needsTranscodeOrExternal(stream, source)) {
-      openPlayer(stream.streamURL, title, false);
-      return;
-    }
-
-    // MKV / HEVC / AV1: prefer Real-Debrid transcode-to-HLS so it plays IN the
-    // window (hls.js). Only RD resolves this (gated inside DebridManager via the
-    // stream's `restrictedId`); any failure / non-RD source returns null and we
-    // fall back to the native-player hand-off below.
-    const hlsUrl = await services.debrid?.getTranscodeHLS(stream).catch(() => null);
-    if (hlsUrl != null) {
-      // In-window: the .m3u8 routes through the webview hls.js path.
-      openPlayer(hlsUrl, title, false);
-      return;
-    }
-
-    // Fallback: native player (mpv/VLC) via the desktop hand-off.
-    openPlayer(stream.streamURL, title, true);
+    await playResolvedStream(stream, title, source);
   }
 
   const downloadDisabledReason =
@@ -1217,7 +1222,12 @@ export function Detail() {
           <VideoPlayer
             url={player.url}
             title={player.title}
-            kind={player.external ? "external" : undefined}
+            engine={player.engine}
+            requestWebviewFallback={
+              player.fallbackStream != null && services.debrid != null
+                ? () => services.debrid!.getTranscodeHLS(player.fallbackStream!)
+                : undefined
+            }
             preferredPlayer={settings.preferredExternalPlayer}
             useBuiltInPlayer={settings.builtInPlayer}
             startPositionSeconds={player.startPositionSeconds}

@@ -11,7 +11,8 @@
 // `kind` lets the caller force the external path (e.g. an MKV stream); otherwise
 // the extension is sniffed from the URL.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Hls from "hls.js";
 import { Icon } from "./Icon";
 import {
@@ -29,6 +30,12 @@ import { ScrubBar } from "./player/ScrubBar";
 import { CaptionsMenu } from "./player/CaptionsMenu";
 import { EmbeddedPlayer } from "./EmbeddedPlayer";
 import type { PlaybackPrefs } from "../storage/models";
+import {
+  currentViewportPixelSize,
+  type PixelSize,
+  type PlaybackEngine,
+} from "../lib/playbackEngine";
+import { PlayerInfoPopover } from "./player/PlayerInfoPopover";
 import "./VideoPlayer.css";
 
 type Playability = "webview" | "external";
@@ -38,6 +45,12 @@ interface VideoPlayerProps {
   title: string;
   /** Force a path; when omitted it's sniffed from the URL extension. */
   kind?: Playability;
+  /** Explicit renderer identity. Detail always supplies this; inference remains
+   * for isolated callers and backwards compatibility. */
+  engine?: PlaybackEngine;
+  /** Native built-in failure fallback. Called only after libmpv fails, never on
+   * the normal native path, so lossless playback starts without transcode delay. */
+  requestWebviewFallback?: () => Promise<string | null>;
   onClose: () => void;
   /** Reports playback progress (seconds watched + total duration) so the store
    * can persist a resume position. Called periodically and on close. */
@@ -139,10 +152,20 @@ function classify(url: string): Playability {
   return "webview";
 }
 
+function inferEngine(url: string, kind?: Playability): PlaybackEngine {
+  const mode = kind ?? classify(url);
+  if (mode === "external") return "native-mpv";
+  return url.split("?")[0].toLowerCase().endsWith(".m3u8")
+    ? "webview-hls-transcode"
+    : "webview-direct";
+}
+
 export function VideoPlayer({
   url,
   title,
   kind,
+  engine,
+  requestWebviewFallback,
   onClose,
   onProgress,
   startPositionSeconds,
@@ -158,7 +181,23 @@ export function VideoPlayer({
   preferredPlayer,
   useBuiltInPlayer = true,
 }: VideoPlayerProps) {
-  const mode = kind ?? classify(url);
+  const requestedEngine = engine ?? inferEngine(url, kind);
+  const [fallbackSource, setFallbackSource] = useState<{
+    originUrl: string;
+    originEngine: PlaybackEngine;
+    url: string;
+  } | null>(null);
+  const activeFallback =
+    fallbackSource?.originUrl === url &&
+    fallbackSource.originEngine === requestedEngine
+      ? fallbackSource
+      : null;
+  const effectiveUrl = activeFallback?.url ?? url;
+  const effectiveEngine: PlaybackEngine = activeFallback
+    ? "webview-hls-transcode"
+    : requestedEngine;
+  const mode: Playability =
+    effectiveEngine === "native-mpv" ? "external" : "webview";
   const underTauri = isTauri();
   // In-window native player: the DEFAULT desktop path for containers/codecs the
   // webview can't decode (MKV/HEVC). Renders libmpv on a native surface behind the
@@ -174,6 +213,40 @@ export function VideoPlayer({
     useBuiltInPlayer;
   const [externalStatus, setExternalStatus] = useState<string | null>(null);
   const [externalError, setExternalError] = useState<string | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [sourceSize, setSourceSize] = useState<PixelSize | null>(null);
+  const [displaySize, setDisplaySize] = useState<PixelSize | null>(() =>
+    currentViewportPixelSize(),
+  );
+
+  useEffect(() => {
+    setSourceSize(null);
+    setInfoOpen(false);
+  }, [effectiveUrl]);
+
+  useEffect(() => {
+    const measure = () => setDisplaySize(currentViewportPixelSize());
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  const recoverNativeInWebview = useCallback(async (): Promise<boolean> => {
+    if (requestWebviewFallback == null) return false;
+    let hlsUrl: string | null = null;
+    try {
+      hlsUrl = await requestWebviewFallback();
+    } catch {
+      hlsUrl = null;
+    }
+    if (hlsUrl == null || hlsUrl.length === 0) return false;
+    setFallbackSource({
+      originUrl: url,
+      originEngine: requestedEngine,
+      url: hlsUrl,
+    });
+    return true;
+  }, [requestWebviewFallback, requestedEngine, url]);
 
   // Native hand-off when running under Tauri and the in-window player is off.
   // Primary path is the BUNDLED mpv sidecar (shipped + app-controlled over IPC);
@@ -186,7 +259,7 @@ export function VideoPlayer({
     let cancelled = false;
     startedMpvRef.current = false;
 
-    playWithMpv(url)
+    playWithMpv(effectiveUrl)
       .then((res) => {
         if (cancelled) return;
         startedMpvRef.current = true;
@@ -199,7 +272,7 @@ export function VideoPlayer({
       .catch(() => {
         // mpv missing / failed to spawn - fall back to the VLC/IINA hand-off.
         if (cancelled) return;
-        openInExternalPlayer(url, preferredPlayer)
+        openInExternalPlayer(effectiveUrl, preferredPlayer)
           .then((status) => {
             if (!cancelled) setExternalStatus(status);
           })
@@ -217,7 +290,7 @@ export function VideoPlayer({
         mpvStop().catch(() => {});
       }
     };
-  }, [mode, underTauri, url, preferredPlayer, useEmbedded]);
+  }, [mode, underTauri, effectiveUrl, preferredPlayer, useEmbedded]);
 
   // In-window native player takes over the whole window (transparent surface +
   // hidden app chrome), so render it standalone - outside the modal frame.
@@ -229,9 +302,11 @@ export function VideoPlayer({
     return (
       <EmbeddedPlayer
         savedPrefs={savedPrefs}
-        url={url}
+        url={effectiveUrl}
         title={title}
         subtitle={epLabel}
+        engine={effectiveEngine}
+        onPlaybackError={recoverNativeInWebview}
         startPositionSeconds={startPositionSeconds}
         onProgress={(current, duration, prefs) =>
           onProgress?.(current, duration, prefs)
@@ -243,28 +318,54 @@ export function VideoPlayer({
     );
   }
 
-  return (
+  // Detail is a fixed, nav-inset surface with backdrop-filter. Filters establish
+  // a containing block for fixed descendants, so mounting this shell there would
+  // make inset:0 mean "the Detail rect", not the window. Portal every webview and
+  // external shell to body, just as EmbeddedPlayer does for its HTML controls.
+  return createPortal(
     <div className="player-backdrop" onClick={onClose}>
       <div
-        className="player glass-hero glass-lit"
+        className="player"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="player-bar">
           <span className="player-title">{title}</span>
-          <button
-            type="button"
-            className="player-close"
-            onClick={onClose}
-            aria-label="Close player"
-          >
-            <Icon name="xmark" size={18} />
-          </button>
+          <div className="player-bar-actions">
+            <button
+              type="button"
+              className="player-info-button"
+              onClick={() => setInfoOpen((open) => !open)}
+              aria-label="Playback information"
+              aria-haspopup="dialog"
+              aria-expanded={infoOpen}
+            >
+              <Icon name="info" size={17} />
+            </button>
+            <button
+              type="button"
+              className="player-close"
+              onClick={onClose}
+              aria-label="Close player"
+            >
+              <Icon name="xmark" size={18} />
+            </button>
+          </div>
         </div>
+
+        {infoOpen && (
+          <PlayerInfoPopover
+            engine={effectiveEngine}
+            sourceSize={sourceSize}
+            displaySize={displaySize}
+            onClose={() => setInfoOpen(false)}
+          />
+        )}
 
         {mode === "webview" && externalError == null ? (
           <WebviewPlayer
-            url={url}
+            url={effectiveUrl}
             title={title}
+            onSourceSize={setSourceSize}
             onProgress={onProgress}
             startPositionSeconds={startPositionSeconds}
             onHlsUnsupported={() =>
@@ -282,13 +383,14 @@ export function VideoPlayer({
         ) : (
           <ExternalPanel
             underTauri={underTauri}
-            url={url}
+            url={effectiveUrl}
             status={externalStatus}
             error={externalError}
           />
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -298,6 +400,7 @@ export function VideoPlayer({
 function WebviewPlayer({
   url,
   title,
+  onSourceSize,
   onProgress,
   startPositionSeconds,
   onHlsUnsupported,
@@ -312,6 +415,7 @@ function WebviewPlayer({
 }: {
   url: string;
   title: string;
+  onSourceSize: (size: PixelSize | null) => void;
   onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
   startPositionSeconds?: number;
   onHlsUnsupported: () => void;
@@ -346,6 +450,8 @@ function WebviewPlayer({
   // render (onProgress identity changes every render → re-subscribe loop).
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
+  const onSourceSizeRef = useRef(onSourceSize);
+  onSourceSizeRef.current = onSourceSize;
   // Stable ref for the HLS-unsupported callback so the source-attach effect does
   // NOT list a fresh inline arrow in its deps. Detail re-renders every ~5s (the
   // progress → recordResume → refreshHistory loop), and a changing callback
@@ -362,6 +468,7 @@ function WebviewPlayer({
     const video = videoRef.current;
     if (video == null) return;
     didSeekRef.current = false;
+    onSourceSizeRef.current(null);
 
     const report = () => {
       const d = Number.isFinite(video.duration) ? video.duration : null;
@@ -406,6 +513,11 @@ function WebviewPlayer({
     };
     const onLoadedMeta = () => {
       if (Number.isFinite(video.duration)) setDuration(video.duration);
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      onSourceSizeRef.current(
+        width > 0 && height > 0 ? { width, height } : null,
+      );
       applyResume();
     };
     const onDurationChange = () => {

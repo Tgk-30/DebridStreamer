@@ -25,6 +25,7 @@ let inWatchlistResult = false;
 let mockCached: { stream: any } | null = null;
 let mockContinueWatching: any[] = [];
 let serverModeOn = false;
+const tauriState = vi.hoisted(() => ({ on: false }));
 
 const closeDetail = vi.fn();
 const openDetail = vi.fn();
@@ -74,6 +75,11 @@ vi.mock("../data/library", () => ({
 
 vi.mock("../lib/serverMode", () => ({
   isServerMode: () => serverModeOn,
+}));
+
+vi.mock("../lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/tauri")>()),
+  isTauri: () => tauriState.on,
 }));
 
 vi.mock("../lib/ServerSessionContext", () => ({
@@ -197,8 +203,13 @@ vi.mock("../components/Spinner", () => ({
 }));
 
 vi.mock("../components/VideoPlayer", () => ({
-  VideoPlayer: ({ title }: any) => (
-    <div data-testid="player" data-title={title} />
+  VideoPlayer: ({ title, engine, requestWebviewFallback }: any) => (
+    <div
+      data-testid="player"
+      data-title={title}
+      data-engine={engine}
+      data-has-fallback={String(requestWebviewFallback != null)}
+    />
   ),
 }));
 
@@ -258,6 +269,7 @@ beforeEach(() => {
   mockCached = null;
   mockContinueWatching = [];
   serverModeOn = false;
+  tauriState.on = false;
   mockServices = {
     tmdb: null,
     indexers: null,
@@ -439,6 +451,10 @@ describe("Detail play", () => {
     expect(screen.getByTestId("player").getAttribute("data-title")).toBe(
       "movie.mp4",
     );
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-engine",
+      "webview-direct",
+    );
   });
 
   it("requests a transcode HLS url for an MKV cached stream", async () => {
@@ -456,6 +472,10 @@ describe("Detail play", () => {
     await waitFor(() => expect(getTranscodeHLS).toHaveBeenCalled());
     await waitFor(() =>
       expect(screen.getByTestId("player")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-engine",
+      "webview-hls-transcode",
     );
   });
 
@@ -475,6 +495,40 @@ describe("Detail play", () => {
       expect(screen.getByTestId("player")).toBeInTheDocument(),
     );
     expect(getTranscodeHLS).toHaveBeenCalled();
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-engine",
+      "native-mpv",
+    );
+  });
+
+  it("routes 2160p DV/HDR H265-in-MP4 straight to native mpv on desktop", async () => {
+    tauriState.on = true;
+    const getTranscodeHLS = vi.fn(async () => "https://cdn/lossy.m3u8");
+    mockServices.debrid = { getTranscodeHLS };
+    mockSettings = {
+      ...mockSettings,
+      builtInPlayer: true,
+      preferredExternalPlayer: "IINA",
+    };
+    mockCached = {
+      stream: {
+        fileName:
+          "Obsession.2026.2160p.iT.WEB-DL.UNRATED.DV.HDR10+.MULTi.H265.MP4",
+        streamURL: "https://cdn/obsession.mp4",
+        // Route defensively from the filename even if cached metadata is stale.
+        codec: "Unknown",
+        restrictedId: "rd-id",
+      },
+    };
+
+    render(<Detail />);
+    await userEvent.click(screen.getByText("play"));
+    const player = await screen.findByTestId("player");
+
+    expect(player).toHaveAttribute("data-engine", "native-mpv");
+    expect(player).toHaveAttribute("data-has-fallback", "true");
+    // RD HLS is lazy recovery only. It must not run before native has failed.
+    expect(getTranscodeHLS).not.toHaveBeenCalled();
   });
 });
 
