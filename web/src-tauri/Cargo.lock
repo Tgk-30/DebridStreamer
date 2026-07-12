@@ -774,6 +774,8 @@ name = "debridstreamer"
 version = "0.6.1"
 dependencies = [
  "dispatch2",
+ "dirs",
+ "futures-util",
  "getrandom 0.2.17",
  "keyring",
  "libc",
@@ -787,6 +789,7 @@ dependencies = [
  "objc2-open-gl",
  "objc2-quartz-core",
  "raw-window-handle",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tauri",
@@ -796,6 +799,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-shell",
  "tauri-plugin-updater",
+ "tokio",
  "windows-sys 0.59.0",
 ]
 

@@ -50,6 +50,7 @@
     ],
     "resources": [
       "resources/server/**/*",
+      "resources/ffmpeg/**/*",
       "lib/**/*"
     ]
   },

@@ -41,6 +41,12 @@ raw-window-handle = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 getrandom = "0.2"
+# Native download streaming and cancellable background jobs.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+tokio = { version = "1", features = ["fs", "io-util", "process", "rt", "time"] }
+futures-util = "0.3"
+# OS-appropriate Movies/Downloads directory discovery.
+dirs = "6"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 # Desktop-only auto-updater. The JS side calls `check()` on launch (see

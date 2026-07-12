@@ -150,3 +150,81 @@ export async function openExternalURL(url: string): Promise<void> {
   }
   window.open(url, "_blank", "noopener,noreferrer");
 }
+
+// Downloads native bridge. Keep this region separate from the existing player
+// and desktop-server bindings because the downloads UI owns all orchestration.
+
+export interface DownloadStartArgs {
+  jobId: string;
+  url: string;
+  headers?: Record<string, string>;
+  destPath: string;
+}
+
+export interface TranscodeStartArgs {
+  jobId: string;
+  inputPath: string;
+  outputPath: string;
+  keepAudioLangs: string[];
+  keepSubLangs: string[];
+  profile: "remux" | "h265";
+}
+
+export interface DownloadProgress {
+  jobId: string;
+  phase: "downloading" | "optimizing" | "completed" | "failed" | "canceled";
+  bytesDone: number;
+  bytesTotal: number | null;
+  speedBps?: number;
+  error?: string;
+  outputPath?: string;
+}
+
+export async function downloadStart(args: DownloadStartArgs): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("download_start", { args });
+}
+
+export async function downloadPause(jobId: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("download_pause", { jobId });
+}
+
+export async function downloadResume(jobId: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("download_resume", { jobId });
+}
+
+export async function downloadCancel(jobId: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("download_cancel", { jobId });
+}
+
+export async function transcodeStart(args: TranscodeStartArgs): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("transcode_start", { args });
+}
+
+export async function transcodeCancel(jobId: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("transcode_cancel", { jobId });
+}
+
+export async function downloadsFfmpegAvailable(): Promise<boolean> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("downloads_ffmpeg_available");
+}
+
+export async function downloadsDefaultDir(): Promise<string> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("downloads_default_dir");
+}
+
+export async function listenDownloadProgress(
+  listener: (progress: DownloadProgress) => void,
+): Promise<() => void> {
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<DownloadProgress>("download-progress", (event) => {
+    listener(event.payload);
+  });
+}

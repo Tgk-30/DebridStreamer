@@ -24,6 +24,9 @@ mod keychain;
 // desktop app can host the PWA/API for other devices.
 mod server_host;
 
+// Native downloads and optional ffmpeg optimization pipeline.
+mod downloads;
+
 // The external players we can detect + hand a stream to, in default-preference
 // order. macOS entries are .app names (opened via LaunchServices); "mpv" is also
 // probed on PATH for a CLI/Homebrew install with no .app.
@@ -188,7 +191,9 @@ pub fn run() {
         // At-most-one in-window render-API player (v0.5).
         .manage(render_player::PlayerState::default())
         // At-most-one local DebridStreamer server process.
-        .manage(server_host::ServerState::default());
+        .manage(server_host::ServerState::default())
+        // All active and paused download/transcode jobs, keyed by frontend UUID.
+        .manage(downloads::DownloadsState::default());
 
     // Auto-updater is desktop-only. The JS side (web/src/lib/updater.ts) calls
     // the plugin's `check()` once on launch; releases are signed with the
@@ -261,6 +266,14 @@ pub fn run() {
             server_host::desktop_server_status,
             server_host::desktop_server_start,
             server_host::desktop_server_stop,
+            downloads::download_start,
+            downloads::download_pause,
+            downloads::download_resume,
+            downloads::download_cancel,
+            downloads::transcode_start,
+            downloads::transcode_cancel,
+            downloads::downloads_ffmpeg_available,
+            downloads::downloads_default_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
