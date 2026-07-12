@@ -18,6 +18,11 @@ mod core;
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub use core::*;
 
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub(crate) fn debug_log_startup() {
+    core::rp_log("RPGEO event=app-start native-player-debug-ready=true engine=none");
+}
+
 #[cfg(target_os = "macos")]
 mod surface_macos;
 #[cfg(target_os = "macos")]

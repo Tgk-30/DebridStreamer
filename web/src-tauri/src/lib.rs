@@ -207,6 +207,8 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             opaque_window_background(app.handle());
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            render_player::debug_log_startup();
             // Dev-only player smoke: DS_PLAYER_SMOKE=<url> auto-loads a stream in
             // the in-window player a few seconds after launch, so the surface can
             // be exercised without configuring indexers/debrid.

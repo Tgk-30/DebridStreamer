@@ -52,9 +52,9 @@ pub fn surface_attach<R: Runtime>(
     _app: &AppHandle<R>,
     _mpv: Arc<Mpv>,
     handle: usize,
-) -> Result<Box<dyn VideoSurface>, String> {
+) -> Result<Arc<dyn VideoSurface>, String> {
     // mpv owns the rendering into its own child of the wid window; nothing to bind.
-    Ok(Box::new(WindowsSurface { _wid: handle }))
+    Ok(Arc::new(WindowsSurface { _wid: handle }))
 }
 
 struct WindowsSurface {

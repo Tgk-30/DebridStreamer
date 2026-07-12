@@ -23,10 +23,14 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State, Window};
 
 /// Trace log, OFF unless `DS_MPV_DEBUG` is set. GUI-app stderr is unreliable under
 /// `tauri dev`, so when enabled this appends to a file. Shared by core + surfaces.
+pub(crate) fn rp_debug_enabled() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("DS_MPV_DEBUG").is_some())
+}
+
 pub(crate) fn rp_log(msg: &str) {
     use std::io::Write;
-    static ON: OnceLock<bool> = OnceLock::new();
-    if !*ON.get_or_init(|| std::env::var_os("DS_MPV_DEBUG").is_some()) {
+    if !rp_debug_enabled() {
         return;
     }
     if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -45,13 +49,27 @@ pub(crate) fn rp_log(msg: &str) {
 /// while a wid surface just hands mpv a native window handle.
 ///
 /// Object-safe (no `attach` here); construction is the cfg-selected free function
-/// `attach_surface()`, so `Player` can hold a `Box<dyn VideoSurface>`.
-pub trait VideoSurface: Send {
+/// `attach_surface()`, so `Player` can hold an `Arc<dyn VideoSurface>` shared with
+/// the mpv event thread.
+pub trait VideoSurface: Send + Sync {
     /// Keep the video rect synced to the app layout, in BACKING pixels. A no-op on
     /// macOS (the surface autoresizes with the window) and on the wid-embed
     /// surfaces for now (mpv fills the wid window); the future refinement is a
     /// DOM-rect child reposition (SetWindowPos / XConfigureWindow).
     fn set_rect(&self, x: i32, y: i32, w: i32, h: i32);
+
+    /// A new file is about to replace the current one. Render surfaces that own
+    /// native window geometry use this to discard the prior video's aspect until
+    /// mpv publishes the new dwidth/dheight pair.
+    fn video_file_started(&self) {}
+
+    /// mpv's aspect-corrected display dimensions changed. macOS uses this to wrap
+    /// the NSWindow content area around the video; wid-based surfaces do nothing.
+    fn video_dimensions_changed(&self, _width: i64, _height: i64) {}
+
+    /// Playback reached EOF (or otherwise ended). Native window constraints and
+    /// session-owned window geometry must be restored by the platform surface.
+    fn video_playback_ended(&self) {}
 
     /// ORDERED teardown - the single most bug-prone invariant. Each surface MUST:
     /// stop its redraws, free any `mpv_render_context` (or DestroyWindow) BEFORE
@@ -64,7 +82,7 @@ pub trait VideoSurface: Send {
 /// A live in-window player: shared mpv + a platform surface + the event thread.
 pub struct Player {
     pub(crate) mpv: Arc<Mpv>,
-    surface: Box<dyn VideoSurface>,
+    surface: Arc<dyn VideoSurface>,
     event_stop: Arc<AtomicBool>,
     event_thread: Option<JoinHandle<()>>,
 }
@@ -100,9 +118,26 @@ pub struct PlayerState(pub std::sync::Mutex<Option<Player>>);
 fn spawn_event_thread<R: Runtime>(
     app: AppHandle<R>,
     mpv: Arc<Mpv>,
-    observed: Vec<ObserveSpec>,
+    mut observed: Vec<ObserveSpec>,
     stop: Arc<AtomicBool>,
+    surface: Arc<dyn VideoSurface>,
 ) -> JoinHandle<()> {
+    // Window wrapping is Rust-owned and must not depend on which diagnostics the
+    // frontend happens to request. Keep these observations internal-by-default;
+    // duplicate names are avoided when the frontend already requested them.
+    for (name, format) in [
+        ("dwidth", "int64"),
+        ("dheight", "int64"),
+        ("eof-reached", "flag"),
+    ] {
+        if !observed.iter().any(|spec| spec.name == name) {
+            observed.push(ObserveSpec {
+                name: name.to_string(),
+                format: format.to_string(),
+            });
+        }
+    }
+
     std::thread::spawn(move || {
         // The primary handle already has its own event queue and libmpv's client
         // API is thread-safe. Do NOT create a secondary client here: libmpv2 5.0.3
@@ -122,16 +157,56 @@ fn spawn_event_thread<R: Runtime>(
             let _ = mpv.observe_property(&spec.name, fmt, i as u64);
         }
         let ctx = mpv.ctx.as_ptr();
+        let mut display_width: Option<i64> = None;
+        let mut display_height: Option<i64> = None;
         while !stop.load(Ordering::Acquire) {
             let ev = unsafe { &*libmpv2_sys::mpv_wait_event(ctx, 0.25) };
             match ev.event_id {
                 libmpv2_sys::mpv_event_id_MPV_EVENT_NONE => {}
                 libmpv2_sys::mpv_event_id_MPV_EVENT_SHUTDOWN => break,
+                libmpv2_sys::mpv_event_id_MPV_EVENT_START_FILE => {
+                    display_width = None;
+                    display_height = None;
+                    surface.video_file_started();
+                    rp_log("RPGEO event=file-start engine=native-mpv dwidth=? dheight=?");
+                }
                 libmpv2_sys::mpv_event_id_MPV_EVENT_END_FILE => {
                     let ef = unsafe { &*(ev.data as *mut libmpv2_sys::mpv_event_end_file) };
+                    surface.video_playback_ended();
                     rp_log(&format!(
                         "event thread: END_FILE reason={} error={}",
                         ef.reason, ef.error
+                    ));
+                    // mpv_end_file_reason (stable public ABI): EOF=0, STOP=2,
+                    // QUIT=3, ERROR=4, REDIRECT=5. Only ERROR is a genuine playback
+                    // FAILURE - a file `loadfile` ACCEPTED but that then failed to
+                    // demux/decode (corrupt data, or a codec this build can't
+                    // handle). `loadfile` returns success in that case and the
+                    // decode error surfaces only here, asynchronously, so this is
+                    // the sole signal the webview gets to fall back to the HLS
+                    // transcode. EOF/stop/quit/redirect are normal and are never
+                    // forwarded (a forwarded EOF would tear down the end card).
+                    // Widen to i64 before comparing: `reason` is a bindgen enum
+                    // alias whose primitive type (c_int vs c_uint) we don't pin
+                    // here, and i64 fits either without a lint-flagged narrowing.
+                    const MPV_END_FILE_REASON_ERROR: i64 = 4;
+                    if ef.reason as i64 == MPV_END_FILE_REASON_ERROR {
+                        let _ = app.emit(
+                            "player-event",
+                            json!({
+                                "name": "end-file",
+                                "data": { "error": true, "code": ef.error as i64 }
+                            }),
+                        );
+                    }
+                    rp_log(&format!(
+                        "RPGEO event=file-end engine=native-mpv dwidth={} dheight={}",
+                        display_width
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "?".to_string()),
+                        display_height
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "?".to_string())
                     ));
                 }
                 libmpv2_sys::mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
@@ -143,6 +218,42 @@ fn spawn_event_thread<R: Runtime>(
                         .to_string_lossy()
                         .into_owned();
                     let data = unsafe { prop_data_to_json(prop.format, prop.data) };
+                    let dimension_changed = match name.as_str() {
+                        "dwidth" => {
+                            display_width = data.as_i64().filter(|v| *v > 0);
+                            true
+                        }
+                        "dheight" => {
+                            display_height = data.as_i64().filter(|v| *v > 0);
+                            true
+                        }
+                        _ => false,
+                    };
+                    if dimension_changed {
+                        rp_log(&format!(
+                            "RPGEO event=mpv-display-property engine=native-mpv property={name} dwidth={} dheight={}",
+                            display_width
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "?".to_string()),
+                            display_height
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "?".to_string())
+                        ));
+                        if let (Some(width), Some(height)) = (display_width, display_height) {
+                            surface.video_dimensions_changed(width, height);
+                        }
+                    } else if name == "eof-reached" {
+                        if data == Value::Bool(true) {
+                            surface.video_playback_ended();
+                        } else if data == Value::Bool(false) {
+                            // Replay after keep-open does not necessarily emit a
+                            // fresh START_FILE/dwidth pair. Re-apply the retained
+                            // dimensions when EOF clears.
+                            if let (Some(width), Some(height)) = (display_width, display_height) {
+                                surface.video_dimensions_changed(width, height);
+                            }
+                        }
+                    }
                     let _ = app.emit("player-event", json!({ "name": name, "data": data }));
                 }
                 _ => {}
@@ -430,6 +541,7 @@ pub fn create_player<R: Runtime>(
         mpv.clone(),
         observed,
         event_stop.clone(),
+        surface.clone(),
     ));
 
     let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
@@ -440,6 +552,7 @@ pub fn create_player<R: Runtime>(
         event_thread,
     });
     rp_log("create_player: ready");
+    rp_log("RPGEO event=player-ready engine=native-mpv");
     Ok(())
 }
 
@@ -458,8 +571,9 @@ fn with_player<T>(
 /// `player_command("loadfile", [url])`.
 ///
 /// MUST be `async`: on macOS `create_player` blocks on a channel while the AppKit
-/// surface is built on the main thread (via GCD). A SYNC Tauri command runs ON the
-/// main thread, which would deadlock. Async commands run off the main thread.
+/// surface is built on the main thread (via Tauri's native-webview callback). A
+/// SYNC Tauri command runs ON the main thread, which would deadlock. Async commands
+/// run off the main thread.
 #[tauri::command]
 pub async fn player_init<R: Runtime>(
     app: AppHandle<R>,
@@ -479,6 +593,7 @@ pub async fn player_load<R: Runtime>(
     create_player(app.clone(), HashMap::new(), Vec::new())?;
     let state = app.state::<PlayerState>();
     with_player(&state, |p| {
+        rp_log("RPGEO event=loadfile-command engine=native-mpv path=player_load");
         p.mpv
             .command("loadfile", &[&url])
             .map_err(|e| format!("loadfile failed: {e}"))
@@ -490,11 +605,19 @@ pub fn player_command(state: State<'_, PlayerState>, args: Vec<String>) -> Resul
     with_player(&state, |p| {
         let (name, rest) = args.split_first().ok_or("empty command")?;
         let rest_refs: Vec<&str> = rest.iter().map(|s| s.as_str()).collect();
+        if name == "loadfile" {
+            // Do not include the URL: debrid links commonly contain credentials.
+            rp_log("RPGEO event=loadfile-command engine=native-mpv path=player_command");
+        }
         let r = p
             .mpv
             .command(name, &rest_refs)
             .map_err(|e| format!("mpv command failed: {e}"));
-        rp_log(&format!("cmd {name} {rest:?} -> {r:?}"));
+        if name == "loadfile" {
+            rp_log(&format!("cmd loadfile [url redacted] -> {r:?}"));
+        } else {
+            rp_log(&format!("cmd {name} {rest:?} -> {r:?}"));
+        }
         r
     })
 }
