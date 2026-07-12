@@ -1,6 +1,6 @@
 [package]
 name = "debridstreamer"
-version = "0.6.4"
+version = "0.6.5"
 description = "DebridStreamer - debrid streaming desktop app"
 authors = ["tgk30"]
 edition = "2021"
