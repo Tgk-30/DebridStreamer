@@ -145,9 +145,20 @@ vi.mock("../components/OmdbRatings", () => ({
 }));
 
 vi.mock("../components/StreamPicker", () => ({
-  StreamPicker: ({ onOpenSettings }: any) => (
+  StreamPicker: ({ onOpenSettings, onPlay }: any) => (
     <div data-testid="streampicker">
       <button onClick={onOpenSettings}>open-settings</button>
+      <button
+        data-testid="play-stream"
+        onClick={() =>
+          onPlay(
+            { streamURL: "https://cdn.example/x.mp4", fileName: "x.mp4", codec: "H.264" },
+            { title: "Src" },
+          )
+        }
+      >
+        play-stream
+      </button>
     </div>
   ),
 }));
@@ -308,6 +319,36 @@ describe("Detail base render", () => {
     // "‹ Episodes" back button returns to the episode list (closes the page).
     await userEvent.click(screen.getByRole("button", { name: /Episodes/ }));
     expect(screen.queryByTestId("streampicker")).not.toBeInTheDocument();
+  });
+
+  it("keeps the streams page open while Escape reaches the player", async () => {
+    mockDetailItem = preview("s1", { type: "series", title: "The Series", tmdbId: 200 });
+    mockDetail = detailState({ item: mediaItem({ type: "series", id: "s1", tmdbId: 200 }) });
+    render(<Detail />);
+    await userEvent.click(screen.getByTestId("pick-episode"));
+    await userEvent.click(screen.getByTestId("play-stream"));
+    expect(await screen.findByTestId("player")).toBeInTheDocument();
+
+    const playerKeydown = vi.fn();
+    window.addEventListener("keydown", playerKeydown);
+    fireEvent.keyDown(document.body, { key: "Escape" });
+
+    expect(playerKeydown).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("player")).toBeInTheDocument();
+    window.removeEventListener("keydown", playerKeydown);
+  });
+
+  it("closes the streams page on Escape when no player is mounted", async () => {
+    mockDetailItem = preview("s1", { type: "series", title: "The Series", tmdbId: 200 });
+    mockDetail = detailState({ item: mediaItem({ type: "series", id: "s1", tmdbId: 200 }) });
+    render(<Detail />);
+    await userEvent.click(screen.getByTestId("pick-episode"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("renders the AI analysis only when the provider exposes analyzeTitle", () => {
