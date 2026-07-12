@@ -216,6 +216,9 @@ fn is_forced_mpv_option(name: &str) -> bool {
 /// overrides it).
 pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
     let mut o = vec![
+        // The native surface always fills the window; mpv owns any genuine
+        // letterboxing and must never stretch the decoded picture to that surface.
+        ("keepaspect", "yes"),
         // Rendering quality (libplacebo-grade scaling + downscale correctness).
         ("scale", "ewa_lanczossharp"),
         ("cscale", "ewa_lanczossharp"),
@@ -626,6 +629,7 @@ mod tests {
         assert_eq!(map.len(), opts.len(), "duplicate option keys: {opts:?}");
 
         // Cross-platform quality baseline.
+        assert_eq!(map.get("keepaspect"), Some(&"yes"));
         assert_eq!(map.get("scale"), Some(&"ewa_lanczossharp"));
         assert_eq!(map.get("cscale"), Some(&"ewa_lanczossharp"));
         assert_eq!(map.get("deband"), Some(&"yes"));

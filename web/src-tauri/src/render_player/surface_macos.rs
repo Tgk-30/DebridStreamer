@@ -43,7 +43,6 @@ use super::core::{rp_log, PreInit, VideoSurface};
 
 // GL enum constants we need (not worth a GL crate).
 const GL_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
-const GL_VIEWPORT: u32 = 0x0BA2;
 // 3.2 Core profile value for kCGLPFAOpenGLProfile.
 const CGL_OGLP_VERSION_3_2_CORE: u32 = 0x3200;
 
@@ -86,16 +85,11 @@ fn gl_get_int(pname: u32) -> i32 {
     }
 }
 
-/// Read the current GL_VIEWPORT as (width, height) in pixels.
-fn gl_viewport_size() -> (i32, i32) {
-    type F = unsafe extern "C" fn(u32, *mut i32);
-    match gl_fn::<F>("glGetIntegerv") {
-        Some(f) => {
-            let mut v = [0i32; 4];
-            unsafe { f(GL_VIEWPORT, v.as_mut_ptr()) };
-            (v[2].max(1), v[3].max(1))
-        }
-        None => (1, 1),
+/// Cover the complete drawable. OpenGL viewport dimensions are backing pixels.
+fn gl_set_viewport(w: i32, h: i32) {
+    type F = unsafe extern "C" fn(i32, i32, i32, i32);
+    if let Some(f) = gl_fn::<F>("glViewport") {
+        unsafe { f(0, 0, w, h) };
     }
 }
 
@@ -246,9 +240,17 @@ define_class!(
                 }
             }
 
-            // FBO 0-relative; w/h are the layer's drawable size in pixels.
+            // CALayer bounds are points; contentsScale maps them to the backing
+            // store's pixels. GL_VIEWPORT is mutable drawing state (including
+            // state left by mpv), not framebuffer-size metadata, so feeding it
+            // back as mpv_opengl_fbo.w/h can render into only part of the drawable
+            // and can give mpv the wrong target aspect after a resize.
+            let bounds = self.bounds();
+            let scale = self.contentsScale();
+            let w = (bounds.size.width * scale).round().max(1.0) as i32;
+            let h = (bounds.size.height * scale).round().max(1.0) as i32;
             let fbo = gl_get_int(GL_FRAMEBUFFER_BINDING);
-            let (w, h) = gl_viewport_size();
+            gl_set_viewport(w, h);
             if let Some(sr) = render_slot.as_ref() {
                 if let Err(e) = sr.0.render::<()>(fbo, w, h, true) {
                     rp_log(&format!("VideoLayer.draw: render failed: {e}"));
