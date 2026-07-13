@@ -183,6 +183,16 @@ interface RawFindResponse {
   tv_results: RawSearchResult[];
 }
 
+/** A movie release date from TMDB's now-playing or upcoming catalog. The
+ * catalog endpoint supplies a primary release date, which is the best
+ * date-level signal available without fanning out into one request per movie
+ * for territory-specific release windows. */
+export interface MovieRelease {
+  movie: MediaPreview;
+  releaseDate: string;
+  source: "now_playing" | "upcoming";
+}
+
 // MARK: - Mappers (mirror toMediaPreview / toMediaItem)
 
 /** Parse a leading 4-digit year from a TMDB date string. Mirrors the Swift
@@ -443,6 +453,72 @@ export class TMDBService implements MetadataProvider {
       const response = await this.request<RawPagedResponse<RawSearchResult>>(path, params);
       return this.pagedToResult(response);
     });
+  }
+
+  /**
+   * Release-dated movie rows for calendar surfaces. This intentionally reads
+   * only the first now-playing and upcoming pages: two cached catalog requests
+   * give the calendar a useful recent and near-future cadence without a detail
+   * or release-dates request for every movie.
+   */
+  async getMovieReleaseCalendar(): Promise<MovieRelease[]> {
+    const fetchCategory = async (
+      source: MovieRelease["source"],
+    ): Promise<MovieRelease[]> => {
+      const path = `/movie/${source}`;
+      const params = { page: "1", language: "en-US" };
+      const response = await this.cached(
+        this.cacheKey(path, params),
+        TMDBService.shortTTL,
+        () => this.request<RawPagedResponse<RawSearchResult>>(path, params),
+      );
+      return response.results.flatMap((raw) => {
+        const movie = toMediaPreview(raw);
+        const releaseDate = raw.release_date;
+        if (
+          movie == null ||
+          movie.type !== MediaTypeNS.movie ||
+          releaseDate == null ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(releaseDate)
+        ) {
+          return [];
+        }
+        return [{ movie, releaseDate, source }];
+      });
+    };
+
+    const results = await Promise.allSettled([
+      fetchCategory("now_playing"),
+      fetchCategory("upcoming"),
+    ]);
+    const releases = results.flatMap((result) =>
+      result.status === "fulfilled" ? result.value : [],
+    );
+    if (releases.length === 0) {
+      const failure = results.find(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+      if (failure != null) throw failure.reason;
+    }
+
+    // A movie can move between both category endpoints around its release day.
+    // Keep one date per title, preferring the upcoming source for an exact tie.
+    const unique = new Map<string, MovieRelease>();
+    for (const release of releases) {
+      const current = unique.get(release.movie.id);
+      if (
+        current == null ||
+        release.releaseDate < current.releaseDate ||
+        (release.releaseDate === current.releaseDate && release.source === "upcoming")
+      ) {
+        unique.set(release.movie.id, release);
+      }
+    }
+    return [...unique.values()].sort((a, b) =>
+      a.releaseDate === b.releaseDate
+        ? a.movie.title.localeCompare(b.movie.title)
+        : a.releaseDate.localeCompare(b.releaseDate),
+    );
   }
 
   async discover(

@@ -71,6 +71,17 @@ describe("NavRail render", () => {
     }
   });
 
+  it("keeps Calendar reachable in Advanced mode", async () => {
+    mockSimpleMode = false;
+    const onSelect = vi.fn();
+    renderRail({ selected: "calendar", onSelect });
+
+    const calendar = screen.getByRole("button", { name: "Calendar" });
+    expect(calendar).toHaveAttribute("aria-current", "page");
+    await userEvent.click(calendar);
+    expect(onSelect).toHaveBeenCalledWith("calendar");
+  });
+
   it("marks the selected screen with aria-current=page and is-selected", () => {
     const { container } = renderRail({ selected: "library", onSelect: () => {} });
     const lib = screen.getByRole("button", { name: "Library" });

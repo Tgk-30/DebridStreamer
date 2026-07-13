@@ -8,6 +8,7 @@ import {
   resolveImdbId,
   getUpcomingEpisodes,
   getUpcomingEpisodesForSeries,
+  MAX_CALENDAR_SERIES,
   tmdbIdOf,
 } from "./metadata";
 import type { TMDBService } from "../services/metadata/TMDBService";
@@ -152,5 +153,48 @@ describe("getUpcomingEpisodesForSeries", () => {
     const out = await getUpcomingEpisodesForSeries(list, tmdb, NOW);
     expect(seasonsCalls).toBe(1); // deduped
     expect(out).toHaveLength(1);
+  });
+
+  it("caps resolution at 30 recent series and never exceeds six in-flight requests", async () => {
+    let inFlight = 0;
+    let peakInFlight = 0;
+    let episodeCalls = 0;
+    const resolvedSeriesIds: number[] = [];
+    const tracked = async <T,>(value: T): Promise<T> => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+      return value;
+    };
+    const tmdb = stubTMDB({
+      getSeasons: async (tmdbId: number) => {
+        resolvedSeriesIds.push(tmdbId);
+        return tracked([
+          {
+            id: tmdbId,
+            seasonNumber: 1,
+            name: "S1",
+            episodeCount: 1,
+            airDate: null,
+          },
+        ]);
+      },
+      getEpisodes: async () => {
+        episodeCalls += 1;
+        return tracked([]);
+      },
+    });
+    const series = Array.from({ length: 50 }, (_, index) =>
+      previewSeries(`tmdb-${index + 1}`, index + 1),
+    );
+
+    await getUpcomingEpisodesForSeries(series, tmdb, NOW);
+
+    expect(peakInFlight).toBe(6);
+    expect(resolvedSeriesIds).toEqual(
+      Array.from({ length: MAX_CALENDAR_SERIES }, (_, index) => index + 1),
+    );
+    expect(episodeCalls).toBe(MAX_CALENDAR_SERIES);
   });
 });

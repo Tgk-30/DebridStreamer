@@ -90,6 +90,12 @@ export function getServerUpcomingEpisodes(
   },
 ): Promise<unknown>;
 
+export function getServerMovieReleaseCalendar(
+  db: AppDatabase,
+  config: ServerConfig,
+  profileId: string,
+): Promise<unknown>;
+
 export function getServerDetail(
   db: AppDatabase,
   config: ServerConfig,

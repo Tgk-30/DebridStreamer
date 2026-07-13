@@ -8,6 +8,8 @@ import type { MediaPreview, MediaType } from "../models/media";
 const search = vi.fn<(q: string, t: MediaType | null) => Promise<{ items: MediaPreview[] }>>();
 const importToWatchlist =
   vi.fn<(p: MediaPreview[]) => Promise<{ added: number; skipped: number }>>();
+const createWatchlistFolder = vi.fn();
+const assignWatchlistFolder = vi.fn();
 let serverMode = false;
 let tmdb: { search: typeof search } | null = { search };
 
@@ -18,6 +20,9 @@ vi.mock("../lib/serverMode", () => ({ isServerMode: () => serverMode }));
 vi.mock("../lib/serverApi", () => ({
   searchServerMedia: (input: { query: string; type: MediaType | null }) =>
     search(input.query, input.type),
+}));
+vi.mock("../storage", () => ({
+  getStore: () => ({ createWatchlistFolder, assignWatchlistFolder }),
 }));
 vi.mock("./useModalA11y", () => ({ useModalA11y: () => ({ current: null }) }));
 vi.mock("./Icon", () => ({ Icon: ({ name }: { name: string }) => <i data-icon={name} /> }));
@@ -33,6 +38,8 @@ afterEach(() => {
   vi.clearAllMocks();
   serverMode = false;
   tmdb = { search };
+  createWatchlistFolder.mockResolvedValue({ id: "folder-imdb", name: "IMDb import" });
+  assignWatchlistFolder.mockResolvedValue(undefined);
 });
 
 describe("WatchlistImportDialog", () => {
@@ -76,5 +83,29 @@ describe("WatchlistImportDialog", () => {
     ]);
     // The unmatched title is reported.
     expect(screen.getByText(/1 couldn't be matched/i)).toBeInTheDocument();
+  });
+
+  it("creates an IMDb import folder and assigns every matched title to it", async () => {
+    search.mockImplementation(async (q: string) => ({
+      items: [preview(`tmdb-${q}`, { title: q, year: q === "Heat" ? 1995 : 1999 })],
+    }));
+    importToWatchlist.mockResolvedValue({ added: 2, skipped: 0 });
+
+    render(<WatchlistImportDialog onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText("Titles or CSV to import"), {
+      target: {
+        value: [
+          "Const,Title,Title Type,Your Rating,Date Added,Year",
+          "tt0113277,Heat,movie,9,2024-01-01,1995",
+          "tt0133093,The Matrix,movie,10,2024-01-02,1999",
+        ].join("\n"),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+
+    await waitFor(() => expect(createWatchlistFolder).toHaveBeenCalledWith("IMDb import"));
+    expect(assignWatchlistFolder).toHaveBeenCalledWith("tmdb-Heat", "folder-imdb");
+    expect(assignWatchlistFolder).toHaveBeenCalledWith("tmdb-The Matrix", "folder-imdb");
+    expect(screen.getByText(/Organized in the IMDb import folder/i)).toBeInTheDocument();
   });
 });

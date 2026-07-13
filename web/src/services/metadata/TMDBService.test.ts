@@ -219,6 +219,39 @@ describe("TMDBService catalog reads decode into MediaPreview", () => {
     expect(mock.lastURL()!.pathname).toBe("/3/movie/top_rated");
   });
 
+  it("builds a cached, release-dated movie calendar from now-playing and upcoming", async () => {
+    const mock = makeRoutedFetch({
+      "/3/movie/now_playing": ok(JSON.stringify({
+        page: 1,
+        results: [
+          { id: 1, title: "Recent Movie", release_date: "2026-06-10" },
+          { id: 2, title: "No Date" },
+        ],
+        total_pages: 1,
+        total_results: 2,
+      })),
+      "/3/movie/upcoming": ok(JSON.stringify({
+        page: 1,
+        results: [
+          { id: 3, title: "Future Movie", release_date: "2026-07-04" },
+        ],
+        total_pages: 1,
+        total_results: 1,
+      })),
+    });
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const first = await service.getMovieReleaseCalendar();
+    expect(first).toEqual([
+      expect.objectContaining({ releaseDate: "2026-06-10", source: "now_playing" }),
+      expect.objectContaining({ releaseDate: "2026-07-04", source: "upcoming" }),
+    ]);
+    expect(mock.hits()).toBe(2);
+
+    expect(await service.getMovieReleaseCalendar()).toEqual(first);
+    expect(mock.hits()).toBe(2);
+  });
+
   it("discover applies filters and hits the discover path", async () => {
     const mock = makeMockFetch(() => ok(searchBody));
     const service = new TMDBService("tmdb-key", mock.fetchImpl);

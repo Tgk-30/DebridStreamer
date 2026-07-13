@@ -840,6 +840,50 @@ describe("DebridStreamer server", () => {
     }
   });
 
+  it("server calendar: returns cached TMDB movie release dates", async () => {
+    const owner = await setupOwner(app);
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "tmdb", value: "tmdb-key", label: "TMDB" },
+    });
+
+    const originalFetch = globalThis.fetch;
+    let tmdbCalls = 0;
+    globalThis.fetch = (async (url, init) => {
+      const parsed = new URL(String(url));
+      if (parsed.hostname === "api.themoviedb.org") {
+        tmdbCalls += 1;
+        const upcoming = parsed.pathname.endsWith("/upcoming");
+        return new Response(JSON.stringify({
+          page: 1,
+          total_pages: 1,
+          total_results: 1,
+          results: [{
+            id: upcoming ? 2 : 1,
+            title: upcoming ? "Future Movie" : "Recent Movie",
+            release_date: upcoming ? "2026-07-04" : "2026-06-10",
+          }],
+        }), { status: 200 });
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+
+    try {
+      const first = await request(owner, { method: "GET", url: "/api/calendar/movies" });
+      expect(first.statusCode).toBe(200);
+      expect(json<{ releases: Array<{ releaseDate: string }> }>(first).releases).toHaveLength(2);
+      expect(tmdbCalls).toBe(2);
+
+      const second = await request(owner, { method: "GET", url: "/api/calendar/movies" });
+      expect(second.statusCode).toBe(200);
+      expect(tmdbCalls).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("server AI recommend: enforces the count bounds (1..20)", async () => {
     const owner = await setupOwner(app);
     await request(owner, {
@@ -1438,6 +1482,9 @@ describe("DebridStreamer server", () => {
       expect(
         (await request(owner, { method: "POST", url: "/api/calendar/upcoming", csrf: true, payload: { series: [] } })).statusCode,
       ).toBe(403);
+      expect(
+        json<{ releases: unknown[] }>(await request(owner, { method: "GET", url: "/api/calendar/movies" })).releases,
+      ).toEqual([]);
 
       // The series-only episode-guide routes are closed for kids too (the
       // client degrades to its stepper fallback).

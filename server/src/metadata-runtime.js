@@ -396,6 +396,14 @@ export async function getServerUpcomingEpisodes(db, config, profileId, input) {
   };
 }
 
+/** Release-dated movie rows for Server Mode's calendar. The TMDB service uses
+ * the server's encrypted credential and cached fetch broker, so callers never
+ * need direct access to that essential-service key. */
+export async function getServerMovieReleaseCalendar(db, config, profileId) {
+  const service = tmdbService(db, config, profileId);
+  return { releases: await service.getMovieReleaseCalendar() };
+}
+
 // The US maturity certification for a title, used by the kid play-block + the
 // detail/source-search cert gates. mediaId may be a TMDB id ("tmdb-NNN"/numeric)
 // OR an IMDB id ("tt…", the form /api/streams/:imdbId carries) - the latter is

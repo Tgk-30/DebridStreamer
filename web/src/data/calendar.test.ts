@@ -1,9 +1,10 @@
 // Tests for the calendar episode-grouping helper (pure).
 
 import { describe, expect, it } from "vitest";
-import { groupEpisodes } from "./calendar";
+import { calendarEntries, groupEpisodes } from "./calendar";
 import type { UpcomingEpisode } from "../lib/metadata";
 import type { MediaPreview } from "../models/media";
+import type { MovieRelease } from "../services/metadata/TMDBService";
 
 const series: MediaPreview = { id: "tmdb-1", type: "series", title: "Show" };
 
@@ -57,5 +58,24 @@ describe("groupEpisodes", () => {
     expect(today?.episodes.map((e) => e.episodeNumber)).toEqual([1]);
     // Tomorrow's episode must NOT be mislabeled as Today.
     expect(today?.episodes.some((e) => e.episodeNumber === 2)).toBe(false);
+  });
+});
+
+describe("calendarEntries", () => {
+  it("merges mocked followed-show and TMDB movie releases in date order", () => {
+    const movie: MovieRelease = {
+      movie: { id: "movie-1", type: "movie", title: "Movie" },
+      releaseDate: "2026-06-18",
+      source: "upcoming",
+    };
+    const entries = calendarEntries(
+      [ep("2026-06-19", 2), ep("not-a-date", 3)],
+      [movie],
+    );
+
+    expect(entries).toEqual([
+      expect.objectContaining({ kind: "movie", date: "2026-06-18", media: movie.movie }),
+      expect.objectContaining({ kind: "episode", date: "2026-06-19", detail: "S01E02 · Ep 2" }),
+    ]);
   });
 });

@@ -30,14 +30,17 @@ vi.mock("../lib/metadata", () => ({
     const d = new Date(now);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   },
+  MAX_CALENDAR_SERIES: 30,
   getUpcomingEpisodesForSeries: (...a: unknown[]) =>
     getUpcomingEpisodesForSeries(...a),
 }));
 
 const fetchServerUpcomingEpisodes = vi.fn();
+const fetchServerMovieReleases = vi.fn();
 vi.mock("../lib/serverApi", () => ({
   fetchServerUpcomingEpisodes: (...a: unknown[]) =>
     fetchServerUpcomingEpisodes(...a),
+  fetchServerMovieReleases: () => fetchServerMovieReleases(),
 }));
 
 const isServerMode = vi.fn(() => false as boolean);
@@ -46,6 +49,8 @@ vi.mock("../lib/serverMode", () => ({
 }));
 
 import { useCalendar } from "./calendar";
+
+const getMovieReleaseCalendar = vi.fn();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function preview(id: string, type: MediaPreview["type"] = "series"): MediaPreview {
@@ -74,13 +79,15 @@ function todayEp(series = preview("s")): UpcomingEpisode {
 // A single STABLE service reference. `useCalendar` lists `tmdb` in its effect
 // deps, so a fresh object per render would re-run the effect → setState →
 // re-render forever. Reuse one identity across renders.
-const SVC = {} as unknown as TMDBService;
+const SVC = { getMovieReleaseCalendar } as unknown as TMDBService;
 
 beforeEach(() => {
   vi.clearAllMocks();
   isServerMode.mockReturnValue(false);
   listLibrary.mockResolvedValue([]);
   listWatchlist.mockResolvedValue([]);
+  getMovieReleaseCalendar.mockResolvedValue([]);
+  fetchServerMovieReleases.mockResolvedValue([]);
 });
 
 describe("useCalendar - initial state", () => {
@@ -105,6 +112,7 @@ describe("useCalendar - empty paths", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.groups).toEqual([]);
+    expect(result.current.entries).toEqual([]);
     expect(result.current.hasSeries).toBe(false);
     expect(result.current.error).toBeNull();
     // Episode resolution is never attempted when there are no series.
@@ -119,6 +127,7 @@ describe("useCalendar - empty paths", () => {
     expect(result.current.hasSeries).toBe(true);
     expect(result.current.hasTMDB).toBe(false);
     expect(result.current.groups).toEqual([]);
+    expect(result.current.entries).toEqual([]);
     expect(getUpcomingEpisodesForSeries).not.toHaveBeenCalled();
   });
 });
@@ -134,9 +143,12 @@ describe("useCalendar - live resolution", () => {
     expect(result.current.hasSeries).toBe(true);
     expect(result.current.hasTMDB).toBe(true);
     expect(result.current.groups.map((g) => g.bucket)).toEqual(["today"]);
+    expect(result.current.entries).toHaveLength(1);
     expect(getUpcomingEpisodesForSeries).toHaveBeenCalledWith(
       [preview("s1")],
       SVC,
+      expect.any(Number),
+      14,
     );
   });
 });
@@ -153,8 +165,33 @@ describe("useCalendar - server mode", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.hasTMDB).toBe(true);
     expect(result.current.groups.map((g) => g.bucket)).toEqual(["today"]);
+    expect(result.current.entries).toHaveLength(1);
     expect(fetchServerUpcomingEpisodes).toHaveBeenCalledWith([preview("s2")]);
     expect(getUpcomingEpisodesForSeries).not.toHaveBeenCalled();
+    expect(getMovieReleaseCalendar).not.toHaveBeenCalled();
+    expect(fetchServerMovieReleases).toHaveBeenCalledTimes(1);
+  });
+
+  it("combines TMDB movie releases with watched-series episodes by date", async () => {
+    listWatchlist.mockResolvedValue([watchRecord(preview("s3"))]);
+    const date = todayEp().airDate;
+    getUpcomingEpisodesForSeries.mockResolvedValue([todayEp(preview("s3"))]);
+    getMovieReleaseCalendar.mockResolvedValue([
+      {
+        movie: preview("m1", "movie"),
+        releaseDate: date,
+        source: "upcoming",
+      },
+    ]);
+
+    const { result } = renderHook(() => useCalendar(SVC));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.entries).toEqual([
+      expect.objectContaining({ kind: "movie", date, media: preview("m1", "movie") }),
+      expect.objectContaining({ kind: "episode", date, media: preview("s3") }),
+    ]);
+    expect(getMovieReleaseCalendar).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -168,6 +205,7 @@ describe("useCalendar - error fallback", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toBe("tmdb down");
     expect(result.current.groups).toEqual([]);
+    expect(result.current.entries).toEqual([]);
     expect(result.current.hasSeries).toBe(false);
   });
 

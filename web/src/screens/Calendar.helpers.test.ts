@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { relativeAir } from "./Calendar";
+import { calendarMonthDays, relativeAir } from "./Calendar";
+import type { CalendarEntry } from "../data/calendar";
 
 // A fixed local "now": afternoon of 2026-07-05.
 const NOW = new Date("2026-07-05T14:00:00").getTime();
@@ -40,5 +41,29 @@ describe("relativeAir", () => {
     // new Date("2026-07T00:00:00") parses to Jul 1 - the strict guard rejects it.
     expect(relativeAir("2026-07", NOW)).toBeNull();
     expect(relativeAir("2026", NOW)).toBeNull();
+  });
+});
+
+describe("calendarMonthDays", () => {
+  it("places release entries on their local month day and marks today", () => {
+    const entry: CalendarEntry = {
+      id: "episode:show:1:1:2026-07-05",
+      date: "2026-07-05",
+      media: { id: "show", type: "series", title: "Severance" },
+      kind: "episode",
+      detail: "S02E07 · Cold Harbor",
+    };
+    const days = calendarMonthDays(
+      new Date("2026-07-01T12:00:00"),
+      [entry],
+      NOW,
+    );
+
+    expect(days).toHaveLength(42);
+    expect(days.find((day) => day.date === "2026-07-05")).toMatchObject({
+      inMonth: true,
+      isToday: true,
+      entries: [entry],
+    });
   });
 });

@@ -26,6 +26,7 @@ import {
   getServerDiscoverHome,
   getServerEpisodes,
   getServerGenres,
+  getServerMovieReleaseCalendar,
   getServerSeasons,
   getServerUpcomingEpisodes,
   searchServerMedia,
@@ -3291,6 +3292,14 @@ function registerRoutes(
     return getServerUpcomingEpisodes(db, config, auth.profileId, {
       series: body.series.filter(isSeriesPreviewInput),
     });
+  });
+
+  app.get("/api/calendar/movies", async (request) => {
+    const auth = requireAuth(db, request);
+    // TMDB category endpoints cannot be certification-capped. Preserve kid
+    // profile safety instead of proxying an uncapped movie catalog.
+    if (auth.isKid) return { releases: [] };
+    return getServerMovieReleaseCalendar(db, config, auth.profileId);
   });
 
   // AI recommendations (Assistant). Uses the server's stored AI provider key for

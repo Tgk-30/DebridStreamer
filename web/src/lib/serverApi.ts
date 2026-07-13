@@ -11,6 +11,7 @@ import type { Genre, MediaCategory } from "../services/metadata/types";
 import type { OMDBRatings } from "../services/metadata/OMDBService";
 import type { StreamRow } from "../data/streams";
 import type { UpcomingEpisode } from "./metadata";
+import type { MovieRelease } from "../services/metadata/TMDBService";
 import { configuredServerURL } from "./serverMode";
 import { notifyUnauthorized, readCsrfToken } from "./serverSession";
 
@@ -229,6 +230,15 @@ export async function fetchServerUpcomingEpisodes(
     { series },
   );
   return response.episodes;
+}
+
+/** Movie release dates resolved by the Server Mode TMDB broker. */
+export async function fetchServerMovieReleases(): Promise<MovieRelease[]> {
+  const response = await serverRequest<{ releases: MovieRelease[] }>(
+    "GET",
+    "/api/calendar/movies",
+  );
+  return response.releases;
 }
 
 export async function recommendServerAI(input: {
