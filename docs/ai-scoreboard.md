@@ -11,3 +11,4 @@
 2026-07-13 | v0.7.0 three-lane perf build | sol[rust] + terra[player] + terra[browse], all opus-reviewed | success | 3 review-caught regressions fixed (resume-position, ratings-eviction, respawn-budget); merged conflict-free; 2814 tests
 2026-07-13 | v0.6.9-web crash-fix release (superseded) | fable-integrate | superseded | crash fix + player UX; folded into v0.7.0 which shipped first; draft removed
 2026-07-13 | v0.7.0-web ship | fable-integrate | success | one retag: heavy 1000-row taste-prune test ran 15ms over the 5s default on intel CI; bumped to 20s; 4/4 green, published latest
+2026-07-13 | v0.7.2 player-UI batch (icons, fullscreen, merged panel, pause screen) | terra[xhigh] + opus review | success | fullscreen root cause = Tauri ACL gap (allow-set-fullscreen); review caught pause-overlay click-blocking, fixed; v0.7.1 name held by parallel dead-code session so shipped as v0.7.2; 2820 tests
