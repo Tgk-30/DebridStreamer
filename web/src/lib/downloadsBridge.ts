@@ -37,6 +37,7 @@ export interface DownloadsBridge {
   downloadPause(jobId: string): Promise<void>;
   downloadResume(jobId: string): Promise<void>;
   downloadCancel(jobId: string): Promise<void>;
+  downloadForceStop(jobId: string): Promise<void>;
   transcodeStart(args: TranscodeStartArgs): Promise<void>;
   transcodeCancel(jobId: string): Promise<void>;
   downloadsFfmpegAvailable(): Promise<boolean>;
@@ -55,6 +56,7 @@ const nativeDownloadsBridge: DownloadsBridge = {
   downloadPause: (jobId) => tauriDownloads.downloadPause(jobId),
   downloadResume: (jobId) => tauriDownloads.downloadResume(jobId),
   downloadCancel: (jobId) => tauriDownloads.downloadCancel(jobId),
+  downloadForceStop: (jobId) => tauriDownloads.downloadForceStop(jobId),
   transcodeStart: (args) => tauriDownloads.transcodeStart(args),
   transcodeCancel: (jobId) => tauriDownloads.transcodeCancel(jobId),
   downloadsFfmpegAvailable: () => tauriDownloads.downloadsFfmpegAvailable(),

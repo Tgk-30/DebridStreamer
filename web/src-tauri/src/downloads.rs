@@ -23,6 +23,7 @@ use tokio::io::{
 use tokio::process::Command;
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
+const PROGRESS_BYTES: u64 = 1024 * 1024;
 const DOWNLOAD_BUFFER_CAPACITY: usize = 1024 * 1024;
 const DELETE_RETRY_INTERVAL: Duration = Duration::from_millis(50);
 const DELETE_RETRIES: usize = 20;
@@ -110,6 +111,10 @@ fn progress(
         error: None,
         output_path: None,
     }
+}
+
+fn should_emit_download_progress(elapsed: Duration, bytes_since_emit: u64) -> bool {
+    elapsed >= PROGRESS_INTERVAL || bytes_since_emit >= PROGRESS_BYTES
 }
 
 fn emit_progress_if_current<R: Runtime>(
@@ -282,9 +287,9 @@ pub fn download_pause(
 ) -> Result<(), String> {
     let abort = {
         let mut jobs = state.jobs.lock().map_err(|e| e.to_string())?;
-        let job = jobs
-            .get_mut(&job_id)
-            .ok_or_else(|| format!("Download job {job_id} was not found."))?;
+        let Some(job) = jobs.get_mut(&job_id) else {
+            return Ok(());
+        };
         if !matches!(&job.spec, JobSpec::Download(_)) {
             return Err(format!("Job {job_id} is not a download."));
         }
@@ -340,10 +345,10 @@ pub async fn download_cancel<R: Runtime>(
 ) -> Result<(), String> {
     let job = {
         let mut jobs = state.jobs.lock().map_err(|e| e.to_string())?;
-        let is_download = jobs
-            .get(&job_id)
-            .map(|job| matches!(&job.spec, JobSpec::Download(_)))
-            .ok_or_else(|| format!("Download job {job_id} was not found."))?;
+        let Some(job) = jobs.get(&job_id) else {
+            return Ok(());
+        };
+        let is_download = matches!(&job.spec, JobSpec::Download(_));
         if !is_download {
             return Err(format!("Job {job_id} is not a download."));
         }
@@ -414,7 +419,7 @@ fn redact_url(url: &str) -> String {
 
 /// Format a reqwest failure without leaking the request URL's query/credentials.
 /// reqwest's own `Display` appends the full URL, so the error is never formatted
-/// directly — only its redacted URL and underlying transport cause (which does
+/// directly. Only its redacted URL and underlying transport cause (which does
 /// not carry the URL) are surfaced.
 fn redact_reqwest_error(context: &str, error: &reqwest::Error) -> String {
     let mut message = context.to_string();
@@ -530,11 +535,11 @@ async fn transfer_download<R: Runtime>(
         last_done.store(bytes_done, Ordering::Relaxed);
 
         let elapsed = last_emit.elapsed();
-        if elapsed >= PROGRESS_INTERVAL {
+        let delta = bytes_done.saturating_sub(last_emit_bytes);
+        if should_emit_download_progress(elapsed, delta) {
             file.flush()
                 .await
                 .map_err(|e| format!("Failed to flush download: {e}"))?;
-            let delta = bytes_done.saturating_sub(last_emit_bytes);
             let mut payload = progress(&args.job_id, "downloading", bytes_done, bytes_total);
             if elapsed.as_secs_f64() > 0.0 {
                 payload.speed_bps = Some((delta as f64 / elapsed.as_secs_f64()) as u64);
@@ -709,6 +714,7 @@ async fn probe_input(ffprobe: &Path, input: &str) -> Result<ProbeOutput, String>
         .arg("-of")
         .arg("json")
         .arg(input)
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| format!("Failed to run ffprobe: {e}"))?;
@@ -914,10 +920,10 @@ pub async fn transcode_cancel<R: Runtime>(
 ) -> Result<(), String> {
     let job = {
         let mut jobs = state.jobs.lock().map_err(|e| e.to_string())?;
-        let is_transcode = jobs
-            .get(&job_id)
-            .map(|job| matches!(&job.spec, JobSpec::Transcode { .. }))
-            .ok_or_else(|| format!("Transcode job {job_id} was not found."))?;
+        let Some(job) = jobs.get(&job_id) else {
+            return Ok(());
+        };
+        let is_transcode = matches!(&job.spec, JobSpec::Transcode { .. });
         if !is_transcode {
             return Err(format!("Job {job_id} is not a transcode."));
         }
@@ -949,6 +955,55 @@ pub async fn transcode_cancel<R: Runtime>(
             job.last_done.load(Ordering::Relaxed),
             Some(100),
         ),
+    );
+    Ok(())
+}
+
+/// Abort whichever native executor currently owns `job_id`. Unlike the typed
+/// cancel commands, this is deliberately idempotent so a stale frontend record
+/// can always be forced into a terminal state even when the native worker has
+/// already finished and removed itself from the registry.
+#[tauri::command]
+pub async fn download_force_stop<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, DownloadsState>,
+    job_id: String,
+) -> Result<(), String> {
+    let job = {
+        let mut jobs = state.jobs.lock().map_err(|e| e.to_string())?;
+        jobs.remove(&job_id)
+    };
+    let Some(job) = job else {
+        return Ok(());
+    };
+
+    if let Some(abort) = job.abort {
+        abort.abort();
+    }
+
+    let bytes_done = job.last_done.load(Ordering::Relaxed);
+    let (partial_path, bytes_total, failure_context) = match job.spec {
+        JobSpec::Download(args) => (
+            PathBuf::from(args.dest_path),
+            None,
+            "partial download",
+        ),
+        JobSpec::Transcode { output_path } => (
+            PathBuf::from(output_path),
+            Some(100),
+            "partial transcode",
+        ),
+    };
+    if let Err(error) = remove_partial_file(&partial_path).await {
+        let message = format!("Failed to remove {failure_context}: {error}");
+        let mut terminal = progress(&job_id, "failed", bytes_done, bytes_total);
+        terminal.error = Some(message.clone());
+        let _ = app.emit("download-progress", terminal);
+        return Err(message);
+    }
+    let _ = app.emit(
+        "download-progress",
+        progress(&job_id, "canceled", bytes_done, bytes_total),
     );
     Ok(())
 }
@@ -1044,4 +1099,45 @@ async fn run_transcode<R: Runtime>(
         return Err("ffmpeg exited successfully but did not create the output file.".to_string());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::future::Future;
+    use std::task::{Context, Poll};
+
+    #[test]
+    fn download_progress_fires_at_the_time_or_byte_threshold() {
+        assert!(should_emit_download_progress(
+            PROGRESS_INTERVAL,
+            PROGRESS_BYTES - 1,
+        ));
+        assert!(should_emit_download_progress(
+            PROGRESS_INTERVAL - Duration::from_millis(1),
+            PROGRESS_BYTES,
+        ));
+        assert!(!should_emit_download_progress(
+            PROGRESS_INTERVAL - Duration::from_millis(1),
+            PROGRESS_BYTES - 1,
+        ));
+    }
+
+    #[test]
+    fn abort_handle_stops_the_native_worker_future() {
+        let (abort, registration) = AbortHandle::new_pair();
+        let mut worker = Box::pin(Abortable::new(
+            futures_util::future::pending::<()>(),
+            registration,
+        ));
+        let waker = futures_util::task::noop_waker();
+        let mut context = Context::from_waker(&waker);
+        assert!(matches!(worker.as_mut().poll(&mut context), Poll::Pending));
+
+        abort.abort();
+        assert!(matches!(
+            worker.as_mut().poll(&mut context),
+            Poll::Ready(Err(_))
+        ));
+    }
 }

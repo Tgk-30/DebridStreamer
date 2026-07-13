@@ -163,7 +163,7 @@ export function Downloads() {
             const progress = percent(record) ?? 0;
             const canPause = ["resolving", "downloading", "optimizing"].includes(record.status);
             const canResume = record.status === "paused";
-            const canCancel = !["completed", "canceled", "failed"].includes(record.status);
+            const canForceStop = !["completed", "canceled"].includes(record.status);
             return (
               <div key={record.jobId} className="downloads-row">
                 <span className="dl-col-check">
@@ -205,8 +205,8 @@ export function Downloads() {
                       <Icon name="play" size={14} />
                     </button>
                   )}
-                  {canCancel && (
-                    <button type="button" className="dl-icon-btn downloads-cancel" onClick={() => void manager.cancel(record.jobId)} aria-label={`Cancel ${record.title}`} title="Cancel">
+                  {canForceStop && (
+                    <button type="button" className="dl-icon-btn downloads-cancel" onClick={() => void manager.forceStop(record.jobId)} aria-label={`Force stop ${record.title}`} title="Force stop">
                       <Icon name="xmark" size={15} />
                     </button>
                   )}

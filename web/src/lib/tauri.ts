@@ -200,6 +200,12 @@ export async function downloadCancel(jobId: string): Promise<void> {
   await invoke("download_cancel", { jobId });
 }
 
+/** Idempotently abort any native download or transcode registered for this id. */
+export async function downloadForceStop(jobId: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("download_force_stop", { jobId });
+}
+
 export async function transcodeStart(args: TranscodeStartArgs): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("transcode_start", { args });

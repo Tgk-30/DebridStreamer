@@ -292,6 +292,7 @@ pub fn run() {
             downloads::download_pause,
             downloads::download_resume,
             downloads::download_cancel,
+            downloads::download_force_stop,
             downloads::transcode_start,
             downloads::transcode_cancel,
             downloads::downloads_ffmpeg_available,

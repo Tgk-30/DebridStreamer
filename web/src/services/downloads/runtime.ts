@@ -16,6 +16,7 @@ export function startDownloadsRuntime(
   debrid: DownloadDebridResolver | null,
 ): DownloadManager {
   if (active != null && active.store === store && active.debrid === debrid) {
+    void active.manager.start();
     return active.manager;
   }
   active?.manager.stop();

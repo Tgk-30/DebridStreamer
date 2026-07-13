@@ -16,6 +16,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
+const listenMock = vi.fn();
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: (...args: unknown[]) => listenMock(...args),
+}));
+
 const openUrlMock = vi.fn();
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (...args: unknown[]) => openUrlMock(...args),
@@ -34,6 +39,10 @@ import {
   startDesktopServer,
   stopDesktopServer,
   openExternalURL,
+  downloadStart,
+  downloadCancel,
+  downloadForceStop,
+  listenDownloadProgress,
   type DesktopServerStatus,
   type MpvPlayResult,
 } from "./tauri";
@@ -45,6 +54,7 @@ function enterTauri(): void {
 
 beforeEach(() => {
   invokeMock.mockReset();
+  listenMock.mockReset();
   openUrlMock.mockReset();
 });
 
@@ -151,6 +161,51 @@ describe("mpv control commands (no isTauri gate)", () => {
     invokeMock.mockResolvedValue(undefined);
     await mpvStop();
     expect(invokeMock).toHaveBeenCalledWith("mpv_stop");
+  });
+});
+
+describe("download IPC bridge", () => {
+  it("invokes start, cancel, and force-stop with the contract payloads", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    await downloadStart({
+      jobId: "job-1",
+      url: "https://cdn.example/file",
+      destPath: "/Downloads/file.mkv",
+    });
+    await downloadCancel("job-1");
+    await downloadForceStop("job-1");
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "download_start", {
+      args: {
+        jobId: "job-1",
+        url: "https://cdn.example/file",
+        destPath: "/Downloads/file.mkv",
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "download_cancel", { jobId: "job-1" });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, "download_force_stop", { jobId: "job-1" });
+  });
+
+  it("forwards download-progress payloads and returns the native unlisten function", async () => {
+    const unlisten = vi.fn();
+    let nativeListener!: (event: { payload: unknown }) => void;
+    listenMock.mockImplementation(async (_eventName: string, listener: typeof nativeListener) => {
+      nativeListener = listener;
+      return unlisten;
+    });
+    const listener = vi.fn();
+    await expect(listenDownloadProgress(listener)).resolves.toBe(unlisten);
+    expect(listenMock).toHaveBeenCalledWith("download-progress", expect.any(Function));
+
+    const payload = {
+      jobId: "job-1",
+      phase: "downloading" as const,
+      bytesDone: 1_048_576,
+      bytesTotal: 2_097_152,
+      speedBps: 1_048_576,
+    };
+    nativeListener({ payload });
+    expect(listener).toHaveBeenCalledWith(payload);
   });
 });
 

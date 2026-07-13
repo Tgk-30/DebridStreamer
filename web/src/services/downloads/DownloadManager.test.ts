@@ -14,6 +14,9 @@ class DownloadStore {
   history: DownloadRecord["status"][] = [];
   updateCalls = 0;
   listCalls = 0;
+  beforeUpdate: (
+    changes: Partial<Omit<DownloadRecord, "jobId" | "createdAt">>,
+  ) => Promise<void> = async () => {};
 
   async getSetting(key: string): Promise<string | null> {
     return key === "downloads_directory" ? "/Downloads" : null;
@@ -29,6 +32,7 @@ class DownloadStore {
     changes: Partial<Omit<DownloadRecord, "jobId" | "createdAt">>,
   ): Promise<DownloadRecord | null> {
     this.updateCalls += 1;
+    await this.beforeUpdate(changes);
     const current = this.records.get(jobId);
     if (current == null) return null;
     const next = { ...current, ...changes, jobId, createdAt: current.createdAt };
@@ -58,13 +62,29 @@ class DownloadStore {
 
 function makeBridge() {
   let emit: ((progress: DownloadProgress) => void) | null = null;
+  const running = new Set<string>();
   const bridge: DownloadsBridge = {
-    downloadStart: vi.fn(async () => {}),
-    downloadPause: vi.fn(async () => {}),
-    downloadResume: vi.fn(async () => {}),
-    downloadCancel: vi.fn(async () => {}),
-    transcodeStart: vi.fn(async () => {}),
-    transcodeCancel: vi.fn(async () => {}),
+    downloadStart: vi.fn(async (args) => {
+      running.add(args.jobId);
+    }),
+    downloadPause: vi.fn(async (jobId) => {
+      running.delete(jobId);
+    }),
+    downloadResume: vi.fn(async (jobId) => {
+      running.add(jobId);
+    }),
+    downloadCancel: vi.fn(async (jobId) => {
+      running.delete(jobId);
+    }),
+    downloadForceStop: vi.fn(async (jobId) => {
+      running.delete(jobId);
+    }),
+    transcodeStart: vi.fn(async (args) => {
+      running.add(args.jobId);
+    }),
+    transcodeCancel: vi.fn(async (jobId) => {
+      running.delete(jobId);
+    }),
     downloadsFfmpegAvailable: vi.fn(async () => true),
     downloadsDefaultDir: vi.fn(async () => "/Downloads"),
     listenDownloadProgress: vi.fn(async (callback) => {
@@ -76,6 +96,7 @@ function makeBridge() {
   };
   return {
     bridge,
+    running,
     emit(progress: DownloadProgress) {
       emit?.(progress);
     },
@@ -156,6 +177,113 @@ describe("DownloadManager", () => {
     expect(store.history).toEqual(expect.arrayContaining(["queued", "resolving", "downloading", "optimizing", "completed"]));
   });
 
+  it("pauses and resumes the transcode phase instead of resuming the HTTP download", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "optimized-controls",
+      mediaId: "m",
+      title: "Optimized Controls",
+      infoHash: "hash",
+      mode: "optimized",
+      optimizeProfile: "remux",
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+    native.emit({
+      jobId: record.jobId,
+      phase: "completed",
+      bytesDone: 100,
+      bytesTotal: 100,
+      outputPath: "/Downloads/Optimized Controls/Optimized Controls.source.mp4",
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("optimizing"));
+
+    await manager.pause(record.jobId);
+    expect(await status(store, record.jobId)).toBe("paused");
+    expect(native.bridge.transcodeCancel).toHaveBeenCalledWith(record.jobId);
+    native.emit({ jobId: record.jobId, phase: "canceled", bytesDone: 25, bytesTotal: 100 });
+    await Promise.resolve();
+    expect(await status(store, record.jobId)).toBe("paused");
+
+    await manager.resume(record.jobId);
+    expect(await status(store, record.jobId)).toBe("optimizing");
+    expect(native.bridge.transcodeStart).toHaveBeenCalledTimes(2);
+    expect(native.bridge.downloadResume).not.toHaveBeenCalledWith(record.jobId);
+  });
+
+  it("does not launch queued work before the native progress listener is attached", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    let releaseListener!: () => void;
+    const listenerReady = new Promise<void>((resolve) => {
+      releaseListener = resolve;
+    });
+    const attachListener = native.bridge.listenDownloadProgress;
+    native.bridge.listenDownloadProgress = vi.fn(async (callback) => {
+      await listenerReady;
+      return attachListener(callback);
+    });
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    const starting = manager.start();
+    const record = await manager.enqueue({
+      jobId: "listener-first",
+      mediaId: "m",
+      title: "Listener First",
+      infoHash: "hash",
+      mode: "full",
+    });
+    await waitUntil(async () => {
+      expect(native.bridge.listenDownloadProgress).toHaveBeenCalledOnce();
+    });
+    expect(native.bridge.downloadStart).not.toHaveBeenCalled();
+
+    releaseListener();
+    await starting;
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+    expect(native.bridge.downloadStart).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: record.jobId }),
+    );
+  });
+
+  it("leaves work queued when progress listening fails and starts it after a retry", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const attachListener = native.bridge.listenDownloadProgress;
+    native.bridge.listenDownloadProgress = vi
+      .fn<DownloadsBridge["listenDownloadProgress"]>()
+      .mockRejectedValueOnce(new Error("event bus unavailable"))
+      .mockImplementation(attachListener);
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "listener-retry",
+      mediaId: "m",
+      title: "Listener Retry",
+      infoHash: "hash",
+      mode: "full",
+    });
+    await Promise.resolve();
+    expect(await status(store, record.jobId)).toBe("queued");
+    expect(native.bridge.downloadStart).not.toHaveBeenCalled();
+
+    await manager.start();
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+    expect(native.bridge.downloadStart).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: record.jobId }),
+    );
+  });
+
   it("persists failed, paused, resumed, and canceled states without inventing completion", async () => {
     const store = new DownloadStore();
     const native = makeBridge();
@@ -185,6 +313,150 @@ describe("DownloadManager", () => {
     await working.cancel(record.jobId);
     expect(await status(store, record.jobId)).toBe("canceled");
     expect(native.bridge.downloadCancel).toHaveBeenCalledWith(record.jobId);
+    expect(native.running.has(record.jobId)).toBe(false);
+  });
+
+  it("force-stops a resolver that never settles and immediately opens the queue slot", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const resolveStream = vi
+      .fn<DownloadDebridResolver["resolveStream"]>()
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValue({
+        streamURL: "https://cdn.example/next",
+        fileName: "next.mp4",
+      });
+    const manager = new DownloadManager(
+      store as unknown as Store,
+      { resolveStream },
+      { bridge: native.bridge, concurrency: 1 },
+    );
+    managers.push(manager);
+    await manager.start();
+    const stuck = await manager.enqueue({
+      jobId: "stuck-resolver",
+      mediaId: "m1",
+      title: "Stuck",
+      infoHash: "stuck",
+      mode: "full",
+    });
+    await waitUntil(() => expect(status(store, stuck.jobId)).resolves.toBe("resolving"));
+
+    await manager.forceStop(stuck.jobId);
+    expect(await status(store, stuck.jobId)).toBe("canceled");
+    expect(native.bridge.downloadForceStop).toHaveBeenCalledWith(stuck.jobId);
+    expect(native.bridge.downloadStart).not.toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: stuck.jobId }),
+    );
+
+    const next = await manager.enqueue({
+      jobId: "after-stuck",
+      mediaId: "m2",
+      title: "Next",
+      infoHash: "next",
+      mode: "full",
+    });
+    await waitUntil(() => expect(status(store, next.jobId)).resolves.toBe("downloading"));
+    expect(native.running.has(next.jobId)).toBe(true);
+  });
+
+  it("force-stops an active native transfer before marking its row canceled", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "active-force-stop",
+      mediaId: "m",
+      title: "Active",
+      infoHash: "hash",
+      mode: "full",
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+    expect(native.running.has(record.jobId)).toBe(true);
+
+    await manager.forceStop(record.jobId);
+    expect(native.bridge.downloadForceStop).toHaveBeenCalledWith(record.jobId);
+    expect(native.running.has(record.jobId)).toBe(false);
+    expect(await status(store, record.jobId)).toBe("canceled");
+  });
+
+  it("force-stops a queued row even before the manager cache is primed", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    const record = await manager.enqueue({
+      jobId: "uncached-queued",
+      mediaId: "m",
+      title: "Uncached",
+      infoHash: "hash",
+      mode: "full",
+    });
+
+    await manager.forceStop(record.jobId);
+    expect(await status(store, record.jobId)).toBe("canceled");
+    expect(native.bridge.downloadForceStop).toHaveBeenCalledWith(record.jobId);
+    expect(native.bridge.downloadStart).not.toHaveBeenCalled();
+  });
+
+  it("keeps a terminal completion newer than an already-running progress write", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "terminal-order",
+      mediaId: "m",
+      title: "Ordered",
+      infoHash: "hash",
+      mode: "full",
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+
+    let releaseProgress!: () => void;
+    const progressReleased = new Promise<void>((resolve) => {
+      releaseProgress = resolve;
+    });
+    let markProgressBlocked!: () => void;
+    const progressBlocked = new Promise<void>((resolve) => {
+      markProgressBlocked = resolve;
+    });
+    store.beforeUpdate = async (changes) => {
+      if (changes.status === "downloading" && changes.bytesDone === 50) {
+        markProgressBlocked();
+        await progressReleased;
+      }
+    };
+
+    native.emit({
+      jobId: record.jobId,
+      phase: "downloading",
+      bytesDone: 50,
+      bytesTotal: 100,
+    });
+    await progressBlocked;
+    native.emit({
+      jobId: record.jobId,
+      phase: "completed",
+      bytesDone: 100,
+      bytesTotal: 100,
+      outputPath: "/Downloads/Ordered/Ordered.mp4",
+    });
+    releaseProgress();
+
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("completed"));
+    expect((await store.listDownloads())[0]).toEqual(
+      expect.objectContaining({ status: "completed", bytesDone: 100 }),
+    );
   });
 
   it("recovers interrupted native phases as paused after an app restart", async () => {
