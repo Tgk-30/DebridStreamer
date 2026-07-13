@@ -113,7 +113,7 @@ html.mpv-active .embed-player * {
 .embed-controls {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 7;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -123,6 +123,12 @@ html.mpv-active .embed-player * {
 }
 .embed-player.show-controls .embed-controls {
   opacity: 1;
+}
+.embed-player.show-controls .embed-top,
+.embed-player.show-controls .embed-bottom,
+.embed-player.show-controls .player-info-popover,
+.embed-player.show-controls .embed-menu-scrim,
+.embed-player.show-controls .embed-menu {
   pointer-events: auto;
 }
 
@@ -157,8 +163,28 @@ html.mpv-active .embed-player * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.embed-top-help {
+.embed-top-actions {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.embed-fullscreen-error {
+  position: absolute;
+  top: 78px;
+  right: 28px;
+  z-index: 7;
+  max-width: min(420px, calc(100vw - 56px));
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 187, 80, 0.4);
+  border-radius: 10px;
+  background: rgba(59, 35, 13, 0.92);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  color: rgba(255, 239, 205, 0.96);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 /* ── Bottom bar ─────────────────────────────────────────────────────────────*/
@@ -540,59 +566,6 @@ html.mpv-active .embed-player * {
 }
 .embed-setting input[type="range"] {
   width: 100%;
-}
-
-/* ── Keyboard shortcuts overlay ─────────────────────────────────────────────*/
-.embed-shortcuts-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  display: grid;
-  place-items: center;
-  background: rgba(0, 0, 0, 0.5);
-}
-.embed-shortcuts {
-  width: min(420px, 84vw);
-  padding: 18px 20px 20px;
-  border-radius: var(--r-lg, 18px);
-  color: #fff;
-  background: rgba(12, 14, 22, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
-}
-.embed-shortcuts-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 16px;
-  font-weight: 750;
-  margin-bottom: 12px;
-}
-.embed-shortcuts-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 18px;
-}
-.embed-shortcuts-list li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.82);
-}
-.embed-shortcuts-list kbd {
-  flex: 0 0 auto;
-  min-width: 62px;
-  padding: 3px 6px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  text-align: center;
 }
 
 @media (prefers-reduced-motion: reduce) {

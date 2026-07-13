@@ -1,6 +1,7 @@
 import {
   BotMessageSquare,
   Bookmark,
+  AudioLines,
   CalendarDays,
   Captions,
   Check,
@@ -61,6 +62,7 @@ export type IconName =
   | "refresh"
   | "share"
   | "captions"
+  | "audio"
   | "check"
   | "copy"
   | "eye"
@@ -109,6 +111,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   refresh: RefreshCw,
   share: Share2,
   captions: Captions,
+  audio: AudioLines,
   check: Check,
   help: CircleHelp,
   copy: Copy,

@@ -6,6 +6,8 @@
   "platforms": ["macOS", "windows", "linux"],
   "permissions": [
     "core:default",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-fullscreen",
     "opener:default",
     "updater:default",
     "process:default",

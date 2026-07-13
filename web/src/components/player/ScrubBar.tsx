@@ -31,6 +31,8 @@ interface ScrubBarProps {
   onHover: (timeSeconds: number) => void;
   onLeave: () => void;
   onSeek: (timeSeconds: number) => void;
+  /** Lets a parent suppress transient overlays while a pointer seek is active. */
+  onScrubbingChange?: (scrubbing: boolean) => void;
 }
 
 export function ScrubBar({
@@ -40,6 +42,7 @@ export function ScrubBar({
   onHover,
   onLeave,
   onSeek,
+  onScrubbingChange,
 }: ScrubBarProps) {
   const barRef = useRef<HTMLDivElement | null>(null);
   const [hoverX, setHoverX] = useState<number | null>(null);
@@ -69,7 +72,8 @@ export function ScrubBar({
   const handleLeave = useCallback(() => {
     setHoverX(null);
     onLeave();
-  }, [onLeave]);
+    onScrubbingChange?.(false);
+  }, [onLeave, onScrubbingChange]);
 
   const handleClick = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -149,7 +153,12 @@ export function ScrubBar({
         className="scrubbar"
         onPointerMove={handleMove}
         onPointerLeave={handleLeave}
-        onPointerDown={handleClick}
+        onPointerDown={(event) => {
+          onScrubbingChange?.(true);
+          handleClick(event);
+        }}
+        onPointerUp={() => onScrubbingChange?.(false)}
+        onPointerCancel={() => onScrubbingChange?.(false)}
         onKeyDown={handleKeyDown}
         role="slider"
         aria-label="Seek"

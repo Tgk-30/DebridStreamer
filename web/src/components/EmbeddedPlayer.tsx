@@ -39,6 +39,10 @@ import {
 import type { PlaybackPrefs } from "../storage/models";
 import { Icon } from "./Icon";
 import { PlayerInfoPopover } from "./player/PlayerInfoPopover";
+import {
+  PlayerPauseOverlay,
+  type NowPlayingMetadata,
+} from "./player/PlayerPauseOverlay";
 import "./EmbeddedPlayer.css";
 
 interface Props {
@@ -46,6 +50,8 @@ interface Props {
   title: string;
   /** Optional secondary line (e.g. "S2 · E5 · Episode title"). */
   subtitle?: string | null;
+  /** Optional Detail metadata used by the paused now-playing treatment. */
+  nowPlaying?: NowPlayingMetadata | null;
   /** Raw resolved source name. Keep it in Playback information, not the title
    * bar, so human media metadata remains the playback context. */
   sourceFileName?: string | null;
@@ -218,6 +224,7 @@ interface NativeScrubberProps {
   chapters: Chapter[];
   active: boolean;
   onSeek: (time: number) => void;
+  onScrubbingChange?: (scrubbing: boolean) => void;
 }
 
 /**
@@ -229,7 +236,7 @@ interface NativeScrubberProps {
  */
 const NativeScrubber = memo(
   forwardRef<NativeScrubberHandle, NativeScrubberProps>(function NativeScrubber(
-    { duration, chapters, active, onSeek },
+    { duration, chapters, active, onSeek, onScrubbingChange },
     ref,
   ) {
     const [playback, setPlayback] = useState({ pos: 0, bufferedTo: 0 });
@@ -302,6 +309,7 @@ const NativeScrubber = memo(
           ref={scrubRef}
           onPointerDown={(event) => {
             (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
+            onScrubbingChange?.(true);
             onSeek(timeAtClientX(event.clientX));
           }}
           onPointerMove={(event) => {
@@ -309,7 +317,12 @@ const NativeScrubber = memo(
             if (event.buttons === 1) onSeek(time);
             setHover({ x: event.clientX, t: time });
           }}
-          onPointerLeave={() => setHover(null)}
+          onPointerUp={() => onScrubbingChange?.(false)}
+          onPointerCancel={() => onScrubbingChange?.(false)}
+          onPointerLeave={(event) => {
+            setHover(null);
+            if (event.buttons !== 1) onScrubbingChange?.(false);
+          }}
           role="slider"
           aria-label="Seek"
           aria-valuemin={0}
@@ -370,6 +383,7 @@ export function EmbeddedPlayer({
   url,
   title,
   subtitle,
+  nowPlaying,
   sourceFileName,
   startPositionSeconds = 0,
   savedPrefs,
@@ -399,8 +413,9 @@ export function EmbeddedPlayer({
   const [subScale, setSubScale] = useState(1);
   const [ended, setEnded] = useState(false);
   const [activeChapterIndex, setActiveChapterIndex] = useState(-1);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [detailsSection, setDetailsSection] = useState<"info" | "shortcuts" | null>(null);
+  const [scrubbing, setScrubbing] = useState(false);
+  const [fullscreenError, setFullscreenError] = useState<string | null>(null);
   // Source dimensions are diagnostic only. Player chrome is deliberately never
   // fitted to this rectangle: it belongs to the window, while mpv owns genuine
   // source-aspect letterboxing inside its full-window native surface.
@@ -430,7 +445,7 @@ export function EmbeddedPlayer({
   const pausedRef = useRef(paused);
   const lastAudibleVolume = useRef(100);
   const menuOpenRef = useRef(false);
-  menuOpenRef.current = menu != null || shortcutsOpen || infoOpen;
+  menuOpenRef.current = menu != null || detailsSection != null;
   const chaptersRef = useRef(chapters);
   chaptersRef.current = chapters;
 
@@ -738,6 +753,7 @@ export function EmbeddedPlayer({
       void setProperty("pause", false);
       return;
     }
+    setPaused((current) => !current);
     void setProperty("pause", !paused);
     nudgeControls();
   }, [paused, ended, nudgeControls]);
@@ -846,11 +862,38 @@ export function EmbeddedPlayer({
     void setProperty("sub-scale", s);
   }, []);
 
+  const syncFullscreen = useCallback(async () => {
+    const actual = await getCurrentWindow().isFullscreen();
+    setFullscreen(actual);
+    return actual;
+  }, []);
+
   const toggleFullscreen = useCallback(() => {
-    const next = !fullscreen;
-    setFullscreen(next);
-    void getCurrentWindow().setFullscreen(next).catch(() => {});
-  }, [fullscreen]);
+    void (async () => {
+      try {
+        // Read the native state immediately before toggling. The green window
+        // control and Escape can change it independently of React state.
+        const current = await syncFullscreen();
+        const next = !current;
+        await getCurrentWindow().setFullscreen(next);
+        setFullscreen(next);
+        setFullscreenError(null);
+      } catch (error) {
+        // Surface a bridge or ACL failure instead of leaving an optimistic icon
+        // that claims the window entered fullscreen when it did not.
+        setFullscreenError(
+          `Fullscreen could not be changed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        try {
+          await syncFullscreen();
+        } catch {
+          // The visible error above is the actionable diagnostic.
+        }
+      }
+    })();
+  }, [syncFullscreen]);
 
   // Delay a stage click just long enough to distinguish a single click from a
   // double click. Without this, a double click pauses before entering
@@ -860,15 +903,15 @@ export function EmbeddedPlayer({
       setMenu(null);
       return;
     }
-    if (infoOpen) {
-      setInfoOpen(false);
+    if (detailsSection != null) {
+      setDetailsSection(null);
       return;
     }
     window.clearTimeout(stageClickTimer.current);
     stageClickTimer.current = window.setTimeout(() => {
       togglePause();
     }, 220);
-  }, [infoOpen, menu, togglePause]);
+  }, [detailsSection, menu, togglePause]);
   const handleStageDoubleClick = useCallback(() => {
     window.clearTimeout(stageClickTimer.current);
     toggleFullscreen();
@@ -879,7 +922,15 @@ export function EmbeddedPlayer({
   );
 
   const doClose = useCallback(() => {
-    if (fullscreen) void getCurrentWindow().setFullscreen(false).catch(() => {});
+    if (fullscreen) {
+      void getCurrentWindow().setFullscreen(false).catch((error) => {
+        setFullscreenError(
+          `Fullscreen could not be changed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
+    }
     if (startedRef.current && durRef.current > 0) {
       onProgress?.(posRef.current, durRef.current, prefsRef.current);
     }
@@ -889,20 +940,17 @@ export function EmbeddedPlayer({
   // Keep the current window's real fullscreen state in sync (Esc, green button).
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    void syncFullscreen().catch(() => {});
     void getCurrentWindow()
-      .onResized(async () => {
-        try {
-          setFullscreen(await getCurrentWindow().isFullscreen());
-        } catch {
-          /* ignore */
-        }
+      .onResized(() => {
+        void syncFullscreen().catch(() => {});
       })
       .then((u) => {
         unlisten = u;
       })
       .catch(() => {});
     return () => unlisten?.();
-  }, []);
+  }, [syncFullscreen]);
 
   const openMenu = useCallback(
     (id: Exclude<MenuId, null>) => {
@@ -967,11 +1015,12 @@ export function EmbeddedPlayer({
           applySpeed(SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(speed as (typeof SPEEDS)[number]) + 1)] ?? 1);
           break;
         case "?":
-          setShortcutsOpen((o) => !o);
+          setDetailsSection((section) =>
+            section === "shortcuts" ? null : "shortcuts",
+          );
           break;
         case "Escape":
-          if (shortcutsOpen) setShortcutsOpen(false);
-          else if (infoOpen) setInfoOpen(false);
+          if (detailsSection != null) setDetailsSection(null);
           else if (menu != null) setMenu(null);
           else if (fullscreen) toggleFullscreen();
           else doClose();
@@ -988,7 +1037,7 @@ export function EmbeddedPlayer({
   }, [
     togglePause, relSeek, changeVolume, volume, toggleMute, toggleFullscreen,
     applySpeed, speed, doClose, seekTo, nudgeControls, menu, fullscreen,
-    shortcutsOpen, infoOpen, refreshTracks,
+    detailsSection, refreshTracks,
   ]);
 
   const nativeSourceSize = useMemo<PixelSize | null>(() => {
@@ -1044,7 +1093,7 @@ export function EmbeddedPlayer({
   return createPortal(
     <div
       className={`embed-player${
-        controlsVisible || menu != null || infoOpen || shortcutsOpen
+        controlsVisible || menu != null || detailsSection != null || fullscreenError != null
           ? " show-controls"
           : ""
       }`}
@@ -1088,49 +1137,66 @@ export function EmbeddedPlayer({
         </div>
       )}
 
+      {paused && !ended && menu == null && detailsSection == null && !scrubbing && (
+        <PlayerPauseOverlay
+          title={title}
+          nowPlaying={nowPlaying}
+          onResume={togglePause}
+        />
+      )}
+
       <div className="embed-controls">
         {/* Top bar */}
         <div className="embed-top">
-          <button
-            type="button"
-            className="embed-icon-btn"
-            onClick={doClose}
-            aria-label="Close player"
-            title="Close player (Esc)"
-          >
-            <Icon name="xmark" size={22} />
-          </button>
           <div className="embed-titles">
             <span className="embed-title" title={title}>
               {title}
             </span>
             {subtitle && <span className="embed-subtitle">{subtitle}</span>}
           </div>
-          <button
-            type="button"
-            className="embed-icon-btn embed-top-help"
-            onClick={() => setShortcutsOpen((open) => !open)}
-            aria-label="Keyboard shortcuts"
-            aria-haspopup="dialog"
-            aria-expanded={shortcutsOpen}
-            title="Keyboard shortcuts (?)"
-          >
-            <Icon name="help" size={19} />
-          </button>
+          <div className="embed-top-actions">
+            <button
+              type="button"
+              className="embed-icon-btn"
+              onClick={() =>
+                setDetailsSection((section) => section === "info" ? null : "info")
+              }
+              aria-label="Player details and shortcuts"
+              aria-haspopup="dialog"
+              aria-expanded={detailsSection != null}
+              title="Player details and shortcuts (?)"
+            >
+              <Icon name="info" size={19} />
+            </button>
+            <button
+              type="button"
+              className="embed-icon-btn"
+              onClick={doClose}
+              aria-label="Close player"
+              title="Close player (Esc)"
+            >
+              <Icon name="xmark" size={20} />
+            </button>
+          </div>
         </div>
 
-        {infoOpen && (
+        {detailsSection != null && (
           <PlayerInfoPopover
             engine={engine}
             sourceSize={nativeSourceSize}
             displaySize={displaySize}
             sourceFileName={sourceFileName}
-            onClose={() => setInfoOpen(false)}
-            onShowShortcuts={() => {
-              setInfoOpen(false);
-              setShortcutsOpen(true);
-            }}
+            section={detailsSection}
+            onSectionChange={setDetailsSection}
+            shortcuts={NATIVE_SHORTCUTS}
+            onClose={() => setDetailsSection(null)}
           />
+        )}
+
+        {fullscreenError && (
+          <div className="embed-fullscreen-error" role="status">
+            {fullscreenError}
+          </div>
         )}
 
         {/* Bottom control bar */}
@@ -1139,8 +1205,9 @@ export function EmbeddedPlayer({
             ref={scrubberRef}
             duration={dur}
             chapters={chapters}
-            active={controlsVisible || menu != null || infoOpen || shortcutsOpen}
+            active={controlsVisible || menu != null || detailsSection != null}
             onSeek={seekTo}
+            onScrubbingChange={setScrubbing}
           />
 
           {/* Buttons row: equal flexible side columns keep the transport group
@@ -1242,7 +1309,7 @@ export function EmbeddedPlayer({
                   active={menu === "audio"}
                   onClick={() => openMenu("audio")}
                 >
-                  <Icon name="captions" size={18} />
+                  <Icon name="audio" size={18} />
                 </MenuButton>
               )}
               <MenuButton
@@ -1277,17 +1344,6 @@ export function EmbeddedPlayer({
                 title={fullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
               >
                 <Icon name={fullscreen ? "fullscreen-exit" : "fullscreen"} size={18} />
-              </button>
-              <button
-                type="button"
-                className="embed-icon-btn"
-                onClick={() => setInfoOpen((open) => !open)}
-                aria-label="Playback information"
-                aria-haspopup="dialog"
-                aria-expanded={infoOpen}
-                title="Playback information"
-              >
-                <Icon name="info" size={18} />
               </button>
             </div>
           </div>
@@ -1437,7 +1493,6 @@ export function EmbeddedPlayer({
         )}
       </div>
 
-      {shortcutsOpen && <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />}
     </div>,
     document.body,
   );
@@ -1564,7 +1619,7 @@ function Slider({
   );
 }
 
-const SHORTCUTS: Array<[string, string]> = [
+const NATIVE_SHORTCUTS: Array<[string, string]> = [
   ["Space / K", "Play / pause"],
   ["← / →", "Seek ∓10s"],
   ["J / L", "Seek ∓30s"],
@@ -1577,31 +1632,3 @@ const SHORTCUTS: Array<[string, string]> = [
   ["Esc", "Back / close"],
   ["?", "This help"],
 ];
-
-function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
-  return (
-    <div
-      className="embed-shortcuts-scrim"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="embed-shortcuts glass-raised glass-lit" role="dialog" aria-label="Keyboard shortcuts">
-        <div className="embed-shortcuts-head">
-          <span>Keyboard shortcuts</span>
-          <button type="button" className="embed-icon-btn" onClick={onClose} aria-label="Close">
-            <Icon name="xmark" size={16} />
-          </button>
-        </div>
-        <ul className="embed-shortcuts-list">
-          {SHORTCUTS.map(([keys, desc]) => (
-            <li key={keys}>
-              <kbd>{keys}</kbd>
-              <span>{desc}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-}

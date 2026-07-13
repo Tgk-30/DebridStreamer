@@ -221,8 +221,8 @@ describe("VideoPlayer shell", () => {
       "2160p",
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Playback information" }));
-    expect(screen.getByRole("dialog", { name: "Playback information" })).toHaveTextContent(
+    await userEvent.click(screen.getByRole("button", { name: "Player details and shortcuts" }));
+    expect(screen.getByRole("dialog", { name: "Player details and shortcuts" })).toHaveTextContent(
       "Obsession.2026.2160p.WEB-DL.H265.MP4",
     );
   });
@@ -336,9 +336,9 @@ describe("VideoPlayer shell", () => {
     fireEvent(video, new Event("loadedmetadata"));
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Playback information" }),
+      screen.getByRole("button", { name: "Player details and shortcuts" }),
     );
-    const info = screen.getByRole("dialog", { name: "Playback information" });
+    const info = screen.getByRole("dialog", { name: "Player details and shortcuts" });
     expect(info).toHaveTextContent("Webview direct");
     expect(info).toHaveTextContent("1920 × 1080 px");
     expect(info).toHaveTextContent(
@@ -567,25 +567,44 @@ describe("WebviewPlayer", () => {
       expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
     });
 
-    it("? toggles the shortcuts overlay, and its close button + the ? button work", async () => {
-      const user = userEvent.setup();
+    it("? opens the merged panel to Shortcuts and Escape closes it first", async () => {
       setup(true);
-      expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Player details and shortcuts" })).toBeNull();
       // "?" opens it (state update → wrap in act so React flushes).
       act(() => {
         press("?");
       });
-      expect(
-        screen.getByRole("dialog", { name: "Keyboard shortcuts" }),
-      ).toBeInTheDocument();
-      // Its close button dismisses it.
-      await user.click(screen.getByRole("button", { name: "Close" }));
-      expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
-      // The OSD "?" button also opens it.
-      await user.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
-      expect(
-        screen.getByRole("dialog", { name: "Keyboard shortcuts" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("tabpanel", { name: "Shortcuts" })).toBeInTheDocument();
+      act(() => {
+        press("Escape");
+      });
+      expect(screen.queryByRole("dialog", { name: "Player details and shortcuts" })).toBeNull();
+    });
+
+    it("shows the paused now-playing screen with a graceful title fallback", async () => {
+      render(
+        <VideoPlayer
+          url="https://x/test.mp4"
+          title="Fallback title"
+          nowPlaying={{
+            year: 2026,
+            runtimeMinutes: 118,
+            rating: 7.9,
+            episodeLabel: "S2 E5 - The Arrival",
+            overview: "A reveal changes everything.",
+            backdropUrl: "https://image.test/backdrop.jpg",
+          }}
+          onClose={() => {}}
+        />,
+      );
+      const video = document.querySelector("video.player-video") as HTMLVideoElement;
+      fireEvent.pause(video);
+      expect(screen.getByRole("button", { name: "Resume playback" })).toBeInTheDocument();
+      expect(screen.getByText("S2 E5 - The Arrival · 2026 · 1h 58m · ★ 7.9")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Resume playback" }));
+      expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Resume playback" })).toBeNull();
     });
   });
 
@@ -814,10 +833,10 @@ describe("Built-in player (Tauri)", () => {
     );
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Playback information" }),
+      screen.getByRole("button", { name: "Player details and shortcuts" }),
     );
     expect(
-      screen.getByRole("dialog", { name: "Playback information" }),
+      screen.getByRole("dialog", { name: "Player details and shortcuts" }),
     ).toHaveTextContent("Webview HLS transcode");
   });
 

@@ -38,6 +38,7 @@ import { Spinner } from "../components/Spinner";
 import { Icon } from "../components/Icon";
 import { isInWatchlist } from "../data/library";
 import { VideoCodec, type StreamInfo } from "../services/debrid/models";
+import { MediaItem as MediaItemNS } from "../models/media";
 import type { TorrentResult } from "../services/indexers/models";
 import type { StreamRow } from "../data/streams";
 import { createRequest, resolveServerStream } from "../lib/serverApi";
@@ -57,6 +58,7 @@ import {
   type PlaybackPrefs,
   type TasteEventType,
 } from "../storage/models";
+import type { NowPlayingMetadata } from "../components/player/PlayerPauseOverlay";
 import { watchedStateForRecord, type WatchedState } from "../data/watchedState";
 import { rebuildTasteContext } from "../services/ai/TasteProfile";
 import "./Detail.css";
@@ -103,6 +105,8 @@ interface ActivePlayer {
   /** Episode context belongs under the show title, never in the media source
    * filename. Null for movies and when metadata is unavailable. */
   subtitle: string | null;
+  /** A lightweight snapshot of Detail metadata for the player pause screen. */
+  nowPlaying: NowPlayingMetadata | null;
   /** Raw debrid path, visible in Playback information only. */
   sourceFileName: string | null;
   /** Exact renderer selected for this source. Never infer this from the URL in
@@ -570,6 +574,14 @@ export function Detail() {
               ? ` - ${episodeMetadata.title.trim()}`
               : ""
           }`;
+    const episodePauseLabel =
+      selected == null
+        ? null
+        : `S${selected.season} E${selected.episode}${
+            episodeMetadata?.title?.trim()
+              ? ` - ${episodeMetadata.title.trim()}`
+              : ""
+          }`;
     const title =
       metadataTitle.length > 0
         ? detailItem?.type === "movie" && metadataYear != null
@@ -580,6 +592,15 @@ export function Detail() {
       url,
       title,
       subtitle: detailItem?.type === "series" ? episodeContext : null,
+      nowPlaying: {
+        year: metadataYear,
+        runtimeMinutes: episodeMetadata?.runtime ?? item?.runtime ?? null,
+        rating: item?.imdbRating ?? detailItem?.imdbRating ?? null,
+        episodeLabel: detailItem?.type === "series" ? episodePauseLabel : null,
+        overview: episodeMetadata?.overview ?? item?.overview ?? null,
+        backdropUrl: item != null ? MediaItemNS.backdropURL(item) : null,
+        posterUrl: item != null ? MediaItemNS.posterURL(item) : null,
+      },
       sourceFileName,
       engine,
       fallbackStream,
@@ -1263,6 +1284,7 @@ export function Detail() {
             url={player.url}
             title={player.title}
             subtitle={player.subtitle}
+            nowPlaying={player.nowPlaying}
             sourceFileName={player.sourceFileName}
             engine={player.engine}
             requestWebviewFallback={

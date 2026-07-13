@@ -12,8 +12,11 @@ interface Props {
   /** Technical source name stays out of the playback chrome but remains
    * available in diagnostics for support and source selection checks. */
   sourceFileName?: string | null;
+  /** The panel opens to Info from the control and to Shortcuts from "?". */
+  section: "info" | "shortcuts";
+  onSectionChange: (section: "info" | "shortcuts") => void;
+  shortcuts: ReadonlyArray<readonly [string, string]>;
   onClose: () => void;
-  onShowShortcuts?: () => void;
 }
 
 function dimensions(size: PixelSize | null): string {
@@ -26,8 +29,10 @@ export function PlayerInfoPopover({
   sourceSize,
   displaySize,
   sourceFileName,
+  section,
+  onSectionChange,
+  shortcuts,
   onClose,
-  onShowShortcuts,
 }: Props) {
   const [appVersion, setAppVersion] = useState<string | null>(null);
 
@@ -45,10 +50,10 @@ export function PlayerInfoPopover({
     <section
       className="player-info-popover"
       role="dialog"
-      aria-label="Playback information"
+      aria-label="Player details and shortcuts"
     >
       <div className="player-info-head">
-        <strong>Playback information</strong>
+        <strong>Player details</strong>
         <button
           type="button"
           className="player-info-close"
@@ -58,32 +63,54 @@ export function PlayerInfoPopover({
           <Icon name="xmark" size={15} />
         </button>
       </div>
-      <dl className="player-info-grid">
-        <dt>Engine</dt>
-        <dd>{PLAYBACK_ENGINE_LABEL[engine]}</dd>
-        <dt>Version</dt>
-        <dd className="player-info-version">v{appVersion ?? "…"}</dd>
-        <dt>Source</dt>
-        <dd>{dimensions(sourceSize)}</dd>
-        <dt>Display</dt>
-        <dd>{dimensions(displaySize)}</dd>
-        {sourceFileName != null && sourceFileName.length > 0 && (
-          <>
-            <dt>File</dt>
-            <dd className="player-info-file" title={sourceFileName}>
-              {sourceFileName}
-            </dd>
-          </>
-        )}
-      </dl>
-      {onShowShortcuts != null && (
+      <div className="player-info-tabs" role="tablist" aria-label="Player details">
         <button
           type="button"
-          className="player-info-shortcuts"
-          onClick={onShowShortcuts}
+          role="tab"
+          aria-selected={section === "info"}
+          className={section === "info" ? "is-active" : ""}
+          onClick={() => onSectionChange("info")}
         >
-          Keyboard shortcuts
+          Info
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={section === "shortcuts"}
+          className={section === "shortcuts" ? "is-active" : ""}
+          onClick={() => onSectionChange("shortcuts")}
+        >
+          Shortcuts
+        </button>
+      </div>
+      {section === "info" ? (
+        <dl className="player-info-grid" role="tabpanel" aria-label="Info">
+          <dt>Engine</dt>
+          <dd>{PLAYBACK_ENGINE_LABEL[engine]}</dd>
+          <dt>Version</dt>
+          <dd className="player-info-version">v{appVersion ?? "…"}</dd>
+          <dt>Source</dt>
+          <dd>{dimensions(sourceSize)}</dd>
+          <dt>Display</dt>
+          <dd>{dimensions(displaySize)}</dd>
+          {sourceFileName != null && sourceFileName.length > 0 && (
+            <>
+              <dt>File</dt>
+              <dd className="player-info-file" title={sourceFileName}>
+                {sourceFileName}
+              </dd>
+            </>
+          )}
+        </dl>
+      ) : (
+        <ul className="player-info-shortcuts" role="tabpanel" aria-label="Shortcuts">
+          {shortcuts.map(([keys, label]) => (
+            <li key={keys}>
+              <kbd>{keys}</kbd>
+              <span>{label}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );

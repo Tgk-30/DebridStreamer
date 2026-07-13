@@ -208,6 +208,7 @@ vi.mock("../components/VideoPlayer", () => ({
   VideoPlayer: ({
     title,
     subtitle,
+    nowPlaying,
     sourceFileName,
     engine,
     requestWebviewFallback,
@@ -222,6 +223,12 @@ vi.mock("../components/VideoPlayer", () => ({
       data-subtitle={subtitle ?? ""}
       data-source-file={sourceFileName ?? ""}
       data-engine={engine}
+      data-pause-year={nowPlaying?.year ?? ""}
+      data-pause-runtime={nowPlaying?.runtimeMinutes ?? ""}
+      data-pause-rating={nowPlaying?.rating ?? ""}
+      data-pause-overview={nowPlaying?.overview ?? ""}
+      data-pause-episode={nowPlaying?.episodeLabel ?? ""}
+      data-pause-backdrop={nowPlaying?.backdropUrl ?? ""}
       data-has-fallback={String(requestWebviewFallback != null)}
       data-up-next={upNext?.label ?? ""}
       data-auto-countdown={String(autoCountdown)}
@@ -478,6 +485,13 @@ describe("Detail play", () => {
   });
 
   it("uses movie metadata in player chrome and keeps the resolved filename in diagnostics", async () => {
+    mockDetail = detailState({
+      item: mediaItem({
+        backdropPath: "/backdrop.jpg",
+        posterPath: "/poster.jpg",
+        overview: "A movie overview.",
+      }),
+    });
     mockCached = {
       stream: {
         fileName: "movie.mp4",
@@ -497,6 +511,17 @@ describe("Detail play", () => {
     expect(screen.getByTestId("player")).toHaveAttribute(
       "data-engine",
       "webview-direct",
+    );
+    expect(screen.getByTestId("player")).toHaveAttribute("data-pause-year", "2020");
+    expect(screen.getByTestId("player")).toHaveAttribute("data-pause-runtime", "120");
+    expect(screen.getByTestId("player")).toHaveAttribute("data-pause-rating", "7.5");
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-pause-overview",
+      "A movie overview.",
+    );
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-pause-backdrop",
+      "https://image.tmdb.org/t/p/w1280/backdrop.jpg",
     );
   });
 

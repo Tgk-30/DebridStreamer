@@ -44,6 +44,10 @@ import {
   type PlaybackEngine,
 } from "../lib/playbackEngine";
 import { PlayerInfoPopover } from "./player/PlayerInfoPopover";
+import {
+  PlayerPauseOverlay,
+  type NowPlayingMetadata,
+} from "./player/PlayerPauseOverlay";
 import "./VideoPlayer.css";
 
 type Playability = "webview" | "external";
@@ -55,6 +59,8 @@ interface VideoPlayerProps {
   title: string;
   /** Series context shown beneath the show title. */
   subtitle?: string | null;
+  /** Optional Detail metadata used by the paused now-playing treatment. */
+  nowPlaying?: NowPlayingMetadata | null;
   /** Raw resolved filename, confined to Playback information. */
   sourceFileName?: string | null;
   /** Force a path; when omitted it's sniffed from the URL extension. */
@@ -206,6 +212,7 @@ export function VideoPlayer({
   url,
   title,
   subtitle,
+  nowPlaying,
   sourceFileName,
   kind,
   engine,
@@ -257,7 +264,7 @@ export function VideoPlayer({
     useBuiltInPlayer;
   const [externalStatus, setExternalStatus] = useState<string | null>(null);
   const [externalError, setExternalError] = useState<string | null>(null);
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [detailsSection, setDetailsSection] = useState<"info" | "shortcuts" | null>(null);
   const [sourceSize, setSourceSize] = useState<PixelSize | null>(null);
   const [displaySize, setDisplaySize] = useState<PixelSize | null>(() =>
     currentViewportPixelSize(),
@@ -265,7 +272,7 @@ export function VideoPlayer({
 
   useEffect(() => {
     setSourceSize(null);
-    setInfoOpen(false);
+    setDetailsSection(null);
   }, [effectiveUrl]);
 
   useEffect(() => {
@@ -274,6 +281,19 @@ export function VideoPlayer({
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, []);
+
+  // A single top-right panel owns both playback information and the keymap.
+  // Escape dismisses it before any lower-level player action can run.
+  useEffect(() => {
+    if (detailsSection == null) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setDetailsSection(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detailsSection]);
 
   const recoverNativeInWebview = useCallback(async (): Promise<boolean> => {
     if (requestWebviewFallback == null) return false;
@@ -349,6 +369,7 @@ export function VideoPlayer({
         url={effectiveUrl}
         title={title}
         subtitle={subtitle ?? epLabel}
+        nowPlaying={nowPlaying}
         sourceFileName={sourceFileName}
         engine={effectiveEngine}
         onPlaybackError={recoverNativeInWebview}
@@ -382,10 +403,13 @@ export function VideoPlayer({
             <button
               type="button"
               className="player-info-button"
-              onClick={() => setInfoOpen((open) => !open)}
-              aria-label="Playback information"
+              onClick={() =>
+                setDetailsSection((section) => section === "info" ? null : "info")
+              }
+              aria-label="Player details and shortcuts"
               aria-haspopup="dialog"
-              aria-expanded={infoOpen}
+              aria-expanded={detailsSection != null}
+              title="Player details and shortcuts (?)"
             >
               <Icon name="info" size={17} />
             </button>
@@ -400,13 +424,16 @@ export function VideoPlayer({
           </div>
         </div>
 
-        {infoOpen && (
+        {detailsSection != null && (
           <PlayerInfoPopover
             engine={effectiveEngine}
             sourceSize={sourceSize}
             displaySize={displaySize}
             sourceFileName={sourceFileName}
-            onClose={() => setInfoOpen(false)}
+            section={detailsSection}
+            onSectionChange={setDetailsSection}
+            shortcuts={WEBVIEW_SHORTCUTS}
+            onClose={() => setDetailsSection(null)}
           />
         )}
 
@@ -414,6 +441,9 @@ export function VideoPlayer({
           <WebviewPlayer
             url={effectiveUrl}
             title={title}
+            nowPlaying={nowPlaying}
+            detailsOpen={detailsSection != null}
+            onOpenShortcuts={() => setDetailsSection("shortcuts")}
             onSourceSize={setSourceSize}
             onProgress={onProgress}
             startPositionSeconds={startPositionSeconds}
@@ -449,6 +479,9 @@ export function VideoPlayer({
 function WebviewPlayer({
   url,
   title,
+  nowPlaying,
+  detailsOpen,
+  onOpenShortcuts,
   onSourceSize,
   onProgress,
   startPositionSeconds,
@@ -464,6 +497,9 @@ function WebviewPlayer({
 }: {
   url: string;
   title: string;
+  nowPlaying?: NowPlayingMetadata | null;
+  detailsOpen: boolean;
+  onOpenShortcuts: () => void;
   onSourceSize: (size: PixelSize | null) => void;
   onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
   startPositionSeconds?: number;
@@ -481,7 +517,8 @@ function WebviewPlayer({
   const scrubberRef = useRef<WebviewScrubberHandle | null>(null);
   const [duration, setDuration] = useState(0);
   const [captionsOpen, setCaptionsOpen] = useState(false);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
   // Set when the video reaches its natural end - drives the Up-next card.
   const [ended, setEnded] = useState(false);
 
@@ -574,18 +611,25 @@ function WebviewPlayer({
       applyResume();
     };
     const onEnded = () => setEnded(true);
+    const onPause = () => setPaused(true);
+    const onPlay = () => setPaused(false);
     setEnded(false); // a new URL is a new playback - clear any stale end state
+    setPaused(false);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMeta);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("canplay", applyResume);
     video.addEventListener("ended", onEnded);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("play", onPlay);
     return () => {
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMeta);
       video.removeEventListener("durationchange", onDurationChange);
       video.removeEventListener("canplay", applyResume);
       video.removeEventListener("ended", onEnded);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("play", onPlay);
       if (onProgressRef.current != null && video.currentTime > 0) report();
     };
   }, [url]);
@@ -712,7 +756,7 @@ function WebviewPlayer({
           break;
         case "?":
           e.preventDefault();
-          setShortcutsOpen((o) => !o);
+          onOpenShortcuts();
           break;
         default:
           if (/^[0-9]$/.test(e.key) && dur > 0) {
@@ -723,6 +767,11 @@ function WebviewPlayer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [onOpenShortcuts]);
+
+  const resumePlayback = useCallback(() => {
+    setPaused(false);
+    void videoRef.current?.play();
   }, []);
 
   return (
@@ -748,6 +797,14 @@ function WebviewPlayer({
         </video>
       </div>
 
+      {paused && !ended && !captionsOpen && !detailsOpen && !scrubbing && (
+        <PlayerPauseOverlay
+          title={title}
+          nowPlaying={nowPlaying}
+          onResume={resumePlayback}
+        />
+      )}
+
       <div className="player-osd">
         <WebviewScrubber
           key={url}
@@ -757,6 +814,7 @@ function WebviewPlayer({
           onHover={thumbs.onHover}
           onLeave={thumbs.onLeave}
           onSeek={seek}
+          onScrubbingChange={setScrubbing}
         />
         <div className="player-osd-row">
           <button
@@ -774,23 +832,8 @@ function WebviewPlayer({
               <span className="captions-active-dot" />
             )}
           </button>
-          <button
-            type="button"
-            className={`chip player-help-btn${shortcutsOpen ? " is-active" : ""}`}
-            onClick={() => setShortcutsOpen((o) => !o)}
-            aria-label="Keyboard shortcuts"
-            aria-haspopup="dialog"
-            aria-expanded={shortcutsOpen}
-            title="Keyboard shortcuts (?)"
-          >
-            ?
-          </button>
         </div>
       </div>
-
-      {shortcutsOpen && (
-        <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />
-      )}
 
       {ended && upNext != null && onPlayNext != null && (
         <UpNextOverlay
@@ -816,7 +859,7 @@ function WebviewPlayer({
 
 /** A small, dismissible reference for the player keyboard shortcuts. Surfaced
  * by the "?" key or the "?" OSD button - invisible otherwise. */
-const SHORTCUTS: Array<[string, string]> = [
+const WEBVIEW_SHORTCUTS: Array<[string, string]> = [
   ["Space / K", "Play / pause"],
   ["← / →", "Back / forward 5s"],
   ["J / L", "Back / forward 10s"],
@@ -888,44 +931,6 @@ function UpNextOverlay({
             Dismiss
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
-  return (
-    <div
-      className="player-shortcuts-scrim"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="player-shortcuts glass-raised"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Keyboard shortcuts"
-      >
-        <div className="player-shortcuts-head">
-          <span className="player-shortcuts-title">Keyboard shortcuts</span>
-          <button
-            type="button"
-            className="player-shortcuts-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <Icon name="xmark" size={16} />
-          </button>
-        </div>
-        <ul className="player-shortcuts-list">
-          {SHORTCUTS.map(([keys, label]) => (
-            <li key={keys}>
-              <kbd>{keys}</kbd>
-              <span>{label}</span>
-            </li>
-          ))}
-        </ul>
       </div>
     </div>
   );

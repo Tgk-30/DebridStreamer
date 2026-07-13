@@ -8,6 +8,7 @@ const renderPlayerMock = vi.hoisted(() => ({
   callback: null as ((ev: { name: string; data: unknown }) => void) | null,
   observeProperties: vi.fn(),
   setProperty: vi.fn(),
+  getProperty: vi.fn(),
 }));
 const iconMock = vi.hoisted(() => vi.fn(({ name }: { name: string }) => <span data-icon={name} />));
 
@@ -22,7 +23,7 @@ vi.mock("../lib/renderPlayer", () => ({
   destroy: vi.fn(async () => {}),
   command: vi.fn(async () => {}),
   setProperty: renderPlayerMock.setProperty,
-  getProperty: vi.fn(async () => []),
+  getProperty: renderPlayerMock.getProperty,
   observeProperties: renderPlayerMock.observeProperties,
   setVideoMarginRatio: vi.fn(async () => {}),
 }));
@@ -74,6 +75,10 @@ beforeEach(() => {
     },
   );
   renderPlayerMock.setProperty.mockResolvedValue(undefined);
+  renderPlayerMock.getProperty.mockResolvedValue([]);
+  tauriWindowMock.setFullscreen.mockResolvedValue(undefined);
+  tauriWindowMock.isFullscreen.mockResolvedValue(false);
+  tauriWindowMock.onResized.mockResolvedValue(() => {});
   iconMock.mockClear();
   setViewport(1024, 768);
 });
@@ -262,17 +267,119 @@ describe("EmbeddedPlayer playback controls", () => {
     expect(renderPlayerMock.setProperty).not.toHaveBeenCalledWith("pause", true);
   });
 
-  it("opens the shortcut overlay and Escape closes it before closing the player", () => {
+  it("opens the merged details panel to Shortcuts and Escape closes it before closing the player", () => {
     const onClose = vi.fn();
     render(
       <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={onClose} />,
     );
 
     fireEvent.keyDown(window, { key: "?" });
-    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    const panel = screen.getByRole("dialog", { name: "Player details and shortcuts" });
+    expect(panel).toHaveTextContent("Info");
+    expect(panel).toHaveTextContent("Shortcuts");
+    expect(screen.getByRole("tabpanel", { name: "Shortcuts" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Player details and shortcuts" })).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("uses distinct conventional icons for audio and subtitle controls", async () => {
+    renderPlayerMock.getProperty.mockResolvedValue([
+      { id: 1, type: "audio", title: "English" },
+      { id: 2, type: "sub", title: "English CC" },
+    ]);
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    fireEvent.keyDown(window, { key: "c" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Audio" })).toBeInTheDocument());
+
+    const audioButton = screen.getByRole("button", { name: "Audio" });
+    const subtitleButton = screen.getByRole("button", { name: "Subtitles" });
+    expect(audioButton.querySelector('[data-icon="audio"]')).not.toBeNull();
+    expect(subtitleButton.querySelector('[data-icon="captions"]')).not.toBeNull();
+  });
+
+  it("uses the Tauri window API from the fullscreen button in both directions", async () => {
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Fullscreen" }));
+    await waitFor(() => expect(tauriWindowMock.setFullscreen).toHaveBeenCalledWith(true));
+
+    tauriWindowMock.isFullscreen.mockResolvedValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
+    await waitFor(() => expect(tauriWindowMock.setFullscreen).toHaveBeenCalledWith(false));
+  });
+
+  it("shows the paused now-playing screen and resumes immediately", async () => {
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/movie.mkv"
+        title="Example Show"
+        nowPlaying={{
+          year: 2026,
+          runtimeMinutes: 48,
+          rating: 8.4,
+          episodeLabel: "S2 E5 - The Arrival",
+          overview: "The crew make a difficult discovery.",
+          backdropUrl: "https://image.test/backdrop.jpg",
+        }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("pause", true);
+
+    expect(screen.getByRole("button", { name: "Resume playback" })).toBeInTheDocument();
+    expect(screen.getByText("S2 E5 - The Arrival · 2026 · 48m · ★ 8.4")).toBeInTheDocument();
+    expect(screen.getByText("The crew make a difficult discovery.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Resume playback" }));
+    expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("pause", false);
+    expect(screen.queryByRole("button", { name: "Resume playback" })).toBeNull();
+  });
+
+  it("keeps native chrome interactive above the pause overlay", async () => {
+    const onClose = vi.fn();
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/movie.mkv"
+        title="Movie"
+        onClose={onClose}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("pause", true);
+    renderPlayerMock.setProperty.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close player" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(renderPlayerMock.setProperty).not.toHaveBeenCalledWith("pause", false);
+
+    const css = readFileSync("src/components/EmbeddedPlayer.css", "utf8");
+    expect(css).toMatch(/\.embed-controls\s*\{[^}]*z-index:\s*7;[^}]*pointer-events:\s*none;/s);
+    expect(css).toMatch(
+      /\.embed-player\.show-controls \.embed-top,[\s\S]*?\.embed-player\.show-controls \.embed-bottom,[\s\S]*?pointer-events:\s*auto;/,
+    );
+  });
+
+  it("falls back to a title-only pause screen when Detail metadata is absent", async () => {
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/movie.mkv"
+        title="Just the title"
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("pause", true);
+
+    expect(screen.getByRole("button", { name: "Resume playback" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Just the title" })).toBeInTheDocument();
+    expect(document.querySelector(".player-pause-meta")).toBeNull();
   });
 
   it("keeps Escape layering: close a menu first, then close the player", () => {
@@ -370,8 +477,8 @@ describe("window-anchored controls and playback diagnostics", () => {
     emitProperty("video-params/w", 3840);
     emitProperty("video-params/h", 2160);
 
-    fireEvent.click(screen.getByRole("button", { name: "Playback information" }));
-    const dialog = screen.getByRole("dialog", { name: "Playback information" });
+    fireEvent.click(screen.getByRole("button", { name: "Player details and shortcuts" }));
+    const dialog = screen.getByRole("dialog", { name: "Player details and shortcuts" });
     expect(dialog).toHaveTextContent("Native mpv");
     expect(dialog).toHaveTextContent("3840 × 2160 px");
     expect(dialog).toHaveTextContent("2000 × 1400 px");
