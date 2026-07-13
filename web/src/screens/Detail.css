@@ -87,6 +87,69 @@
   flex-wrap: wrap;
   gap: var(--sp-sm);
 }
+.detail-download-field {
+  display: flex;
+  flex: 1 1 180px;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+.detail-download-field select,
+.detail-download-field input {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 9px;
+  font: inherit;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.08));
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+}
+.detail-download-field select:focus-visible,
+.detail-download-field input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(140, 133, 250, 0.5));
+}
+.detail-download-optimize {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm);
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.025);
+}
+.detail-download-profile,
+.detail-download-language-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.detail-download-estimate {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--sp-sm) var(--sp-md);
+  border: 0.75px solid rgba(var(--accent-rgb), 0.35);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  background: rgba(var(--accent-rgb), 0.09);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.detail-download-estimate strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.detail-download-source {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+}
 .detail-download-track-note {
   margin-top: 0;
 }
@@ -203,6 +266,32 @@
 }
 .detail-rate-btn {
   font-weight: 600;
+}
+.detail-rate-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+.detail-rate-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
+}
+.detail-rate-done {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--accent);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.08));
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.detail-rate-done:hover {
+  background: var(--glass-tint-hover, rgba(255, 255, 255, 0.14));
 }
 
 /* Honest gate for the "Will I like this?" AI verdict when no AI provider is

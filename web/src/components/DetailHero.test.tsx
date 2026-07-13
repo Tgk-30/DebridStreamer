@@ -6,7 +6,7 @@
 // states, and the optional taste-signal (thumbs) control.
 
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { createElement, forwardRef } from "react";
 import { DetailHero } from "./DetailHero";
 import type { MediaItem } from "../models/media";
@@ -166,6 +166,22 @@ describe("DetailHero content", () => {
     expect(chips).toHaveLength(2);
     expect(screen.getByText("Sci-Fi")).toBeInTheDocument();
     expect(screen.getByText("A blade runner must pursue replicants.")).toBeInTheDocument();
+  });
+
+  it("places supplied external ratings beside the TMDB score in the hero", () => {
+    const { container } = render(
+      <DetailHero
+        item={makeItem()}
+        inWatchlist={false}
+        onPlay={noop}
+        onToggleWatchlist={noop}
+        onClose={noop}
+        externalRatings={<span data-testid="external-ratings">IMDb 8.2</span>}
+      />,
+    );
+    const ratings = container.querySelector(".detail-hero-ratings")!;
+    expect(within(ratings as HTMLElement).getByText("8.1")).toBeInTheDocument();
+    expect(within(ratings as HTMLElement).getByTestId("external-ratings")).toBeInTheDocument();
   });
 
   it("hides the rating chip when the rating is N/A", () => {

@@ -113,11 +113,20 @@
   text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
 }
 
+.detail-hero-ratings,
 .detail-hero-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+.detail-hero-ratings {
+  min-height: 0;
+}
+.detail-hero-ratings:empty {
+  display: none;
+}
+.detail-hero-meta {
   font-size: 14px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.84);
@@ -135,6 +144,26 @@
 }
 .detail-hero-dot {
   color: rgba(255, 255, 255, 0.4);
+}
+
+/* OMDb loads asynchronously, so this compact row is allowed to start with only
+   the TMDB score and gain the external scores without shifting the hero's
+   content hierarchy. */
+.detail-hero-ratings .omdb-ratings {
+  gap: 6px;
+  margin: 0;
+}
+.detail-hero-ratings .omdb-rating {
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(8, 9, 18, 0.32);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.detail-hero-ratings .omdb-rating-value {
+  font-size: 12px;
+}
+.detail-hero-ratings .omdb-rating-label {
+  font-size: 9.5px;
 }
 
 .detail-hero-genres {

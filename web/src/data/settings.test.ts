@@ -202,7 +202,7 @@ describe("defaultSettings", () => {
     expect(d.simpleMode).toBe(true);
     expect(d.autoUpdateChecks).toBe(true);
     expect(d.autoInstallUpdates).toBe(false);
-    expect(d.streamCachedOnly).toBe(false);
+    expect(d.streamCachedOnly).toBe(true);
     expect(d.streamMaxQuality).toBe("any");
     expect(d.streamMaxSizeGB).toBe(0);
     expect(d.dataSaver).toBe(false);
@@ -619,6 +619,7 @@ describe("loadSettingsFromStore - established store", () => {
     expect(s.builtInIndexersEnabled).toBe(true); // null -> base default
     expect(s.simpleMode).toBe(true);
     expect(s.theme).toBe(DEFAULT_THEME_ID);
+    expect(s.streamCachedOnly).toBe(true);
     expect(s.streamMaxQuality).toBe("any");
     expect(s.debridTokens).toEqual([]);
     expect(s.sources).toEqual([]);
@@ -649,6 +650,12 @@ describe("loadSettingsFromStore - established store", () => {
     expect(s.streamCachedOnly).toBe(true);
     expect(s.dataSaver).toBe(true);
     expect(s.transcode).toBe(true);
+  });
+
+  it("keeps an existing saved cached-only choice", async () => {
+    settingsMap.set("stream_cached_only", "false");
+    const s = await loadSettingsFromStore();
+    expect(s.streamCachedOnly).toBe(false);
   });
 
   it("treats any non-'true' boolean string as false", async () => {

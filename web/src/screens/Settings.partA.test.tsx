@@ -575,6 +575,15 @@ describe("Settings · Appearance", () => {
 // ============================================================================
 
 describe("Settings · Playback (local caps)", () => {
+  it("defaults cached-only on for new settings", () => {
+    renderAt("playback");
+    const cachedOnly = screen
+      .getByText("Show cached streams only")
+      .closest("label")!
+      .querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(cachedOnly.checked).toBe(true);
+  });
+
   it("toggles Data Saver through patch", async () => {
     const user = userEvent.setup();
     renderAt("playback");

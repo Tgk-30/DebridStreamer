@@ -14,6 +14,7 @@ import userEvent from "@testing-library/user-event";
 import type { MediaPreview, MediaItem } from "../models/media";
 import type { DetailState } from "../data/detail";
 import type { StreamsState } from "../data/streams";
+import { TorrentResult } from "../services/indexers/models";
 
 // --- mutable mock state -----------------------------------------------------
 
@@ -26,6 +27,7 @@ let mockCached: { stream: any } | null = null;
 let mockContinueWatching: any[] = [];
 let serverModeOn = false;
 const tauriState = vi.hoisted(() => ({ on: false }));
+const downloadsFfmpegAvailable = vi.hoisted(() => vi.fn(async () => true));
 
 const closeDetail = vi.fn();
 const openDetail = vi.fn();
@@ -69,6 +71,7 @@ vi.mock("../data/detail", () => ({
 
 vi.mock("../data/streams", () => ({
   useStreams: () => mockStreams,
+  filterStreamRows: (rows: unknown[]) => rows,
 }));
 
 vi.mock("../data/library", () => ({
@@ -86,6 +89,10 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
 
 vi.mock("../lib/ServerSessionContext", () => ({
   useTranscodeAvailable: () => false,
+}));
+
+vi.mock("../lib/downloadsBridge", () => ({
+  getDownloadsBridge: () => ({ downloadsFfmpegAvailable }),
 }));
 
 const createRequest = vi.fn<(...a: any[]) => any>();
@@ -126,13 +133,22 @@ vi.mock("../components/DetailHero", () => ({
     tasteSignal,
     onTasteSignal,
     onPlay,
+    onDownload,
+    downloadDisabledReason,
+    externalRatings,
   }: any) => (
     <div data-testid="hero">
       <span data-testid="hero-title">{item?.title}</span>
       <span data-testid="hero-inwl">{String(inWatchlist)}</span>
       <span data-testid="hero-reqstate">{requestState}</span>
       <span data-testid="hero-taste">{tasteSignal ?? "none"}</span>
+      {externalRatings}
       <button onClick={onPlay}>play</button>
+      {onDownload && (
+        <button onClick={onDownload} disabled={downloadDisabledReason != null}>
+          download
+        </button>
+      )}
       <button onClick={onClose}>close</button>
       <button onClick={onToggleWatchlist}>toggle-wl</button>
       <button onClick={() => onTasteSignal?.("liked")}>like</button>
@@ -290,6 +306,20 @@ function streamsState(): StreamsState {
   return { rows: [], loading: false, error: null } as unknown as StreamsState;
 }
 
+function downloadRow(title: string, sizeBytes: number) {
+  return {
+    result: TorrentResult.fromSearch({
+      infoHash: title,
+      title,
+      sizeBytes,
+      seeders: 10,
+      leechers: 0,
+      indexerName: "Test source",
+    }),
+    cachedOn: null,
+  };
+}
+
 beforeEach(() => {
   mockDetailItem = preview("m1", { type: "movie", title: "Selected" });
   mockDetail = detailState();
@@ -335,6 +365,7 @@ describe("Detail base render", () => {
     expect(screen.getByTestId("hero")).toBeInTheDocument();
     expect(screen.getByTestId("hero-title").textContent).toBe("The Movie");
     expect(screen.getByTestId("omdb").getAttribute("data-imdb")).toBe("tt100");
+    expect(screen.getByTestId("omdb").closest('[data-testid="hero"]')).not.toBeNull();
     expect(screen.getByTestId("streampicker")).toBeInTheDocument();
     expect(screen.getByTestId("castrail").getAttribute("data-count")).toBe("1");
     expect(screen.getByText("related-rel1")).toBeInTheDocument();
@@ -718,6 +749,49 @@ describe("Detail taste signal", () => {
     expect(screen.getByTestId("hero-taste").textContent).toBe("disliked");
     await waitFor(() => expect(addTasteEvent).toHaveBeenCalled());
     expect((addTasteEvent.mock.calls[0][0] as any).signalStrength).toBe(-1);
+  });
+});
+
+describe("Detail downloads", () => {
+  it("shows an estimate for the selected resolution and updates it for optimization", async () => {
+    tauriState.on = true;
+    mockServices = {
+      tmdb: null,
+      indexers: {},
+      debrid: { hasServices: true },
+      ai: null,
+      subtitles: null,
+      translator: null,
+    };
+    mockSettings = {
+      transcode: false,
+      ratingScale: "thumbs",
+      streamCachedOnly: false,
+    };
+    mockStreams = streamsState();
+    mockStreams.rows = [
+      downloadRow("Movie 2160p", 8 * 1024 * 1024 * 1024),
+      downloadRow("Movie 720p", 1536 * 1024 * 1024),
+    ];
+
+    render(<Detail />);
+    await userEvent.click(screen.getByRole("button", { name: "download" }));
+    expect(await screen.findByText("Estimated total: 8.0 GB")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Download resolution"), {
+      target: { value: "720p" },
+    });
+    expect(screen.getByText("Estimated total: 1.5 GB")).toBeInTheDocument();
+
+    const optimized = screen.getByRole("button", { name: "Optimized" });
+    await waitFor(() => expect(optimized).toBeEnabled());
+    await userEvent.click(optimized);
+    expect(screen.getByText("Estimated total: up to 1.5 GB")).toBeInTheDocument();
+    expect(screen.getByLabelText("Audio languages to keep")).toBeInTheDocument();
+    expect(screen.getByLabelText("Subtitle languages to keep")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "H.265 re-encode" }));
+    expect(screen.getByText("Planning estimate: about 768 MB")).toBeInTheDocument();
   });
 });
 

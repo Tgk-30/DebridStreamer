@@ -423,7 +423,7 @@ export function defaultSettings(): AppSettings {
     simpleMode: true,
     autoUpdateChecks: true,
     autoInstallUpdates: false,
-    streamCachedOnly: false,
+    streamCachedOnly: true,
     streamMaxQuality: "any",
     streamMaxSizeGB: 0,
     dataSaver: false,

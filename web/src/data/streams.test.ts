@@ -123,14 +123,14 @@ describe("dedupeStreamRows", () => {
 });
 
 describe("filterStreamRows", () => {
-  it("keeps all rows when data-saver filters are disabled", () => {
+  it("uses the cached-only default when data-saver filters are disabled", () => {
     const rows = [
       row("cached-4k", VideoQuality.uhd4k, 80),
       row("uncached-1080p", VideoQuality.hd1080p, 12, false),
     ];
 
     expect(filterStreamRows(rows, defaultSettings()).map((item) => item.result.infoHash))
-      .toEqual(["cached-4k", "uncached-1080p"]);
+      .toEqual(["cached-4k"]);
   });
 
   it("hides uncached rows when cached-only is enabled", () => {

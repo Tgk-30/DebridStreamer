@@ -11,7 +11,10 @@ import type { Store } from "../storage/types";
 const preview = { id: "tt1", type: "movie", title: "Movie" } as unknown as MediaPreview;
 
 function settings(over: Partial<AppSettings>): AppSettings {
-  return { ...defaultSettings(), ...over };
+  // These auto-resolve cases exercise the opt-out behavior, not the picker
+  // default. A user who leaves cached-only on intentionally skips uncached
+  // pre-caching, covered by the explicit test below.
+  return { ...defaultSettings(), streamCachedOnly: false, ...over };
 }
 
 function torrent(infoHash: string, quality: VideoQuality, sizeGB: number) {

@@ -26,7 +26,9 @@ function previewOf(id = "tt1"): MediaPreview {
 }
 
 function settings(over: Partial<AppSettings> = {}): AppSettings {
-  return { ...defaultSettings(), ...over };
+  // Most resolver cases exercise source selection, so opt out of the picker's
+  // cached-only default unless a case explicitly verifies that hard constraint.
+  return { ...defaultSettings(), streamCachedOnly: false, ...over };
 }
 
 function torrent(infoHash: string, quality: VideoQuality, sizeGB: number) {

@@ -24,7 +24,6 @@ export function RatingControl({
   return (
     <section className="rating-control" aria-label="Your rating">
       <div className="rating-control-head">
-        <span className="rating-control-label">Your rating</span>
         {value != null && onClear != null && (
           <button type="button" className="rating-clear" onClick={onClear}>
             Clear

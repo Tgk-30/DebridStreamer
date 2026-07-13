@@ -276,6 +276,48 @@ describe("StreamPicker", () => {
     expect(screen.getByText(/1 instant · 3 total/)).toBeInTheDocument();
   });
 
+  it("starts with the Settings cached-only default, while the picker toggle stays session-scoped", () => {
+    storeSettings = {
+      dataSaver: false,
+      streamCachedOnly: true,
+      streamMaxQuality: "any",
+      streamMaxSizeGB: 0,
+    };
+    const rows = [
+      makeRow({ hash: "A", title: "Cached default 1080p", cachedOn: DebridServiceType.realDebrid }),
+      makeRow({ hash: "B", title: "Uncached default 1080p", cachedOn: null }),
+    ];
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+
+    const toggle = screen.getByRole("checkbox", { name: /Cached only/ });
+    expect(toggle).toBeChecked();
+    expect(screen.getByText("Cached default 1080p")).toBeInTheDocument();
+    expect(screen.queryByText("Uncached default 1080p")).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText("Uncached default 1080p")).toBeInTheDocument();
+  });
+
+  it("renders 10 streams initially and expands by 20 at a time", () => {
+    const rows = Array.from({ length: 31 }, (_, index) =>
+      makeRow({ hash: `page-${index}`, title: `Paged stream ${index + 1} 1080p` }),
+    );
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+
+    expect(screen.getAllByText(/^Paged stream /)).toHaveLength(10);
+    const more = screen.getByRole("button", { name: "Show 20 more" });
+    fireEvent.click(more);
+    expect(screen.getAllByText(/^Paged stream /)).toHaveLength(30);
+    fireEvent.click(screen.getByRole("button", { name: "Show 20 more" }));
+    expect(screen.getAllByText(/^Paged stream /)).toHaveLength(31);
+    expect(screen.queryByRole("button", { name: "Show 20 more" })).toBeNull();
+  });
+
   it("cached-first sorts the rows (instant rows render before will-cache ones)", () => {
     const rows = [
       makeRow({ hash: "A", title: "Uncached First 1080p", cachedOn: null }),

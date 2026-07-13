@@ -60,12 +60,16 @@ export function StreamPicker({
   episodeLabel = null,
   episodeContext = null,
 }: StreamPickerProps) {
-  const [cachedOnly, setCachedOnly] = useState(false);
+  const { settings } = useAppStore();
+  // Settings supplies the initial preference for each picker. The local state
+  // remains session-scoped so switching this checkbox does not rewrite a
+  // person's saved default.
+  const [cachedOnly, setCachedOnly] = useState(() => settings.streamCachedOnly);
   const [resFilter, setResFilter] = useState<VideoQuality | null>(null);
   const [codecFilter, setCodecFilter] = useState<VideoCodec | null>(null);
+  const [visibleCount, setVisibleCount] = useState(10);
   const [resolvingHash, setResolvingHash] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
-  const { settings } = useAppStore();
 
   // Clear the resolution/codec chips whenever the underlying results change
   // (a new title is opened). A stale value is already ignored if it no longer
@@ -75,11 +79,12 @@ export function StreamPicker({
   useEffect(() => {
     setResFilter(null);
     setCodecFilter(null);
+    setVisibleCount(10);
   }, [state.rows]);
 
   // The data-saver-eligible rows are the basis for both the chips and the list.
   const baseRows = useMemo(
-    () => filterStreamRows(state.rows, settings),
+    () => filterStreamRows(state.rows, { ...settings, streamCachedOnly: false }),
     [state.rows, settings],
   );
 
@@ -121,6 +126,17 @@ export function StreamPicker({
     });
   }, [baseRows, cachedOnly, effRes, effCodec]);
 
+  // A filter change is a fresh result set, so the next view starts at the fast
+  // initial mount size rather than retaining a previous "show more" expansion.
+  useEffect(() => {
+    setVisibleCount(10);
+  }, [cachedOnly, effRes, effCodec]);
+
+  const visibleRows = useMemo(
+    () => rows.slice(0, visibleCount),
+    [rows, visibleCount],
+  );
+
   async function select(row: StreamRow) {
     if (!state.hasDebrid) {
       setResolveError(
@@ -158,7 +174,7 @@ export function StreamPicker({
           <div className="streams-controls">
             <span className="streams-count t-secondary">
               {cachedCount} instant · {state.rows.length} total
-              {rows.length < state.rows.length ? ` · ${rows.length} shown` : ""}
+              {visibleRows.length < rows.length ? ` · ${visibleRows.length} shown` : ""}
             </span>
             <label className="streams-toggle">
               <input
@@ -206,6 +222,7 @@ export function StreamPicker({
       <StreamBody
         state={state}
         rows={rows}
+        visibleRows={visibleRows}
         cachedOnly={cachedOnly}
         filteredCount={filteredCount}
         chipFiltersActive={effRes != null || effCodec != null}
@@ -216,6 +233,7 @@ export function StreamPicker({
           setResFilter(null);
           setCodecFilter(null);
         }}
+        onShowMore={() => setVisibleCount((count) => count + 20)}
         onOpenSettings={onOpenSettings}
         episodeLabel={episodeLabel}
         episodeContext={episodeContext}
@@ -227,6 +245,7 @@ export function StreamPicker({
 function StreamBody({
   state,
   rows,
+  visibleRows,
   cachedOnly,
   filteredCount,
   chipFiltersActive,
@@ -234,12 +253,14 @@ function StreamBody({
   onSelect,
   onShowAll,
   onClearChips,
+  onShowMore,
   onOpenSettings,
   episodeLabel = null,
   episodeContext = null,
 }: {
   state: StreamsState;
   rows: StreamRow[];
+  visibleRows: StreamRow[];
   cachedOnly: boolean;
   filteredCount: number;
   chipFiltersActive: boolean;
@@ -247,6 +268,7 @@ function StreamBody({
   onSelect: (row: StreamRow) => void;
   onShowAll: () => void;
   onClearChips: () => void;
+  onShowMore: () => void;
   onOpenSettings?: () => void;
   episodeLabel?: string | null;
   episodeContext?: { season: number; episode: number } | null;
@@ -414,21 +436,30 @@ function StreamBody({
   }
 
   return (
-    <ul className="streams-list">
-      {rows.map((row) => (
-        <StreamRowItem
-          key={row.result.infoHash}
-          row={row}
-          resolving={resolvingHash === row.result.infoHash}
-          onSelect={() => onSelect(row)}
-          pack={
-            episodeContext != null &&
-            classifyRowForEpisode(row, episodeContext.season, episodeContext.episode) ===
-              "pack"
-          }
-        />
-      ))}
-    </ul>
+    <>
+      <ul className="streams-list">
+        {visibleRows.map((row) => (
+          <StreamRowItem
+            key={row.result.infoHash}
+            row={row}
+            resolving={resolvingHash === row.result.infoHash}
+            onSelect={() => onSelect(row)}
+            pack={
+              episodeContext != null &&
+              classifyRowForEpisode(row, episodeContext.season, episodeContext.episode) ===
+                "pack"
+            }
+          />
+        ))}
+      </ul>
+      {visibleRows.length < rows.length && (
+        <div className="streams-pagination">
+          <button type="button" className="btn" onClick={onShowMore}>
+            Show 20 more
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -92,6 +92,12 @@
   gap: var(--sp-sm);
 }
 
+.streams-pagination {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--sp-xs);
+}
+
 .stream-row {
   position: relative;
   width: 100%;

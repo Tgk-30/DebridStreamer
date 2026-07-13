@@ -4,7 +4,7 @@
 // poster + large title, a dotted meta row, genre chips, the overview, and the
 // primary actions (Play prominent + Watchlist). Content settles in with motion.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { motion } from "motion/react";
 import { MediaItem as MediaItemNS } from "../models/media";
 import type { MediaItem } from "../models/media";
@@ -38,6 +38,8 @@ interface DetailHeroProps {
   onDownload?: () => void;
   /** Honest explanation for a disabled download action. */
   downloadDisabledReason?: string | null;
+  /** Async external ratings owned by Detail, placed beside the TMDB score. */
+  externalRatings?: ReactNode;
 }
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -55,6 +57,7 @@ export function DetailHero({
   playDisabledReason = null,
   onDownload,
   downloadDisabledReason = null,
+  externalRatings,
 }: DetailHeroProps) {
   const backdrop = MediaItemNS.backdropURL(item);
   const [backdropFailed, setBackdropFailed] = useState(false);
@@ -121,16 +124,20 @@ export function DetailHero({
         <div className="detail-hero-info">
           <h1 className="detail-hero-title">{item.title}</h1>
 
-          <div className="detail-hero-meta">
+          <div className="detail-hero-ratings">
             {rating !== "N/A" && (
               <span className="detail-hero-rating">
                 <Icon name="star" size={13} className="t-warning" />
                 {rating}
               </span>
             )}
+            {externalRatings}
+          </div>
+
+          <div className="detail-hero-meta">
             {metaBits.map((bit, i) => (
               <span key={bit + i} className="detail-hero-metabit">
-                {(rating !== "N/A" || i > 0) && <span className="detail-hero-dot">·</span>}
+                {i > 0 && <span className="detail-hero-dot">·</span>}
                 {bit}
               </span>
             ))}

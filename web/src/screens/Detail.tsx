@@ -39,7 +39,11 @@ import { Icon } from "../components/Icon";
 import { isInWatchlist } from "../data/library";
 import { VideoCodec, type StreamInfo } from "../services/debrid/models";
 import { MediaItem as MediaItemNS } from "../models/media";
-import type { TorrentResult } from "../services/indexers/models";
+import {
+  VideoQuality,
+  type TorrentResult,
+  type VideoQuality as VideoQualityValue,
+} from "../services/indexers/models";
 import type { StreamRow } from "../data/streams";
 import { createRequest, resolveServerStream } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
@@ -153,6 +157,61 @@ function needsTranscodeOrExternal(
   return badContainer || badCodec;
 }
 
+function formatDownloadSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "Size unavailable";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(value >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function parseLanguageList(value: string): string[] {
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((language) => language.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+type DownloadEstimate = {
+  summary: string;
+  detail: string;
+};
+
+function downloadEstimate(
+  sourceSizeBytes: number,
+  mode: "full" | "optimized",
+  profile: "remux" | "h265",
+): DownloadEstimate | null {
+  if (!Number.isFinite(sourceSizeBytes) || sourceSizeBytes <= 0) return null;
+  const sourceSize = formatDownloadSize(sourceSizeBytes);
+  if (mode === "full") {
+    return {
+      summary: `Estimated total: ${sourceSize}`,
+      detail: "The selected source's reported file size.",
+    };
+  }
+  if (profile === "remux") {
+    return {
+      summary: `Estimated total: up to ${sourceSize}`,
+      detail:
+        "A remux keeps the source video, so it is roughly the same size minus any audio or subtitle tracks you drop.",
+    };
+  }
+  return {
+    summary: `Planning estimate: about ${formatDownloadSize(sourceSizeBytes * 0.5)}`,
+    detail:
+      `The ${sourceSize} source will be re-encoded to H.265. Final size can vary, but should be substantially smaller.`,
+  };
+}
+
 export function Detail() {
   const {
     detailItem,
@@ -220,6 +279,22 @@ export function Detail() {
     services.debrid,
   );
 
+  // Download selection intentionally follows the current list's source order.
+  // The first row at a selected resolution is the same "best currently listed"
+  // source the existing download flow used before it had a resolution control.
+  // Cached-only is a StreamPicker display default, not a download limitation:
+  // debrid can queue an uncached source for download just as it did before.
+  const downloadRows = useMemo(
+    () => filterStreamRows(streams.rows, { ...settings, streamCachedOnly: false }),
+    [streams.rows, settings],
+  );
+  const downloadQualities = useMemo(() => {
+    const present = new Set(downloadRows.map((row) => row.result.quality));
+    return [...present].sort(
+      (left, right) => VideoQuality.sortOrder(right) - VideoQuality.sortOrder(left),
+    );
+  }, [downloadRows]);
+
   // Per-episode resume bars + watched checks for the picker rows (this series
   // only). `continueWatching` holds ALL history records incl. completed ones.
   const progressByEpisodeId = useMemo(() => {
@@ -251,8 +326,39 @@ export function Detail() {
   const [streamsPageOpen, setStreamsPageOpen] = useState(false);
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const [downloadMode, setDownloadMode] = useState<"full" | "optimized">("full");
+  const [downloadQuality, setDownloadQuality] = useState<VideoQualityValue | null>(null);
+  const [downloadProfile, setDownloadProfile] = useState<"remux" | "h265">("remux");
+  const [downloadAudioLanguages, setDownloadAudioLanguages] = useState("");
+  const [downloadSubtitleLanguages, setDownloadSubtitleLanguages] = useState("");
   const [ffmpegAvailable, setFfmpegAvailable] = useState<boolean | null>(null);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDownloadQuality((current) =>
+      current != null && downloadQualities.includes(current)
+        ? current
+        : downloadQualities[0] ?? null,
+    );
+  }, [downloadQualities]);
+
+  const selectedDownloadSource = useMemo(
+    () =>
+      downloadRows.find(
+        (row) => downloadQuality == null || row.result.quality === downloadQuality,
+      ) ?? null,
+    [downloadQuality, downloadRows],
+  );
+  const selectedDownloadEstimate = useMemo(
+    () =>
+      selectedDownloadSource == null
+        ? null
+        : downloadEstimate(
+            selectedDownloadSource.result.sizeBytes,
+            downloadMode,
+            downloadProfile,
+          ),
+    [downloadMode, downloadProfile, selectedDownloadSource],
+  );
 
   useEffect(() => {
     if (!isTauri() || isServerMode()) {
@@ -860,16 +966,19 @@ export function Detail() {
           ? null
           : episodeIdFor(episodeContext.season, episodeContext.episode),
       mode: downloadMode,
-      optimizeProfile: downloadMode === "optimized" ? "remux" : null,
-      // Stream rows do not expose track metadata. Empty means keep all tracks,
-      // which is the honest fallback until the native ffprobe pass reports them.
-      keepAudioLangs: [],
-      keepSubLangs: [],
+      optimizeProfile: downloadMode === "optimized" ? downloadProfile : null,
+      // Stream rows have no track inventory before the native ffprobe pass.
+      // Empty means keep all tracks; otherwise these optional user-entered
+      // language codes are forwarded unchanged to the existing FFmpeg contract.
+      keepAudioLangs:
+        downloadMode === "optimized" ? parseLanguageList(downloadAudioLanguages) : [],
+      keepSubLangs:
+        downloadMode === "optimized" ? parseLanguageList(downloadSubtitleLanguages) : [],
     };
   }
 
   async function enqueueCurrentDownload(): Promise<void> {
-    const source = filterStreamRows(streams.rows, settings)[0]?.result;
+    const source = selectedDownloadSource?.result;
     if (source == null) {
       setDownloadNotice("Find a stream for this title before adding it to the queue.");
       return;
@@ -900,7 +1009,10 @@ export function Detail() {
           episode.season,
           episode.episode,
         );
-        const source = results[0];
+        const source =
+          results.find(
+            (result) => downloadQuality == null || result.quality === downloadQuality,
+          ) ?? results[0];
         return source == null ? null : downloadInput(source, episode);
       }),
     );
@@ -983,6 +1095,7 @@ export function Detail() {
               : undefined
           }
           downloadDisabledReason={downloadDisabledReason}
+          externalRatings={<OmdbRatings imdbId={detail.data.imdbId} />}
           onPlay={() => {
             // Instant play: if the auto-resolve job pre-cached a ready stream
             // for this title, play it immediately instead of re-walking the
@@ -1029,7 +1142,7 @@ export function Detail() {
               className={`chip${downloadMode === "full" ? " is-active dl-chip-active" : ""}`}
               onClick={() => setDownloadMode("full")}
             >
-              Full size
+              Full download
             </button>
             <button
               type="button"
@@ -1038,12 +1151,89 @@ export function Detail() {
               disabled={ffmpegAvailable !== true}
               title={ffmpegAvailable === false ? "FFmpeg is unavailable on this desktop." : "Checking FFmpeg…"}
             >
-              Optimized · remux
+              Optimized
             </button>
           </div>
+          <label className="detail-download-field">
+            <span>Resolution</span>
+            <select
+              aria-label="Download resolution"
+              value={downloadQuality ?? ""}
+              onChange={(event) => setDownloadQuality(event.target.value as VideoQualityValue)}
+              disabled={downloadQualities.length === 0}
+            >
+              {downloadQualities.map((quality) => (
+                <option key={quality} value={quality}>
+                  {quality}
+                </option>
+              ))}
+            </select>
+          </label>
           {downloadMode === "optimized" && (
+            <div className="detail-download-optimize">
+              <div className="detail-download-profile" role="group" aria-label="Optimized profile">
+                <button
+                  type="button"
+                  className={`chip${downloadProfile === "remux" ? " is-active dl-chip-active" : ""}`}
+                  aria-pressed={downloadProfile === "remux"}
+                  onClick={() => setDownloadProfile("remux")}
+                >
+                  Remux
+                </button>
+                <button
+                  type="button"
+                  className={`chip${downloadProfile === "h265" ? " is-active dl-chip-active" : ""}`}
+                  aria-pressed={downloadProfile === "h265"}
+                  onClick={() => setDownloadProfile("h265")}
+                >
+                  H.265 re-encode
+                </button>
+              </div>
+              <div className="detail-download-language-fields">
+                <label className="detail-download-field">
+                  <span>Audio languages to keep</span>
+                  <input
+                    type="text"
+                    value={downloadAudioLanguages}
+                    onChange={(event) => setDownloadAudioLanguages(event.target.value)}
+                    placeholder="Optional, e.g. en, fr"
+                  />
+                </label>
+                <label className="detail-download-field">
+                  <span>Subtitle languages to keep</span>
+                  <input
+                    type="text"
+                    value={downloadSubtitleLanguages}
+                    onChange={(event) => setDownloadSubtitleLanguages(event.target.value)}
+                    placeholder="Optional, e.g. en, es"
+                  />
+                </label>
+              </div>
+              <p className="detail-download-track-note t-secondary">
+                Language codes are optional. Leave a field empty to keep every track of that type.
+              </p>
+            </div>
+          )}
+          {selectedDownloadSource != null ? (
+            <div className="detail-download-estimate" role="status">
+              {selectedDownloadEstimate != null ? (
+                <>
+                  <strong>{selectedDownloadEstimate.summary}</strong>
+                  <span>{selectedDownloadEstimate.detail}</span>
+                </>
+              ) : (
+                <>
+                  <strong>Estimated total: size unavailable</strong>
+                  <span>The selected source did not report a file size.</span>
+                </>
+              )}
+              <span className="detail-download-source">
+                Selected {selectedDownloadSource.result.quality} source: {selectedDownloadSource.result.title}
+              </span>
+            </div>
+          ) : (
             <p className="detail-download-track-note t-secondary">
-              Track languages are not available in stream results, so this remux keeps all audio and subtitle tracks.
+              Find a stream to see a size estimate before downloading.
             </p>
           )}
           {ffmpegAvailable === false && (
@@ -1056,7 +1246,7 @@ export function Detail() {
               type="button"
               className="btn btn-prominent"
               onClick={() => void enqueueCurrentDownload()}
-              disabled={filterStreamRows(streams.rows, settings).length === 0}
+              disabled={selectedDownloadSource == null}
             >
               <Icon name="debrid" size={15} />
               {isSeries && selected != null
@@ -1129,11 +1319,6 @@ export function Detail() {
           Watch trailer
         </button>
       )}
-
-      {/* External ratings (IMDb / Rotten Tomatoes / Metacritic) via OMDb - 
-          from the user's own key (local BYOK) or the server "hidden key" proxy.
-          Renders nothing when no key is available. */}
-      <OmdbRatings imdbId={detail.data.imdbId} />
 
       {/* Your own rating (1–10 pips or a 0–100 slider), collapsed behind an
           explicit "Rate" button so the stars don't sit out permanently. Thumbs

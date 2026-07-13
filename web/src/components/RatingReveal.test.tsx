@@ -52,4 +52,20 @@ describe("RatingReveal", () => {
     fireEvent.keyDown(group, { key: "3" });
     expect(onRate).toHaveBeenLastCalledWith(3);
   });
+
+  it("dismisses with Done or Escape without clearing a saved rating", async () => {
+    const onClear = vi.fn();
+    render(<RatingReveal scale="ten" value={8} onRate={() => {}} onClear={onClear} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Your rating: 8/10" }));
+    expect(screen.getByRole("radiogroup", { name: "Rate out of 10" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.getByRole("button", { name: "Your rating: 8/10" })).toBeInTheDocument();
+    expect(onClear).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Your rating: 8/10" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Your rating: 8/10" })).toBeInTheDocument();
+    expect(onClear).not.toHaveBeenCalled();
+  });
 });

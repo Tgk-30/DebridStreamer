@@ -6,7 +6,7 @@
 //
 // A thin wrapper: it does not change RatingControl's internals or storage format.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RatingControl } from "./RatingControl";
 import { Icon } from "./Icon";
 
@@ -25,6 +25,22 @@ export function RatingReveal({
   const wrapRef = useRef<HTMLDivElement>(null);
   const max = scale === "hundred" ? 100 : 10;
 
+  function dismiss() {
+    setOpen(false);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dismiss();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
   function reveal() {
     setOpen(true);
     // Move focus into the control so keyboard quick-rating works immediately on
@@ -41,6 +57,12 @@ export function RatingReveal({
   if (open) {
     return (
       <div className="detail-rate" ref={wrapRef}>
+        <div className="detail-rate-head">
+          <span className="detail-rate-title">Your rating</span>
+          <button type="button" className="detail-rate-done" onClick={dismiss}>
+            Done
+          </button>
+        </div>
         <RatingControl
           scale={scale}
           value={value}
