@@ -3,3 +3,4 @@
 2026-07-12 | player geometry v3 | BLOCKED | awaiting | two shipped fixes (overlay portal, FBO pixel-dims) did NOT resolve the native squish+inset; cannot diagnose native render without runtime data; asked Brendan for DS_MPV_DEBUG log
 2026-07-12 | v0.6.4 field reports: exit-fullscreen crash + wrap axis | gpt-5.6-sol[max] + opus review | success | crash = setFrame on fullscreen window during teardown; review caught permanent aspect-lock before ship
 2026-07-12 | v0.6.5-web ship: fullscreen-safe mutations + width-anchored wrap | fable-integrate | success | 4/4 green first try; 2782 tests
+2026-07-13 | fullscreen wrong-axis fit + version label | gpt-5.6-sol[max] + luna[medium] + opus review | success | fullscreen-entry reconcile + re-armed self-heal; luna test mocks needed 2 fable fixes (TDZ hoist, missing isTauri export); 4/4 green
