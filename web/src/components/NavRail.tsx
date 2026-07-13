@@ -7,6 +7,7 @@ import { useLayoutEffect, useState } from "react";
 import { Icon, type IconName } from "./Icon";
 import { isServerMode } from "../lib/serverMode";
 import { useSimpleMode } from "../store/AppStore";
+import type { LocalProfile } from "../storage/ProfileRegistry";
 import {
   useServerProfiles,
   useServerSession,
@@ -36,16 +37,14 @@ export function isScreenHidden(
   return false;
 }
 
-/** Whether to show the "who's watching" switcher entry. Pure + testable: only
- *  in Server Mode, only with a handler wired, and only when the account has more
- *  than one profile (a single-profile account has nothing to switch to, so there
- *  is no forced picker). */
+/** Whether to show the "who's watching" switcher entry. */
 export function shouldShowProfileSwitch(opts: {
   serverMode: boolean;
   hasHandler: boolean;
   profileCount: number;
+  multiUserEnabled?: boolean;
 }): boolean {
-  return opts.serverMode && opts.hasHandler && opts.profileCount > 1;
+  return opts.hasHandler && opts.profileCount > 1 && (opts.serverMode || opts.multiUserEnabled === true);
 }
 
 /** Pure, testable nav filter for the current modes. */
@@ -113,6 +112,11 @@ interface NavRailProps {
   /** Opens the "who's watching" picker (Server Mode only). When absent or when
    *  the account has a single profile, the switch entry is not shown. */
   onSwitchProfile?: () => void;
+  /** Local profile state is supplied by App, keeping this navigation component
+   * independently testable and leaving server context behavior unchanged. */
+  localProfile?: LocalProfile | null;
+  localProfileCount?: number;
+  localMultiUserEnabled?: boolean;
 }
 
 function initialOf(name: string): string {
@@ -120,9 +124,18 @@ function initialOf(name: string): string {
   return trimmed.length > 0 ? trimmed[0]!.toUpperCase() : "?";
 }
 
+/** A local profile avatar can be an emoji/initial OR an image data/URL set via
+ * the ProfileMenu; only the latter renders as an <img> (never as raw text). */
+function isImageAvatar(avatar: string | undefined): avatar is string {
+  return (
+    typeof avatar === "string" &&
+    (avatar.startsWith("data:") || avatar.startsWith("http") || avatar.startsWith("blob:"))
+  );
+}
+
 const NAV_COLLAPSED_KEY = "ds_nav_collapsed";
 
-export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
+export function NavRail({ selected, onSelect, onSwitchProfile, localProfile, localProfileCount = 0, localMultiUserEnabled = false }: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   // Collapsed (icons-only) side rail - an ephemeral UI preference persisted to
   // localStorage. Reflected on the root so the layout var + content inset track.
@@ -160,12 +173,14 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
   const showProfileSwitch = shouldShowProfileSwitch({
     serverMode,
     hasHandler: onSwitchProfile != null,
-    profileCount: profiles.length,
+    profileCount: serverMode ? profiles.length : (localMultiUserEnabled ? localProfileCount : 0),
+    multiUserEnabled: localMultiUserEnabled,
   });
-  const activeProfile =
+  const serverActiveProfile =
     session != null
       ? profiles.find((p) => p.id === session.profileId) ?? null
       : null;
+  const activeName = serverMode ? session?.displayName ?? "profile" : localProfile?.name ?? "profile";
 
   function selectScreen(id: ScreenId) {
     setMoreOpen(false);
@@ -217,15 +232,21 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
                 onSwitchProfile?.();
               }}
               title="Switch profile"
-              aria-label={`Switch profile (current: ${session?.displayName ?? "profile"})`}
+              aria-label={`Switch profile (current: ${activeName})`}
             >
               <span className="nav-rail-icon">
                 <span
                   className="nav-rail-profile-avatar"
-                  style={{ background: activeProfile?.avatarColor ?? "#475569" }}
+                  style={{ background: serverMode ? serverActiveProfile?.avatarColor ?? "#475569" : localProfile?.color ?? "#475569" }}
                   aria-hidden
                 >
-                  {initialOf(session?.displayName ?? "?")}
+                  {serverMode ? (
+                    initialOf(session?.displayName ?? "?")
+                  ) : isImageAvatar(localProfile?.avatar) ? (
+                    <img src={localProfile.avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} />
+                  ) : (
+                    localProfile?.avatar || initialOf(activeName)
+                  )}
                 </span>
               </span>
               <span className="nav-rail-label">Switch</span>

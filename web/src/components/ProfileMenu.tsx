@@ -6,6 +6,8 @@
 
 import { useRef, useState } from "react";
 import { useAppStore } from "../store/AppStore";
+import { isServerMode } from "../lib/serverMode";
+import { updateProfileRecord } from "../storage/ProfileRegistry";
 import { Icon } from "./Icon";
 import { PRESET_AVATARS } from "./AvatarPresets";
 import "./ProfileMenu.css";
@@ -48,7 +50,7 @@ async function fileToAvatarDataURL(file: File): Promise<string> {
 }
 
 export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
-  const { settings, updateSettings } = useAppStore();
+  const { settings, updateSettings, activeProfile, refreshProfiles } = useAppStore();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -56,6 +58,11 @@ export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
   const name = (settings.userName ?? "").trim();
   const avatar = settings.userAvatar ?? "";
   const initial = (name || "You").charAt(0).toUpperCase();
+
+  const syncLocalProfile = (patch: { name?: string; avatar?: string }) => {
+    if (isServerMode() || activeProfile == null) return;
+    void updateProfileRecord(activeProfile.id, patch).then(() => refreshProfiles());
+  };
 
   const pickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -65,6 +72,7 @@ export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
     try {
       const dataUrl = await fileToAvatarDataURL(file);
       updateSettings({ ...settings, userAvatar: dataUrl });
+      syncLocalProfile({ avatar: dataUrl });
     } catch {
       /* ignore - keep the previous avatar */
     } finally {
@@ -109,7 +117,10 @@ export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
                 placeholder="Your name"
                 maxLength={40}
                 onChange={(e) =>
-                  updateSettings({ ...settings, userName: e.target.value })
+                  (() => {
+                    updateSettings({ ...settings, userName: e.target.value });
+                    syncLocalProfile({ name: e.target.value });
+                  })()
                 }
                 aria-label="Your name"
               />
@@ -130,7 +141,10 @@ export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
                   type="button"
                   className="profile-menu-action"
                   disabled={busy}
-                  onClick={() => updateSettings({ ...settings, userAvatar: "" })}
+                  onClick={() => {
+                    updateSettings({ ...settings, userAvatar: "" });
+                    syncLocalProfile({ avatar: "" });
+                  }}
                 >
                   <Icon name="trash" size={16} />
                   Remove
@@ -155,7 +169,10 @@ export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
                     aria-pressed={avatar === preset.dataUrl}
                     title={preset.label}
                     onClick={() =>
-                      updateSettings({ ...settings, userAvatar: preset.dataUrl })
+                      (() => {
+                        updateSettings({ ...settings, userAvatar: preset.dataUrl });
+                        syncLocalProfile({ avatar: preset.dataUrl });
+                      })()
                     }
                   >
                     <img src={preset.dataUrl} alt="" />

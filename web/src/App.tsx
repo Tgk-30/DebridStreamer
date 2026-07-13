@@ -48,8 +48,12 @@ import { InstallPrompt, isInstallPromptEligible } from "./components/InstallProm
 // Eager: it's always mounted (self-contained) and owns the global ⌘K listener, so
 // code-splitting it would leave the shortcut dead until its chunk resolved.
 import { CommandPalette } from "./components/CommandPalette";
+// Eager (not lazy): the lock screen must paint in the SAME commit as the app
+// shell, or a code-split chunk load would flash a protected profile's content
+// behind a null Suspense fallback before the gate appears.
+import { LocalProfilePicker } from "./components/LocalProfilePicker";
 import { isSmartPreloadEnabled, whenIdle } from "./lib/smartPreload";
-import { useAppStore } from "./store/AppStore";
+import { isLocalProfileUnlocked, useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
 import { isServerMode } from "./lib/serverMode";
 import { isTauri } from "./lib/tauri";
@@ -275,11 +279,15 @@ export function FirstRunHost() {
 }
 
 export function App() {
-  const { route, navigate, detailItem, browseContext, openDetail, search, settings, simpleMode, services } =
+  const { route, navigate, detailItem, browseContext, openDetail, search, settings, simpleMode, services, activeProfile, multiUserEnabled = false, profiles = [] } =
     useAppStore();
 
-  // "Who's watching" picker visibility (Server Mode only; opened from the rail).
+  // "Who's watching" picker visibility, server or Local Mode.
   const [profilePickerOpen, setProfilePickerOpen] = useState(false);
+  // A password lock is independent of the "enable multiple profiles" toggle:
+  // once a profile has a password it stays gated until unlocked, even if
+  // multi-user is later switched off (otherwise the toggle silently voids it).
+  const localProfileLocked = !isServerMode() && activeProfile?.passwordHash != null && !isLocalProfileUnlocked(activeProfile.id);
 
   // First-run feature tour. App only mounts past the setup wizards, so this is
   // the moment to greet a new user. Shown once (localStorage flag); existing
@@ -441,7 +449,12 @@ export function App() {
     if (!isTauri() || isServerMode()) return;
     const manager = startDownloadsRuntime(getStore(), services.debrid);
     return () => stopDownloadsRuntime(manager);
-  }, [services.debrid]);
+    // activeProfile?.id is in the deps so a Local Mode profile switch rebinds
+    // the runtime to the NEW profile's Store. Without it, two profiles sharing
+    // one debrid token keep services.debrid referentially identical, the effect
+    // never re-runs, and the DownloadManager keeps writing to the previous
+    // profile's now-closed database.
+  }, [services.debrid, activeProfile?.id]);
 
   // If the current screen is hidden under the active modes (e.g. the user flips
   // to Simple while on Assistant/Debrid, or is in Server Mode), redirect to
@@ -475,6 +488,9 @@ export function App() {
         selected={route}
         onSelect={navigate}
         onSwitchProfile={() => setProfilePickerOpen(true)}
+        localProfile={activeProfile}
+        localProfileCount={profiles.length}
+        localMultiUserEnabled={multiUserEnabled}
       />
 
       <main className="app-content">
@@ -482,7 +498,7 @@ export function App() {
         {showsGlobalSearch && (
           <ProfileMenu
             onSwitchProfile={() => setProfilePickerOpen(true)}
-            showSwitch={isServerMode()}
+            showSwitch={isServerMode() || (multiUserEnabled && profiles.length > 1)}
           />
         )}
 
@@ -529,10 +545,13 @@ export function App() {
           A null Suspense fallback is correct here: these are modals, so "nothing
           for a frame" is invisible until the chunk resolves. */}
       <Suspense fallback={null}>
-        {/* "Who's watching" picker overlay (Server Mode only) - mounts above
-            everything when opened from the rail's profile switcher. */}
-        {profilePickerOpen && (
+        {profilePickerOpen && (isServerMode() ? (
           <ProfilePicker onClose={() => setProfilePickerOpen(false)} />
+        ) : (
+          <LocalProfilePicker onClose={() => setProfilePickerOpen(false)} />
+        ))}
+        {localProfileLocked && (
+          <LocalProfilePicker mode="lock" onClose={() => {}} />
         )}
 
         {/* ⌘K quick switcher - self-contained; hidden until invoked. */}

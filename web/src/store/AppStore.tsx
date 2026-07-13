@@ -49,11 +49,31 @@ import type {
   PlaybackPrefs,
   WatchHistoryRecord,
 } from "../storage/models";
-import { getStore } from "../storage";
+import { getStore, swapLocalProfileStore } from "../storage";
 import { RemoteStore } from "../storage/RemoteStore";
 import { AutoResolveScheduler } from "../lib/autoResolve";
 import { isServerMode } from "../lib/serverMode";
 import { useServerSession } from "../lib/ServerSessionContext";
+import { verifyPassword } from "../lib/passwordHash";
+import {
+  dbNameForProfile,
+  ensureDefaultProfile,
+  getActiveProfileId,
+  getProfile,
+  isMultiUserEnabled,
+  listProfiles,
+  setActiveProfileId,
+  updateProfileRecord,
+  type LocalProfile,
+} from "../storage/ProfileRegistry";
+
+// Password unlocks deliberately live only for this renderer session. A reload
+// returns protected Local Mode profiles to their lock screen.
+const unlockedProfileIds = new Set<string>();
+
+export function isLocalProfileUnlocked(id: string): boolean {
+  return unlockedProfileIds.has(id);
+}
 
 export interface AppStore {
   // Routing
@@ -115,6 +135,16 @@ export interface AppStore {
    * continue-watching / settings). Called after a Server-Mode "who's watching"
    * profile switch so the UI reflects the newly-active profile's data. */
   reloadProfileData: () => Promise<void>;
+  /** Local Mode profile registry state. Server Mode continues to use its
+   * session profile context and never reads this registry. */
+  activeProfile: LocalProfile | null;
+  profiles: LocalProfile[];
+  multiUserEnabled: boolean;
+  refreshProfiles: () => Promise<void>;
+  switchLocalProfile: (
+    id: string,
+    password?: string,
+  ) => Promise<{ ok: boolean; reason?: "bad-password" | "not-found" }>;
   /** Record a real resume position (called from the player). For series pass
    *  the playing episode's id (`s2e5`); movies omit it / pass null. */
   recordResume: (
@@ -150,6 +180,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   // first-run wizard waits for this so its choice (e.g. Advanced → simpleMode
   // false) isn't racily clobbered by a late hydration setSettings().
   const [hydrated, setHydrated] = useState(false);
+  const [activeProfile, setActiveProfile] = useState<LocalProfile | null>(null);
+  const [profiles, setProfiles] = useState<LocalProfile[]>([]);
+  const [multiUserEnabled, setMultiUserEnabledState] = useState(true);
 
   // Hydrate everything from the Store once on mount.
   useEffect(() => {
@@ -159,6 +192,37 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       // blocked/corrupt, or a transient RemoteStore network error in Server Mode)
       // must degrade that one slice to a safe default - never reject the whole
       // Promise.all and leave `hydrated` false forever (a permanent blank screen).
+      // Resolve Local Mode's active database before any per-profile read. The
+      // default keeps the literal legacy database name and therefore never
+      // closes or migrates an existing single-user installation at boot.
+      if (!isServerMode()) {
+        // The whole profile-resolution chain is guarded: if the registry DB is
+        // blocked/corrupt/quota-denied it must degrade to the implicit single
+        // user on the legacy "debridstreamer" DB (no swap), NEVER reject before
+        // setHydrated(true) and strand an existing user on a permanent spinner.
+        try {
+          const bootstrap = loadSettings();
+          const defaultProfile = await ensureDefaultProfile({
+            name: bootstrap.userName,
+            avatar: bootstrap.userAvatar,
+          });
+          const activeId = (await getActiveProfileId()) ?? defaultProfile.id;
+          const active = (await getProfile(activeId)) ?? defaultProfile;
+          if (!active.isDefault) await swapLocalProfileStore(dbNameForProfile(active));
+          const [registryProfiles, enabled] = await Promise.all([
+            listProfiles(),
+            isMultiUserEnabled(),
+          ]);
+          if (cancelled) return;
+          setActiveProfile(active);
+          setProfiles(registryProfiles);
+          setMultiUserEnabledState(enabled);
+        } catch {
+          // Registry unavailable: stay on the already-open default DB and fall
+          // through to hydration so the app still opens on the user's data.
+          if (cancelled) return;
+        }
+      }
       const [loadedSettings, wl, hist, cw, cached] = await Promise.all([
         loadSettingsFromStore().catch(() => loadSettings()),
         loadWatchlist().catch(() => []),
@@ -207,17 +271,55 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const reloadProfileData = useCallback(async () => {
     const store = getStore();
     if (store instanceof RemoteStore) store.resetProfileCache();
-    const [loadedSettings, wl, hist, cw] = await Promise.all([
+    const [loadedSettings, wl, hist, cw, cached] = await Promise.all([
       loadSettingsFromStore(),
       loadWatchlist(),
       loadHistory(),
       loadContinueWatching(),
+      store.listCachedResolutions(),
     ]);
     setSettings(loadedSettings);
     setWatchlist(wl);
     setHistory(hist);
     setContinueWatching(cw);
+    const map: Record<string, CachedResolutionRecord> = {};
+    for (const row of cached) map[row.mediaId] = row;
+    setCachedResolutions(map);
+    // Settings update changes serviceConfigKey, so useMemo rebuilds clients for
+    // the newly selected Local Mode profile without a separate service reset.
   }, []);
+
+  const refreshProfiles = useCallback(async () => {
+    if (isServerMode()) return;
+    const [nextProfiles, enabled, activeId] = await Promise.all([
+      listProfiles(),
+      isMultiUserEnabled(),
+      getActiveProfileId(),
+    ]);
+    setProfiles(nextProfiles);
+    setMultiUserEnabledState(enabled);
+    setActiveProfile(nextProfiles.find((profile) => profile.id === activeId) ?? null);
+  }, []);
+
+  const switchLocalProfile = useCallback(async (
+    id: string,
+    password?: string,
+  ): Promise<{ ok: boolean; reason?: "bad-password" | "not-found" }> => {
+    if (isServerMode()) return { ok: false, reason: "not-found" };
+    const profile = await getProfile(id);
+    if (profile == null) return { ok: false, reason: "not-found" };
+    if (profile.passwordHash != null) {
+      const valid = await verifyPassword(password ?? "", profile.passwordHash);
+      if (!valid) return { ok: false, reason: "bad-password" };
+      unlockedProfileIds.add(id);
+    }
+    await swapLocalProfileStore(dbNameForProfile(profile));
+    await setActiveProfileId(id);
+    await updateProfileRecord(id, { lastUsedAt: Date.now() });
+    await reloadProfileData();
+    await refreshProfiles();
+    return { ok: true };
+  }, [refreshProfiles, reloadProfileData]);
 
   // Most settings are presentation or playback preferences. Rebuilding every
   // API client for those changes also used to restart the app-wide download
@@ -541,6 +643,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       removeFromWatchlist,
       importToWatchlist,
       reloadProfileData,
+      activeProfile,
+      profiles,
+      multiUserEnabled,
+      refreshProfiles,
+      switchLocalProfile,
       recordResume,
     }),
     [
@@ -570,6 +677,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       removeFromWatchlist,
       importToWatchlist,
       reloadProfileData,
+      activeProfile,
+      profiles,
+      multiUserEnabled,
+      refreshProfiles,
+      switchLocalProfile,
       recordResume,
     ],
   );

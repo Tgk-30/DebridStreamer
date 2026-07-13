@@ -59,6 +59,14 @@ import { fetchAvailableModels } from "../services/ai/ModelCatalog";
 import { readModelCache, writeModelCache } from "../services/ai/ModelCache";
 import { appFetch } from "../lib/http";
 import { getStore } from "../storage";
+import {
+  createProfileRecord,
+  deleteProfileRecord,
+  setMultiUserEnabled,
+  updateProfileRecord,
+  type LocalProfile,
+} from "../storage/ProfileRegistry";
+import { hashPassword } from "../lib/passwordHash";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import { InfoTip } from "../components/InfoTip";
@@ -337,12 +345,14 @@ type Tab =
   | "playback"
   | "updates"
   | "install"
-  | "server";
+  | "server"
+  | "profiles";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "playback", label: "Playback" },
   { id: "install", label: "Install & setup" },
+  { id: "profiles", label: "Profiles" },
   { id: "updates", label: "Updates" },
   { id: "server", label: "Server" },
   { id: "keys", label: "API keys" },
@@ -358,6 +368,7 @@ const SIMPLE_TABS = new Set<Tab>([
   "install",
   "keys",
   "debrid",
+  "profiles",
 ]);
 
 /** Pure, testable tab filter for the current modes. */
@@ -367,6 +378,7 @@ export function visibleTabs(opts: {
 }): { id: Tab; label: string }[] {
   return TABS.filter((t) => {
     if (!opts.serverMode && t.id === "server") return false;
+    if (opts.serverMode && t.id === "profiles") return false;
     if (opts.simpleMode && !SIMPLE_TABS.has(t.id)) return false;
     return true;
   });
@@ -605,7 +617,7 @@ async function serverRequest<T>(
 }
 
 export function Settings() {
-  const { settings, updateSettings, simpleMode } = useAppStore();
+  const { settings, updateSettings, simpleMode, activeProfile, profiles, multiUserEnabled, refreshProfiles } = useAppStore();
   const serverSession = useServerSession();
   const setServerSession = useSetServerSession();
   // Land where the user's next step is: an unconfigured profile (no debrid
@@ -792,10 +804,124 @@ export function Settings() {
         {tab === "keys" && <KeysTab draft={draft} patch={patch} />}
         {tab === "debrid" && <DebridTab draft={draft} patch={patch} />}
         {tab === "sources" && <SourcesTab draft={draft} patch={patch} />}
+        {tab === "profiles" && !serverMode && (
+          <ProfilesTab
+            activeProfile={activeProfile}
+            profiles={profiles}
+            multiUserEnabled={multiUserEnabled}
+            refreshProfiles={refreshProfiles}
+            settings={settings}
+            updateSettings={updateSettings}
+          />
+        )}
       </div>
       <p className="settings-version t-secondary">
         DebridStreamer v{appVersion ?? "…"}
       </p>
+    </div>
+  );
+}
+
+function localProfileId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function ProfilesTab({
+  activeProfile,
+  profiles,
+  multiUserEnabled,
+  refreshProfiles,
+  settings,
+  updateSettings,
+}: {
+  activeProfile: LocalProfile | null;
+  profiles: LocalProfile[];
+  multiUserEnabled: boolean;
+  refreshProfiles: () => Promise<void>;
+  settings: AppSettings;
+  updateSettings: (next: AppSettings) => void;
+}) {
+  const [newName, setNewName] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [passwords, setPasswords] = useState<Record<string, string>>({});
+  const canManage = activeProfile?.isAdmin ?? false;
+
+  async function refresh(message?: string) {
+    await refreshProfiles();
+    setMessage(message ?? null);
+  }
+
+  // Editing the ACTIVE profile's identity here must also update the shared
+  // settings.userName/userAvatar the ProfileMenu reads, or the top-right menu
+  // shows a stale name/avatar after a reload (ProfileMenu syncs the other way).
+  function editProfile(profile: LocalProfile, patch: { name?: string; avatar?: string; color?: string }) {
+    void updateProfileRecord(profile.id, patch).then(() => refreshProfiles());
+    if (profile.id === activeProfile?.id) {
+      if (patch.name !== undefined) updateSettings({ ...settings, userName: patch.name });
+      if (patch.avatar !== undefined) updateSettings({ ...settings, userAvatar: patch.avatar });
+    }
+  }
+
+  async function addProfile() {
+    const name = newName.trim();
+    if (!name) return setMessage("Enter a name for the new profile.");
+    await createProfileRecord({
+      id: localProfileId(),
+      name,
+      avatar: "😀",
+      color: "#6366f1",
+      isDefault: false,
+      isAdmin: false,
+      createdAt: Date.now(),
+    });
+    setNewName("");
+    await refresh("Profile added.");
+  }
+
+  async function savePassword(profile: LocalProfile) {
+    const plain = passwords[profile.id] ?? "";
+    if (!plain) return setMessage("Enter a password before saving it.");
+    const passwordHash = await hashPassword(plain);
+    await updateProfileRecord(profile.id, { passwordHash });
+    setPasswords((previous) => ({ ...previous, [profile.id]: "" }));
+    await refresh("Password saved.");
+  }
+
+  async function deleteProfile(profile: LocalProfile) {
+    if (profiles.length <= 1) return setMessage("You need at least one profile.");
+    if (profile.id === activeProfile?.id) return setMessage("Switch to another profile before deleting this one.");
+    await deleteProfileRecord(profile.id);
+    await refresh("Profile deleted. Its data remains in its local database.");
+  }
+
+  return (
+    <div className="settings-fields">
+      <SettingsInfo label="Profiles">
+        Each profile has separate settings, library, watchlist, history, and credentials on this device.
+      </SettingsInfo>
+      <label className="settings-field">
+        <span className="settings-label-line"><span className="settings-label">Enable multiple profiles</span><InfoTip label="About multiple profiles">Turning this off keeps only the current profile active. It does not delete other profiles or their data.</InfoTip></span>
+        <input type="checkbox" checked={multiUserEnabled} onChange={(event) => void setMultiUserEnabled(event.target.checked).then(() => refreshProfiles())} />
+      </label>
+      {profiles.map((profile) => (
+        <div className="settings-source-card" key={profile.id}>
+          <div className="settings-source-card-head"><strong>{profile.name}{profile.id === activeProfile?.id ? " (current)" : ""}</strong>{profile.isAdmin && <span className="chip is-active">Admin</span>}</div>
+          <div className="settings-source-grid">
+            <Field label="Name"><input value={profile.name} maxLength={40} disabled={!canManage} onChange={(event) => editProfile(profile, { name: event.target.value })} /></Field>
+            <Field label="Avatar"><input value={profile.avatar ?? ""} maxLength={80} disabled={!canManage} onChange={(event) => editProfile(profile, { avatar: event.target.value })} /></Field>
+            <Field label="Color"><input type="color" value={profile.color ?? "#475569"} disabled={!canManage} onChange={(event) => editProfile(profile, { color: event.target.value })} /></Field>
+          </div>
+          {canManage && <div className="settings-source-actions">
+            <input type="password" value={passwords[profile.id] ?? ""} placeholder={profile.passwordHash ? "New password" : "Set password"} onChange={(event) => setPasswords((previous) => ({ ...previous, [profile.id]: event.target.value }))} />
+            <button type="button" className="btn" onClick={() => void savePassword(profile)}>{profile.passwordHash ? "Change password" : "Set password"}</button>
+            {profile.passwordHash && <button type="button" className="btn" onClick={() => void updateProfileRecord(profile.id, { passwordHash: undefined }).then(() => refresh("Password cleared."))}>Clear password</button>}
+            {!profile.isDefault && <button type="button" className="btn" onClick={() => void deleteProfile(profile)}>Delete</button>}
+          </div>}
+        </div>
+      ))}
+      {canManage && <div className="settings-source-actions"><input value={newName} maxLength={40} placeholder="New profile name" onChange={(event) => setNewName(event.target.value)} /><button type="button" className="btn btn-prominent" onClick={() => void addProfile()}>Add profile</button></div>}
+      {message && <p className="settings-note" role="status">{message}</p>}
     </div>
   );
 }

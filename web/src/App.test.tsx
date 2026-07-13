@@ -462,6 +462,7 @@ describe("ProfilePicker gating", () => {
   });
 
   it("opens the picker from the rail and closes it via onClose", async () => {
+    serverModeValue = true;
     render(<App />);
     fireEvent.click(screen.getByTestId("nav-switch-profile"));
     // ProfilePicker is code-split (React.lazy) - await its chunk.

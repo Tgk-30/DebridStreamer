@@ -24,6 +24,15 @@ vi.mock("../lib/tauri", () => ({
 vi.mock("./DexieStore", () => ({
   DexieStore: class {
     readonly kind = "dexie";
+    readonly name: string;
+    // Mirror the real signature: default arg is the legacy "debridstreamer" DB.
+    constructor(name = "debridstreamer") {
+      this.name = name;
+    }
+    async close() {}
+    async open() {
+      return this;
+    }
   },
 }));
 
@@ -124,6 +133,20 @@ describe("getSecretStore()", () => {
     const secret = mod.getSecretStore() as unknown as { dexie: unknown };
     // getSecretStore's backing Dexie is the very same instance getStore() returns.
     expect(secret.dexie).toBe(store);
+  });
+
+  it("does NOT keychain-migrate a non-default profile database under Tauri", async () => {
+    tauri = true;
+    const mod = await freshIndex();
+    await mod.swapLocalProfileStore("debridstreamer_p_abc");
+    // A non-default profile DB must return the RAW Dexie secret store (kind
+    // "dexie"), never the keychain-migrating wrapper (which has no `kind`), so
+    // it can never re-read the OS keychain and absorb the owner's secrets.
+    const secret = mod.getSecretStore() as unknown as { kind?: string };
+    expect(secret.kind).toBe("dexie");
+    // The default DB, by contrast, IS wrapped (no `kind` on the wrapper).
+    await mod.swapLocalProfileStore("debridstreamer");
+    expect((mod.getSecretStore() as unknown as { kind?: string }).kind).toBeUndefined();
   });
 });
 

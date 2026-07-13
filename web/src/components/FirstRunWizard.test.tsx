@@ -49,6 +49,14 @@ vi.mock("../lib/onboardingValidation", () => ({
   testOmdbKey: vi.fn(),
   testDebridToken: vi.fn(),
 }));
+vi.mock("../lib/passwordHash", () => ({
+  hashPassword: () => Promise.resolve("pbkdf2:v1:test"),
+}));
+vi.mock("../storage/ProfileRegistry", () => ({
+  ensureDefaultProfile: () => Promise.resolve({ id: "default" }),
+  updateProfileRecord: () => Promise.resolve(),
+  setMultiUserEnabled: () => Promise.resolve(),
+}));
 
 import { testDebridToken, testOmdbKey, testTmdbKey } from "../lib/onboardingValidation";
 import { FirstRunWizard } from "./FirstRunWizard";
@@ -62,6 +70,13 @@ const testDebridTokenMock = vi.mocked(testDebridToken);
 async function skipAi(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { name: "Add AI recommendations" });
   await user.click(screen.getByRole("button", { name: /Skip - add AI later/ }));
+  await screen.findByRole("heading", { name: "Set up profiles" });
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+}
+
+async function finishProfiles(user: ReturnType<typeof userEvent.setup>) {
+  await screen.findByRole("heading", { name: "Set up profiles" });
+  await user.click(screen.getByRole("button", { name: "Continue" }));
 }
 
 /** Click through choose → catalog with a validated key, landing on streaming. */
@@ -112,6 +127,8 @@ describe("FirstRunWizard", () => {
     // Skip anyway completes without touching settings.
     await user.click(screen.getByRole("button", { name: "Skip for now" }));
     await user.click(screen.getByRole("button", { name: "Skip anyway" }));
+    await screen.findByRole("heading", { name: "Set up profiles" });
+    await user.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(markOnboardingComplete).toHaveBeenCalledTimes(1);
     expect(updateSettings).not.toHaveBeenCalled();
@@ -330,6 +347,8 @@ describe("FirstRunWizard", () => {
     const onDone = vi.fn();
     render(<FirstRunWizard onDone={onDone} />);
     await user.click(screen.getByText("Advanced setup"));
+    await screen.findByRole("heading", { name: "Set up profiles" });
+    await user.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ simpleMode: false }),
@@ -437,6 +456,8 @@ describe("FirstRunWizard", () => {
     render(<FirstRunWizard onDone={onDone} />);
     await user.click(screen.getByText("Host for my family"));
     await user.click(screen.getByRole("button", { name: "Open Settings" }));
+    await screen.findByRole("heading", { name: "Set up profiles" });
+    await user.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ simpleMode: true }),
@@ -664,6 +685,7 @@ describe("FirstRunWizard - optional AI step", () => {
     render(<FirstRunWizard onDone={onDone} />);
     await reachAiStep(user);
     await user.click(screen.getByRole("button", { name: /Skip - add AI later/ }));
+    await finishProfiles(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     // AI key left untouched (empty), and Save & finish was disabled while empty.
     expect(updateSettings).toHaveBeenCalledWith(
@@ -678,6 +700,7 @@ describe("FirstRunWizard - optional AI step", () => {
     await reachAiStep(user);
     await user.type(screen.getByLabelText("API key"), "sk-ant-123");
     await user.click(screen.getByRole("button", { name: "Save & finish" }));
+    await finishProfiles(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ aiProvider: "anthropic", aiApiKey: "sk-ant-123" }),
@@ -696,6 +719,7 @@ describe("FirstRunWizard - optional AI step", () => {
     await user.clear(endpoint);
     await user.type(endpoint, "http://localhost:1234");
     await user.click(screen.getByRole("button", { name: "Save & finish" }));
+    await finishProfiles(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({

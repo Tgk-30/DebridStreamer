@@ -55,7 +55,12 @@ export function getSecretStore(): SecretStore {
       return secretInstance;
     }
     const dexie = getDexieStore();
-    secretInstance = isTauri() ? new MigratedSecretStore(dexie) : dexie;
+    // The keychain->local migration only ever runs against the legacy default
+    // database. A non-default profile's DB must NEVER re-read the OS keychain,
+    // or it could absorb the household owner's secrets that survived the default
+    // profile's drain. Non-default profiles use the raw Dexie secret store.
+    secretInstance =
+      isTauri() && dexie.name === "debridstreamer" ? new MigratedSecretStore(dexie) : dexie;
   }
   return secretInstance;
 }
@@ -89,6 +94,24 @@ function getDexieStore(): DexieStore {
     dexieInstance = new DexieStore();
   }
   return dexieInstance;
+}
+
+/** The currently selected Local Mode database, if one has been instantiated. */
+export function currentDexieDbName(): string | null {
+  return dexieInstance?.name ?? null;
+}
+
+/** Swap the process-wide Local Mode Store to a profile-specific database. */
+export async function swapLocalProfileStore(dbName: string): Promise<void> {
+  if (configuredServerURL() != null) {
+    throw new Error("Local profile switching is unavailable in Server Mode");
+  }
+  if (dexieInstance?.name === dbName) return;
+  if (dexieInstance != null) await dexieInstance.close();
+  dexieInstance = new DexieStore(dbName);
+  instance = dexieInstance;
+  secretInstance = null;
+  await dexieInstance.open();
 }
 
 function createStore(): Store {

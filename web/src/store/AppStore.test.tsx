@@ -88,9 +88,36 @@ const fakeStore = {
   resetProfileCache: vi.fn(),
 };
 const getStore = vi.fn(() => fakeStore);
+const swapLocalProfileStore = vi.fn<(name: string) => Promise<void>>();
 
 vi.mock("../storage", () => ({
   getStore: () => getStore(),
+  swapLocalProfileStore: (name: string) => swapLocalProfileStore(name),
+}));
+
+const registryProfiles = vi.hoisted(() => [
+  { id: "default", name: "You", isDefault: true, isAdmin: true, createdAt: 1 },
+]);
+const ensureDefaultProfile = vi.fn();
+const getActiveProfileId = vi.fn();
+const getProfile = vi.fn();
+const listProfiles = vi.fn();
+const isMultiUserEnabled = vi.fn();
+const setActiveProfileId = vi.fn();
+const updateProfileRecord = vi.fn();
+vi.mock("../storage/ProfileRegistry", () => ({
+  dbNameForProfile: (profile: { id: string; isDefault: boolean }) => profile.isDefault ? "debridstreamer" : `debridstreamer_p_${profile.id}`,
+  ensureDefaultProfile: () => ensureDefaultProfile(),
+  getActiveProfileId: () => getActiveProfileId(),
+  getProfile: (id: string) => getProfile(id),
+  listProfiles: () => listProfiles(),
+  isMultiUserEnabled: () => isMultiUserEnabled(),
+  setActiveProfileId: (id: string) => setActiveProfileId(id),
+  updateProfileRecord: (id: string, patch: unknown) => updateProfileRecord(id, patch),
+}));
+const verifyPassword = vi.fn();
+vi.mock("../lib/passwordHash", () => ({
+  verifyPassword: (plain: string, hash: string) => verifyPassword(plain, hash),
 }));
 
 // RemoteStore identity matters: AppStore does `store instanceof RemoteStore`.
@@ -233,6 +260,15 @@ beforeEach(() => {
   deleteCachedResolution.mockResolvedValue(undefined);
   isInWatchlist.mockResolvedValue(false);
   addToWatchlist.mockResolvedValue(undefined);
+  ensureDefaultProfile.mockResolvedValue(registryProfiles[0]);
+  getActiveProfileId.mockResolvedValue("default");
+  getProfile.mockImplementation(async (id: string) => registryProfiles.find((profile) => profile.id === id));
+  listProfiles.mockResolvedValue(registryProfiles);
+  isMultiUserEnabled.mockResolvedValue(true);
+  setActiveProfileId.mockResolvedValue(undefined);
+  updateProfileRecord.mockResolvedValue(undefined);
+  swapLocalProfileStore.mockResolvedValue(undefined);
+  verifyPassword.mockResolvedValue(true);
   schedulerKick.mockResolvedValue(null);
   getStore.mockReturnValue(fakeStore);
   isServerMode.mockReturnValue(false);
@@ -252,6 +288,84 @@ describe("useAppStore guard", () => {
       /must be used within an <AppStoreProvider>/,
     );
     spy.mockRestore();
+  });
+});
+
+describe("Local profile switching", () => {
+  it("blocks a wrong password before swapping the Local Mode database", async () => {
+    const locked = {
+      id: "kid", name: "Kid", isDefault: false, isAdmin: false,
+      passwordHash: "pbkdf2:v1:test", createdAt: 2,
+    };
+    registryProfiles.push(locked);
+    getProfile.mockImplementation(async (id: string) => registryProfiles.find((profile) => profile.id === id));
+    verifyPassword.mockResolvedValue(false);
+    const { result } = await renderStore();
+
+    let switched: { ok: boolean; reason?: string } | undefined;
+    await act(async () => {
+      switched = await result.current.switchLocalProfile("kid", "wrong");
+    });
+
+    expect(switched).toEqual({ ok: false, reason: "bad-password" });
+    expect(swapLocalProfileStore).not.toHaveBeenCalled();
+    registryProfiles.pop();
+  });
+
+  it("does NOT swap the database at boot for the default profile (zero migration)", async () => {
+    await renderStore();
+    // The default profile IS the already-open legacy "debridstreamer" DB, so an
+    // existing single user must never close/reopen it at boot.
+    expect(swapLocalProfileStore).not.toHaveBeenCalled();
+  });
+
+  it("swaps to the active non-default profile's database at boot", async () => {
+    const other = { id: "abc", name: "Other", isDefault: false, isAdmin: false, createdAt: 2 };
+    registryProfiles.push(other);
+    getActiveProfileId.mockResolvedValue("abc");
+    await renderStore();
+    expect(swapLocalProfileStore).toHaveBeenCalledWith("debridstreamer_p_abc");
+    registryProfiles.pop();
+  });
+
+  it("switching an unprotected profile swaps its DB, marks it active, and reloads", async () => {
+    const other = { id: "abc", name: "Other", isDefault: false, isAdmin: false, createdAt: 2 };
+    registryProfiles.push(other);
+    const { result } = await renderStore();
+    expect(swapLocalProfileStore).not.toHaveBeenCalled(); // booted on default
+    getActiveProfileId.mockResolvedValue("abc");
+
+    let res: { ok: boolean; reason?: string } | undefined;
+    await act(async () => {
+      res = await result.current.switchLocalProfile("abc");
+    });
+
+    expect(res).toEqual({ ok: true });
+    expect(swapLocalProfileStore).toHaveBeenCalledWith("debridstreamer_p_abc");
+    expect(setActiveProfileId).toHaveBeenCalledWith("abc");
+    expect(updateProfileRecord).toHaveBeenCalledWith("abc", expect.objectContaining({ lastUsedAt: expect.any(Number) }));
+    expect(result.current.activeProfile?.id).toBe("abc");
+    registryProfiles.pop();
+  });
+
+  it("returns not-found (no swap) when the target profile is gone", async () => {
+    const { result } = await renderStore();
+    getProfile.mockResolvedValueOnce(undefined);
+    let res: { ok: boolean; reason?: string } | undefined;
+    await act(async () => {
+      res = await result.current.switchLocalProfile("ghost");
+    });
+    expect(res).toEqual({ ok: false, reason: "not-found" });
+    expect(swapLocalProfileStore).not.toHaveBeenCalled();
+  });
+
+  it("still hydrates when the profile registry throws (no permanent spinner)", async () => {
+    ensureDefaultProfile.mockRejectedValue(new Error("idb blocked"));
+    // renderStore resolves only once hydrated === true; a boot that rejected the
+    // profile chain without the guard would hang here and fail the test.
+    const { result } = await renderStore();
+    expect(result.current.hydrated).toBe(true);
+    expect(result.current.activeProfile).toBeNull();
   });
 });
 
