@@ -33,12 +33,21 @@ export function PlayerPauseOverlay({
   nowPlaying?: NowPlayingMetadata | null;
   onResume: () => void;
 }) {
+  const runtime = runtimeLabel(nowPlaying?.runtimeMinutes);
   const metadata = [
-    nowPlaying?.episodeLabel ?? null,
-    nowPlaying?.year != null ? String(nowPlaying.year) : null,
-    runtimeLabel(nowPlaying?.runtimeMinutes),
-    nowPlaying?.rating != null ? `★ ${nowPlaying.rating.toFixed(1)}` : null,
-  ].filter((item): item is string => item != null && item.length > 0);
+    nowPlaying?.episodeLabel
+      ? { label: nowPlaying.episodeLabel, kind: "episode" }
+      : null,
+    nowPlaying?.year != null
+      ? { label: String(nowPlaying.year), kind: "year" }
+      : null,
+    runtime ? { label: runtime, kind: "runtime" } : null,
+    nowPlaying?.rating != null
+      ? { label: `★ ${nowPlaying.rating.toFixed(1)}`, kind: "rating" }
+      : null,
+  ].filter(
+    (item): item is { label: string; kind: string } => item != null,
+  );
   const artwork = nowPlaying?.backdropUrl ?? nowPlaying?.posterUrl ?? null;
 
   return (
@@ -60,7 +69,16 @@ export function PlayerPauseOverlay({
         <span className="player-pause-eyebrow">Paused</span>
         <h2>{title}</h2>
         {metadata.length > 0 && (
-          <p className="player-pause-meta">{metadata.join(" · ")}</p>
+          <p
+            className="player-pause-meta"
+            aria-label={metadata.map(({ label }) => label).join(" · ")}
+          >
+            {metadata.map(({ label, kind }) => (
+              <span className={`player-pause-meta-item is-${kind}`} key={kind}>
+                {label}
+              </span>
+            ))}
+          </p>
         )}
         {nowPlaying?.overview && (
           <p className="player-pause-overview">{nowPlaying.overview}</p>

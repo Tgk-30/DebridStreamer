@@ -337,7 +337,13 @@ describe("EmbeddedPlayer playback controls", () => {
     emitProperty("pause", true);
 
     expect(screen.getByRole("button", { name: "Resume playback" })).toBeInTheDocument();
-    expect(screen.getByText("S2 E5 - The Arrival · 2026 · 48m · ★ 8.4")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.classList.contains("player-pause-meta") === true &&
+          element.textContent === "S2 E5 - The Arrival202648m★ 8.4",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("The crew make a difficult discovery.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Resume playback" }));

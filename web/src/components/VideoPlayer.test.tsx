@@ -600,7 +600,13 @@ describe("WebviewPlayer", () => {
       const video = document.querySelector("video.player-video") as HTMLVideoElement;
       fireEvent.pause(video);
       expect(screen.getByRole("button", { name: "Resume playback" })).toBeInTheDocument();
-      expect(screen.getByText("S2 E5 - The Arrival · 2026 · 1h 58m · ★ 7.9")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          (_, element) =>
+            element?.classList.contains("player-pause-meta") === true &&
+            element.textContent === "S2 E5 - The Arrival20261h 58m★ 7.9",
+        ),
+      ).toBeInTheDocument();
 
       await userEvent.click(screen.getByRole("button", { name: "Resume playback" }));
       expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
