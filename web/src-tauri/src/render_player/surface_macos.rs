@@ -15,6 +15,7 @@
 // implements the `VideoSurface` trait (set_rect is a no-op - the host view
 // autoresizes with the content view; detach performs the ordered teardown).
 
+use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
@@ -35,7 +36,9 @@ use objc2_app_kit::{
 };
 use objc2_core_foundation::CFTimeInterval;
 use objc2_core_video::CVTimeStamp;
-use objc2_foundation::{NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize};
+use objc2_foundation::{
+    NSNotification, NSNotificationCenter, NSObject, NSPoint, NSRect, NSSize,
+};
 use objc2_open_gl::{
     CGLChoosePixelFormat, CGLContextObj, CGLLockContext, CGLPixelFormatAttribute,
     CGLPixelFormatObj, CGLUnlockContext,
@@ -166,7 +169,9 @@ struct SurfaceState {
     wrap_has_applied: AtomicBool,
     wrap_restore_pending: AtomicBool,
     pre_wrap_frame: Mutex<Option<FrameSnapshot>>,
-    fullscreen_suspended: AtomicBool,
+    fullscreen_session_active: AtomicBool,
+    fullscreen_enter_in_flight: AtomicBool,
+    fullscreen_exit_in_flight: AtomicBool,
     dead: AtomicBool,
 }
 
@@ -199,7 +204,9 @@ impl SurfaceState {
             wrap_has_applied: AtomicBool::new(false),
             wrap_restore_pending: AtomicBool::new(false),
             pre_wrap_frame: Mutex::new(None),
-            fullscreen_suspended: AtomicBool::new(false),
+            fullscreen_session_active: AtomicBool::new(false),
+            fullscreen_enter_in_flight: AtomicBool::new(false),
+            fullscreen_exit_in_flight: AtomicBool::new(false),
             dead: AtomicBool::new(false),
         })
     }
@@ -219,6 +226,122 @@ impl SurfaceState {
                 "?".to_string()
             },
         )
+    }
+}
+
+fn note_fullscreen_will_enter(surface: &SurfaceState) {
+    // Do not clear contentAspectRatio here. WillEnter is close to AppKit's exit
+    // frame snapshot, and a valid windowed ratio does not need to be rewritten
+    // for fullscreen layout. The live surface reconciles only after DidExit.
+    surface
+        .fullscreen_session_active
+        .store(true, Ordering::Release);
+    surface
+        .fullscreen_enter_in_flight
+        .store(true, Ordering::Release);
+    surface
+        .fullscreen_exit_in_flight
+        .store(false, Ordering::Release);
+}
+
+fn note_fullscreen_did_enter(surface: &SurfaceState) {
+    surface
+        .fullscreen_session_active
+        .store(true, Ordering::Release);
+    surface
+        .fullscreen_enter_in_flight
+        .store(false, Ordering::Release);
+    surface
+        .fullscreen_exit_in_flight
+        .store(false, Ordering::Release);
+}
+
+fn note_fullscreen_will_exit(surface: &SurfaceState) {
+    surface
+        .fullscreen_session_active
+        .store(true, Ordering::Release);
+    surface
+        .fullscreen_enter_in_flight
+        .store(false, Ordering::Release);
+    surface
+        .fullscreen_exit_in_flight
+        .store(true, Ordering::Release);
+}
+
+/// Returns true when this DidExit completed the current fullscreen session.
+/// A nested WillEnter posted by another observer takes precedence.
+fn note_fullscreen_did_exit(surface: &SurfaceState) -> bool {
+    surface
+        .fullscreen_exit_in_flight
+        .store(false, Ordering::Release);
+    if surface
+        .fullscreen_enter_in_flight
+        .load(Ordering::Acquire)
+    {
+        return false;
+    }
+    surface
+        .fullscreen_session_active
+        .store(false, Ordering::Release);
+    true
+}
+
+// A surface can be torn down while its NSWindow is fullscreen. The host view
+// cannot own the eventual cleanup because teardown removes that view and all of
+// its notification registrations. This small observer is retained independently
+// in a main-thread-only registry until the window exits fullscreen or closes.
+struct PostFullscreenCleanupIvars {
+    surface: Arc<SurfaceState>,
+}
+
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[name = "DSPostFullscreenCleanup"]
+    #[ivars = PostFullscreenCleanupIvars]
+    #[thread_kind = MainThreadOnly]
+    struct PostFullscreenCleanup;
+
+    impl PostFullscreenCleanup {
+        #[unsafe(method(windowWillEnterFullScreen:))]
+        fn window_will_enter_full_screen(&self, _notification: &NSNotification) {
+            note_fullscreen_will_enter(&self.ivars().surface);
+        }
+
+        #[unsafe(method(windowDidEnterFullScreen:))]
+        fn window_did_enter_full_screen(&self, _notification: &NSNotification) {
+            note_fullscreen_did_enter(&self.ivars().surface);
+        }
+
+        #[unsafe(method(windowWillExitFullScreen:))]
+        fn window_will_exit_full_screen(&self, _notification: &NSNotification) {
+            note_fullscreen_will_exit(&self.ivars().surface);
+        }
+
+        #[unsafe(method(windowDidExitFullScreen:))]
+        fn window_did_exit_full_screen(&self, _notification: &NSNotification) {
+            let surface = &self.ivars().surface;
+            // Preserve a nested WillEnter from another DidExit observer. If a
+            // new transition has already begun, this helper remains registered
+            // for that fullscreen session's eventual DidExit.
+            if !note_fullscreen_did_exit(surface) {
+                return;
+            }
+            finish_post_fullscreen_cleanup_on_main(self, true, "did-exit-fullscreen");
+        }
+
+        #[unsafe(method(windowWillClose:))]
+        fn window_will_close(&self, _notification: &NSNotification) {
+            finish_post_fullscreen_cleanup_on_main(self, false, "window-close");
+        }
+    }
+);
+
+impl PostFullscreenCleanup {
+    fn new(mtm: MainThreadMarker, surface: Arc<SurfaceState>) -> Retained<Self> {
+        let this = mtm
+            .alloc::<Self>()
+            .set_ivars(PostFullscreenCleanupIvars { surface });
+        unsafe { msg_send![super(this), init] }
     }
 }
 
@@ -535,13 +658,19 @@ define_class!(
 
         #[unsafe(method(windowWillEnterFullScreen:))]
         fn window_will_enter_full_screen(&self, _notification: &NSNotification) {
-            suspend_window_wrap_on_main(&self.ivars().surface, "will-enter-fullscreen");
+            let surface = &self.ivars().surface;
+            note_fullscreen_will_enter(surface);
+            log_fullscreen_state_on_main(surface, "will-enter");
         }
 
         #[unsafe(method(windowDidEnterFullScreen:))]
         fn window_did_enter_full_screen(&self, _notification: &NSNotification) {
             let surface = &self.ivars().surface;
-            suspend_window_wrap_on_main(surface, "did-enter-fullscreen");
+            note_fullscreen_did_enter(surface);
+            log_fullscreen_state_on_main(surface, "did-enter");
+            if surface.dead.load(Ordering::Acquire) {
+                return;
+            }
             // AppKit owns the NSWindow frame during the transition, but the video
             // hierarchy is ours. Repair it against the final screen-sized content
             // bounds even if autoresizing did not invoke setFrameSize.
@@ -554,14 +683,17 @@ define_class!(
 
         #[unsafe(method(windowWillExitFullScreen:))]
         fn window_will_exit_full_screen(&self, _notification: &NSNotification) {
-            // Keep the constraint suspended for the whole transition. It is
-            // restored only by the matching did-exit notification.
-            suspend_window_wrap_on_main(&self.ivars().surface, "will-exit-fullscreen");
+            let surface = &self.ivars().surface;
+            note_fullscreen_will_exit(surface);
+            log_fullscreen_state_on_main(surface, "will-exit");
         }
 
         #[unsafe(method(windowDidExitFullScreen:))]
         fn window_did_exit_full_screen(&self, _notification: &NSNotification) {
-            resume_window_wrap_on_main(&self.ivars().surface);
+            let surface = &self.ivars().surface;
+            note_fullscreen_did_exit(surface);
+            log_fullscreen_state_on_main(surface, "did-exit");
+            resume_window_wrap_on_main(surface);
         }
 
         #[unsafe(method(windowWillClose:))]
@@ -755,7 +887,8 @@ fn queue_geometry_check(surface: Arc<SurfaceState>, log_first_draw_result: bool)
 /// Verify the native hierarchy after CoreAnimation has actually drawn. This runs
 /// after attach, at fullscreen completion, and whenever the rendered target size
 /// changes. If a framework changed the hierarchy or frame, move the host back
-/// below the WKWebView's top-level sibling and re-fill contentView.bounds.
+/// below the WKWebView's top-level sibling and re-fill contentView.bounds. This
+/// reads NSWindow geometry but mutates only NSView and CALayer properties.
 fn verify_and_repair_geometry_on_main(
     surface: &SurfaceState,
     log_event: Option<&str>,
@@ -972,6 +1105,173 @@ fn centered_frame_within_visible(
     NSRect::new(origin, fitted_size)
 }
 
+// NSNotificationCenter does not own selector observers strongly. Keep exactly
+// one post-fullscreen cleanup alive per NSWindow without placing it on the host
+// view that teardown removes. The registry contains raw retained pointers only;
+// all insertion/removal and Objective-C dereferences happen on the main thread.
+static POST_FULLSCREEN_CLEANUPS: OnceLock<Mutex<HashMap<usize, usize>>> =
+    OnceLock::new();
+
+fn post_fullscreen_cleanup_registry() -> &'static Mutex<HashMap<usize, usize>> {
+    POST_FULLSCREEN_CLEANUPS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn take_post_fullscreen_cleanup_on_main(
+    window_ptr: usize,
+    expected_observer_ptr: Option<usize>,
+) -> Option<Retained<PostFullscreenCleanup>> {
+    let raw = {
+        let mut registry = post_fullscreen_cleanup_registry().lock().unwrap();
+        let observer_ptr = *registry.get(&window_ptr)?;
+        if let Some(expected) = expected_observer_ptr {
+            if expected != observer_ptr {
+                return None;
+            }
+        }
+        registry.remove(&window_ptr)
+    }?;
+    unsafe { Retained::from_raw(raw as *mut PostFullscreenCleanup) }
+}
+
+fn discard_window_wrap_state(surface: &SurfaceState) {
+    surface.wrap_needs_resize.store(false, Ordering::Release);
+    surface
+        .wrap_constraint_applied
+        .store(false, Ordering::Release);
+    surface.wrap_has_applied.store(false, Ordering::Release);
+    surface
+        .wrap_restore_pending
+        .store(false, Ordering::Release);
+    surface
+        .fullscreen_session_active
+        .store(false, Ordering::Release);
+    surface
+        .fullscreen_enter_in_flight
+        .store(false, Ordering::Release);
+    surface
+        .fullscreen_exit_in_flight
+        .store(false, Ordering::Release);
+    if let Ok(mut saved) = surface.pre_wrap_frame.lock() {
+        *saved = None;
+    }
+}
+
+fn cancel_post_fullscreen_cleanup_on_main(
+    window_ptr: usize,
+    reason: &str,
+) -> Option<(bool, bool, bool)> {
+    let Some(observer) = take_post_fullscreen_cleanup_on_main(window_ptr, None) else {
+        return None;
+    };
+    let center = NSNotificationCenter::defaultCenter();
+    unsafe { center.removeObserver(&*observer) };
+    let surface = &observer.ivars().surface;
+    let transition_state = (
+        surface
+            .fullscreen_session_active
+            .load(Ordering::Acquire),
+        surface
+            .fullscreen_enter_in_flight
+            .load(Ordering::Acquire),
+        surface
+            .fullscreen_exit_in_flight
+            .load(Ordering::Acquire),
+    );
+    discard_window_wrap_state(surface);
+    rp_log(&format!(
+        "post-fullscreen-cleanup: action=cancel window=0x{window_ptr:x} reason={reason}"
+    ));
+    Some(transition_state)
+}
+
+fn register_post_fullscreen_cleanup_on_main(surface: Arc<SurfaceState>) {
+    let window_ptr = surface.window_ptr;
+    if window_ptr == 0 {
+        return;
+    }
+    let _ = cancel_post_fullscreen_cleanup_on_main(window_ptr, "replace");
+
+    let mtm = MainThreadMarker::new()
+        .expect("post-fullscreen cleanup must be registered on the main thread");
+    let window: &NSWindow = unsafe { &*(window_ptr as *const NSWindow) };
+    let observer = PostFullscreenCleanup::new(mtm, surface);
+    let center = NSNotificationCenter::defaultCenter();
+    unsafe {
+        center.addObserver_selector_name_object(
+            &*observer,
+            objc2::sel!(windowWillEnterFullScreen:),
+            Some(NSWindowWillEnterFullScreenNotification),
+            Some(window),
+        );
+        center.addObserver_selector_name_object(
+            &*observer,
+            objc2::sel!(windowDidEnterFullScreen:),
+            Some(NSWindowDidEnterFullScreenNotification),
+            Some(window),
+        );
+        center.addObserver_selector_name_object(
+            &*observer,
+            objc2::sel!(windowWillExitFullScreen:),
+            Some(NSWindowWillExitFullScreenNotification),
+            Some(window),
+        );
+        center.addObserver_selector_name_object(
+            &*observer,
+            objc2::sel!(windowDidExitFullScreen:),
+            Some(NSWindowDidExitFullScreenNotification),
+            Some(window),
+        );
+        center.addObserver_selector_name_object(
+            &*observer,
+            objc2::sel!(windowWillClose:),
+            Some(NSWindowWillCloseNotification),
+            Some(window),
+        );
+    }
+    let observer_ptr = Retained::as_ptr(&observer) as usize;
+    let retained_ptr = Retained::into_raw(observer) as usize;
+    post_fullscreen_cleanup_registry()
+        .lock()
+        .unwrap()
+        .insert(window_ptr, retained_ptr);
+    rp_log(&format!(
+        "post-fullscreen-cleanup: action=register window=0x{window_ptr:x} observer=0x{observer_ptr:x}"
+    ));
+}
+
+fn finish_post_fullscreen_cleanup_on_main(
+    observer: &PostFullscreenCleanup,
+    apply_window_cleanup: bool,
+    reason: &str,
+) {
+    let window_ptr = observer.ivars().surface.window_ptr;
+    let observer_ptr = observer as *const PostFullscreenCleanup as usize;
+    let Some(owner) =
+        take_post_fullscreen_cleanup_on_main(window_ptr, Some(observer_ptr))
+    else {
+        return;
+    };
+
+    // The registry-owned retain keeps the observer alive through this callback.
+    // Stop every notification before its retain is released at function exit.
+    let center = NSNotificationCenter::defaultCenter();
+    unsafe { center.removeObserver(observer) };
+
+    let surface = &owner.ivars().surface;
+    let mut window_cleanup_applied = false;
+    if apply_window_cleanup {
+        let cleared = clear_window_aspect_on_main(surface, reason);
+        if cleared {
+            window_cleanup_applied = true;
+            restore_pre_wrap_frame_on_main(surface, reason);
+        }
+    }
+    discard_window_wrap_state(surface);
+    rp_log(&format!(
+        "post-fullscreen-cleanup: action=finish window=0x{window_ptr:x} observer=0x{observer_ptr:x} reason={reason} applied={window_cleanup_applied}"
+    ));
+}
+
 fn save_pre_wrap_frame_on_main(surface: &SurfaceState, window: &NSWindow) -> bool {
     if surface.wrap_has_applied.load(Ordering::Acquire) {
         return false;
@@ -985,15 +1285,58 @@ fn save_pre_wrap_frame_on_main(surface: &SurfaceState, window: &NSWindow) -> boo
     true
 }
 
-/// AppKit owns the window frame for the complete fullscreen transition. Frame
-/// changes, and applying a new nonzero aspect, stay suspended until did-exit.
-/// Clearing the aspect to zero is safe because it does not move the window.
-fn window_wrap_mutation_allowed_on_main(
+/// AppKit owns every NSWindow property for the complete fullscreen lifecycle.
+/// The style bit covers stable fullscreen and the explicit flags cover both
+/// transition intervals. The session latch deliberately stays set from
+/// WillEnter through DidExit as a conservative fallback if WillExit is late or
+/// absent while AppKit has already cleared the style bit.
+fn in_fullscreen_or_transition_on_main(
     surface: &SurfaceState,
     window: &NSWindow,
 ) -> bool {
-    !surface.fullscreen_suspended.load(Ordering::Acquire)
-        && !window.styleMask().contains(NSWindowStyleMask::FullScreen)
+    window.styleMask().contains(NSWindowStyleMask::FullScreen)
+        || surface
+            .fullscreen_session_active
+            .load(Ordering::Acquire)
+        || surface
+            .fullscreen_enter_in_flight
+            .load(Ordering::Acquire)
+        || surface
+            .fullscreen_exit_in_flight
+            .load(Ordering::Acquire)
+}
+
+fn window_property_mutation_allowed_on_main(
+    surface: &SurfaceState,
+    window: &NSWindow,
+) -> bool {
+    !in_fullscreen_or_transition_on_main(surface, window)
+}
+
+fn log_fullscreen_state_on_main(surface: &SurfaceState, event: &str) {
+    if surface.window_ptr == 0 {
+        return;
+    }
+    let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
+    let style_fullscreen = window
+        .styleMask()
+        .contains(NSWindowStyleMask::FullScreen);
+    let session_active = surface
+        .fullscreen_session_active
+        .load(Ordering::Acquire);
+    let enter_in_flight = surface
+        .fullscreen_enter_in_flight
+        .load(Ordering::Acquire);
+    let exit_in_flight = surface
+        .fullscreen_exit_in_flight
+        .load(Ordering::Acquire);
+    log_geometry_on_main(
+        "window-wrap",
+        surface,
+        &format!(
+            "action=fullscreen-state event={event} style_fullscreen={style_fullscreen} session_active={session_active} enter_in_flight={enter_in_flight} exit_in_flight={exit_in_flight}"
+        ),
+    );
 }
 
 fn restore_pre_wrap_frame_on_main(surface: &SurfaceState, reason: &str) -> bool {
@@ -1015,7 +1358,9 @@ fn restore_pre_wrap_frame_on_main(surface: &SurfaceState, reason: &str) -> bool 
         return false;
     }
     let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
-    if !window_wrap_mutation_allowed_on_main(surface, window) {
+    // Re-evaluate the complete predicate immediately before setFrame. Queued
+    // reconciliation may have been requested before a transition began.
+    if !window_property_mutation_allowed_on_main(surface, window) {
         surface
             .wrap_restore_pending
             .store(true, Ordering::Release);
@@ -1046,9 +1391,16 @@ fn clear_window_aspect_on_main(surface: &SurfaceState, reason: &str) -> bool {
         return false;
     }
     let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
-    // Removing the constraint does not change the frame or AppKit's saved
-    // fullscreen transition geometry, so teardown must be allowed to do this
-    // even after its did-exit observer is about to be removed.
+    // (0, 0) is a real NSWindow property mutation. Never feed it to AppKit while
+    // fullscreen or while either transition is in flight.
+    if !window_property_mutation_allowed_on_main(surface, window) {
+        log_geometry_on_main(
+            "window-wrap",
+            surface,
+            &format!("action=defer-clear reason={reason}"),
+        );
+        return false;
+    }
     window.setContentAspectRatio(NSSize::new(0.0, 0.0));
     surface
         .wrap_constraint_applied
@@ -1065,7 +1417,7 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
     if surface.dead.load(Ordering::Acquire) {
         return;
     }
-    // fullscreen_suspended gates NSWindow sizing only. Host/layer/FBO geometry
+    // Fullscreen state gates NSWindow properties only. Host/layer/FBO geometry
     // remains live and is reconciled before any fullscreen early return below.
     verify_and_repair_geometry_on_main(surface, None, false);
     if surface
@@ -1080,16 +1432,7 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
             return;
         }
         let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
-        if window.styleMask().contains(NSWindowStyleMask::FullScreen) {
-            surface
-                .fullscreen_suspended
-                .store(true, Ordering::Release);
-            return;
-        }
-        // A will-enter/will-exit notification keeps this true throughout the
-        // transition, even during frames where AppKit has already toggled the
-        // style-mask bit. did-exit is the sole resume point.
-        if surface.fullscreen_suspended.load(Ordering::Acquire) {
+        if in_fullscreen_or_transition_on_main(surface, window) {
             return;
         }
         let restore_pending = surface.wrap_restore_pending.load(Ordering::Acquire);
@@ -1135,7 +1478,9 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
                 let old_frame = window.frame();
                 let centered =
                     centered_frame_within_visible(window, old_frame, fitted, visible_frame);
-                if !window_wrap_mutation_allowed_on_main(surface, window) {
+                // The block may have been queued while windowed. Check again at
+                // the exact setFrame call site in case a transition has started.
+                if !window_property_mutation_allowed_on_main(surface, window) {
                     surface.wrap_needs_resize.store(true, Ordering::Release);
                     return;
                 }
@@ -1145,7 +1490,9 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
         }
 
         let aspect = normalized_aspect(width, height);
-        if !window_wrap_mutation_allowed_on_main(surface, window) {
+        // setFrame above can synchronously run AppKit code, so the aspect call
+        // gets its own fresh transition check rather than sharing the prior one.
+        if !window_property_mutation_allowed_on_main(surface, window) {
             surface.wrap_needs_resize.store(true, Ordering::Release);
             return;
         }
@@ -1208,44 +1555,18 @@ fn queue_window_wrap_reconcile(surface: Arc<SurfaceState>) {
     });
 }
 
-fn suspend_window_wrap_on_main(surface: &SurfaceState, reason: &str) {
-    if surface.dead.load(Ordering::Acquire) {
-        return;
-    }
-    surface
-        .fullscreen_suspended
-        .store(true, Ordering::Release);
-    // Do not carry the windowed video's aspect constraint into fullscreen.
-    // Clearing it does not move or resize the NSWindow and is intentionally
-    // allowed by the same teardown path that is safe while fullscreen.
-    if surface.wrap_constraint_applied.load(Ordering::Acquire) {
-        clear_window_aspect_on_main(surface, reason);
-    }
-    log_geometry_on_main(
-        "window-wrap",
-        surface,
-        &format!("action=suspend reason={reason}"),
-    );
-}
-
 fn resume_window_wrap_on_main(surface: &SurfaceState) {
     if surface.dead.load(Ordering::Acquire) || surface.window_ptr == 0 {
         return;
     }
     let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
-    if window.styleMask().contains(NSWindowStyleMask::FullScreen) {
-        surface
-            .fullscreen_suspended
-            .store(true, Ordering::Release);
+    // DidExit is the normal resume point, but evaluate the full predicate here
+    // as well. This also protects against a new transition initiated by another
+    // observer before this callback runs.
+    if in_fullscreen_or_transition_on_main(surface, window) {
         return;
     }
-    surface
-        .fullscreen_suspended
-        .store(false, Ordering::Release);
     if surface.wrap_active.load(Ordering::Acquire) {
-        // Keep the refit independent of any constraint AppKit may have restored
-        // as part of its own fullscreen transition bookkeeping.
-        clear_window_aspect_on_main(surface, "did-exit-fullscreen");
         surface.wrap_needs_resize.store(true, Ordering::Release);
     }
     reconcile_window_wrap_on_main(surface);
@@ -1309,25 +1630,42 @@ fn teardown_surface_on_main(
         layer.ivars().callback.dead.store(true, Ordering::Release);
     }
 
-    clear_window_aspect_on_main(surface, reason);
-    if restore_window_frame {
-        restore_pre_wrap_frame_on_main(surface, reason);
-    }
+    let window_cleanup_deferred = if restore_window_frame && surface.window_ptr != 0 {
+        let window: &NSWindow =
+            unsafe { &*(surface.window_ptr as *const NSWindow) };
+        if in_fullscreen_or_transition_on_main(surface, window) {
+            // Register before removing the host's observers. The independent
+            // helper owns an Arc<SurfaceState>, so the saved frame and transition
+            // flags remain alive after the host and MacosSurface are gone.
+            register_post_fullscreen_cleanup_on_main(surface.clone());
+            true
+        } else {
+            let had_saved_frame = surface
+                .pre_wrap_frame
+                .lock()
+                .map(|frame| frame.is_some())
+                .unwrap_or(false);
+            let cleared = clear_window_aspect_on_main(surface, reason);
+            let restored = restore_pre_wrap_frame_on_main(surface, reason);
+            if !cleared || (had_saved_frame && !restored) {
+                // A setter above can synchronously run AppKit. If that started a
+                // fullscreen transition, preserve the still-pending work rather
+                // than discarding it at the end of teardown.
+                register_post_fullscreen_cleanup_on_main(surface.clone());
+                true
+            } else {
+                false
+            }
+        }
+    } else {
+        // windowWillClose needs no cosmetic cleanup. In particular, never touch
+        // a closing fullscreen window just to reset a constraint it cannot reuse.
+        false
+    };
 
-    // A destroyed surface cannot receive the later did-exit notification. If
-    // fullscreen blocked frame restoration, discard it rather than touching
-    // AppKit's transition state. A closing window also has no useful frame to
-    // restore.
     surface.wrap_needs_resize.store(false, Ordering::Release);
-    surface
-        .wrap_constraint_applied
-        .store(false, Ordering::Release);
-    surface.wrap_has_applied.store(false, Ordering::Release);
-    surface
-        .wrap_restore_pending
-        .store(false, Ordering::Release);
-    if let Ok(mut saved) = surface.pre_wrap_frame.lock() {
-        *saved = None;
+    if !window_cleanup_deferred {
+        discard_window_wrap_state(surface);
     }
 
     if host_ptr != 0 {
@@ -1343,6 +1681,8 @@ fn teardown_surface_on_main(
     }
     if host_ptr != 0 {
         let host: &HostView = unsafe { &*(host_ptr as *const HostView) };
+        // Safe during fullscreen: this changes only the content-view hierarchy
+        // and does not issue an NSWindow property mutation.
         host.removeFromSuperview();
     }
     surface.host_ptr.store(0, Ordering::Release);
@@ -1538,6 +1878,13 @@ fn setup_on_main(
         return Err("Tauri returned a null native window or webview".to_string());
     }
     let ns_window: &NSWindow = unsafe { &*(window_ptr as *const NSWindow) };
+    // A newly attached live surface supersedes any cleanup left by an older
+    // surface on the same window. It will observe and reconcile the eventual
+    // DidExit itself, so the old one-shot must not mutate the new session later.
+    // Carry its transition state forward in case reattach occurs after WillExit
+    // and after AppKit has already cleared the fullscreen style bit.
+    let inherited_fullscreen_state =
+        cancel_post_fullscreen_cleanup_on_main(window_ptr, "surface-reattach");
     let webview: &NSView = unsafe { &*(webview_ptr as *const NSView) };
     let content = ns_window.contentView().ok_or("no content view")?;
     let content_ptr = Retained::as_ptr(&content) as usize;
@@ -1550,11 +1897,26 @@ fn setup_on_main(
         webview_ptr,
         webview_sibling_ptr,
     );
+    if let Some((session_active, enter_in_flight, exit_in_flight)) =
+        inherited_fullscreen_state
+    {
+        state
+            .fullscreen_session_active
+            .store(session_active, Ordering::Release);
+        state
+            .fullscreen_enter_in_flight
+            .store(enter_in_flight, Ordering::Release);
+        state
+            .fullscreen_exit_in_flight
+            .store(exit_in_flight, Ordering::Release);
+    }
     if ns_window
         .styleMask()
         .contains(NSWindowStyleMask::FullScreen)
     {
-        state.fullscreen_suspended.store(true, Ordering::Release);
+        state
+            .fullscreen_session_active
+            .store(true, Ordering::Release);
     }
     rp_log(&format!(
         "setup_on_main: exact Tauri window=0x{window_ptr:x} webview=0x{webview_ptr:x} content=0x{content_ptr:x} sibling=0x{webview_sibling_ptr:x} content {}x{} scale {}",
