@@ -102,13 +102,13 @@ function toRatings(raw: RawOMDBResponse): OMDBRatings {
 
 // MARK: - Errors (mirror Swift `OMDBError`)
 
-export type OMDBErrorKind =
+type OMDBErrorKind =
   | "invalidURL"
   | "invalidResponse"
   | "httpError"
   | "notFound";
 
-export class OMDBError extends Error {
+class OMDBError extends Error {
   readonly kind: OMDBErrorKind;
   /** HTTP status code, present for `httpError`. */
   readonly statusCode?: number;

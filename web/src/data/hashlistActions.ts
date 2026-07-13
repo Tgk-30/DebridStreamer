@@ -24,7 +24,7 @@ import {
 } from "../lib/hashlist";
 
 /** Per-item import outcome. */
-export interface ImportItemResult {
+interface ImportItemResult {
   infoHash: string;
   name: string | null;
   ok: boolean;

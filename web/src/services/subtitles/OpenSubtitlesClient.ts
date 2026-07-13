@@ -15,7 +15,7 @@ import type { FetchImpl } from "../../lib/http";
 
 const API_BASE = "https://api.opensubtitles.com/api/v1";
 /** OpenSubtitles requires a unique, descriptive UA per consumer app. */
-export const OPEN_SUBTITLES_USER_AGENT = "DebridStreamer v2";
+const OPEN_SUBTITLES_USER_AGENT = "DebridStreamer v2";
 
 /** A normalized subtitle search result (one row per file). */
 export interface SubtitleSearchResult {

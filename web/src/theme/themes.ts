@@ -83,9 +83,6 @@ export function accentById(id: string | null | undefined): AccentDef {
 /** The default theme id (the historical Aurora-glass look). */
 export const DEFAULT_THEME_ID = "aurora";
 
-/** The Store key the chosen theme is persisted under (KV table; not a secret). */
-export const THEME_SETTING_KEY = "ui_theme";
-
 /** Whether `id` names a shipped theme. Pure. */
 export function isValidThemeId(id: string | null | undefined): id is string {
   return id != null && THEMES.some((t) => t.id === id);

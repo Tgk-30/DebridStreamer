@@ -18,7 +18,7 @@ import type {
  * Error kinds returned by the Trakt sync service. Mirrors Swift
  * `TraktSyncError`, carrying the same human-facing descriptions via `message`.
  */
-export type TraktSyncErrorKind =
+type TraktSyncErrorKind =
   | "invalidURL"
   | "invalidResponse"
   | "decodingFailed"
@@ -72,7 +72,7 @@ export class TraktSyncError extends Error {
 // The Swift code relies on JSONDecoder + CodingKeys. In TS we decode the raw
 // snake_case JSON explicitly, keeping the mapping in one place.
 
-export interface RawTraktDeviceCodeResponse {
+interface RawTraktDeviceCodeResponse {
   device_code: string;
   user_code: string;
   verification_url: string;
@@ -80,7 +80,7 @@ export interface RawTraktDeviceCodeResponse {
   interval: number;
 }
 
-export interface RawTraktTokenResponse {
+interface RawTraktTokenResponse {
   access_token: string;
   refresh_token: string;
   expires_in: number;
@@ -90,40 +90,40 @@ export interface RawTraktTokenResponse {
 }
 
 /** One element of `GET /sync/watchlist/movies`. */
-export interface RawTraktWatchlistResponseItem {
+interface RawTraktWatchlistResponseItem {
   movie?: RawTraktWatchlistMovie | null;
 }
 
-export interface RawTraktWatchlistMovie {
+interface RawTraktWatchlistMovie {
   title: string;
   year?: number | null;
   ids: RawTraktWatchlistMovieIDs;
 }
 
-export interface RawTraktWatchlistMovieIDs {
+interface RawTraktWatchlistMovieIDs {
   imdb?: string | null;
 }
 
 /** Body of `POST /sync/watchlist`. */
-export interface RawTraktWatchlistPushResult {
+interface RawTraktWatchlistPushResult {
   added?: RawTraktPushCounts | null;
   existing?: RawTraktPushCounts | null;
   not_found?: RawTraktPushNotFound | null;
 }
 
-export interface RawTraktPushCounts {
+interface RawTraktPushCounts {
   movies?: number | null;
 }
 
-export interface RawTraktPushNotFound {
+interface RawTraktPushNotFound {
   movies?: RawTraktPushNotFoundMovie[] | null;
 }
 
-export interface RawTraktPushNotFoundMovie {
+interface RawTraktPushNotFoundMovie {
   ids?: RawTraktPushNotFoundIDs | null;
 }
 
-export interface RawTraktPushNotFoundIDs {
+interface RawTraktPushNotFoundIDs {
   imdb?: string | null;
 }
 

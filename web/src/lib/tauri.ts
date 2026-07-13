@@ -154,14 +154,14 @@ export async function openExternalURL(url: string): Promise<void> {
 // Downloads native bridge. Keep this region separate from the existing player
 // and desktop-server bindings because the downloads UI owns all orchestration.
 
-export interface DownloadStartArgs {
+interface DownloadStartArgs {
   jobId: string;
   url: string;
   headers?: Record<string, string>;
   destPath: string;
 }
 
-export interface TranscodeStartArgs {
+interface TranscodeStartArgs {
   jobId: string;
   inputPath: string;
   outputPath: string;
@@ -170,7 +170,7 @@ export interface TranscodeStartArgs {
   profile: "remux" | "h265";
 }
 
-export interface DownloadProgress {
+interface DownloadProgress {
   jobId: string;
   phase: "downloading" | "optimizing" | "completed" | "failed" | "canceled";
   bytesDone: number;

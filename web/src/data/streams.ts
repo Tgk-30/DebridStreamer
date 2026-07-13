@@ -23,13 +23,7 @@ import { configuredServerURL } from "../lib/serverMode";
 import {
   buildTitleQuery,
   combineStreamResults,
-  filterResultsByTitle,
 } from "./streamMatching";
-
-// buildTitleQuery + filterResultsByTitle historically lived in this module and
-// now back BOTH modes via ./streamMatching; re-export so any importer reaching
-// them through ../data/streams keeps working.
-export { buildTitleQuery, filterResultsByTitle };
 
 /** A torrent result plus its resolved cache state. */
 export interface StreamRow {

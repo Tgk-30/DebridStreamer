@@ -168,8 +168,7 @@ export type AppearancePosterSize = "compact" | "default" | "large";
 /** How the user rates a title on Detail. "ten" = 1–10, "hundred" = 0–100
  *  slider, "thumbs" = like/dislike. Default is "ten". */
 export type RatingScale = "ten" | "hundred" | "thumbs";
-export const RATING_SCALES: readonly RatingScale[] = ["ten", "hundred", "thumbs"];
-export function isRatingScale(v: unknown): v is RatingScale {
+function isRatingScale(v: unknown): v is RatingScale {
   return v === "ten" || v === "hundred" || v === "thumbs";
 }
 /** Coerce any persisted value to a legal scale, falling back to the 1–10 default

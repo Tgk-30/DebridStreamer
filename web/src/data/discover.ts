@@ -27,7 +27,7 @@ export interface DiscoverData {
   upcomingMovies: MediaPreview[];
 }
 
-export type DiscoverSource = "live" | "fixtures";
+type DiscoverSource = "live" | "fixtures";
 
 export interface DiscoverState {
   data: DiscoverData | null;

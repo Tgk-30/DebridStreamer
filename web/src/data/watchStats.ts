@@ -13,7 +13,7 @@ import type {
   WatchHistoryRecord,
 } from "../storage/models";
 
-export interface GenreCount {
+interface GenreCount {
   genre: string;
   count: number;
 }

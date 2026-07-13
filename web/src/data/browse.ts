@@ -32,7 +32,7 @@ import { loadDiscoverFixtures } from "./fixtures";
 // ---- Browse context ---------------------------------------------------------
 
 /** A "trending" / category target (Discover's rail kinds). */
-export interface CategoryTarget {
+interface CategoryTarget {
   kind: "category";
   type: MediaType;
   /** `"trending"` plus the TMDB MediaCategory list values. */
@@ -40,7 +40,7 @@ export interface CategoryTarget {
 }
 
 /** A single-genre target (a genre rail → Browse with that genre pre-set). */
-export interface GenreTarget {
+interface GenreTarget {
   kind: "genre";
   type: MediaType;
   genreId: number;
@@ -48,14 +48,14 @@ export interface GenreTarget {
 }
 
 /** A free-text TMDB search target ("See all" / deepen from Search). */
-export interface SearchTarget {
+interface SearchTarget {
   kind: "search";
   type: MediaType | null;
   query: string;
 }
 
 /** A full discover() filter target (the advanced filter slideover). */
-export interface DiscoverTarget {
+interface DiscoverTarget {
   kind: "discover";
   type: MediaType;
   filters: BrowseFilters;
@@ -441,7 +441,7 @@ export function sortPreviews(
 
 // ---- React hook -------------------------------------------------------------
 
-export type BrowseSource = "live" | "fixtures";
+type BrowseSource = "live" | "fixtures";
 
 export interface BrowseState {
   items: MediaPreview[];

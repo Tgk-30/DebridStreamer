@@ -78,19 +78,19 @@ export interface TraktWatchlistPushResult {
   notFound?: TraktPushNotFound | null;
 }
 
-export interface TraktPushCounts {
+interface TraktPushCounts {
   movies?: number | null;
 }
 
-export interface TraktPushNotFoundIDs {
+interface TraktPushNotFoundIDs {
   imdb?: string | null;
 }
 
-export interface TraktPushNotFoundMovie {
+interface TraktPushNotFoundMovie {
   ids?: TraktPushNotFoundIDs | null;
 }
 
-export interface TraktPushNotFound {
+interface TraktPushNotFound {
   movies?: TraktPushNotFoundMovie[] | null;
 }
 
@@ -102,10 +102,4 @@ export interface IMDbCSVEntry {
   title: string;
   year: number | null;
   listType: ListType;
-}
-
-/** Result of an import run. Mirrors Swift `IMDbImportResult`. */
-export interface IMDbImportResult {
-  added: number;
-  skippedDuplicates: number;
 }

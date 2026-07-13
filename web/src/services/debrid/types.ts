@@ -159,7 +159,7 @@ export interface DebridService {
 
 /** A captured/raw HTTP response, mirroring what `URLSession.data(for:)` yields
  * before the per-service status mapping runs. */
-export interface RawHTTPResponse {
+interface RawHTTPResponse {
   status: number;
   text(): Promise<string>;
 }

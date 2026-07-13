@@ -12,7 +12,7 @@ import type { TMDBService } from "../services/metadata/TMDBService";
 import { fetchServerDetail } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 
-export interface DetailData {
+interface DetailData {
   item: MediaItem | null;
   cast: CastMember[];
   related: MediaPreview[];

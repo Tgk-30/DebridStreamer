@@ -31,7 +31,7 @@ export function buildTitleQuery(
  * dropping a valid release that spells the connector out - e.g. title
  * "Dungeons & Dragons" vs release "Dungeons.and.Dragons…", or "Tom & Jerry" vs
  * "Tom.and.Jerry…". */
-export function normalizeForMatch(s: string): string {
+function normalizeForMatch(s: string): string {
   return s
     .toLowerCase()
     .replace(/&/g, " and ")
@@ -63,7 +63,7 @@ export function filterResultsByTitle(
 /** Merge two result sets: dedupe by infoHash (keep the higher-seeder copy) and
  * sort by quality then seeders. Lets the imdb-based and title-based passes be
  * combined without double-listing the same torrent. */
-export function mergeResults(
+function mergeResults(
   a: TorrentResult[],
   b: TorrentResult[],
 ): TorrentResult[] {

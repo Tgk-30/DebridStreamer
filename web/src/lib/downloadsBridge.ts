@@ -3,14 +3,14 @@
 
 import * as tauri from "./tauri";
 
-export interface DownloadStartArgs {
+interface DownloadStartArgs {
   jobId: string;
   url: string;
   headers?: Record<string, string>;
   destPath: string;
 }
 
-export interface TranscodeStartArgs {
+interface TranscodeStartArgs {
   jobId: string;
   inputPath: string;
   outputPath: string;
@@ -29,7 +29,7 @@ export interface DownloadProgress {
   outputPath?: string;
 }
 
-export type DownloadProgressUnlisten = () => void;
+type DownloadProgressUnlisten = () => void;
 
 /** The complete import surface the UI expects the engine to add to tauri.ts. */
 export interface DownloadsBridge {
@@ -67,9 +67,4 @@ let activeBridge: DownloadsBridge = nativeDownloadsBridge;
 /** Return the current bridge. Tests can replace it without mocking Tauri. */
 export function getDownloadsBridge(): DownloadsBridge {
   return activeBridge;
-}
-
-/** Test-only injection seam. Pass null to restore native bindings. */
-export function __setDownloadsBridgeForTesting(bridge: DownloadsBridge | null): void {
-  activeBridge = bridge ?? nativeDownloadsBridge;
 }
