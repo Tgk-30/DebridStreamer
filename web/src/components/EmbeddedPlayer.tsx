@@ -666,12 +666,20 @@ export function EmbeddedPlayer({
             }
           },
         );
-        const opts =
-          startPositionSeconds > 5
-            ? `start=+${Math.floor(startPositionSeconds)}`
-            : undefined;
+        const resumeSeconds =
+          Number.isFinite(startPositionSeconds) && startPositionSeconds > 5
+            ? Math.floor(startPositionSeconds)
+            : null;
         setEnded(false);
-        await command("loadfile", opts ? [url, "replace", opts] : [url]);
+        // mpv 0.38 inserted a playlist-index argument before the per-file options
+        // argument. Even with `replace`, the ignored index slot must be present or
+        // `start=+N` is parsed as an integer index and rejected with Raw(-4).
+        await command(
+          "loadfile",
+          resumeSeconds == null
+            ? [url]
+            : [url, "replace", "-1", `start=+${resumeSeconds}`],
+        );
         await setProperty("pause", false);
         startedRef.current = true;
         // Arm the first-frame watchdog. loadfile has been accepted, but mpv can

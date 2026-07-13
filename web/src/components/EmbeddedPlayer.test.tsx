@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const renderPlayerMock = vi.hoisted(() => ({
   callback: null as ((ev: { name: string; data: unknown }) => void) | null,
+  command: vi.fn(),
   observeProperties: vi.fn(),
   setProperty: vi.fn(),
   getProperty: vi.fn(),
@@ -21,7 +22,7 @@ const tauriWindowMock = vi.hoisted(() => ({
 vi.mock("../lib/renderPlayer", () => ({
   init: vi.fn(async () => {}),
   destroy: vi.fn(async () => {}),
-  command: vi.fn(async () => {}),
+  command: renderPlayerMock.command,
   setProperty: renderPlayerMock.setProperty,
   getProperty: renderPlayerMock.getProperty,
   observeProperties: renderPlayerMock.observeProperties,
@@ -65,6 +66,8 @@ function emitProperty(name: string, data: unknown): void {
 
 beforeEach(() => {
   renderPlayerMock.callback = null;
+  renderPlayerMock.command.mockReset();
+  renderPlayerMock.command.mockResolvedValue(undefined);
   renderPlayerMock.observeProperties.mockImplementation(
     async (
       _properties: unknown,
@@ -489,6 +492,49 @@ describe("window-anchored controls and playback diagnostics", () => {
 describe("EmbeddedPlayer decode-failure fallback", () => {
   // The window mpv's watchdog uses (mirrors FIRST_FRAME_WATCHDOG_MS).
   const WATCHDOG_MS = 10_000;
+
+  it("puts resume options after the mpv 0.38 playlist-index slot", async () => {
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/resumed.mkv"
+        title="Resumed"
+        startPositionSeconds={125.9}
+        onClose={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(renderPlayerMock.command).toHaveBeenCalledWith("loadfile", [
+        "https://example.test/resumed.mkv",
+        "replace",
+        "-1",
+        "start=+125",
+      ]),
+    );
+  });
+
+  it("routes a synchronous loadfile rejection through native fallback", async () => {
+    renderPlayerMock.command.mockRejectedValueOnce(
+      new Error("mpv command failed: Raw(-4)"),
+    );
+    const onPlaybackError = vi.fn(async () => true);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/rejected.mkv"
+        title="Rejected"
+        startPositionSeconds={125}
+        onPlaybackError={onPlaybackError}
+        onClose={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(onPlaybackError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "mpv command failed: Raw(-4)" }),
+      ),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 
   it("hands off to the webview when mpv reports an end-file decode error", async () => {
     // The gap this closes: loadfile SUCCEEDS (so the init try/catch sees nothing)

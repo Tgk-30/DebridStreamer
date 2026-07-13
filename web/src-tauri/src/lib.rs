@@ -250,7 +250,9 @@ pub fn run() {
                     let state = handle.state::<render_player::PlayerState>();
                     let guard = state.0.lock().ok();
                     if let Some(p) = guard.as_ref().and_then(|g| g.as_ref()) {
-                        if let Err(e) = p.mpv.command("loadfile", &[&url]) {
+                        if let Err(e) =
+                            render_player::run_mpv_command(&p.mpv, "loadfile", &[&url])
+                        {
                             eprintln!("DS_PLAYER_SMOKE loadfile failed: {e}");
                         }
                     }

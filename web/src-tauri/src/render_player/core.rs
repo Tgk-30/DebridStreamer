@@ -605,6 +605,172 @@ fn with_player<T>(
     f(p)
 }
 
+fn validate_nonempty_mpv_value(label: &str, value: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err(format!("{label} is empty"));
+    }
+    if value.contains('\0') {
+        return Err(format!("{label} contains NUL"));
+    }
+    Ok(())
+}
+
+/// Validate the string command surface before libmpv sees it. The frontend only
+/// uses loadfile, seek, and cycle today, but the generic checks protect future
+/// commands from empty string arguments and embedded NULs as well.
+fn validate_mpv_command(name: &str, args: &[&str]) -> Result<(), String> {
+    validate_nonempty_mpv_value("command name", name)?;
+    for (index, arg) in args.iter().enumerate() {
+        validate_nonempty_mpv_value(&format!("argument {index}"), arg)?;
+    }
+
+    match name {
+        "loadfile" => {
+            if args.is_empty() {
+                return Err("loadfile URL is missing".to_string());
+            }
+            if args.len() > 4 {
+                return Err("loadfile has more than four arguments".to_string());
+            }
+            // url, flags, index, options. mpv 0.38 inserted the integer index
+            // before options; accepting a key=value string here recreates Raw(-4).
+            if let Some(flags) = args.get(1) {
+                let known = flags.split('+').all(|flag| {
+                    matches!(
+                        flag,
+                        "replace"
+                            | "append"
+                            | "play"
+                            | "append-play"
+                            | "insert-next"
+                            | "insert-next-play"
+                            | "insert-at"
+                            | "insert-at-play"
+                    )
+                });
+                if !known {
+                    return Err("loadfile flags are invalid".to_string());
+                }
+            }
+            if let Some(index) = args.get(2) {
+                index
+                    .parse::<i64>()
+                    .map_err(|_| "loadfile index is not an integer".to_string())?;
+            }
+            if let Some(options) = args.get(3) {
+                for option in options.split(',') {
+                    let (key, value) = option
+                        .split_once('=')
+                        .ok_or_else(|| "loadfile option is not key=value".to_string())?;
+                    if key.trim().is_empty() || value.trim().is_empty() {
+                        return Err("loadfile option has an empty key or value".to_string());
+                    }
+                }
+            }
+        }
+        "seek" => {
+            let amount = args
+                .first()
+                .ok_or_else(|| "seek amount is missing".to_string())?
+                .parse::<f64>()
+                .map_err(|_| "seek amount is not numeric".to_string())?;
+            if !amount.is_finite() {
+                return Err("seek amount is not finite".to_string());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn parse_mpv_release(version: &str) -> Option<(u64, u64)> {
+    version
+        .split(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .find_map(|candidate| {
+            let mut numbers = candidate.split('.');
+            let major = numbers.next()?.parse::<u64>().ok()?;
+            let minor = numbers.next()?.parse::<u64>().ok()?;
+            Some((major, minor))
+        })
+}
+
+fn mpv_supports_loadfile_index(version: Option<&str>) -> bool {
+    // A git build can expose only a hash. Such builds are newer than the packaged
+    // 0.37 compatibility target, so an unparseable version uses the modern shape.
+    version
+        .and_then(parse_mpv_release)
+        .map(|(major, minor)| major > 0 || minor >= 38)
+        .unwrap_or(true)
+}
+
+/// The app uses the mpv 0.38+ canonical loadfile shape. Ubuntu 24.04 still ships
+/// mpv 0.37, where options occupy the third slot, so remove the new index
+/// placeholder only at the final libmpv boundary on that runtime.
+fn command_args_for_runtime<'a>(
+    name: &str,
+    args: &'a [&'a str],
+    mpv_version: Option<&str>,
+) -> Vec<&'a str> {
+    if name == "loadfile" && args.len() == 4 && !mpv_supports_loadfile_index(mpv_version) {
+        vec![args[0], args[1], args[3]]
+    } else {
+        args.to_vec()
+    }
+}
+
+pub fn run_mpv_command(mpv: &Mpv, name: &str, args: &[&str]) -> Result<(), String> {
+    if let Err(reason) = validate_mpv_command(name, args) {
+        rp_log(&format!(
+            "RPGEO event=command-reject engine=native-mpv command={} reason={reason}",
+            if name.trim().is_empty() { "<empty>" } else { name }
+        ));
+        return Err(format!("mpv command rejected: {reason}"));
+    }
+
+    let version = if name == "loadfile" && args.len() == 4 {
+        mpv.get_property::<String>("mpv-version").ok()
+    } else {
+        None
+    };
+    let runtime_args = command_args_for_runtime(name, args, version.as_deref());
+    if runtime_args.len() != args.len() {
+        rp_log(
+            "RPGEO event=loadfile-compat engine=native-mpv runtime=pre-0.38 options-slot=third",
+        );
+    }
+    mpv.command(name, &runtime_args)
+        .map_err(|e| format!("mpv command failed: {e}"))
+}
+
+fn validate_mpv_property(name: &str, value: &str) -> Result<(), String> {
+    validate_nonempty_mpv_value("property name", name)?;
+    validate_nonempty_mpv_value("property value", value)?;
+    match name {
+        "pause" | "mute" if !matches!(value, "yes" | "no") => {
+            Err(format!("{name} must be yes or no"))
+        }
+        "aid" | "sid"
+            if !matches!(value, "auto" | "no")
+                && value.parse::<u64>().is_err() =>
+        {
+            Err(format!("{name} must be auto, no, or a numeric track id"))
+        }
+        "volume" | "speed" | "sub-delay" | "audio-delay" | "sub-scale" => {
+            let number = value
+                .parse::<f64>()
+                .map_err(|_| format!("{name} must be numeric"))?;
+            if !number.is_finite() {
+                return Err(format!("{name} must be finite"));
+            }
+            if matches!(name, "speed" | "sub-scale") && number <= 0.0 {
+                return Err(format!("{name} must be positive"));
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 // ---- Tauri commands ------------------------------------------------------
 
 /// Create the player (mpv + surface + event thread). Loading a file is a separate
@@ -633,10 +799,8 @@ pub async fn player_load<R: Runtime>(
     create_player(app.clone(), HashMap::new(), Vec::new())?;
     let state = app.state::<PlayerState>();
     with_player(&state, |p| {
-        rp_log("RPGEO event=loadfile-command engine=native-mpv path=player_load");
-        p.mpv
-            .command("loadfile", &[&url])
-            .map_err(|e| format!("loadfile failed: {e}"))
+        rp_log("RPGEO event=loadfile-command engine=native-mpv path=player_load argc=1 flags=default index=absent options=absent");
+        run_mpv_command(&p.mpv, "loadfile", &[&url])
     })
 }
 
@@ -647,12 +811,30 @@ pub fn player_command(state: State<'_, PlayerState>, args: Vec<String>) -> Resul
         let rest_refs: Vec<&str> = rest.iter().map(|s| s.as_str()).collect();
         if name == "loadfile" {
             // Do not include the URL: debrid links commonly contain credentials.
-            rp_log("RPGEO event=loadfile-command engine=native-mpv path=player_command");
+            let flags = match rest.get(1).map(String::as_str) {
+                Some("replace") => "replace",
+                Some(_) => "present",
+                None => "default",
+            };
+            let index = match rest.get(2).map(String::as_str) {
+                Some("-1") => "-1",
+                Some(value) if value.parse::<i64>().is_ok() => "integer",
+                Some(_) => "invalid",
+                None => "absent",
+            };
+            let options = match rest.get(3).map(String::as_str) {
+                Some(value) if value.split(',').any(|option| option.starts_with("start=")) => {
+                    "start"
+                }
+                Some(_) => "present",
+                None => "absent",
+            };
+            rp_log(&format!(
+                "RPGEO event=loadfile-command engine=native-mpv path=player_command argc={} flags={flags} index={index} options={options}",
+                rest.len()
+            ));
         }
-        let r = p
-            .mpv
-            .command(name, &rest_refs)
-            .map_err(|e| format!("mpv command failed: {e}"));
+        let r = run_mpv_command(&p.mpv, name, &rest_refs);
         if name == "loadfile" {
             rp_log(&format!("cmd loadfile [url redacted] -> {r:?}"));
         } else {
@@ -669,6 +851,12 @@ pub fn player_set_property(
     value: String,
 ) -> Result<(), String> {
     with_player(&state, |p| {
+        if let Err(reason) = validate_mpv_property(&name, &value) {
+            rp_log(&format!(
+                "RPGEO event=property-reject engine=native-mpv property={name} reason={reason}"
+            ));
+            return Err(format!("set_property rejected: {reason}"));
+        }
         let r = p
             .mpv
             .set_property(&name, value.as_str())
@@ -694,6 +882,12 @@ pub fn player_get_property(state: State<'_, PlayerState>, name: String) -> Resul
 #[tauri::command]
 pub fn player_set_video_margin(state: State<'_, PlayerState>, bottom: f64) -> Result<(), String> {
     with_player(&state, |p| {
+        if !bottom.is_finite() || !(0.0..=1.0).contains(&bottom) {
+            rp_log(&format!(
+                "RPGEO event=property-reject engine=native-mpv property=video-margin-ratio-bottom reason=out-of-range value={bottom}"
+            ));
+            return Err("video margin must be finite and between 0 and 1".to_string());
+        }
         let r = p
             .mpv
             .set_property("video-margin-ratio-bottom", bottom)
@@ -769,8 +963,66 @@ fn build_chapter_list(mpv: &Mpv) -> Value {
 #[cfg(test)]
 mod tests {
     use super::best_in_class_options;
+    use super::command_args_for_runtime;
     use super::is_forced_mpv_option;
+    use super::mpv_supports_loadfile_index;
+    use super::validate_mpv_command;
+    use super::validate_mpv_property;
     use std::collections::HashMap;
+
+    #[test]
+    fn resumed_loadfile_uses_the_version_correct_options_slot() {
+        let args = [
+            "https://example.test/episode.mkv",
+            "replace",
+            "-1",
+            "start=+125",
+        ];
+        assert_eq!(validate_mpv_command("loadfile", &args), Ok(()));
+
+        let modern = command_args_for_runtime("loadfile", &args, Some("mpv 0.41.0"));
+        assert_eq!(modern, args.to_vec());
+        let legacy = command_args_for_runtime("loadfile", &args, Some("mpv 0.37.0"));
+        assert_eq!(
+            legacy,
+            vec![args[0], args[1], args[3]],
+            "mpv 0.37 expects options in the third slot"
+        );
+        assert!(!mpv_supports_loadfile_index(Some("mpv 0.37.0")));
+        assert!(mpv_supports_loadfile_index(Some("mpv 0.38.0")));
+        assert!(mpv_supports_loadfile_index(Some("mpv git-deadbeef")));
+    }
+
+    #[test]
+    fn command_guard_rejects_the_regressed_and_empty_shapes() {
+        assert!(validate_mpv_command(
+            "loadfile",
+            &["https://example.test/episode.mkv", "replace", "start=+125"]
+        )
+        .is_err());
+        assert!(validate_mpv_command("loadfile", &[""]).is_err());
+        assert!(validate_mpv_command(
+            "loadfile",
+            &[
+                "https://example.test/episode.mkv",
+                "replace",
+                "-1",
+                "start=+125,"
+            ]
+        )
+        .is_err());
+        assert!(validate_mpv_command("seek", &["NaN", "absolute"]).is_err());
+    }
+
+    #[test]
+    fn property_guard_accepts_real_track_ids_and_rejects_bad_values() {
+        assert_eq!(validate_mpv_property("aid", "2"), Ok(()));
+        assert_eq!(validate_mpv_property("sid", "no"), Ok(()));
+        assert_eq!(validate_mpv_property("sid", "auto"), Ok(()));
+        assert!(validate_mpv_property("aid", "none").is_err());
+        assert!(validate_mpv_property("speed", "NaN").is_err());
+        assert!(validate_mpv_property("pause", "false").is_err());
+    }
 
     /// A frontend option must never be able to re-enable the renderer-owned safety
     /// switches that keep mpv's built-in Lua scripts (LuaJIT) from loading.
