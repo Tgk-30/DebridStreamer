@@ -252,6 +252,17 @@ describe("TMDBService catalog reads decode into MediaPreview", () => {
     expect(mock.hits()).toBe(2);
   });
 
+  it("returns [] without throwing when a category response has no results array", async () => {
+    // TMDB unreachable / missing key / error shape: response lacks `.results`.
+    // The calendar must degrade to empty, not crash on `.results.flatMap`.
+    const mock = makeRoutedFetch({
+      "/3/movie/now_playing": ok(JSON.stringify({ success: false, status_message: "invalid" })),
+      "/3/movie/upcoming": ok(JSON.stringify({})),
+    });
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+    await expect(service.getMovieReleaseCalendar()).resolves.toEqual([]);
+  });
+
   it("discover applies filters and hits the discover path", async () => {
     const mock = makeMockFetch(() => ok(searchBody));
     const service = new TMDBService("tmdb-key", mock.fetchImpl);

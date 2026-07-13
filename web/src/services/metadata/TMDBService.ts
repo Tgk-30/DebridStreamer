@@ -472,7 +472,11 @@ export class TMDBService implements MetadataProvider {
         TMDBService.shortTTL,
         () => this.request<RawPagedResponse<RawSearchResult>>(path, params),
       );
-      return response.results.flatMap((raw) => {
+      // Guard against a non-standard/error response (TMDB unreachable, missing
+      // key, rate limited) so the calendar degrades to its honest empty/error
+      // state instead of throwing on `.results` being undefined.
+      const rows = Array.isArray(response?.results) ? response.results : [];
+      return rows.flatMap((raw) => {
         const movie = toMediaPreview(raw);
         const releaseDate = raw.release_date;
         if (
