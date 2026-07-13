@@ -590,7 +590,9 @@ describe("taste events", () => {
     expect(
       await table.where("eventType").noneOf(["rated", "liked", "disliked"]).count(),
     ).toBe(1_000);
-  });
+    // Heavier fake-IndexedDB seed (1000+ rows) than the default
+    // 5s test timeout comfortably covers on a slow CI runner.
+  }, 20000);
 });
 
 describe("v4 to v5 migration", () => {
