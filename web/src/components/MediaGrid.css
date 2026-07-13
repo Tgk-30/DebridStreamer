@@ -11,3 +11,8 @@
 .media-grid .media-card {
   justify-self: center;
 }
+
+.media-grid-item {
+  justify-self: center;
+  min-width: 0;
+}

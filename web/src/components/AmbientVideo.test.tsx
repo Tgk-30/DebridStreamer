@@ -15,6 +15,7 @@ describe("AmbientVideo", () => {
     expect(video.muted).toBe(true);
     expect(video.loop).toBe(true);
     expect(video.autoplay).toBe(true);
+    expect(video).toHaveAttribute("preload", "metadata");
   });
 
   it("applies the default opacity and a custom class", () => {

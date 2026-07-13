@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { MediaCard } from "../components/MediaCard";
+import { VirtualMediaGrid } from "../components/MediaGrid";
 import { Rail } from "../components/Rail";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
@@ -448,16 +449,16 @@ export function Library() {
               Showing your watchlist - add favorites to build your library.
             </p>
           )}
-          <div className="media-grid">
-            {items.map((item) => (
+          <VirtualMediaGrid
+            items={items}
+            renderItem={(item) => (
               <MediaCard
-                key={item.id}
                 item={item}
                 onSelect={openDetail}
                 watched={watchedIds.has(item.id)}
               />
-            ))}
-          </div>
+            )}
+          />
         </>
       )}
     </div>

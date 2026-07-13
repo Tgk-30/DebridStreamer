@@ -9,9 +9,9 @@
 // localStorage snapshot), then hydrates from the durable Store on mount; every
 // mutation writes through the Store and refreshes the in-memory state.
 //
-// Services are rebuilt whenever settings change (buildServices reads the keys/
-// tokens/sources), so saving a TMDB key in Settings immediately lights up live
-// data without a reload. Everything imports the ported services READ-ONLY.
+// Services rebuild only when their keys/tokens/sources change, so saving a TMDB
+// key lights up live data without making unrelated preference saves restart
+// service consumers. Everything imports the ported services READ-ONLY.
 
 import {
   createContext,
@@ -94,6 +94,9 @@ export interface AppStore {
   history: MediaPreview[];
   /** Incomplete items with resume positions (the Continue Watching rail). */
   continueWatching: WatchHistoryRecord[];
+  /** Re-read only Continue Watching after a playback session closes. Waits for
+   * any final progress write already in flight before loading the slice. */
+  refreshContinueWatching: () => Promise<void>;
   /** Cached, ready-to-play resolutions keyed by mediaId (the watchlist
    * "Ready to play" badge + instant playback). Populated by the background
    * auto-resolve job; empty in a plain browser. */
@@ -139,6 +142,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [continueWatching, setContinueWatching] = useState<WatchHistoryRecord[]>(
     [],
   );
+  const pendingResumeWritesRef = useRef<Set<Promise<unknown>>>(new Set());
   const [cachedResolutions, setCachedResolutions] = useState<
     Record<string, CachedResolutionRecord>
   >({});
@@ -215,15 +219,27 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setContinueWatching(cw);
   }, []);
 
-  // Rebuild services only when settings actually change.
-  const services = useMemo(() => buildServices(settings), [settings]);
-
-  const navigate = useCallback((next: ScreenId) => {
-    // Switching primary destination dismisses any open overlays.
-    setBrowseContext(null);
-    setDetailItem(null);
-    setRoute(next);
-  }, []);
+  // Most settings are presentation or playback preferences. Rebuilding every
+  // API client for those changes also used to restart the app-wide download
+  // runtime, because the context handed App a fresh `services.debrid` path.
+  // Build only when an input consumed by buildServices changes; settings still
+  // update normally for consumers that actually use the changed preference.
+  const serviceConfigKey = JSON.stringify({
+    tmdbKey: settings.tmdbKey,
+    omdbKey: settings.omdbKey,
+    debridTokens: settings.debridTokens,
+    sources: settings.sources,
+    builtInIndexersEnabled: settings.builtInIndexersEnabled,
+    aiProvider: settings.aiProvider,
+    aiApiKey: settings.aiApiKey,
+    aiModel: settings.aiModel,
+    ollamaEndpoint: settings.ollamaEndpoint,
+    openSubtitlesApiKey: settings.openSubtitlesApiKey,
+  });
+  const services = useMemo(
+    () => buildServices(settings),
+    [serviceConfigKey],
+  );
 
   const openBrowse = useCallback((ctx: BrowseContext) => {
     setBrowseContext(ctx);
@@ -292,6 +308,26 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setContinueWatching(cw);
   }, []);
 
+  const refreshContinueWatching = useCallback(async () => {
+    // The webview player's final progress report is emitted during unmount.
+    // Drain all writes visible at this session boundary before reading the
+    // updated slice, including one added while an earlier write is settling.
+    while (pendingResumeWritesRef.current.size > 0) {
+      await Promise.all([...pendingResumeWritesRef.current]);
+    }
+    setContinueWatching(await loadContinueWatching());
+  }, []);
+
+  // Load the history slices only when a screen requests them. In particular,
+  // durable progress ticks must not deserialize the full history table and
+  // rebuild the provider context every few seconds while a player is open.
+  const navigate = useCallback((next: ScreenId) => {
+    setBrowseContext(null);
+    setDetailItem(null);
+    setRoute(next);
+    if (next === "history") void refreshHistory();
+  }, [refreshHistory]);
+
   // Drive the background auto-resolve scheduler. It only does work under Tauri
   // with debrid configured (gated internally); here we (re)start it whenever
   // debrid availability changes and refresh the cached-resolution badge state on
@@ -345,8 +381,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const consumePendingSearch = useCallback(() => setPendingSearch(null), []);
 
   const updateSettings = useCallback((next: AppSettings) => {
-    // Optimistically update in-memory (rebuilds services immediately), then
-    // persist to the durable Store. Persisting can reject if a keychain write
+    // Optimistically update in-memory (and rebuild services only when their
+    // config changes), then persist to the durable Store. Persisting can reject if a keychain write
     // fails closed (desktop) - surface it to the console rather than leaving an
     // unhandled rejection; the in-memory value is still usable for the session.
     setSettings(next);
@@ -436,18 +472,33 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         durationSeconds != null &&
         durationSeconds > 0 &&
         progressSeconds / durationSeconds >= 0.95;
-      void recordHistory(item, {
-        progressSeconds,
-        durationSeconds,
-        completed,
-        episodeId: episodeId ?? null,
-        preferredAudioId: prefs?.preferredAudioId,
-        preferredAudioLang: prefs?.preferredAudioLang,
-        preferredSubId: prefs?.preferredSubId,
-        playbackSpeed: prefs?.playbackSpeed,
-      }).then(() => void refreshHistory());
+      // `recordHistory()` is intentionally convenient for interactive history
+      // mutations because it reads the refreshed list back. Playback progress
+      // is different: doing that every five seconds deserializes all history
+      // rows and changes the provider context for the entire app. The storage
+      // upsert already preserves omitted player prefs, so persist directly and
+      // refresh once at the playback-session boundary or when History opens.
+      const write = getStore()
+        .recordHistory({
+          mediaId: item.id,
+          episodeId: episodeId ?? null,
+          progressSeconds,
+          durationSeconds,
+          completed,
+          preview: item,
+          preferredAudioId: prefs?.preferredAudioId,
+          preferredAudioLang: prefs?.preferredAudioLang,
+          preferredSubId: prefs?.preferredSubId,
+          playbackSpeed: prefs?.playbackSpeed,
+        })
+        .catch(() => {
+          // Progress persistence is best effort. The next tick and final close
+          // report can retry without interrupting playback.
+        });
+      pendingResumeWritesRef.current.add(write);
+      void write.finally(() => pendingResumeWritesRef.current.delete(write));
     },
-    [refreshHistory],
+    [],
   );
 
   // Effective experience tier. Server Mode is authoritative from the profile
@@ -483,6 +534,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       watchlist,
       history,
       continueWatching,
+      refreshContinueWatching,
       cachedResolutions,
       refreshCachedResolutions,
       toggleWatchlist,
@@ -511,6 +563,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       watchlist,
       history,
       continueWatching,
+      refreshContinueWatching,
       cachedResolutions,
       refreshCachedResolutions,
       toggleWatchlist,

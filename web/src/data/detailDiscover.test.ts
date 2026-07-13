@@ -100,6 +100,7 @@ const cast: CastMember[] = [
 function fakeTMDB(over: Partial<Record<string, unknown>> = {}): TMDBService {
   const base = {
     getDetail: vi.fn(async () => mediaItem()),
+    getExternalIds: vi.fn(async () => ({ imdbId: null, tvdbId: null })),
     getCast: vi.fn(async () => cast),
     getRecommendations: vi.fn(async () => [preview({ id: "tmdb-7", title: "Rec" })]),
     getTrending: vi.fn(async (kind: string) => ({
@@ -143,6 +144,18 @@ describe("useDetail", () => {
     expect(result.current.data.imdbId).toBe("tt0084787");
     expect(svc.getCast).toHaveBeenCalledWith(1091, "movie");
     expect(svc.getRecommendations).toHaveBeenCalledWith(1091, "movie");
+  });
+
+  it("publishes external IMDb ids before a slow detail payload settles", async () => {
+    const svc = fakeTMDB({
+      getDetail: vi.fn(() => new Promise<MediaItem>(() => {})),
+      getExternalIds: vi.fn(async () => ({ imdbId: "tt1091", tvdbId: null })),
+    });
+    const p = preview({ tmdbId: 1091 });
+    const { result } = renderHook(() => useDetail(p, svc));
+
+    await waitFor(() => expect(result.current.data.imdbId).toBe("tt1091"));
+    expect(result.current.loading).toBe(true);
   });
 
   it("derives the tmdb id from a tmdb- prefixed preview id when tmdbId is absent", async () => {

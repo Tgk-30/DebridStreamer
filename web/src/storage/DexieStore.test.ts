@@ -7,6 +7,7 @@
 // library + folder CRUD; indexer/debrid config CRUD + ordering; secrets.
 
 import "fake-indexeddb/auto";
+import Dexie from "dexie";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DexieStore } from "./DexieStore";
 import {
@@ -553,6 +554,153 @@ describe("taste events", () => {
     const recent = await db.recentTasteEvents();
     expect(recent.map((e) => e.id)).toEqual(["e2", "e1"]);
     expect(await db.recentTasteEvents(1)).toHaveLength(1);
+  });
+
+  it("uses the additive mediaId+createdAt index for per-title reads", async () => {
+    await db.addTasteEvent(event("old", "2024-01-01T00:00:00.000Z"));
+    await db.addTasteEvent({
+      ...event("other", "2024-03-01T00:00:00.000Z"),
+      mediaId: "tt-other",
+    });
+    await db.addTasteEvent(event("new", "2024-02-01T00:00:00.000Z"));
+
+    expect(db.table("tasteEvents").schema.idxByName["[mediaId+createdAt]"]).toBeDefined();
+    expect((await db.recentTasteEventsForMedia("tt1")).map((row) => row.id)).toEqual([
+      "new",
+      "old",
+    ]);
+  });
+
+  it("never prunes explicit ratings, likes, or dislikes", async () => {
+    const explicit: TasteEventRecord[] = [
+      { ...event("rated-old", "1990-01-01T00:00:00.000Z"), eventType: "rated" },
+      { ...event("liked-old", "1990-01-02T00:00:00.000Z"), eventType: "liked" },
+      { ...event("disliked-old", "1990-01-03T00:00:00.000Z"), eventType: "disliked" },
+    ];
+    const implicit = Array.from({ length: 1_002 }, (_, index) => ({
+      ...event(`implicit-${index}`, new Date(Date.UTC(2024, 0, 1, 0, 0, index)).toISOString()),
+      mediaId: `tmdb-${index}`,
+    }));
+    const table = db.table<TasteEventRecord, string>("tasteEvents");
+    await table.bulkPut([...explicit, ...implicit]);
+
+    await db.addTasteEvent(event("implicit-trigger", "2025-01-01T00:00:00.000Z"));
+
+    expect((await table.bulkGet(explicit.map((row) => row.id))).filter(Boolean)).toHaveLength(3);
+    expect(
+      await table.where("eventType").noneOf(["rated", "liked", "disliked"]).count(),
+    ).toBe(1_000);
+  });
+});
+
+describe("v4 to v5 migration", () => {
+  it("preserves taste events and makes them queryable by the new media index", async () => {
+    const name = `migration-${Date.now()}-${Math.random()}`;
+    const legacy = new Dexie(name);
+    legacy.version(4).stores({
+      settings: "key",
+      secrets: "key",
+      watchlist: "mediaId, addedAt",
+      watchHistory: "id, mediaId, lastWatched, completed",
+      library: "id, mediaId, folderId, listType, addedAt",
+      folders: "id, parentId, listType, isSystem",
+      indexerConfigs: "id, priority, isActive",
+      debridConfigs: "id, priority, isActive",
+      tasteEvents: "id, userId, createdAt",
+      mediaCache: "id, lastFetched",
+      cachedResolutions: "mediaId, resolvedAt",
+      aiUsage: "id, createdAt",
+      downloads: "jobId, status, updatedAt, createdAt, mediaId, episodeId",
+    });
+    const seeded: TasteEventRecord[] = [
+      {
+        id: "legacy-1",
+        userId: "default",
+        mediaId: "tt-upgrade",
+        episodeId: null,
+        eventType: "rated",
+        signalStrength: 0.9,
+        metadata: { rating: "9" },
+        createdAt: "2024-01-01T00:00:00.000Z",
+      },
+      {
+        id: "legacy-2",
+        userId: "default",
+        mediaId: "tt-other",
+        episodeId: null,
+        eventType: "liked",
+        signalStrength: 1,
+        metadata: {},
+        createdAt: "2024-02-01T00:00:00.000Z",
+      },
+    ];
+    await legacy.table<TasteEventRecord, string>("tasteEvents").bulkAdd(seeded);
+    legacy.close();
+
+    const upgraded = new DexieStore(name);
+    try {
+      expect(await upgraded.table("tasteEvents").count()).toBe(seeded.length);
+      expect(
+        (await upgraded.recentTasteEventsForMedia("tt-upgrade")).map((row) => row.id),
+      ).toEqual(["legacy-1"]);
+      expect(
+        upgraded.table("tasteEvents").schema.idxByName["[mediaId+createdAt]"],
+      ).toBeDefined();
+    } finally {
+      await upgraded.delete();
+    }
+  });
+});
+
+describe("storage open failure handling", () => {
+  it("reports a failed open and lets the caller offer explicit recovery", async () => {
+    const original = Dexie.dependencies.indexedDB;
+    const issue = vi.fn();
+
+    try {
+      Dexie.dependencies.indexedDB = undefined as unknown as IDBFactory;
+      // Create after removing the IndexedDB implementation so its eager open
+      // follows the same failure path a blocked/corrupt browser profile would.
+      const unavailable = new DexieStore(`unavailable-${Date.now()}`);
+      unavailable.onStorageIssue(issue);
+      await expect(unavailable.getSetting("boot")).rejects.toBeInstanceOf(Error);
+      expect(issue).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "open-failed" }),
+      );
+      unavailable.close();
+    } finally {
+      Dexie.dependencies.indexedDB = original;
+    }
+  });
+
+  it("retries after a transient open timeout and serves the waiting operation", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const originalOpen = DexieStore.prototype.open;
+    let calls = 0;
+    const open = vi
+      .spyOn(DexieStore.prototype, "open")
+      .mockImplementation(function (this: DexieStore) {
+        calls += 1;
+        if (calls === 1) {
+          return new Promise<Dexie>(() => {}) as ReturnType<DexieStore["open"]>;
+        }
+        return originalOpen.call(this);
+      });
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const recovering = new DexieStore(`recovering-${Date.now()}`);
+
+    try {
+      const read = recovering.getSetting("boot");
+      await vi.advanceTimersByTimeAsync(10_001);
+      await expect(read).resolves.toBeNull();
+      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(recovering.getStorageIssue()).toBeNull();
+    } finally {
+      open.mockRestore();
+      warning.mockRestore();
+      vi.useRealTimers();
+      await recovering.delete();
+    }
   });
 });
 

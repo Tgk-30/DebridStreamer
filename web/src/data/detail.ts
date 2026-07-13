@@ -52,6 +52,7 @@ function previewToItem(p: MediaPreview): MediaItem {
 async function loadLive(
   service: TMDBService,
   preview: MediaPreview,
+  onImdbId?: (imdbId: string) => void,
 ): Promise<DetailData> {
   const tmdbId =
     preview.tmdbId ??
@@ -59,17 +60,35 @@ async function loadLive(
       ? Number.parseInt(preview.id.slice(5), 10)
       : null);
 
-  const detail = await service.getDetail(preview.id, preview.type);
+  // Start independent requests together. External ids previously waited for
+  // detail, then cast/recommendations, leaving stream search needlessly idle.
+  const hasTmdbId = tmdbId != null && !Number.isNaN(tmdbId);
+  let publishedImdbId: string | null = null;
+  const publishImdbId = (candidate: string | null | undefined) => {
+    if (candidate == null || !candidate.startsWith("tt") || candidate === publishedImdbId) return;
+    publishedImdbId = candidate;
+    onImdbId?.(candidate);
+  };
+  const externalIds = hasTmdbId
+    ? service
+        .getExternalIds(tmdbId, preview.type)
+        .then((ids) => {
+          // This can resolve before the heavyweight detail payload. Publishing
+          // it immediately lets useStreams begin without waiting for hero art.
+          publishImdbId(ids.imdbId);
+          return ids;
+        })
+        .catch(() => null)
+    : Promise.resolve(null);
+  const detailPromise = service.getDetail(preview.id, preview.type);
+  const castPromise = hasTmdbId
+    ? service.getCast(tmdbId, preview.type).catch(() => [] as CastMember[])
+    : Promise.resolve([] as CastMember[]);
+  const relatedPromise = hasTmdbId
+    ? service.getRecommendations(tmdbId, preview.type).catch(() => [] as MediaPreview[])
+    : Promise.resolve([] as MediaPreview[]);
 
-  // Cast + recommendations need the numeric TMDB id.
-  let cast: CastMember[] = [];
-  let related: MediaPreview[] = [];
-  if (tmdbId != null && !Number.isNaN(tmdbId)) {
-    [cast, related] = await Promise.all([
-      service.getCast(tmdbId, preview.type).catch(() => []),
-      service.getRecommendations(tmdbId, preview.type).catch(() => []),
-    ]);
-  }
+  const detail = await detailPromise;
 
   // The detail id is an IMDb id (tt…) when TMDB had one, else a tmdb- fallback.
   let imdbId = detail.id.startsWith("tt") ? detail.id : null;
@@ -77,16 +96,14 @@ async function loadLive(
   // imdb_id (notably TV) - try the dedicated external_ids endpoint before
   // settling for null, because a null imdb id means the STREAM SEARCH NEVER
   // RUNS for this title (the silent "no streams found" P0).
-  if (imdbId == null && tmdbId != null && !Number.isNaN(tmdbId)) {
-    try {
-      const ids = await service.getExternalIds(tmdbId, preview.type);
-      if (ids.imdbId != null && ids.imdbId.startsWith("tt")) {
-        imdbId = ids.imdbId;
-      }
-    } catch {
-      // Best-effort - the picker now tells the user when the id is missing.
-    }
+  if (imdbId == null) {
+    const ids = await externalIds;
+    if (ids?.imdbId != null && ids.imdbId.startsWith("tt")) imdbId = ids.imdbId;
   }
+
+  // Publish the stream-search key while cast and related art continue loading.
+  publishImdbId(imdbId);
+  const [cast, related] = await Promise.all([castPromise, relatedPromise]);
 
   return { item: detail, cast, related, imdbId };
 }
@@ -172,7 +189,14 @@ export function useDetail(
       }
 
       try {
-        const data = await loadLive(service, currentPreview);
+        const data = await loadLive(service, currentPreview, (imdbId) => {
+          if (cancelled) return;
+          setState((current) => ({
+            ...current,
+            data: { ...current.data, imdbId },
+            source: "live",
+          }));
+        });
         if (!cancelled) {
           setState({ data, loading: false, error: null, source: "live" });
         }

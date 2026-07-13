@@ -9,6 +9,7 @@ const renderPlayerMock = vi.hoisted(() => ({
   observeProperties: vi.fn(),
   setProperty: vi.fn(),
 }));
+const iconMock = vi.hoisted(() => vi.fn(({ name }: { name: string }) => <span data-icon={name} />));
 
 const tauriWindowMock = vi.hoisted(() => ({
   setFullscreen: vi.fn(async () => {}),
@@ -36,7 +37,7 @@ vi.mock("../lib/tauri", () => ({
 }));
 
 vi.mock("./Icon", () => ({
-  Icon: ({ name }: { name: string }) => <span data-icon={name} />,
+  Icon: iconMock,
 }));
 
 import { EmbeddedPlayer } from "./EmbeddedPlayer";
@@ -73,6 +74,7 @@ beforeEach(() => {
     },
   );
   renderPlayerMock.setProperty.mockResolvedValue(undefined);
+  iconMock.mockClear();
   setViewport(1024, 768);
 });
 
@@ -170,8 +172,10 @@ describe("EmbeddedPlayer playback controls", () => {
     // time-ahead delta: 40s cached of a 100s file must draw 40%, not 65%.
     emitProperty("demuxer-cache-time", 40);
 
-    const buffered = document.body.querySelector(".embed-scrub-buffered") as HTMLElement;
-    expect(buffered.style.width).toBe("40%");
+    await waitFor(() => {
+      const buffered = document.body.querySelector(".embed-scrub-buffered") as HTMLElement;
+      expect(buffered.style.width).toBe("40%");
+    });
   });
 
   it("toggles the right time readout between remaining and total duration", async () => {
@@ -182,12 +186,52 @@ describe("EmbeddedPlayer playback controls", () => {
     emitProperty("duration", 100);
     emitProperty("time-pos", 25);
 
-    const readout = screen.getByRole("button", { name: "Show total duration" });
-    expect(readout).toHaveTextContent("-1:15");
+    const readout = await screen.findByRole("button", { name: "Show total duration" });
+    await waitFor(() => expect(readout).toHaveTextContent("-1:15"));
     fireEvent.click(readout);
     expect(screen.getByRole("button", { name: "Show remaining time" })).toHaveTextContent(
       "1:40",
     );
+  });
+
+  it("coalesces rapid native clock/cache events into scrubber-only updates", async () => {
+    vi.useFakeTimers();
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    emitProperty("duration", 100);
+    // First position also drops the initial spinner. Settle that one parent
+    // render, then assert the rapid steady-state events do not recreate icons.
+    emitProperty("time-pos", 1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    iconMock.mockClear();
+
+    for (let pos = 2; pos <= 20; pos += 1) {
+      emitProperty("time-pos", pos);
+      emitProperty("demuxer-cache-time", pos + 20);
+    }
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(199);
+    });
+    expect(screen.getByRole("slider", { name: "Seek" })).toHaveAttribute(
+      "aria-valuenow",
+      "1",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByRole("slider", { name: "Seek" })).toHaveAttribute(
+      "aria-valuenow",
+      "20",
+    );
+    expect(document.body.querySelector<HTMLElement>(".embed-scrub-buffered")?.style.width).toBe("40%");
+    expect(iconMock).not.toHaveBeenCalled();
   });
 
   it("pauses on a single stage click but fullscreen toggles on double click without pausing", async () => {

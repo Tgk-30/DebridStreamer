@@ -218,6 +218,7 @@ async function resolveStreams(
   title: string | null,
   indexers: IndexerManager,
   debrid: DebridManager | null,
+  signal?: AbortSignal,
 ): Promise<StreamRow[]> {
   // Two complementary passes, merged: the imdb-based search (YTS/EZTV are
   // imdb-native) AND a title-based query - APIBay and other name-matching
@@ -230,13 +231,24 @@ async function resolveStreams(
   const [byImdb, byTitle] = await Promise.all([
     // searchAll errors still surface (state.error); IndexerManager already
     // absorbs per-indexer failures internally, so a throw here is catastrophic.
-    indexers.searchAll(imdbId, type, season, episode),
+    (indexers.searchAll as unknown as (
+      imdbId: string,
+      type: MediaType,
+      season: number | null,
+      episode: number | null,
+      signal?: AbortSignal,
+    ) => Promise<TorrentResult[]>)(imdbId, type, season, episode, signal),
     // The title pass is best-effort - a failure there must NOT empty the imdb
     // results, so it degrades to an empty set.
     query != null
-      ? indexers.searchByQuery(query, type).catch(() => [] as TorrentResult[])
+      ? (indexers.searchByQuery as unknown as (
+          query: string,
+          type: MediaType,
+          signal?: AbortSignal,
+        ) => Promise<TorrentResult[]>)(query, type, signal).catch(() => [] as TorrentResult[])
       : Promise.resolve([] as TorrentResult[]),
   ]);
+  if (signal?.aborted) return [];
   // Fold the imdb-exact + loose title passes into one ranked, deduped set. The
   // combiner (shared with Server Mode) validates the title pass against the
   // requested title so the two modes can never diverge.
@@ -248,7 +260,10 @@ async function resolveStreams(
   if (debrid != null && debrid.hasServices) {
     const hashes = results.map((r) => r.infoHash);
     try {
-      const merged = await debrid.checkCacheAll(hashes);
+      const merged = await (debrid.checkCacheAll as unknown as (
+        hashes: string[],
+        signal?: AbortSignal,
+      ) => ReturnType<DebridManager["checkCacheAll"]>)(hashes, signal);
       cacheByHash = Object.fromEntries(
         Object.entries(merged)
           .filter(([, entry]) => CacheStatus.isCached(entry.status))
@@ -300,7 +315,7 @@ export function useStreams(
   });
 
   const run = useCallback(
-    async (signal: { cancelled: boolean }) => {
+    async (signal: AbortSignal) => {
       if (imdbId == null || !hasIndexers) {
         // HONEST idle: a null imdb id means NO search ever ran - say so instead
         // of letting the UI render the generic "No streams found".
@@ -316,8 +331,22 @@ export function useStreams(
       setState((s) => ({ ...s, loading: true, error: null, hasIndexers, hasDebrid }));
       try {
         if (serverMode) {
-          const remote = await fetchServerStreams({ imdbId, type, season, episode, title });
-          if (!signal.cancelled) {
+          const remote = await (fetchServerStreams as unknown as (input: {
+            imdbId: string;
+            type: MediaType;
+            season: number | null;
+            episode: number | null;
+            title: string | null;
+            signal: AbortSignal;
+          }) => ReturnType<typeof fetchServerStreams>)({
+            imdbId,
+            type,
+            season,
+            episode,
+            title,
+            signal,
+          });
+          if (!signal.aborted) {
             setState({
               rows: filterAndRankForEpisode(
                 dedupeStreamRows(remote.rows),
@@ -342,6 +371,7 @@ export function useStreams(
           title,
           indexers,
           debrid,
+          signal,
         );
         // Per-source failures from the passes that just ran (both passes error
         // on every source when the network path is down, so whichever pass
@@ -359,7 +389,7 @@ export function useStreams(
             .join(" · ");
           throw new Error(`Couldn't reach any source - ${detail}`);
         }
-        if (!signal.cancelled) {
+        if (!signal.aborted) {
           setState({
             rows,
             loading: false,
@@ -372,7 +402,7 @@ export function useStreams(
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (!signal.cancelled) {
+        if (!signal.aborted) {
           setState({
             rows: [],
             loading: false,
@@ -389,10 +419,10 @@ export function useStreams(
   );
 
   useEffect(() => {
-    const signal = { cancelled: false };
-    void run(signal);
+    const controller = new AbortController();
+    void run(controller.signal);
     return () => {
-      signal.cancelled = true;
+      controller.abort();
     };
   }, [run]);
 

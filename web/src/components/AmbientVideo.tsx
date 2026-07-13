@@ -26,7 +26,7 @@ export function AmbientVideo({ name, opacity = 0.35, className }: Props) {
       loop
       muted
       playsInline
-      preload="auto"
+      preload="metadata"
       aria-hidden="true"
       tabIndex={-1}
     />

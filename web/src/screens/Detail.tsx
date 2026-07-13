@@ -161,6 +161,7 @@ export function Detail() {
     toggleWatchlist,
     recordResume,
     continueWatching,
+    refreshContinueWatching,
     cachedResolutions,
   } = useAppStore();
   const transcodeAvailable = useTranscodeAvailable();
@@ -591,6 +592,16 @@ export function Detail() {
     });
   }
 
+  function closePlayer(): void {
+    setPlayer(null);
+    // WebviewPlayer emits its final progress report from unmount cleanup. Run
+    // the one-per-session slice refresh on the next task so that write is
+    // registered first; AppStore then waits for it before reading the slice.
+    window.setTimeout(() => {
+      void refreshContinueWatching();
+    }, 0);
+  }
+
   /** Record (or toggle off) a like/dislike taste signal for the current title.
    * The event carries the title + genre names in metadata so the taste-profile
    * assembler can derive liked/disliked genres without a media-cache join. The
@@ -782,7 +793,7 @@ export function Detail() {
    * search - and queues the auto-play attempt for when the new rows land. */
   function handlePlayNext() {
     if (upNextTarget == null || detailItem == null) return;
-    setPlayer(null);
+    closePlayer();
     selectEpisode(detailItem.id, upNextTarget);
     setAutoPlayPending(upNextTarget);
   }
@@ -1263,7 +1274,7 @@ export function Detail() {
             useBuiltInPlayer={settings.builtInPlayer}
             startPositionSeconds={player.startPositionSeconds}
             savedPrefs={player.savedPrefs}
-            onClose={() => setPlayer(null)}
+            onClose={closePlayer}
             onProgress={(current, duration, prefs) => {
               // Persist a resume position against the title (movies) or the
               // SNAPSHOTTED episode (series) so Continue Watching resumes the

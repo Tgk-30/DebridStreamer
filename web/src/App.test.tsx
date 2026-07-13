@@ -560,16 +560,18 @@ describe("smart preload effect", () => {
 // -----------------------------------------------------------------------
 
 describe("FirstRunHost gating", () => {
-  it("renders nothing until the store has hydrated", async () => {
+  it("renders boot chrome until the store has hydrated", async () => {
     store = makeStore({ hydrated: false });
     const { container } = render(<FirstRunHost />);
-    // firstRun resolves to false, but hydrated=false keeps it null-rendering.
+    // firstRun resolves to false, but hydrated=false keeps app/wizard decisions
+    // gated while a lightweight boot shell prevents a blank window.
     await waitFor(() => {
-      // nothing meaningful mounted (no app, no wizard markers).
+      // No app or wizard mounts before hydration.
       expect(screen.queryByTestId("nav-rail")).not.toBeInTheDocument();
       expect(screen.queryByTestId("first-run")).not.toBeInTheDocument();
     });
-    expect(container).toBeEmptyDOMElement();
+    expect(container).not.toBeEmptyDOMElement();
+    expect(screen.getByTestId("spinner")).toBeInTheDocument();
   });
 
   it("renders the App once hydrated with no first-run and no server setup", async () => {

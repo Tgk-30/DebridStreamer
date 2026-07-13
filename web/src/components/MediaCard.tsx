@@ -2,10 +2,10 @@
 // reveals a cinematic info layer (title, year·rating, quick Play/Info) sliding up
 // from a gradient scrim - the "expand-on-hover" feel of Netflix/Apple TV+, done
 // in place (no neighbor-overlap clipping). Poster fades in on load with a shimmer
-// placeholder. Motion via `motion`.
+// placeholder. Hover and reveal effects are CSS-only so large grids do not
+// instantiate animation controllers per card.
 
 import { memo, useCallback, useState } from "react";
-import { motion } from "motion/react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import type { MediaPreview } from "../models/media";
 import { Icon } from "./Icon";
@@ -32,24 +32,6 @@ interface MediaCardProps {
    * no resume point). Omit (or false) to hide it. */
   watched?: boolean;
 }
-
-// Animation objects are hoisted to module scope so they're referentially stable
-// across every card render - motion never re-reconciles them, and they don't add
-// per-render allocation on grids of 100+ cards.
-const SPRING = { type: "spring", stiffness: 380, damping: 30, mass: 0.7 } as const;
-const WHILE_TAP = { scale: 0.98 } as const;
-const CARD_VARIANTS = {
-  rest: { y: 0, scale: 1 },
-  hover: { y: -14, scale: 1.08 },
-} as const;
-const IMG_TRANSITION = { duration: 0.5, ease: [0.16, 1, 0.3, 1] } as const;
-const REVEAL_VARIANTS = { rest: { opacity: 0 }, hover: { opacity: 1 } } as const;
-const REVEAL_TRANSITION = { duration: 0.25, ease: "easeOut" } as const;
-const REVEAL_INNER_VARIANTS = {
-  rest: { y: 10, opacity: 0 },
-  hover: { y: 0, opacity: 1 },
-} as const;
-const REVEAL_INNER_TRANSITION = { duration: 0.3, ease: [0.16, 1, 0.3, 1] } as const;
 
 // memo: a grid re-render (filter/scroll/parent state) shouldn't re-run 100+ cards
 // whose props are unchanged.
@@ -78,19 +60,12 @@ export const MediaCard = memo(function MediaCard({
   );
 
   return (
-    <motion.button
+    <button
       type="button"
       className={rank != null ? "media-card is-ranked" : "media-card"}
       onClick={handleSelect}
       title={item.title}
       aria-label={rank != null ? `#${rank}: ${item.title}` : item.title}
-      initial={false}
-      whileHover="hover"
-      whileFocus="hover"
-      whileTap={WHILE_TAP}
-      animate="rest"
-      variants={CARD_VARIANTS}
-      transition={SPRING}
     >
       {rank != null && (
         <span className="media-card-rank" aria-hidden="true">
@@ -99,7 +74,7 @@ export const MediaCard = memo(function MediaCard({
       )}
       <div className="media-card-poster">
         {poster ? (
-          <motion.img
+          <img
             ref={(el) => {
               // Already-cached posters can be `complete` before React attaches
               // onLoad (which it never replays for a cached image), leaving the
@@ -110,10 +85,9 @@ export const MediaCard = memo(function MediaCard({
             src={poster}
             alt={item.title}
             loading="lazy"
+            decoding="async"
             draggable={false}
-            initial={{ opacity: 0, scale: 1.04 }}
-            animate={loaded ? { opacity: 1, scale: 1 } : { opacity: 0 }}
-            transition={IMG_TRANSITION}
+            className={loaded ? "is-loaded" : ""}
             onLoad={() => setLoaded(true)}
             onError={() => setLoaded(true)}
           />
@@ -142,16 +116,8 @@ export const MediaCard = memo(function MediaCard({
         )}
 
         {/* Cinematic reveal layer - fades/slides in on hover. */}
-        <motion.div
-          className="media-card-reveal"
-          variants={REVEAL_VARIANTS}
-          transition={REVEAL_TRANSITION}
-        >
-          <motion.div
-            className="media-card-reveal-inner"
-            variants={REVEAL_INNER_VARIANTS}
-            transition={REVEAL_INNER_TRANSITION}
-          >
+        <div className="media-card-reveal">
+          <div className="media-card-reveal-inner">
             <div className="media-card-reveal-title">{item.title}</div>
             <div className="media-card-reveal-meta">
               {item.year != null && <span>{item.year}</span>}
@@ -174,8 +140,8 @@ export const MediaCard = memo(function MediaCard({
                 <Icon name="info" size={13} />
               </span>
             </div>
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
 
         {progress != null && progress > 0 && (
           <div className="media-card-progress" aria-hidden>
@@ -197,6 +163,6 @@ export const MediaCard = memo(function MediaCard({
           </span>
         )}
       </div>
-    </motion.button>
+    </button>
   );
 });

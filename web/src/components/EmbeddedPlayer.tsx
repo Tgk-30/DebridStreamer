@@ -7,7 +7,16 @@
 // navigation (with scrubber markers), buffered range, hover scrub preview,
 // subtitle + audio sync, real fullscreen, gestures, and a full keyboard map.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   init,
@@ -122,6 +131,10 @@ const VIDEO_MARGIN_BOTTOM = 0;
  *  treat it as a native failure and hand off to the webview HLS transcode. This
  *  is the backstop; an mpv end-file ERROR event closes the common case faster. */
 const FIRST_FRAME_WATCHDOG_MS = 10_000;
+/** The native event stream may run at display cadence. The seek UI does not
+ * need that precision, and keeping it at 5Hz leaves the rest of the chrome
+ * completely out of the playback hot path. */
+const SCRUBBER_UPDATE_INTERVAL_MS = 200;
 
 function fmt(s: number): string {
   if (!Number.isFinite(s) || s < 0) return "0:00";
@@ -193,6 +206,166 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 
 type MenuId = "audio" | "sub" | "speed" | "chapters" | "settings" | null;
 
+interface NativeScrubberHandle {
+  updatePlayback(
+    next: Partial<{ pos: number; bufferedTo: number }>,
+    immediate?: boolean,
+  ): void;
+}
+
+interface NativeScrubberProps {
+  duration: number;
+  chapters: Chapter[];
+  active: boolean;
+  onSeek: (time: number) => void;
+}
+
+/**
+ * The only player-chrome leaf which updates while playback advances. mpv can
+ * report time and cache changes independently and much faster than a seek bar
+ * can visibly change, so merge both into one capped state update here. When
+ * the controls are hidden we retain only the latest refs and do no React work;
+ * showing the controls flushes that latest value immediately.
+ */
+const NativeScrubber = memo(
+  forwardRef<NativeScrubberHandle, NativeScrubberProps>(function NativeScrubber(
+    { duration, chapters, active, onSeek },
+    ref,
+  ) {
+    const [playback, setPlayback] = useState({ pos: 0, bufferedTo: 0 });
+    const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
+    const [showTotalDuration, setShowTotalDuration] = useState(false);
+    const scrubRef = useRef<HTMLDivElement | null>(null);
+    const pendingRef = useRef(playback);
+    const activeRef = useRef(active);
+    const timerRef = useRef<number | undefined>(undefined);
+
+    activeRef.current = active;
+
+    const flush = useCallback(() => {
+      timerRef.current = undefined;
+      if (!activeRef.current) return;
+      const next = pendingRef.current;
+      setPlayback((current) =>
+        current.pos === next.pos && current.bufferedTo === next.bufferedTo
+          ? current
+          : next,
+      );
+    }, []);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        updatePlayback(next, immediate = false) {
+          pendingRef.current = { ...pendingRef.current, ...next };
+          if (!activeRef.current && !immediate) return;
+          if (immediate) {
+            window.clearTimeout(timerRef.current);
+            flush();
+            return;
+          }
+          if (timerRef.current == null) {
+            timerRef.current = window.setTimeout(flush, SCRUBBER_UPDATE_INTERVAL_MS);
+          }
+        },
+      }),
+      [flush],
+    );
+
+    useEffect(() => {
+      if (active) flush();
+      else window.clearTimeout(timerRef.current);
+    }, [active, flush]);
+    useEffect(
+      () => () => window.clearTimeout(timerRef.current),
+      [],
+    );
+
+    const timeAtClientX = useCallback(
+      (clientX: number): number => {
+        const el = scrubRef.current;
+        if (el == null || duration <= 0) return 0;
+        const rect = el.getBoundingClientRect();
+        const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+        return fraction * duration;
+      },
+      [duration],
+    );
+    const pct = (value: number) =>
+      duration > 0 ? Math.min(100, Math.max(0, (value / duration) * 100)) : 0;
+
+    return (
+      <div className="embed-scrub-row">
+        <span className="embed-time">{fmt(playback.pos)}</span>
+        <div
+          className="embed-scrub"
+          ref={scrubRef}
+          onPointerDown={(event) => {
+            (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
+            onSeek(timeAtClientX(event.clientX));
+          }}
+          onPointerMove={(event) => {
+            const time = timeAtClientX(event.clientX);
+            if (event.buttons === 1) onSeek(time);
+            setHover({ x: event.clientX, t: time });
+          }}
+          onPointerLeave={() => setHover(null)}
+          role="slider"
+          aria-label="Seek"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(duration)}
+          aria-valuenow={Math.round(playback.pos)}
+          tabIndex={0}
+        >
+          <div className="embed-scrub-track">
+            <div
+              className="embed-scrub-buffered"
+              style={{ width: `${pct(Math.max(playback.bufferedTo, playback.pos))}%` }}
+            />
+            <div className="embed-scrub-played" style={{ width: `${pct(playback.pos)}%` }} />
+            {chapters.length > 1 &&
+              chapters.map((chapter, index) => (
+                <span
+                  key={index}
+                  className="embed-scrub-chapter"
+                  style={{ left: `${pct(chapter.time)}%` }}
+                  title={chapter.title}
+                />
+              ))}
+            <div className="embed-scrub-thumb" style={{ left: `${pct(playback.pos)}%` }} />
+          </div>
+          {hover && (
+            <div
+              className="embed-scrub-hover"
+              style={{ left: `${Math.min(100, Math.max(0, pct(hover.t)))}%` }}
+            >
+              {fmt(hover.t)}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="embed-time embed-time-toggle"
+          onClick={() => setShowTotalDuration((showingTotal) => !showingTotal)}
+          aria-label={showTotalDuration ? "Show remaining time" : "Show total duration"}
+          title={showTotalDuration ? "Show remaining time" : "Show total duration"}
+        >
+          {showTotalDuration
+            ? fmt(duration)
+            : `-${fmt(Math.max(0, duration - playback.pos))}`}
+        </button>
+      </div>
+    );
+  }),
+);
+
+function chapterIndexAt(pos: number, chapters: readonly Chapter[]): number {
+  for (let index = chapters.length - 1; index >= 0; index -= 1) {
+    if (pos >= chapters[index].time) return index;
+  }
+  return -1;
+}
+
 export function EmbeddedPlayer({
   url,
   title,
@@ -209,10 +382,8 @@ export function EmbeddedPlayer({
 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
-  const [pos, setPos] = useState(0);
   const [dur, setDur] = useState(0);
   const [buffering, setBuffering] = useState(true);
-  const [bufferedTo, setBufferedTo] = useState(0);
   const [volume, setVolume] = useState(100);
   const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -227,8 +398,7 @@ export function EmbeddedPlayer({
   const [audioDelay, setAudioDelay] = useState(0);
   const [subScale, setSubScale] = useState(1);
   const [ended, setEnded] = useState(false);
-  const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
-  const [showTotalDuration, setShowTotalDuration] = useState(false);
+  const [activeChapterIndex, setActiveChapterIndex] = useState(-1);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   // Source dimensions are diagnostic only. Player chrome is deliberately never
@@ -249,17 +419,21 @@ export function EmbeddedPlayer({
   const lastReportRef = useRef(0);
   const posRef = useRef(0);
   const durRef = useRef(0);
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
   const onPlaybackErrorRef = useRef(onPlaybackError);
   onPlaybackErrorRef.current = onPlaybackError;
   const hideTimer = useRef<number | undefined>(undefined);
   const stageClickTimer = useRef<number | undefined>(undefined);
-  const scrubRef = useRef<HTMLDivElement | null>(null);
+  const scrubberRef = useRef<NativeScrubberHandle | null>(null);
+  const activeChapterIndexRef = useRef(-1);
   const pausedRef = useRef(paused);
   const lastAudibleVolume = useRef(100);
   const menuOpenRef = useRef(false);
   menuOpenRef.current = menu != null || shortcutsOpen || infoOpen;
+  const chaptersRef = useRef(chapters);
+  chaptersRef.current = chapters;
 
-  posRef.current = pos;
   durRef.current = dur;
   pausedRef.current = paused;
 
@@ -293,7 +467,13 @@ export function EmbeddedPlayer({
   const refreshChapters = useCallback(async () => {
     try {
       const raw = await getProperty("chapter-list", "node");
-      setChapters(parseChapters(raw));
+      const nextChapters = parseChapters(raw);
+      setChapters(nextChapters);
+      const nextChapterIndex = chapterIndexAt(posRef.current, nextChapters);
+      if (activeChapterIndexRef.current !== nextChapterIndex) {
+        activeChapterIndexRef.current = nextChapterIndex;
+        setActiveChapterIndex(nextChapterIndex);
+      }
     } catch {
       /* ignore */
     }
@@ -309,6 +489,11 @@ export function EmbeddedPlayer({
     // Armed after loadfile; fires if no first frame arrives in time.
     let watchdog: number | undefined;
     firstFrameRef.current = false; // new file: show the initial spinner again
+    posRef.current = 0;
+    durRef.current = 0;
+    scrubberRef.current?.updatePlayback({ pos: 0, bufferedTo: 0 }, true);
+    activeChapterIndexRef.current = -1;
+    setActiveChapterIndex(-1);
     setSourceW(0);
     setSourceH(0);
     setVideoW(0);
@@ -355,7 +540,20 @@ export function EmbeddedPlayer({
                 break;
               case "time-pos":
                 if (typeof ev.data === "number") {
-                  setPos(ev.data);
+                  // Keep command/keyboard math exact at native event cadence,
+                  // while NativeScrubber coalesces its React state to 5Hz.
+                  posRef.current = ev.data;
+                  scrubberRef.current?.updatePlayback({ pos: ev.data });
+                  if (chaptersRef.current.length > 0) {
+                    const nextChapterIndex = chapterIndexAt(
+                      ev.data,
+                      chaptersRef.current,
+                    );
+                    if (activeChapterIndexRef.current !== nextChapterIndex) {
+                      activeChapterIndexRef.current = nextChapterIndex;
+                      setActiveChapterIndex(nextChapterIndex);
+                    }
+                  }
                   // First position report ≈ first frame shown → drop the
                   // initial-load spinner and stand the watchdog down.
                   if (!firstFrameRef.current) {
@@ -363,10 +561,26 @@ export function EmbeddedPlayer({
                     setBuffering(false);
                     window.clearTimeout(watchdog);
                   }
+                  const now = Date.now();
+                  if (
+                    startedRef.current &&
+                    durRef.current > 0 &&
+                    now - lastReportRef.current >= 5000
+                  ) {
+                    lastReportRef.current = now;
+                    onProgressRef.current?.(
+                      posRef.current,
+                      durRef.current,
+                      prefsRef.current,
+                    );
+                  }
                 }
                 break;
               case "duration":
-                if (typeof ev.data === "number") setDur(ev.data);
+                if (typeof ev.data === "number") {
+                  durRef.current = ev.data;
+                  setDur(ev.data);
+                }
                 break;
               case "paused-for-cache":
                 // Only a real cache stall (after playback has started) toggles the
@@ -391,7 +605,9 @@ export function EmbeddedPlayer({
                 // time-ahead quantity is demuxer-cache-duration, a different
                 // property), so it maps directly onto the seek bar.
                 if (typeof ev.data === "number") {
-                  setBufferedTo(Math.max(0, ev.data));
+                  scrubberRef.current?.updatePlayback({
+                    bufferedTo: Math.max(0, ev.data),
+                  });
                 }
                 break;
               case "aid":
@@ -485,16 +701,6 @@ export function EmbeddedPlayer({
     };
   }, [activeAid, activeSid, speed, audioTracks]);
 
-  // ── Throttled progress write-back (every ~5s) ─────────────────────────────
-  useEffect(() => {
-    if (!startedRef.current || dur <= 0) return;
-    const now = Date.now();
-    if (now - lastReportRef.current >= 5000) {
-      lastReportRef.current = now;
-      onProgress?.(pos, dur, prefsRef.current);
-    }
-  }, [pos, dur, onProgress]);
-
   // ── Auto-hide controls + cursor while playing (kept up while a menu is open)
   const nudgeControls = useCallback(() => {
     setControlsVisible(true);
@@ -537,9 +743,16 @@ export function EmbeddedPlayer({
   }, [paused, ended, nudgeControls]);
 
   const seekTo = useCallback((to: number) => {
-    setPos(to);
+    const next = Math.max(0, to);
+    posRef.current = next;
+    scrubberRef.current?.updatePlayback({ pos: next }, true);
+    const nextChapterIndex = chapterIndexAt(next, chaptersRef.current);
+    if (activeChapterIndexRef.current !== nextChapterIndex) {
+      activeChapterIndexRef.current = nextChapterIndex;
+      setActiveChapterIndex(nextChapterIndex);
+    }
     setEnded(false);
-    void command("seek", [Math.max(0, to), "absolute"]);
+    void command("seek", [next, "absolute"]);
   }, []);
 
   const relSeek = useCallback(
@@ -778,19 +991,6 @@ export function EmbeddedPlayer({
     shortcutsOpen, infoOpen, refreshTracks,
   ]);
 
-  // Scrub-bar pointer → time (used for both seek and hover preview).
-  const timeAtClientX = useCallback(
-    (clientX: number): number => {
-      const el = scrubRef.current;
-      if (el == null || dur <= 0) return 0;
-      const r = el.getBoundingClientRect();
-      const frac = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-      return frac * dur;
-    },
-    [dur],
-  );
-
-  const pct = (v: number) => (dur > 0 ? Math.min(100, Math.max(0, (v / dur) * 100)) : 0);
   const nativeSourceSize = useMemo<PixelSize | null>(() => {
     const width = sourceW > 0 ? sourceW : videoW;
     const height = sourceH > 0 ? sourceH : videoH;
@@ -935,68 +1135,13 @@ export function EmbeddedPlayer({
 
         {/* Bottom control bar */}
         <div className="embed-bottom">
-          {/* Scrubber: buffered range + played fill + chapter markers + hover */}
-          <div className="embed-scrub-row">
-            <span className="embed-time">{fmt(pos)}</span>
-            <div
-              className="embed-scrub"
-              ref={scrubRef}
-              onPointerDown={(e) => {
-                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                seekTo(timeAtClientX(e.clientX));
-              }}
-              onPointerMove={(e) => {
-                if (e.buttons === 1) seekTo(timeAtClientX(e.clientX));
-                setHover({ x: e.clientX, t: timeAtClientX(e.clientX) });
-              }}
-              onPointerLeave={() => setHover(null)}
-              role="slider"
-              aria-label="Seek"
-              aria-valuemin={0}
-              aria-valuemax={Math.round(dur)}
-              aria-valuenow={Math.round(pos)}
-              tabIndex={0}
-            >
-              <div className="embed-scrub-track">
-                <div
-                  className="embed-scrub-buffered"
-                  style={{ width: `${pct(Math.max(bufferedTo, pos))}%` }}
-                />
-                <div className="embed-scrub-played" style={{ width: `${pct(pos)}%` }} />
-                {chapters.length > 1 &&
-                  chapters.map((c, i) => (
-                    <span
-                      key={i}
-                      className="embed-scrub-chapter"
-                      style={{ left: `${pct(c.time)}%` }}
-                      title={c.title}
-                    />
-                  ))}
-                <div className="embed-scrub-thumb" style={{ left: `${pct(pos)}%` }} />
-              </div>
-              {hover && (
-                <div
-                  className="embed-scrub-hover"
-                  style={{
-                    left: `${Math.min(100, Math.max(0, pct(hover.t)))}%`,
-                  }}
-                >
-                  {fmt(hover.t)}
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              className="embed-time embed-time-toggle"
-              onClick={() => setShowTotalDuration((showingTotal) => !showingTotal)}
-              aria-label={showTotalDuration ? "Show remaining time" : "Show total duration"}
-              title={showTotalDuration ? "Show remaining time" : "Show total duration"}
-            >
-              {showTotalDuration
-                ? fmt(dur)
-                : `-${fmt(Math.max(0, dur - pos))}`}
-            </button>
-          </div>
+          <NativeScrubber
+            ref={scrubberRef}
+            duration={dur}
+            chapters={chapters}
+            active={controlsVisible || menu != null || infoOpen || shortcutsOpen}
+            onSeek={seekTo}
+          />
 
           {/* Buttons row: equal flexible side columns keep the transport group
               (center) centered on the frame regardless of side widths. */}
@@ -1246,10 +1391,7 @@ export function EmbeddedPlayer({
                 type="button"
                 className={
                   "embed-menu-item embed-chapter-item" +
-                  (pos >= c.time &&
-                  (i === chapters.length - 1 || pos < chapters[i + 1].time)
-                    ? " is-active"
-                    : "")
+                  (activeChapterIndex === i ? " is-active" : "")
                 }
                 role="menuitem"
                 onClick={() => jumpChapter(c.time)}

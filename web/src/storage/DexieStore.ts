@@ -44,6 +44,21 @@ import type {
 /** The list types that get a system root folder (mirrors the Swift
  * UserLibraryEntry.ListType.allCases). */
 const LIST_TYPES: ListType[] = ["watchlist", "favorites", "custom"];
+const OPEN_TIMEOUT_MS = 10_000;
+const MEDIA_CACHE_CAP = 500;
+const TASTE_EVENTS_CAP = 1_000;
+const AI_USAGE_CAP = 1_000;
+const EXPLICIT_TASTE_EVENT_TYPES: ReadonlySet<TasteEventRecord["eventType"]> = new Set([
+  "rated",
+  "liked",
+  "disliked",
+]);
+
+export interface StorageIssue {
+  kind: "blocked" | "open-failed";
+  message: string;
+  error?: unknown;
+}
 
 /** Compose the (mediaId, episodeId) watch-history primary key. A null/absent
  * episodeId collapses to the media-level row. */
@@ -77,6 +92,9 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   private cachedResolutions!: Table<CachedResolutionRecord, string>;
   private aiUsage!: Table<AIUsageRecord, string>;
   private downloads!: Table<DownloadRecord, string>;
+  private openReady: Promise<void>;
+  private storageIssue: StorageIssue | null = null;
+  private readonly storageIssueListeners = new Set<(issue: StorageIssue) => void>();
 
   constructor(name = "debridstreamer") {
     super(name);
@@ -118,16 +136,135 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     this.version(4).stores({
       downloads: "jobId, status, updatedAt, createdAt, mediaId, episodeId",
     });
+
+    // v5 is deliberately additive: it only creates indexes on the existing
+    // tasteEvents store, preserving every pre-v5 row during upgrade.
+    this.version(5).stores({
+      tasteEvents: "id, userId, createdAt, mediaId, eventType, [mediaId+createdAt]",
+    });
+
+    this.on("blocked", () => {
+      this.reportStorageIssue({
+        kind: "blocked",
+        message: "Local storage upgrade is blocked by another open DebridStreamer tab.",
+      });
+    });
+    this.openReady = this.startOpenAttempt();
+  }
+
+  /** Subscribe to recoverable IndexedDB failures for a toast/support surface. */
+  onStorageIssue(listener: (issue: StorageIssue) => void): () => void {
+    this.storageIssueListeners.add(listener);
+    if (this.storageIssue != null) listener(this.storageIssue);
+    return () => this.storageIssueListeners.delete(listener);
+  }
+
+  getStorageIssue(): StorageIssue | null {
+    return this.storageIssue;
+  }
+
+  /** Explicit recovery path. Never deletes data automatically. */
+  async resetLocalData(): Promise<void> {
+    this.close();
+    await Dexie.delete(this.name);
+    this.storageIssue = null;
+    this.openReady = this.startOpenAttempt();
+    await this.openReady;
+  }
+
+  private startOpenAttempt(): Promise<void> {
+    const attempt = this.openWithTimeout();
+    void attempt.catch(() => undefined);
+    return attempt;
+  }
+
+  private openWithTimeout(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        const error = new Error("Timed out opening local storage.");
+        this.reportStorageIssue({ kind: "open-failed", message: error.message, error });
+        reject(error);
+      }, OPEN_TIMEOUT_MS);
+      this.open().then(
+        () => {
+          clearTimeout(timeout);
+          this.storageIssue = null;
+          resolve();
+        },
+        (error) => {
+          clearTimeout(timeout);
+          this.reportStorageIssue({
+            kind: "open-failed",
+            message: "Could not open local storage. Reset local data to recover.",
+            error,
+          });
+          reject(error);
+        },
+      );
+    });
+  }
+
+  private async ready(): Promise<void> {
+    const attempt = this.openReady;
+    try {
+      await attempt;
+      return;
+    } catch {
+      // A timed-out blocked upgrade may have completed after the timeout fired.
+      // Normalize the ready state instead of bricking every later operation.
+      if (this.isOpen()) {
+        if (this.openReady === attempt) this.openReady = Promise.resolve();
+        return;
+      }
+
+      // Only one caller replaces a failed attempt. Dexie reuses an outstanding
+      // open internally, so this also safely rejoins a still-blocked upgrade.
+      if (this.openReady === attempt) this.openReady = this.startOpenAttempt();
+      await this.openReady;
+    }
+  }
+
+  private reportStorageIssue(issue: StorageIssue): void {
+    this.storageIssue = issue;
+    for (const listener of this.storageIssueListeners) listener(issue);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("debridstreamer:storage-issue", { detail: issue }));
+    }
+    console.warn("[DebridStreamer storage]", issue.message, issue.error ?? "");
+  }
+
+  private async pruneOldest<T>(table: Table<T, string>, index: string, cap: number): Promise<void> {
+    const count = await table.count();
+    if (count <= cap) return;
+    const keys = await table.orderBy(index).limit(count - cap).primaryKeys();
+    await table.bulkDelete(keys as string[]);
+  }
+
+  private async pruneImplicitTasteEvents(): Promise<void> {
+    const implicitCount = await this.tasteEvents
+      .where("eventType")
+      .noneOf([...EXPLICIT_TASTE_EVENT_TYPES])
+      .count();
+    if (implicitCount <= TASTE_EVENTS_CAP) return;
+
+    const keys = await this.tasteEvents
+      .orderBy("createdAt")
+      .filter((event) => !EXPLICIT_TASTE_EVENT_TYPES.has(event.eventType))
+      .limit(implicitCount - TASTE_EVENTS_CAP)
+      .primaryKeys();
+    await this.tasteEvents.bulkDelete(keys);
   }
 
   // ---- Settings -------------------------------------------------------------
 
   async getSetting(key: string): Promise<string | null> {
+    await this.ready();
     const row = await this.settings.get(key);
     return row?.value ?? null;
   }
 
   async setSetting(key: string, value: string | null): Promise<void> {
+    await this.ready();
     if (value == null) {
       await this.settings.delete(key);
       return;
@@ -136,6 +273,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async allSettings(): Promise<Record<string, string>> {
+    await this.ready();
     const rows = await this.settings.toArray();
     const out: Record<string, string> = {};
     for (const r of rows) out[r.key] = r.value;
@@ -145,21 +283,25 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   // ---- Secrets (SecretStore) -----------------------------------------------
 
   async getSecret(key: string): Promise<string | null> {
+    await this.ready();
     const row = await this.secrets.get(key);
     return row?.value ?? null;
   }
 
   async setSecret(key: string, value: string): Promise<void> {
+    await this.ready();
     await this.secrets.put({ key, value });
   }
 
   async deleteSecret(key: string): Promise<void> {
+    await this.ready();
     await this.secrets.delete(key);
   }
 
   // ---- Watchlist ------------------------------------------------------------
 
   async addToWatchlist(preview: MediaPreview): Promise<void> {
+    await this.ready();
     // Keyed by mediaId → put() is an upsert, so there can be no duplicate.
     // Preserve the original addedAt when re-adding so ordering is stable, but
     // refresh the stored preview (metadata may have improved).
@@ -172,22 +314,26 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async removeFromWatchlist(mediaId: string): Promise<void> {
+    await this.ready();
     await this.watchlist.delete(mediaId);
   }
 
   async listWatchlist(): Promise<WatchlistRecord[]> {
+    await this.ready();
     const rows = await this.watchlist.toArray();
     // Most-recently-added first.
     return rows.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
   }
 
   async isInWatchlist(mediaId: string): Promise<boolean> {
+    await this.ready();
     return (await this.watchlist.get(mediaId)) != null;
   }
 
   // ---- Watch history / resume ----------------------------------------------
 
   async recordHistory(entry: WatchHistoryUpsert): Promise<WatchHistoryRecord> {
+    await this.ready();
     const episodeId = entry.episodeId ?? null;
     const id = historyKey(entry.mediaId, episodeId);
     // `put` REPLACES the row, so a progress-only write must not wipe the
@@ -216,6 +362,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async listHistory(limit = 100): Promise<WatchHistoryRecord[]> {
+    await this.ready();
     // lastWatched index → reverse for newest-first, then cap.
     return this.watchHistory
       .orderBy("lastWatched")
@@ -228,11 +375,13 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     mediaId: string,
     episodeId?: string | null,
   ): Promise<WatchHistoryRecord | null> {
+    await this.ready();
     const row = await this.watchHistory.get(historyKey(mediaId, episodeId ?? null));
     return row ?? null;
   }
 
   async continueWatching(limit = 20): Promise<WatchHistoryRecord[]> {
+    await this.ready();
     // Rows with a real resume point, newest first - mirrors fetchRecentWatchHistory.
     // Filter to resumable BEFORE slicing: zero-progress "viewed" rows (written
     // when a Detail opens) would otherwise fill the limit and crowd genuinely
@@ -248,6 +397,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   // ---- Library + folders ----------------------------------------------------
 
   async addToLibrary(entry: LibraryEntryUpsert): Promise<LibraryEntryRecord> {
+    await this.ready();
     // Serialize the reconcile-then-put in one transaction: the table is keyed by
     // a random uuid, so this read-then-decide is the ONLY thing enforcing the
     // one-row-per-(mediaId, folderId) invariant. Without a transaction, two
@@ -289,10 +439,12 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async removeFromLibrary(id: string): Promise<void> {
+    await this.ready();
     await this.library.delete(id);
   }
 
   async listLibrary(listType?: ListType): Promise<LibraryEntryRecord[]> {
+    await this.ready();
     const rows = listType
       ? await this.library.where("listType").equals(listType).toArray()
       : await this.library.toArray();
@@ -300,11 +452,13 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async listLibraryByFolder(folderId: string): Promise<LibraryEntryRecord[]> {
+    await this.ready();
     const rows = await this.library.where("folderId").equals(folderId).toArray();
     return rows.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
   }
 
   async saveFolder(folder: LibraryFolderRecord): Promise<void> {
+    await this.ready();
     await this.folders.put(folder);
   }
 
@@ -313,6 +467,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     listType: ListType,
     parentId: string | null,
   ): Promise<LibraryFolderRecord> {
+    await this.ready();
     if (!listTypeSupportsFolders(listType)) {
       throw new Error(`Folders are not supported for ${listType}.`);
     }
@@ -334,6 +489,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async listFolders(listType?: ListType): Promise<LibraryFolderRecord[]> {
+    await this.ready();
     const rows = listType
       ? await this.folders.where("listType").equals(listType).toArray()
       : await this.folders.toArray();
@@ -345,6 +501,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async deleteFolder(id: string): Promise<void> {
+    await this.ready();
     const folder = await this.folders.get(id);
     if (folder == null) return;
     if (folder.isSystem) {
@@ -377,6 +534,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async ensureSystemFolders(): Promise<void> {
+    await this.ready();
     for (const listType of LIST_TYPES) {
       const id = systemFolderID(listType);
       const existing = await this.folders.get(id);
@@ -441,42 +599,65 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   // ---- Indexer configs ------------------------------------------------------
 
   async saveIndexerConfig(config: IndexerConfigRecord): Promise<void> {
+    await this.ready();
     await this.indexerConfigs.put(config);
   }
 
   async listIndexerConfigs(): Promise<IndexerConfigRecord[]> {
+    await this.ready();
     const rows = await this.indexerConfigs.toArray();
     return rows.sort((a, b) => a.priority - b.priority);
   }
 
   async deleteIndexerConfig(id: string): Promise<void> {
+    await this.ready();
     await this.indexerConfigs.delete(id);
   }
 
   // ---- Debrid configs -------------------------------------------------------
 
   async saveDebridConfig(config: DebridConfigRecord): Promise<void> {
+    await this.ready();
     await this.debridConfigs.put(config);
   }
 
   async listDebridConfigs(): Promise<DebridConfigRecord[]> {
+    await this.ready();
     const rows = await this.debridConfigs.toArray();
     return rows.sort((a, b) => a.priority - b.priority);
   }
 
   async deleteDebridConfig(id: string): Promise<void> {
+    await this.ready();
     await this.debridConfigs.delete(id);
   }
 
   // ---- Taste events ---------------------------------------------------------
 
   async addTasteEvent(event: TasteEventRecord): Promise<void> {
+    await this.ready();
     await this.tasteEvents.put(event);
+    await this.pruneImplicitTasteEvents();
   }
 
   async recentTasteEvents(limit = 100): Promise<TasteEventRecord[]> {
+    await this.ready();
     return this.tasteEvents
       .orderBy("createdAt")
+      .reverse()
+      .limit(limit)
+      .toArray();
+  }
+
+  /** Per-title lookup uses the v5 compound index instead of scanning recency. */
+  async recentTasteEventsForMedia(
+    mediaId: string,
+    limit = 100,
+  ): Promise<TasteEventRecord[]> {
+    await this.ready();
+    return this.tasteEvents
+      .where("[mediaId+createdAt]")
+      .between([mediaId, Dexie.minKey], [mediaId, Dexie.maxKey])
       .reverse()
       .limit(limit)
       .toArray();
@@ -485,27 +666,37 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   // ---- AI usage (local-only token/cost ledger) ------------------------------
 
   async addAIUsage(record: AIUsageRecord): Promise<void> {
+    await this.ready();
     await this.aiUsage.put(record);
+    await this.pruneOldest(this.aiUsage, "createdAt", AI_USAGE_CAP);
   }
 
   async totalAIUsageCostUSD(): Promise<number> {
-    const rows = await this.aiUsage.toArray();
-    return rows.reduce((sum, r) => sum + (r.estimatedCostUSD ?? 0), 0);
+    await this.ready();
+    let total = 0;
+    await this.aiUsage.each((row) => {
+      total += row.estimatedCostUSD ?? 0;
+    });
+    return total;
   }
 
   // ---- Media cache ----------------------------------------------------------
 
   async putMedia(item: MediaItem): Promise<void> {
+    await this.ready();
     await this.mediaCache.put({ id: item.id, item, lastFetched: nowISO() });
+    await this.pruneOldest(this.mediaCache, "lastFetched", MEDIA_CACHE_CAP);
   }
 
   async getMedia(id: string): Promise<MediaCacheRecord | null> {
+    await this.ready();
     return (await this.mediaCache.get(id)) ?? null;
   }
 
   // ---- Cached resolutions (watchlist auto-resolve) --------------------------
 
   async putCachedResolution(record: CachedResolutionRecord): Promise<void> {
+    await this.ready();
     // Keyed by mediaId → put() is an upsert, so exactly one resolution is kept
     // per title; re-resolving replaces the previous (newest wins).
     await this.cachedResolutions.put(record);
@@ -514,20 +705,24 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   async getCachedResolution(
     mediaId: string,
   ): Promise<CachedResolutionRecord | null> {
+    await this.ready();
     return (await this.cachedResolutions.get(mediaId)) ?? null;
   }
 
   async listCachedResolutions(): Promise<CachedResolutionRecord[]> {
+    await this.ready();
     return this.cachedResolutions.toArray();
   }
 
   async deleteCachedResolution(mediaId: string): Promise<void> {
+    await this.ready();
     await this.cachedResolutions.delete(mediaId);
   }
 
   // ---- Desktop downloads ---------------------------------------------------
 
   async saveDownload(record: DownloadRecord): Promise<void> {
+    await this.ready();
     await this.downloads.put(record);
   }
 
@@ -535,6 +730,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     jobId: string,
     changes: Partial<Omit<DownloadRecord, "jobId" | "createdAt">>,
   ): Promise<DownloadRecord | null> {
+    await this.ready();
     const current = await this.downloads.get(jobId);
     if (current == null) return null;
     const next: DownloadRecord = {
@@ -549,10 +745,12 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   }
 
   async deleteDownload(jobId: string): Promise<void> {
+    await this.ready();
     await this.downloads.delete(jobId);
   }
 
   async listDownloads(): Promise<DownloadRecord[]> {
+    await this.ready();
     const rows = await this.downloads.toArray();
     return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }

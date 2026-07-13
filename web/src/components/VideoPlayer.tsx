@@ -11,7 +11,15 @@
 // `kind` lets the caller force the external path (e.g. an MKV stream); otherwise
 // the extension is sniffed from the URL.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import Hls from "hls.js";
 import { Icon } from "./Icon";
@@ -165,6 +173,34 @@ function inferEngine(url: string, kind?: Playability): PlaybackEngine {
     ? "webview-hls-transcode"
     : "webview-direct";
 }
+
+interface WebviewScrubberHandle {
+  setCurrentTime(time: number): void;
+}
+
+/** Keep media-clock updates local to the scrub bar. Browser `timeupdate` fires
+ * about four times per second; captions, help controls, and the video shell do
+ * not need to reconcile for each tick. */
+const WebviewScrubber = memo(
+  forwardRef<
+    WebviewScrubberHandle,
+    Omit<React.ComponentProps<typeof ScrubBar>, "currentTime">
+  >(function WebviewScrubber({ duration, ...props }, ref) {
+    const [currentTime, setCurrentTime] = useState(0);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        setCurrentTime(time) {
+          setCurrentTime((current) => (current === time ? current : time));
+        },
+      }),
+      [],
+    );
+
+    return <ScrubBar {...props} duration={duration} currentTime={currentTime} />;
+  }),
+);
 
 export function VideoPlayer({
   url,
@@ -442,7 +478,7 @@ function WebviewPlayer({
   autoCountdown?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [currentTime, setCurrentTime] = useState(0);
+  const scrubberRef = useRef<WebviewScrubberHandle | null>(null);
   const [duration, setDuration] = useState(0);
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -488,7 +524,7 @@ function WebviewPlayer({
       onProgressRef.current?.(video.currentTime, d);
     };
     const onTimeUpdate = () => {
-      setCurrentTime(video.currentTime);
+      scrubberRef.current?.setCurrentTime(video.currentTime);
       const now = Date.now();
       if (onProgressRef.current != null && now - lastReportRef.current >= 5000) {
         lastReportRef.current = now;
@@ -598,7 +634,10 @@ function WebviewPlayer({
 
   const seek = (t: number) => {
     const video = videoRef.current;
-    if (video != null && Number.isFinite(t)) video.currentTime = t;
+    if (video != null && Number.isFinite(t)) {
+      video.currentTime = t;
+      scrubberRef.current?.setCurrentTime(t);
+    }
   };
 
   // Keyboard shortcuts (invisible power-user nicety). Active only while this
@@ -710,8 +749,9 @@ function WebviewPlayer({
       </div>
 
       <div className="player-osd">
-        <ScrubBar
-          currentTime={currentTime}
+        <WebviewScrubber
+          key={url}
+          ref={scrubberRef}
           duration={duration}
           preview={thumbs.available ? thumbs.preview : null}
           onHover={thumbs.onHover}

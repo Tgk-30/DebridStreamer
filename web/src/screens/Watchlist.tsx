@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { MediaCard } from "../components/MediaCard";
+import { VirtualMediaGrid } from "../components/MediaGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { WatchlistImportDialog } from "../components/WatchlistImportDialog";
@@ -90,9 +91,11 @@ export function Watchlist() {
           }
         />
       ) : (
-        <div className="lib-grid-wrap">
-          {watchlist.map((item) => (
-            <div className="lib-removable" key={item.id}>
+        <VirtualMediaGrid
+          items={watchlist}
+          className="lib-grid-wrap"
+          renderItem={(item) => (
+            <div className="lib-removable">
               <MediaCard
                 item={item}
                 onSelect={openDetail}
@@ -110,8 +113,8 @@ export function Watchlist() {
                 <Icon name="xmark" size={15} />
               </button>
             </div>
-          ))}
-        </div>
+          )}
+        />
       )}
     </div>
   );

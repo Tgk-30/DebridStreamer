@@ -115,8 +115,9 @@ function fakeIndexers(opts: {
     type: MediaType,
     season?: number | null,
     episode?: number | null,
+    signal?: AbortSignal,
   ) => Promise<TorrentResult[]>;
-  searchByQuery?: (query: string, type: MediaType) => Promise<TorrentResult[]>;
+  searchByQuery?: (query: string, type: MediaType, signal?: AbortSignal) => Promise<TorrentResult[]>;
 }): IndexerManager {
   return {
     get activeIndexers() {
@@ -135,7 +136,7 @@ function fakeIndexers(opts: {
 /** Minimal DebridManager stand-in: only hasServices + checkCacheAll are read. */
 function fakeDebrid(opts: {
   hasServices?: boolean;
-  checkCacheAll?: (hashes: string[]) => Promise<Record<string, MergedCacheEntry>>;
+  checkCacheAll?: (hashes: string[], signal?: AbortSignal) => Promise<Record<string, MergedCacheEntry>>;
 }): DebridManager {
   return {
     get hasServices() {
@@ -247,7 +248,7 @@ describe("useStreams - Local resolve path (resolveStreams)", () => {
     const debrid = fakeDebrid({ hasServices: true, checkCacheAll });
     const { state } = await renderStreams("tt9", "series", indexers, debrid);
 
-    expect(checkCacheAll).toHaveBeenCalledWith(["h1", "h2", "h3"]);
+    expect(checkCacheAll).toHaveBeenCalledWith(["h1", "h2", "h3"], expect.any(AbortSignal));
     expect(state.rows.map((r) => [r.result.infoHash, r.cachedOn])).toEqual([
       ["h1", DebridServiceType.realDebrid],
       ["h2", null],
@@ -396,6 +397,21 @@ describe("useStreams - error path", () => {
 });
 
 describe("useStreams - cancellation", () => {
+  it("aborts the request signal on effect cleanup", () => {
+    let signal: AbortSignal | undefined;
+    const indexers = fakeIndexers({
+      searchAll: (_imdbId, _type, _season, _episode, requestSignal) => {
+        signal = requestSignal;
+        return new Promise<TorrentResult[]>(() => {});
+      },
+    });
+    useStreams("tt1", "movie", null, null, null, indexers, null);
+    const teardown = cell.effect ? cell.effect() : undefined;
+    expect(signal?.aborted).toBe(false);
+    if (typeof teardown === "function") teardown();
+    expect(signal?.aborted).toBe(true);
+  });
+
   it("does not commit results after the effect is torn down (cancelled)", async () => {
     let resolveSearch: (v: TorrentResult[]) => void = () => {};
     const indexers = fakeIndexers({
@@ -435,13 +451,16 @@ describe("useStreams - Server mode", () => {
     const indexers = fakeIndexers({ active: [] });
     const { state } = await renderStreams("tt5", "movie", indexers, null);
 
-    expect(mockFetchServerStreams).toHaveBeenCalledWith({
-      imdbId: "tt5",
-      type: "movie",
-      season: null,
-      episode: null,
-      title: null,
-    });
+    expect(mockFetchServerStreams).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imdbId: "tt5",
+        type: "movie",
+        season: null,
+        episode: null,
+        title: null,
+        signal: expect.any(AbortSignal),
+      }),
+    );
     expect(state.rows.map((r) => r.result.infoHash)).toEqual(["s1"]);
     expect(state.rows[0].cachedOn).toBe(DebridServiceType.torBox);
     // server response drives the final hasIndexers/hasDebrid flags.
@@ -460,13 +479,16 @@ describe("useStreams - Server mode", () => {
     // series + season/episode + title - the exact context the server needs to
     // build "The Bear S01E06" for its APIBay-style name-matching pass.
     await renderStreams("tt5", "series", indexers, null, 1, 6, "The Bear");
-    expect(mockFetchServerStreams).toHaveBeenCalledWith({
-      imdbId: "tt5",
-      type: "series",
-      season: 1,
-      episode: 6,
-      title: "The Bear",
-    });
+    expect(mockFetchServerStreams).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imdbId: "tt5",
+        type: "series",
+        season: 1,
+        episode: 6,
+        title: "The Bear",
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 
   it("surfaces a server fetch error into state.error", async () => {

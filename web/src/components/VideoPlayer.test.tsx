@@ -23,6 +23,10 @@ const { hlsInstances, hlsIsSupported } = vi.hoisted(() => ({
   }>,
   hlsIsSupported: vi.fn(() => true),
 }));
+const scrubBarMock = vi.hoisted(() => vi.fn((props: { currentTime: number }) => (
+  <div data-testid="scrub-bar" data-current-time={props.currentTime} />
+)));
+const iconMock = vi.hoisted(() => vi.fn(({ name }: { name: string }) => <span data-icon={name} />));
 vi.mock("hls.js", () => {
   class FakeHls {
     static isSupported = hlsIsSupported;
@@ -108,7 +112,7 @@ vi.mock("./player/useScrubThumbnails", () => ({
 
 // Child components we don't drive directly - render identifiable stubs.
 vi.mock("./player/ScrubBar", () => ({
-  ScrubBar: () => <div data-testid="scrub-bar" />,
+  ScrubBar: scrubBarMock,
 }));
 vi.mock("./player/CaptionsMenu", () => ({
   CaptionsMenu: (props: { onClose: () => void }) => (
@@ -120,7 +124,7 @@ vi.mock("./player/CaptionsMenu", () => ({
   ),
 }));
 vi.mock("./Icon", () => ({
-  Icon: ({ name }: { name: string }) => <span data-icon={name} />,
+  Icon: iconMock,
 }));
 
 // Built-in libmpv player - a native surface that can't render in jsdom, so stub
@@ -160,6 +164,8 @@ beforeEach(() => {
   openInExternalPlayerMock.mockResolvedValue("VLC hand-off");
   subsState.tracks = [];
   subsState.activeTrackId = null;
+  scrubBarMock.mockClear();
+  iconMock.mockClear();
 
   Object.defineProperty(HTMLMediaElement.prototype, "play", {
     configurable: true,
@@ -354,6 +360,22 @@ describe("WebviewPlayer", () => {
     expect(screen.getByTestId("scrub-bar")).toBeInTheDocument();
     // CC button lives in the OSD row.
     expect(screen.getByRole("button", { name: "Subtitles" })).toBeInTheDocument();
+  });
+
+  it("keeps timeupdate renders inside the scrubber leaf", async () => {
+    render(<VideoPlayer url="https://x/movie.mp4" title="T" onClose={() => {}} />);
+    const video = document.querySelector("video.player-video") as HTMLVideoElement;
+    scrubBarMock.mockClear();
+    iconMock.mockClear();
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 42 });
+
+    fireEvent.timeUpdate(video);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("scrub-bar")).toHaveAttribute("data-current-time", "42"),
+    );
+    expect(scrubBarMock).toHaveBeenCalled();
+    expect(iconMock).not.toHaveBeenCalled();
   });
 
   it("assigns the progressive src directly on the <video>", () => {

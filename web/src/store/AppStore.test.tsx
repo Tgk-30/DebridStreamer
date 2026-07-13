@@ -62,6 +62,7 @@ const loadWatchlist = vi.fn<() => Promise<MediaPreview[]>>();
 const loadHistory = vi.fn<() => Promise<MediaPreview[]>>();
 const loadContinueWatching = vi.fn<() => Promise<unknown[]>>();
 const recordHistory = vi.fn<(item: MediaPreview, opts?: unknown) => Promise<MediaPreview[]>>();
+const storeRecordHistory = vi.fn<(entry: unknown) => Promise<unknown>>();
 const toggleWatchlistStore = vi.fn<(item: MediaPreview) => Promise<MediaPreview[]>>();
 const removeFromWatchlistStore = vi.fn<(id: string) => Promise<MediaPreview[]>>();
 
@@ -83,6 +84,7 @@ const fakeStore = {
   deleteCachedResolution: (id: string) => deleteCachedResolution(id),
   isInWatchlist: (id: string) => isInWatchlist(id),
   addToWatchlist: (preview: MediaPreview) => addToWatchlist(preview),
+  recordHistory: (entry: unknown) => storeRecordHistory(entry),
   resetProfileCache: vi.fn(),
 };
 const getStore = vi.fn(() => fakeStore);
@@ -224,6 +226,7 @@ beforeEach(() => {
   loadHistory.mockResolvedValue([]);
   loadContinueWatching.mockResolvedValue([]);
   recordHistory.mockResolvedValue([]);
+  storeRecordHistory.mockResolvedValue({});
   toggleWatchlistStore.mockResolvedValue([]);
   removeFromWatchlistStore.mockResolvedValue([]);
   listCachedResolutions.mockResolvedValue([]);
@@ -404,7 +407,7 @@ describe("search / pendingSearch", () => {
 });
 
 describe("updateSettings", () => {
-  it("optimistically updates in-memory settings, rebuilds services, and persists", async () => {
+  it("optimistically updates in-memory settings without rebuilding services for unrelated preferences", async () => {
     const { result } = await renderStore();
     buildServices.mockClear();
 
@@ -412,9 +415,20 @@ describe("updateSettings", () => {
     act(() => result.current.updateSettings(next));
 
     expect(result.current.settings).toEqual(next);
-    // services rebuilt because settings identity changed.
-    expect(buildServices).toHaveBeenCalledWith(next);
+    // Theme/data-saver are not service inputs, so service identities and the
+    // download runtime dependency remain stable through this settings save.
+    expect(buildServices).not.toHaveBeenCalled();
     await waitFor(() => expect(saveSettingsToStore).toHaveBeenCalledWith(next));
+  });
+
+  it("rebuilds services when a service configuration input changes", async () => {
+    const { result } = await renderStore();
+    buildServices.mockClear();
+
+    const next = settings({ tmdbKey: "new-key" });
+    act(() => result.current.updateSettings(next));
+
+    expect(buildServices).toHaveBeenCalledWith(next);
   });
 
   it("surfaces a persistence failure to console.error without throwing", async () => {
@@ -568,7 +582,9 @@ describe("recordResume", () => {
     const item = media("r1");
 
     act(() => result.current.recordResume(item, 95, 100));
-    expect(recordHistory).toHaveBeenCalledWith(item, {
+    expect(storeRecordHistory).toHaveBeenCalledWith({
+      mediaId: item.id,
+      preview: item,
       progressSeconds: 95,
       durationSeconds: 100,
       completed: true,
@@ -581,7 +597,9 @@ describe("recordResume", () => {
     const item = media("r5");
 
     act(() => result.current.recordResume(item, 42, 100, "s2e5"));
-    expect(recordHistory).toHaveBeenCalledWith(item, {
+    expect(storeRecordHistory).toHaveBeenCalledWith({
+      mediaId: item.id,
+      preview: item,
       progressSeconds: 42,
       durationSeconds: 100,
       completed: false,
@@ -593,30 +611,85 @@ describe("recordResume", () => {
     const { result } = await renderStore();
 
     act(() => result.current.recordResume(media("r2"), 40, 100));
-    expect(recordHistory).toHaveBeenCalledWith(media("r2"), {
+    expect(storeRecordHistory).toHaveBeenCalledWith({
+      mediaId: "r2",
+      preview: media("r2"),
       progressSeconds: 40,
       durationSeconds: 100,
       completed: false,
       episodeId: null,
     });
 
-    recordHistory.mockClear();
+    storeRecordHistory.mockClear();
     act(() => result.current.recordResume(media("r3"), 10, null));
-    expect(recordHistory).toHaveBeenCalledWith(media("r3"), {
+    expect(storeRecordHistory).toHaveBeenCalledWith({
+      mediaId: "r3",
+      preview: media("r3"),
       progressSeconds: 10,
       durationSeconds: null,
       completed: false,
       episodeId: null,
     });
 
-    recordHistory.mockClear();
+    storeRecordHistory.mockClear();
     act(() => result.current.recordResume(media("r4"), 10, 0));
-    expect(recordHistory).toHaveBeenCalledWith(media("r4"), {
+    expect(storeRecordHistory).toHaveBeenCalledWith({
+      mediaId: "r4",
+      preview: media("r4"),
       progressSeconds: 10,
       durationSeconds: 0,
       completed: false,
       episodeId: null,
     });
+  });
+
+  it("persists progress without refreshing the history slices or provider state", async () => {
+    const { result } = await renderStore();
+    loadHistory.mockClear();
+    loadContinueWatching.mockClear();
+    const historyBefore = result.current.history;
+    const continueWatchingBefore = result.current.continueWatching;
+
+    act(() => result.current.recordResume(media("no-refresh"), 30, 100));
+    await waitFor(() => expect(storeRecordHistory).toHaveBeenCalledTimes(1));
+
+    expect(loadHistory).not.toHaveBeenCalled();
+    expect(loadContinueWatching).not.toHaveBeenCalled();
+    expect(result.current.history).toBe(historyBefore);
+    expect(result.current.continueWatching).toBe(continueWatchingBefore);
+  });
+
+  it("refreshes continue watching after the final progress write at player close", async () => {
+    let finishWrite: (value: unknown) => void = () => {};
+    storeRecordHistory.mockReturnValue(
+      new Promise((resolve) => {
+        finishWrite = resolve;
+      }),
+    );
+    const { result } = await renderStore();
+    loadContinueWatching.mockClear();
+    const updated = {
+      mediaId: "resume-after-close",
+      episodeId: null,
+      progressSeconds: 80,
+      durationSeconds: 100,
+      completed: false,
+    };
+    loadContinueWatching.mockResolvedValue([updated]);
+
+    act(() =>
+      result.current.recordResume(media("resume-after-close"), 80, 100),
+    );
+    const closeRefresh = result.current.refreshContinueWatching();
+    expect(loadContinueWatching).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishWrite({});
+      await closeRefresh;
+    });
+
+    expect(loadContinueWatching).toHaveBeenCalledTimes(1);
+    expect(result.current.continueWatching).toEqual([updated]);
   });
 });
 

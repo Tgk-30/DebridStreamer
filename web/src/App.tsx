@@ -131,9 +131,9 @@ const SetupNudge = lazy(() =>
  *   • Server Mode → the owner-only ServerSetupWizard for a fresh server
  *     (shouldShowServerSetup), driven off the live admin health counts.
  *
- *  Renders nothing until the async checks resolve to avoid a flash of the app
- *  before a wizard. Lives inside AppStoreProvider + ServerSessionProvider so all
- *  branches have store + session access. */
+ *  Renders boot chrome while async checks resolve, avoiding a blank opaque
+ *  window before a wizard decision. Lives inside AppStoreProvider +
+ *  ServerSessionProvider so all branches have store + session access. */
 export function FirstRunHost() {
   const { hydrated, settings, services } = useAppStore();
   const session = useServerSession();
@@ -229,7 +229,19 @@ export function FirstRunHost() {
   // ensures the wizard's choice (e.g. Advanced → simpleMode false) is applied
   // AFTER hydration's setSettings, so a late hydration can't revert it.
   if (firstRun == null || serverSetup == null || keyGate == null || !hydrated) {
-    return null;
+    return (
+      <div
+        aria-busy="true"
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background: "var(--bg-1, #0a0b16)",
+        }}
+      >
+        <Spinner label="Starting DebridStreamer" />
+      </div>
+    );
   }
   // Tier-tailored welcome first, on a genuine fresh start (then the existing
   // mode-specific setup wizard collects the actual config).

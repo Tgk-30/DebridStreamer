@@ -12,6 +12,8 @@ class DownloadStore {
   records = new Map<string, DownloadRecord>();
   listeners = new Set<(records: DownloadRecord[]) => void>();
   history: DownloadRecord["status"][] = [];
+  updateCalls = 0;
+  listCalls = 0;
 
   async getSetting(key: string): Promise<string | null> {
     return key === "downloads_directory" ? "/Downloads" : null;
@@ -26,6 +28,7 @@ class DownloadStore {
     jobId: string,
     changes: Partial<Omit<DownloadRecord, "jobId" | "createdAt">>,
   ): Promise<DownloadRecord | null> {
+    this.updateCalls += 1;
     const current = this.records.get(jobId);
     if (current == null) return null;
     const next = { ...current, ...changes, jobId, createdAt: current.createdAt };
@@ -39,6 +42,7 @@ class DownloadStore {
     this.notify();
   }
   async listDownloads(): Promise<DownloadRecord[]> {
+    this.listCalls += 1;
     return [...this.records.values()];
   }
   subscribeDownloads(listener: (records: DownloadRecord[]) => void): () => void {
@@ -108,7 +112,10 @@ async function waitUntil(assertion: () => Promise<void>, timeoutMs = 1000): Prom
 
 describe("DownloadManager", () => {
   const managers: DownloadManager[] = [];
-  afterEach(() => managers.splice(0).forEach((manager) => manager.stop()));
+  afterEach(() => {
+    managers.splice(0).forEach((manager) => manager.stop());
+    vi.useRealTimers();
+  });
 
   it("moves an optimized job through queued, resolving, downloading, optimizing, and completed", async () => {
     const store = new DownloadStore();
@@ -209,6 +216,60 @@ describe("DownloadManager", () => {
     managers.push(manager);
     await manager.start();
     expect(await status(store, "restart")).toBe("paused");
+  });
+
+  it("coalesces byte persistence while keeping the live UI fed between writes", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "rapid-progress",
+      mediaId: "m",
+      title: "Rapid",
+      infoHash: "hash",
+      mode: "full",
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+
+    const liveProgress = vi.fn();
+    manager.subscribeProgress(liveProgress);
+    store.updateCalls = 0;
+    store.listCalls = 0;
+    vi.useFakeTimers();
+
+    for (let bytesDone = 1; bytesDone <= 20; bytesDone += 1) {
+      native.emit({ jobId: record.jobId, phase: "downloading", bytesDone, bytesTotal: 100 });
+    }
+    // The first value is immediate; the latest burst value is delivered at
+    // 5Hz, independently of the 1Hz durable write cadence.
+    expect(liveProgress).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(200);
+    await Promise.resolve();
+    expect(liveProgress).toHaveBeenCalledTimes(2);
+    expect(liveProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bytesDone: 20 }),
+    );
+    expect(store.updateCalls).toBe(1);
+    // The queue subscription sees the persisted byte values, but because the
+    // status has not changed it does not call pump() for another full-table read.
+    expect(store.listCalls).toBe(0);
+    expect((await store.listDownloads()).find((row) => row.jobId === record.jobId)?.bytesDone).toBe(20);
+
+    store.listCalls = 0;
+    for (let bytesDone = 21; bytesDone <= 40; bytesDone += 1) {
+      native.emit({ jobId: record.jobId, phase: "downloading", bytesDone, bytesTotal: 100 });
+    }
+    await vi.advanceTimersByTimeAsync(799);
+    expect(store.updateCalls).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await Promise.resolve();
+    expect(store.updateCalls).toBe(2);
+    expect(store.listCalls).toBe(0);
+    expect((await store.listDownloads()).find((row) => row.jobId === record.jobId)?.bytesDone).toBe(40);
   });
 
   it("enqueues every supplied season episode as an independent durable record", async () => {

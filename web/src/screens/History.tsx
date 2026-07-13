@@ -8,6 +8,7 @@
 
 import { useAppStore } from "../store/AppStore";
 import { MediaCard } from "../components/MediaCard";
+import { VirtualMediaGrid } from "../components/MediaGrid";
 import { Rail } from "../components/Rail";
 import { EmptyState } from "../components/EmptyState";
 import { WatchStatsCard } from "../components/WatchStatsCard";
@@ -95,17 +96,17 @@ export function History() {
           }
         />
       ) : (
-        <div className="media-grid">
-          {history.map((item) => (
+        <VirtualMediaGrid
+          items={history}
+          renderItem={(item) => (
             <MediaCard
-              key={item.id}
               item={item}
               onSelect={openDetail}
               progress={resumableProgress[item.id]}
               watched={watchedIds.has(item.id)}
             />
-          ))}
-        </div>
+          )}
+        />
       )}
     </div>
   );

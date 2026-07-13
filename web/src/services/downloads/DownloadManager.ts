@@ -105,6 +105,12 @@ export async function downloadsDirectory(
 
 type ProgressListener = (progress: DownloadProgress) => void;
 
+/** Native transfers can report many times per second. Durable records only need
+ * enough cadence for recovery and a background Downloads screen; live UI uses
+ * the in-memory progress listener below. */
+const PROGRESS_PERSIST_INTERVAL_MS = 1000;
+const PROGRESS_UI_INTERVAL_MS = 200;
+
 /**
  * Frontend queue scheduler for the native streaming executor.
  *
@@ -125,6 +131,13 @@ export class DownloadManager {
   private readonly optimizingOutputs = new Map<string, string>();
   private readonly speeds = new Map<string, number>();
   private readonly progressListeners = new Set<ProgressListener>();
+  private recordsByJobId = new Map<string, DownloadRecord>();
+  private readonly pendingProgress = new Map<string, DownloadProgress>();
+  private readonly progressTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly lastProgressPersistedAt = new Map<string, number>();
+  private readonly pendingProgressNotifications = new Map<string, DownloadProgress>();
+  private readonly progressNotificationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly lastProgressNotifiedAt = new Map<string, number>();
   private ffmpegAvailability: Promise<boolean> | null = null;
 
   constructor(
@@ -140,13 +153,16 @@ export class DownloadManager {
     if (this.started) return;
     this.started = true;
     await this.recoverInterrupted();
-    this.queueUnlisten = this.store.subscribeDownloads(() => {
-      void this.pump();
+    this.queueUnlisten = this.store.subscribeDownloads((records) => {
+      // Dexie liveQuery still keeps the UI in sync, but byte-only persistence
+      // must not make the scheduler run another full queue scan. Cache every
+      // row for direct progress lookup and pump only after queue/status changes.
+      if (this.syncRecords(records)) void this.pump();
     });
     try {
       this.progressUnlisten = await this.bridge.listenDownloadProgress((progress) => {
         if (progress.speedBps != null) this.speeds.set(progress.jobId, progress.speedBps);
-        this.progressListeners.forEach((listener) => listener(progress));
+        this.publishProgress(progress);
         void this.handleProgress(progress);
       });
     } catch {
@@ -162,6 +178,14 @@ export class DownloadManager {
     this.progressUnlisten = null;
     this.queueUnlisten?.();
     this.queueUnlisten = null;
+    this.progressTimers.forEach((timer) => clearTimeout(timer));
+    this.progressTimers.clear();
+    this.pendingProgress.clear();
+    this.lastProgressPersistedAt.clear();
+    this.progressNotificationTimers.forEach((timer) => clearTimeout(timer));
+    this.progressNotificationTimers.clear();
+    this.pendingProgressNotifications.clear();
+    this.lastProgressNotifiedAt.clear();
     this.started = false;
   }
 
@@ -187,32 +211,33 @@ export class DownloadManager {
   }
 
   async pause(jobId: string): Promise<void> {
-    const record = (await this.store.listDownloads()).find((row) => row.jobId === jobId);
+    const record = this.recordsByJobId.get(jobId);
     if (record == null || !["resolving", "downloading", "optimizing"].includes(record.status)) {
       return;
     }
     if (record.status === "optimizing") await this.bridge.transcodeCancel(jobId);
     else if (record.status === "downloading") await this.bridge.downloadPause(jobId);
-    await this.store.updateDownload(jobId, { status: "paused", error: null });
+    this.clearPendingProgress(jobId);
+    await this.updateRecord(jobId, { status: "paused", error: null });
     void this.pump();
   }
 
   async resume(jobId: string): Promise<void> {
-    const record = (await this.store.listDownloads()).find((row) => row.jobId === jobId);
+    const record = this.recordsByJobId.get(jobId);
     if (record == null || record.status !== "paused") return;
     // A job paused during this process can use native HTTP Range resume. After
     // a restart the Rust process has no URL/job state, so queue a fresh resolve.
     if (this.nativeJobs.has(jobId)) {
       await this.bridge.downloadResume(jobId);
-      await this.store.updateDownload(jobId, { status: "downloading", error: null });
+      await this.updateRecord(jobId, { status: "downloading", error: null });
       return;
     }
-    await this.store.updateDownload(jobId, { status: "queued", error: null });
+    await this.updateRecord(jobId, { status: "queued", error: null });
     void this.pump();
   }
 
   async cancel(jobId: string): Promise<void> {
-    const record = (await this.store.listDownloads()).find((row) => row.jobId === jobId);
+    const record = this.recordsByJobId.get(jobId);
     if (record == null || ["completed", "canceled"].includes(record.status)) return;
     if (record.status === "optimizing") await this.bridge.transcodeCancel(jobId);
     else if (record.status === "downloading" || this.nativeJobs.has(jobId)) {
@@ -220,7 +245,8 @@ export class DownloadManager {
     }
     this.nativeJobs.delete(jobId);
     this.optimizingOutputs.delete(jobId);
-    await this.store.updateDownload(jobId, { status: "canceled", error: null });
+    this.clearPendingProgress(jobId);
+    await this.updateRecord(jobId, { status: "canceled", error: null });
     void this.pump();
   }
 
@@ -261,7 +287,7 @@ export class DownloadManager {
       return;
     }
     try {
-      await this.store.updateDownload(record.jobId, {
+      await this.updateRecord(record.jobId, {
         status: "resolving",
         error: null,
       });
@@ -270,11 +296,11 @@ export class DownloadManager {
           ? { season: record.season, episode: record.episode }
           : null;
       const stream = await this.debrid.resolveStream(record.infoHash, null, hint);
-      const latest = (await this.store.listDownloads()).find((row) => row.jobId === record.jobId);
+      const latest = this.recordsByJobId.get(record.jobId);
       if (latest == null || latest.status !== "resolving") return;
       const directory = await downloadsDirectory(this.store, this.bridge);
       const destPath = rawDownloadPath(directory, latest, stream.fileName);
-      await this.store.updateDownload(record.jobId, {
+      await this.updateRecord(record.jobId, {
         status: "downloading",
         destPath,
         bytesDone: 0,
@@ -288,7 +314,7 @@ export class DownloadManager {
         destPath,
       });
     } catch (error) {
-      const latest = (await this.store.listDownloads()).find((row) => row.jobId === record.jobId);
+      const latest = this.recordsByJobId.get(record.jobId);
       if (latest?.status !== "canceled" && latest?.status !== "paused") {
         await this.fail(record.jobId, errorMessage(error));
       }
@@ -296,7 +322,7 @@ export class DownloadManager {
   }
 
   private async handleProgress(progress: DownloadProgress): Promise<void> {
-    const record = (await this.store.listDownloads()).find((row) => row.jobId === progress.jobId);
+    const record = this.recordsByJobId.get(progress.jobId);
     if (record == null) return;
     if (["paused", "canceled", "completed", "failed"].includes(record.status)) return;
     const measurements = {
@@ -305,21 +331,31 @@ export class DownloadManager {
     };
     switch (progress.phase) {
       case "downloading":
-        await this.store.updateDownload(record.jobId, { status: "downloading", ...measurements });
+      case "optimizing": {
+        const status = progress.phase;
+        this.pendingProgress.set(progress.jobId, progress);
+        // A phase change is durable immediately. Repeated byte reports for the
+        // same phase are coalesced to one primary-key update per second.
+        if (record.status !== status) {
+          await this.flushPendingProgress(progress.jobId);
+        } else {
+          this.scheduleProgressPersistence(progress.jobId);
+        }
         return;
-      case "optimizing":
-        await this.store.updateDownload(record.jobId, { status: "optimizing", ...measurements });
-        return;
+      }
       case "failed":
+        this.clearPendingProgress(record.jobId);
         await this.fail(record.jobId, progress.error ?? "The native download failed.");
         return;
       case "canceled":
         this.nativeJobs.delete(record.jobId);
         this.optimizingOutputs.delete(record.jobId);
-        await this.store.updateDownload(record.jobId, { status: "canceled", ...measurements });
+        this.clearPendingProgress(record.jobId);
+        await this.updateRecord(record.jobId, { status: "canceled", ...measurements });
         void this.pump();
         return;
       case "completed":
+        this.clearPendingProgress(record.jobId);
         await this.completeNativePhase(record, progress, measurements);
     }
   }
@@ -333,7 +369,7 @@ export class DownloadManager {
       const finalPath = progress.outputPath ?? this.optimizingOutputs.get(record.jobId) ?? record.destPath;
       this.nativeJobs.delete(record.jobId);
       this.optimizingOutputs.delete(record.jobId);
-      await this.store.updateDownload(record.jobId, {
+      await this.updateRecord(record.jobId, {
         status: "completed",
         destPath: finalPath,
         ...measurements,
@@ -346,7 +382,7 @@ export class DownloadManager {
     const rawPath = progress.outputPath ?? record.destPath;
     if (record.mode === "full") {
       this.nativeJobs.delete(record.jobId);
-      await this.store.updateDownload(record.jobId, {
+      await this.updateRecord(record.jobId, {
         status: "completed",
         destPath: rawPath,
         ...measurements,
@@ -367,7 +403,7 @@ export class DownloadManager {
     const outputPath = optimizedOutputPath(rawPath, record.optimizeProfile);
     this.optimizingOutputs.set(record.jobId, outputPath);
     try {
-      await this.store.updateDownload(record.jobId, {
+      await this.updateRecord(record.jobId, {
         status: "optimizing",
         destPath: rawPath,
         ...measurements,
@@ -394,8 +430,101 @@ export class DownloadManager {
   private async fail(jobId: string, error: string): Promise<void> {
     this.nativeJobs.delete(jobId);
     this.optimizingOutputs.delete(jobId);
-    await this.store.updateDownload(jobId, { status: "failed", error });
+    this.clearPendingProgress(jobId);
+    await this.updateRecord(jobId, { status: "failed", error });
     void this.pump();
+  }
+
+  private syncRecords(records: DownloadRecord[]): boolean {
+    const previous = this.recordsByJobId;
+    const needsPump =
+      previous.size !== records.length ||
+      records.some((record) => previous.get(record.jobId)?.status !== record.status);
+    this.recordsByJobId = new Map(records.map((record) => [record.jobId, record]));
+    return needsPump;
+  }
+
+  private async updateRecord(
+    jobId: string,
+    changes: Partial<Omit<DownloadRecord, "jobId" | "createdAt">>,
+  ): Promise<DownloadRecord | null> {
+    const current = this.recordsByJobId.get(jobId);
+    if (current != null) {
+      this.recordsByJobId.set(jobId, {
+        ...current,
+        ...changes,
+        jobId,
+        createdAt: current.createdAt,
+      });
+    }
+    const saved = await this.store.updateDownload(jobId, changes);
+    if (saved != null) this.recordsByJobId.set(jobId, saved);
+    return saved;
+  }
+
+  private scheduleProgressPersistence(jobId: string): void {
+    if (this.progressTimers.has(jobId)) return;
+    const elapsed = Date.now() - (this.lastProgressPersistedAt.get(jobId) ?? 0);
+    const delay = Math.max(0, PROGRESS_PERSIST_INTERVAL_MS - elapsed);
+    const timer = setTimeout(() => {
+      this.progressTimers.delete(jobId);
+      void this.flushPendingProgress(jobId);
+    }, delay);
+    this.progressTimers.set(jobId, timer);
+  }
+
+  private async flushPendingProgress(jobId: string): Promise<void> {
+    const timer = this.progressTimers.get(jobId);
+    if (timer != null) clearTimeout(timer);
+    this.progressTimers.delete(jobId);
+    const progress = this.pendingProgress.get(jobId);
+    this.pendingProgress.delete(jobId);
+    const record = this.recordsByJobId.get(jobId);
+    if (progress == null || record == null) return;
+    if (["paused", "canceled", "completed", "failed"].includes(record.status)) return;
+    if (progress.phase !== "downloading" && progress.phase !== "optimizing") return;
+    this.lastProgressPersistedAt.set(jobId, Date.now());
+    await this.updateRecord(jobId, {
+      status: progress.phase,
+      bytesDone: Math.max(0, progress.bytesDone),
+      bytesTotal: progress.bytesTotal,
+    });
+  }
+
+  private clearPendingProgress(jobId: string): void {
+    const timer = this.progressTimers.get(jobId);
+    if (timer != null) clearTimeout(timer);
+    this.progressTimers.delete(jobId);
+    this.pendingProgress.delete(jobId);
+    this.lastProgressPersistedAt.delete(jobId);
+  }
+
+  private publishProgress(progress: DownloadProgress): void {
+    this.pendingProgressNotifications.set(progress.jobId, progress);
+    const terminal = ["completed", "failed", "canceled"].includes(progress.phase);
+    const lastNotified = this.lastProgressNotifiedAt.get(progress.jobId);
+    const elapsed = Date.now() - (lastNotified ?? 0);
+    if (terminal || lastNotified == null || elapsed >= PROGRESS_UI_INTERVAL_MS) {
+      this.flushProgressNotification(progress.jobId);
+      return;
+    }
+    if (this.progressNotificationTimers.has(progress.jobId)) return;
+    const timer = setTimeout(() => {
+      this.progressNotificationTimers.delete(progress.jobId);
+      this.flushProgressNotification(progress.jobId);
+    }, Math.max(0, PROGRESS_UI_INTERVAL_MS - elapsed));
+    this.progressNotificationTimers.set(progress.jobId, timer);
+  }
+
+  private flushProgressNotification(jobId: string): void {
+    const timer = this.progressNotificationTimers.get(jobId);
+    if (timer != null) clearTimeout(timer);
+    this.progressNotificationTimers.delete(jobId);
+    const progress = this.pendingProgressNotifications.get(jobId);
+    this.pendingProgressNotifications.delete(jobId);
+    if (progress == null) return;
+    this.lastProgressNotifiedAt.set(jobId, Date.now());
+    this.progressListeners.forEach((listener) => listener(progress));
   }
 }
 

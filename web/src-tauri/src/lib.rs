@@ -55,8 +55,7 @@ fn cli_on_path(bin: &str) -> bool {
 
 /// The external media players actually installed on this machine, so the UI can
 /// offer only real choices (and pick a sensible default).
-#[tauri::command]
-fn list_external_players() -> Vec<String> {
+fn list_external_players_blocking() -> Vec<String> {
     #[cfg(target_os = "macos")]
     {
         let mut found: Vec<String> = MACOS_PLAYERS
@@ -79,10 +78,19 @@ fn list_external_players() -> Vec<String> {
     }
 }
 
+#[tauri::command]
+async fn list_external_players() -> Vec<String> {
+    tokio::task::spawn_blocking(list_external_players_blocking)
+        .await
+        .unwrap_or_default()
+}
+
 /// Hand `url` to an external player. `preferred` (a value from
 /// `list_external_players`) is tried first; otherwise the default order is used.
-#[tauri::command]
-fn open_in_external_player(url: String, preferred: Option<String>) -> Result<String, String> {
+fn open_in_external_player_blocking(
+    url: String,
+    preferred: Option<String>,
+) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
         // Preferred first (when still installed), then the default order.
@@ -139,6 +147,16 @@ fn open_in_external_player(url: String, preferred: Option<String>) -> Result<Str
         }
         Err("No external player (mpv/vlc) found on PATH".into())
     }
+}
+
+#[tauri::command]
+async fn open_in_external_player(
+    url: String,
+    preferred: Option<String>,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || open_in_external_player_blocking(url, preferred))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 /// macOS: the window is created `transparent: true` (the in-window player reveals

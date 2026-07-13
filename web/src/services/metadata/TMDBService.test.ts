@@ -813,7 +813,7 @@ describe("TMDBService getEpisodes", () => {
   });
 });
 
-// MARK: - getExternalIds (uncached request)
+// MARK: - getExternalIds
 
 describe("TMDBService getExternalIds", () => {
   it("maps imdb_id/tvdb_id and hits the external_ids path", async () => {
@@ -826,7 +826,7 @@ describe("TMDBService getExternalIds", () => {
     expect(mock.lastURL()!.pathname).toBe("/3/tv/321/external_ids");
   });
 
-  it("maps missing ids to null and is NOT memoized (each call hits the network)", async () => {
+  it("maps missing ids to null and memoizes the result", async () => {
     const mock = makeMockFetch(() => ok(JSON.stringify({})));
     const service = new TMDBService("tmdb-key", mock.fetchImpl);
 
@@ -834,7 +834,27 @@ describe("TMDBService getExternalIds", () => {
     expect(ids).toEqual({ imdbId: null, tvdbId: null });
 
     await service.getExternalIds(321, "movie");
-    expect(mock.hits()).toBe(2); // uncached path
+    expect(mock.hits()).toBe(1);
+  });
+
+  it("deduplicates concurrent external-id reads before the cache is filled", async () => {
+    let hits = 0;
+    const fetchImpl: FetchImpl = async () => {
+      hits += 1;
+      return {
+        status: 200,
+        text: async () => JSON.stringify({ imdb_id: "tt321" }),
+      };
+    };
+    const service = new TMDBService("tmdb-key", fetchImpl);
+
+    const first = service.getExternalIds(321, "movie");
+    const second = service.getExternalIds(321, "movie");
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { imdbId: "tt321", tvdbId: null },
+      { imdbId: "tt321", tvdbId: null },
+    ]);
+    expect(hits).toBe(1);
   });
 });
 

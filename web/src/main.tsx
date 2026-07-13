@@ -9,6 +9,26 @@ import { installSuspendOnHidden } from "./lib/suspendOnHidden";
 import { initInstallPromptCapture } from "./lib/installPrompt";
 import { installExternalLinkHandler } from "./lib/externalLinks";
 
+const failureLog: string[] = [];
+const MAX_FAILURE_LOG = 50;
+
+function reportBackgroundFailure(kind: "error" | "unhandledrejection", value: unknown): void {
+  const message = value instanceof Error ? value.message : String(value);
+  failureLog.push(`${new Date().toISOString()} ${kind}: ${message}`);
+  if (failureLog.length > MAX_FAILURE_LOG) failureLog.splice(0, failureLog.length - MAX_FAILURE_LOG);
+  // Keep the last-resort failure visible in production diagnostics without
+  // interrupting the current task. React ErrorBoundary cannot observe async
+  // promise rejections.
+  console.error(`[DebridStreamer ${kind}]`, value);
+}
+
+window.addEventListener("unhandledrejection", (event) => {
+  reportBackgroundFailure("unhandledrejection", event.reason);
+});
+window.addEventListener("error", (event) => {
+  reportBackgroundFailure("error", event.error ?? event.message);
+});
+
 // Park all CSS animations whenever the window is hidden/minimized/covered.
 installSuspendOnHidden();
 

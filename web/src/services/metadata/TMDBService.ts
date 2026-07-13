@@ -292,6 +292,8 @@ export class TMDBService implements MetadataProvider {
   // `path + sorted query params`. Only successful reads are cached - errors
   // are never stored, so a failure is always retried.
   private responseCache = new Map<string, CacheEntry>();
+  /** Identical reads that begin before the TTL cache is populated share work. */
+  private inFlight = new Map<string, Promise<unknown>>();
   private readonly cacheCapacity = 256;
 
   /** Short TTL for volatile catalog reads (search/trending/category/discover/
@@ -320,9 +322,19 @@ export class TMDBService implements MetadataProvider {
     if (entry && entry.expiresAt > Date.now()) {
       return entry.value as T;
     }
-    const value = await produce();
-    this.store(key, value, ttl);
-    return value;
+    const pending = this.inFlight.get(key);
+    if (pending != null) return pending as Promise<T>;
+
+    const request = produce()
+      .then((value) => {
+        this.store(key, value, ttl);
+        return value;
+      })
+      .finally(() => {
+        this.inFlight.delete(key);
+      });
+    this.inFlight.set(key, request);
+    return request;
   }
 
   /** Inserts into the bounded cache: expired entries are swept first, then the
@@ -528,8 +540,10 @@ export class TMDBService implements MetadataProvider {
 
   async getExternalIds(tmdbId: number, type: MediaType): Promise<ExternalIds> {
     const path = `/${MediaTypeNS.tmdbPath(type)}/${tmdbId}/external_ids`;
-    const raw = await this.request<RawExternalIds>(path, {});
-    return { imdbId: raw.imdb_id ?? null, tvdbId: raw.tvdb_id ?? null };
+    return this.cached(this.cacheKey(path, {}), TMDBService.shortTTL, async () => {
+      const raw = await this.request<RawExternalIds>(path, {});
+      return { imdbId: raw.imdb_id ?? null, tvdbId: raw.tvdb_id ?? null };
+    });
   }
 
   async getCast(tmdbId: number, type: MediaType): Promise<CastMember[]> {

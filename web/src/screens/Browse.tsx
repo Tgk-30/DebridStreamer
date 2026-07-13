@@ -25,6 +25,7 @@ import { genreName, useGenres } from "../data/genres";
 import { SortOption } from "../services/metadata/types";
 import type { MediaType } from "../models/media";
 import { MediaCard } from "../components/MediaCard";
+import { VirtualMediaGrid } from "../components/MediaGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import "./Browse.css";
@@ -217,11 +218,11 @@ function BrowseInner({
           />
         ) : (
           <>
-            <div className="browse-grid">
-              {state.items.map((item) => (
-                <MediaCard key={item.id} item={item} onSelect={onSelect} />
-              ))}
-            </div>
+            <VirtualMediaGrid
+              items={state.items}
+              className="browse-grid"
+              renderItem={(item) => <MediaCard item={item} onSelect={onSelect} />}
+            />
 
             {/* Infinite-scroll sentinel + an explicit fallback button. */}
             <div ref={sentinelRef} className="browse-sentinel" />

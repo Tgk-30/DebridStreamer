@@ -14,6 +14,7 @@ use std::ffi::{c_void, CStr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use libmpv2::{Format, Mpv};
 
@@ -159,79 +160,54 @@ fn spawn_event_thread<R: Runtime>(
         let ctx = mpv.ctx.as_ptr();
         let mut display_width: Option<i64> = None;
         let mut display_height: Option<i64> = None;
+        let mut last_hot_emit: HashMap<String, Instant> = HashMap::new();
+        const HOT_PROPERTY_INTERVAL: Duration = Duration::from_millis(200);
         while !stop.load(Ordering::Acquire) {
-            let ev = unsafe { &*libmpv2_sys::mpv_wait_event(ctx, 0.25) };
-            match ev.event_id {
-                libmpv2_sys::mpv_event_id_MPV_EVENT_NONE => {}
-                libmpv2_sys::mpv_event_id_MPV_EVENT_SHUTDOWN => break,
-                libmpv2_sys::mpv_event_id_MPV_EVENT_START_FILE => {
-                    display_width = None;
-                    display_height = None;
-                    surface.video_file_started();
-                    rp_log("RPGEO event=file-start engine=native-mpv dwidth=? dheight=?");
-                }
-                libmpv2_sys::mpv_event_id_MPV_EVENT_END_FILE => {
-                    let ef = unsafe { &*(ev.data as *mut libmpv2_sys::mpv_event_end_file) };
-                    surface.video_playback_ended();
-                    rp_log(&format!(
-                        "event thread: END_FILE reason={} error={}",
-                        ef.reason, ef.error
-                    ));
-                    // mpv_end_file_reason (stable public ABI): EOF=0, STOP=2,
-                    // QUIT=3, ERROR=4, REDIRECT=5. Only ERROR is a genuine playback
-                    // FAILURE - a file `loadfile` ACCEPTED but that then failed to
-                    // demux/decode (corrupt data, or a codec this build can't
-                    // handle). `loadfile` returns success in that case and the
-                    // decode error surfaces only here, asynchronously, so this is
-                    // the sole signal the webview gets to fall back to the HLS
-                    // transcode. EOF/stop/quit/redirect are normal and are never
-                    // forwarded (a forwarded EOF would tear down the end card).
-                    // Widen to i64 before comparing: `reason` is a bindgen enum
-                    // alias whose primitive type (c_int vs c_uint) we don't pin
-                    // here, and i64 fits either without a lint-flagged narrowing.
-                    const MPV_END_FILE_REASON_ERROR: i64 = 4;
-                    if ef.reason as i64 == MPV_END_FILE_REASON_ERROR {
-                        let _ = app.emit(
-                            "player-event",
-                            json!({
-                                "name": "end-file",
-                                "data": { "error": true, "code": ef.error as i64 }
-                            }),
-                        );
+            let mut pending_properties: HashMap<String, Value> = HashMap::new();
+            let mut wait_seconds = 0.25;
+            let mut shutdown = false;
+            loop {
+                let ev = unsafe { &*libmpv2_sys::mpv_wait_event(ctx, wait_seconds) };
+                match ev.event_id {
+                    libmpv2_sys::mpv_event_id_MPV_EVENT_NONE => {}
+                    libmpv2_sys::mpv_event_id_MPV_EVENT_SHUTDOWN => shutdown = true,
+                    libmpv2_sys::mpv_event_id_MPV_EVENT_START_FILE => {
+                        display_width = None;
+                        display_height = None;
+                        surface.video_file_started();
+                        rp_log("RPGEO event=file-start engine=native-mpv dwidth=? dheight=?");
                     }
-                    rp_log(&format!(
-                        "RPGEO event=file-end engine=native-mpv dwidth={} dheight={}",
-                        display_width
-                            .map(|v| v.to_string())
-                            .unwrap_or_else(|| "?".to_string()),
-                        display_height
-                            .map(|v| v.to_string())
-                            .unwrap_or_else(|| "?".to_string())
-                    ));
-                }
-                libmpv2_sys::mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
-                    let prop = unsafe { &*(ev.data as *mut libmpv2_sys::mpv_event_property) };
-                    if prop.name.is_null() {
-                        continue;
-                    }
-                    let name = unsafe { CStr::from_ptr(prop.name) }
-                        .to_string_lossy()
-                        .into_owned();
-                    let data = unsafe { prop_data_to_json(prop.format, prop.data) };
-                    let dimension_changed = match name.as_str() {
-                        "dwidth" => {
-                            display_width = data.as_i64().filter(|v| *v > 0);
-                            true
-                        }
-                        "dheight" => {
-                            display_height = data.as_i64().filter(|v| *v > 0);
-                            true
-                        }
-                        _ => false,
-                    };
-                    if dimension_changed {
+                    libmpv2_sys::mpv_event_id_MPV_EVENT_END_FILE => {
+                        let ef = unsafe { &*(ev.data as *mut libmpv2_sys::mpv_event_end_file) };
+                        surface.video_playback_ended();
                         rp_log(&format!(
-                            "RPGEO event=mpv-display-property engine=native-mpv property={name} dwidth={} dheight={}",
+                            "event thread: END_FILE reason={} error={}",
+                            ef.reason, ef.error
+                        ));
+                        // mpv_end_file_reason (stable public ABI): EOF=0, STOP=2,
+                        // QUIT=3, ERROR=4, REDIRECT=5. Only ERROR is a genuine playback
+                        // FAILURE - a file `loadfile` ACCEPTED but that then failed to
+                        // demux/decode (corrupt data, or a codec this build can't
+                        // handle). `loadfile` returns success in that case and the
+                        // decode error surfaces only here, asynchronously, so this is
+                        // the sole signal the webview gets to fall back to the HLS
+                        // transcode. EOF/stop/quit/redirect are normal and are never
+                        // forwarded (a forwarded EOF would tear down the end card).
+                        // Widen to i64 before comparing: `reason` is a bindgen enum
+                        // alias whose primitive type (c_int vs c_uint) we don't pin
+                        // here, and i64 fits either without a lint-flagged narrowing.
+                        const MPV_END_FILE_REASON_ERROR: i64 = 4;
+                        if ef.reason as i64 == MPV_END_FILE_REASON_ERROR {
+                            let _ = app.emit(
+                                "player-event",
+                                json!({
+                                    "name": "end-file",
+                                    "data": { "error": true, "code": ef.error as i64 }
+                                }),
+                            );
+                        }
+                        rp_log(&format!(
+                            "RPGEO event=file-end engine=native-mpv dwidth={} dheight={}",
                             display_width
                                 .map(|v| v.to_string())
                                 .unwrap_or_else(|| "?".to_string()),
@@ -239,24 +215,88 @@ fn spawn_event_thread<R: Runtime>(
                                 .map(|v| v.to_string())
                                 .unwrap_or_else(|| "?".to_string())
                         ));
-                        if let (Some(width), Some(height)) = (display_width, display_height) {
-                            surface.video_dimensions_changed(width, height);
+                    }
+                    libmpv2_sys::mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
+                        let prop = unsafe { &*(ev.data as *mut libmpv2_sys::mpv_event_property) };
+                        if prop.name.is_null() {
+                            wait_seconds = 0.0;
+                            continue;
                         }
-                    } else if name == "eof-reached" {
-                        if data == Value::Bool(true) {
-                            surface.video_playback_ended();
-                        } else if data == Value::Bool(false) {
-                            // Replay after keep-open does not necessarily emit a
-                            // fresh START_FILE/dwidth pair. Re-apply the retained
-                            // dimensions when EOF clears.
+                        let name = unsafe { CStr::from_ptr(prop.name) }
+                            .to_string_lossy()
+                            .into_owned();
+                        let data = unsafe { prop_data_to_json(prop.format, prop.data) };
+                        let dimension_changed = match name.as_str() {
+                            "dwidth" => {
+                                display_width = data.as_i64().filter(|v| *v > 0);
+                                true
+                            }
+                            "dheight" => {
+                                display_height = data.as_i64().filter(|v| *v > 0);
+                                true
+                            }
+                            _ => false,
+                        };
+                        if dimension_changed {
+                            rp_log(&format!(
+                                "RPGEO event=mpv-display-property engine=native-mpv property={name} dwidth={} dheight={}",
+                                display_width
+                                    .map(|v| v.to_string())
+                                    .unwrap_or_else(|| "?".to_string()),
+                                display_height
+                                    .map(|v| v.to_string())
+                                    .unwrap_or_else(|| "?".to_string())
+                            ));
                             if let (Some(width), Some(height)) = (display_width, display_height) {
                                 surface.video_dimensions_changed(width, height);
                             }
+                        } else if name == "eof-reached" {
+                            if data == Value::Bool(true) {
+                                surface.video_playback_ended();
+                            } else if data == Value::Bool(false) {
+                                // Replay after keep-open does not necessarily emit a
+                                // fresh START_FILE/dwidth pair. Re-apply the retained
+                                // dimensions when EOF clears.
+                                if let (Some(width), Some(height)) = (display_width, display_height) {
+                                    surface.video_dimensions_changed(width, height);
+                                }
+                            }
                         }
+                        // mpv can enqueue several updates for the same property before
+                        // this thread catches up. Keep only the newest owned value in
+                        // this zero-timeout drain, while retaining one event per name.
+                        pending_properties.insert(name, data);
                     }
-                    let _ = app.emit("player-event", json!({ "name": name, "data": data }));
+                    _ => {}
                 }
-                _ => {}
+
+                if shutdown || stop.load(Ordering::Acquire) {
+                    break;
+                }
+                if ev.event_id == libmpv2_sys::mpv_event_id_MPV_EVENT_NONE {
+                    break;
+                }
+                wait_seconds = 0.0;
+            }
+
+            let now = Instant::now();
+            for (name, data) in pending_properties {
+                let is_hot = matches!(name.as_str(), "time-pos" | "demuxer-cache-time");
+                if is_hot
+                    && last_hot_emit
+                        .get(&name)
+                        .map(|last| now.duration_since(*last) < HOT_PROPERTY_INTERVAL)
+                        .unwrap_or(false)
+                {
+                    continue;
+                }
+                if is_hot {
+                    last_hot_emit.insert(name.clone(), now);
+                }
+                let _ = app.emit("player-event", json!({ "name": name, "data": data }));
+            }
+            if shutdown {
+                break;
             }
         }
         rp_log("event thread: stopped");

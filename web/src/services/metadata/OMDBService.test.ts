@@ -79,6 +79,21 @@ const omdbNAValuesBody = JSON.stringify({
 // MARK: - Full-body parse (parsesFullBody)
 
 describe("OMDBService fetchRatings", () => {
+  it("caches a completed lookup and deduplicates concurrent callers", async () => {
+    const mock = makeMockFetch(() => ok(omdbFullBody));
+    const service = new OMDBService("test-key", mock.fetchImpl);
+
+    const [first, second] = await Promise.all([
+      service.fetchRatings("tt0111161"),
+      service.fetchRatings("tt0111161"),
+    ]);
+    expect(first).toEqual(second);
+    expect(mock.hits()).toBe(1);
+
+    await service.fetchRatings("tt0111161");
+    expect(mock.hits()).toBe(1);
+  });
+
   it("parses a full OMDB body into imdbRating, RT percent and metascore", async () => {
     const mock = makeMockFetch(() => ok(omdbFullBody));
     const service = new OMDBService("test-key", mock.fetchImpl);

@@ -1,26 +1,50 @@
 use std::fs;
+use std::io::Write;
 use std::net::{IpAddr, TcpStream, UdpSocket};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime, State};
 
 const DEFAULT_PORT: u16 = 43110;
+const SERVER_LOG_MAX_BYTES: u64 = 1024 * 1024;
+const SERVER_MONITOR_INTERVAL: Duration = Duration::from_millis(250);
+const SERVER_MAX_RESPAWN_ATTEMPTS: usize = 5;
+const SERVER_MAX_BACKOFF: Duration = Duration::from_secs(4);
 
 struct ServerProcess {
     child: Child,
     port: u16,
     setup_token: String,
+    generation: u64,
 }
 
 #[derive(Default)]
-pub struct ServerState(Mutex<Option<ServerProcess>>);
+pub struct ServerState {
+    process: Arc<Mutex<Option<ServerProcess>>>,
+    desired_generation: Arc<AtomicU64>,
+    next_generation: AtomicU64,
+    monitor: Mutex<Option<JoinHandle<()>>>,
+}
+
+#[derive(Clone)]
+struct ServerLaunch {
+    node_path: PathBuf,
+    server_entry: PathBuf,
+    web_dist: Option<PathBuf>,
+    data_dir: PathBuf,
+    setup_token: String,
+    port: u16,
+    log_path: PathBuf,
+}
 
 #[derive(Serialize)]
 pub struct DesktopServerStatus {
@@ -39,8 +63,12 @@ pub struct DesktopServerStatus {
 }
 
 impl ServerState {
+    fn generation(&self) -> u64 {
+        self.next_generation.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
     fn prune_exited(&self) {
-        if let Ok(mut guard) = self.0.lock() {
+        if let Ok(mut guard) = self.process.lock() {
             let exited = match guard.as_mut() {
                 Some(process) => process.child.try_wait().ok().flatten().is_some(),
                 None => false,
@@ -50,6 +78,43 @@ impl ServerState {
             }
         }
     }
+}
+
+impl Drop for ServerState {
+    fn drop(&mut self) {
+        self.desired_generation.store(0, Ordering::Release);
+        if let Ok(mut guard) = self.process.lock() {
+            *guard = None;
+        }
+        if let Ok(mut monitor) = self.monitor.lock() {
+            if let Some(handle) = monitor.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+}
+
+fn append_server_log(path: &Path, source: &str, message: &str) {
+    eprintln!("desktop server [{source}]: {message}");
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "[{source}] {message}");
+    }
+}
+
+fn server_log_files(path: &Path) -> Result<(fs::File, fs::File), String> {
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| format!("Failed to open desktop server log: {e}"))?;
+    if file.metadata().map(|metadata| metadata.len()).unwrap_or(0) > SERVER_LOG_MAX_BYTES {
+        file.set_len(0)
+            .map_err(|e| format!("Failed to rotate desktop server log: {e}"))?;
+    }
+    let stderr = file
+        .try_clone()
+        .map_err(|e| format!("Failed to clone desktop server log: {e}"))?;
+    Ok((file, stderr))
 }
 
 impl Drop for ServerProcess {
@@ -216,14 +281,56 @@ fn materialized_node_path<R: Runtime>(
     Ok(dest)
 }
 
-fn node_command<R: Runtime>(app: &AppHandle<R>) -> Result<Command, String> {
+fn node_executable_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     if let Some(path) = configured_node_path() {
-        Ok(Command::new(path))
+        Ok(path)
     } else if let Some(path) = bundled_node_path(app) {
-        Ok(Command::new(materialized_node_path(app, &path)?))
+        materialized_node_path(app, &path)
     } else {
-        Ok(Command::new("node"))
+        Ok(PathBuf::from("node"))
     }
+}
+
+fn spawn_server_process(
+    launch: &ServerLaunch,
+    generation: u64,
+) -> Result<ServerProcess, String> {
+    let (stdout, stderr) = server_log_files(&launch.log_path)?;
+    let mut command = Command::new(&launch.node_path);
+    command
+        .arg(&launch.server_entry)
+        .env("NODE_ENV", "production")
+        .env("HOST", "0.0.0.0")
+        .env("PORT", launch.port.to_string())
+        .env("DS_SERVER_DATA_DIR", &launch.data_dir)
+        .env(
+            "DS_SERVER_DB_PATH",
+            launch.data_dir.join("debridstreamer.sqlite"),
+        )
+        .env("DS_SERVER_SETUP_TOKEN", &launch.setup_token)
+        .env(
+            "DS_SERVER_CORS_ORIGIN",
+            "http://tauri.localhost,tauri://localhost,http://localhost:5173,http://127.0.0.1:5173",
+        )
+        .env("DS_SERVER_COOKIE_SECURE", "false")
+        .env("DS_SERVER_COOKIE_SAMESITE", "lax")
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr));
+
+    if let Some(web_dist) = &launch.web_dist {
+        command.env("DS_WEB_DIST", web_dist);
+    }
+
+    let child = command
+        .spawn()
+        .map_err(|e| format!("Failed to start bundled server with Node: {e}"))?;
+    Ok(ServerProcess {
+        child,
+        port: launch.port,
+        setup_token: launch.setup_token.clone(),
+        generation,
+    })
 }
 
 fn local_url(port: u16) -> String {
@@ -335,6 +442,180 @@ fn wait_for_port(port: u16) -> bool {
     false
 }
 
+fn wait_while_desired(desired: &AtomicU64, generation: u64, duration: Duration) -> bool {
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+        if desired.load(Ordering::Acquire) != generation {
+            return false;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        thread::sleep(Duration::from_millis(100).min(remaining));
+    }
+    desired.load(Ordering::Acquire) == generation
+}
+
+fn wait_for_port_while_desired(port: u16, desired: &AtomicU64, generation: u64) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(6);
+    while Instant::now() < deadline {
+        if desired.load(Ordering::Acquire) != generation {
+            return false;
+        }
+        if port_is_open(port) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
+fn spawn_server_monitor(
+    process_state: Arc<Mutex<Option<ServerProcess>>>,
+    desired_generation: Arc<AtomicU64>,
+    generation: u64,
+    launch: ServerLaunch,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let mut respawn_attempts = 0_usize;
+        'monitor: loop {
+            if desired_generation.load(Ordering::Acquire) != generation {
+                return;
+            }
+
+            let exit_detail = {
+                let mut guard = match process_state.lock() {
+                    Ok(guard) => guard,
+                    Err(error) => {
+                        append_server_log(
+                            &launch.log_path,
+                            "monitor",
+                            &format!("state lock failed: {error}"),
+                        );
+                        return;
+                    }
+                };
+                match guard.as_mut() {
+                    Some(process) if process.generation == generation => {
+                        match process.child.try_wait() {
+                            Ok(Some(status)) => Some(format!("process exited with {status}")),
+                            Ok(None) => None,
+                            Err(error) => Some(format!("process status failed: {error}")),
+                        }
+                    }
+                    Some(_) => return,
+                    None => Some("process was no longer registered".to_string()),
+                }
+            };
+
+            let Some(exit_detail) = exit_detail else {
+                thread::sleep(SERVER_MONITOR_INTERVAL);
+                continue;
+            };
+            append_server_log(&launch.log_path, "monitor", &exit_detail);
+            if let Ok(mut guard) = process_state.lock() {
+                if guard
+                    .as_ref()
+                    .map(|process| process.generation == generation)
+                    .unwrap_or(false)
+                {
+                    *guard = None;
+                }
+            }
+
+            loop {
+                if desired_generation.load(Ordering::Acquire) != generation {
+                    return;
+                }
+                if respawn_attempts >= SERVER_MAX_RESPAWN_ATTEMPTS {
+                    let _ = desired_generation.compare_exchange(
+                        generation,
+                        0,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    );
+                    append_server_log(
+                        &launch.log_path,
+                        "monitor",
+                        "respawn limit reached; server left stopped",
+                    );
+                    return;
+                }
+
+                respawn_attempts += 1;
+                let multiplier = 1_u32 << (respawn_attempts.saturating_sub(1) as u32);
+                let backoff = (Duration::from_millis(250) * multiplier).min(SERVER_MAX_BACKOFF);
+                append_server_log(
+                    &launch.log_path,
+                    "monitor",
+                    &format!(
+                        "respawn attempt {respawn_attempts}/{SERVER_MAX_RESPAWN_ATTEMPTS} in {} ms",
+                        backoff.as_millis()
+                    ),
+                );
+                if !wait_while_desired(&desired_generation, generation, backoff) {
+                    return;
+                }
+
+                match spawn_server_process(&launch, generation) {
+                    Ok(process) => {
+                        let mut guard = match process_state.lock() {
+                            Ok(guard) => guard,
+                            Err(error) => {
+                                append_server_log(
+                                    &launch.log_path,
+                                    "monitor",
+                                    &format!("state lock failed: {error}"),
+                                );
+                                return;
+                            }
+                        };
+                        if desired_generation.load(Ordering::Acquire) != generation {
+                            drop(process);
+                            return;
+                        }
+                        *guard = Some(process);
+                        drop(guard);
+
+                        if wait_for_port_while_desired(
+                            launch.port,
+                            &desired_generation,
+                            generation,
+                        )
+                        {
+                            append_server_log(
+                                &launch.log_path,
+                                "monitor",
+                                "server respawned",
+                            );
+                            // A confirmed-healthy respawn resets the budget so
+                            // the cap counts consecutive failures in one crash
+                            // burst, not the lifetime total; otherwise a
+                            // long-lived server that recovers a handful of
+                            // separate times would eventually refuse to respawn.
+                            respawn_attempts = 0;
+                            continue 'monitor;
+                        }
+                        if let Ok(mut guard) = process_state.lock() {
+                            if guard
+                                .as_ref()
+                                .map(|process| process.generation == generation)
+                                .unwrap_or(false)
+                            {
+                                *guard = None;
+                            }
+                        }
+                        append_server_log(
+                            &launch.log_path,
+                            "monitor",
+                            "respawned process did not open its port",
+                        );
+                    }
+                    Err(error) => append_server_log(&launch.log_path, "monitor", &error),
+                }
+            }
+        }
+    })
+}
+
 fn status_for<R: Runtime>(
     app: &AppHandle<R>,
     state: &ServerState,
@@ -343,7 +624,7 @@ fn status_for<R: Runtime>(
     state.prune_exited();
     let port = configured_port();
     let running_process = state
-        .0
+        .process
         .lock()
         .ok()
         .and_then(|guard| guard.as_ref().map(|process| (process.port, process.setup_token.clone())));
@@ -404,8 +685,21 @@ pub fn desktop_server_start<R: Runtime>(
     state: State<'_, ServerState>,
 ) -> Result<DesktopServerStatus, String> {
     state.prune_exited();
-    if state.0.lock().map_err(|e| e.to_string())?.is_some() {
+    let has_process = state
+        .process
+        .lock()
+        .map_err(|e| e.to_string())?
+        .is_some();
+    if has_process || state.desired_generation.load(Ordering::Acquire) != 0 {
         return Ok(status_for(&app, &state, None));
+    }
+    if let Some(handle) = state
+        .monitor
+        .lock()
+        .map_err(|e| e.to_string())?
+        .take()
+    {
+        let _ = handle.join();
     }
 
     let port = configured_port();
@@ -424,48 +718,52 @@ pub fn desktop_server_start<R: Runtime>(
         .join("server");
     std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
     let setup_token = read_or_create_setup_token(&data_dir)?;
-
-    let mut command = node_command(&app)?;
-    command
-        .arg(&server_entry)
-        .env("NODE_ENV", "production")
-        .env("HOST", "0.0.0.0")
-        .env("PORT", port.to_string())
-        .env("DS_SERVER_DATA_DIR", &data_dir)
-        .env("DS_SERVER_DB_PATH", data_dir.join("debridstreamer.sqlite"))
-        .env("DS_SERVER_SETUP_TOKEN", &setup_token)
-        .env(
-            "DS_SERVER_CORS_ORIGIN",
-            "http://tauri.localhost,tauri://localhost,http://localhost:5173,http://127.0.0.1:5173",
-        )
-        .env("DS_SERVER_COOKIE_SECURE", "false")
-        .env("DS_SERVER_COOKIE_SAMESITE", "lax")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-
-    if let Some(web_dist) = &web_dist {
-        command.env("DS_WEB_DIST", web_dist);
+    let launch = ServerLaunch {
+        node_path: node_executable_path(&app)?,
+        server_entry,
+        web_dist,
+        data_dir,
+        setup_token,
+        port,
+        log_path: app
+            .path()
+            .app_log_dir()
+            .map_err(|e| e.to_string())?
+            .join("desktop-server.log"),
+    };
+    if let Some(parent) = launch.log_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-
-    let child = command
-        .spawn()
-        .map_err(|e| format!("Failed to start bundled server with Node: {e}"))?;
+    let generation = state.generation();
+    state
+        .desired_generation
+        .store(generation, Ordering::Release);
+    let process = match spawn_server_process(&launch, generation) {
+        Ok(process) => process,
+        Err(error) => {
+            state.desired_generation.store(0, Ordering::Release);
+            return Err(error);
+        }
+    };
 
     {
-        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-        *guard = Some(ServerProcess {
-            child,
-            port,
-            setup_token,
-        });
+        let mut guard = state.process.lock().map_err(|e| e.to_string())?;
+        *guard = Some(process);
     }
 
     if !wait_for_port(port) {
-        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        state.desired_generation.store(0, Ordering::Release);
+        let mut guard = state.process.lock().map_err(|e| e.to_string())?;
         *guard = None;
         return Err("Server process started but did not open its port.".to_string());
     }
+    let monitor = spawn_server_monitor(
+        Arc::clone(&state.process),
+        Arc::clone(&state.desired_generation),
+        generation,
+        launch,
+    );
+    *state.monitor.lock().map_err(|e| e.to_string())? = Some(monitor);
 
     Ok(status_for(
         &app,
@@ -479,9 +777,18 @@ pub fn desktop_server_stop<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, ServerState>,
 ) -> Result<DesktopServerStatus, String> {
+    state.desired_generation.store(0, Ordering::Release);
     {
-        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        let mut guard = state.process.lock().map_err(|e| e.to_string())?;
         *guard = None;
+    }
+    if let Some(handle) = state
+        .monitor
+        .lock()
+        .map_err(|e| e.to_string())?
+        .take()
+    {
+        let _ = handle.join();
     }
     Ok(status_for(
         &app,

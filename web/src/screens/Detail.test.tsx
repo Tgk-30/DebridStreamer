@@ -32,6 +32,7 @@ const openDetail = vi.fn();
 const navigate = vi.fn();
 const toggleWatchlist = vi.fn();
 const recordResume = vi.fn();
+const refreshContinueWatching = vi.fn(async () => {});
 
 let mockServices: any = {
   tmdb: null,
@@ -55,6 +56,7 @@ vi.mock("../store/AppStore", () => ({
     toggleWatchlist,
     recordResume,
     continueWatching: mockContinueWatching,
+    refreshContinueWatching,
     cachedResolutions: mockCached
       ? { [mockDetailItem?.id ?? "x"]: mockCached }
       : {},
@@ -211,6 +213,8 @@ vi.mock("../components/VideoPlayer", () => ({
     requestWebviewFallback,
     upNext,
     autoCountdown,
+    onClose,
+    onProgress,
   }: any) => (
     <div
       data-testid="player"
@@ -221,7 +225,14 @@ vi.mock("../components/VideoPlayer", () => ({
       data-has-fallback={String(requestWebviewFallback != null)}
       data-up-next={upNext?.label ?? ""}
       data-auto-countdown={String(autoCountdown)}
-    />
+    >
+      <button type="button" onClick={() => onProgress?.(80, 100)}>
+        report-progress
+      </button>
+      <button type="button" onClick={onClose}>
+        close-player
+      </button>
+    </div>
   ),
 }));
 
@@ -320,6 +331,25 @@ describe("Detail base render", () => {
     expect(screen.getByTestId("streampicker")).toBeInTheDocument();
     expect(screen.getByTestId("castrail").getAttribute("data-count")).toBe("1");
     expect(screen.getByText("related-rel1")).toBeInTheDocument();
+  });
+
+  it("refreshes Continue Watching once when a player session closes", async () => {
+    render(<Detail />);
+    await userEvent.click(screen.getByTestId("play-stream"));
+    expect(await screen.findByTestId("player")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("report-progress"));
+    expect(recordResume).toHaveBeenCalledWith(
+      mockDetailItem,
+      80,
+      100,
+      null,
+      undefined,
+    );
+    await userEvent.click(screen.getByText("close-player"));
+
+    await waitFor(() => expect(refreshContinueWatching).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId("player")).not.toBeInTheDocument();
   });
 
   it("omits the hero when the detail item is null (no metadata yet)", () => {

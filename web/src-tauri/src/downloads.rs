@@ -17,11 +17,13 @@ use reqwest::header::{
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
+use tokio::io::{
+    AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter,
+};
 use tokio::process::Command;
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
-const PROGRESS_BYTES: u64 = 1024 * 1024;
+const DOWNLOAD_BUFFER_CAPACITY: usize = 1024 * 1024;
 const DELETE_RETRY_INTERVAL: Duration = Duration::from_millis(50);
 const DELETE_RETRIES: usize = 20;
 
@@ -512,6 +514,7 @@ async fn transfer_download<R: Runtime>(
             .await
             .map_err(|e| format!("Failed to seek download destination: {e}"))?;
     }
+    let mut file = BufWriter::with_capacity(DOWNLOAD_BUFFER_CAPACITY, file);
     let mut stream = response.bytes_stream();
     let mut bytes_done = offset;
     last_done.store(bytes_done, Ordering::Relaxed);
@@ -527,9 +530,10 @@ async fn transfer_download<R: Runtime>(
         last_done.store(bytes_done, Ordering::Relaxed);
 
         let elapsed = last_emit.elapsed();
-        if elapsed >= PROGRESS_INTERVAL
-            || bytes_done.saturating_sub(last_emit_bytes) >= PROGRESS_BYTES
-        {
+        if elapsed >= PROGRESS_INTERVAL {
+            file.flush()
+                .await
+                .map_err(|e| format!("Failed to flush download: {e}"))?;
             let delta = bytes_done.saturating_sub(last_emit_bytes);
             let mut payload = progress(&args.job_id, "downloading", bytes_done, bytes_total);
             if elapsed.as_secs_f64() > 0.0 {
@@ -652,8 +656,12 @@ fn executable_on_path(tool: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn downloads_ffmpeg_available<R: Runtime>(app: AppHandle<R>) -> bool {
-    bundled_tool_path(&app, "ffmpeg").is_some() || executable_on_path("ffmpeg")
+pub async fn downloads_ffmpeg_available<R: Runtime>(app: AppHandle<R>) -> bool {
+    tokio::task::spawn_blocking(move || {
+        bundled_tool_path(&app, "ffmpeg").is_some() || executable_on_path("ffmpeg")
+    })
+    .await
+    .unwrap_or(false)
 }
 
 #[tauri::command]
