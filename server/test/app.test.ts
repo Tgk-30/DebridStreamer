@@ -1480,7 +1480,7 @@ describe("DebridStreamer server", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
-  });
+  }, 20000); // heavy multi-request integration test; 5s default is tight on loaded CI
 
   it("uses server credentials by default and profile credentials as overrides", async () => {
     const owner = await setupOwner(app);
