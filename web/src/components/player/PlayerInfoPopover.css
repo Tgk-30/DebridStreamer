@@ -56,6 +56,10 @@
   overflow-wrap: anywhere;
 }
 
+.player-info-version {
+  font-size: 10px;
+}
+
 .player-info-shortcuts {
   width: 100%;
   margin-top: 13px;

@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import type { PixelSize, PlaybackEngine } from "../../lib/playbackEngine";
 import { PLAYBACK_ENGINE_LABEL } from "../../lib/playbackEngine";
+import { getAppVersion } from "../../lib/appVersion";
 import { Icon } from "../Icon";
 import "./PlayerInfoPopover.css";
 
@@ -23,6 +25,18 @@ export function PlayerInfoPopover({
   onClose,
   onShowShortcuts,
 }: Props) {
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    void getAppVersion().then((version) => {
+      if (mounted) setAppVersion(version);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <section
       className="player-info-popover"
@@ -43,6 +57,8 @@ export function PlayerInfoPopover({
       <dl className="player-info-grid">
         <dt>Engine</dt>
         <dd>{PLAYBACK_ENGINE_LABEL[engine]}</dd>
+        <dt>Version</dt>
+        <dd className="player-info-version">v{appVersion ?? "…"}</dd>
         <dt>Source</dt>
         <dd>{dimensions(sourceSize)}</dd>
         <dt>Display</dt>

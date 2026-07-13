@@ -1127,6 +1127,12 @@
   color: var(--danger);
 }
 
+.settings-version {
+  margin: var(--sp-sm) 0 0;
+  font-size: 11px;
+  text-align: center;
+}
+
 .settings-profile-list {
   display: flex;
   flex-direction: column;

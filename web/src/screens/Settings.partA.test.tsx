@@ -23,6 +23,7 @@ import { defaultSettings, type AppSettings } from "../data/settings";
 let mockSettings: AppSettings = defaultSettings();
 let mockSimpleMode = false;
 const updateSettings = vi.fn();
+const getAppVersion = vi.hoisted(() => vi.fn(async () => "test-version"));
 const setSmartPreloadEnabled = vi.fn();
 let smartPreloadOn = false;
 
@@ -41,6 +42,8 @@ vi.mock("../lib/serverMode", () => ({
   configuredServerURLSource: () => null,
   saveServerURL: vi.fn(),
 }));
+
+vi.mock("../lib/appVersion", () => ({ getAppVersion }));
 
 vi.mock("../lib/tauri", () => ({
   isTauri: () => false,
@@ -99,6 +102,7 @@ beforeEach(() => {
   mockSimpleMode = false;
   smartPreloadOn = false;
   updateSettings.mockClear();
+  getAppVersion.mockClear();
   setSmartPreloadEnabled.mockClear();
 });
 
@@ -111,6 +115,11 @@ afterEach(() => {
 // ============================================================================
 
 describe("Settings shell", () => {
+  it("shows the app version on the landing shell", async () => {
+    renderAt();
+    expect(await screen.findByText("DebridStreamer vtest-version")).toBeInTheDocument();
+  });
+
   it("hides the Server tab in Local Mode", () => {
     renderAt();
     const tabs = screen.getByText("Settings").closest(".settings-screen")!;

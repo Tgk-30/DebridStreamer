@@ -87,6 +87,7 @@ import {
   type DesktopServerStatus,
 } from "../lib/tauri";
 import { getDownloadsBridge } from "../lib/downloadsBridge";
+import { getAppVersion } from "../lib/appVersion";
 import {
   DOWNLOADS_DIRECTORY_SETTING,
   downloadsDirectory,
@@ -617,6 +618,17 @@ export function Settings() {
   // Edit a local draft; "Save" commits it through the store.
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saved, setSaved] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    void getAppVersion().then((version) => {
+      if (mounted) setAppVersion(version);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   function patch(next: Partial<AppSettings>) {
     setDraft((d) => ({ ...d, ...next }));
@@ -788,6 +800,9 @@ export function Settings() {
         {tab === "debrid" && <DebridTab draft={draft} patch={patch} />}
         {tab === "sources" && <SourcesTab draft={draft} patch={patch} />}
       </div>
+      <p className="settings-version t-secondary">
+        DebridStreamer v{appVersion ?? "…"}
+      </p>
     </div>
   );
 }

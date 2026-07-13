@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import packageJson from "./package.json";
 
 // Build-time OMDb "embedded key" obfuscation (Mode 3 - serverless limited
 // distribution). `OMDB_EMBED_KEY` is a NON-VITE env (so Vite does not auto-inline
@@ -22,6 +23,7 @@ export default defineConfig({
   plugins: [react()],
   define: {
     __OMDB_EMBED__: JSON.stringify(obfuscateOmdbKey(process.env.OMDB_EMBED_KEY ?? "")),
+    __APP_VERSION__: JSON.stringify(packageJson.version),
   },
   test: {
     globals: true,

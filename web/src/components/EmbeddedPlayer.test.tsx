@@ -30,6 +30,7 @@ vi.mock("@tauri-apps/api/window", () => {
 
 vi.mock("../lib/tauri", () => ({
   openInExternalPlayer: vi.fn(async () => "opened"),
+  isTauri: () => false,
 }));
 
 vi.mock("./Icon", () => ({
