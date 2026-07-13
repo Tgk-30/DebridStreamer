@@ -1054,9 +1054,61 @@ fn gcd(mut a: i64, mut b: i64) -> i64 {
     a.max(1)
 }
 
-fn normalized_aspect(width: i64, height: i64) -> NSSize {
+fn positive_finite_size(size: NSSize) -> bool {
+    size.width.is_finite()
+        && size.height.is_finite()
+        && size.width > 0.0
+        && size.height > 0.0
+}
+
+fn positive_finite_rect(rect: NSRect) -> bool {
+    rect.origin.x.is_finite()
+        && rect.origin.y.is_finite()
+        && positive_finite_size(rect.size)
+}
+
+fn normalized_aspect(width: i64, height: i64) -> Option<NSSize> {
+    if width <= 0 || height <= 0 {
+        return None;
+    }
     let divisor = gcd(width, height);
-    NSSize::new((width / divisor) as f64, (height / divisor) as f64)
+    let aspect = NSSize::new((width / divisor) as f64, (height / divisor) as f64);
+    if positive_finite_size(aspect) {
+        Some(aspect)
+    } else {
+        None
+    }
+}
+
+fn validated_video_aspect(width: i64, height: i64) -> Option<(f64, NSSize)> {
+    let normalized = normalized_aspect(width, height)?;
+    let scalar = width as f64 / height as f64;
+    if scalar.is_finite() && scalar > 0.0 {
+        Some((scalar, normalized))
+    } else {
+        None
+    }
+}
+
+fn validated_content_minimum(minimum: NSSize) -> Option<NSSize> {
+    if !minimum.width.is_finite()
+        || !minimum.height.is_finite()
+        || minimum.width < 0.0
+        || minimum.height < 0.0
+    {
+        return None;
+    }
+    Some(NSSize::new(
+        minimum.width.max(1.0),
+        minimum.height.max(1.0),
+    ))
+}
+
+fn size_meets_minimum(size: NSSize, minimum: NSSize) -> bool {
+    positive_finite_size(size)
+        && positive_finite_size(minimum)
+        && size.width >= minimum.width
+        && size.height >= minimum.height
 }
 
 fn screen_limits(window: &NSWindow) -> (Option<NSRect>, NSSize) {
@@ -1179,6 +1231,47 @@ fn centered_frame_within_visible(
         origin.y = origin.y.max(visible.origin.y).min(max_y);
     }
     NSRect::new(origin, fitted_size)
+}
+
+fn set_window_frame_if_valid_on_main(
+    surface: &SurfaceState,
+    window: &NSWindow,
+    frame: NSRect,
+    target: &str,
+) -> bool {
+    if !positive_finite_rect(frame) {
+        log_geometry_on_main(
+            "window-wrap",
+            surface,
+            &format!(
+                "action=skip-invalid-frame target={target} proposed_frame={}",
+                rect_text(frame)
+            ),
+        );
+        return false;
+    }
+    window.setFrame_display(frame, true);
+    true
+}
+
+fn set_window_content_aspect_if_valid_on_main(
+    surface: &SurfaceState,
+    window: &NSWindow,
+    aspect: NSSize,
+) -> bool {
+    if !positive_finite_size(aspect) {
+        log_geometry_on_main(
+            "window-wrap",
+            surface,
+            &format!(
+                "action=skip-invalid-content-aspect proposed_ratio={}x{}",
+                aspect.width, aspect.height
+            ),
+        );
+        return false;
+    }
+    window.setContentAspectRatio(aspect);
+    true
 }
 
 // NSNotificationCenter does not own selector observers strongly. Keep exactly
@@ -1348,13 +1441,24 @@ fn finish_post_fullscreen_cleanup_on_main(
     ));
 }
 
-fn save_pre_wrap_frame_on_main(surface: &SurfaceState, window: &NSWindow) -> bool {
+fn save_pre_wrap_frame_on_main(surface: &SurfaceState, frame: NSRect) -> bool {
     if surface.wrap_has_applied.load(Ordering::Acquire) {
+        return false;
+    }
+    if !positive_finite_rect(frame) {
+        log_geometry_on_main(
+            "window-wrap",
+            surface,
+            &format!(
+                "action=skip-invalid-frame-snapshot proposed_frame={}",
+                rect_text(frame)
+            ),
+        );
         return false;
     }
     if let Ok(mut saved) = surface.pre_wrap_frame.lock() {
         if saved.is_none() {
-            *saved = Some(FrameSnapshot::from_rect(window.frame()));
+            *saved = Some(FrameSnapshot::from_rect(frame));
         }
     }
     surface.wrap_has_applied.store(true, Ordering::Release);
@@ -1434,6 +1538,24 @@ fn restore_pre_wrap_frame_on_main(surface: &SurfaceState, reason: &str) -> bool 
         return false;
     }
     let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
+    let saved_frame = saved.as_rect();
+    if !positive_finite_rect(saved_frame) {
+        if let Ok(mut frame) = surface.pre_wrap_frame.lock() {
+            *frame = None;
+        }
+        surface
+            .wrap_restore_pending
+            .store(false, Ordering::Release);
+        log_geometry_on_main(
+            "window-wrap",
+            surface,
+            &format!(
+                "action=discard-invalid-session-frame reason={reason} proposed_frame={}",
+                rect_text(saved_frame)
+            ),
+        );
+        return true;
+    }
     // Re-evaluate the complete predicate immediately before setFrame. Queued
     // reconciliation may have been requested before a transition began.
     if !window_property_mutation_allowed_on_main(surface, window) {
@@ -1447,7 +1569,9 @@ fn restore_pre_wrap_frame_on_main(surface: &SurfaceState, reason: &str) -> bool 
         );
         return false;
     }
-    window.setFrame_display(saved.as_rect(), true);
+    if !set_window_frame_if_valid_on_main(surface, window, saved_frame, "session-restore") {
+        return false;
+    }
     if let Ok(mut saved_frame) = surface.pre_wrap_frame.lock() {
         *saved_frame = None;
     }
@@ -1467,8 +1591,8 @@ fn clear_window_aspect_on_main(surface: &SurfaceState, reason: &str) -> bool {
         return false;
     }
     let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
-    // (0, 0) is a real NSWindow property mutation. Never feed it to AppKit while
-    // fullscreen or while either transition is in flight.
+    // Cancelling the content ratio is a real NSWindow property mutation. Never
+    // do it while fullscreen or while either transition is in flight.
     if !window_property_mutation_allowed_on_main(surface, window) {
         log_geometry_on_main(
             "window-wrap",
@@ -1477,7 +1601,9 @@ fn clear_window_aspect_on_main(surface: &SurfaceState, reason: &str) -> bool {
         );
         return false;
     }
-    window.setContentAspectRatio(NSSize::new(0.0, 0.0));
+    // Positive unit resize increments cancel the mutually exclusive content
+    // aspect constraint without passing a zero-dimension ratio to AppKit.
+    window.setContentResizeIncrements(NSSize::new(1.0, 1.0));
     surface
         .wrap_constraint_applied
         .store(false, Ordering::Release);
@@ -1525,33 +1651,84 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
 
         let width = surface.dwidth.load(Ordering::Acquire);
         let height = surface.dheight.load(Ordering::Acquire);
-        if width <= 0 || height <= 0 {
-            clear_window_aspect_on_main(surface, "dimensions-unknown");
+        let Some((aspect, normalized_aspect)) = validated_video_aspect(width, height) else {
+            // Leave the current frame and constraint untouched. A later positive
+            // dwidth/dheight pair queues another reconciliation.
+            surface.wrap_needs_resize.store(true, Ordering::Release);
+            rp_log(&format!(
+                "RPGEO event=window-wrap engine=native-mpv action=skip-invalid-video-dimensions dwidth={width} dheight={height} retry=pending"
+            ));
             return;
-        }
+        };
 
         let content: &NSView = unsafe { &*(surface.content_view_ptr as *const NSView) };
         let before = content.bounds().size;
-        let first_wrap = save_pre_wrap_frame_on_main(surface, window);
+        let old_frame = window.frame();
+        if !positive_finite_size(before) || !positive_finite_rect(old_frame) {
+            surface.wrap_needs_resize.store(true, Ordering::Release);
+            log_geometry_on_main(
+                "window-wrap",
+                surface,
+                &format!(
+                    "action=skip-invalid-current-geometry content={}x{} window_frame={}",
+                    before.width,
+                    before.height,
+                    rect_text(old_frame)
+                ),
+            );
+            return;
+        }
+        let first_wrap = save_pre_wrap_frame_on_main(surface, old_frame);
         let mut resized = false;
         let mut internal_letterbox = false;
-        if before.width > 0.0
-            && before.height > 0.0
-            && surface.wrap_needs_resize.swap(false, Ordering::AcqRel)
-        {
-            let aspect = width as f64 / height as f64;
-            let minimum = window.contentMinSize();
+        if surface.wrap_needs_resize.swap(false, Ordering::AcqRel) {
+            let raw_minimum = window.contentMinSize();
+            let Some(minimum) = validated_content_minimum(raw_minimum) else {
+                surface.wrap_needs_resize.store(true, Ordering::Release);
+                log_geometry_on_main(
+                    "window-wrap",
+                    surface,
+                    &format!(
+                        "action=skip-invalid-content-minimum content_min={}x{}",
+                        raw_minimum.width, raw_minimum.height
+                    ),
+                );
+                return;
+            };
             let (visible_frame, maximum) = screen_limits(window);
+            if !positive_finite_size(maximum) {
+                surface.wrap_needs_resize.store(true, Ordering::Release);
+                log_geometry_on_main(
+                    "window-wrap",
+                    surface,
+                    &format!(
+                        "action=skip-invalid-screen-maximum content_max={}x{}",
+                        maximum.width, maximum.height
+                    ),
+                );
+                return;
+            }
             let (fitted, letterbox) = if first_wrap {
                 first_wrap_size(before, aspect, minimum, maximum)
             } else {
                 width_preserving_wrap_size(before, aspect, minimum, maximum)
             };
+            if !size_meets_minimum(fitted, minimum) {
+                surface.wrap_needs_resize.store(true, Ordering::Release);
+                log_geometry_on_main(
+                    "window-wrap",
+                    surface,
+                    &format!(
+                        "action=skip-invalid-fitted-size fitted={}x{} content_min={}x{}",
+                        fitted.width, fitted.height, minimum.width, minimum.height
+                    ),
+                );
+                return;
+            }
             internal_letterbox = letterbox;
             if (fitted.width - before.width).abs() > 0.01
                 || (fitted.height - before.height).abs() > 0.01
             {
-                let old_frame = window.frame();
                 let centered =
                     centered_frame_within_visible(window, old_frame, fitted, visible_frame);
                 // The block may have been queued while windowed. Check again at
@@ -1560,19 +1737,29 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
                     surface.wrap_needs_resize.store(true, Ordering::Release);
                     return;
                 }
-                window.setFrame_display(centered, true);
+                if !set_window_frame_if_valid_on_main(
+                    surface,
+                    window,
+                    centered,
+                    "video-wrap",
+                ) {
+                    surface.wrap_needs_resize.store(true, Ordering::Release);
+                    return;
+                }
                 resized = true;
             }
         }
 
-        let aspect = normalized_aspect(width, height);
         // setFrame above can synchronously run AppKit code, so the aspect call
         // gets its own fresh transition check rather than sharing the prior one.
         if !window_property_mutation_allowed_on_main(surface, window) {
             surface.wrap_needs_resize.store(true, Ordering::Release);
             return;
         }
-        window.setContentAspectRatio(aspect);
+        if !set_window_content_aspect_if_valid_on_main(surface, window, normalized_aspect) {
+            surface.wrap_needs_resize.store(true, Ordering::Release);
+            return;
+        }
         surface
             .wrap_constraint_applied
             .store(true, Ordering::Release);
@@ -1584,8 +1771,8 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
                 surface,
                 &format!(
                     "action=apply ratio={:.0}x{:.0} policy={} resized={} internal_letterbox={} content_before={:.2}x{:.2} content_after={:.2}x{:.2} content_min={:.2}x{:.2}",
-                    aspect.width,
-                    aspect.height,
+                    normalized_aspect.width,
+                    normalized_aspect.height,
                     if first_wrap {
                         if width >= height {
                             "first-wide-width"
@@ -1795,7 +1982,10 @@ impl VideoSurface for MacosSurface {
     }
 
     fn video_dimensions_changed(&self, width: i64, height: i64) {
-        if width <= 0 || height <= 0 {
+        if validated_video_aspect(width, height).is_none() {
+            rp_log(&format!(
+                "RPGEO event=window-wrap engine=native-mpv action=reject-invalid-video-dimensions dwidth={width} dheight={height} retry=next-property-change"
+            ));
             return;
         }
         let old_width = self.state.dwidth.load(Ordering::Acquire);
