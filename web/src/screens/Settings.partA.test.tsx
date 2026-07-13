@@ -115,6 +115,15 @@ afterEach(() => {
 // ============================================================================
 
 describe("Settings shell", () => {
+  it("puts settings search first and removes the Control center kicker", () => {
+    renderAt();
+    const search = screen.getByLabelText("Search settings");
+    const experience = screen.getByRole("radiogroup", { name: "Experience tier" });
+
+    expect(search.compareDocumentPosition(experience) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText("Control center")).toBeNull();
+  });
+
   it("shows the app version on the landing shell", async () => {
     renderAt();
     expect(await screen.findByText("DebridStreamer vtest-version")).toBeInTheDocument();
@@ -178,7 +187,16 @@ describe("Settings shell", () => {
   it("Experience segmented control flips Local Mode simpleMode through updateSettings", async () => {
     const user = userEvent.setup();
     renderAt();
-    // Currently advanced - click "Simple".
+    expect(screen.getByRole("radio", { name: "Advanced" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "About Experience tier" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Calendar, Assistant, and Debrid",
+    );
+
+    // Currently advanced. Click "Simple".
     const simpleBtn = screen.getByRole("radio", { name: "Simple" });
     await user.click(simpleBtn);
     expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ simpleMode: true }));
@@ -587,10 +605,8 @@ describe("Settings · Playback (local caps)", () => {
   it("toggles Data Saver through patch", async () => {
     const user = userEvent.setup();
     renderAt("playback");
-    // "Data Saver" appears in both the intro hint and the toggle label; scope to
-    // the toggle row via its unique helper copy.
     const ds = screen
-      .getByText(/prefer smaller, lower-resolution streams/)
+      .getByText("Data Saver")
       .closest("label")!
       .querySelector('input[type="checkbox"]') as HTMLInputElement;
     expect(ds.checked).toBe(false);

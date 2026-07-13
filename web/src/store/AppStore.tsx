@@ -502,11 +502,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   );
 
   // Effective experience tier. Server Mode is authoritative from the profile
-  // session (default Simple when the session hasn't loaded yet); Local Mode uses
+  // session (default Advanced when the session hasn't loaded yet); Local Mode uses
   // the AppSettings flag.
   const serverSession = useServerSession();
   const simpleMode = isServerMode()
-    ? (serverSession?.simpleMode ?? true)
+    ? (serverSession?.simpleMode ?? false)
     : settings.simpleMode;
 
   // PERF: memoize the context value. Every member below is already referentially

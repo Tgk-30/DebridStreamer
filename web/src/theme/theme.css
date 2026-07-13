@@ -5,7 +5,7 @@
  * The native app is adaptive (light/dark) but cinematic dark-first; this web
  * shell ports the DARK appearance values (the ones used for screenshots /
  * the V2 glass look). RGB triples from AppTheme's `Color(red:green:blue:)`
- * are converted to 0-255 (× 255, rounded). Glass elevation tiers, the aurora
+ * are converted to 0-255 (× 255, rounded). Glass elevation tiers, the midnight
  * background + restrained glow, spacing/radius scales, and the hero gradient
  * are all reproduced here.
  */
@@ -13,36 +13,36 @@
 :root {
   color-scheme: dark;
 
-  /* ---- Brand + semantic colors (AppTheme dark values) ---- */
-  --accent: rgb(140, 133, 250); /* 0.55,0.52,0.98 */
-  --accent-secondary: rgb(92, 189, 250); /* 0.36,0.74,0.98 */
-  --accent-tertiary: rgb(250, 117, 189); /* 0.98,0.46,0.74 */
-  --success: rgb(92, 217, 140); /* 0.36,0.85,0.55 */
-  --warning: rgb(250, 184, 92); /* 0.98,0.72,0.36 */
-  --danger: rgb(250, 115, 115); /* 0.98,0.45,0.45 */
+  /* ---- Brand + semantic colors (Midnight default) ---- */
+  --accent: rgb(120, 176, 224);
+  --accent-secondary: rgb(140, 150, 170);
+  --accent-tertiary: rgb(150, 130, 190);
+  --success: rgb(96, 190, 130);
+  --warning: rgb(214, 170, 100);
+  --danger: rgb(220, 110, 110);
   --info: var(--accent-secondary);
 
   /* RGB channels (for rgba() composition in glows/tints) */
-  --accent-rgb: 140, 133, 250;
-  --accent-secondary-rgb: 92, 189, 250;
-  --accent-tertiary-rgb: 250, 117, 189;
-  --warning-rgb: 250, 184, 92;
-  --success-rgb: 92, 217, 140;
-  --danger-rgb: 250, 115, 115;
+  --accent-rgb: 120, 176, 224;
+  --accent-secondary-rgb: 140, 150, 170;
+  --accent-tertiary-rgb: 150, 130, 190;
+  --warning-rgb: 214, 170, 100;
+  --success-rgb: 96, 190, 130;
+  --danger-rgb: 220, 110, 110;
 
   /* ---- Glass edges (AppTheme.glassBorder / glassHighlight, dark) ---- */
-  --glass-border: rgba(255, 255, 255, 0.14);
-  --glass-highlight: rgba(255, 255, 255, 0.22);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.16);
 
   /* ---- Text ---- */
-  --text-primary: rgba(255, 255, 255, 0.94);
-  --text-secondary: rgba(255, 255, 255, 0.72);
-  --text-tertiary: rgba(255, 255, 255, 0.58);
+  --text-primary: rgba(235, 238, 245, 0.95);
+  --text-secondary: rgba(235, 238, 245, 0.68);
+  --text-tertiary: rgba(235, 238, 245, 0.52);
 
-  /* ---- Background aurora stops (AppTheme.background, dark) ---- */
-  --bg-1: rgb(13, 15, 26); /* 0.05,0.06,0.10 */
-  --bg-2: rgb(23, 23, 41); /* 0.09,0.09,0.16 */
-  --bg-3: rgb(15, 18, 31); /* 0.06,0.07,0.12 */
+  /* ---- Midnight background stops ---- */
+  --bg-1: rgb(6, 7, 10);
+  --bg-2: rgb(12, 13, 18);
+  --bg-3: rgb(8, 9, 13);
 
   /* ---- Spacing scale (4pt grid, AppTheme.Spacing) ---- */
   --sp-xxs: 2px;
@@ -181,7 +181,7 @@
 /* ---------------------------------------------------------------------------
  * Selectable themes / skins.
  *
- * The `:root` block above is the default Aurora-glass (dark) look. Each theme
+ * The `:root` block above is the default Midnight (dark) look. Each theme
  * below is a complete CSS-variable retune applied via a `data-theme` attribute
  * on the root (set by applyTheme in theme/themes.ts). The default theme sets NO
  * attribute, so it renders identically to the historical values. Each skin
@@ -193,11 +193,11 @@
 /* Glass tint variables - defaulted here so the dark tiers below can reference
  * them; the Light theme overrides them to dark-on-glass. */
 :root {
-  --glass-tint-rest: rgba(255, 255, 255, 0.05);
-  --glass-tint-raised: rgba(255, 255, 255, 0.07);
-  --glass-tint-hero: rgba(255, 255, 255, 0.09);
-  --glass-tint-control: rgba(255, 255, 255, 0.06);
-  --glass-tint-control-hover: rgba(255, 255, 255, 0.1);
+  --glass-tint-rest: rgba(255, 255, 255, 0.04);
+  --glass-tint-raised: rgba(255, 255, 255, 0.06);
+  --glass-tint-hero: rgba(255, 255, 255, 0.08);
+  --glass-tint-control: rgba(255, 255, 255, 0.05);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.09);
   --ambient-primary-alpha: 0.13;
   --ambient-secondary-alpha: 0.1;
   --nav-rail-bg: linear-gradient(
@@ -217,6 +217,41 @@
   --nav-mobile-icon-bg: transparent;
   --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.19);
   --nav-mobile-active-border: rgba(var(--accent-rgb), 0.48);
+}
+
+/* Aurora - the historical violet glass look. Kept explicit so persisted
+ * Aurora selections retain their appearance after Midnight became the default. */
+:root[data-theme="aurora"] {
+  --accent: rgb(140, 133, 250);
+  --accent-secondary: rgb(92, 189, 250);
+  --accent-tertiary: rgb(250, 117, 189);
+  --success: rgb(92, 217, 140);
+  --warning: rgb(250, 184, 92);
+  --danger: rgb(250, 115, 115);
+
+  --accent-rgb: 140, 133, 250;
+  --accent-secondary-rgb: 92, 189, 250;
+  --accent-tertiary-rgb: 250, 117, 189;
+  --warning-rgb: 250, 184, 92;
+  --success-rgb: 92, 217, 140;
+  --danger-rgb: 250, 115, 115;
+
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.22);
+
+  --text-primary: rgba(255, 255, 255, 0.94);
+  --text-secondary: rgba(255, 255, 255, 0.72);
+  --text-tertiary: rgba(255, 255, 255, 0.58);
+
+  --bg-1: rgb(13, 15, 26);
+  --bg-2: rgb(23, 23, 41);
+  --bg-3: rgb(15, 18, 31);
+
+  --glass-tint-rest: rgba(255, 255, 255, 0.05);
+  --glass-tint-raised: rgba(255, 255, 255, 0.07);
+  --glass-tint-hero: rgba(255, 255, 255, 0.09);
+  --glass-tint-control: rgba(255, 255, 255, 0.06);
+  --glass-tint-control-hover: rgba(255, 255, 255, 0.1);
 }
 
 /* Daybreak - bright frosted glass. Dark text, dark-on-glass tints, a deeper
@@ -275,40 +310,6 @@
   --nav-mobile-icon-bg: transparent;
   --nav-mobile-active-bg: rgba(var(--accent-rgb), 0.14);
   --nav-mobile-active-border: rgba(var(--accent-rgb), 0.38);
-}
-
-/* Midnight - near-black, low-saturation, minimal glow. */
-:root[data-theme="midnight"] {
-  --accent: rgb(120, 176, 224);
-  --accent-secondary: rgb(140, 150, 170);
-  --accent-tertiary: rgb(150, 130, 190);
-  --success: rgb(96, 190, 130);
-  --warning: rgb(214, 170, 100);
-  --danger: rgb(220, 110, 110);
-
-  --accent-rgb: 120, 176, 224;
-  --accent-secondary-rgb: 140, 150, 170;
-  --accent-tertiary-rgb: 150, 130, 190;
-  --warning-rgb: 214, 170, 100;
-  --success-rgb: 96, 190, 130;
-  --danger-rgb: 220, 110, 110;
-
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-highlight: rgba(255, 255, 255, 0.16);
-
-  --text-primary: rgba(235, 238, 245, 0.95);
-  --text-secondary: rgba(235, 238, 245, 0.68);
-  --text-tertiary: rgba(235, 238, 245, 0.52);
-
-  --bg-1: rgb(6, 7, 10);
-  --bg-2: rgb(12, 13, 18);
-  --bg-3: rgb(8, 9, 13);
-
-  --glass-tint-rest: rgba(255, 255, 255, 0.04);
-  --glass-tint-raised: rgba(255, 255, 255, 0.06);
-  --glass-tint-hero: rgba(255, 255, 255, 0.08);
-  --glass-tint-control: rgba(255, 255, 255, 0.05);
-  --glass-tint-control-hover: rgba(255, 255, 255, 0.09);
 }
 
 /* Sunset - warm amber/rose aurora over a dark plum field. */

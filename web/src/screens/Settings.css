@@ -32,22 +32,6 @@
   min-width: 0;
 }
 
-.settings-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  padding: 0 9px;
-  border: 1px solid rgba(var(--accent-rgb), 0.34);
-  border-radius: var(--r-pill);
-  background: rgba(var(--accent-rgb), 0.1);
-  color: var(--text-primary);
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
 .settings-h1 {
   margin: 0;
   font-size: clamp(28px, 3vw, 34px);
@@ -138,6 +122,16 @@
   line-height: 1.1;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+.settings-label-line,
+.settings-info-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+}
+.settings-info-row {
+  align-self: flex-start;
 }
 .settings-field-hint,
 .settings-hint {
@@ -1724,8 +1718,7 @@
 }
 
 @media (max-width: 380px) {
-  .settings-subtitle,
-  .settings-experience-hint {
+  .settings-subtitle {
     display: none;
   }
 
@@ -1769,11 +1762,6 @@
   .settings-experience {
     margin-bottom: 10px;
   }
-
-  .settings-experience-hint {
-    margin-top: 5px;
-    line-height: 1.35;
-  }
 }
 
 @media (min-width: 1100px) {
@@ -1782,7 +1770,10 @@
     grid-template-columns: 210px minmax(0, 900px);
     grid-template-areas:
       "header header"
-      "tabs panel";
+      "search search"
+      "experience experience"
+      "tabs panel"
+      "version version";
     align-items: start;
     column-gap: var(--sp-xl);
     width: min(100%, 1180px);
@@ -1790,6 +1781,14 @@
 
   .settings-header {
     grid-area: header;
+  }
+
+  .settings-search {
+    grid-area: search;
+  }
+
+  .settings-experience {
+    grid-area: experience;
   }
 
   .settings-tabs {
@@ -1820,6 +1819,10 @@
 
   .settings-panel {
     grid-area: panel;
+  }
+
+  .settings-version {
+    grid-area: version;
   }
 }
 
@@ -1951,11 +1954,6 @@
 /* Simple/Advanced experience toggle (above the tab navigation). */
 .settings-experience {
   margin: 0 0 var(--sp-md);
-}
-.settings-experience-hint {
-  margin: 6px 0 0;
-  font-size: 12.5px;
-  line-height: 1.45;
 }
 
 /* Remote-access (Tailscale / Cloudflare Tunnel) guided steps in the Server tab. */

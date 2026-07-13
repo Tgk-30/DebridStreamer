@@ -420,7 +420,7 @@ export function defaultSettings(): AppSettings {
     subtitleTextColor: "#ffffff",
     subtitleBgOpacity: 0.55,
     openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
-    simpleMode: true,
+    simpleMode: false,
     autoUpdateChecks: true,
     autoInstallUpdates: false,
     streamCachedOnly: true,

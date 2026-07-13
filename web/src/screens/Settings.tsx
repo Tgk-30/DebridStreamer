@@ -61,6 +61,7 @@ import { appFetch } from "../lib/http";
 import { getStore } from "../storage";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
+import { InfoTip } from "../components/InfoTip";
 import { AdvancedOnly } from "../components/AdvancedOnly";
 import { SettingsSearch } from "../components/SettingsSearch";
 import type { ScreenId } from "../components/NavRail";
@@ -704,10 +705,6 @@ export function Settings() {
     <div className="settings-screen">
       <header className="settings-header settings-hero glass-raised glass-lit">
         <div className="settings-title-block">
-          <div className="settings-kicker">
-            <Icon name="settings" size={15} />
-            <span>Control center</span>
-          </div>
           <h1 className="settings-h1">Settings</h1>
           <p className="settings-subtitle t-secondary">
             {selectedTab.label} controls for this profile, device, and server session.
@@ -738,27 +735,23 @@ export function Settings() {
         )}
       </header>
 
+      <SettingsSearch
+        onJump={(id) => setTab(id as Tab)}
+        visibleTabs={new Set(tabs.map((t) => t.id))}
+      />
+
       <div className="settings-experience">
         <SegmentedControl
-          label="Experience"
+          label="Experience tier"
           value={simpleMode ? "simple" : "advanced"}
           options={[
             { value: "simple", label: "Simple" },
             { value: "advanced", label: "Advanced" },
           ]}
           onChange={(v) => setExperience(v === "simple")}
+          infoTip="Advanced is the default for new profiles. Simple hides Calendar, Assistant, and Debrid while keeping the essential screens and settings available."
         />
-        <p className="settings-experience-hint t-secondary">
-          {simpleMode
-            ? "Simple shows the essentials. Switch to Advanced for sources, updates, and every dial."
-            : "Advanced reveals all tabs and controls."}
-        </p>
       </div>
-
-      <SettingsSearch
-        onJump={(id) => setTab(id as Tab)}
-        visibleTabs={new Set(tabs.map((t) => t.id))}
-      />
 
       <label className="settings-tab-select">
         <span className="settings-label">Settings category</span>
@@ -810,10 +803,10 @@ export function Settings() {
 function UpdatesTab({ draft, patch }: TabProps) {
   return (
     <div className="settings-fields">
-      <p className="settings-hint t-secondary">
+      <SettingsInfo label="About desktop updates">
         Desktop builds use signed release metadata from GitHub Releases. Browser
         and PWA installs update through the web server instead.
-      </p>
+      </SettingsInfo>
 
       <label className="settings-toggle-row">
         <input
@@ -856,6 +849,21 @@ function UpdatesTab({ draft, patch }: TabProps) {
 interface TabProps {
   draft: AppSettings;
   patch: (next: Partial<AppSettings>) => void;
+}
+
+function SettingsInfo({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="settings-info-row">
+      <span className="settings-label">{label}</span>
+      <InfoTip label={label}>{children}</InfoTip>
+    </div>
+  );
 }
 
 const STREAM_QUALITY_OPTIONS: { value: StreamMaxQuality; label: string }[] = [
@@ -903,12 +911,12 @@ function PlaybackTab({ draft, patch }: TabProps) {
 
   return (
     <div className="settings-fields">
-      <p className="settings-hint t-secondary">
+      <SettingsInfo label="About playback filters">
         These profile controls hide stream results that are likely to use more
         bandwidth. <strong>Data Saver</strong> adds a ≤720p / ≤5&nbsp;GB ceiling on
         top and also governs automatic (watchlist) playback. Server Mode applies
         them before sending stream rows to this device.
-      </p>
+      </SettingsInfo>
 
       {isTauri() && (
         <label className="settings-toggle-row">
@@ -919,12 +927,11 @@ function PlaybackTab({ draft, patch }: TabProps) {
           />
           <span>
             <strong>Built-in player</strong>
-            <span className="t-secondary">
-              {" "}
-              - play MKV / HEVC right inside the window (native libmpv). On by
-              default; turn it off to open your chosen external player below
-              instead. Works on macOS, Windows, and Linux (X11).
-            </span>
+            <InfoTip label="About the built-in player">
+              Play MKV and HEVC right inside the window with native libmpv. Turn
+              it off to open your chosen external player instead. It works on
+              macOS, Windows, and Linux with X11.
+            </InfoTip>
           </span>
         </label>
       )}
@@ -963,10 +970,14 @@ function PlaybackTab({ draft, patch }: TabProps) {
           checked={draft.dataSaver}
           onChange={(event) => patch({ dataSaver: event.target.checked })}
         />
-        <span>
-          <strong>Data Saver</strong>
-          <span className="t-secondary"> - prefer smaller, lower-resolution streams (≤720p, ≤5&nbsp;GB) to use less bandwidth, including for instant/watchlist playback. No re-encoding.</span>
-        </span>
+          <span>
+            <strong>Data Saver</strong>
+            <InfoTip label="About Data Saver">
+              Prefer smaller, lower-resolution streams up to 720p and 5 GB to use
+              less bandwidth, including instant and watchlist playback. It does
+              not re-encode video.
+            </InfoTip>
+          </span>
       </label>
 
       {canTranscode && (
@@ -978,7 +989,11 @@ function PlaybackTab({ draft, patch }: TabProps) {
           />
           <span>
             <strong>Reduce playback bitrate (server transcode)</strong>
-            <span className="t-secondary"> - the server re-encodes playback to a 720p stream to use less bandwidth (uses more server CPU). Complements Data Saver, which only caps the source file picked.</span>
+            <InfoTip label="About server transcode">
+              The server re-encodes playback to a 720p stream to use less
+              bandwidth and more server CPU. It complements Data Saver, which
+              only caps the source file selected.
+            </InfoTip>
           </span>
         </label>
       )}
@@ -989,10 +1004,12 @@ function PlaybackTab({ draft, patch }: TabProps) {
           checked={draft.streamCachedOnly}
           onChange={(event) => patch({ streamCachedOnly: event.target.checked })}
         />
-        <span>
-          <strong>Show cached streams only</strong>
-          <span className="t-secondary"> - avoids streams that need to be cached first.</span>
-        </span>
+          <span>
+            <strong>Show cached streams only</strong>
+            <InfoTip label="About cached streams only">
+              Avoid streams that need to be cached before playback.
+            </InfoTip>
+          </span>
       </label>
 
       <label className="settings-toggle-row">
@@ -1001,10 +1018,14 @@ function PlaybackTab({ draft, patch }: TabProps) {
           checked={draft.autoAdvanceEpisodes}
           onChange={(event) => patch({ autoAdvanceEpisodes: event.target.checked })}
         />
-        <span>
-          <strong>Auto-play next episode</strong>
-          <span className="t-secondary"> - when a series episode ends, play the next one automatically if an instant (cached) stream is available. Otherwise you're taken to the stream list.</span>
-        </span>
+          <span>
+            <strong>Auto-play next episode</strong>
+            <InfoTip label="About auto-play next episode">
+              When a series episode ends, play the next one automatically if an
+              instant cached stream is available. Otherwise, return to the stream
+              list.
+            </InfoTip>
+          </span>
       </label>
 
       <div className="settings-control-grid">
@@ -3300,18 +3321,20 @@ function AppearanceTab({
 
   return (
     <div className="settings-fields">
-      <p className="settings-hint t-secondary">
+      <SettingsInfo label="About appearance settings">
         Tune the interface for the device and room you are using. Appearance
         changes apply instantly and are saved to this profile.
-      </p>
+      </SettingsInfo>
 
       <div className="appearance-profile-card settings-source glass-rest">
         <div className="appearance-profile-head">
           <div>
-            <span className="settings-label">Quick profile</span>
-            <p className="settings-hint t-secondary">
+            <span className="settings-label-line">
+              <span className="settings-label">Quick profile</span>
+              <InfoTip label="About quick profiles">
               Apply a complete interface setup, then fine tune each control below.
-            </p>
+              </InfoTip>
+            </span>
           </div>
           <label className="appearance-profile-picker">
             <span className="settings-secret-label">Profile</span>
@@ -3417,10 +3440,12 @@ function AppearanceTab({
 
       <div className="appearance-section-head">
         <div>
-          <span className="settings-sources-title">Display</span>
-          <p className="settings-hint t-secondary">
+          <span className="settings-label-line">
+            <span className="settings-sources-title">Display</span>
+            <InfoTip label="About display controls">
             Device-scale defaults come first; switch only the dimensions that need it.
-          </p>
+            </InfoTip>
+          </span>
         </div>
       </div>
 
@@ -3528,10 +3553,12 @@ function AppearanceTab({
 
       <div className="appearance-section-head">
         <div>
-          <span className="settings-sources-title">Navigation and catalog</span>
-          <p className="settings-hint t-secondary">
+          <span className="settings-label-line">
+            <span className="settings-sources-title">Navigation and catalog</span>
+            <InfoTip label="About navigation and catalog controls">
             Tune the dock, rail labels, and poster density for the screen in use.
-          </p>
+            </InfoTip>
+          </span>
         </div>
       </div>
 
@@ -3724,10 +3751,10 @@ function AppearanceTab({
           />
           <span>
             <strong>Smart preloading</strong>
-            <span className="settings-hint t-secondary">
+            <InfoTip label="About Smart preloading">
               Quietly warms upcoming screens and images so the app feels instant.
               Turn off on a metered connection to save data.
-            </span>
+            </InfoTip>
           </span>
         </label>
         <label className="settings-toggle-row">
@@ -3738,10 +3765,10 @@ function AppearanceTab({
           />
           <span>
             <strong>Show watch stats</strong>
-            <span className="settings-hint t-secondary">
+            <InfoTip label="About watch stats">
               Adds a personal insights card (time watched, completion, streak,
               favourite genres) to the top of the History screen.
-            </span>
+            </InfoTip>
           </span>
         </label>
         <button
@@ -3774,15 +3801,20 @@ function SegmentedControl({
   value,
   options,
   onChange,
+  infoTip,
 }: {
   label: string;
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
+  infoTip?: React.ReactNode;
 }) {
   return (
     <div className="settings-segment-block">
-      <span className="settings-label">{label}</span>
+      <span className="settings-label-line">
+        <span className="settings-label">{label}</span>
+        {infoTip && <InfoTip label={`About ${label}`}>{infoTip}</InfoTip>}
+      </span>
       <div
         className="settings-segmented"
         role="radiogroup"
@@ -4002,10 +4034,10 @@ function KeysTab({ draft, patch }: TabProps) {
 
   return (
     <div className="settings-fields">
-      <p className="settings-hint settings-secret-summary">
+      <SettingsInfo label="About credential storage">
         Secrets stay in this profile. Desktop builds keep them in secure device
         storage when available.
-      </p>
+      </SettingsInfo>
 
       <div className="settings-subsection-picker is-option-only">
         <label className="settings-subsection-select settings-mobile-picker">
@@ -4264,14 +4296,12 @@ function DebridTab({ draft, patch }: TabProps) {
 
   return (
     <div className="settings-fields">
-      <p className="settings-hint t-secondary">
-        <strong>{CONCEPTS.debrid.term}:</strong> {CONCEPTS.debrid.blurb}
-      </p>
-      <p className="settings-hint t-secondary">
-        Choose one provider at a time. Saved providers are tried in priority
-        order; the first that has a cached result wins. Tokens stay in this
-        profile, with secure device storage in desktop builds when available.
-      </p>
+      <SettingsInfo label={`About ${CONCEPTS.debrid.term}`}>
+        <strong>{CONCEPTS.debrid.term}:</strong> {CONCEPTS.debrid.blurb} Choose
+        one provider at a time. Saved providers are tried in priority order; the
+        first that has a cached result wins. Tokens stay in this profile, with
+        secure device storage in desktop builds when available.
+      </SettingsInfo>
 
       <Field label="Provider" hint="Real-Debrid is selected first by default.">
         <select
@@ -4369,10 +4399,10 @@ function SourcesTab({ draft, patch }: TabProps) {
 
   return (
     <div className="settings-fields">
-      <p className="settings-hint t-secondary">
+      <SettingsInfo label={`About ${CONCEPTS.source.term}`}>
         <strong>{CONCEPTS.source.term}:</strong> {CONCEPTS.source.blurb} Pair a
         source with a debrid service to stream instantly.
-      </p>
+      </SettingsInfo>
       <label className="settings-toggle-row">
         <input
           type="checkbox"
@@ -4578,8 +4608,10 @@ function Field({
 }) {
   return (
     <label className="settings-field">
-      <span className="settings-label">{label}</span>
-      {hint && <span className="settings-field-hint t-secondary">{hint}</span>}
+      <span className="settings-label-line">
+        <span className="settings-label">{label}</span>
+        {hint && <InfoTip label={`About ${label}`}>{hint}</InfoTip>}
+      </span>
       {children}
       {helpUrl && (
         <a

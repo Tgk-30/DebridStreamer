@@ -54,7 +54,7 @@ describe("useTheme", () => {
   });
 
   it("applies the default theme by removing data-theme and setting dark color-scheme", () => {
-    renderHook(() => useTheme(settings({ theme: "aurora" })));
+    renderHook(() => useTheme(settings({ theme: "midnight" })));
     const root = document.documentElement;
     expect(root.hasAttribute("data-theme")).toBe(false);
     expect(root.style.getPropertyValue("color-scheme")).toBe("dark");
@@ -68,9 +68,9 @@ describe("useTheme", () => {
   });
 
   it("sets data-theme + dark color-scheme for a non-default dark theme", () => {
-    renderHook(() => useTheme(settings({ theme: "midnight" })));
+    renderHook(() => useTheme(settings({ theme: "aurora" })));
     const root = document.documentElement;
-    expect(root.getAttribute("data-theme")).toBe("midnight");
+    expect(root.getAttribute("data-theme")).toBe("aurora");
     expect(root.style.getPropertyValue("color-scheme")).toBe("dark");
   });
 
@@ -95,11 +95,11 @@ describe("useTheme", () => {
 
   it("removes data-theme when switching back to the default", () => {
     const { rerender } = renderHook(({ s }) => useTheme(s), {
-      initialProps: { s: settings({ theme: "midnight" }) },
+      initialProps: { s: settings({ theme: "aurora" }) },
     });
-    expect(document.documentElement.getAttribute("data-theme")).toBe("midnight");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("aurora");
 
-    rerender({ s: settings({ theme: "aurora" }) });
+    rerender({ s: settings({ theme: "midnight" }) });
     expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
   });
 

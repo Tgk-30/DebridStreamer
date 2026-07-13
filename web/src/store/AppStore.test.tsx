@@ -811,11 +811,11 @@ describe("simpleMode wiring", () => {
     expect(result.current.simpleMode).toBe(false);
   });
 
-  it("Server Mode defaults to simple=true when the session has not loaded", async () => {
+  it("Server Mode defaults to advanced when the session has not loaded", async () => {
     isServerMode.mockReturnValue(true);
     loadSettingsFromStore.mockResolvedValue(settings({ simpleMode: false }));
     const { result } = await renderStore(null);
-    expect(result.current.simpleMode).toBe(true);
+    expect(result.current.simpleMode).toBe(false);
   });
 });
 

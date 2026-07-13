@@ -8,8 +8,8 @@
 // apply/persist logic - all unit-tested without a DOM.
 //
 // Adding a theme = add an entry here + a matching `[data-theme="id"]` block in
-// theme.css. The default ("aurora") intentionally has NO override block so it
-// renders identically to the historical look.
+// theme.css. The default ("midnight") intentionally has NO override block so it
+// renders from the root token set.
 
 /** A selectable theme. `swatch*` drive the Settings preview card (no DOM read
  * needed to render the picker). */
@@ -80,8 +80,8 @@ export function accentById(id: string | null | undefined): AccentDef {
   return ACCENTS.find((accent) => accent.id === id) ?? ACCENTS[0];
 }
 
-/** The default theme id (the historical Aurora-glass look). */
-export const DEFAULT_THEME_ID = "aurora";
+/** The default theme id for new profiles. */
+export const DEFAULT_THEME_ID = "midnight";
 
 /** The Store key the chosen theme is persisted under (KV table; not a secret). */
 export const THEME_SETTING_KEY = "ui_theme";

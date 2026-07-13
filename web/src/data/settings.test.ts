@@ -186,20 +186,20 @@ describe("normalizeRatingScale", () => {
 // =============================================================================
 
 describe("defaultSettings", () => {
-  it("returns sane defaults with empty arrays and the default theme", () => {
+  it("defaults new profiles to Advanced and Midnight", () => {
     const d = defaultSettings();
     expect(d.debridTokens).toEqual([]);
     expect(d.sources).toEqual([]);
     expect(d.builtInIndexersEnabled).toBe(true);
     expect(d.aiProvider).toBe("anthropic");
     expect(d.ollamaEndpoint).toBe("http://localhost:11434");
-    expect(d.theme).toBe(DEFAULT_THEME_ID);
+    expect(d.theme).toBe("midnight");
     expect(d.appearanceAccent).toBe("theme");
     expect(d.appearanceBlur).toBe(18);
     expect(d.subtitleFontScale).toBe(1);
     expect(d.subtitleTextColor).toBe("#ffffff");
     expect(d.subtitleBgOpacity).toBe(0.55);
-    expect(d.simpleMode).toBe(true);
+    expect(d.simpleMode).toBe(false);
     expect(d.autoUpdateChecks).toBe(true);
     expect(d.autoInstallUpdates).toBe(false);
     expect(d.streamCachedOnly).toBe(true);
@@ -268,6 +268,16 @@ describe("loadSettings", () => {
     expect(s.simpleMode).toBe(false);
     // Untouched fields keep their defaults.
     expect(s.aiProvider).toBe("anthropic");
+  });
+
+  it("keeps a persisted Simple and Aurora selection over the new defaults", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ simpleMode: true, theme: "aurora" }),
+    });
+
+    const s = loadSettings();
+    expect(s.simpleMode).toBe(true);
+    expect(s.theme).toBe("aurora");
   });
 
   it("normalizes legacy / invalid stored values to safe defaults", () => {
@@ -617,7 +627,7 @@ describe("loadSettingsFromStore - established store", () => {
     const s = await loadSettingsFromStore();
     expect(s.tmdbKey).toBe("");
     expect(s.builtInIndexersEnabled).toBe(true); // null -> base default
-    expect(s.simpleMode).toBe(true);
+    expect(s.simpleMode).toBe(false);
     expect(s.theme).toBe(DEFAULT_THEME_ID);
     expect(s.streamCachedOnly).toBe(true);
     expect(s.streamMaxQuality).toBe("any");
@@ -632,6 +642,15 @@ describe("loadSettingsFromStore - established store", () => {
     const s = await loadSettingsFromStore();
     expect(s.tmdbKey).toBe("resolved-tmdb");
     expect(s.omdbKey).toBe("plain-omdb");
+  });
+
+  it("keeps persisted Simple and Aurora values when the durable store hydrates", async () => {
+    settingsMap.set("simple_mode", "true");
+    settingsMap.set("ui_theme", "aurora");
+
+    const s = await loadSettingsFromStore();
+    expect(s.simpleMode).toBe(true);
+    expect(s.theme).toBe("aurora");
   });
 
   it("parses boolean string flags correctly", async () => {
