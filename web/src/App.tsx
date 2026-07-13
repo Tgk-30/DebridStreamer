@@ -595,6 +595,7 @@ export function App() {
       <UpdateBanner
         autoCheck={settings.autoUpdateChecks}
         autoInstall={settings.autoInstallUpdates}
+        networkMode={settings.networkMode}
       />
     </div>
   );

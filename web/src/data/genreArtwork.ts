@@ -10,6 +10,7 @@ import type { MediaType } from "../models/media";
 import type { MetadataProvider } from "../services/metadata/types";
 import { makeDiscoverFilters, SortOption } from "../services/metadata/types";
 import { catalogTilesFor, tileGenreId, type GenreCatalogTile } from "./genreCatalog";
+import { isNetworkAllowed } from "../lib/networkPolicy";
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 // Cache entries live 30 min, so artwork refreshes within a long session (and a
@@ -92,11 +93,11 @@ async function loadTileBackdrops(
                 }),
               );
             })();
-      const urls = (result?.items ?? [])
+      const urls = isNetworkAllowed("images") ? (result?.items ?? [])
         .map((it) => it.backdropPath)
         .filter((p): p is string => p != null)
         .slice(0, MAX_BACKDROPS)
-        .map((p) => `${TMDB_IMAGE_BASE}/w780${p}`);
+        .map((p) => `${TMDB_IMAGE_BASE}/w780${p}`) : [];
       // A successful lookup (even an empty one → []) is cached with a TTL, so it
       // stops re-asking for a while but recovers after the entry expires. A
       // THROWN error is NOT cached, so a transient failure retries on remount.

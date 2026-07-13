@@ -6,8 +6,11 @@
 // `FetchImpl` stub that plays the same role: it captures the requested URL.
 // The canned JSON bodies are copied verbatim from the Swift fixtures.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { type FetchImpl, OMDBService } from "./OMDBService";
+import { NetworkBlockedError, setNetworkMode } from "../../lib/networkPolicy";
+
+afterEach(() => setNetworkMode("standard"));
 
 // MARK: - fetch stub (mirrors MockURLProtocol + makeMockSession)
 
@@ -79,6 +82,25 @@ const omdbNAValuesBody = JSON.stringify({
 // MARK: - Full-body parse (parsesFullBody)
 
 describe("OMDBService fetchRatings", () => {
+  it("throws NetworkBlockedError in Offline mode before requesting ratings", async () => {
+    const mock = makeMockFetch(() => ok(omdbFullBody));
+    const service = new OMDBService("test-key", mock.fetchImpl);
+    setNetworkMode("offline");
+
+    await expect(service.fetchRatings("tt0111161")).rejects.toBeInstanceOf(
+      NetworkBlockedError,
+    );
+    expect(mock.hits()).toBe(0);
+  });
+
+  it("requests ratings in Standard mode", async () => {
+    const mock = makeMockFetch(() => ok(omdbFullBody));
+    const service = new OMDBService("test-key", mock.fetchImpl);
+
+    await expect(service.fetchRatings("tt0111161")).resolves.toMatchObject({ imdbRating: 9.3 });
+    expect(mock.hits()).toBe(1);
+  });
+
   it("caches a completed lookup and deduplicates concurrent callers", async () => {
     const mock = makeMockFetch(() => ok(omdbFullBody));
     const service = new OMDBService("test-key", mock.fetchImpl);

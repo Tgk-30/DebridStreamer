@@ -18,6 +18,8 @@ import {
   WEEKLY_UPDATE_CHECK_MS,
   type PendingUpdate,
 } from "../lib/updater";
+import { isNetworkAllowed } from "../lib/networkPolicy";
+import type { NetworkMode } from "../lib/networkPolicy";
 import { Icon } from "./Icon";
 import "./UpdateBanner.css";
 
@@ -32,9 +34,11 @@ const UPDATE_POLL_MS = 6 * 60 * 60 * 1000;
 export function UpdateBanner({
   autoCheck,
   autoInstall,
+  networkMode = "standard",
 }: {
   autoCheck: boolean;
   autoInstall: boolean;
+  networkMode?: NetworkMode;
 }) {
   const [update, setUpdate] = useState<PendingUpdate | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -52,7 +56,7 @@ export function UpdateBanner({
   // Check on launch, then re-check weekly for long-running instances. No-op
   // (resolves null) in the browser.
   useEffect(() => {
-    if (!autoCheck) return;
+    if (!autoCheck || networkMode !== "standard" || !isNetworkAllowed("updates")) return;
     let cancelled = false;
 
     const runCheck = () => {
@@ -94,7 +98,7 @@ export function UpdateBanner({
       cancelled = true;
       clearInterval(poll);
     };
-  }, [autoCheck, autoInstall]);
+  }, [autoCheck, autoInstall, networkMode]);
 
   if (update == null) return null;
 

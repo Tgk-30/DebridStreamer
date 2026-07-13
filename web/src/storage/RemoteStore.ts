@@ -589,7 +589,7 @@ export class RemoteStore implements Store, SecretStore {
     return 0;
   }
 
-  async putMedia(_item: MediaItem): Promise<void> {
+  async putMedia(_item: MediaItem, _key?: string): Promise<void> {
     // Server-side media cache endpoints come after stream/search APIs.
   }
 

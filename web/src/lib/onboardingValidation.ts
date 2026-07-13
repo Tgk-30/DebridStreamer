@@ -5,6 +5,7 @@
 import { TMDBService } from "../services/metadata/TMDBService";
 import { TMDBError } from "../services/metadata/types";
 import { buildDebridService, type DebridTokenEntry } from "../data/settings";
+import { assertNetworkAllowed } from "./networkPolicy";
 
 export type TmdbTestResult = "ok" | "unauthorized" | "network";
 
@@ -28,6 +29,14 @@ export type OmdbTestResult = "ok" | "unauthorized" | "network";
  *  JSON body either way and sends permissive CORS headers, so a plain browser
  *  can genuinely distinguish a bad key from a network failure. */
 export async function testOmdbKey(key: string): Promise<OmdbTestResult> {
+  try {
+    // This validator uses raw fetch (not the gated OMDBService), so it must
+    // enforce the network gate itself. In Offline mode "ratings" is blocked, so
+    // the key is never sent off the device; report it as unverifiable.
+    assertNetworkAllowed("ratings", "OMDb key test");
+  } catch {
+    return "network";
+  }
   try {
     const res = await fetch(
       `https://www.omdbapi.com/?apikey=${encodeURIComponent(key.trim())}&i=tt0111161`,

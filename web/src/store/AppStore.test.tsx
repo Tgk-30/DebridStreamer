@@ -177,6 +177,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     aiApiKey: "",
     aiModel: "",
     ollamaEndpoint: "http://localhost:11434",
+    networkMode: "standard",
     theme: "midnight",
     appearanceAccent: "theme",
     appearanceDensity: "comfortable",

@@ -11,6 +11,8 @@ import type { CastMember, MediaItem, MediaPreview } from "../models/media";
 import type { TMDBService } from "../services/metadata/TMDBService";
 import { fetchServerDetail } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
+import { getNetworkMode, NetworkBlockedError } from "../lib/networkPolicy";
+import { getStore } from "../storage";
 
 export interface DetailData {
   item: MediaItem | null;
@@ -49,7 +51,7 @@ function previewToItem(p: MediaPreview): MediaItem {
   };
 }
 
-async function loadLive(
+export async function loadLive(
   service: TMDBService,
   preview: MediaPreview,
   onImdbId?: (imdbId: string) => void,
@@ -89,6 +91,15 @@ async function loadLive(
     : Promise.resolve([] as MediaPreview[]);
 
   const detail = await detailPromise;
+  try {
+    // Cache under the PREVIEW id (the stable id a browse card carries), which is
+    // what the Offline read path looks up. detail.id may be an IMDb "tt..." id
+    // that differs from the preview's "tmdb-..." id, so keying by detail.id here
+    // would guarantee an Offline cache miss.
+    await getStore().putMedia(detail, preview.id);
+  } catch {
+    // The cache is a convenience for Offline mode, never a reason to fail detail.
+  }
 
   // The detail id is an IMDb id (tt…) when TMDB had one, else a tmdb- fallback.
   let imdbId = detail.id.startsWith("tt") ? detail.id : null;
@@ -106,6 +117,27 @@ async function loadLive(
   const [cast, related] = await Promise.all([castPromise, relatedPromise]);
 
   return { item: detail, cast, related, imdbId };
+}
+
+/** Load cached detail when Offline blocks metadata, preserving a useful Detail
+ * screen for titles the user opened while connected. */
+export async function loadDetailWithOfflineFallback(
+  service: TMDBService,
+  preview: MediaPreview,
+  onImdbId?: (imdbId: string) => void,
+): Promise<DetailData | null> {
+  try {
+    return await loadLive(service, preview, onImdbId);
+  } catch (error) {
+    if (!(error instanceof NetworkBlockedError) && getNetworkMode() !== "offline") {
+      throw error;
+    }
+    const cached = await getStore().getMedia(preview.id);
+    if (cached == null) return null;
+    const imdbId = cached.item.id.startsWith("tt") ? cached.item.id : null;
+    if (imdbId != null) onImdbId?.(imdbId);
+    return { item: cached.item, cast: [], related: [], imdbId };
+  }
 }
 
 /** Resolve the detail data for a selected preview. */
@@ -189,7 +221,7 @@ export function useDetail(
       }
 
       try {
-        const data = await loadLive(service, currentPreview, (imdbId) => {
+        const data = await loadDetailWithOfflineFallback(service, currentPreview, (imdbId) => {
           if (cancelled) return;
           setState((current) => ({
             ...current,
@@ -197,8 +229,15 @@ export function useDetail(
             source: "live",
           }));
         });
-        if (!cancelled) {
+        if (!cancelled && data != null) {
           setState({ data, loading: false, error: null, source: "live" });
+        } else if (!cancelled) {
+          setState({
+            data: { item: null, cast: [], related: [], imdbId: null },
+            loading: false,
+            error: "Not available offline (not cached yet).",
+            source: "fixtures",
+          });
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

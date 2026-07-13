@@ -19,6 +19,11 @@ vi.mock("./tauri", () => ({
   isTauri: () => isTauri(),
 }));
 
+const configuredServerURL = vi.fn<() => string | null>(() => null);
+vi.mock("./serverMode", () => ({
+  configuredServerURL: () => configuredServerURL(),
+}));
+
 // The Tauri plugin's `fetch`. Mocked so the dynamic `import(...)` resolves to it.
 const pluginFetch = vi.fn();
 vi.mock("@tauri-apps/plugin-http", () => ({
@@ -44,6 +49,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", globalFetch);
   // Default: not under Tauri (the plain-browser path).
   isTauri.mockReturnValue(false);
+  configuredServerURL.mockReturnValue(null);
 });
 
 afterEach(() => {
@@ -58,6 +64,40 @@ async function loadHttp() {
 }
 
 describe("appFetch - non-Tauri (browser) path", () => {
+  it("blocks disallowed hosts in Offline mode before fetch", async () => {
+    const { appFetch } = await loadHttp();
+    const { NetworkBlockedError, setNetworkMode } = await import("./networkPolicy");
+    setNetworkMode("offline");
+
+    await expect(appFetch("https://api.themoviedb.org/3/movie/1")).rejects.toBeInstanceOf(
+      NetworkBlockedError,
+    );
+    expect(globalFetch).not.toHaveBeenCalled();
+  });
+
+  it("allows permitted metadata hosts in Full Local mode", async () => {
+    globalFetch.mockResolvedValue(fakeResponse(200, "ok"));
+    const { appFetch } = await loadHttp();
+    const { setNetworkMode } = await import("./networkPolicy");
+    setNetworkMode("fullLocal");
+
+    await expect(appFetch("https://api.themoviedb.org/3/movie/1")).resolves.toMatchObject({
+      status: 200,
+    });
+  });
+
+  it("always allows the configured server and loopback URLs", async () => {
+    configuredServerURL.mockReturnValue("http://192.168.1.9:3000");
+    globalFetch.mockResolvedValue(fakeResponse(200, "ok"));
+    const { appFetch } = await loadHttp();
+    const { setNetworkMode } = await import("./networkPolicy");
+    setNetworkMode("offline");
+
+    await appFetch("http://192.168.1.9:3000/api/me");
+    await appFetch("http://localhost:3000/api/me");
+    expect(globalFetch).toHaveBeenCalledTimes(2);
+  });
+
   it("delegates to the global fetch and returns its Response", async () => {
     const res = fakeResponse(200, "ok");
     globalFetch.mockResolvedValue(res);

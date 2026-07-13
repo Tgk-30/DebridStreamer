@@ -9,6 +9,8 @@
 // In a plain browser there is no Tauri runtime, so `isTauri()` is false and the
 // player falls back to an "open externally" note instead of invoking.
 
+import { assertNetworkAllowed, isRequestExempt } from "./networkPolicy";
+
 /** True when running inside the Tauri webview. Tauri v2 injects
  * `__TAURI_INTERNALS__` on the window; we also tolerate the older flag. */
 export function isTauri(): boolean {
@@ -24,6 +26,9 @@ export async function openInExternalPlayer(
   url: string,
   preferred?: string | null,
 ): Promise<string> {
+  if (/^https?:\/\//i.test(url) && !isRequestExempt(url)) {
+    assertNetworkAllowed("streaming", "external player");
+  }
   if (!isTauri()) {
     throw new Error("Not running under Tauri - no native player available.");
   }
@@ -66,6 +71,9 @@ export interface MpvPlayResult {
  * Tauri or if the sidecar isn't bundled / fails to spawn - callers should fall
  * back to {@link openInExternalPlayer} (VLC) in that case. */
 export async function playWithMpv(url: string): Promise<MpvPlayResult> {
+  if (/^https?:\/\//i.test(url) && !isRequestExempt(url)) {
+    assertNetworkAllowed("streaming", "mpv");
+  }
   if (!isTauri()) {
     throw new Error("Not running under Tauri - no bundled mpv available.");
   }
@@ -181,6 +189,9 @@ export interface DownloadProgress {
 }
 
 export async function downloadStart(args: DownloadStartArgs): Promise<void> {
+  if (/^https?:\/\//i.test(args.url) && !isRequestExempt(args.url)) {
+    assertNetworkAllowed("streaming", "download");
+  }
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("download_start", { args });
 }

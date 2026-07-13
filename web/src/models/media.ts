@@ -4,7 +4,13 @@
 // Field names are kept aligned with the Swift models so cached JSON and later
 // sync code line up across the two implementations.
 
+import { isNetworkAllowed } from "../lib/networkPolicy";
+
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
+
+function imageURL(path: string | null | undefined, size: string): string | null {
+  return path && isNetworkAllowed("images") ? `${TMDB_IMAGE_BASE}/${size}${path}` : null;
+}
 
 /** The type of media content. Mirrors Swift `MediaType`. */
 export type MediaType = "movie" | "series";
@@ -44,12 +50,12 @@ export interface MediaPreview {
 export const MediaPreview = {
   /** w342 poster, mirrors `MediaPreview.posterURL`. */
   posterURL(p: MediaPreview): string | null {
-    return p.posterPath ? `${TMDB_IMAGE_BASE}/w342${p.posterPath}` : null;
+    return imageURL(p.posterPath, "w342");
   },
 
   /** Full-bleed w1280 backdrop, mirrors `MediaPreview.backdropURL`. */
   backdropURL(p: MediaPreview): string | null {
-    return p.backdropPath ? `${TMDB_IMAGE_BASE}/w1280${p.backdropPath}` : null;
+    return imageURL(p.backdropPath, "w1280");
   },
 
   /** "%.1f" rating or "" when missing, mirrors `MediaPreview.ratingString`. */
@@ -83,17 +89,17 @@ export interface MediaItem {
 export const MediaItem = {
   /** w500 poster, mirrors `MediaItem.posterURL`. */
   posterURL(m: MediaItem): string | null {
-    return m.posterPath ? `${TMDB_IMAGE_BASE}/w500${m.posterPath}` : null;
+    return imageURL(m.posterPath, "w500");
   },
 
   /** w1280 backdrop, mirrors `MediaItem.backdropURL`. */
   backdropURL(m: MediaItem): string | null {
-    return m.backdropPath ? `${TMDB_IMAGE_BASE}/w1280${m.backdropPath}` : null;
+    return imageURL(m.backdropPath, "w1280");
   },
 
   /** w342 poster thumbnail, mirrors `MediaItem.posterThumbnailURL`. */
   posterThumbnailURL(m: MediaItem): string | null {
-    return m.posterPath ? `${TMDB_IMAGE_BASE}/w342${m.posterPath}` : null;
+    return imageURL(m.posterPath, "w342");
   },
 
   /** Year as a string or "", mirrors `MediaItem.yearString`. */
@@ -135,9 +141,7 @@ export function makeCastMember(
   profilePath: string | null | undefined,
 ): CastMember {
   const profileURL =
-    profilePath && profilePath.length > 0
-      ? `${TMDB_IMAGE_BASE}/w185${profilePath}`
-      : null;
+    profilePath && profilePath.length > 0 ? imageURL(profilePath, "w185") : null;
   return { id, name, character, profileURL };
 }
 

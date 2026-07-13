@@ -8,8 +8,11 @@
 // Here we inject a `FetchImpl` stub that plays the same role: it captures the
 // requested URL and counts calls.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { type FetchImpl, TMDBService } from "./TMDBService";
+import { NetworkBlockedError, setNetworkMode } from "../../lib/networkPolicy";
+
+afterEach(() => setNetworkMode("standard"));
 
 // MARK: - fetch stub (mirrors MockURLProtocol + makeMockSession)
 
@@ -49,6 +52,29 @@ function makeMockFetch(handler: (url: URL) => MockResponse): MockFetch {
 
 const ok = (body: string): MockResponse => ({ status: 200, body });
 const serverError = (body: string): MockResponse => ({ status: 500, body });
+
+describe("TMDBService privacy gate", () => {
+  it("throws NetworkBlockedError in Offline mode before requesting metadata", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("key", mock.fetchImpl);
+    setNetworkMode("offline");
+
+    await expect(service.search("Fight Club", "movie")).rejects.toBeInstanceOf(
+      NetworkBlockedError,
+    );
+    expect(mock.hits()).toBe(0);
+  });
+
+  it("requests metadata in Standard mode", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("key", mock.fetchImpl);
+
+    await expect(service.search("Fight Club", "movie")).resolves.toMatchObject({
+      items: expect.any(Array),
+    });
+    expect(mock.hits()).toBe(1);
+  });
+});
 
 /** A fetch stub that dispatches per-path so a single service can answer the
  * multi-request flows (getDetail-via-find, etc.). Routes on URL.pathname. */

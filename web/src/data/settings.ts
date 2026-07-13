@@ -42,6 +42,7 @@ import type { SecretStore } from "../storage";
 import type { ScreenId } from "../components/NavRail";
 import { appFetch } from "../lib/http";
 import { isServerMode } from "../lib/serverMode";
+import type { NetworkMode } from "../lib/networkPolicy";
 import { DEFAULT_THEME_ID, resolveThemeId } from "../theme/themes";
 import {
   OpenSubtitlesClient,
@@ -108,6 +109,7 @@ const SettingsKeys = {
   builtInPlayer: "built_in_player",
   userName: "user_name",
   userAvatar: "user_avatar",
+  networkMode: "network_mode",
 } as const;
 
 /** Marker written into the KV table for secret-valued keys; the real value
@@ -188,6 +190,8 @@ export interface AppSettings {
   aiApiKey: string;
   aiModel: string;
   ollamaEndpoint: string;
+  /** Per-profile privacy policy for outbound network requests. */
+  networkMode: NetworkMode;
   /** Selected UI theme id (see theme/themes.ts). */
   theme: string;
   appearanceAccent: AppearanceAccent;
@@ -400,6 +404,7 @@ export function defaultSettings(): AppSettings {
     aiApiKey: env("VITE_AI_KEY"),
     aiModel: "",
     ollamaEndpoint: "http://localhost:11434",
+    networkMode: "standard",
     theme: env("VITE_THEME") || DEFAULT_THEME_ID,
     appearanceAccent: "theme",
     appearanceDensity: "comfortable",
@@ -487,6 +492,10 @@ export function loadSettings(): AppSettings {
       userName: typeof parsed.userName === "string" ? parsed.userName : "",
       userAvatar:
         typeof parsed.userAvatar === "string" ? parsed.userAvatar : "",
+      networkMode:
+        parsed.networkMode === "fullLocal" || parsed.networkMode === "offline"
+          ? parsed.networkMode
+          : "standard",
       // A stale/poisoned provider id would route to a host that can't serve it.
       aiProvider: AIProviderKind.allCases().includes(
         parsed.aiProvider as AIProviderKind,
@@ -790,6 +799,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     userName,
     userAvatar,
     builtInPlayer,
+    networkMode,
   ] = await Promise.all([
     store.getSetting(SettingsKeys.aiProvider),
     store.getSetting(SettingsKeys.aiModel),
@@ -829,6 +839,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.userName),
     store.getSetting(SettingsKeys.userAvatar),
     store.getSetting(SettingsKeys.builtInPlayer),
+    store.getSetting(SettingsKeys.networkMode),
   ]);
 
   const debridConfigs = await store.listDebridConfigs();
@@ -867,6 +878,10 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     aiApiKey: aiApiKey ?? base.aiApiKey,
     aiModel: aiModel ?? base.aiModel,
     ollamaEndpoint: ollamaEndpoint ?? base.ollamaEndpoint,
+    networkMode:
+      networkMode === "fullLocal" || networkMode === "offline"
+        ? networkMode
+        : base.networkMode,
     theme: resolveThemeId(theme ?? base.theme),
     appearanceAccent: normalizeAppearanceAccent(
       appearanceAccent ?? base.appearanceAccent,
@@ -1000,6 +1015,7 @@ export async function saveSettingsToStore(
     store.setSetting(SettingsKeys.aiProvider, settings.aiProvider),
     store.setSetting(SettingsKeys.aiModel, settings.aiModel),
     store.setSetting(SettingsKeys.ollamaEndpoint, settings.ollamaEndpoint),
+    store.setSetting(SettingsKeys.networkMode, settings.networkMode),
     store.setSetting(SettingsKeys.theme, resolveThemeId(settings.theme)),
     store.setSetting(
       SettingsKeys.appearanceAccent,

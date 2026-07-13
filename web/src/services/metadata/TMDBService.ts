@@ -27,6 +27,7 @@ import {
   TMDBError,
   type TrendingWindow,
 } from "./types";
+import { assertNetworkAllowed } from "../../lib/networkPolicy";
 
 // MARK: - Raw TMDB response shapes (snake_case as the API returns them).
 //
@@ -744,6 +745,7 @@ export class TMDBService implements MetadataProvider {
     path: string,
     params: Record<string, string>,
   ): Promise<T> {
+    assertNetworkAllowed("metadata", "TMDB");
     const url = new URL(this.baseURL + path);
     for (const [k, v] of Object.entries(params)) {
       url.searchParams.append(k, v);

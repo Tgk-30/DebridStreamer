@@ -7,6 +7,7 @@
 
 import { useModalA11y } from "./useModalA11y";
 import { Icon } from "./Icon";
+import { isNetworkAllowed } from "../lib/networkPolicy";
 import "./TrailerModal.css";
 
 interface TrailerModalProps {
@@ -49,15 +50,19 @@ export function TrailerModal({ videoKey, title, onClose }: TrailerModalProps) {
             <Icon name="xmark" size={16} />
           </button>
         </div>
-        <div className="trailer-frame">
-          <iframe
-            src={src}
-            title={`${title} trailer`}
-            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-            allowFullScreen
-            referrerPolicy="strict-origin-when-cross-origin"
-          />
-        </div>
+        {isNetworkAllowed("trailer") ? (
+          <div className="trailer-frame">
+            <iframe
+              src={src}
+              title={`${title} trailer`}
+              allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+              allowFullScreen
+              referrerPolicy="strict-origin-when-cross-origin"
+            />
+          </div>
+        ) : (
+          <p className="t-secondary">Trailers are turned off in this privacy mode.</p>
+        )}
       </div>
     </div>
   );

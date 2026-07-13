@@ -16,6 +16,7 @@
 // before reporting an update, so an unsigned/forged `latest.json` is ignored.
 
 import { isTauri } from "./tauri";
+import { isNetworkAllowed } from "./networkPolicy";
 
 const LAST_CHECK_KEY = "ds_last_update_check";
 
@@ -65,6 +66,7 @@ export interface PendingUpdate {
  * network, a missing release, or running in a plain browser all resolve to
  * `null` (with a console warning) so launch is never degraded. */
 export async function checkForUpdates(): Promise<PendingUpdate | null> {
+  if (!isNetworkAllowed("updates")) return null;
   if (!isTauri()) return null;
 
   try {

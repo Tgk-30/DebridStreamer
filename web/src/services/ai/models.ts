@@ -9,6 +9,7 @@
 // lines up across the two implementations.
 
 import type { MediaType } from "../../models/media";
+import { isNetworkAllowed } from "../../lib/networkPolicy";
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 
@@ -146,7 +147,7 @@ export const AIMovieRecommendation = {
 
   /** w342 poster URL or null. Mirrors `AIMovieRecommendation.posterURL`. */
   posterURL(rec: AIMovieRecommendation): string | null {
-    return rec.posterPath
+    return rec.posterPath && isNetworkAllowed("images")
       ? `${TMDB_IMAGE_BASE}/w342${rec.posterPath}`
       : null;
   },

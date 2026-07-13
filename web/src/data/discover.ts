@@ -15,6 +15,7 @@ import { MediaPreview as MediaPreviewNS } from "../models/media";
 import { TMDBService } from "../services/metadata/TMDBService";
 import { fetchServerDiscoverHome } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
+import { getNetworkMode, NetworkBlockedError } from "../lib/networkPolicy";
 import { loadDiscoverFixtures } from "./fixtures";
 
 export interface DiscoverData {
@@ -27,7 +28,7 @@ export interface DiscoverData {
   upcomingMovies: MediaPreview[];
 }
 
-export type DiscoverSource = "live" | "fixtures";
+export type DiscoverSource = "live" | "fixtures" | "offline";
 
 export interface DiscoverState {
   data: DiscoverData | null;
@@ -107,6 +108,27 @@ export function loadFixtureDiscover(): DiscoverData {
   };
 }
 
+const OFFLINE_DISCOVER_MSG =
+  "You are offline. Connect to browse new titles. Your downloaded titles still play from Downloads.";
+
+/** True when a Discover fetch failed BECAUSE the privacy gate blocked it (or the
+ *  app is simply in Offline mode) - as opposed to a bad key or a real outage. */
+function isOfflineFailure(err: unknown): boolean {
+  return err instanceof NetworkBlockedError || getNetworkMode() === "offline";
+}
+
+/** An honest empty Offline state. Showing bundled demo fixtures as if they were
+ *  the real catalog would misrepresent the app's data while offline. */
+function offlineDiscoverState(): DiscoverState {
+  return {
+    data: { ...EMPTY },
+    loading: false,
+    railsLoading: false,
+    error: OFFLINE_DISCOVER_MSG,
+    source: "offline",
+  };
+}
+
 /**
  * React hook that resolves the Discover data once on mount. With a key it loads
  * live; without one it falls back to fixtures so the screen always renders. A
@@ -137,13 +159,17 @@ export function useDiscover(tmdb: TMDBService | null): DiscoverState {
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           if (!cancelled) {
-            setState({
-              data: loadFixtureDiscover(),
-              loading: false,
-              railsLoading: false,
-              error: message,
-              source: "fixtures",
-            });
+            setState(
+              isOfflineFailure(err)
+                ? offlineDiscoverState()
+                : {
+                    data: loadFixtureDiscover(),
+                    loading: false,
+                    railsLoading: false,
+                    error: message,
+                    source: "fixtures",
+                  },
+            );
           }
           return;
         }
@@ -185,13 +211,17 @@ export function useDiscover(tmdb: TMDBService | null): DiscoverState {
             // category results so they can't clobber the fallback.
             failed = true;
             if (!cancelled) {
-              setState({
-                data: loadFixtureDiscover(),
-                loading: false,
-                railsLoading: false,
-                error: err instanceof Error ? err.message : String(err),
-                source: "fixtures",
-              });
+              setState(
+                isOfflineFailure(err)
+                  ? offlineDiscoverState()
+                  : {
+                      data: loadFixtureDiscover(),
+                      loading: false,
+                      railsLoading: false,
+                      error: err instanceof Error ? err.message : String(err),
+                      source: "fixtures",
+                    },
+              );
             }
           });
 
@@ -218,13 +248,17 @@ export function useDiscover(tmdb: TMDBService | null): DiscoverState {
       }
 
       if (!cancelled) {
-        setState({
-          data: loadFixtureDiscover(),
-          loading: false,
-          railsLoading: false,
-          error: null,
-          source: "fixtures",
-        });
+        setState(
+          getNetworkMode() === "offline"
+            ? offlineDiscoverState()
+            : {
+                data: loadFixtureDiscover(),
+                loading: false,
+                railsLoading: false,
+                error: null,
+                source: "fixtures",
+              },
+        );
       }
     }
 

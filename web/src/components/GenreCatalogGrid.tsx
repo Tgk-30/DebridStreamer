@@ -11,6 +11,7 @@ import { catalogTilesFor, tileGenreId, type GenreCatalogTile } from "../data/gen
 import { useGenreArtwork } from "../data/genreArtwork";
 import { fallbackGenres } from "../data/genres";
 import { prefersReducedMotion } from "../lib/reducedMotion";
+import { isNetworkAllowed } from "../lib/networkPolicy";
 import type { MediaType } from "../models/media";
 import type { MetadataProvider } from "../services/metadata/types";
 import "./GenreCatalogGrid.css";
@@ -30,6 +31,7 @@ const ROTATE_MS = 9000;
  * DOM (current + incoming), so a 15-tile grid loads ~30 images, not ~90. The
  * rotation is staggered per tile and suppressed under reduced-motion. */
 function GenreTileArt({ urls, index }: { urls: string[]; index: number }) {
+  const showImages = isNetworkAllowed("images");
   // Two ping-pong layers; `top` says which one is currently visible.
   const [layers, setLayers] = useState<{ a: string; b: string; top: "a" | "b" }>(
     () => ({ a: urls[0], b: urls[0], top: "a" }),
@@ -58,6 +60,8 @@ function GenreTileArt({ urls, index }: { urls: string[]; index: number }) {
       window.clearTimeout(tick);
     };
   }, [urls, index]);
+
+  if (!showImages) return null;
 
   return (
     <span className="genre-tile-arts" aria-hidden>

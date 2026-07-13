@@ -53,6 +53,7 @@ import {
 } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 import { isTauri } from "../lib/tauri";
+import { assertNetworkAllowed, getNetworkMode, isRequestExempt } from "../lib/networkPolicy";
 import type { PlaybackEngine } from "../lib/playbackEngine";
 import { getDownloadsBridge } from "../lib/downloadsBridge";
 import {
@@ -606,6 +607,15 @@ export function Detail() {
   if (detailItem == null) return null;
 
   const item = detail.data.item;
+  if (item == null && !detail.loading && getNetworkMode() === "offline") {
+    return (
+      <div className="detail" role="status">
+        <p className="detail-nokey-hint t-secondary">
+          {detail.error ?? "Not available offline (not cached yet)."}
+        </p>
+      </div>
+    );
+  }
   const currentDetailItem = detailItem;
   const inWatchlist = isInWatchlist(watchlist, detailItem.id);
   // A pre-resolved, ready-to-play stream from the watchlist auto-resolve job.
@@ -901,6 +911,14 @@ export function Detail() {
     sourceFileName: string | null = stream.fileName,
     source?: TorrentResult,
   ): Promise<void> {
+    if (/^https?:\/\//i.test(stream.streamURL) && !isRequestExempt(stream.streamURL)) {
+      try {
+        assertNetworkAllowed("streaming", "player");
+      } catch {
+        setDownloadNotice("Streaming is turned off in Offline mode. Your downloaded titles still play from Downloads.");
+        return;
+      }
+    }
     if (!needsTranscodeOrExternal(stream, source)) {
       openPlayer(stream.streamURL, sourceFileName, "webview-direct");
       return;

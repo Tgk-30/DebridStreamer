@@ -3,6 +3,7 @@
 
 import type { CastMember } from "../models/media";
 import { Icon } from "./Icon";
+import { isNetworkAllowed } from "../lib/networkPolicy";
 import "./CastRail.css";
 
 interface CastRailProps {
@@ -31,7 +32,7 @@ export function CastRail({ cast, onSelect }: CastRailProps) {
               title={`${member.name}${member.character ? ` - ${member.character}` : ""}`}
             >
               <div className="cast-photo">
-                {member.profileURL ? (
+                {member.profileURL && isNetworkAllowed("images") ? (
                   <img
                     src={member.profileURL}
                     alt={member.name}

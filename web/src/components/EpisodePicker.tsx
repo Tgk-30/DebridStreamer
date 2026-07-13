@@ -14,6 +14,7 @@ import type { Episode } from "../models/media";
 import { episodeIdFor, useEpisodes, useSeasons } from "../data/episodes";
 import { seasonIsWatched } from "../data/watchedState";
 import { Icon } from "./Icon";
+import { isNetworkAllowed } from "../lib/networkPolicy";
 import "./EpisodePicker.css";
 
 const TMDB_STILL_BASE = "https://image.tmdb.org/t/p/w300";
@@ -295,7 +296,7 @@ export function EpisodePicker({
                     onSelect({ season: ep.seasonNumber, episode: ep.episodeNumber })
                   }
                 >
-                  {ep.stillPath ? (
+                  {ep.stillPath && isNetworkAllowed("images") ? (
                     <img
                       className="episode-still"
                       src={`${TMDB_STILL_BASE}${ep.stillPath}`}

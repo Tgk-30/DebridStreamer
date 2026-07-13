@@ -343,6 +343,7 @@ type Tab =
   | "sources"
   | "appearance"
   | "playback"
+  | "privacy"
   | "updates"
   | "install"
   | "server"
@@ -351,6 +352,7 @@ type Tab =
 const TABS: { id: Tab; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "playback", label: "Playback" },
+  { id: "privacy", label: "Privacy" },
   { id: "install", label: "Install & setup" },
   { id: "profiles", label: "Profiles" },
   { id: "updates", label: "Updates" },
@@ -365,6 +367,7 @@ const TABS: { id: Tab; label: string }[] = [
 const SIMPLE_TABS = new Set<Tab>([
   "appearance",
   "playback",
+  "privacy",
   "install",
   "keys",
   "debrid",
@@ -799,6 +802,7 @@ export function Settings() {
         )}
         {tab === "install" && <InstallTab />}
         {tab === "playback" && <PlaybackTab draft={draft} patch={patch} />}
+        {tab === "privacy" && <PrivacyTab draft={draft} patch={patch} />}
         {tab === "updates" && <UpdatesTab draft={draft} patch={patch} />}
         {tab === "server" && <ServerTab />}
         {tab === "keys" && <KeysTab draft={draft} patch={patch} />}
@@ -975,6 +979,59 @@ function UpdatesTab({ draft, patch }: TabProps) {
 interface TabProps {
   draft: AppSettings;
   patch: (next: Partial<AppSettings>) => void;
+}
+
+function PrivacyTab({ draft, patch }: TabProps) {
+  const modes: Array<{
+    value: AppSettings["networkMode"];
+    label: string;
+    description: string;
+    info: string;
+  }> = [
+    {
+      value: "standard",
+      label: "Standard",
+      description: "All app connections are available.",
+      info: "Allows metadata, images, ratings, debrid, indexers, subtitles, updates, trailers, and external AI.",
+    },
+    {
+      value: "fullLocal",
+      label: "Full Local",
+      description: "Keep the media essentials, turn off extras.",
+      info: "Allows only TMDB, ratings, debrid, indexers, and subtitles, plus local AI and your server. It blocks app updates, external AI, trailers, telemetry, and other external connections.",
+    },
+    {
+      value: "offline",
+      label: "Offline",
+      description: "Use cached titles and downloaded files.",
+      info: "Nothing leaves this device. Browse cached titles and play downloads. Local AI and your own local server remain available.",
+    },
+  ];
+
+  return (
+    <div className="settings-fields">
+      <SettingsInfo label="Privacy mode">
+        Choose how this profile connects to services. The setting applies immediately when you save it.
+      </SettingsInfo>
+      <div className="settings-option-strip" role="radiogroup" aria-label="Privacy mode">
+        {modes.map((mode) => (
+          <div className="settings-field" key={mode.value}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={draft.networkMode === mode.value}
+              className={`settings-option-card${draft.networkMode === mode.value ? " is-active" : ""}`}
+              onClick={() => patch({ networkMode: mode.value })}
+            >
+              <span>{mode.label}</span>
+              <small>{mode.description}</small>
+            </button>
+            <InfoTip label={`About ${mode.label}`}>{mode.info}</InfoTip>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function SettingsInfo({

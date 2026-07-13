@@ -5,10 +5,11 @@ describe("visibleTabs", () => {
   const ids = (opts: { serverMode: boolean; simpleMode: boolean }) =>
     visibleTabs(opts).map((t) => t.id);
 
-  it("Advanced + Server Mode shows all 8 tabs", () => {
+  it("Advanced + Server Mode shows all 9 tabs", () => {
     expect(ids({ serverMode: true, simpleMode: false })).toEqual([
       "appearance",
       "playback",
+      "privacy",
       "install",
       "updates",
       "server",
@@ -27,7 +28,7 @@ describe("visibleTabs", () => {
 
   it("Simple hides updates, server, and sources", () => {
     const out = ids({ serverMode: true, simpleMode: true });
-    expect(out).toEqual(["appearance", "playback", "install", "keys", "debrid"]);
+    expect(out).toEqual(["appearance", "playback", "privacy", "install", "keys", "debrid"]);
     expect(out).not.toContain("updates");
     expect(out).not.toContain("server");
     expect(out).not.toContain("sources");

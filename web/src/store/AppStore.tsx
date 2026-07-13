@@ -53,6 +53,7 @@ import { getStore, swapLocalProfileStore } from "../storage";
 import { RemoteStore } from "../storage/RemoteStore";
 import { AutoResolveScheduler } from "../lib/autoResolve";
 import { isServerMode } from "../lib/serverMode";
+import { setNetworkMode } from "../lib/networkPolicy";
 import { useServerSession } from "../lib/ServerSessionContext";
 import { verifyPassword } from "../lib/passwordHash";
 import {
@@ -166,7 +167,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   // Synchronous bootstrap so the first paint has something sane; the durable
   // Store hydrates over it on mount.
-  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const initial = loadSettings();
+    // Apply the persisted privacy mode SYNCHRONOUSLY on first render, before any
+    // child effect (auto-update check, discover fetch) can fire, so a fullLocal
+    // or offline user never has a boot window running under the default mode.
+    setNetworkMode(initial.networkMode);
+    return initial;
+  });
   const [watchlist, setWatchlist] = useState<MediaPreview[]>([]);
   const [history, setHistory] = useState<MediaPreview[]>([]);
   const [continueWatching, setContinueWatching] = useState<WatchHistoryRecord[]>(
@@ -236,6 +244,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       // Mark it applied ONLY after a successful persist, so a failed Store write
       // retries next load instead of leaving the reset marked-done-but-lost.
       const refreshedSettings = applyDesignRefresh(loadedSettings);
+      setNetworkMode(refreshedSettings.networkMode);
       setSettings(refreshedSettings);
       if (refreshedSettings !== loadedSettings) {
         void saveSettingsToStore(refreshedSettings)
@@ -278,6 +287,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       loadContinueWatching(),
       store.listCachedResolutions(),
     ]);
+    setNetworkMode(loadedSettings.networkMode);
     setSettings(loadedSettings);
     setWatchlist(wl);
     setHistory(hist);
@@ -313,10 +323,15 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       if (!valid) return { ok: false, reason: "bad-password" };
       unlockedProfileIds.add(id);
     }
+    // Fail safe across the swap: the target profile's own mode is unknown until
+    // reloadProfileData loads its settings, and getStore() now points at the new
+    // profile's DB. Clamp to the most restrictive mode so a scheduler tick in
+    // that sub-second window cannot make a call the target profile would block.
+    setNetworkMode("offline");
     await swapLocalProfileStore(dbNameForProfile(profile));
     await setActiveProfileId(id);
     await updateProfileRecord(id, { lastUsedAt: Date.now() });
-    await reloadProfileData();
+    await reloadProfileData(); // sets the target profile's real networkMode
     await refreshProfiles();
     return { ok: true };
   }, [refreshProfiles, reloadProfileData]);
@@ -487,6 +502,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     // config changes), then persist to the durable Store. Persisting can reject if a keychain write
     // fails closed (desktop) - surface it to the console rather than leaving an
     // unhandled rejection; the in-memory value is still usable for the session.
+    setNetworkMode(next.networkMode);
     setSettings(next);
     void saveSettingsToStore(next).catch((err) => {
       // eslint-disable-next-line no-console

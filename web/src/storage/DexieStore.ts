@@ -786,9 +786,12 @@ export class DexieStore extends Dexie implements Store, SecretStore {
 
   // ---- Media cache ----------------------------------------------------------
 
-  async putMedia(item: MediaItem): Promise<void> {
+  async putMedia(item: MediaItem, key: string = item.id): Promise<void> {
     await this.ready();
-    await this.mediaCache.put({ id: item.id, item, lastFetched: nowISO() });
+    // `key` lets a caller cache under a STABLE lookup id (e.g. the preview id
+    // "tmdb-603") that differs from item.id (an IMDb "tt..." id), so the Offline
+    // read path can find it by the same id the browse card carries.
+    await this.mediaCache.put({ id: key, item, lastFetched: nowISO() });
     await this.pruneOldest(this.mediaCache, "lastFetched", MEDIA_CACHE_CAP);
   }
 

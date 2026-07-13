@@ -186,6 +186,9 @@ describe("normalizeRatingScale", () => {
 // =============================================================================
 
 describe("defaultSettings", () => {
+  it('defaults networkMode to "standard"', () => {
+    expect(defaultSettings().networkMode).toBe("standard");
+  });
   it("defaults new profiles to Advanced and Midnight", () => {
     const d = defaultSettings();
     expect(d.debridTokens).toEqual([]);
@@ -472,6 +475,13 @@ describe("saveSettingsToStore - no plaintext secrets in the localStorage cache",
 // =============================================================================
 
 describe("loadSettingsFromStore - first-run migration", () => {
+  it("persists and hydrates networkMode", async () => {
+    settingsMap.set("storage_port_initialized", "true");
+    await saveSettingsToStore({ ...defaultSettings(), networkMode: "offline" });
+    expect(settingsMap.get("network_mode")).toBe("offline");
+    await expect(loadSettingsFromStore()).resolves.toMatchObject({ networkMode: "offline" });
+  });
+
   it("seeds the Store from the legacy localStorage blob on first run", async () => {
     // No storage_port_initialized flag -> migration path.
     stubLocalStorage({

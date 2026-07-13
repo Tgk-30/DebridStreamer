@@ -152,8 +152,8 @@ export interface Store {
 
   // MARK: Media cache (optional) - mirrors media_cache.
 
-  /** Cache a MediaItem by id. Mirrors `saveMedia`. */
-  putMedia(item: MediaItem): Promise<void>;
+  /** Cache a MediaItem under `key` (defaults to item.id). Mirrors `saveMedia`. */
+  putMedia(item: MediaItem, key?: string): Promise<void>;
   /** Fetch a cached MediaItem by id, or null. Mirrors `fetchMedia`. */
   getMedia(id: string): Promise<MediaCacheRecord | null>;
 

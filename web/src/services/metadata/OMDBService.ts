@@ -12,6 +12,8 @@
 
 // MARK: - Public result type (mirrors Swift `OMDBRatings`)
 
+import { assertNetworkAllowed } from "../../lib/networkPolicy";
+
 /**
  * Aggregated ratings parsed from an OMDB lookup (B1).
  *
@@ -201,6 +203,7 @@ export class OMDBService {
   }
 
   private async fetchRatingsUncached(imdbId: string): Promise<OMDBRatings> {
+    assertNetworkAllowed("ratings", "OMDb");
     let url: URL;
     try {
       url = new URL(this.baseURL);
