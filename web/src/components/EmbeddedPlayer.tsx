@@ -37,6 +37,9 @@ interface Props {
   title: string;
   /** Optional secondary line (e.g. "S2 · E5 · Episode title"). */
   subtitle?: string | null;
+  /** Raw resolved source name. Keep it in Playback information, not the title
+   * bar, so human media metadata remains the playback context. */
+  sourceFileName?: string | null;
   startPositionSeconds?: number;
   /** Remembered audio/subtitle/speed for this title, restored after load. */
   savedPrefs?: PlaybackPrefs | null;
@@ -79,6 +82,7 @@ const OBSERVED: readonly MpvObservableProperty[] = [
   // buffering spinner appear over paused frames.
   ["paused-for-cache", "flag"],
   ["volume", "double", "none"],
+  ["mute", "flag"],
   ["speed", "double", "none"],
   ["demuxer-cache-time", "double", "none"],
   ["aid", "string", "none"],
@@ -173,12 +177,27 @@ function parseChapters(raw: unknown): Chapter[] {
     .filter((c) => Number.isFinite(c.time));
 }
 
+/** Let focused sliders, menu buttons, and text inputs keep their native keys.
+ * Escape remains global so overlay layering is predictable. */
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (el == null) return false;
+  return (
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT" ||
+    el.tagName === "BUTTON" ||
+    el.isContentEditable
+  );
+}
+
 type MenuId = "audio" | "sub" | "speed" | "chapters" | "settings" | null;
 
 export function EmbeddedPlayer({
   url,
   title,
   subtitle,
+  sourceFileName,
   startPositionSeconds = 0,
   savedPrefs,
   onProgress,
@@ -209,6 +228,7 @@ export function EmbeddedPlayer({
   const [subScale, setSubScale] = useState(1);
   const [ended, setEnded] = useState(false);
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
+  const [showTotalDuration, setShowTotalDuration] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   // Source dimensions are diagnostic only. Player chrome is deliberately never
@@ -232,12 +252,16 @@ export function EmbeddedPlayer({
   const onPlaybackErrorRef = useRef(onPlaybackError);
   onPlaybackErrorRef.current = onPlaybackError;
   const hideTimer = useRef<number | undefined>(undefined);
+  const stageClickTimer = useRef<number | undefined>(undefined);
   const scrubRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useRef(paused);
+  const lastAudibleVolume = useRef(100);
   const menuOpenRef = useRef(false);
   menuOpenRef.current = menu != null || shortcutsOpen || infoOpen;
 
   posRef.current = pos;
   durRef.current = dur;
+  pausedRef.current = paused;
 
   const audioTracks = useMemo(() => tracks.filter((t) => t.type === "audio"), [tracks]);
   const subTracks = useMemo(() => tracks.filter((t) => t.type === "sub"), [tracks]);
@@ -350,13 +374,25 @@ export function EmbeddedPlayer({
                 if (firstFrameRef.current) setBuffering(Boolean(ev.data));
                 break;
               case "volume":
-                if (typeof ev.data === "number") setVolume(Math.round(ev.data));
+                if (typeof ev.data === "number") {
+                  const nextVolume = Math.round(ev.data);
+                  setVolume(nextVolume);
+                  if (nextVolume > 0) lastAudibleVolume.current = nextVolume;
+                }
+                break;
+              case "mute":
+                setMuted(Boolean(ev.data));
                 break;
               case "speed":
                 if (typeof ev.data === "number") setSpeed(ev.data);
                 break;
               case "demuxer-cache-time":
-                if (typeof ev.data === "number") setBufferedTo(ev.data);
+                // Absolute timestamp of the last buffered demuxer data (the
+                // time-ahead quantity is demuxer-cache-duration, a different
+                // property), so it maps directly onto the seek bar.
+                if (typeof ev.data === "number") {
+                  setBufferedTo(Math.max(0, ev.data));
+                }
                 break;
               case "aid":
                 setActiveAid(ev.data == null ? "no" : String(ev.data));
@@ -464,7 +500,14 @@ export function EmbeddedPlayer({
     setControlsVisible(true);
     window.clearTimeout(hideTimer.current);
     hideTimer.current = window.setTimeout(() => {
-      if (menuOpenRef.current || !posRef.current || durRef.current === 0) return;
+      if (
+        pausedRef.current ||
+        menuOpenRef.current ||
+        !posRef.current ||
+        durRef.current === 0
+      ) {
+        return;
+      }
       setControlsVisible(false);
     }, 3200);
   }, []);
@@ -472,6 +515,14 @@ export function EmbeddedPlayer({
     nudgeControls();
     return () => window.clearTimeout(hideTimer.current);
   }, [nudgeControls]);
+  useEffect(() => {
+    if (paused) {
+      window.clearTimeout(hideTimer.current);
+      setControlsVisible(true);
+      return;
+    }
+    nudgeControls();
+  }, [paused, nudgeControls]);
 
   // ── Playback controls ──────────────────────────────────────────────────────
   const togglePause = useCallback(() => {
@@ -501,16 +552,26 @@ export function EmbeddedPlayer({
   );
 
   const changeVolume = useCallback((v: number) => {
-    setVolume(v);
-    setMuted(v === 0);
-    void setProperty("volume", v);
-    void setProperty("mute", v === 0);
+    const next = Math.min(130, Math.max(0, Math.round(v)));
+    setVolume(next);
+    setMuted(next === 0);
+    if (next > 0) lastAudibleVolume.current = next;
+    void setProperty("volume", next);
+    void setProperty("mute", next === 0);
   }, []);
   const toggleMute = useCallback(() => {
-    const next = !muted;
-    setMuted(next);
-    void setProperty("mute", next);
-  }, [muted]);
+    if (muted || volume === 0) {
+      const restored = Math.max(1, lastAudibleVolume.current);
+      setMuted(false);
+      setVolume(restored);
+      void setProperty("mute", false);
+      void setProperty("volume", restored);
+      return;
+    }
+    lastAudibleVolume.current = volume;
+    setMuted(true);
+    void setProperty("mute", true);
+  }, [muted, volume]);
 
   const applySpeed = useCallback((s: number) => {
     setSpeed(s);
@@ -578,6 +639,32 @@ export function EmbeddedPlayer({
     void getCurrentWindow().setFullscreen(next).catch(() => {});
   }, [fullscreen]);
 
+  // Delay a stage click just long enough to distinguish a single click from a
+  // double click. Without this, a double click pauses before entering
+  // fullscreen, which reads as a flicker in the native surface.
+  const handleStageClick = useCallback(() => {
+    if (menu != null) {
+      setMenu(null);
+      return;
+    }
+    if (infoOpen) {
+      setInfoOpen(false);
+      return;
+    }
+    window.clearTimeout(stageClickTimer.current);
+    stageClickTimer.current = window.setTimeout(() => {
+      togglePause();
+    }, 220);
+  }, [infoOpen, menu, togglePause]);
+  const handleStageDoubleClick = useCallback(() => {
+    window.clearTimeout(stageClickTimer.current);
+    toggleFullscreen();
+  }, [toggleFullscreen]);
+  useEffect(
+    () => () => window.clearTimeout(stageClickTimer.current),
+    [],
+  );
+
   const doClose = useCallback(() => {
     if (fullscreen) void getCurrentWindow().setFullscreen(false).catch(() => {});
     if (startedRef.current && durRef.current > 0) {
@@ -618,6 +705,7 @@ export function EmbeddedPlayer({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key !== "Escape" && isInteractiveTarget(e.target)) return;
       switch (e.key) {
         case " ":
         case "k":
@@ -626,11 +714,11 @@ export function EmbeddedPlayer({
           break;
         case "ArrowRight":
           e.preventDefault();
-          relSeek(10);
+          relSeek(e.shiftKey ? 60 : 10);
           break;
         case "ArrowLeft":
           e.preventDefault();
-          relSeek(-10);
+          relSeek(e.shiftKey ? -60 : -10);
           break;
         case "l":
           relSeek(30);
@@ -755,19 +843,19 @@ export function EmbeddedPlayer({
   // app overlays that would otherwise become its fixed-position containing block.
   return createPortal(
     <div
-      className={`embed-player${controlsVisible || menu != null ? " show-controls" : ""}`}
+      className={`embed-player${
+        controlsVisible || menu != null || infoOpen || shortcutsOpen
+          ? " show-controls"
+          : ""
+      }`}
       onMouseMove={nudgeControls}
-      onDoubleClick={toggleFullscreen}
     >
       {/* Transparent stage - the native mpv surface shows through. Clicking it
           (not the controls) toggles play/pause. */}
       <div
         className="embed-stage"
-        onClick={() => {
-          if (menu != null) setMenu(null);
-          else if (infoOpen) setInfoOpen(false);
-          else togglePause();
-        }}
+        onClick={handleStageClick}
+        onDoubleClick={handleStageDoubleClick}
       />
 
       {buffering && !ended && !paused && (
@@ -808,6 +896,7 @@ export function EmbeddedPlayer({
             className="embed-icon-btn"
             onClick={doClose}
             aria-label="Close player"
+            title="Close player (Esc)"
           >
             <Icon name="xmark" size={22} />
           </button>
@@ -820,13 +909,13 @@ export function EmbeddedPlayer({
           <button
             type="button"
             className="embed-icon-btn embed-top-help"
-            onClick={() => setInfoOpen((o) => !o)}
-            aria-label="Playback information"
+            onClick={() => setShortcutsOpen((open) => !open)}
+            aria-label="Keyboard shortcuts"
             aria-haspopup="dialog"
-            aria-expanded={infoOpen}
-            title="Playback information"
+            aria-expanded={shortcutsOpen}
+            title="Keyboard shortcuts (?)"
           >
-            <Icon name="info" size={18} />
+            <Icon name="help" size={19} />
           </button>
         </div>
 
@@ -835,6 +924,7 @@ export function EmbeddedPlayer({
             engine={engine}
             sourceSize={nativeSourceSize}
             displaySize={displaySize}
+            sourceFileName={sourceFileName}
             onClose={() => setInfoOpen(false)}
             onShowShortcuts={() => {
               setInfoOpen(false);
@@ -895,21 +985,37 @@ export function EmbeddedPlayer({
                 </div>
               )}
             </div>
-            <span className="embed-time">-{fmt(Math.max(0, dur - pos))}</span>
+            <button
+              type="button"
+              className="embed-time embed-time-toggle"
+              onClick={() => setShowTotalDuration((showingTotal) => !showingTotal)}
+              aria-label={showTotalDuration ? "Show remaining time" : "Show total duration"}
+              title={showTotalDuration ? "Show remaining time" : "Show total duration"}
+            >
+              {showTotalDuration
+                ? fmt(dur)
+                : `-${fmt(Math.max(0, dur - pos))}`}
+            </button>
           </div>
 
           {/* Buttons row: equal flexible side columns keep the transport group
               (center) centered on the frame regardless of side widths. */}
           <div className="embed-buttons">
             <div className="embed-buttons-left">
-              <div className="embed-volume">
+              <div
+                className="embed-volume"
+                onWheel={(e) => {
+                  changeVolume((muted ? lastAudibleVolume.current : volume) + (e.deltaY < 0 ? 5 : -5));
+                }}
+              >
                 <button
                   type="button"
                   className="embed-icon-btn"
                   onClick={toggleMute}
                   aria-label={muted ? "Unmute" : "Mute"}
+                  title={muted ? "Unmute (M)" : "Mute (M)"}
                 >
-                  <Icon name={muted || volume === 0 ? "eye" : "captions"} size={19} />
+                  <Icon name={muted || volume === 0 ? "volume-muted" : "volume"} size={20} />
                 </button>
                 <input
                   className="embed-vol-range"
@@ -919,6 +1025,7 @@ export function EmbeddedPlayer({
                   value={muted ? 0 : volume}
                   onChange={(e) => changeVolume(Number(e.target.value))}
                   aria-label="Volume"
+                  title="Volume (Up / Down or scroll)"
                   style={{ ["--v" as string]: `${(muted ? 0 : volume) / 1.3}%` }}
                 />
               </div>
@@ -930,8 +1037,9 @@ export function EmbeddedPlayer({
                 className="embed-icon-btn"
                 onClick={() => relSeek(-10)}
                 aria-label="Back 10 seconds"
+                title="Back 10 seconds (Left)"
               >
-                <Icon name="refresh" size={20} />
+                <Icon name="rewind" size={20} />
                 <span className="embed-skip-num">10</span>
               </button>
               <button
@@ -939,6 +1047,7 @@ export function EmbeddedPlayer({
                 className="embed-play-btn"
                 onClick={togglePause}
                 aria-label={paused ? "Play" : "Pause"}
+                title={paused ? "Play (Space)" : "Pause (Space)"}
               >
                 {paused || ended ? (
                   <Icon name="play" size={26} filled />
@@ -954,8 +1063,9 @@ export function EmbeddedPlayer({
                 className="embed-icon-btn"
                 onClick={() => relSeek(10)}
                 aria-label="Forward 10 seconds"
+                title="Forward 10 seconds (Right)"
               >
-                <Icon name="refresh" size={20} className="embed-flip" />
+                <Icon name="forward" size={20} />
                 <span className="embed-skip-num">10</span>
               </button>
             </div>
@@ -964,13 +1074,13 @@ export function EmbeddedPlayer({
               {onPlayNext != null && (
                 <button
                   type="button"
-                  className="embed-icon-btn"
+                  className="embed-next-btn"
                   onClick={onPlayNext}
                   aria-label="Next episode"
-                  title={nextLabel ? `Next: ${nextLabel}` : "Next episode"}
+                  title={nextLabel ? `Next episode: ${nextLabel}` : "Next episode"}
                 >
-                  <Icon name="play" size={17} />
-                  <Icon name="play" size={17} className="embed-next-2" />
+                  <span>Next</span>
+                  <Icon name="skip-next" size={17} />
                 </button>
               )}
               <MenuButton
@@ -979,7 +1089,7 @@ export function EmbeddedPlayer({
                 onClick={() => openMenu("speed")}
                 badge={speed !== 1 ? `${speed}×` : undefined}
               >
-                <Icon name="refresh" size={18} />
+                <Icon name="speed" size={18} />
               </MenuButton>
               {audioTracks.length > 0 && (
                 <MenuButton
@@ -1019,8 +1129,20 @@ export function EmbeddedPlayer({
                 className="embed-icon-btn"
                 onClick={toggleFullscreen}
                 aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+                title={fullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
               >
-                <Icon name={fullscreen ? "xmark" : "sparkles"} size={18} />
+                <Icon name={fullscreen ? "fullscreen-exit" : "fullscreen"} size={18} />
+              </button>
+              <button
+                type="button"
+                className="embed-icon-btn"
+                onClick={() => setInfoOpen((open) => !open)}
+                aria-label="Playback information"
+                aria-haspopup="dialog"
+                aria-expanded={infoOpen}
+                title="Playback information"
+              >
+                <Icon name="info" size={18} />
               </button>
             </div>
           </div>
@@ -1035,6 +1157,8 @@ export function EmbeddedPlayer({
                 key={s}
                 type="button"
                 className={"embed-menu-item" + (speed === s ? " is-active" : "")}
+                role="menuitemradio"
+                aria-checked={speed === s}
                 onClick={() => {
                   applySpeed(s);
                   setMenu(null);
@@ -1060,7 +1184,12 @@ export function EmbeddedPlayer({
                   key={t.id}
                   type="button"
                   className={"embed-menu-item" + (on ? " is-active" : "")}
-                  onClick={() => selectAudio(String(t.id))}
+                  role="menuitemradio"
+                  aria-checked={on}
+                  onClick={() => {
+                    selectAudio(String(t.id));
+                    setMenu(null);
+                  }}
                 >
                   {trackLabel(t, i)}
                   {on && <Icon name="check" size={14} />}
@@ -1076,7 +1205,12 @@ export function EmbeddedPlayer({
             <button
               type="button"
               className={"embed-menu-item" + (activeSid === "no" ? " is-active" : "")}
-              onClick={() => selectSub("no")}
+              role="menuitemradio"
+              aria-checked={activeSid === "no"}
+              onClick={() => {
+                selectSub("no");
+                setMenu(null);
+              }}
             >
               Off
               {activeSid === "no" && <Icon name="check" size={14} />}
@@ -1088,7 +1222,12 @@ export function EmbeddedPlayer({
                   key={t.id}
                   type="button"
                   className={"embed-menu-item" + (on ? " is-active" : "")}
-                  onClick={() => selectSub(String(t.id))}
+                  role="menuitemradio"
+                  aria-checked={on}
+                  onClick={() => {
+                    selectSub(String(t.id));
+                    setMenu(null);
+                  }}
                 >
                   {trackLabel(t, i)}
                   {on && <Icon name="check" size={14} />}
@@ -1112,6 +1251,7 @@ export function EmbeddedPlayer({
                     ? " is-active"
                     : "")
                 }
+                role="menuitem"
                 onClick={() => jumpChapter(c.time)}
               >
                 <span className="embed-chapter-name">{c.title}</span>
@@ -1200,6 +1340,33 @@ function Popover({
   onClose: () => void;
   className?: string;
 }) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const firstItem = menuRef.current?.querySelector<HTMLElement>(
+      ".embed-menu-item.is-active, .embed-menu-item",
+    );
+    firstItem?.focus();
+  }, []);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>(".embed-menu-item"),
+    );
+    if (items.length === 0) return;
+    event.preventDefault();
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? items.length - 1
+          : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) %
+            items.length;
+    items[next]?.focus();
+  };
+
   return (
     <>
       <button
@@ -1209,8 +1376,10 @@ function Popover({
         onClick={onClose}
       />
       <div
+        ref={menuRef}
         className={"embed-menu glass-raised glass-lit" + (className ? " " + className : "")}
         role="menu"
+        onKeyDown={handleKeyDown}
       >
         {children}
       </div>

@@ -42,7 +42,13 @@ type Playability = "webview" | "external";
 
 interface VideoPlayerProps {
   url: string;
+  /** Human-facing media metadata. Never pass the raw resolved file here when
+   * metadata is available. */
   title: string;
+  /** Series context shown beneath the show title. */
+  subtitle?: string | null;
+  /** Raw resolved filename, confined to Playback information. */
+  sourceFileName?: string | null;
   /** Force a path; when omitted it's sniffed from the URL extension. */
   kind?: Playability;
   /** Explicit renderer identity. Detail always supplies this; inference remains
@@ -163,6 +169,8 @@ function inferEngine(url: string, kind?: Playability): PlaybackEngine {
 export function VideoPlayer({
   url,
   title,
+  subtitle,
+  sourceFileName,
   kind,
   engine,
   requestWebviewFallback,
@@ -304,7 +312,8 @@ export function VideoPlayer({
         savedPrefs={savedPrefs}
         url={effectiveUrl}
         title={title}
-        subtitle={epLabel}
+        subtitle={subtitle ?? epLabel}
+        sourceFileName={sourceFileName}
         engine={effectiveEngine}
         onPlaybackError={recoverNativeInWebview}
         startPositionSeconds={startPositionSeconds}
@@ -329,7 +338,10 @@ export function VideoPlayer({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="player-bar">
-          <span className="player-title">{title}</span>
+          <div className="player-title-group">
+            <span className="player-title">{title}</span>
+            {subtitle && <span className="player-subtitle">{subtitle}</span>}
+          </div>
           <div className="player-bar-actions">
             <button
               type="button"
@@ -357,6 +369,7 @@ export function VideoPlayer({
             engine={effectiveEngine}
             sourceSize={sourceSize}
             displaySize={displaySize}
+            sourceFileName={sourceFileName}
             onClose={() => setInfoOpen(false)}
           />
         )}

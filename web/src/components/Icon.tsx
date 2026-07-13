@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Captions,
   Check,
+  CircleHelp,
   Compass,
   Copy,
   Clock3,
@@ -11,13 +12,19 @@ import {
   Eye,
   EyeOff,
   Film,
+  Gauge,
   HardDriveDownload,
   Info,
+  Maximize,
+  Minimize,
   Play,
   RefreshCw,
+  RotateCcw,
+  RotateCw,
   Save,
   Search,
   Share2,
+  SkipForward,
   SlidersHorizontal,
   Sparkles,
   Star,
@@ -25,6 +32,8 @@ import {
   ThumbsUp,
   Trash2,
   Upload,
+  Volume2,
+  VolumeX,
   WandSparkles,
   X,
   type LucideIcon,
@@ -59,7 +68,16 @@ export type IconName =
   | "save"
   | "more"
   | "thumbs-up"
-  | "thumbs-down";
+  | "thumbs-down"
+  | "volume"
+  | "volume-muted"
+  | "rewind"
+  | "forward"
+  | "speed"
+  | "fullscreen"
+  | "fullscreen-exit"
+  | "skip-next"
+  | "help";
 
 interface IconProps {
   name: IconName;
@@ -92,11 +110,20 @@ const ICONS: Record<IconName, LucideIcon> = {
   share: Share2,
   captions: Captions,
   check: Check,
+  help: CircleHelp,
   copy: Copy,
   eye: Eye,
   "eye-off": EyeOff,
   save: Save,
   more: Ellipsis,
+  volume: Volume2,
+  "volume-muted": VolumeX,
+  rewind: RotateCcw,
+  forward: RotateCw,
+  speed: Gauge,
+  fullscreen: Maximize,
+  "fullscreen-exit": Minimize,
+  "skip-next": SkipForward,
   "thumbs-up": ThumbsUp,
   "thumbs-down": ThumbsDown,
 };

@@ -9,6 +9,9 @@ interface Props {
   engine: PlaybackEngine;
   sourceSize: PixelSize | null;
   displaySize: PixelSize | null;
+  /** Technical source name stays out of the playback chrome but remains
+   * available in diagnostics for support and source selection checks. */
+  sourceFileName?: string | null;
   onClose: () => void;
   onShowShortcuts?: () => void;
 }
@@ -22,6 +25,7 @@ export function PlayerInfoPopover({
   engine,
   sourceSize,
   displaySize,
+  sourceFileName,
   onClose,
   onShowShortcuts,
 }: Props) {
@@ -63,6 +67,14 @@ export function PlayerInfoPopover({
         <dd>{dimensions(sourceSize)}</dd>
         <dt>Display</dt>
         <dd>{dimensions(displaySize)}</dd>
+        {sourceFileName != null && sourceFileName.length > 0 && (
+          <>
+            <dt>File</dt>
+            <dd className="player-info-file" title={sourceFileName}>
+              {sourceFileName}
+            </dd>
+          </>
+        )}
       </dl>
       {onShowShortcuts != null && (
         <button

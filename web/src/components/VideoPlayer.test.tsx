@@ -197,6 +197,30 @@ describe("VideoPlayer shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps media metadata in the fallback title bar and exposes the raw file only in info", async () => {
+    render(
+      <VideoPlayer
+        url="https://x/test.mp4"
+        title="Obsession (2026)"
+        subtitle="S2 E5 - The Arrival"
+        sourceFileName="Obsession.2026.2160p.WEB-DL.H265.MP4"
+        onClose={() => {}}
+      />,
+    );
+    expect(document.querySelector(".player-title")).toHaveTextContent("Obsession (2026)");
+    expect(document.querySelector(".player-subtitle")).toHaveTextContent(
+      "S2 E5 - The Arrival",
+    );
+    expect(document.querySelector(".player-title-group")).not.toHaveTextContent(
+      "2160p",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Playback information" }));
+    expect(screen.getByRole("dialog", { name: "Playback information" })).toHaveTextContent(
+      "Obsession.2026.2160p.WEB-DL.H265.MP4",
+    );
+  });
+
   it("invokes onClose from the close button", async () => {
     const onClose = vi.fn();
     render(<VideoPlayer url="https://x/test.mp4" title="T" onClose={onClose} />);

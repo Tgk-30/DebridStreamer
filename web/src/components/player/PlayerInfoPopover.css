@@ -60,6 +60,13 @@
   font-size: 10px;
 }
 
+.player-info-file {
+  color: rgba(255, 255, 255, 0.76) !important;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
 .player-info-shortcuts {
   width: 100%;
   margin-top: 13px;

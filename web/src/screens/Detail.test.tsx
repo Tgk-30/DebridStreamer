@@ -203,12 +203,24 @@ vi.mock("../components/Spinner", () => ({
 }));
 
 vi.mock("../components/VideoPlayer", () => ({
-  VideoPlayer: ({ title, engine, requestWebviewFallback }: any) => (
+  VideoPlayer: ({
+    title,
+    subtitle,
+    sourceFileName,
+    engine,
+    requestWebviewFallback,
+    upNext,
+    autoCountdown,
+  }: any) => (
     <div
       data-testid="player"
       data-title={title}
+      data-subtitle={subtitle ?? ""}
+      data-source-file={sourceFileName ?? ""}
       data-engine={engine}
       data-has-fallback={String(requestWebviewFallback != null)}
+      data-up-next={upNext?.label ?? ""}
+      data-auto-countdown={String(autoCountdown)}
     />
   ),
 }));
@@ -435,7 +447,7 @@ describe("Detail play", () => {
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
   });
 
-  it("instant-plays a browser-playable cached stream in-window", async () => {
+  it("uses movie metadata in player chrome and keeps the resolved filename in diagnostics", async () => {
     mockCached = {
       stream: {
         fileName: "movie.mp4",
@@ -449,12 +461,52 @@ describe("Detail play", () => {
       expect(screen.getByTestId("player")).toBeInTheDocument();
     });
     expect(screen.getByTestId("player").getAttribute("data-title")).toBe(
-      "movie.mp4",
+      "The Movie (2020)",
     );
+    expect(screen.getByTestId("player")).toHaveAttribute("data-source-file", "movie.mp4");
     expect(screen.getByTestId("player")).toHaveAttribute(
       "data-engine",
       "webview-direct",
     );
+  });
+
+  it("falls back to the resolved filename only when media metadata is unavailable", async () => {
+    mockDetailItem = preview("m1", { title: "" });
+    mockDetail = detailState({ item: null });
+    render(<Detail />);
+
+    await userEvent.click(screen.getByTestId("play-stream"));
+    const player = await screen.findByTestId("player");
+    expect(player).toHaveAttribute("data-title", "x.mp4");
+    expect(player).toHaveAttribute("data-source-file", "x.mp4");
+  });
+
+  it("uses show and episode metadata for series player title and subtitle", async () => {
+    const getEpisodes = vi.fn(async () => [
+      {
+        id: "ep-3",
+        mediaId: "s1",
+        seasonNumber: 1,
+        episodeNumber: 3,
+        title: "The Arrival",
+      },
+    ]);
+    mockDetailItem = preview("s1", { type: "series", title: "Obsession", tmdbId: 200 });
+    mockDetail = detailState({
+      item: mediaItem({ id: "s1", type: "series", title: "Obsession", tmdbId: 200 }),
+    });
+    mockServices.tmdb = { getEpisodes, getSeasons: vi.fn(async () => []) };
+    render(<Detail />);
+
+    await userEvent.click(screen.getByTestId("pick-episode"));
+    await waitFor(() => expect(getEpisodes).toHaveBeenCalledWith(200, 1));
+    await userEvent.click(screen.getByTestId("play-stream"));
+
+    const player = await screen.findByTestId("player");
+    expect(player).toHaveAttribute("data-title", "Obsession");
+    expect(player).toHaveAttribute("data-subtitle", "S1 E3 - The Arrival");
+    expect(player).toHaveAttribute("data-up-next", "S1 E4");
+    expect(player).toHaveAttribute("data-auto-countdown", "false");
   });
 
   it("requests a transcode HLS url for an MKV cached stream", async () => {

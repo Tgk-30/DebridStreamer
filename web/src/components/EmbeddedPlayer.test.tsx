@@ -7,25 +7,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const renderPlayerMock = vi.hoisted(() => ({
   callback: null as ((ev: { name: string; data: unknown }) => void) | null,
   observeProperties: vi.fn(),
+  setProperty: vi.fn(),
+}));
+
+const tauriWindowMock = vi.hoisted(() => ({
+  setFullscreen: vi.fn(async () => {}),
+  isFullscreen: vi.fn(async () => false),
+  onResized: vi.fn(async () => () => {}),
 }));
 
 vi.mock("../lib/renderPlayer", () => ({
   init: vi.fn(async () => {}),
   destroy: vi.fn(async () => {}),
   command: vi.fn(async () => {}),
-  setProperty: vi.fn(async () => {}),
+  setProperty: renderPlayerMock.setProperty,
   getProperty: vi.fn(async () => []),
   observeProperties: renderPlayerMock.observeProperties,
   setVideoMarginRatio: vi.fn(async () => {}),
 }));
 
 vi.mock("@tauri-apps/api/window", () => {
-  const fakeWindow = {
-    setFullscreen: vi.fn(async () => {}),
-    isFullscreen: vi.fn(async () => false),
-    onResized: vi.fn(async () => () => {}),
-  };
-  return { getCurrentWindow: () => fakeWindow };
+  return { getCurrentWindow: () => tauriWindowMock };
 });
 
 vi.mock("../lib/tauri", () => ({
@@ -70,12 +72,14 @@ beforeEach(() => {
       return () => {};
     },
   );
+  renderPlayerMock.setProperty.mockResolvedValue(undefined);
   setViewport(1024, 768);
 });
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
   setViewport(initialViewport.width, initialViewport.height, initialViewport.scale);
 });
 
@@ -117,6 +121,130 @@ describe("EmbeddedPlayer control geometry", () => {
     expect(css).toContain(
       "grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);",
     );
+  });
+});
+
+describe("EmbeddedPlayer playback controls", () => {
+  it("only shows the Next episode control when a next target exists", () => {
+    const { rerender } = render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    expect(screen.queryByRole("button", { name: "Next episode" })).toBeNull();
+
+    rerender(
+      <EmbeddedPlayer
+        url="https://example.test/episode.mkv"
+        title="Show"
+        onClose={() => {}}
+        onPlayNext={() => {}}
+        nextLabel="S2 E6 - The Arrival"
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Next episode" })).toBeInTheDocument();
+  });
+
+  it("toggles mute and restores the remembered volume level", async () => {
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("volume", 72);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mute" }));
+    expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("mute", true);
+    expect(screen.getByRole("button", { name: "Unmute" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
+    expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("mute", false);
+    expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("volume", 72);
+  });
+
+  it("draws the buffered range from the absolute demuxer cache timestamp", async () => {
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("duration", 100);
+    emitProperty("time-pos", 25);
+    // demuxer-cache-time is the ABSOLUTE last buffered timestamp, not a
+    // time-ahead delta: 40s cached of a 100s file must draw 40%, not 65%.
+    emitProperty("demuxer-cache-time", 40);
+
+    const buffered = document.body.querySelector(".embed-scrub-buffered") as HTMLElement;
+    expect(buffered.style.width).toBe("40%");
+  });
+
+  it("toggles the right time readout between remaining and total duration", async () => {
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("duration", 100);
+    emitProperty("time-pos", 25);
+
+    const readout = screen.getByRole("button", { name: "Show total duration" });
+    expect(readout).toHaveTextContent("-1:15");
+    fireEvent.click(readout);
+    expect(screen.getByRole("button", { name: "Show remaining time" })).toHaveTextContent(
+      "1:40",
+    );
+  });
+
+  it("pauses on a single stage click but fullscreen toggles on double click without pausing", async () => {
+    vi.useFakeTimers();
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    renderPlayerMock.setProperty.mockClear();
+    const stage = document.querySelector<HTMLElement>(".embed-stage");
+    if (stage == null) throw new Error("stage missing");
+
+    fireEvent.click(stage);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(220);
+    });
+    expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("pause", true);
+
+    renderPlayerMock.setProperty.mockClear();
+    fireEvent.click(stage);
+    fireEvent.doubleClick(stage);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(tauriWindowMock.setFullscreen).toHaveBeenCalledWith(true);
+    expect(renderPlayerMock.setProperty).not.toHaveBeenCalledWith("pause", true);
+  });
+
+  it("opens the shortcut overlay and Escape closes it before closing the player", () => {
+    const onClose = vi.fn();
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={onClose} />,
+    );
+
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("keeps Escape layering: close a menu first, then close the player", () => {
+    const onClose = vi.fn();
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={onClose} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Speed" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -189,6 +317,7 @@ describe("window-anchored controls and playback diagnostics", () => {
       <EmbeddedPlayer
         url="https://example.test/movie.mkv"
         title="Test movie"
+        sourceFileName="Test.Movie.2160p.WEB-DL.H265.mkv"
         onClose={() => {}}
       />,
     );
@@ -202,6 +331,7 @@ describe("window-anchored controls and playback diagnostics", () => {
     expect(dialog).toHaveTextContent("Native mpv");
     expect(dialog).toHaveTextContent("3840 × 2160 px");
     expect(dialog).toHaveTextContent("2000 × 1400 px");
+    expect(dialog).toHaveTextContent("Test.Movie.2160p.WEB-DL.H265.mkv");
   });
 });
 

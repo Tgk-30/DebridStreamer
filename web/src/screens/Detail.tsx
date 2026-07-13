@@ -100,6 +100,11 @@ function loadEpisodeOverrides(): Record<string, { season: number; episode: numbe
 interface ActivePlayer {
   url: string;
   title: string;
+  /** Episode context belongs under the show title, never in the media source
+   * filename. Null for movies and when metadata is unavailable. */
+  subtitle: string | null;
+  /** Raw debrid path, visible in Playback information only. */
+  sourceFileName: string | null;
   /** Exact renderer selected for this source. Never infer this from the URL in
    * diagnostics: a debrid direct link often has no useful extension. */
   engine: PlaybackEngine;
@@ -274,11 +279,11 @@ export function Detail() {
     services.tmdb,
   );
 
-  // ── Next-episode auto-advance ─────────────────────────────────────────────
+  // ── Next-episode action and auto-advance ──────────────────────────────────
   // The up-next target is computed from the PLAYER SNAPSHOT (never the live
   // picker selection) using TMDB season metadata for season boundaries; a
   // guide-less series falls back to a blind within-season increment inside
-  // nextEpisodeFor (harmless: auto-play still requires a cached row).
+  // nextEpisodeFor (harmless: moving to it still requires a cached row).
   const seasonsState = useSeasons(
     detail.data.item?.tmdbId ?? detailItem?.tmdbId ?? null,
     detailItem?.type === "series",
@@ -293,14 +298,13 @@ export function Detail() {
     () =>
       player?.episodeId != null &&
       player.season != null &&
-      player.episode != null &&
-      settings.autoAdvanceEpisodes
+      player.episode != null
         ? nextEpisodeFor(
             { season: player.season, episode: player.episode },
             seasonsState.seasons,
           )
         : null,
-    [player, settings.autoAdvanceEpisodes, seasonsState.seasons],
+    [player, seasonsState.seasons],
   );
   // Pending auto-play for the just-advanced episode. Guards (per the design
   // review): busy ref blocks double-fire from rows-identity churn; the
@@ -543,13 +547,39 @@ export function Detail() {
    * episode context so a picker change mid-playback can't retarget progress. */
   function openPlayer(
     url: string,
-    title: string,
+    sourceFileName: string | null,
     engine: PlaybackEngine,
     fallbackStream: StreamInfo | null = null,
   ): void {
+    const metadataTitle = item?.title?.trim() || detailItem?.title?.trim() || "";
+    const metadataYear = item?.year ?? detailItem?.year ?? null;
+    const episodeMetadata =
+      selected == null
+        ? null
+        : selectedSeasonEpisodes.episodes.find(
+            (episode) =>
+              episode.seasonNumber === selected.season &&
+              episode.episodeNumber === selected.episode,
+          ) ?? null;
+    const episodeContext =
+      selected == null
+        ? null
+        : `${episodeLabel(selected.season, selected.episode)}${
+            episodeMetadata?.title?.trim()
+              ? ` - ${episodeMetadata.title.trim()}`
+              : ""
+          }`;
+    const title =
+      metadataTitle.length > 0
+        ? detailItem?.type === "movie" && metadataYear != null
+          ? `${metadataTitle} (${metadataYear})`
+          : metadataTitle
+        : sourceFileName || "Untitled stream";
     setPlayer({
       url,
       title,
+      subtitle: detailItem?.type === "series" ? episodeContext : null,
+      sourceFileName,
       engine,
       fallbackStream,
       startPositionSeconds: resumeSecondsFor(),
@@ -664,30 +694,30 @@ export function Detail() {
    * VideoPlayer: off means native external hand-off, never a silent webview swap. */
   async function playResolvedStream(
     stream: StreamInfo,
-    title: string,
+    sourceFileName: string | null = stream.fileName,
     source?: TorrentResult,
   ): Promise<void> {
     if (!needsTranscodeOrExternal(stream, source)) {
-      openPlayer(stream.streamURL, title, "webview-direct");
+      openPlayer(stream.streamURL, sourceFileName, "webview-direct");
       return;
     }
 
     if (isTauri()) {
-      openPlayer(stream.streamURL, title, "native-mpv", stream);
+      openPlayer(stream.streamURL, sourceFileName, "native-mpv", stream);
       return;
     }
 
     const hlsUrl = await services.debrid?.getTranscodeHLS(stream).catch(() => null);
     if (hlsUrl != null) {
-      openPlayer(hlsUrl, title, "webview-hls-transcode");
+      openPlayer(hlsUrl, sourceFileName, "webview-hls-transcode");
       return;
     }
-    openPlayer(stream.streamURL, title, "native-mpv");
+    openPlayer(stream.streamURL, sourceFileName, "native-mpv");
   }
 
   /** Play an already-resolved StreamInfo (the instant-play path). */
-  async function playStream(stream: StreamInfo, title: string) {
-    await playResolvedStream(stream, title);
+  async function playStream(stream: StreamInfo) {
+    await playResolvedStream(stream, stream.fileName);
   }
 
   async function resolveSelectedStream(
@@ -758,8 +788,7 @@ export function Detail() {
   }
 
   async function handlePlay(stream: StreamInfo, source: TorrentResult) {
-    const title = stream.fileName || source.title;
-    await playResolvedStream(stream, title, source);
+    await playResolvedStream(stream, stream.fileName || source.title, source);
   }
 
   const downloadDisabledReason =
@@ -927,7 +956,7 @@ export function Detail() {
             // for this title, play it immediately instead of re-walking the
             // indexers + debrid.
             if (cached != null) {
-              void playStream(cached.stream, cached.stream.fileName || detailItem.title);
+              void playStream(cached.stream);
               return;
             }
             // Series open the dedicated streams page; movies scroll the inline
@@ -1222,6 +1251,8 @@ export function Detail() {
           <VideoPlayer
             url={player.url}
             title={player.title}
+            subtitle={player.subtitle}
+            sourceFileName={player.sourceFileName}
             engine={player.engine}
             requestWebviewFallback={
               player.fallbackStream != null && services.debrid != null
@@ -1254,7 +1285,7 @@ export function Detail() {
                 : null
             }
             onPlayNext={handlePlayNext}
-            autoCountdown={!settings.dataSaver}
+            autoCountdown={Boolean(settings.autoAdvanceEpisodes) && !settings.dataSaver}
           />
         </Suspense>
       )}

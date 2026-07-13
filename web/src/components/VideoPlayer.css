@@ -40,13 +40,27 @@
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent);
   pointer-events: none;
 }
+.player-title-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .player-title {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+}
+.player-subtitle {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .player-bar-actions {
   display: flex;
