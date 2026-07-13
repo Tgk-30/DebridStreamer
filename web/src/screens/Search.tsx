@@ -336,6 +336,17 @@ export function Search() {
             </button>
           ))}
         </div>
+
+        {results == null && !loading && (
+          <MoodStrip
+            variant="search"
+            onCurate={curateMood}
+            loading={moodLoading}
+            status={moodStatus}
+            error={moodError}
+            aiAvailable={serverMode || services.ai != null}
+          />
+        )}
       </div>
 
       {error && <p className="search-status search-error">{error}</p>}
@@ -344,13 +355,6 @@ export function Search() {
         <SearchSkeleton />
       ) : results == null ? (
         <section className="search-idle">
-          <MoodStrip
-            onCurate={curateMood}
-            loading={moodLoading}
-            status={moodStatus}
-            error={moodError}
-            aiAvailable={serverMode || services.ai != null}
-          />
           {moodResults.length > 0 && (
             <Rail
               title={moodTitle}

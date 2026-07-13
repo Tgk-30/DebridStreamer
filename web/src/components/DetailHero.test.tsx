@@ -184,6 +184,25 @@ describe("DetailHero content", () => {
     expect(within(ratings as HTMLElement).getByTestId("external-ratings")).toBeInTheDocument();
   });
 
+  it.each(["Watched", "Completed"] as const)(
+    "renders the %s completion indicator when supplied by Detail",
+    (completionLabel) => {
+      render(
+        <DetailHero
+          item={makeItem()}
+          inWatchlist={false}
+          onPlay={noop}
+          onToggleWatchlist={noop}
+          onClose={noop}
+          completionLabel={completionLabel}
+        />,
+      );
+      expect(screen.getByLabelText(completionLabel)).toHaveClass(
+        "detail-hero-completion",
+      );
+    },
+  );
+
   it("hides the rating chip when the rating is N/A", () => {
     const { container } = render(
       <DetailHero

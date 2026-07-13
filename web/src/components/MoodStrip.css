@@ -107,6 +107,44 @@
   color: var(--danger);
 }
 
+/* Search keeps discovery in the same visual rhythm as the title field and
+   type chips. It is a continuation of search controls, not a separate panel. */
+.mood-search {
+  gap: var(--sp-sm);
+  padding-top: var(--sp-md);
+  border-top: 1px solid var(--glass-border);
+}
+.mood-search .mood-header {
+  gap: 8px;
+}
+.mood-search .mood-title {
+  font-size: 14px;
+}
+.mood-search .mood-subtitle {
+  font-size: 12px;
+}
+.mood-search .mood-prompt {
+  max-width: 620px;
+  min-height: 46px;
+  border-radius: var(--r-pill);
+}
+.mood-search .mood-chips {
+  max-width: 620px;
+  gap: 8px;
+}
+.mood-search .mood-chips .chip {
+  min-height: 36px;
+  padding: 6px 11px;
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .mood.mood-search {
+    width: 100%;
+    padding: var(--sp-md) 0 0;
+  }
+}
+
 @media (max-width: 560px) {
   .mood {
     gap: 10px;

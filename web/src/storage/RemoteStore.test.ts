@@ -174,6 +174,16 @@ describe("RemoteStore", () => {
       expect(rec.streamQuality).toBe("1080p");
     });
 
+    it("deleteHistory DELETEs only the requested episode row", async () => {
+      vi.stubGlobal("document", { cookie: "ds_csrf=tok123" });
+      fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+      await store().deleteHistory("show/1", "s2e3");
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe("http://srv/api/history/show%2F1?episodeId=s2e3");
+      expect(init.method).toBe("DELETE");
+      expect(init.headers["x-csrf-token"]).toBe("tok123");
+    });
+
     it("listHistory passes the requested limit through", async () => {
       fetchMock.mockResolvedValue(jsonResponse({ items: [] }));
       await store().listHistory(7);

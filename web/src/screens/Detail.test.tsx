@@ -97,8 +97,10 @@ vi.mock("../lib/downloadsBridge", () => ({
 
 const createRequest = vi.fn<(...a: any[]) => any>();
 const resolveServerStream = vi.fn<(...a: any[]) => any>();
+const fetchServerEpisodes = vi.fn<(...a: any[]) => any>();
 vi.mock("../lib/serverApi", () => ({
   createRequest: (...a: unknown[]) => createRequest(...a),
+  fetchServerEpisodes: (...a: unknown[]) => fetchServerEpisodes(...a),
   resolveServerStream: (...a: unknown[]) => resolveServerStream(...a),
 }));
 
@@ -108,12 +110,20 @@ const addTasteEvent = vi.fn<(...a: any[]) => Promise<void>>(async () => {});
 const rebuildTasteContext = vi.fn<(...a: any[]) => Promise<string>>(
   async () => "ctx",
 );
+const listHistory = vi.fn<(...a: any[]) => Promise<any[]>>(async () => []);
+const listHistoryForMedia = vi.fn<(...a: any[]) => Promise<any[]>>(async () => []);
 const getResume = vi.fn<(...a: any[]) => Promise<any>>(async () => null);
+const storeRecordHistory = vi.fn<(...a: any[]) => Promise<any>>(async () => ({}));
+const deleteHistory = vi.fn<(...a: any[]) => Promise<void>>(async () => {});
 vi.mock("../storage", () => ({
   getStore: () => ({
     recentTasteEvents,
     addTasteEvent,
+    listHistory,
+    listHistoryForMedia,
     getResume,
+    recordHistory: storeRecordHistory,
+    deleteHistory,
   }),
 }));
 vi.mock("../services/ai/TasteProfile", () => ({
@@ -136,12 +146,14 @@ vi.mock("../components/DetailHero", () => ({
     onDownload,
     downloadDisabledReason,
     externalRatings,
+    completionLabel,
   }: any) => (
     <div data-testid="hero">
       <span data-testid="hero-title">{item?.title}</span>
       <span data-testid="hero-inwl">{String(inWatchlist)}</span>
       <span data-testid="hero-reqstate">{requestState}</span>
       <span data-testid="hero-taste">{tasteSignal ?? "none"}</span>
+      <span data-testid="hero-completion">{completionLabel ?? "none"}</span>
       {externalRatings}
       <button onClick={onPlay}>play</button>
       {onDownload && (
@@ -188,13 +200,27 @@ vi.mock("../components/StreamPicker", () => ({
 }));
 
 vi.mock("../components/EpisodePicker", () => ({
-  EpisodePicker: ({ onSelect }: any) => (
-    <button
-      data-testid="pick-episode"
-      onClick={() => onSelect({ season: 1, episode: 3 })}
-    >
-      pick-ep
-    </button>
+  EpisodePicker: ({ onSelect, onToggleWatched }: any) => (
+    <>
+      <button
+        data-testid="pick-episode"
+        onClick={() => onSelect({ season: 1, episode: 3 })}
+      >
+        pick-ep
+      </button>
+      <button
+        data-testid="mark-episode-watched"
+        onClick={() => onToggleWatched?.({ season: 1, episode: 2 }, true)}
+      >
+        mark-episode-watched
+      </button>
+      <button
+        data-testid="mark-episode-unwatched"
+        onClick={() => onToggleWatched?.({ season: 1, episode: 2 }, false)}
+      >
+        mark-episode-unwatched
+      </button>
+    </>
   ),
 }));
 
@@ -341,6 +367,9 @@ beforeEach(() => {
   mockSettings = { transcode: false, ratingScale: "thumbs" };
   vi.clearAllMocks();
   recentTasteEvents.mockResolvedValue([]);
+  listHistory.mockResolvedValue([]);
+  listHistoryForMedia.mockResolvedValue([]);
+  getResume.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -466,6 +495,37 @@ describe("Detail base render", () => {
     inWatchlistResult = true;
     render(<Detail />);
     expect(screen.getByTestId("hero-inwl").textContent).toBe("true");
+  });
+
+  it("marks and unmarks an episode through history without touching continue watching", async () => {
+    mockDetailItem = preview("s1", {
+      type: "series",
+      title: "The Series",
+      tmdbId: 200,
+    });
+    mockDetail = detailState({
+      item: mediaItem({ id: "s1", type: "series", title: "The Series", tmdbId: 200 }),
+    });
+    render(<Detail />);
+
+    await userEvent.click(screen.getByTestId("mark-episode-watched"));
+    await waitFor(() =>
+      expect(storeRecordHistory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mediaId: "s1",
+          episodeId: "s1e2",
+          progressSeconds: 1,
+          durationSeconds: 1,
+          completed: true,
+        }),
+      ),
+    );
+    await userEvent.click(screen.getByTestId("mark-episode-unwatched"));
+    await waitFor(() =>
+      expect(deleteHistory).toHaveBeenCalledWith("s1", "s1e2"),
+    );
+    expect(recordResume).not.toHaveBeenCalled();
+    expect(refreshContinueWatching).not.toHaveBeenCalled();
   });
 });
 

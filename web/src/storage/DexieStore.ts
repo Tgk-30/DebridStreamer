@@ -452,6 +452,11 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     return record;
   }
 
+  async deleteHistory(mediaId: string, episodeId?: string | null): Promise<void> {
+    await this.ready();
+    await this.watchHistory.delete(historyKey(mediaId, episodeId ?? null));
+  }
+
   async listHistory(limit = 100): Promise<WatchHistoryRecord[]> {
     await this.ready();
     // lastWatched index → reverse for newest-first, then cap.
@@ -460,6 +465,14 @@ export class DexieStore extends Dexie implements Store, SecretStore {
       .reverse()
       .limit(limit)
       .toArray();
+  }
+
+  async listHistoryForMedia(mediaId: string): Promise<WatchHistoryRecord[]> {
+    await this.ready();
+    const rows = await this.watchHistory.where("mediaId").equals(mediaId).toArray();
+    return rows.sort((left, right) =>
+      right.lastWatched.localeCompare(left.lastWatched),
+    );
   }
 
   async getResume(

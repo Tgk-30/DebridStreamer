@@ -72,9 +72,14 @@ export interface Store {
   /** Upsert a watch-history entry (one row per (mediaId, episodeId); newest
    * wins). Mirrors `DatabaseManager.saveWatchHistory`. */
   recordHistory(entry: WatchHistoryUpsert): Promise<WatchHistoryRecord>;
+  /** Remove the exact history row for a movie or episode. Used when a manual
+   * watched-state toggle is turned back off. */
+  deleteHistory(mediaId: string, episodeId?: string | null): Promise<void>;
   /** All history, most-recently-watched first (capped). Mirrors
    * `fetchAllWatchHistory`. */
   listHistory(limit?: number): Promise<WatchHistoryRecord[]>;
+  /** Complete history for one media id, with no global recency window. */
+  listHistoryForMedia(mediaId: string): Promise<WatchHistoryRecord[]>;
   /** The resume row for a (mediaId, episodeId), or null. Mirrors
    * `fetchWatchHistory(mediaId:episodeId:)`. */
   getResume(

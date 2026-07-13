@@ -16,6 +16,7 @@ import {
   watchProgressPercent,
   type WatchHistoryRecord,
 } from "../storage/models";
+import type { Season } from "../models/media";
 
 export type WatchedState = "watched" | "inProgress" | "unwatched";
 
@@ -68,4 +69,59 @@ export function watchedMediaIds(
     if (states[id] === "watched") ids.add(id);
   }
   return ids;
+}
+
+/** Completed episode ids for one series. This reads the durable history shape,
+ * not the resumable Continue Watching slice, because completed rows are
+ * intentionally absent from that slice. */
+export function watchedEpisodeIdsForMedia(
+  records: readonly WatchHistoryRecord[],
+  mediaId: string,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const record of records) {
+    if (
+      record.mediaId === mediaId &&
+      record.episodeId != null &&
+      watchedStateForRecord(record) === "watched"
+    ) {
+      ids.add(record.episodeId);
+    }
+  }
+  return ids;
+}
+
+/** Whether every known episode in one regular season is marked watched. */
+export function seasonIsWatched(
+  watchedEpisodeIds: ReadonlySet<string>,
+  seasonNumber: number,
+  episodeCount: number,
+): boolean {
+  if (seasonNumber < 1 || episodeCount < 1) return false;
+  for (let episode = 1; episode <= episodeCount; episode += 1) {
+    if (!watchedEpisodeIds.has(`s${seasonNumber}e${episode}`)) return false;
+  }
+  return true;
+}
+
+/** Whether every regular season with known episodes is complete. TMDB season
+ * counts are the denominator, so an incomplete or missing episode never makes
+ * a series look completed. */
+export function seriesIsWatched(
+  watchedEpisodeIds: ReadonlySet<string>,
+  seasons: readonly Pick<Season, "seasonNumber" | "episodeCount">[],
+): boolean {
+  const regularSeasons = seasons.filter(
+    (season) => season.seasonNumber > 0 && season.episodeCount > 0,
+  );
+  return (
+    regularSeasons.length > 0 &&
+    regularSeasons.every((season) =>
+      seasonIsWatched(
+        watchedEpisodeIds,
+        season.seasonNumber,
+        season.episodeCount,
+      ),
+    )
+  );
 }

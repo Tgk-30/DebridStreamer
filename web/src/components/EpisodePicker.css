@@ -29,6 +29,45 @@
   flex-wrap: wrap;
 }
 
+.episode-picker-watch-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.episode-rollup-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s, color 0.16s;
+}
+.episode-rollup-btn:hover:not(:disabled) {
+  border-color: rgba(var(--accent-rgb), 0.56);
+  color: var(--text-primary);
+}
+.episode-rollup-btn.is-watched {
+  border-color: rgba(102, 221, 155, 0.55);
+  background: rgba(52, 199, 120, 0.16);
+  color: rgb(157, 240, 190);
+}
+.episode-rollup-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.episode-rollup-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .episode-season-chip.is-active {
   border-color: rgba(var(--accent-rgb), 0.55);
   background: rgba(var(--accent-rgb), 0.14);
@@ -101,12 +140,19 @@
   display: block;
   position: relative;
 }
-/* Watched episodes read as "done": dimmed row, accent check. */
+/* Watched episodes remain fully legible and use an unmistakable full-row
+   completion treatment. */
 .episode-row-item.is-watched .episode-row {
-  opacity: 0.72;
+  border-color: rgba(102, 221, 155, 0.55);
+  background:
+    linear-gradient(135deg, rgba(52, 199, 120, 0.2), rgba(var(--accent-rgb), 0.1)),
+    var(--glass-tint-rest, rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 0 0 1px rgba(52, 199, 120, 0.1),
+    0 10px 28px -22px rgba(52, 199, 120, 0.72);
 }
 
-/* Mark-watched toggle - floats over the row's top-right corner. */
+/* The row remains the primary stream action. This adjacent check controls only
+   watched state, while the resulting highlight covers the full row. */
 .episode-watched-btn {
   position: absolute;
   top: 10px;
@@ -114,8 +160,8 @@
   z-index: 2;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 0.75px solid var(--glass-border);
   background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
@@ -168,6 +214,12 @@
   background: rgba(var(--accent-rgb), 0.1);
   box-shadow: 0 10px 28px -18px rgba(var(--accent-rgb), 0.55);
 }
+.episode-row-item.is-watched .episode-row.is-selected {
+  border-color: rgba(157, 240, 190, 0.78);
+  background:
+    linear-gradient(135deg, rgba(52, 199, 120, 0.28), rgba(var(--accent-rgb), 0.15)),
+    var(--glass-tint-rest, rgba(255, 255, 255, 0.04));
+}
 
 .episode-still {
   width: 100%;
@@ -185,6 +237,7 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  padding-right: 38px;
 }
 .episode-head {
   display: flex;

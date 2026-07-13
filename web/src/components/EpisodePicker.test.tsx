@@ -166,7 +166,7 @@ describe("EpisodePicker - rich mode", () => {
     expect(document.querySelector(".episode-row-skel")).not.toBeNull();
   });
 
-  it("marks episodes watched/unwatched with the desired new state", async () => {
+  it("opens streams from the row while the check toggles the full-row watched state", async () => {
     const user = userEvent.setup();
     mockUseSeasons.mockReturnValue({
       seasons: [season(1)],
@@ -179,19 +179,24 @@ describe("EpisodePicker - rich mode", () => {
       source: "live",
     });
     const onToggleWatched = vi.fn();
-    renderPicker({
+    const { onSelect } = renderPicker({
       watchedEpisodeIds: new Set(["s1e1"]),
       onToggleWatched,
     });
 
-    // E1 is watched → button offers to unmark, row is dimmed.
+    // The episode row remains the primary stream-opening action.
+    await user.click(screen.getByRole("button", { name: /Ep 1/ }));
+    expect(onSelect).toHaveBeenCalledWith({ season: 1, episode: 1 });
+    expect(onToggleWatched).not.toHaveBeenCalled();
+
+    // The adjacent check owns watched state and the full-row highlight.
     const unmark = screen.getByRole("button", { name: "Mark E1 unwatched" });
     expect(unmark).toHaveAttribute("aria-pressed", "true");
     expect(document.querySelector(".episode-row-item.is-watched")).not.toBeNull();
     await user.click(unmark);
     expect(onToggleWatched).toHaveBeenCalledWith({ season: 1, episode: 1 }, false);
 
-    // E2 is unwatched → button offers to mark.
+    // E2 is unwatched and its check marks it watched.
     await user.click(screen.getByRole("button", { name: "Mark E2 watched" }));
     expect(onToggleWatched).toHaveBeenCalledWith({ season: 1, episode: 2 }, true);
   });

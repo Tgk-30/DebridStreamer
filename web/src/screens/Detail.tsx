@@ -20,6 +20,7 @@ import {
   episodeIdFor,
   episodeLabel,
   nextEpisodeFor,
+  parseEpisodeId,
   useEpisodes,
   useSeasons,
 } from "../data/episodes";
@@ -45,7 +46,11 @@ import {
   type VideoQuality as VideoQualityValue,
 } from "../services/indexers/models";
 import type { StreamRow } from "../data/streams";
-import { createRequest, resolveServerStream } from "../lib/serverApi";
+import {
+  createRequest,
+  fetchServerEpisodes,
+  resolveServerStream,
+} from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 import { isTauri } from "../lib/tauri";
 import type { PlaybackEngine } from "../lib/playbackEngine";
@@ -63,7 +68,8 @@ import {
   type TasteEventType,
 } from "../storage/models";
 import type { NowPlayingMetadata } from "../components/player/PlayerPauseOverlay";
-import { watchedStateForRecord, type WatchedState } from "../data/watchedState";
+import { seriesIsWatched } from "../data/watchedState";
+import { useDetailWatchedState } from "../data/useWatchedIds";
 import { rebuildTasteContext } from "../services/ai/TasteProfile";
 import "./Detail.css";
 
@@ -269,6 +275,20 @@ export function Detail() {
     [detailItem, episodeOverrides, continueWatching],
   );
 
+  // Completion is deliberately sourced from complete history rows. The
+  // Continue Watching slice below remains only for resume bars and positions.
+  const [watchedRefreshVersion, setWatchedRefreshVersion] = useState(0);
+  const watchedRefreshKey = useMemo(
+    () => ({ continueWatching, watchedRefreshVersion }),
+    [continueWatching, watchedRefreshVersion],
+  );
+  const watchedDetail = useDetailWatchedState(
+    detailItem?.id,
+    detailItem?.type,
+    watchedRefreshKey,
+  );
+  const watchedMutationIds = useRef<Set<string>>(new Set());
+
   const streams = useStreams(
     detail.data.imdbId,
     detailItem?.type ?? "movie",
@@ -295,8 +315,8 @@ export function Detail() {
     );
   }, [downloadRows]);
 
-  // Per-episode resume bars + watched checks for the picker rows (this series
-  // only). `continueWatching` holds ALL history records incl. completed ones.
+  // Per-episode resume bars come from the resumable slice only. Watched checks
+  // come from durable history above because completed rows are excluded here.
   const progressByEpisodeId = useMemo(() => {
     if (detailItem?.type !== "series") return {};
     const map: Record<string, number> = {};
@@ -307,14 +327,6 @@ export function Detail() {
       }
     }
     return map;
-  }, [detailItem, continueWatching]);
-  const watchedEpisodeIds = useMemo(() => {
-    if (detailItem?.type !== "series") return new Set<string>();
-    return new Set(
-      continueWatching
-        .filter((r) => r.mediaId === detailItem.id && r.episodeId != null && r.completed)
-        .map((r) => r.episodeId as string),
-    );
   }, [detailItem, continueWatching]);
 
   const [player, setPlayer] = useState<ActivePlayer | null>(null);
@@ -417,6 +429,9 @@ export function Detail() {
         : null,
     [player, seasonsState.seasons],
   );
+  const seriesWatched =
+    detailItem?.type === "series" &&
+    seriesIsWatched(watchedDetail.episodeIds, seasonsState.seasons);
   // Pending auto-play for the just-advanced episode. Guards (per the design
   // review): busy ref blocks double-fire from rows-identity churn; the
   // selected-matches-pending gate ensures the stream list is already re-scoped
@@ -588,29 +603,6 @@ export function Detail() {
     };
   }, [detailId]);
 
-  // Title-level watched state (movies only): the (mediaId, null) history row is
-  // read straight from the Store so a completed title reads as "Watched" even
-  // though the Continue Watching list excludes finished rows. Series show their
-  // watched/in-progress state per episode in the picker instead.
-  const detailType = detailItem?.type ?? null;
-  const [watchedState, setWatchedState] = useState<WatchedState>("unwatched");
-  useEffect(() => {
-    setWatchedState("unwatched");
-    if (detailId == null || detailType !== "movie") return;
-    let cancelled = false;
-    void getStore()
-      .getResume(detailId, null)
-      .then((rec) => {
-        if (!cancelled) setWatchedState(watchedStateForRecord(rec));
-      })
-      .catch(() => {
-        if (!cancelled) setWatchedState("unwatched");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [detailId, detailType]);
-
   if (detailItem == null) return null;
 
   const item = detail.data.item;
@@ -621,6 +613,80 @@ export function Detail() {
   // series could play the wrong episode. Series always go through the picker.
   const cached =
     detailItem.type === "movie" ? cachedResolutions[detailItem.id] ?? null : null;
+
+  function persistWatchedEpisodes(
+    episodes: readonly { season: number; episode: number }[],
+    watched: boolean,
+  ): void {
+    const unique = [...new Map(
+      episodes.map((episode) => [
+        episodeIdFor(episode.season, episode.episode),
+        episode,
+      ]),
+    ).entries()];
+    if (unique.length === 0 || unique.some(([id]) => watchedMutationIds.current.has(id))) {
+      return;
+    }
+    for (const [id] of unique) watchedMutationIds.current.add(id);
+    const store = getStore();
+    void Promise.all(
+      unique.map(([episodeId]) =>
+        watched
+          ? store.recordHistory({
+              mediaId: currentDetailItem.id,
+              episodeId,
+              progressSeconds: 1,
+              durationSeconds: 1,
+              completed: true,
+              preview: currentDetailItem,
+            })
+          : store.deleteHistory(currentDetailItem.id, episodeId),
+      ),
+    )
+      .then(() => setWatchedRefreshVersion((version) => version + 1))
+      .catch(() => {
+        // Keep the existing display state when persistence fails.
+      })
+      .finally(() => {
+        for (const [id] of unique) watchedMutationIds.current.delete(id);
+      });
+  }
+
+  function toggleSeriesWatched(watched: boolean): void {
+    if (!watched) {
+      persistWatchedEpisodes(
+        [...watchedDetail.episodeIds]
+          .map((id) => parseEpisodeId(id))
+          .filter((episode): episode is { season: number; episode: number } => episode != null),
+        false,
+      );
+      return;
+    }
+    const tmdbId = item?.tmdbId ?? currentDetailItem.tmdbId ?? null;
+    if (tmdbId == null || seasonsState.seasons.length === 0) return;
+    void Promise.all(
+      seasonsState.seasons.map((season) =>
+        isServerMode()
+          ? fetchServerEpisodes({ tmdbId, season: season.seasonNumber }).then(
+              (response) => response.episodes,
+            )
+          : services.tmdb?.getEpisodes(tmdbId, season.seasonNumber) ??
+            Promise.resolve([]),
+      ),
+    )
+      .then((groups) =>
+        persistWatchedEpisodes(
+          groups.flat().map((episode) => ({
+            season: episode.seasonNumber,
+            episode: episode.episodeNumber,
+          })),
+          true,
+        ),
+      )
+      .catch(() => {
+        // A failed guide fetch leaves current watched state intact.
+      });
+  }
 
   /** Resume position (seconds) for the title (movies) or the SELECTED episode
    * (series), read from the already-loaded Continue Watching list
@@ -1096,6 +1162,15 @@ export function Detail() {
           }
           downloadDisabledReason={downloadDisabledReason}
           externalRatings={<OmdbRatings imdbId={detail.data.imdbId} />}
+          completionLabel={
+            detailItem.type === "movie"
+              ? watchedDetail.movieWatched
+                ? "Watched"
+                : null
+              : seriesWatched
+                ? "Completed"
+                : null
+          }
           onPlay={() => {
             // Instant play: if the auto-resolve job pre-cached a ready stream
             // for this title, play it immediately instead of re-walking the
@@ -1278,15 +1353,6 @@ export function Detail() {
         </section>
       )}
 
-      {/* Finished-watching marker (movies) - an honest state near the title.
-          Series surface watched/in-progress per episode in the picker. */}
-      {detailItem.type === "movie" && watchedState === "watched" && (
-        <span className="detail-watched">
-          <Icon name="check" size={13} />
-          Watched
-        </span>
-      )}
-
       {/* No-metadata-key hint: the hero renders from the catalog preview alone
           (no overview/genres) - say why, and where to fix it, instead of just
           looking sparse. Local Mode only; Server Mode proxies the server key. */}
@@ -1376,18 +1442,13 @@ export function Detail() {
             setStreamsPageOpen(true);
           }}
           progressByEpisodeId={progressByEpisodeId}
-          watchedEpisodeIds={watchedEpisodeIds}
-          onToggleWatched={(ep, watched) => {
-            // Watched → a completed 1/1 record (no resume bar); unwatched → a
-            // zeroed incomplete record. Both flow through recordResume so the
-            // history + continue-watching state refresh automatically.
-            const epId = episodeIdFor(ep.season, ep.episode);
-            if (watched) {
-              recordResume(detailItem, 1, 1, epId);
-            } else {
-              recordResume(detailItem, 0, null, epId);
-            }
-          }}
+          watchedEpisodeIds={new Set(watchedDetail.episodeIds)}
+          onToggleWatched={(episode, watched) =>
+            persistWatchedEpisodes([episode], watched)
+          }
+          onToggleSeasonWatched={persistWatchedEpisodes}
+          onToggleSeriesWatched={toggleSeriesWatched}
+          seriesWatched={seriesWatched}
         />
       )}
 

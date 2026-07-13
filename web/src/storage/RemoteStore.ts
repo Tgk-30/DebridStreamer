@@ -379,9 +379,24 @@ export class RemoteStore implements Store, SecretStore {
     };
   }
 
+  async deleteHistory(mediaId: string, episodeId?: string | null): Promise<void> {
+    const query =
+      episodeId != null && episodeId.length > 0
+        ? `?episodeId=${encodeURIComponent(episodeId)}`
+        : "";
+    await this.api.delete(`/api/history/${encodeURIComponent(mediaId)}${query}`);
+  }
+
   async listHistory(limit = 100): Promise<WatchHistoryRecord[]> {
     const response = await this.api.get<ServerHistoryResponse>(
       `/api/history?limit=${encodeURIComponent(String(limit))}`,
+    );
+    return response.items.map(mapHistory);
+  }
+
+  async listHistoryForMedia(mediaId: string): Promise<WatchHistoryRecord[]> {
+    const response = await this.api.get<ServerHistoryResponse>(
+      `/api/history/${encodeURIComponent(mediaId)}/entries`,
     );
     return response.items.map(mapHistory);
   }

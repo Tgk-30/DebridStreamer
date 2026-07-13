@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { WatchHistoryRecord } from "../storage/models";
 import {
   WATCHED_THRESHOLD,
+  seasonIsWatched,
+  seriesIsWatched,
+  watchedEpisodeIdsForMedia,
   watchedMediaIds,
   watchedStateForRecord,
   watchedStatesByMedia,
@@ -110,5 +113,31 @@ describe("watchedMediaIds", () => {
     expect(ids.has("half")).toBe(false);
     expect(ids.has("fresh")).toBe(false);
     expect(ids.size).toBe(1);
+  });
+});
+
+describe("episode and series completion", () => {
+  it("derives episode checks from completed history rows only", () => {
+    const ids = watchedEpisodeIdsForMedia(
+      [
+        record({ mediaId: "show", episodeId: "s1e1", completed: true }),
+        record({ mediaId: "show", episodeId: "s1e2", progressSeconds: 20, durationSeconds: 100 }),
+        record({ mediaId: "other", episodeId: "s1e3", completed: true }),
+      ],
+      "show",
+    );
+    expect(ids).toEqual(new Set(["s1e1"]));
+  });
+
+  it("requires every TMDB episode and season before a series is complete", () => {
+    const seasons = [
+      { seasonNumber: 1, episodeCount: 2 },
+      { seasonNumber: 2, episodeCount: 1 },
+    ];
+    const partial = new Set(["s1e1", "s1e2"]);
+    expect(seasonIsWatched(partial, 1, 2)).toBe(true);
+    expect(seasonIsWatched(partial, 2, 1)).toBe(false);
+    expect(seriesIsWatched(partial, seasons)).toBe(false);
+    expect(seriesIsWatched(new Set(["s1e1", "s1e2", "s2e1"]), seasons)).toBe(true);
   });
 });

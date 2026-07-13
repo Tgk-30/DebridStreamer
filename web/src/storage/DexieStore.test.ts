@@ -236,6 +236,28 @@ describe("watch history", () => {
     expect(all).toHaveLength(2);
   });
 
+  it("deletes only the requested completed episode row when unmarked", async () => {
+    await db.recordHistory({
+      mediaId: "show",
+      episodeId: "s1e1",
+      preview: preview("show"),
+      progressSeconds: 1,
+      durationSeconds: 1,
+      completed: true,
+    });
+    await db.recordHistory({
+      mediaId: "show",
+      episodeId: "s1e2",
+      preview: preview("show"),
+      progressSeconds: 1,
+      durationSeconds: 1,
+      completed: true,
+    });
+    await db.deleteHistory("show", "s1e1");
+    expect(await db.getResume("show", "s1e1")).toBeNull();
+    expect((await db.getResume("show", "s1e2"))?.completed).toBe(true);
+  });
+
   it("remembers player prefs and preserves them across progress-only writes", async () => {
     // First write sets the remembered audio/sub/speed.
     await db.recordHistory({

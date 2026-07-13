@@ -112,6 +112,27 @@
   color: #fff;
   text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
 }
+.detail-hero-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.detail-hero-completion {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid rgba(126, 234, 171, 0.5);
+  border-radius: var(--r-pill);
+  background: rgba(52, 199, 120, 0.2);
+  color: rgb(174, 245, 199);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+  box-shadow: 0 5px 18px -8px rgba(52, 199, 120, 0.7);
+}
 
 .detail-hero-ratings,
 .detail-hero-meta {

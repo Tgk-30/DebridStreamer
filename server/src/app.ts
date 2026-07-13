@@ -2898,6 +2898,25 @@ function registerRoutes(
     return { items: rows.map(mapWatchHistoryRow) };
   });
 
+  // Complete per-title history for Detail watched rollups. This is scoped by
+  // media id and intentionally has no global recency window.
+  app.get("/api/history/:mediaId/entries", async (request) => {
+    const auth = requireAuth(db, request);
+    const mediaId = mediaIdParamSchema.parse(
+      (request.params as { mediaId: string }).mediaId,
+    );
+    const rows = db.sqlite
+      .prepare(
+        `SELECT media_id, episode_id, progress_seconds, duration_seconds,
+                completed, last_watched, stream_quality, preview_json
+         FROM watch_history
+         WHERE profile_id = ? AND media_id = ?
+         ORDER BY last_watched DESC`,
+      )
+      .all(auth.profileId, mediaId) as Parameters<typeof mapWatchHistoryRow>[0][];
+    return { items: rows.map(mapWatchHistoryRow) };
+  });
+
   // Exact-key resume lookup. The list endpoint is windowed (≤500), so a client
   // merge that reads the existing resume position must not depend on scanning it
   // - otherwise an older title (beyond the window) would read back as absent and
@@ -2960,6 +2979,26 @@ function registerRoutes(
         serializePreview(body.preview),
       );
     audit(db, auth, "history.upsert", "media", mediaId);
+    return { ok: true };
+  });
+
+  app.delete("/api/history/:mediaId", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const mediaId = mediaIdParamSchema.parse(
+      (request.params as { mediaId: string }).mediaId,
+    );
+    const { episodeId } = request.query as { episodeId?: string };
+    const episodeKey = episodeId ?? "";
+    db.sqlite
+      .prepare(
+        `DELETE FROM watch_history
+         WHERE profile_id = ? AND media_id = ? AND episode_key = ?`,
+      )
+      .run(auth.profileId, mediaId, episodeKey);
+    audit(db, auth, "history.delete", "media", mediaId, {
+      episodeId: episodeId ?? null,
+    });
     return { ok: true };
   });
 

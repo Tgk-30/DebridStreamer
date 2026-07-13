@@ -40,6 +40,8 @@ interface DetailHeroProps {
   downloadDisabledReason?: string | null;
   /** Async external ratings owned by Detail, placed beside the TMDB score. */
   externalRatings?: ReactNode;
+  /** Full-title completion state derived from durable watch history. */
+  completionLabel?: "Watched" | "Completed" | null;
 }
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -58,6 +60,7 @@ export function DetailHero({
   onDownload,
   downloadDisabledReason = null,
   externalRatings,
+  completionLabel = null,
 }: DetailHeroProps) {
   const backdrop = MediaItemNS.backdropURL(item);
   const [backdropFailed, setBackdropFailed] = useState(false);
@@ -122,7 +125,15 @@ export function DetailHero({
         )}
 
         <div className="detail-hero-info">
-          <h1 className="detail-hero-title">{item.title}</h1>
+          <div className="detail-hero-title-row">
+            <h1 className="detail-hero-title">{item.title}</h1>
+            {completionLabel != null && (
+              <span className="detail-hero-completion" aria-label={completionLabel}>
+                <Icon name="check" size={13} />
+                {completionLabel}
+              </span>
+            )}
+          </div>
 
           <div className="detail-hero-ratings">
             {rating !== "N/A" && (

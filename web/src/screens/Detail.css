@@ -244,22 +244,6 @@
   margin: 4px 0 10px;
 }
 
-/* "Watched" pill under the hero - a quiet, honest state marker for a finished
-   title (movies). Sits inline near the top of the detail content. */
-.detail-watched {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 5px 11px 5px 9px;
-  border-radius: var(--r-pill);
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--success);
-  background: rgba(var(--success-rgb, 92, 217, 140), 0.14);
-  border: 0.75px solid rgba(var(--success-rgb, 92, 217, 140), 0.4);
-}
-
 /* Rate control - the stars sit behind an explicit "Rate" button until revealed. */
 .detail-rate {
   align-self: flex-start;
