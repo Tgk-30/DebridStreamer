@@ -7,3 +7,7 @@
 2026-07-13 | fs-exit crash root cause after 3 failed guards: (0,0) aspect clear on fullscreen window | gpt-5.6-sol[max] + 2-lens workflow review | success | structural state machine + surviving cleanup helper; both reviewers ship; F1 latch hardening chipped
 2026-07-13 | v0.6.7-web ship | fable-integrate | success | 4/4 green first try
 2026-07-13 | v0.6.7 follow-up: revalidate aborted fullscreen enter (stale latch wedge) | gpt-5.6-sol[high] + fable review | success | one-shot dispatch_after repair; sol clean first try off a fully-specified brief; web gate 2786 green
+2026-07-13 | v0.7 seven-lens perf/stability recon (33 findings) | workflow: 7 opus lenses + critic | success | ran on opus subagents after fable limit hit; ranked, split into 3 disjoint lanes
+2026-07-13 | v0.7.0 three-lane perf build | sol[rust] + terra[player] + terra[browse], all opus-reviewed | success | 3 review-caught regressions fixed (resume-position, ratings-eviction, respawn-budget); merged conflict-free; 2814 tests
+2026-07-13 | v0.6.9-web crash-fix release (superseded) | fable-integrate | superseded | crash fix + player UX; folded into v0.7.0 which shipped first; draft removed
+2026-07-13 | v0.7.0-web ship | fable-integrate | success | one retag: heavy 1000-row taste-prune test ran 15ms over the 5s default on intel CI; bumped to 20s; 4/4 green, published latest
