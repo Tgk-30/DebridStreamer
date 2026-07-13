@@ -6,3 +6,4 @@
 2026-07-13 | fullscreen wrong-axis fit + version label | gpt-5.6-sol[max] + luna[medium] + opus review | success | fullscreen-entry reconcile + re-armed self-heal; luna test mocks needed 2 fable fixes (TDZ hoist, missing isTauri export); 4/4 green
 2026-07-13 | fs-exit crash root cause after 3 failed guards: (0,0) aspect clear on fullscreen window | gpt-5.6-sol[max] + 2-lens workflow review | success | structural state machine + surviving cleanup helper; both reviewers ship; F1 latch hardening chipped
 2026-07-13 | v0.6.7-web ship | fable-integrate | success | 4/4 green first try
+2026-07-13 | v0.6.7 follow-up: revalidate aborted fullscreen enter (stale latch wedge) | gpt-5.6-sol[high] + fable review | success | one-shot dispatch_after repair; sol clean first try off a fully-specified brief; web gate 2786 green

@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use libmpv2::render::{OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType};
 use libmpv2::Mpv;
 
-use dispatch2::DispatchQueue;
+use dispatch2::{DispatchQueue, DispatchTime};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
@@ -172,6 +172,7 @@ struct SurfaceState {
     fullscreen_session_active: AtomicBool,
     fullscreen_enter_in_flight: AtomicBool,
     fullscreen_exit_in_flight: AtomicBool,
+    fullscreen_transition_seq: AtomicUsize,
     dead: AtomicBool,
 }
 
@@ -207,6 +208,7 @@ impl SurfaceState {
             fullscreen_session_active: AtomicBool::new(false),
             fullscreen_enter_in_flight: AtomicBool::new(false),
             fullscreen_exit_in_flight: AtomicBool::new(false),
+            fullscreen_transition_seq: AtomicUsize::new(0),
             dead: AtomicBool::new(false),
         })
     }
@@ -229,7 +231,10 @@ impl SurfaceState {
     }
 }
 
-fn note_fullscreen_will_enter(surface: &SurfaceState) {
+fn note_fullscreen_will_enter(surface: &Arc<SurfaceState>) {
+    surface
+        .fullscreen_transition_seq
+        .fetch_add(1, Ordering::AcqRel);
     // Do not clear contentAspectRatio here. WillEnter is close to AppKit's exit
     // frame snapshot, and a valid windowed ratio does not need to be rewritten
     // for fullscreen layout. The live surface reconciles only after DidExit.
@@ -242,9 +247,13 @@ fn note_fullscreen_will_enter(surface: &SurfaceState) {
     surface
         .fullscreen_exit_in_flight
         .store(false, Ordering::Release);
+    schedule_fullscreen_enter_revalidation(surface.clone());
 }
 
 fn note_fullscreen_did_enter(surface: &SurfaceState) {
+    surface
+        .fullscreen_transition_seq
+        .fetch_add(1, Ordering::AcqRel);
     surface
         .fullscreen_session_active
         .store(true, Ordering::Release);
@@ -257,6 +266,9 @@ fn note_fullscreen_did_enter(surface: &SurfaceState) {
 }
 
 fn note_fullscreen_will_exit(surface: &SurfaceState) {
+    surface
+        .fullscreen_transition_seq
+        .fetch_add(1, Ordering::AcqRel);
     surface
         .fullscreen_session_active
         .store(true, Ordering::Release);
@@ -272,6 +284,9 @@ fn note_fullscreen_will_exit(surface: &SurfaceState) {
 /// A nested WillEnter posted by another observer takes precedence.
 fn note_fullscreen_did_exit(surface: &SurfaceState) -> bool {
     surface
+        .fullscreen_transition_seq
+        .fetch_add(1, Ordering::AcqRel);
+    surface
         .fullscreen_exit_in_flight
         .store(false, Ordering::Release);
     if surface
@@ -284,6 +299,67 @@ fn note_fullscreen_did_exit(surface: &SurfaceState) -> bool {
         .fullscreen_session_active
         .store(false, Ordering::Release);
     true
+}
+
+// AppKit can abort a fullscreen ENTER without posting any NSNotification:
+// windowDidFailToEnterFullScreen goes only to the window delegate, which tao
+// owns. An aborted enter would leave the in-flight/session latches set forever,
+// blocking every future windowed wrap and surviving player restarts through
+// inherited teardown-cleanup state. Revalidate shortly after the latch is set:
+// if no Will/Did notification has arrived and the styleMask FullScreen bit is
+// still clear, release the stale latch.
+const FULLSCREEN_ENTER_REVALIDATE_DELAY: std::time::Duration =
+    std::time::Duration::from_secs(2);
+
+fn schedule_fullscreen_enter_revalidation(surface: Arc<SurfaceState>) {
+    let expected_seq = surface
+        .fullscreen_transition_seq
+        .load(Ordering::Acquire);
+    let Ok(when) = DispatchTime::try_from(FULLSCREEN_ENTER_REVALIDATE_DELAY) else {
+        return;
+    };
+    let _ = DispatchQueue::main().after(when, move || {
+        revalidate_fullscreen_enter_on_main(&surface, expected_seq);
+    });
+}
+
+fn revalidate_fullscreen_enter_on_main(surface: &SurfaceState, expected_seq: usize) {
+    // Any Will/Did fullscreen notification since scheduling owns the state now.
+    if surface
+        .fullscreen_transition_seq
+        .load(Ordering::Acquire)
+        != expected_seq
+    {
+        return;
+    }
+    if !surface
+        .fullscreen_enter_in_flight
+        .load(Ordering::Acquire)
+    {
+        return;
+    }
+    if surface.window_ptr == 0 {
+        return;
+    }
+    // The dereference is safe while the latch is set: every teardown and close
+    // path clears enter_in_flight on the main thread (discard_window_wrap_state)
+    // before the window can deallocate, and this block runs on the main thread.
+    let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
+    if window.styleMask().contains(NSWindowStyleMask::FullScreen) {
+        // The transition really is under way (or landed); DidEnter resolves it.
+        return;
+    }
+    surface
+        .fullscreen_enter_in_flight
+        .store(false, Ordering::Release);
+    surface
+        .fullscreen_session_active
+        .store(false, Ordering::Release);
+    rp_log(&format!(
+        "RPGEO event=window-wrap engine=native-mpv action=fullscreen-enter-revalidate repair=stale-enter-latch window=0x{:x}",
+        surface.window_ptr
+    ));
+    log_fullscreen_state_on_main(surface, "enter-revalidate-repair");
 }
 
 // A surface can be torn down while its NSWindow is fullscreen. The host view
@@ -1909,6 +1985,9 @@ fn setup_on_main(
         state
             .fullscreen_exit_in_flight
             .store(exit_in_flight, Ordering::Release);
+        if enter_in_flight {
+            schedule_fullscreen_enter_revalidation(state.clone());
+        }
     }
     if ns_window
         .styleMask()
