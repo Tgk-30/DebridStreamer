@@ -154,7 +154,9 @@ struct SurfaceState {
     dwidth: AtomicI64,
     dheight: AtomicI64,
     first_draw_logged: AtomicBool,
-    first_draw_check_queued: AtomicBool,
+    last_draw_width: AtomicI64,
+    last_draw_height: AtomicI64,
+    geometry_check_queued: AtomicBool,
     last_main_geometry: Mutex<String>,
     wrap_active: AtomicBool,
     wrap_needs_resize: AtomicBool,
@@ -185,7 +187,9 @@ impl SurfaceState {
             dwidth: AtomicI64::new(0),
             dheight: AtomicI64::new(0),
             first_draw_logged: AtomicBool::new(false),
-            first_draw_check_queued: AtomicBool::new(false),
+            last_draw_width: AtomicI64::new(0),
+            last_draw_height: AtomicI64::new(0),
+            geometry_check_queued: AtomicBool::new(false),
             last_main_geometry: Mutex::new(String::new()),
             wrap_active: AtomicBool::new(false),
             wrap_needs_resize: AtomicBool::new(true),
@@ -359,11 +363,19 @@ define_class!(
             let w = (bounds.size.width * scale).round().max(1.0) as i32;
             let h = (bounds.size.height * scale).round().max(1.0) as i32;
             let fbo = gl_get_int(GL_FRAMEBUFFER_BINDING);
-            if !ivars
+            let previous_w = ivars
+                .surface
+                .last_draw_width
+                .swap(i64::from(w), Ordering::AcqRel);
+            let previous_h = ivars
+                .surface
+                .last_draw_height
+                .swap(i64::from(h), Ordering::AcqRel);
+            let first_draw = !ivars
                 .surface
                 .first_draw_logged
-                .swap(true, Ordering::AcqRel)
-            {
+                .swap(true, Ordering::AcqRel);
+            if first_draw {
                 if rp_debug_enabled() {
                     let cached = ivars
                         .surface
@@ -379,7 +391,16 @@ define_class!(
                         rect_text(bounds),
                     ));
                 }
-                queue_first_draw_check(ivars.surface.clone());
+            }
+            // The attach-time check is not enough: AppKit can resize the
+            // fullscreen content hierarchy after the first frame. Re-arm the
+            // cheap main-thread geometry check whenever the actual target handed
+            // to mpv changes. Multiple transition draws coalesce into one check.
+            if first_draw
+                || previous_w != i64::from(w)
+                || previous_h != i64::from(h)
+            {
+                queue_geometry_check(ivars.surface.clone(), first_draw);
             }
             gl_set_viewport(w, h);
             if let Some(sr) = render_slot.as_ref() {
@@ -456,6 +477,16 @@ define_class!(
                 let _: () = msg_send![super(self), setFrameSize: size];
             }
             let layer = &self.ivars().layer;
+            // A fullscreen transition can move the window to a screen with a
+            // different backing scale without delivering the backing callback
+            // before this resize. Always pair the resized bounds with the live
+            // window scale before the synchronous draw.
+            if let Some(window) = self.window() {
+                let scale = window.backingScaleFactor();
+                if (layer.contentsScale() - scale).abs() > 0.001 {
+                    unsafe { layer.setContentsScale(scale) };
+                }
+            }
             // Resize the layer to the view + force CAOpenGLLayer to reallocate
             // its GL drawable at the new size (a plain setNeedsDisplay does not
             // reliably grow it). Wrapped so the geometry change doesn't animate.
@@ -509,7 +540,16 @@ define_class!(
 
         #[unsafe(method(windowDidEnterFullScreen:))]
         fn window_did_enter_full_screen(&self, _notification: &NSNotification) {
-            suspend_window_wrap_on_main(&self.ivars().surface, "did-enter-fullscreen");
+            let surface = &self.ivars().surface;
+            suspend_window_wrap_on_main(surface, "did-enter-fullscreen");
+            // AppKit owns the NSWindow frame during the transition, but the video
+            // hierarchy is ours. Repair it against the final screen-sized content
+            // bounds even if autoresizing did not invoke setFrameSize.
+            verify_and_repair_geometry_on_main(
+                surface,
+                Some("did-enter-fullscreen-check"),
+                true,
+            );
         }
 
         #[unsafe(method(windowWillExitFullScreen:))]
@@ -640,8 +680,10 @@ fn log_geometry_on_main(event: &str, surface: &SurfaceState, extra: &str) {
     let content_aspect = window.contentAspectRatio();
     let fullscreen = window.styleMask().contains(NSWindowStyleMask::FullScreen);
     let (dwidth, dheight) = surface.dimension_text();
+    let last_draw_width = surface.last_draw_width.load(Ordering::Acquire);
+    let last_draw_height = surface.last_draw_height.load(Ordering::Acquire);
     let fields = format!(
-        "window.ptr=0x{:x} window.frame={} window.backingScale={:.3} content.ptr=0x{:x} content.actual=0x{:x} content.frame={} content.bounds={} contentLayoutRect={} content.safe=({:.2},{:.2},{:.2},{:.2}) webview.ptr=0x{:x} webview.frame={} webview.bounds={} sibling.ptr=0x{:x} sibling.frame={} sibling.bounds={} host.ptr=0x{:x} host.super=0x{:x} host.frame={} host.bounds={} layer.ptr=0x{:x} layer.frame={} layer.bounds={} contentsScale={:.3} mpv_target_px={}x{} dwidth={} dheight={} contentAspect={:.3}x{:.3} fullscreen={}",
+        "window.ptr=0x{:x} window.frame={} window.backingScale={:.3} content.ptr=0x{:x} content.actual=0x{:x} content.frame={} content.bounds={} contentLayoutRect={} content.safe=({:.2},{:.2},{:.2},{:.2}) webview.ptr=0x{:x} webview.frame={} webview.bounds={} sibling.ptr=0x{:x} sibling.frame={} sibling.bounds={} host.ptr=0x{:x} host.super=0x{:x} host.frame={} host.bounds={} layer.ptr=0x{:x} layer.frame={} layer.bounds={} contentsScale={:.3} mpv_target_px={}x{} last_draw_target_px={}x{} dwidth={} dheight={} contentAspect={:.3}x{:.3} fullscreen={}",
         surface.window_ptr,
         rect_text(window_frame),
         window_scale,
@@ -670,6 +712,8 @@ fn log_geometry_on_main(event: &str, surface: &SurfaceState, extra: &str) {
         scale,
         target_width,
         target_height,
+        last_draw_width,
+        last_draw_height,
         dwidth,
         dheight,
         content_aspect.width,
@@ -684,32 +728,55 @@ fn log_geometry_on_main(event: &str, surface: &SurfaceState, extra: &str) {
     ));
 }
 
-fn queue_first_draw_check(surface: Arc<SurfaceState>) {
-    if surface
-        .first_draw_check_queued
-        .swap(true, Ordering::AcqRel)
+fn queue_geometry_check(surface: Arc<SurfaceState>, log_first_draw_result: bool) {
+    if surface.dead.load(Ordering::Acquire)
+        || surface
+            .geometry_check_queued
+            .swap(true, Ordering::AcqRel)
     {
         return;
     }
     DispatchQueue::main().exec_async(move || {
+        surface
+            .geometry_check_queued
+            .store(false, Ordering::Release);
         if surface.dead.load(Ordering::Acquire) {
             return;
         }
-        verify_and_repair_geometry_on_main(&surface);
+        let log_event = if log_first_draw_result {
+            Some("first-draw-check")
+        } else {
+            None
+        };
+        verify_and_repair_geometry_on_main(&surface, log_event, false);
     });
 }
 
-/// Verify the attach-time snapshot after CoreAnimation has actually drawn. If a
-/// framework changed the view hierarchy or frame between attach and first draw,
-/// move the host back below the WKWebView's top-level sibling and re-fill the
-/// current contentView.bounds.
-fn verify_and_repair_geometry_on_main(surface: &SurfaceState) {
-    let host_ptr = surface.host_ptr.load(Ordering::Acquire);
-    let layer_ptr = surface.layer_ptr.load(Ordering::Acquire);
-    if surface.content_view_ptr == 0 || host_ptr == 0 || layer_ptr == 0 {
-        log_geometry_on_main("first-draw-check", surface, "correction=unavailable");
+/// Verify the native hierarchy after CoreAnimation has actually drawn. This runs
+/// after attach, at fullscreen completion, and whenever the rendered target size
+/// changes. If a framework changed the hierarchy or frame, move the host back
+/// below the WKWebView's top-level sibling and re-fill contentView.bounds.
+fn verify_and_repair_geometry_on_main(
+    surface: &SurfaceState,
+    log_event: Option<&str>,
+    force_display: bool,
+) {
+    if surface.dead.load(Ordering::Acquire) {
         return;
     }
+    let host_ptr = surface.host_ptr.load(Ordering::Acquire);
+    let layer_ptr = surface.layer_ptr.load(Ordering::Acquire);
+    if surface.window_ptr == 0
+        || surface.content_view_ptr == 0
+        || host_ptr == 0
+        || layer_ptr == 0
+    {
+        if let Some(event) = log_event {
+            log_geometry_on_main(event, surface, "correction=unavailable");
+        }
+        return;
+    }
+    let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
     let content: &NSView = unsafe { &*(surface.content_view_ptr as *const NSView) };
     let host: &HostView = unsafe { &*(host_ptr as *const HostView) };
     let layer: &VideoLayer = unsafe { &*(layer_ptr as *const VideoLayer) };
@@ -743,7 +810,12 @@ fn verify_and_repair_geometry_on_main(surface: &SurfaceState) {
         unsafe { layer.setBounds(expected_layer_bounds) };
         corrections.push("layer-bounds");
     }
-    if !corrections.is_empty() {
+    let expected_scale = window.backingScaleFactor();
+    if (layer.contentsScale() - expected_scale).abs() > 0.001 {
+        unsafe { layer.setContentsScale(expected_scale) };
+        corrections.push("contents-scale");
+    }
+    if force_display || !corrections.is_empty() {
         unsafe { layer.display() };
     }
     let correction = if corrections.is_empty() {
@@ -751,11 +823,15 @@ fn verify_and_repair_geometry_on_main(surface: &SurfaceState) {
     } else {
         corrections.join(",")
     };
-    log_geometry_on_main(
-        "first-draw-check",
-        surface,
-        &format!("correction={correction}"),
-    );
+    if let Some(event) = log_event {
+        log_geometry_on_main(event, surface, &format!("correction={correction}"));
+    } else if !corrections.is_empty() {
+        log_geometry_on_main(
+            "drawable-change-check",
+            surface,
+            &format!("correction={correction}"),
+        );
+    }
 }
 
 // ---- Native NSWindow aspect lifecycle ----------------------------------
@@ -989,6 +1065,9 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
     if surface.dead.load(Ordering::Acquire) {
         return;
     }
+    // fullscreen_suspended gates NSWindow sizing only. Host/layer/FBO geometry
+    // remains live and is reconciled before any fullscreen early return below.
+    verify_and_repair_geometry_on_main(surface, None, false);
     if surface
         .wrap_reconciling
         .swap(true, Ordering::AcqRel)
@@ -1130,9 +1209,18 @@ fn queue_window_wrap_reconcile(surface: Arc<SurfaceState>) {
 }
 
 fn suspend_window_wrap_on_main(surface: &SurfaceState, reason: &str) {
+    if surface.dead.load(Ordering::Acquire) {
+        return;
+    }
     surface
         .fullscreen_suspended
         .store(true, Ordering::Release);
+    // Do not carry the windowed video's aspect constraint into fullscreen.
+    // Clearing it does not move or resize the NSWindow and is intentionally
+    // allowed by the same teardown path that is safe while fullscreen.
+    if surface.wrap_constraint_applied.load(Ordering::Acquire) {
+        clear_window_aspect_on_main(surface, reason);
+    }
     log_geometry_on_main(
         "window-wrap",
         surface,
@@ -1155,8 +1243,8 @@ fn resume_window_wrap_on_main(surface: &SurfaceState) {
         .fullscreen_suspended
         .store(false, Ordering::Release);
     if surface.wrap_active.load(Ordering::Acquire) {
-        // Fullscreen entry could not safely clear the old native constraint.
-        // Remove it now so a changed video aspect cannot distort this refit.
+        // Keep the refit independent of any constraint AppKit may have restored
+        // as part of its own fullscreen transition bookkeeping.
         clear_window_aspect_on_main(surface, "did-exit-fullscreen");
         surface.wrap_needs_resize.store(true, Ordering::Release);
     }
