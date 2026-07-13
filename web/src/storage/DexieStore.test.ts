@@ -156,6 +156,61 @@ describe("watchlist", () => {
     expect(list[0].mediaId).toBe("tt2");
     expect(list[1].mediaId).toBe("tt1");
   });
+
+  it("creates, renames, assigns, and deletes folders without deleting titles", async () => {
+    await db.addToWatchlist(preview("tt1", "Arrival"));
+    await db.addToWatchlist(preview("tt2", "Dune"));
+    const folder = await db.createWatchlistFolder("Sci-Fi");
+    await db.assignWatchlistFolder("tt1", folder.id);
+
+    expect(await db.listWatchlistFolders()).toContainEqual(
+      expect.objectContaining({ id: folder.id, name: "Sci-Fi" }),
+    );
+    expect(await db.listWatchlist()).toContainEqual(
+      expect.objectContaining({ mediaId: "tt1", folderId: folder.id }),
+    );
+
+    await db.renameWatchlistFolder(folder.id, "Science Fiction");
+    expect(await db.listWatchlistFolders()).toContainEqual(
+      expect.objectContaining({ id: folder.id, name: "Science Fiction" }),
+    );
+
+    await db.deleteWatchlistFolder(folder.id);
+    expect(await db.listWatchlist()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ mediaId: "tt1", folderId: null }),
+        expect.objectContaining({ mediaId: "tt2", folderId: null }),
+      ]),
+    );
+    expect(await db.listWatchlistFolders()).not.toContainEqual(
+      expect.objectContaining({ id: folder.id }),
+    );
+  });
+
+  it("migrates pre-folder watchlist rows to uncategorized without losing data", async () => {
+    const name = `legacy-watchlist-${Date.now()}-${counter}`;
+    const legacy = new Dexie(name);
+    legacy.version(5).stores({ watchlist: "mediaId, addedAt" });
+    await legacy.open();
+    await legacy.table("watchlist").put({
+      mediaId: "tt-legacy",
+      addedAt: "2021-01-02T00:00:00.000Z",
+      preview: preview("tt-legacy", "Stored before folders"),
+    });
+    legacy.close();
+
+    await db.delete();
+    db = new DexieStore(name);
+    const rows = await db.listWatchlist();
+    expect(rows).toEqual([
+      expect.objectContaining({
+        mediaId: "tt-legacy",
+        addedAt: "2021-01-02T00:00:00.000Z",
+        folderId: null,
+        preview: expect.objectContaining({ title: "Stored before folders" }),
+      }),
+    ]);
+  });
 });
 
 // ---- Watch history / resume -------------------------------------------------

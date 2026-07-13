@@ -6,6 +6,53 @@
 .downloads-table {
   min-width: 0;
 }
+.downloads-groups,
+.downloads-series-section,
+.downloads-show-section,
+.downloads-section {
+  display: flex;
+  flex-direction: column;
+}
+.downloads-groups {
+  gap: var(--sp-xl);
+}
+.downloads-series-section {
+  gap: var(--sp-lg);
+}
+.downloads-show-section {
+  gap: var(--sp-md);
+  padding: var(--sp-md);
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-card);
+  background: var(--glass-tint-control);
+}
+.downloads-section {
+  gap: var(--sp-sm);
+}
+.downloads-section.is-nested {
+  gap: var(--sp-xs);
+}
+.downloads-section-heading,
+.downloads-show-heading,
+.downloads-season-heading {
+  margin: 0;
+  color: var(--text-primary);
+}
+.downloads-section-heading {
+  font-size: 18px;
+  font-weight: 700;
+}
+.downloads-show-heading {
+  font-size: 16px;
+  font-weight: 700;
+}
+.downloads-season-heading {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 
 .downloads-row {
   display: grid;

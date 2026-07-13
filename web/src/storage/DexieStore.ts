@@ -32,6 +32,7 @@ import {
   systemFolderName,
   type TasteEventRecord,
   type WatchHistoryRecord,
+  type WatchlistFolderRecord,
   type WatchlistRecord,
 } from "./models";
 import type {
@@ -82,6 +83,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   private settings!: Table<SettingRecord, string>;
   private secrets!: Table<SecretRecord, string>;
   private watchlist!: Table<WatchlistRecord, string>;
+  private watchlistFolders!: Table<WatchlistFolderRecord, string>;
   private watchHistory!: Table<WatchHistoryRecord, string>;
   private library!: Table<LibraryEntryRecord, string>;
   private folders!: Table<LibraryFolderRecord, string>;
@@ -142,6 +144,24 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     this.version(5).stores({
       tasteEvents: "id, userId, createdAt, mediaId, eventType, [mediaId+createdAt]",
     });
+
+    // v6: named Watchlist folders are deliberately separate from Library
+    // folders. This declaration adds the nullable folderId index to existing
+    // watchlist rows and a new folder table. The upgrade writes only the new
+    // field, preserving every existing preview and addedAt value.
+    this.version(6)
+      .stores({
+        watchlist: "mediaId, addedAt, folderId",
+        watchlistFolders: "id, name, createdAt, updatedAt",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table("watchlist")
+          .toCollection()
+          .modify((row: WatchlistRecord) => {
+            if (row.folderId === undefined) row.folderId = null;
+          });
+      });
 
     this.on("blocked", () => {
       this.reportStorageIssue({
@@ -300,8 +320,14 @@ export class DexieStore extends Dexie implements Store, SecretStore {
 
   // ---- Watchlist ------------------------------------------------------------
 
-  async addToWatchlist(preview: MediaPreview): Promise<void> {
+  async addToWatchlist(
+    preview: MediaPreview,
+    folderId?: string | null,
+  ): Promise<void> {
     await this.ready();
+    if (folderId != null && (await this.watchlistFolders.get(folderId)) == null) {
+      throw new Error("That watchlist folder no longer exists.");
+    }
     // Keyed by mediaId → put() is an upsert, so there can be no duplicate.
     // Preserve the original addedAt when re-adding so ordering is stable, but
     // refresh the stored preview (metadata may have improved).
@@ -309,6 +335,9 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     await this.watchlist.put({
       mediaId: preview.id,
       addedAt: existing?.addedAt ?? nowISO(),
+      // A normal re-add keeps the folder. Imports can intentionally supply a
+      // folder id to file existing or newly-added titles together.
+      folderId: folderId === undefined ? existing?.folderId ?? null : folderId,
       preview,
     });
   }
@@ -328,6 +357,68 @@ export class DexieStore extends Dexie implements Store, SecretStore {
   async isInWatchlist(mediaId: string): Promise<boolean> {
     await this.ready();
     return (await this.watchlist.get(mediaId)) != null;
+  }
+
+  async createWatchlistFolder(name: string): Promise<WatchlistFolderRecord> {
+    await this.ready();
+    const base = name.trim() || "New Folder";
+    const folders = await this.watchlistFolders.toArray();
+    const taken = new Set(folders.map((folder) => folder.name));
+    let uniqueName = base;
+    let suffix = 2;
+    while (taken.has(uniqueName)) {
+      uniqueName = `${base} (${suffix})`;
+      suffix += 1;
+    }
+    const folder: WatchlistFolderRecord = {
+      id: `watchlist-folder-${uuid()}`,
+      name: uniqueName,
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
+    };
+    await this.watchlistFolders.put(folder);
+    return folder;
+  }
+
+  async listWatchlistFolders(): Promise<WatchlistFolderRecord[]> {
+    await this.ready();
+    const folders = await this.watchlistFolders.toArray();
+    return folders.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async renameWatchlistFolder(id: string, name: string): Promise<void> {
+    await this.ready();
+    const folder = await this.watchlistFolders.get(id);
+    if (folder == null) return;
+    const trimmed = name.trim();
+    if (trimmed.length === 0) throw new Error("Folder names cannot be empty.");
+    const duplicate = await this.watchlistFolders
+      .where("name")
+      .equals(trimmed)
+      .filter((candidate) => candidate.id !== id)
+      .first();
+    if (duplicate != null) throw new Error("A watchlist folder already has that name.");
+    await this.watchlistFolders.update(id, { name: trimmed, updatedAt: nowISO() });
+  }
+
+  async deleteWatchlistFolder(id: string): Promise<void> {
+    await this.ready();
+    await this.transaction("rw", this.watchlist, this.watchlistFolders, async () => {
+      if ((await this.watchlistFolders.get(id)) == null) return;
+      const rows = await this.watchlist.where("folderId").equals(id).toArray();
+      for (const row of rows) {
+        await this.watchlist.update(row.mediaId, { folderId: null });
+      }
+      await this.watchlistFolders.delete(id);
+    });
+  }
+
+  async assignWatchlistFolder(mediaId: string, folderId: string | null): Promise<void> {
+    await this.ready();
+    if (folderId != null && (await this.watchlistFolders.get(folderId)) == null) {
+      throw new Error("That watchlist folder no longer exists.");
+    }
+    await this.watchlist.update(mediaId, { folderId });
   }
 
   // ---- Watch history / resume ----------------------------------------------

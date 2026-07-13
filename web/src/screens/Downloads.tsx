@@ -42,6 +42,62 @@ function progressLabel(record: DownloadRecord, speedBps?: number): string {
   return `${progress == null ? amount : `${progress}% · ${amount}`}${speed}`;
 }
 
+export interface DownloadSeriesGroup {
+  mediaId: string;
+  title: string;
+  seasons: Array<{ season: number | null; records: DownloadRecord[] }>;
+}
+
+/** Group the flat, durable queue for display only. The queue engine continues
+ * to operate on its original flat records. */
+export function groupDownloads(records: DownloadRecord[]): {
+  movies: DownloadRecord[];
+  series: DownloadSeriesGroup[];
+} {
+  const movies: DownloadRecord[] = [];
+  const seriesByMediaId = new Map<string, DownloadRecord[]>();
+  for (const record of records) {
+    if (record.episodeId == null) movies.push(record);
+    else {
+      const group = seriesByMediaId.get(record.mediaId) ?? [];
+      group.push(record);
+      seriesByMediaId.set(record.mediaId, group);
+    }
+  }
+
+  const series = [...seriesByMediaId.entries()].map(([mediaId, episodes]) => {
+    const first = episodes[0]!;
+    const title = first.title
+      .replace(/\s+[Ss]\d{1,2}[Ee]\d{1,3}\b.*$/, "")
+      .trim() || first.title;
+    const seasonsByNumber = new Map<number | null, DownloadRecord[]>();
+    for (const episode of episodes) {
+      const season = episode.season;
+      const seasonGroup = seasonsByNumber.get(season) ?? [];
+      seasonGroup.push(episode);
+      seasonsByNumber.set(season, seasonGroup);
+    }
+    const seasons = [...seasonsByNumber.entries()]
+      .sort(([a], [b]) => {
+        if (a == null) return 1;
+        if (b == null) return -1;
+        return a - b;
+      })
+      .map(([season, seasonRecords]) => ({
+        season,
+        records: [...seasonRecords].sort((a, b) => {
+          if (a.episode == null && b.episode == null) return a.title.localeCompare(b.title);
+          if (a.episode == null) return 1;
+          if (b.episode == null) return -1;
+          return a.episode - b.episode;
+        }),
+      }));
+    return { mediaId, title, seasons };
+  });
+
+  return { movies, series };
+}
+
 export function Downloads() {
   const { services, navigate } = useAppStore();
   const tauri = isTauri();
@@ -73,6 +129,7 @@ export function Downloads() {
     () => records.filter((record) => selected.has(record.jobId)),
     [records, selected],
   );
+  const groupedRecords = useMemo(() => groupDownloads(records), [records]);
 
   if (!tauri) {
     return (
@@ -150,72 +207,130 @@ export function Downloads() {
           subtitle="Choose Download from a movie or episode to save it to this desktop."
         />
       ) : (
-        <div className="dl-table glass-rest glass-lit downloads-table">
-          <div className="downloads-row downloads-row-head">
-            <span className="dl-col-check" />
-            <span>Title</span>
-            <span>Mode</span>
-            <span>Progress</span>
-            <span>Status</span>
-            <span className="dl-col-actions" />
-          </div>
-          {records.map((record) => {
-            const progress = percent(record) ?? 0;
-            const canPause = ["resolving", "downloading", "optimizing"].includes(record.status);
-            const canResume = record.status === "paused";
-            const canForceStop = !["completed", "canceled"].includes(record.status);
-            return (
-              <div key={record.jobId} className="downloads-row">
-                <span className="dl-col-check">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(record.jobId)}
-                    onChange={() => toggleSelected(record.jobId)}
-                    aria-label={`Select ${record.title}`}
-                  />
-                </span>
-                <span className="downloads-title" title={record.title}>
-                  <strong>{record.title}</strong>
-                  {record.error != null && <small className="dl-error">{record.error}</small>}
-                </span>
-                <span className="downloads-mode">
-                  {record.mode === "optimized"
-                    ? `Optimized · ${record.optimizeProfile ?? "remux"}`
-                    : "Full size"}
-                </span>
-                <span className="downloads-progress">
-                  <span className="downloads-progress-track" aria-hidden>
-                    <span style={{ width: `${progress}%` }} />
-                  </span>
-                  <small>{progressLabel(record, speeds[record.jobId] ?? manager.speedFor(record.jobId))}</small>
-                </span>
-                <span>
-                  <span className={`dl-status-pill downloads-status-${record.status}`}>
-                    {statusLabel(record.status)}
-                  </span>
-                </span>
-                <span className="downloads-actions">
-                  {canPause && (
-                    <button type="button" className="dl-icon-btn" onClick={() => void manager.pause(record.jobId)} aria-label={`Pause ${record.title}`} title="Pause">
-                      Ⅱ
-                    </button>
-                  )}
-                  {canResume && (
-                    <button type="button" className="dl-icon-btn" onClick={() => void manager.resume(record.jobId)} aria-label={`Resume ${record.title}`} title="Resume">
-                      <Icon name="play" size={14} />
-                    </button>
-                  )}
-                  {canForceStop && (
-                    <button type="button" className="dl-icon-btn downloads-cancel" onClick={() => void manager.forceStop(record.jobId)} aria-label={`Force stop ${record.title}`} title="Force stop">
-                      <Icon name="xmark" size={15} />
-                    </button>
-                  )}
-                </span>
-              </div>
-            );
-          })}
+        <div className="downloads-groups">
+          {groupedRecords.movies.length > 0 && (
+            <DownloadSection
+              heading="Movies"
+              records={groupedRecords.movies}
+              selected={selected}
+              toggleSelected={toggleSelected}
+              speeds={speeds}
+              manager={manager}
+            />
+          )}
+          {groupedRecords.series.length > 0 && (
+            <section className="downloads-series-section" aria-labelledby="downloads-series-heading">
+              <h2 id="downloads-series-heading" className="downloads-section-heading">Series</h2>
+              {groupedRecords.series.map((series) => (
+                <section key={series.mediaId} className="downloads-show-section" aria-label={series.title}>
+                  <h3 className="downloads-show-heading">{series.title}</h3>
+                  {series.seasons.map(({ season, records: seasonRecords }) => (
+                    <DownloadSection
+                      key={season ?? "unassigned"}
+                      heading={season == null ? "Episodes" : `Season ${season}`}
+                      nested
+                      records={seasonRecords}
+                      selected={selected}
+                      toggleSelected={toggleSelected}
+                      speeds={speeds}
+                      manager={manager}
+                    />
+                  ))}
+                </section>
+              ))}
+            </section>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function DownloadSection({
+  heading,
+  nested = false,
+  records,
+  selected,
+  toggleSelected,
+  speeds,
+  manager,
+}: {
+  heading: string;
+  nested?: boolean;
+  records: DownloadRecord[];
+  selected: Set<string>;
+  toggleSelected: (jobId: string) => void;
+  speeds: Record<string, number>;
+  manager: ReturnType<typeof startDownloadsRuntime>;
+}) {
+  return (
+    <section className={`downloads-section${nested ? " is-nested" : ""}`}>
+      {nested ? <h4 className="downloads-season-heading">{heading}</h4> : <h2 className="downloads-section-heading">{heading}</h2>}
+      <div className="dl-table glass-rest glass-lit downloads-table">
+        <div className="downloads-row downloads-row-head">
+          <span className="dl-col-check" />
+          <span>Title</span>
+          <span>Mode</span>
+          <span>Progress</span>
+          <span>Status</span>
+          <span className="dl-col-actions" />
+        </div>
+        {records.map((record) => {
+          const progress = percent(record) ?? 0;
+          const canPause = ["resolving", "downloading", "optimizing"].includes(record.status);
+          const canResume = record.status === "paused";
+          const canForceStop = !["completed", "canceled"].includes(record.status);
+          return (
+            <div key={record.jobId} className="downloads-row">
+              <span className="dl-col-check">
+                <input
+                  type="checkbox"
+                  checked={selected.has(record.jobId)}
+                  onChange={() => toggleSelected(record.jobId)}
+                  aria-label={`Select ${record.title}`}
+                />
+              </span>
+              <span className="downloads-title" title={record.title}>
+                <strong>{record.title}</strong>
+                {record.error != null && <small className="dl-error">{record.error}</small>}
+              </span>
+              <span className="downloads-mode">
+                {record.mode === "optimized"
+                  ? `Optimized · ${record.optimizeProfile ?? "remux"}`
+                  : "Full size"}
+              </span>
+              <span className="downloads-progress">
+                <span className="downloads-progress-track" aria-hidden>
+                  <span style={{ width: `${progress}%` }} />
+                </span>
+                <small>{progressLabel(record, speeds[record.jobId] ?? manager.speedFor(record.jobId))}</small>
+              </span>
+              <span>
+                <span className={`dl-status-pill downloads-status-${record.status}`}>
+                  {statusLabel(record.status)}
+                </span>
+              </span>
+              <span className="downloads-actions">
+                {canPause && (
+                  <button type="button" className="dl-icon-btn" onClick={() => void manager.pause(record.jobId)} aria-label={`Pause ${record.title}`} title="Pause">
+                    Ⅱ
+                  </button>
+                )}
+                {canResume && (
+                  <button type="button" className="dl-icon-btn" onClick={() => void manager.resume(record.jobId)} aria-label={`Resume ${record.title}`} title="Resume">
+                    <Icon name="play" size={14} />
+                  </button>
+                )}
+                {canForceStop && (
+                  <button type="button" className="dl-icon-btn downloads-cancel" onClick={() => void manager.forceStop(record.jobId)} aria-label={`Force stop ${record.title}`} title="Force stop">
+                    <Icon name="xmark" size={15} />
+                  </button>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }

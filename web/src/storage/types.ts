@@ -23,6 +23,7 @@ import type {
   MediaCacheRecord,
   TasteEventRecord,
   WatchHistoryRecord,
+  WatchlistFolderRecord,
   WatchlistRecord,
 } from "./models";
 import type { MediaItem, MediaPreview } from "../models/media";
@@ -50,13 +51,21 @@ export interface Store {
   // MARK: Watchlist - keyed by mediaId, no duplicates.
 
   /** Add to the watchlist (no-op if already present, refreshes addedAt). */
-  addToWatchlist(preview: MediaPreview): Promise<void>;
+  addToWatchlist(preview: MediaPreview, folderId?: string | null): Promise<void>;
   /** Remove from the watchlist by media id. */
   removeFromWatchlist(mediaId: string): Promise<void>;
   /** The watchlist, most-recently-added first. */
   listWatchlist(): Promise<WatchlistRecord[]>;
   /** Whether a media id is on the watchlist. */
   isInWatchlist(mediaId: string): Promise<boolean>;
+  /** Create, list, rename, and delete named watchlist folders. Deleting a
+   * folder moves its titles to uncategorized rather than deleting them. */
+  createWatchlistFolder(name: string): Promise<WatchlistFolderRecord>;
+  listWatchlistFolders(): Promise<WatchlistFolderRecord[]>;
+  renameWatchlistFolder(id: string, name: string): Promise<void>;
+  deleteWatchlistFolder(id: string): Promise<void>;
+  /** Assign one saved title to a folder, or null for uncategorized. */
+  assignWatchlistFolder(mediaId: string, folderId: string | null): Promise<void>;
 
   // MARK: Watch history / resume - one row per (mediaId, episodeId).
 

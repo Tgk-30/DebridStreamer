@@ -1,0 +1,119 @@
+/* Watchlist-specific organization controls and poster spacing. Shared grids and
+ * MediaCards remain unchanged for Library, Browse, and History. */
+
+.watchlist-folder-bar,
+.watchlist-tools,
+.watchlist-delete-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.watchlist-folder-bar {
+  margin-top: calc(var(--sp-sm) * -1);
+}
+
+.watchlist-tools {
+  justify-content: space-between;
+}
+
+.watchlist-search {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: var(--sp-sm);
+  max-width: 390px;
+  min-height: 36px;
+  padding: 0 var(--sp-sm);
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: var(--glass-tint-control);
+}
+
+.watchlist-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  font: inherit;
+  background: transparent;
+}
+
+.watchlist-delete-confirm {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.watchlist-organization-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.watchlist-filter-empty {
+  margin: var(--sp-lg) 0;
+}
+
+/* The base card is 168px plus 16px horizontal padding, so a 174px grid track
+ * was narrower than the card. This local override supplies a real gutter and
+ * keeps each year/rating row inside its own grid cell. */
+.watchlist-grid-wrap {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  column-gap: var(--sp-xl);
+  row-gap: var(--sp-xl);
+  padding: var(--sp-sm);
+}
+
+.watchlist-grid-wrap .media-grid-item,
+.watchlist-grid-wrap .watchlist-removable {
+  width: calc(var(--poster-card-width, 168px) + var(--sp-sm) * 2);
+  min-width: 0;
+}
+
+.watchlist-removable {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.watchlist-removable .media-card {
+  width: 100%;
+}
+
+.watchlist-card-folder {
+  display: block;
+  width: calc(var(--poster-card-width, 168px) + var(--sp-sm) * 2);
+  padding: 0 var(--sp-sm);
+}
+
+.watchlist-card-folder select {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  background: var(--glass-tint-control);
+}
+
+@media (max-width: 699px) {
+  .watchlist-grid-wrap {
+    grid-template-columns: repeat(auto-fill, minmax(192px, 1fr));
+    column-gap: var(--sp-md);
+    row-gap: var(--sp-lg);
+    padding: 0;
+  }
+
+  .watchlist-tools {
+    align-items: stretch;
+  }
+
+  .watchlist-search {
+    max-width: none;
+  }
+}

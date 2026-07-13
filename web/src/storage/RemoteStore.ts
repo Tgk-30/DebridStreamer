@@ -12,6 +12,7 @@ import type {
   MediaCacheRecord,
   TasteEventRecord,
   WatchHistoryRecord,
+  WatchlistFolderRecord,
   WatchlistRecord,
 } from "./models";
 import { hasResumePoint } from "./models";
@@ -296,7 +297,7 @@ export class RemoteStore implements Store, SecretStore {
     this.pendingSecrets.delete(key);
   }
 
-  async addToWatchlist(preview: MediaPreview): Promise<void> {
+  async addToWatchlist(preview: MediaPreview, _folderId?: string | null): Promise<void> {
     await this.api.put(`/api/library/watchlist/${encodeURIComponent(preview.id)}`, {
       preview,
     });
@@ -320,6 +321,29 @@ export class RemoteStore implements Store, SecretStore {
   async isInWatchlist(mediaId: string): Promise<boolean> {
     const rows = await this.listWatchlist();
     return rows.some((row) => row.mediaId === mediaId);
+  }
+
+  // These folders are a local Dexie feature for now. Keeping the methods on the
+  // shared Store contract lets the Watchlist UI fail honestly in Server Mode
+  // instead of silently pretending an assignment persisted remotely.
+  async createWatchlistFolder(_name: string): Promise<WatchlistFolderRecord> {
+    throw unsupportedRemoteWrite("createWatchlistFolder");
+  }
+
+  async listWatchlistFolders(): Promise<WatchlistFolderRecord[]> {
+    return [];
+  }
+
+  async renameWatchlistFolder(_id: string, _name: string): Promise<void> {
+    throw unsupportedRemoteWrite("renameWatchlistFolder");
+  }
+
+  async deleteWatchlistFolder(_id: string): Promise<void> {
+    throw unsupportedRemoteWrite("deleteWatchlistFolder");
+  }
+
+  async assignWatchlistFolder(_mediaId: string, _folderId: string | null): Promise<void> {
+    throw unsupportedRemoteWrite("assignWatchlistFolder");
   }
 
   async recordHistory(entry: WatchHistoryUpsert): Promise<WatchHistoryRecord> {

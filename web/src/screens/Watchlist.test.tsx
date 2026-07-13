@@ -24,6 +24,12 @@ const openDetail = vi.fn();
 const openBrowse = vi.fn();
 const navigate = vi.fn();
 const removeFromWatchlist = vi.fn();
+const listWatchlistFolders = vi.fn();
+const listWatchlistRows = vi.fn();
+const createWatchlistFolder = vi.fn();
+const renameWatchlistFolder = vi.fn();
+const deleteWatchlistFolder = vi.fn();
+const assignWatchlistFolder = vi.fn();
 let mockWatchlist: MediaPreview[] = [];
 let mockCachedResolutions: Record<string, CachedResolutionRecord> = {};
 let mockContinueWatching: WatchHistoryRecord[] = [];
@@ -37,6 +43,18 @@ vi.mock("../store/AppStore", () => ({
     continueWatching: mockContinueWatching,
     openBrowse,
     navigate,
+  }),
+}));
+
+vi.mock("../storage", () => ({
+  getStore: () => ({
+    listWatchlistFolders: () => listWatchlistFolders(),
+    listWatchlist: () => listWatchlistRows(),
+    createWatchlistFolder: (name: string) => createWatchlistFolder(name),
+    renameWatchlistFolder: (id: string, name: string) => renameWatchlistFolder(id, name),
+    deleteWatchlistFolder: (id: string) => deleteWatchlistFolder(id),
+    assignWatchlistFolder: (id: string, folderId: string | null) =>
+      assignWatchlistFolder(id, folderId),
   }),
 }));
 
@@ -86,6 +104,12 @@ beforeEach(() => {
   mockCachedResolutions = {};
   mockContinueWatching = [];
   mockWatchedIds = new Set<string>();
+  listWatchlistFolders.mockResolvedValue([]);
+  listWatchlistRows.mockResolvedValue([]);
+  createWatchlistFolder.mockResolvedValue({ id: "folder-1", name: "New Folder" });
+  renameWatchlistFolder.mockResolvedValue(undefined);
+  deleteWatchlistFolder.mockResolvedValue(undefined);
+  assignWatchlistFolder.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -176,5 +200,14 @@ describe("Watchlist - populated", () => {
     render(<Watchlist />);
     expect(screen.getByText("card:Tenet")).toHaveAttribute("data-progress", "0.5");
     expect(screen.getByText("card:Dune")).toHaveAttribute("data-progress", "");
+  });
+
+  it("quickly filters titles in the current watchlist view", async () => {
+    mockWatchlist = [preview("m1", "Tenet"), preview("m2", "Dune")];
+    render(<Watchlist />);
+
+    await userEvent.type(screen.getByRole("searchbox", { name: /search watchlist/i }), "dune");
+    expect(screen.getByText("card:Dune")).toBeInTheDocument();
+    expect(screen.queryByText("card:Tenet")).not.toBeInTheDocument();
   });
 });

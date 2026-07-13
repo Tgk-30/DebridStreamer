@@ -115,7 +115,23 @@ export interface WatchlistRecord {
   mediaId: string;
   /** ISO-8601 timestamp added (most-recent-first ordering). */
   addedAt: string;
+  /** Optional named watchlist folder. Older rows and uncategorized titles use
+   * null; keeping this optional makes the additive IndexedDB migration safe for
+   * rows that predate folders. */
+  folderId?: string | null;
   preview: MediaPreview;
+}
+
+/** A named, flat folder for organizing saved watchlist titles. This is separate
+ * from Library folders on purpose: a title can only appear once in the
+ * watchlist, then optionally belongs to one of these folders. */
+export interface WatchlistFolderRecord {
+  id: string;
+  name: string;
+  /** ISO-8601 timestamp. */
+  createdAt: string;
+  /** ISO-8601 timestamp. */
+  updatedAt: string;
 }
 
 // MARK: - User library (Models/WatchHistory.swift → UserLibraryEntry)
