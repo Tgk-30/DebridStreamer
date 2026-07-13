@@ -12,3 +12,7 @@
 2026-07-13 | v0.6.9-web crash-fix release (superseded) | fable-integrate | superseded | crash fix + player UX; folded into v0.7.0 which shipped first; draft removed
 2026-07-13 | v0.7.0-web ship | fable-integrate | success | one retag: heavy 1000-row taste-prune test ran 15ms over the 5s default on intel CI; bumped to 20s; 4/4 green, published latest
 2026-07-13 | v0.7.2 player-UI batch (icons, fullscreen, merged panel, pause screen) | terra[xhigh] + opus review | success | fullscreen root cause = Tauri ACL gap (allow-set-fullscreen); review caught pause-overlay click-blocking, fixed; v0.7.1 name held by parallel dead-code session so shipped as v0.7.2; 2820 tests
+2026-07-13 | v0.7.4 Detail batch (ratings top, rate-exit, download options+estimate, stream pagination, cached-default) | terra[xhigh] + opus review (2nd try after degenerate) | success | cached-only migration verified persisted-wins; superseded into v0.7.5
+2026-07-13 | downloads broken since v0.7.0 (ac6d51a: progress cadence + un-serialized persistence) | gpt-5.6-sol[max] + opus review | success | root cause = my own v0.7.0 perf pass; progress restored, per-job serialization, real force-stop from any state
+2026-07-13 | v0.7.5-web ship: downloads repair + force-stop (+v0.7.4) | fable-integrate | success | 4/4 green; 2838 tests; published latest, v0.7.4 draft retired
+2026-07-13 | v0.8 architecture planning (4 features + sequencing) | 5-agent opus workflow | success | found watched-tick root cause + simple/advanced already exists + multiuser=per-profile DBs; 4-wave plan saved to memory
