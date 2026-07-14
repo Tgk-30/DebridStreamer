@@ -134,6 +134,11 @@ const patchProfileSchema = z.object({
   disabled: z.boolean().optional(),
 });
 
+// Change an account's role (promote/demote). Kept as a dedicated action rather
+// than folding into patchProfileSchema so the admin/owner guards and audit entry
+// stay explicit and hard to bypass.
+const setRoleSchema = z.object({ role: roleSchema });
+
 // Household sub-profile ("who's watching") schemas. Distinct from the account
 // schemas above: a sub-profile is a viewer within ONE account, not a separate
 // login - so no username, and the password is OPTIONAL (kid/guest profiles).
@@ -2326,6 +2331,56 @@ function registerRoutes(
     }
     audit(db, auth, "profile.update", "profile", id);
     return { ok: true };
+  });
+
+  // Promote or demote an account's role. This is the one management action that
+  // was previously fixed at create/invite time. Guards: admin-only; only the
+  // owner may grant or revoke the owner/admin tier (mirrors profile creation);
+  // you cannot change your own role; and the household's last owner cannot be
+  // demoted (which would strand everyone with no one able to manage admins).
+  app.post("/api/profiles/:id/role", async (request) => {
+    const auth = requireAuth(db, request);
+    requireAdmin(auth);
+    requireCsrf(request);
+    const id = (request.params as { id: string }).id;
+    const body = parseBody(setRoleSchema, request.body);
+
+    const existing = db.sqlite
+      .prepare(
+        `SELECT profiles.id, profiles.user_id, users.role
+         FROM profiles JOIN users ON users.id = profiles.user_id
+         WHERE profiles.id = ?`,
+      )
+      .get(id) as { id: string; user_id: string; role: UserRole } | undefined;
+    if (existing == null) throw httpError(404, "Profile not found.");
+
+    // Only the owner may touch the privileged tier, on either side of the change
+    // (you cannot demote an admin, nor mint one, unless you are the owner).
+    const touchesAdminTier = (r: UserRole) => r === "owner" || r === "admin";
+    if (auth.role !== "owner" && (touchesAdminTier(existing.role) || touchesAdminTier(body.role))) {
+      throw httpError(403, "Only the owner can change owner or admin roles.");
+    }
+    // Never let an account change its own role (self-lockout / self-promotion).
+    // Compared by user id: one account can own several household profiles.
+    if (existing.user_id === auth.userId) {
+      throw httpError(400, "You cannot change your own role.");
+    }
+    // Keep at least one active owner, always.
+    if (existing.role === "owner" && body.role !== "owner") {
+      const owners = countScalar(
+        db,
+        "SELECT COUNT(*) AS count FROM users WHERE role = 'owner' AND disabled_at IS NULL",
+      );
+      if (owners <= 1) throw httpError(400, "The last owner cannot be demoted.");
+    }
+
+    if (existing.role === body.role) return { ok: true, role: body.role };
+    db.sqlite.prepare("UPDATE users SET role = ? WHERE id = ?").run(body.role, existing.user_id);
+    audit(db, auth, "profile.role.update", "profile", id, {
+      from: existing.role,
+      to: body.role,
+    });
+    return { ok: true, role: body.role };
   });
 
   app.delete("/api/profiles/:id", async (request) => {

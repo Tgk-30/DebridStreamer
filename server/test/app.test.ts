@@ -2089,6 +2089,119 @@ describe("DebridStreamer server", () => {
     expect(ownerCred.statusCode).toBe(200);
   });
 
+  // ---- Account role management (promote / demote) --------------------------
+
+  it("owner promotes and demotes account roles; the change takes effect on the target", async () => {
+    const owner = await setupOwner(app);
+    const bobId = await createProfile(owner, "bob", "bob-password", "member");
+
+    const promote = await request(owner, {
+      method: "POST",
+      url: `/api/profiles/${bobId}/role`,
+      csrf: true,
+      payload: { role: "admin" },
+    });
+    expect(promote.statusCode).toBe(200);
+    const bobAsAdmin = await login(app, "bob", "bob-password");
+    expect(
+      json<{ session: { role: string } }>(
+        await request(bobAsAdmin, { method: "GET", url: "/api/auth/session" }),
+      ).session.role,
+    ).toBe("admin");
+
+    const demote = await request(owner, {
+      method: "POST",
+      url: `/api/profiles/${bobId}/role`,
+      csrf: true,
+      payload: { role: "member" },
+    });
+    expect(demote.statusCode).toBe(200);
+    const bobAsMember = await login(app, "bob", "bob-password");
+    expect(
+      json<{ session: { role: string } }>(
+        await request(bobAsMember, { method: "GET", url: "/api/auth/session" }),
+      ).session.role,
+    ).toBe("member");
+  });
+
+  it("a non-owner admin cannot grant the admin tier but can move member <-> restricted", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "alice", "alice-password", "admin");
+    const memberId = await createProfile(owner, "bob", "bob-password", "member");
+    const admin = await login(app, "alice", "alice-password");
+
+    const grant = await request(admin, {
+      method: "POST",
+      url: `/api/profiles/${memberId}/role`,
+      csrf: true,
+      payload: { role: "admin" },
+    });
+    expect(grant.statusCode).toBe(403);
+
+    const restrict = await request(admin, {
+      method: "POST",
+      url: `/api/profiles/${memberId}/role`,
+      csrf: true,
+      payload: { role: "restricted" },
+    });
+    expect(restrict.statusCode).toBe(200);
+  });
+
+  it("no account can change its own role", async () => {
+    const owner = await setupOwner(app);
+    const list = await request(owner, { method: "GET", url: "/api/profiles" });
+    const ownerAccount = json<{ profiles: Array<{ id: string; username: string }> }>(list).profiles.find(
+      (p) => p.username === "owner",
+    );
+    expect(ownerAccount).toBeTruthy();
+    const selfChange = await request(owner, {
+      method: "POST",
+      url: `/api/profiles/${ownerAccount?.id ?? "missing"}/role`,
+      csrf: true,
+      payload: { role: "member" },
+    });
+    expect(selfChange.statusCode).toBe(400);
+  });
+
+  it("the role route is admin-only, CSRF-guarded, and 404s an unknown profile", async () => {
+    const owner = await setupOwner(app);
+    const bobId = await createProfile(owner, "bob", "bob-password", "member");
+    const member = await login(app, "bob", "bob-password");
+
+    // A non-admin member is rejected before anything else (requireAdmin).
+    expect(
+      (
+        await request(member, {
+          method: "POST",
+          url: `/api/profiles/${bobId}/role`,
+          csrf: true,
+          payload: { role: "restricted" },
+        })
+      ).statusCode,
+    ).toBe(403);
+    // Missing CSRF token is rejected for the owner.
+    expect(
+      (
+        await request(owner, {
+          method: "POST",
+          url: `/api/profiles/${bobId}/role`,
+          payload: { role: "admin" },
+        })
+      ).statusCode,
+    ).toBe(403);
+    // Unknown profile id.
+    expect(
+      (
+        await request(owner, {
+          method: "POST",
+          url: "/api/profiles/does-not-exist/role",
+          csrf: true,
+          payload: { role: "member" },
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
+
   // ---- Household sub-profiles ("who's watching") ---------------------------
 
   interface AccountProfile {
