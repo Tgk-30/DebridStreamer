@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon";
 import { getDownloadsBridge, type DownloadProgress } from "../lib/downloadsBridge";
 import { isTauri } from "../lib/tauri";
 import { getStore } from "../storage";
+import { MediaItem as MediaItemNS } from "../models/media";
 import type { DownloadRecord } from "../storage/models";
 import { startDownloadsRuntime } from "../services/downloads";
 import { useAppStore } from "../store/AppStore";
@@ -46,6 +47,22 @@ interface DownloadSeriesGroup {
   mediaId: string;
   title: string;
   seasons: Array<{ season: number | null; records: DownloadRecord[] }>;
+}
+
+/** Poster + backdrop for a queued title, resolved from the media cache. Both are
+ * nullable: artwork is decorative, and a title can be queued before (or without)
+ * its media ever being cached. */
+export interface DownloadArtwork {
+  poster: string | null;
+  backdrop: string | null;
+}
+export type DownloadArtworkMap = Record<string, DownloadArtwork>;
+
+/** The distinct media ids in a queue, in a stable order. The artwork effect keys
+ * off this string so a progress tick - which replaces every record roughly once a
+ * second - doesn't re-read the media cache. */
+export function artworkKeyFor(records: DownloadRecord[]): string {
+  return [...new Set(records.map((record) => record.mediaId))].sort().join(",");
 }
 
 /** Group the flat, durable queue for display only. The queue engine continues
@@ -98,6 +115,76 @@ export function groupDownloads(records: DownloadRecord[]): {
   return { movies, series };
 }
 
+/** A queued title's poster with its download progress drawn across the bottom of
+ * the artwork. Falls back to a plain tile when the media cache has no poster.
+ * Exported for test: the Downloads screen itself is behind a Tauri-only gate. */
+export function DownloadPoster({
+  art,
+  title,
+  progress,
+  active,
+}: {
+  art?: DownloadArtwork;
+  title: string;
+  progress: number;
+  active: boolean;
+}) {
+  const poster = art?.poster ?? null;
+  return (
+    <span className="downloads-poster">
+      {poster != null ? (
+        <img src={poster} alt="" loading="lazy" draggable={false} />
+      ) : (
+        <span className="downloads-poster-ph" aria-hidden>
+          <Icon name="library" size={14} />
+        </span>
+      )}
+      <span
+        className={`downloads-poster-bar${active ? " is-active" : ""}`}
+        role="progressbar"
+        aria-valuenow={progress}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`${title} download progress`}
+      >
+        <span style={{ width: `${progress}%` }} />
+      </span>
+    </span>
+  );
+}
+
+/** Show header for a series group: the backdrop as a banner, with the poster and
+ * title over it. Degrades to a plain heading when no artwork is cached.
+ * Exported for test: the Downloads screen itself is behind a Tauri-only gate. */
+export function DownloadShowBanner({ title, art }: { title: string; art?: DownloadArtwork }) {
+  const backdrop = art?.backdrop ?? null;
+  const poster = art?.poster ?? null;
+  return (
+    <div className={`downloads-show-banner${backdrop != null ? " has-backdrop" : ""}`}>
+      {backdrop != null && (
+        <img
+          className="downloads-show-backdrop"
+          src={backdrop}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          aria-hidden
+        />
+      )}
+      <div className="downloads-show-banner-inner">
+        {poster != null ? (
+          <img className="downloads-show-poster" src={poster} alt="" loading="lazy" draggable={false} />
+        ) : (
+          <span className="downloads-show-poster is-placeholder" aria-hidden>
+            <Icon name="library" size={16} />
+          </span>
+        )}
+        <h3 className="downloads-show-heading">{title}</h3>
+      </div>
+    </div>
+  );
+}
+
 export function Downloads() {
   const { services, navigate } = useAppStore();
   const tauri = isTauri();
@@ -130,6 +217,38 @@ export function Downloads() {
     [records, selected],
   );
   const groupedRecords = useMemo(() => groupDownloads(records), [records]);
+
+  // Artwork for the queue, read from the media cache. Keyed on the distinct
+  // media ids (not `records`) so streaming progress updates don't refetch.
+  const [artwork, setArtwork] = useState<DownloadArtworkMap>({});
+  const artworkKey = useMemo(() => artworkKeyFor(records), [records]);
+  useEffect(() => {
+    if (!tauri || artworkKey === "") return;
+    let cancelled = false;
+    void (async () => {
+      const store = getStore();
+      const next: DownloadArtworkMap = {};
+      await Promise.all(
+        artworkKey.split(",").map(async (mediaId) => {
+          try {
+            const cached = await store.getMedia(mediaId);
+            if (cached?.item != null) {
+              next[mediaId] = {
+                poster: MediaItemNS.posterThumbnailURL(cached.item),
+                backdrop: MediaItemNS.backdropURL(cached.item),
+              };
+            }
+          } catch {
+            // Decorative only - a cache miss just leaves the fallback tile.
+          }
+        }),
+      );
+      if (!cancelled) setArtwork(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [artworkKey, tauri]);
 
   if (!tauri) {
     return (
@@ -216,6 +335,7 @@ export function Downloads() {
               toggleSelected={toggleSelected}
               speeds={speeds}
               manager={manager}
+              artwork={artwork}
             />
           )}
           {groupedRecords.series.length > 0 && (
@@ -223,7 +343,7 @@ export function Downloads() {
               <h2 id="downloads-series-heading" className="downloads-section-heading">Series</h2>
               {groupedRecords.series.map((series) => (
                 <section key={series.mediaId} className="downloads-show-section" aria-label={series.title}>
-                  <h3 className="downloads-show-heading">{series.title}</h3>
+                  <DownloadShowBanner title={series.title} art={artwork[series.mediaId]} />
                   {series.seasons.map(({ season, records: seasonRecords }) => (
                     <DownloadSection
                       key={season ?? "unassigned"}
@@ -234,6 +354,7 @@ export function Downloads() {
                       toggleSelected={toggleSelected}
                       speeds={speeds}
                       manager={manager}
+                      artwork={artwork}
                     />
                   ))}
                 </section>
@@ -254,6 +375,7 @@ function DownloadSection({
   toggleSelected,
   speeds,
   manager,
+  artwork,
 }: {
   heading: string;
   nested?: boolean;
@@ -262,6 +384,7 @@ function DownloadSection({
   toggleSelected: (jobId: string) => void;
   speeds: Record<string, number>;
   manager: ReturnType<typeof startDownloadsRuntime>;
+  artwork: DownloadArtworkMap;
 }) {
   return (
     <section className={`downloads-section${nested ? " is-nested" : ""}`}>
@@ -269,6 +392,7 @@ function DownloadSection({
       <div className="dl-table glass-rest glass-lit downloads-table">
         <div className="downloads-row downloads-row-head">
           <span className="dl-col-check" />
+          <span className="dl-col-art" />
           <span>Title</span>
           <span>Mode</span>
           <span>Progress</span>
@@ -290,6 +414,12 @@ function DownloadSection({
                   aria-label={`Select ${record.title}`}
                 />
               </span>
+              <DownloadPoster
+                art={artwork[record.mediaId]}
+                title={record.title}
+                progress={progress}
+                active={!["completed", "canceled", "failed"].includes(record.status)}
+              />
               <span className="downloads-title" title={record.title}>
                 <strong>{record.title}</strong>
                 {record.error != null && <small className="dl-error">{record.error}</small>}
@@ -299,10 +429,9 @@ function DownloadSection({
                   ? `Optimized · ${record.optimizeProfile ?? "remux"}`
                   : "Full size"}
               </span>
+              {/* The bar itself now lives on the poster; this column keeps the
+                  numbers, which the bar alone can't convey. */}
               <span className="downloads-progress">
-                <span className="downloads-progress-track" aria-hidden>
-                  <span style={{ width: `${progress}%` }} />
-                </span>
                 <small>{progressLabel(record, speeds[record.jobId] ?? manager.speedFor(record.jobId))}</small>
               </span>
               <span>

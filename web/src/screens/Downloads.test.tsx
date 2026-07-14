@@ -9,7 +9,13 @@ vi.mock("../store/AppStore", () => ({
 }));
 vi.mock("../lib/tauri", () => ({ isTauri: () => false }));
 
-import { Downloads, groupDownloads } from "./Downloads";
+import {
+  Downloads,
+  groupDownloads,
+  artworkKeyFor,
+  DownloadPoster,
+  DownloadShowBanner,
+} from "./Downloads";
 
 function record(overrides: Partial<DownloadRecord>): DownloadRecord {
   return {
@@ -81,5 +87,96 @@ describe("groupDownloads", () => {
     expect(grouped.series[0]?.seasons[0]?.records.map((item) => item.jobId)).toEqual([
       "show-s1e3",
     ]);
+  });
+});
+
+describe("artworkKeyFor", () => {
+  it("reduces a queue to its distinct media ids, sorted", () => {
+    expect(
+      artworkKeyFor([
+        record({ jobId: "1", mediaId: "show-b" }),
+        record({ jobId: "2", mediaId: "show-a" }),
+        record({ jobId: "3", mediaId: "show-b" }),
+      ]),
+    ).toBe("show-a,show-b");
+  });
+
+  it("is unchanged when only progress moves, so ticks don't refetch artwork", () => {
+    const before = artworkKeyFor([record({ jobId: "1", mediaId: "m", bytesDone: 0 })]);
+    const after = artworkKeyFor([
+      record({ jobId: "1", mediaId: "m", bytesDone: 5_000_000, status: "downloading" }),
+    ]);
+    expect(after).toBe(before);
+  });
+
+  it("is empty for an empty queue", () => {
+    expect(artworkKeyFor([])).toBe("");
+  });
+});
+
+describe("DownloadPoster", () => {
+  const art = { poster: "https://img.test/p.jpg", backdrop: "https://img.test/b.jpg" };
+
+  it("draws the progress bar over the poster artwork", () => {
+    const { container } = render(
+      <DownloadPoster art={art} title="Dune" progress={42} active />,
+    );
+    const image = container.querySelector(".downloads-poster img");
+    expect(image).toHaveAttribute("src", art.poster);
+
+    const bar = screen.getByRole("progressbar", { name: "Dune download progress" });
+    // The bar is inside the poster, not a separate column.
+    expect(container.querySelector(".downloads-poster")).toContainElement(bar);
+    expect(bar).toHaveAttribute("aria-valuenow", "42");
+    expect((bar.firstElementChild as HTMLElement).style.width).toBe("42%");
+  });
+
+  it("falls back to a placeholder tile when no poster is cached", () => {
+    const { container } = render(<DownloadPoster title="Dune" progress={0} active />);
+    expect(container.querySelector(".downloads-poster img")).toBeNull();
+    expect(container.querySelector(".downloads-poster-ph")).not.toBeNull();
+    // The bar still renders so every row reads consistently.
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+  });
+
+  it("only accents the bar while the job is in flight", () => {
+    const { container: live } = render(
+      <DownloadPoster art={art} title="A" progress={10} active />,
+    );
+    expect(live.querySelector(".downloads-poster-bar")).toHaveClass("is-active");
+
+    const { container: done } = render(
+      <DownloadPoster art={art} title="B" progress={100} active={false} />,
+    );
+    expect(done.querySelector(".downloads-poster-bar")).not.toHaveClass("is-active");
+  });
+});
+
+describe("DownloadShowBanner", () => {
+  it("uses the backdrop as a banner behind the poster and title", () => {
+    const { container } = render(
+      <DownloadShowBanner
+        title="Severance"
+        art={{ poster: "https://img.test/p.jpg", backdrop: "https://img.test/b.jpg" }}
+      />,
+    );
+    expect(container.querySelector(".downloads-show-banner")).toHaveClass("has-backdrop");
+    expect(container.querySelector(".downloads-show-backdrop")).toHaveAttribute(
+      "src",
+      "https://img.test/b.jpg",
+    );
+    expect(container.querySelector("img.downloads-show-poster")).toHaveAttribute(
+      "src",
+      "https://img.test/p.jpg",
+    );
+    expect(screen.getByRole("heading", { name: "Severance" })).toBeInTheDocument();
+  });
+
+  it("degrades to a plain heading when the title has no cached artwork", () => {
+    const { container } = render(<DownloadShowBanner title="Severance" />);
+    expect(container.querySelector(".downloads-show-banner")).not.toHaveClass("has-backdrop");
+    expect(container.querySelector(".downloads-show-backdrop")).toBeNull();
+    expect(container.querySelector(".downloads-show-poster.is-placeholder")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Severance" })).toBeInTheDocument();
   });
 });

@@ -117,7 +117,10 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 116px;
+  /* Fits the date plus three poster-bearing events (30 + 84 + 14). Grid rows
+     size to their tallest cell, so this must clear a full cell or busy weeks
+     would render taller than quiet ones. */
+  min-height: 128px;
   padding: 6px 6px 8px;
   border-right: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
@@ -168,7 +171,7 @@
   width: 100%;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 4px;
   padding: 3px 6px;
   overflow: hidden;
@@ -187,6 +190,19 @@
   color: var(--text-tertiary);
   font-size: 10px;
   font-weight: 600;
+}
+/* Tiny poster on each month-grid event. A chip is 26px tall with this, so a
+   full day (date + three chips) needs the 128px .cal-day min-height above. */
+.cal-event-thumb {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 20px;
+  border-radius: 2px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+}
+.cal-event-thumb.is-placeholder {
+  background: rgba(255, 255, 255, 0.06);
 }
 .cal-event span,
 .cal-event small {
@@ -361,7 +377,7 @@
   height: 20px;
   margin: 0 auto var(--sp-md);
 }
-.cal-day--skel { min-height: 116px; }
+.cal-day--skel { min-height: 128px; }
 /* Top-left, matching the real .cal-day-number - the skeleton used to park it on
    the right, so the layout visibly jumped when the month resolved. */
 .cal-skel-day {
@@ -381,12 +397,13 @@
     gap: var(--sp-sm);
   }
   .cal-legend { gap: var(--sp-sm); }
-  .cal-day { min-height: 82px; padding: 5px 3px; }
+  .cal-day { min-height: 104px; padding: 5px 3px; }
   .cal-weekdays span { padding: 8px 3px; font-size: 10px; }
   .cal-day-number { margin-bottom: 3px; font-size: 11px; }
   .cal-event { padding: 2px 3px; }
   .cal-event span { font-size: 10px; }
   .cal-event small { display: none; }
+  .cal-event-thumb { width: 11px; height: 16px; }
   .cal-agenda-day {
     grid-template-columns: 1fr;
     gap: var(--sp-xs);
@@ -399,4 +416,6 @@
   .cal-day { min-height: 68px; }
   .cal-event { overflow: hidden; }
   .cal-event span { font-size: 9px; }
+  /* No room left for artwork once the cell is this short. */
+  .cal-event-thumb { display: none; }
 }

@@ -142,6 +142,28 @@ describe("Calendar cadence", () => {
     })).toHaveAttribute("src", "https://image.tmdb.org/t/p/w342/poster.jpg");
   });
 
+  it("shows a tiny poster on each month-grid event, falling back to a placeholder", () => {
+    const date = localDate(2);
+    calendarState = baseState({
+      entries: [
+        entry(preview("with-art", "Severance"), date),
+        entry(preview("no-art", "Andor", "series", null), date),
+      ],
+    });
+    render(<Calendar />);
+
+    // [0] is the month-grid chip; [1] is the agenda row for the same entry.
+    const chip = screen.getAllByTitle("Open Severance")[0]!;
+    const thumb = chip.querySelector("img.cal-event-thumb");
+    expect(thumb).toHaveAttribute("src", "https://image.tmdb.org/t/p/w342/poster.jpg");
+    // Decorative: the chip's own aria-label already announces the title.
+    expect(thumb).toHaveAttribute("alt", "");
+
+    const bare = screen.getAllByTitle("Open Andor")[0]!;
+    expect(bare.querySelector("img.cal-event-thumb")).toBeNull();
+    expect(bare.querySelector(".cal-event-thumb.is-placeholder")).not.toBeNull();
+  });
+
   it("marks today's day and labels the agenda group as Today", () => {
     const show = preview("show-today", "Andor", "series", null);
     calendarState = baseState({ entries: [entry(show, localDate())] });

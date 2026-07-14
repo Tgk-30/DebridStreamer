@@ -264,19 +264,33 @@ export function Calendar() {
                 >
                   <span className="cal-day-number">{day.day}</span>
                   <div className="cal-day-events">
-                    {day.entries.slice(0, 3).map((entry) => (
-                      <button
-                        key={entry.id}
-                        type="button"
-                        className={`cal-event cal-event--${entry.kind}`}
-                        onClick={() => openEntry(entry)}
-                        title={`Open ${entry.media.title}`}
-                        aria-label={`${entry.media.title}, ${entry.detail}`}
-                      >
-                        <span>{entry.media.title}</span>
-                        <small>{entry.kind === "episode" ? entry.detail.split(" · ")[0] : "Movie"}</small>
-                      </button>
-                    ))}
+                    {day.entries.slice(0, 3).map((entry) => {
+                      const thumb = MediaPreviewNS.posterURL(entry.media);
+                      return (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          className={`cal-event cal-event--${entry.kind}`}
+                          onClick={() => openEntry(entry)}
+                          title={`Open ${entry.media.title}`}
+                          aria-label={`${entry.media.title}, ${entry.detail}`}
+                        >
+                          {thumb != null ? (
+                            <img
+                              className="cal-event-thumb"
+                              src={thumb}
+                              alt=""
+                              loading="lazy"
+                              draggable={false}
+                            />
+                          ) : (
+                            <span className="cal-event-thumb is-placeholder" aria-hidden />
+                          )}
+                          <span>{entry.media.title}</span>
+                          <small>{entry.kind === "episode" ? entry.detail.split(" · ")[0] : "Movie"}</small>
+                        </button>
+                      );
+                    })}
                     {day.entries.length > 3 && (
                       <span className="cal-more">+{day.entries.length - 3} more</span>
                     )}
