@@ -1,14 +1,17 @@
+/* Paused state: a semi full-screen cinematic banner. The backdrop fills the
+   frame with a slow Ken Burns drift, a bottom-left scrim keeps the text
+   legible, and the content sits as a lower-left banner (not a boxed card). */
 .player-pause-screen {
   position: absolute;
   inset: 0;
   z-index: 6;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: flex-end;
   overflow: hidden;
   isolation: isolate;
   color: #fff;
   cursor: pointer;
-  animation: playerPauseIn 0.32s ease-out both;
+  animation: playerPauseIn 0.4s ease-out both;
 }
 
 @keyframes playerPauseIn {
@@ -27,78 +30,69 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.72;
-  filter: saturate(0.88) brightness(0.72) contrast(1.05);
-  transform: scale(1.025);
+  opacity: 0.92;
+  filter: saturate(0.96) brightness(0.82) contrast(1.03);
+  transform-origin: 62% 38%;
+  animation: playerPauseKenBurns 26s ease-out both;
+}
+
+/* Slow, subtle drift so a paused frame still feels alive. */
+@keyframes playerPauseKenBurns {
+  from { transform: scale(1.06); }
+  to { transform: scale(1.16) translate3d(-1.6%, -1.2%, 0); }
 }
 
 .player-pause-scrim {
   z-index: -1;
   background:
-    radial-gradient(ellipse 72% 92% at 76% 34%, rgba(18, 25, 47, 0.08) 0%, rgba(4, 5, 11, 0.36) 66%, rgba(3, 4, 9, 0.72) 100%),
-    linear-gradient(102deg, rgba(3, 4, 10, 0.96) 0%, rgba(4, 5, 11, 0.82) 36%, rgba(5, 7, 15, 0.38) 70%, rgba(3, 4, 9, 0.64) 100%),
-    linear-gradient(to top, rgba(2, 3, 8, 0.9) 0%, rgba(3, 4, 10, 0.22) 52%, rgba(3, 4, 10, 0.38) 100%);
+    linear-gradient(to top, rgba(2, 3, 8, 0.94) 0%, rgba(3, 4, 10, 0.5) 34%, rgba(3, 4, 10, 0.12) 62%, transparent 100%),
+    linear-gradient(100deg, rgba(2, 3, 9, 0.82) 0%, rgba(3, 4, 10, 0.34) 44%, transparent 74%);
 }
 
 .player-pause-content {
   position: relative;
-  width: min(620px, calc(100vw - 48px));
-  padding: 38px 42px 36px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 24px;
-  background:
-    linear-gradient(138deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.035) 42%, rgba(255, 255, 255, 0.07)),
-    rgba(9, 11, 20, 0.64);
-  box-shadow:
-    0 30px 88px rgba(0, 0, 0, 0.52),
-    0 3px 14px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.13);
-  text-align: center;
-  backdrop-filter: blur(24px) saturate(135%);
-  -webkit-backdrop-filter: blur(24px) saturate(135%);
-  animation: playerPauseCardIn 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
+  width: min(760px, calc(100vw - 96px));
+  margin: 0 0 clamp(40px, 7vh, 88px) clamp(40px, 6vw, 88px);
+  text-align: left;
+  animation: playerPauseContentIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both;
 }
 
-.player-pause-content::before {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 22%);
-  content: "";
-  pointer-events: none;
-}
-
-@keyframes playerPauseCardIn {
+@keyframes playerPauseContentIn {
   from {
     opacity: 0;
-    transform: translateY(14px) scale(0.975);
+    transform: translateY(22px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
 .player-pause-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  color: rgba(255, 255, 255, 0.74);
-  font-size: 10px;
+  gap: 9px;
+  margin-bottom: 16px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
   font-weight: 750;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
 }
 
 .player-pause-eyebrow::before {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: rgb(var(--accent-rgb));
-  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.13), 0 0 12px rgba(var(--accent-rgb), 0.72);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.14), 0 0 14px rgba(var(--accent-rgb), 0.8);
   content: "";
+  animation: playerPausePulse 2s ease-in-out infinite;
+}
+
+@keyframes playerPausePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.82); }
 }
 
 .player-pause-content h2,
@@ -108,52 +102,54 @@
 }
 
 .player-pause-content h2 {
-  font-size: clamp(32px, 4.5vw, 50px);
-  font-weight: 780;
+  font-size: clamp(38px, 6vw, 68px);
+  font-weight: 800;
   letter-spacing: -0.045em;
-  line-height: 1.02;
+  line-height: 0.98;
   text-wrap: balance;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.24);
+  text-shadow: 0 3px 26px rgba(0, 0, 0, 0.5);
 }
 
 .player-pause-meta {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 7px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 20px;
 }
 
 .player-pause-meta-item {
   display: inline-flex;
   align-items: center;
-  min-height: 25px;
-  padding: 0 9px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-height: 27px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 11px;
+  background: rgba(0, 0, 0, 0.32);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
   font-weight: 680;
   letter-spacing: 0.01em;
   line-height: 1;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .player-pause-meta-item.is-rating {
-  border-color: rgba(255, 206, 107, 0.27);
-  background: rgba(255, 193, 76, 0.12);
+  border-color: rgba(255, 206, 107, 0.32);
+  background: rgba(255, 193, 76, 0.18);
   color: #ffd98b;
 }
 
 .player-pause-overview {
   display: -webkit-box;
-  max-width: 52ch;
-  margin: 19px auto 0;
+  max-width: 58ch;
+  margin: 20px 0 0;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 14px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 15px;
   font-weight: 450;
-  line-height: 1.62;
+  line-height: 1.6;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
@@ -163,24 +159,24 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: 52px;
-  margin-top: 26px;
-  padding: 0 23px 0 19px;
+  min-height: 54px;
+  margin-top: 30px;
+  padding: 0 26px 0 21px;
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 999px;
   background: linear-gradient(135deg, #ffffff 0%, #eceef6 100%);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.12);
   color: #11131c;
   font: inherit;
-  font-size: 14px;
-  font-weight: 780;
+  font-size: 15px;
+  font-weight: 800;
   cursor: pointer;
   transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease, filter 0.2s ease;
 }
 
 .player-pause-play:hover {
   transform: translateY(-2px) scale(1.015);
-  box-shadow: 0 13px 32px rgba(0, 0, 0, 0.31), 0 0 22px rgba(255, 255, 255, 0.14);
+  box-shadow: 0 15px 36px rgba(0, 0, 0, 0.4), 0 0 24px rgba(255, 255, 255, 0.16);
   filter: brightness(1.025);
 }
 
@@ -195,19 +191,19 @@
 
 @media (max-width: 640px) {
   .player-pause-content {
-    width: min(520px, calc(100vw - 28px));
-    padding: 30px 24px 28px;
-    border-radius: 20px;
+    width: calc(100vw - 44px);
+    margin: 0 0 clamp(28px, 6vh, 56px) 22px;
   }
-
   .player-pause-content h2 {
-    font-size: clamp(29px, 9vw, 40px);
+    font-size: clamp(30px, 10vw, 46px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .player-pause-screen,
   .player-pause-content,
+  .player-pause-art,
+  .player-pause-eyebrow::before,
   .player-pause-play {
     animation: none;
     transition: none;

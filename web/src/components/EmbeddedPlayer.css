@@ -193,11 +193,15 @@ html.mpv-active .embed-player * {
   flex-direction: column;
   gap: 12px;
   padding: 52px 28px 24px;
-  background:
-    linear-gradient(to top, rgba(2, 3, 8, 0.9) 0%, rgba(4, 5, 12, 0.64) 48%, transparent 100%),
-    linear-gradient(90deg, rgba(6, 8, 17, 0.24), rgba(255, 255, 255, 0.025), rgba(6, 8, 17, 0.24));
-  backdrop-filter: blur(4px) saturate(120%);
-  -webkit-backdrop-filter: blur(4px) saturate(120%);
+  /* No frosted bar: just a soft scrim that fades to fully transparent so the
+     video shows through. The controls carry their own pill backgrounds and
+     text shadows for legibility. */
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.46) 0%,
+    rgba(0, 0, 0, 0.16) 42%,
+    transparent 82%
+  );
 }
 
 /* Scrubber */
