@@ -123,13 +123,19 @@
 .mood-search .mood-subtitle {
   font-size: 12px;
 }
+.mood-search {
+  /* Span the full search content width, edge to edge, rather than the narrow
+     620px the vibe box used to sit at (it looked stranded next to the
+     full-width search field above it). */
+  width: 100%;
+}
 .mood-search .mood-prompt {
-  max-width: 620px;
+  max-width: none;
   min-height: 46px;
   border-radius: var(--r-pill);
 }
 .mood-search .mood-chips {
-  max-width: 620px;
+  max-width: none;
   gap: 8px;
 }
 .mood-search .mood-chips .chip {

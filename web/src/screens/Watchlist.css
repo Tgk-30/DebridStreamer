@@ -12,6 +12,37 @@
 
 .watchlist-folder-bar {
   margin-top: calc(var(--sp-sm) * -1);
+  gap: 6px;
+}
+/* A compact, quiet folder selector: smaller pills that read as a filter row,
+   not chunky buttons. Scoped to the watchlist so the Library folders are
+   unaffected. */
+.watchlist-folder-bar .lib-folder-chip {
+  min-height: 27px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 550;
+  border-radius: var(--r-pill);
+  color: var(--text-secondary);
+  transition: color 0.14s, background 0.14s, border-color 0.14s;
+}
+.watchlist-folder-bar .lib-folder-chip:hover {
+  color: var(--text-primary);
+}
+.watchlist-folder-bar .lib-folder-chip.is-active {
+  color: var(--on-accent, #fff);
+  background: rgb(var(--accent-rgb));
+  border-color: transparent;
+}
+/* "+ New folder" reads as a subtle add affordance, not a peer of the folders. */
+.watchlist-folder-bar .lib-folder-add {
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px dashed var(--glass-border);
+}
+.watchlist-folder-bar .lib-folder-add:hover {
+  color: var(--text-secondary);
+  border-color: rgba(var(--accent-rgb), 0.5);
 }
 
 .watchlist-tools {

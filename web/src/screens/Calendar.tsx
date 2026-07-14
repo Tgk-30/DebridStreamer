@@ -264,7 +264,7 @@ export function Calendar() {
                 >
                   <span className="cal-day-number">{day.day}</span>
                   <div className="cal-day-events">
-                    {day.entries.map((entry) => (
+                    {day.entries.slice(0, 3).map((entry) => (
                       <button
                         key={entry.id}
                         type="button"
@@ -277,6 +277,9 @@ export function Calendar() {
                         <small>{entry.kind === "episode" ? entry.detail.split(" · ")[0] : "Movie"}</small>
                       </button>
                     ))}
+                    {day.entries.length > 3 && (
+                      <span className="cal-more">+{day.entries.length - 3} more</span>
+                    )}
                   </div>
                 </div>
               ))}

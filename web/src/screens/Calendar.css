@@ -104,40 +104,49 @@
   background: rgba(0, 0, 0, 0.08);
 }
 .cal-weekdays span {
-  padding: 9px 8px;
+  padding: 9px 12px;
   color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 650;
   letter-spacing: 0.04em;
-  text-align: right;
+  text-align: left;
   text-transform: uppercase;
 }
 .cal-day {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 116px;
-  padding: 7px 6px 8px;
+  padding: 6px 6px 8px;
   border-right: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.01);
+  transition: background 0.14s;
 }
 .cal-day:nth-child(7n) { border-right: 0; }
 .cal-day:nth-last-child(-n + 7) { border-bottom: 0; }
+.cal-day:not(.is-outside):hover {
+  background: rgba(255, 255, 255, 0.035);
+}
 .cal-day.is-outside {
   background: rgba(0, 0, 0, 0.11);
 }
 .cal-day.is-outside .cal-day-number { opacity: 0.35; }
 .cal-day.is-today {
-  background: rgba(var(--accent-rgb), 0.08);
-  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.42);
+  background: rgba(var(--accent-rgb), 0.07);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.4);
 }
+/* A fixed square so the today marker is a clean CIRCLE, not a stretched ellipse
+   (it used to be display:block and filled the cell width). Sits top-left. */
 .cal-day-number {
-  display: block;
-  min-width: 22px;
-  margin: 0 1px 5px auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: 0 0 6px;
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
-  line-height: 22px;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -145,6 +154,7 @@
   border-radius: 50%;
   background: rgb(var(--accent-rgb));
   color: var(--on-accent, #fff);
+  font-weight: 700;
 }
 .cal-day-events {
   display: flex;
@@ -157,13 +167,23 @@
   display: flex;
   align-items: baseline;
   gap: 4px;
-  padding: 3px 5px;
+  padding: 3px 6px;
   overflow: hidden;
   border: 0;
-  border-radius: 4px;
+  border-left: 2px solid transparent;
+  border-radius: 5px;
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
+  transition: background-color 0.14s, box-shadow 0.14s;
+}
+.cal-more {
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 1px 4px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
 }
 .cal-event span,
 .cal-event small {
@@ -181,13 +201,19 @@
   font-size: 10px;
   opacity: 0.78;
 }
-.cal-event--episode { background: rgba(var(--accent-rgb), 0.18); }
-.cal-event--movie { background: rgba(214, 168, 95, 0.18); }
+.cal-event--episode {
+  background: rgba(var(--accent-rgb), 0.16);
+  border-left-color: rgb(var(--accent-rgb));
+}
+.cal-event--movie {
+  background: rgba(214, 168, 95, 0.16);
+  border-left-color: #d6a85f;
+}
 .cal-event:hover,
 .cal-event:focus-visible {
   outline: none;
-  filter: brightness(1.24);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  filter: brightness(1.22);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
 .cal-agenda {
