@@ -33,6 +33,16 @@ interface MediaCardProps {
   watched?: boolean;
 }
 
+/** A stable hue (0-359) derived from the title so a poster-less card gets a
+ *  consistent, distinct fallback color instead of a flat grey box. */
+function hueFor(title: string): number {
+  let hash = 0;
+  for (let i = 0; i < title.length; i += 1) {
+    hash = (hash * 31 + title.charCodeAt(i)) % 360;
+  }
+  return hash;
+}
+
 // memo: a grid re-render (filter/scroll/parent state) shouldn't re-run 100+ cards
 // whose props are unchanged.
 export const MediaCard = memo(function MediaCard({
@@ -48,6 +58,11 @@ export const MediaCard = memo(function MediaCard({
   const poster = MediaPreviewNS.posterURL(item);
   const rating = MediaPreviewNS.ratingString(item);
   const [loaded, setLoaded] = useState(false);
+  // A poster URL can still 404 or fail to decode. Track that so we swap in the
+  // designed fallback tile instead of leaving the browser's broken-image glyph.
+  const [failed, setFailed] = useState(false);
+  const showFallback = poster == null || failed;
+  const initial = item.title.trim().charAt(0).toUpperCase() || "?";
 
   // Stable handlers so the memo above isn't defeated by a fresh closure each render.
   const handleSelect = useCallback(() => onSelect?.(item), [onSelect, item]);
@@ -73,7 +88,16 @@ export const MediaCard = memo(function MediaCard({
         </span>
       )}
       <div className="media-card-poster">
-        {poster ? (
+        {showFallback ? (
+          <div
+            className="media-card-fallback"
+            style={{ "--fallback-hue": String(hueFor(item.title)) } as React.CSSProperties}
+            aria-hidden="true"
+          >
+            <span className="media-card-fallback-initial">{initial}</span>
+            <Icon name="discover" size={20} className="media-card-fallback-icon" />
+          </div>
+        ) : (
           <img
             ref={(el) => {
               // Already-cached posters can be `complete` before React attaches
@@ -89,14 +113,14 @@ export const MediaCard = memo(function MediaCard({
             draggable={false}
             className={loaded ? "is-loaded" : ""}
             onLoad={() => setLoaded(true)}
-            onError={() => setLoaded(true)}
+            onError={() => {
+              // Swap to the designed fallback rather than the broken-image glyph.
+              setFailed(true);
+              setLoaded(true);
+            }}
           />
-        ) : (
-          <div className="media-card-placeholder">
-            <Icon name="discover" size={28} />
-          </div>
         )}
-        {!loaded && poster && <div className="media-card-shimmer" aria-hidden />}
+        {!loaded && !showFallback && <div className="media-card-shimmer" aria-hidden />}
 
         {ready && (
           <span className="media-card-ready" title="Ready to play">

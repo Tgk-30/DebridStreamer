@@ -64,6 +64,13 @@ const FILTERS: { id: TypeFilter; label: string }[] = [
   { id: "series", label: "TV" },
 ];
 
+type SortKey = "relevance" | "rating" | "year";
+const SORTS: { id: SortKey; label: string }[] = [
+  { id: "relevance", label: "Relevance" },
+  { id: "rating", label: "Top rated" },
+  { id: "year", label: "Newest" },
+];
+
 /** Idle starters from fixtures (used as the no-key fallback too). */
 function fixtureStarters(): MediaPreview[] {
   const f = loadDiscoverFixtures();
@@ -101,10 +108,24 @@ export function Search() {
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TypeFilter>("all");
+  const [sort, setSort] = useState<SortKey>("relevance");
   const [results, setResults] = useState<MediaPreview[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Client-side result ordering. "relevance" preserves the search API's own
+  // ranking; the others re-sort the fetched page in place.
+  const sortedResults = useMemo(() => {
+    if (results == null || sort === "relevance") return results;
+    const ranked = [...results];
+    if (sort === "rating") {
+      ranked.sort((a, b) => (b.imdbRating ?? 0) - (a.imdbRating ?? 0));
+    } else {
+      ranked.sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+    }
+    return ranked;
+  }, [results, sort]);
 
   // "Describe a vibe" mood discovery (relocated from Discover).
   const [moodLoading, setMoodLoading] = useState(false);
@@ -383,26 +404,39 @@ export function Search() {
               <h2 className="search-section-title">
                 Results for “{query.trim()}”
               </h2>
-              <button
-                type="button"
-                className="search-see-all"
-                onClick={() =>
-                  openBrowse({
-                    kind: "search",
-                    type: filter === "all" ? null : filter,
-                    query: query.trim(),
-                  })
-                }
-              >
-                See all
-                <span className="search-see-all-arrow" aria-hidden>
-                  ›
-                </span>
-              </button>
+              <div className="search-sort" role="group" aria-label="Sort results">
+                {SORTS.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={`search-sort-chip${sort === s.id ? " is-active" : ""}`}
+                    onClick={() => setSort(s.id)}
+                    aria-pressed={sort === s.id}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="search-see-all"
+                  onClick={() =>
+                    openBrowse({
+                      kind: "search",
+                      type: filter === "all" ? null : filter,
+                      query: query.trim(),
+                    })
+                  }
+                >
+                  See all
+                  <span className="search-see-all-arrow" aria-hidden>
+                    ›
+                  </span>
+                </button>
+              </div>
             </div>
           )}
           <MediaGrid
-            items={results}
+            items={sortedResults ?? results}
             onSelect={openDetail}
             empty={
               !loading ? (

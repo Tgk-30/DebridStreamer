@@ -361,3 +361,29 @@
 .media-card-rating svg {
   color: var(--warning);
 }
+
+/* Designed fallback for a missing OR broken poster (replaces the browser's
+   broken-image glyph, e.g. when a TMDB poster 404s). A stable per-title hue
+   keeps a grid of fallbacks looking varied rather than a wall of grey. */
+.media-card-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(130% 120% at 28% 18%, hsl(var(--fallback-hue, 220) 40% 32%), hsl(var(--fallback-hue, 220) 36% 14%) 72%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.media-card-fallback-initial {
+  font-size: clamp(28px, 3.4vw, 52px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+}
+.media-card-fallback-icon {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  color: rgba(255, 255, 255, 0.34);
+}
