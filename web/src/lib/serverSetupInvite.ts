@@ -3,7 +3,7 @@ export type ServerSetupInvitePresetId =
   | "household_simple"
   | "power_user";
 
-export interface ServerSetupInvitePreset {
+interface ServerSetupInvitePreset {
   id: ServerSetupInvitePresetId;
   label: string;
   inviteLabel: string;

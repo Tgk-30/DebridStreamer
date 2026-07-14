@@ -15,7 +15,7 @@ import type { MediaType } from "../../models/media";
 import { TorrentResult } from "./models";
 import { defaultFetchImpl, type FetchImpl, IndexerError, type TorrentIndexer } from "./types";
 
-export interface TorznabIndexerOptions {
+interface TorznabIndexerOptions {
   name: string;
   baseURL: string;
   endpointPath: string;

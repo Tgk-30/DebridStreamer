@@ -73,7 +73,7 @@ export function makeDownloadRecord(
   };
 }
 
-export async function enqueueDownload(
+async function enqueueDownload(
   store: Store,
   input: EnqueueDownloadInput,
 ): Promise<DownloadRecord> {

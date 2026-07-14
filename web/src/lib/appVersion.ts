@@ -1,6 +1,6 @@
 import { isTauri } from "./tauri";
 
-export type AppVersionProviders = {
+type AppVersionProviders = {
   isTauri: () => boolean;
   native: () => Promise<string>;
   browser: () => string;

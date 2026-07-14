@@ -28,9 +28,9 @@ export interface DiscoverData {
   upcomingMovies: MediaPreview[];
 }
 
-export type DiscoverSource = "live" | "fixtures" | "offline";
+type DiscoverSource = "live" | "fixtures" | "offline";
 
-export interface DiscoverState {
+interface DiscoverState {
   data: DiscoverData | null;
   loading: boolean;
   /** True until the secondary (category) rails have all settled. The hero +

@@ -40,7 +40,7 @@ export interface TorrentIndexer {
  * `badServerResponse`, an unbuildable URL throws `badURL`, and an unparseable
  * feed throws `cannotParseResponse`.
  */
-export type IndexerErrorKind =
+type IndexerErrorKind =
   | "badServerResponse"
   | "badURL"
   | "cannotParseResponse";

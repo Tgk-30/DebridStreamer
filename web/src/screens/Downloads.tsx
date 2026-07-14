@@ -42,7 +42,7 @@ function progressLabel(record: DownloadRecord, speedBps?: number): string {
   return `${progress == null ? amount : `${progress}% · ${amount}`}${speed}`;
 }
 
-export interface DownloadSeriesGroup {
+interface DownloadSeriesGroup {
   mediaId: string;
   title: string;
   seasons: Array<{ season: number | null; records: DownloadRecord[] }>;

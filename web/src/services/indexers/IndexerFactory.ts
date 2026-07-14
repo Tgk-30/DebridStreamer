@@ -28,7 +28,7 @@ import { YTSIndexer } from "./YTSIndexer";
  * Local and Server Mode and stays kid-safe (imdb-exact, bindable by the play
  * block). Per-indexer failures are absorbed by IndexerManager, so if Torrentio
  * is unreachable the other built-ins still serve results. */
-export const TORRENTIO_BUILT_IN_BASE_URL = "https://torrentio.strem.fun";
+const TORRENTIO_BUILT_IN_BASE_URL = "https://torrentio.strem.fun";
 
 export const IndexerFactory = {
   /** Builds the active indexer list. Built-in scrapers come first (enabled

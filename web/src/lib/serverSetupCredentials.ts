@@ -1,6 +1,6 @@
 import type { ServerCredentialProvider } from "./serverApi";
 
-export interface ServerSetupKeyField {
+interface ServerSetupKeyField {
   provider: ServerCredentialProvider;
   label: string;
   hint: string;
@@ -12,13 +12,13 @@ export type DebridCredentialProvider = Extract<
   "real_debrid" | "torbox" | "premiumize" | "all_debrid"
 >;
 
-export interface DebridProviderOption {
+interface DebridProviderOption {
   provider: DebridCredentialProvider;
   label: string;
   placeholder: string;
 }
 
-export interface ServerSetupCredentialDraft {
+interface ServerSetupCredentialDraft {
   provider: ServerCredentialProvider;
   label: string;
   value: string;

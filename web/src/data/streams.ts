@@ -159,7 +159,7 @@ function betterDuplicate(a: StreamRow, b: StreamRow): StreamRow {
 // MARK: - Episode matching
 
 /** How a release title relates to a specific requested episode. */
-export type EpisodeMatch = "exact" | "pack" | "unknown" | "mismatch";
+type EpisodeMatch = "exact" | "pack" | "unknown" | "mismatch";
 
 /** Classify a release title against a requested season/episode.
  *

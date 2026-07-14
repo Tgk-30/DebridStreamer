@@ -79,7 +79,7 @@ export function defaultSelectionFor(
 
 // MARK: - Hooks
 
-export interface SeasonsState {
+interface SeasonsState {
   seasons: Season[];
   loading: boolean;
   /** "live" when a metadata source produced the list, "none" for the
@@ -87,7 +87,7 @@ export interface SeasonsState {
   source: "live" | "none";
 }
 
-export interface EpisodesState {
+interface EpisodesState {
   episodes: Episode[];
   loading: boolean;
   source: "live" | "none";

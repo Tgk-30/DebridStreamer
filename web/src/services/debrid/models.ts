@@ -347,7 +347,7 @@ export const DebridServiceType = {
 
 /** User's debrid service configuration. Mirrors Swift `DebridConfig` (the value
  * fields - the GRDB persistence plumbing is not ported here). */
-export interface DebridConfig {
+interface DebridConfig {
   id: string;
   service: DebridServiceType;
   apiToken: string; // Reference to keychain entry / raw token

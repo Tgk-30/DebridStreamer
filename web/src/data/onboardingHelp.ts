@@ -2,12 +2,6 @@
 // and pointers to where a new user gets each key. Kept as data (no UI, no deps)
 // so onboarding, Settings, and the empty states can all speak with one voice.
 
-export interface Concept {
-  term: string;
-  /** One-sentence, jargon-light explanation for a non-technical user. */
-  blurb: string;
-}
-
 export const CONCEPTS = {
   debrid: {
     term: "Debrid service",
@@ -36,9 +30,8 @@ export const CONCEPTS = {
   },
 } as const;
 
-export type ConceptKey = keyof typeof CONCEPTS;
 
-export interface SignupLink {
+interface SignupLink {
   id: string;
   label: string;
   url: string;
@@ -168,7 +161,7 @@ export function signupUrl(id: string): string | null {
 /** A "watch how to set this up" YouTube link per service. Deliberately a YouTube
  *  SEARCH URL (not a single video id) so it always resolves to current, relevant
  *  walkthroughs and can never 404 when a creator takes a video down. */
-export const SETUP_VIDEOS: Record<string, string> = {
+const SETUP_VIDEOS: Record<string, string> = {
   tmdb: "https://www.youtube.com/results?search_query=how+to+get+a+tmdb+api+key",
   omdb: "https://www.youtube.com/results?search_query=how+to+get+an+omdb+api+key",
   torbox: "https://www.youtube.com/results?search_query=how+to+set+up+torbox+api",

@@ -32,7 +32,7 @@ import {
 } from "./types";
 
 /** Async delay used by retry/poll loops; default is a no-op so tests don't sleep. */
-export type Sleep = (ms: number) => Promise<void>;
+type Sleep = (ms: number) => Promise<void>;
 const noopSleep: Sleep = () => Promise.resolve();
 
 /** Coerces a JSON value to a number (mirrors the Swift `int64Value` helper that

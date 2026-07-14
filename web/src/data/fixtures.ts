@@ -106,7 +106,7 @@ const TRENDING_TV: FixtureSeed[] = [
 
 // ---- Public fixture catalog ------------------------------------------------
 
-export interface DiscoverFixtures {
+interface DiscoverFixtures {
   trendingMovies: MediaPreview[];
   trendingTV: MediaPreview[];
   popularMovies: MediaPreview[];

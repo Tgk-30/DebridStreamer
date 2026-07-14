@@ -42,7 +42,7 @@ export interface AutoResolveDeps {
 }
 
 /** Outcome of a single pass - handy for diagnostics + tests. */
-export interface AutoResolveResult {
+interface AutoResolveResult {
   /** Titles we attempted to resolve (had no fresh cached resolution). */
   attempted: number;
   /** Titles a ready resolution was cached for this pass. */

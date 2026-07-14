@@ -4,7 +4,7 @@
 // the same `userAvatar` settings string an uploaded photo uses, so every render
 // site (<img src={avatar}>) shows them with zero changes.
 
-export interface PresetAvatar {
+interface PresetAvatar {
   id: string;
   label: string;
   dataUrl: string;
@@ -45,8 +45,3 @@ export const PRESET_AVATARS: PresetAvatar[] = DEFS.map((d) => ({
   label: d.label,
   dataUrl: svgAvatar(d.from, d.to, d.emoji),
 }));
-
-/** Whether a stored avatar URL is one of the built-in presets (for the ring). */
-export function isPresetAvatar(url: string): boolean {
-  return PRESET_AVATARS.some((p) => p.dataUrl === url);
-}

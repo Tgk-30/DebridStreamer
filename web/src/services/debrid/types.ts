@@ -17,7 +17,7 @@ import type {
  * `Equatable` enum). The `kind` discriminator carries the associated values the
  * Swift cases hold, and the human-facing `message` matches `errorDescription`.
  */
-export type DebridErrorKind =
+type DebridErrorKind =
   | "invalidToken"
   | "expired"
   | "rateLimited"

@@ -12,7 +12,7 @@
 /** Matches `token` only when delimited by non-alphanumeric boundaries (or
  * string ends), so ambiguous short tokens like "ts"/"sd"/"cam" don't match when
  * embedded inside words. Mirrors Swift `mediaTokenMatch`. */
-export function mediaTokenMatch(haystack: string, token: string): boolean {
+function mediaTokenMatch(haystack: string, token: string): boolean {
   // Swift uses `(?<![a-z0-9])token(?![a-z0-9])` on an already-lowercased string.
   const re = new RegExp(`(?<![a-z0-9])${token}(?![a-z0-9])`);
   return re.test(haystack);

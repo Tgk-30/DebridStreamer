@@ -8,7 +8,7 @@ import { AIProviderKind, OPENAI_COMPATIBLE, type AIProviderKind as Kind } from "
 import { type FetchImpl, resolveFetch } from "./types";
 
 /** Options for a live model lookup. `endpoint` is only used for Ollama. */
-export interface FetchModelsOptions {
+interface FetchModelsOptions {
   kind: Kind;
   apiKey: string;
   /** Ollama base endpoint (e.g. http://localhost:11434). */

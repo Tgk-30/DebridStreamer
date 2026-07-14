@@ -201,7 +201,7 @@ export interface MetadataProvider {
  * Error kinds returned by the TMDB service. Mirrors Swift `TMDBError`,
  * carrying the same human-facing descriptions via `message`.
  */
-export type TMDBErrorKind =
+type TMDBErrorKind =
   | "invalidURL"
   | "invalidResponse"
   | "unauthorized"

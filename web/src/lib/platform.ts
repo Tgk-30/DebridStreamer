@@ -7,7 +7,7 @@ export interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 }
 
-export type DeviceKind =
+type DeviceKind =
   | "ios"
   | "android"
   | "mac"

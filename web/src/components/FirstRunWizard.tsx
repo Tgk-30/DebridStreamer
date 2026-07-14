@@ -78,14 +78,14 @@ function normalizeURL(raw: string): string {
 
 /** The catalog step's validated result: exactly one key, or null when the
  *  (non-forced) built-in-catalog escape was taken. */
-export interface CatalogKey {
+interface CatalogKey {
   tmdbKey?: string;
   omdbKey?: string;
 }
 
 /** The optional AI step's result. A cloud provider carries an apiKey; the
  *  local Ollama provider carries an endpoint instead. */
-export interface AiChoice {
+interface AiChoice {
   provider: AIProviderKind;
   apiKey?: string;
   ollamaEndpoint?: string;

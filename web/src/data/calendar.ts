@@ -25,7 +25,7 @@ import { isServerMode } from "../lib/serverMode";
 /** Keep enough history to make the month view useful without turning it into a
  * full series archive. TMDB's movie catalog supplies recent and near-future
  * release dates independently. */
-export const CALENDAR_RECENT_DAYS = 14;
+const CALENDAR_RECENT_DAYS = 14;
 
 export interface CalendarEntry {
   id: string;

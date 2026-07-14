@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import type { TMDBService } from "../services/metadata/TMDBService";
 import type { MediaType } from "../models/media";
 
-export interface TrailerState {
+interface TrailerState {
   key: string | null;
   loading: boolean;
 }

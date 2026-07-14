@@ -28,7 +28,7 @@ const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
 /** Config for pointing this provider at an OpenAI-compatible host (Gemini,
  * Groq, OpenRouter, Mistral, DeepSeek, xAI). Omit for stock OpenAI. */
-export interface OpenAICompatConfig {
+interface OpenAICompatConfig {
   /** Base URL WITHOUT a trailing `/chat/completions` (e.g. https://api.groq.com/openai/v1). */
   baseURL?: string;
   /** The kind this instance reports (drives usage records + display). */

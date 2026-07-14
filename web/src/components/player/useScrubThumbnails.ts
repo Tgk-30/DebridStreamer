@@ -26,7 +26,7 @@ const THUMB_WIDTH = 168; // capped canvas width for performance
 const BUCKET_SECONDS = 5; // quantize hovered time into 5s buckets for caching
 const THROTTLE_MS = 120; // min gap between seek-driven captures
 
-export interface UseScrubThumbnails {
+interface UseScrubThumbnails {
   /** The currently-previewed frame, or null when not hovering. */
   preview: ScrubPreview | null;
   /** Call on pointer move over the scrub bar with the hovered time (seconds). */

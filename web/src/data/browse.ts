@@ -243,7 +243,7 @@ export function toDiscoverFilters(
 // ---- Page loading -----------------------------------------------------------
 
 /** One loaded page of a Browse: the items plus pagination cursor info. */
-export interface BrowsePage {
+interface BrowsePage {
   items: MediaPreview[];
   page: number;
   totalPages: number;
@@ -441,9 +441,9 @@ export function sortPreviews(
 
 // ---- React hook -------------------------------------------------------------
 
-export type BrowseSource = "live" | "fixtures";
+type BrowseSource = "live" | "fixtures";
 
-export interface BrowseState {
+interface BrowseState {
   items: MediaPreview[];
   loading: boolean;
   /** True while a load-more page is in flight (the first load uses `loading`). */

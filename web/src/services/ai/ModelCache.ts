@@ -19,7 +19,7 @@ interface CachedModelsEnvelope {
   fetchedAt: string; // ISO 8601
 }
 
-export interface ModelCacheEntry {
+interface ModelCacheEntry {
   models: string[];
   /** Epoch ms of the cached fetch. */
   fetchedAt: number;

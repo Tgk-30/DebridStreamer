@@ -18,7 +18,7 @@ import {
 } from "../storage/models";
 import type { Season } from "../models/media";
 
-export type WatchedState = "watched" | "inProgress" | "unwatched";
+type WatchedState = "watched" | "inProgress" | "unwatched";
 
 /** Progress fraction at/above which a title counts as watched. Mirrors the
  * completion cutoff in AppStore.recordResume and hasResumePoint's upper bound. */

@@ -20,9 +20,9 @@
 
 export type NetworkMode = "standard" | "fullLocal" | "offline";
 
-export const NETWORK_MODES: readonly NetworkMode[] = ["standard", "fullLocal", "offline"];
+const NETWORK_MODES: readonly NetworkMode[] = ["standard", "fullLocal", "offline"];
 
-export type NetworkCategory =
+type NetworkCategory =
   | "metadata" // TMDB catalog/detail (api.themoviedb.org)
   | "images" // TMDB artwork (image.tmdb.org) loaded via <img>
   | "ratings" // OMDb (omdbapi.com)

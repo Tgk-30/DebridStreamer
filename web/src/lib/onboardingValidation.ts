@@ -7,7 +7,7 @@ import { TMDBError } from "../services/metadata/types";
 import { buildDebridService, type DebridTokenEntry } from "../data/settings";
 import { assertNetworkAllowed } from "./networkPolicy";
 
-export type TmdbTestResult = "ok" | "unauthorized" | "network";
+type TmdbTestResult = "ok" | "unauthorized" | "network";
 
 /** One GET /search/multi with the candidate key. */
 export async function testTmdbKey(key: string): Promise<TmdbTestResult> {
@@ -23,7 +23,7 @@ export async function testTmdbKey(key: string): Promise<TmdbTestResult> {
   }
 }
 
-export type OmdbTestResult = "ok" | "unauthorized" | "network";
+type OmdbTestResult = "ok" | "unauthorized" | "network";
 
 /** One title lookup with the candidate key. OMDb answers HTTP 200/401 with a
  *  JSON body either way and sends permissive CORS headers, so a plain browser

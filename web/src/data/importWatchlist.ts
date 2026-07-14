@@ -17,11 +17,11 @@ export interface ImportEntry {
   type: MediaType | null;
 }
 
-export type ImportFormat = "imdb" | "letterboxd" | "catalog" | "plain";
+type ImportFormat = "imdb" | "letterboxd" | "catalog" | "plain";
 
 /** The parse result retains source and row-quality information so the import UI
  * can create a meaningful folder and report rows it safely skipped. */
-export interface WatchlistImportParse {
+interface WatchlistImportParse {
   entries: ImportEntry[];
   format: ImportFormat;
   folderName: string | null;

@@ -86,7 +86,7 @@ export interface AIProviderAnalysisResult {
  * Error kinds thrown by AI providers. Mirrors Swift `AIAssistantProviderError`,
  * carrying the same human-facing descriptions via `message`.
  */
-export type AIAssistantProviderErrorKind =
+type AIAssistantProviderErrorKind =
   | "missingAPIKey"
   | "invalidResponse"
   | "apiError";

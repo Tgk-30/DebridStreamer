@@ -312,7 +312,7 @@ export interface AccountProfile {
   maturityMax: string | null;
 }
 
-export interface AccountProfileState {
+interface AccountProfileState {
   profiles: AccountProfile[];
   activeProfileId: string;
 }
@@ -539,7 +539,7 @@ export async function saveServerSharedCredential(input: {
   });
 }
 
-export interface ServerInviteResult {
+interface ServerInviteResult {
   token: string;
   invite: { id: string };
 }

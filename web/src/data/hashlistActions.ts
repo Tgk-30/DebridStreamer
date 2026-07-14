@@ -105,7 +105,7 @@ export function exportHashList(torrents: DebridTorrent[]): string {
 }
 
 /** The result of an AI-emit: the resolved entries plus the shareable string. */
-export interface AIEmitResult {
+interface AIEmitResult {
   entries: HashListEntry[];
   encoded: string;
   /** Titles the AI suggested that we could NOT resolve to an infoHash. */

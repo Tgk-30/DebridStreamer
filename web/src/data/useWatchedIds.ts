@@ -32,7 +32,7 @@ export function useWatchedIds(refreshKey: unknown = 0): ReadonlySet<string> {
   return ids;
 }
 
-export interface DetailWatchedState {
+interface DetailWatchedState {
   /** Fully completed episode rows for this exact series. */
   episodeIds: ReadonlySet<string>;
   /** The completed movie row for this exact title. */
