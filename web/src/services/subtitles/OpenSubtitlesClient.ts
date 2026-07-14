@@ -61,7 +61,10 @@ export interface SubtitleClient {
   download(fileId: string, imdbId?: string | null): Promise<string>;
 }
 
-class OpenSubtitlesError extends Error {
+// Exported: the bundled Node server imports this cross-package (see
+// server/src/subtitles-runtime.js) and relies on `instanceof OpenSubtitlesError`.
+// Do NOT drop this export even though nothing in web/ imports it by name.
+export class OpenSubtitlesError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
     super(message);
