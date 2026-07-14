@@ -720,6 +720,13 @@ export function Settings() {
         const profileId = serverSession?.profileId;
         if (base == null || profileId == null) return;
         const csrf = readCsrfToken();
+        // Optimistic, then RECONCILED. The PATCH used to be fired with its
+        // rejection swallowed and its status never read, so a failed write still
+        // flipped the whole UI and the tier quietly reverted on the next launch.
+        const previous = serverSession;
+        if (serverSession != null) {
+          setServerSession({ ...serverSession, simpleMode: simple });
+        }
         void fetch(`${base}/api/profiles/${encodeURIComponent(profileId)}`, {
           method: "PATCH",
           credentials: "include",
@@ -728,10 +735,15 @@ export function Settings() {
             ...(csrf != null ? { "x-csrf-token": csrf } : {}),
           },
           body: JSON.stringify({ simpleMode: simple }),
-        }).catch(() => {});
-        if (serverSession != null) {
-          setServerSession({ ...serverSession, simpleMode: simple });
-        }
+        })
+          .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          })
+          .catch(() => {
+            // Put the control back where the server still has it.
+            if (previous != null) setServerSession(previous);
+            setSaveError("Could not change the experience tier on the server.");
+          });
       } else {
         updateSettings({ ...settings, simpleMode: simple });
       }
@@ -2433,6 +2445,12 @@ function ServerTab() {
         confirmPassword: "",
       });
       setMessage("Password changed. Other sessions were signed out.");
+      // The server just revoked the other sessions and wrote an audit event.
+      // Without this the "Signed-in devices" list directly below still lists
+      // them as active, contradicting the message above it, and still offers a
+      // Revoke button for a session that is already gone. refresh() clears
+      // `error` but not `message`, so the success text survives.
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

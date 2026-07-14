@@ -114,7 +114,14 @@ export function FilterSlideover({
     }));
   }
 
-  const dirty = draftType !== type || hasActiveFilters(draft);
+  // "Dirty" means the draft DIFFERS from what is applied - not "the draft has
+  // filters". The latter made Clear unappliable: clearing emptied the draft, so
+  // dirty went false, the primary button degraded to "Done", and it closed
+  // without applying anything while the active filters stayed on. Compared in
+  // sanitized form, which is what Apply hands back.
+  const dirty =
+    draftType !== type ||
+    JSON.stringify(sanitizeFilters(draft)) !== JSON.stringify(sanitizeFilters(filters));
   const panelRef = useModalA11y<HTMLElement>(onClose, open);
 
   return (

@@ -104,14 +104,38 @@ describe("FilterSlideover", () => {
     expect(filters.yearLTE).toBe(2012);
   });
 
-  it("clamps a partial/implausible year to null in the Apply payload", async () => {
+  it("sanitizes a plausible year into the Apply payload", async () => {
     const user = userEvent.setup();
     const { onApply } = setup();
-    // "20" is a real number but not a plausible 4-digit year → sanitized to null.
-    await user.type(screen.getByLabelText("Release year from"), "20");
+    await user.type(screen.getByLabelText("Release year from"), "2010");
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
-    const filters = onApply.mock.calls[0][1];
-    expect(filters.yearGTE).toBeNull();
+    expect(onApply.mock.calls[0][1].yearGTE).toBe(2010);
+  });
+
+  it("treats a partial/implausible year as nothing to apply", async () => {
+    const user = userEvent.setup();
+    setup();
+    // "20" is a real number but not a plausible 4-digit year, so it sanitizes to
+    // null - leaving the draft identical to what is already applied. The primary
+    // button says so rather than offering to apply a no-op.
+    await user.type(screen.getByLabelText("Release year from"), "20");
+    expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+  });
+
+  it("can APPLY a Clear - the whole point of the button", async () => {
+    const user = userEvent.setup();
+    // Start with a filter actually applied.
+    const { onApply } = setup({
+      filters: { ...emptyBrowseFilters(), yearGTE: 2010 },
+    });
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    // Clearing leaves the draft EMPTY but different from the applied filters, so
+    // it must remain appliable. Treating "no filters in the draft" as "nothing
+    // to do" degraded this button to "Done", which closed the panel and left the
+    // filters on.
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(onApply).toHaveBeenCalled();
+    expect(onApply.mock.calls[0][1].yearGTE).toBeNull();
   });
 
   it("changes the sort selection and applies it", async () => {

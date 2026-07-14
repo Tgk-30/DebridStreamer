@@ -26,7 +26,7 @@ interface DetailHeroProps {
   onRequest?: () => void;
   /** Drives the Request button label/disabled state: idle → "Request",
    *  requesting → busy, requested → "Requested", already → "Already requested". */
-  requestState?: "idle" | "requesting" | "requested" | "already";
+  requestState?: "idle" | "requesting" | "requested" | "already" | "failed";
   /** Current like/dislike signal for this title (null = no signal yet). */
   tasteSignal?: TasteSignal;
   /** Record (or toggle off) a like/dislike taste signal for this title. */
@@ -224,13 +224,19 @@ export function DetailHero({
                     : ""
                 }`}
                 onClick={onRequest}
-                disabled={requestState !== "idle"}
+                disabled={
+                  requestState === "requesting" ||
+                  requestState === "requested" ||
+                  requestState === "already"
+                }
                 title={
                   requestState === "already"
                     ? "Already requested"
                     : requestState === "requested"
                       ? "Request sent"
-                      : "Ask an admin to add this title"
+                      : requestState === "failed"
+                        ? "Request failed - tap to try again"
+                        : "Ask an admin to add this title"
                 }
               >
                 <Icon
@@ -247,7 +253,9 @@ export function DetailHero({
                     ? "Requested"
                     : requestState === "already"
                       ? "Already requested"
-                      : "Request"}
+                      : requestState === "failed"
+                        ? "Request failed - retry"
+                        : "Request"}
               </button>
             )}
 

@@ -14,6 +14,7 @@ import { WatchlistImportDialog } from "../components/WatchlistImportDialog";
 import { watchProgressMap } from "../storage/models";
 import type { WatchlistFolderRecord } from "../storage/models";
 import { getStore } from "../storage";
+import { isServerMode } from "../lib/serverMode";
 import { useWatchedIds } from "../data/useWatchedIds";
 import "./LibraryScreens.css";
 import "./Watchlist.css";
@@ -21,6 +22,11 @@ import "./Watchlist.css";
 const ALL = "__all__";
 
 export function Watchlist() {
+  // Folders are a Local-Mode feature: every folder write on RemoteStore throws
+  // ("not available in Server Mode yet") and listWatchlistFolders returns [].
+  // Offering the controls there only ever produced a developer-facing error and
+  // discarded whatever the user typed.
+  const serverMode = isServerMode();
   const {
     watchlist,
     openDetail,
@@ -181,6 +187,7 @@ export function Watchlist() {
         />
       ) : (
         <>
+          {!serverMode && (
           <div className="watchlist-folder-bar" aria-label="Watchlist folders">
             <button
               type="button"
@@ -227,6 +234,7 @@ export function Watchlist() {
               </button>
             )}
           </div>
+          )}
 
           <div className="watchlist-tools">
             <label className="watchlist-search">
@@ -314,6 +322,7 @@ export function Watchlist() {
                   >
                     <Icon name="xmark" size={15} />
                   </button>
+                  {!serverMode && (
                   <label className="watchlist-card-folder">
                     <span className="sr-only">Move {item.title} to folder</span>
                     <select
@@ -328,6 +337,7 @@ export function Watchlist() {
                       {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
                     </select>
                   </label>
+                  )}
                 </div>
               )}
             />

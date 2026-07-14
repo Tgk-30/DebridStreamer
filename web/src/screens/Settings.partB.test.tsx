@@ -434,8 +434,16 @@ describe("PasswordPanel changePassword", () => {
       expect(call!.body).toEqual({ currentPassword: "old", newPassword: "newpass1" });
     });
     expect(await screen.findByText("Password changed. Other sessions were signed out.")).toBeInTheDocument();
-    expect(current.value).toBe("");
-    expect(next.value).toBe("");
+    // Re-query rather than reuse the references above: a successful change now
+    // refreshes the signed-in-devices list (the server just revoked the other
+    // sessions), which re-renders the panel and detaches the original inputs.
+    await waitFor(() => {
+      const fresh = (screen.getByText("Password")).closest(".settings-source")! as HTMLElement;
+      const currentNow = fresh.querySelector('input[placeholder="Current password"]') as HTMLInputElement;
+      const nextNow = fresh.querySelector('input[placeholder="New password"]') as HTMLInputElement;
+      expect(currentNow.value).toBe("");
+      expect(nextNow.value).toBe("");
+    });
   });
 
   it("surfaces a server error from changePassword", async () => {

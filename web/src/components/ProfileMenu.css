@@ -198,3 +198,12 @@
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+/* Surfaced when a picked avatar image cannot be decoded - the user asked for
+   it, so the failure has to be visible rather than silently ignored. */
+.profile-menu-error {
+  margin: 0 0 var(--sp-sm);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+}

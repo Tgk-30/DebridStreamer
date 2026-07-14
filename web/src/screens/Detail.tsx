@@ -540,7 +540,7 @@ export function Detail() {
   // Server Mode "title request" state for this detail. Detail doesn't remount
   // between titles (openDetail just swaps detailItem), so reset on id change.
   const [requestState, setRequestState] = useState<
-    "idle" | "requesting" | "requested" | "already"
+    "idle" | "requesting" | "requested" | "already" | "failed"
   >("idle");
 
   // The user's current like/dislike taste signal for this title, read from the
@@ -1015,14 +1015,17 @@ export function Detail() {
    *  MediaPreview - the same minimal shape watchlist add uses - so it's passed
    *  straight through. A 409 means the title already has a live pending request. */
   async function requestTitle() {
-    if (detailItem == null || requestState !== "idle") return;
+    if (detailItem == null || requestState === "requesting") return;
+    if (requestState === "requested" || requestState === "already") return;
     setRequestState("requesting");
     try {
       await createRequest(detailItem.id, detailItem);
       setRequestState("requested");
     } catch (err) {
       const status = (err as { status?: number }).status;
-      setRequestState(status === 409 ? "already" : "idle");
+      // Anything other than "already requested" used to snap silently back to
+      // idle, so a failed request looked exactly like one never made.
+      setRequestState(status === 409 ? "already" : "failed");
     }
   }
 
@@ -1190,7 +1193,12 @@ export function Detail() {
           requestState={requestState}
           tasteSignal={tasteSignal}
           onTasteSignal={
-            settings.ratingScale === "thumbs" ? recordTasteSignal : undefined
+            // RemoteStore.addTasteEvent is still a no-op, so in Server Mode a
+            // thumb would light up and be thrown away. Don't offer it until the
+            // server has somewhere to put it.
+            settings.ratingScale === "thumbs" && !isServerMode()
+              ? recordTasteSignal
+              : undefined
           }
           playDisabledReason={
             !streams.hasDebrid
@@ -1441,7 +1449,10 @@ export function Detail() {
           explicit "Rate" button so the stars don't sit out permanently. Thumbs
           mode keeps the like/dislike control in the hero instead. The key resets
           the reveal to collapsed when the title changes. */}
-      {settings.ratingScale !== "thumbs" && (
+      {/* Hidden in Server Mode for the same reason as the thumbs above: the
+          remote taste store accepts the event and drops it, so the score would
+          show and then vanish on reload. */}
+      {settings.ratingScale !== "thumbs" && !isServerMode() && (
         <RatingReveal
           key={detailItem.id}
           scale={settings.ratingScale}

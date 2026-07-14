@@ -999,12 +999,30 @@ describe("Detail server-mode title request", () => {
     );
   });
 
-  it("returns to idle on a non-409 request failure", async () => {
+  it("reports a non-409 request failure instead of silently resetting", async () => {
+    // Returning to "idle" made a failed request look identical to one never
+    // made: the button span back to "Request" with nothing said.
     serverModeOn = true;
     createRequest.mockRejectedValue({ status: 500 });
     render(<Detail />);
     await userEvent.click(screen.getByText("request"));
     await waitFor(() => expect(createRequest).toHaveBeenCalled());
-    expect(screen.getByTestId("hero-reqstate").textContent).toBe("idle");
+    expect(screen.getByTestId("hero-reqstate").textContent).toBe("failed");
+  });
+
+  it("lets the user retry after a failure", async () => {
+    serverModeOn = true;
+    createRequest.mockRejectedValueOnce({ status: 500 });
+    render(<Detail />);
+    await userEvent.click(screen.getByText("request"));
+    await waitFor(() =>
+      expect(screen.getByTestId("hero-reqstate").textContent).toBe("failed"),
+    );
+    // A failed request must stay actionable.
+    createRequest.mockResolvedValueOnce(undefined);
+    await userEvent.click(screen.getByText("request"));
+    await waitFor(() =>
+      expect(screen.getByTestId("hero-reqstate").textContent).toBe("requested"),
+    );
   });
 });

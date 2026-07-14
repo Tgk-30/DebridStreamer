@@ -53,6 +53,7 @@ export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
   const { settings, updateSettings, activeProfile, refreshProfiles } = useAppStore();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const name = (settings.userName ?? "").trim();
@@ -69,12 +70,15 @@ export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
     e.target.value = ""; // allow re-picking the same file
     if (!file) return;
     setBusy(true);
+    setPhotoError(null);
     try {
       const dataUrl = await fileToAvatarDataURL(file);
       updateSettings({ ...settings, userAvatar: dataUrl });
       syncLocalProfile({ avatar: dataUrl });
     } catch {
-      /* ignore - keep the previous avatar */
+      // The user explicitly asked for this, so a file we cannot decode has to
+      // say so. Silently keeping the old avatar looked like nothing happened.
+      setPhotoError("That image could not be read. Try a JPEG or PNG.");
     } finally {
       setBusy(false);
     }
@@ -125,6 +129,10 @@ export function ProfileMenu({ onSwitchProfile, showSwitch }: Props) {
                 aria-label="Your name"
               />
             </div>
+
+            {photoError != null && (
+              <p className="profile-menu-error" role="alert">{photoError}</p>
+            )}
 
             <div className="profile-menu-actions">
               <button
