@@ -44,8 +44,8 @@ describe("CastRail", () => {
       character: "",
       profileURL: null,
     }));
-    render(<CastRail cast={many} />);
-    expect(screen.getAllByRole("button")).toHaveLength(20);
+    const { container } = render(<CastRail cast={many} />);
+    expect(container.querySelectorAll(".cast-card")).toHaveLength(20);
   });
 
   it("fires onSelect with the member when a card is clicked", async () => {
@@ -53,5 +53,26 @@ describe("CastRail", () => {
     render(<CastRail cast={cast} onSelect={onSelect} />);
     await userEvent.click(screen.getByText("Jane Doe"));
     expect(onSelect).toHaveBeenCalledWith(cast[0]);
+  });
+
+  it("renders interactive cards only when there is somewhere to go", () => {
+    // Detail renders the rail with no onSelect (no credits destination exists).
+    // Cards must not then be buttons: that gave every card a tab stop and a
+    // pointer cursor for a click that could never do anything.
+    const { container: inert } = render(<CastRail cast={cast} />);
+    expect(inert.querySelectorAll("button.cast-card")).toHaveLength(0);
+    expect(inert.querySelectorAll(".cast-card")).toHaveLength(2);
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+
+    const { container: live } = render(<CastRail cast={cast} onSelect={vi.fn()} />);
+    expect(live.querySelectorAll("button.cast-card")).toHaveLength(2);
+  });
+
+  it("keeps the name/character tooltip on non-interactive cards", () => {
+    const { container } = render(<CastRail cast={cast} />);
+    expect(container.querySelector(".cast-card")).toHaveAttribute(
+      "title",
+      "Jane Doe - Hero",
+    );
   });
 });

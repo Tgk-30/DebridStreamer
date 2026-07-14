@@ -284,7 +284,17 @@ export function Downloads() {
     });
   };
   const clearSelected = async () => {
-    await Promise.all(selectedRecords.map((record) => getStore().deleteDownload(record.jobId)));
+    // Stop the native job BEFORE dropping its row. Deleting the row alone left
+    // the transfer (or ffmpeg transcode) running at full speed with nothing left
+    // to stop it - the row carried the only Force stop button, and its destPath
+    // went with the record, orphaning the part-file. forceStop no-ops on
+    // terminal rows, so this is safe for the whole selection.
+    await Promise.all(
+      selectedRecords.map(async (record) => {
+        await manager.forceStop(record.jobId);
+        await getStore().deleteDownload(record.jobId);
+      }),
+    );
     setSelected(new Set());
   };
 

@@ -529,7 +529,7 @@ describe("updateSettings", () => {
     buildServices.mockClear();
 
     const next = settings({ theme: "noir", dataSaver: true });
-    act(() => result.current.updateSettings(next));
+    act(() => void result.current.updateSettings(next));
 
     expect(result.current.settings).toEqual(next);
     // Theme/data-saver are not service inputs, so service identities and the
@@ -543,7 +543,7 @@ describe("updateSettings", () => {
     buildServices.mockClear();
 
     const next = settings({ tmdbKey: "new-key" });
-    act(() => result.current.updateSettings(next));
+    act(() => void result.current.updateSettings(next));
 
     expect(buildServices).toHaveBeenCalledWith(next);
   });
@@ -554,7 +554,7 @@ describe("updateSettings", () => {
     const { result } = await renderStore();
 
     const next = settings({ theme: "noir" });
-    act(() => result.current.updateSettings(next));
+    act(() => void result.current.updateSettings(next));
     // In-memory value is still applied for the session.
     expect(result.current.settings).toEqual(next);
     await waitFor(() =>

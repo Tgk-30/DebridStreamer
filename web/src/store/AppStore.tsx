@@ -76,6 +76,12 @@ export function isLocalProfileUnlocked(id: string): boolean {
   return unlockedProfileIds.has(id);
 }
 
+/** Outcome of a durable settings write. Reported rather than thrown so the many
+ *  fire-and-forget callers can't produce unhandled rejections. */
+export interface SaveResult {
+  ok: boolean;
+}
+
 export interface AppStore {
   // Routing
   route: ScreenId;
@@ -103,7 +109,10 @@ export interface AppStore {
 
   // Settings (storage-port backed)
   settings: AppSettings;
-  updateSettings: (next: AppSettings) => void;
+  /** Applies in memory immediately and persists. Resolves to `{ok: false}` when
+   *  the durable write fails, so a caller that reports success can avoid
+   *  claiming a save that did not happen. Never rejects - safe to ignore. */
+  updateSettings: (next: AppSettings) => Promise<SaveResult>;
   /** Effective Simple/Advanced experience: Server Mode reads the profile
    * session; Local Mode reads AppSettings. Drives progressive disclosure. */
   simpleMode: boolean;
@@ -497,17 +506,27 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const consumePendingSearch = useCallback(() => setPendingSearch(null), []);
 
-  const updateSettings = useCallback((next: AppSettings) => {
+  const updateSettings = useCallback((next: AppSettings): Promise<SaveResult> => {
     // Optimistically update in-memory (and rebuild services only when their
-    // config changes), then persist to the durable Store. Persisting can reject if a keychain write
-    // fails closed (desktop) - surface it to the console rather than leaving an
-    // unhandled rejection; the in-memory value is still usable for the session.
+    // config changes), then persist to the durable Store. Persisting can reject
+    // if a keychain write fails closed (desktop); the in-memory value stays
+    // usable for the session.
+    //
+    // The outcome is REPORTED rather than thrown: most callers fire-and-forget
+    // (instant-apply appearance controls, the profile menu), so a rejecting
+    // promise would surface as an unhandled rejection. Resolving to {ok} lets
+    // "Save changes" avoid claiming a save that didn't happen, while leaving
+    // every existing caller safe to ignore the result.
     setNetworkMode(next.networkMode);
     setSettings(next);
-    void saveSettingsToStore(next).catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error("Failed to persist settings:", err);
-    });
+    return saveSettingsToStore(next).then(
+      () => ({ ok: true as const }),
+      (err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("Failed to persist settings:", err);
+        return { ok: false as const };
+      },
+    );
   }, []);
 
   // Coalesce concurrent watchlist mutations of the SAME item: each

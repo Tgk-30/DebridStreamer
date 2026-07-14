@@ -640,7 +640,22 @@ export function Settings() {
   // Edit a local draft; "Save" commits it through the store.
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  // Switching profiles swaps the settings under us. The draft was seeded once at
+  // mount, so without this it would still hold the PREVIOUS profile's values and
+  // Save would write them into the profile just switched to. Keyed on the
+  // profile id (not `settings`) so ordinary edits are never clobbered.
+  const draftProfileId = useRef<string | null>(activeProfile?.id ?? null);
+  useEffect(() => {
+    const id = activeProfile?.id ?? null;
+    if (draftProfileId.current === id) return;
+    draftProfileId.current = id;
+    setDraft(settings);
+    setSaved(false);
+    setSaveError(null);
+  }, [activeProfile?.id, settings]);
 
   useEffect(() => {
     let mounted = true;
@@ -657,9 +672,19 @@ export function Settings() {
     setSaved(false);
   }
 
-  function save() {
-    updateSettings(draft);
-    setSaved(true);
+  async function save() {
+    setSaveError(null);
+    const result = await updateSettings(draft);
+    if (result.ok) {
+      setSaved(true);
+      return;
+    }
+    // Don't claim a save that didn't happen (e.g. a keychain write failing
+    // closed on desktop). The in-memory value still applies for this session.
+    setSaved(false);
+    setSaveError(
+      "Could not save to this device. Your changes apply for now, but will be lost when the app restarts.",
+    );
   }
 
   function applyAppearance(next: Partial<AppSettings>) {
@@ -718,9 +743,12 @@ export function Settings() {
     [draft, settings],
   );
   const saveLabel = hasUnsavedChanges ? "Save changes" : saved ? "Saved" : "Up to date";
-  const saveNote = hasUnsavedChanges
-    ? "Unsaved changes are local until you save this profile."
-    : "Profile saved · credentials protected";
+  // A failed durable write must not read as "Profile saved".
+  const saveNote = saveError
+    ? saveError
+    : hasUnsavedChanges
+      ? "Unsaved changes are local until you save this profile."
+      : "Profile saved · credentials protected";
 
   return (
     <div className="settings-screen">
@@ -851,7 +879,7 @@ function ProfilesTab({
   multiUserEnabled: boolean;
   refreshProfiles: () => Promise<void>;
   settings: AppSettings;
-  updateSettings: (next: AppSettings) => void;
+  updateSettings: (next: AppSettings) => Promise<{ ok: boolean }>;
 }) {
   const [newName, setNewName] = useState("");
   const [message, setMessage] = useState<string | null>(null);

@@ -40,8 +40,13 @@
   border: none;
   background: transparent;
   color: var(--text-primary);
-  cursor: pointer;
   text-align: center;
+}
+/* Click affordances belong only to the interactive variant (rendered as a
+   <button> when CastRail is given an onSelect). Without one the card is a plain
+   <div>, so no pointer cursor promising an action that isn't there. */
+button.cast-card {
+  cursor: pointer;
 }
 
 .cast-photo {
@@ -65,7 +70,7 @@
     box-shadow 0.16s,
     transform 0.2s;
 }
-.cast-card:hover .cast-photo {
+button.cast-card:hover .cast-photo {
   transform: scale(1.04);
   border-color: rgba(var(--accent-rgb), 0.5);
   box-shadow: 0 6px 16px rgba(var(--accent-rgb), 0.22);
