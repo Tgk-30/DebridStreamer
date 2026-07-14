@@ -95,9 +95,32 @@ export function decryptSecret(payload: string, key: Buffer): string {
   return decrypted.toString("utf8");
 }
 
+/** The shipped scrypt work factor. Deliberately expensive - that is the whole
+ *  point of a password KDF. */
+const SCRYPT_N = 2 ** 15;
+
+/** The work factor to hash NEW passwords with.
+ *
+ *  Under test the full cost is pure waste: nearly every server test sets up an
+ *  owner and profiles, and each one pays it. On a loaded CI runner that pushed
+ *  the longest test past vitest's 20s limit and failed a release build, which
+ *  then passed unchanged on retry - a flake, not a bug.
+ *
+ *  Only ever honoured under NODE_ENV=test: an env var that could dial down
+ *  password hashing in a real deployment would be a vulnerability, not a knob.
+ *  verifyPassword reads N/r/p back out of each stored hash, so hashes written at
+ *  any cost stay verifiable and the shipped default is unchanged. */
+function scryptCost(): number {
+  if (process.env.NODE_ENV !== "test") return SCRYPT_N;
+  const override = Number(process.env.DS_SCRYPT_N);
+  // scrypt requires a power of two greater than 1.
+  const isPowerOfTwo = Number.isInteger(override) && override > 1 && (override & (override - 1)) === 0;
+  return isPowerOfTwo ? override : SCRYPT_N;
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("base64url");
-  const params = { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+  const params = { N: scryptCost(), r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
   const derived = await scryptAsync(password, salt, 64, params);
   return [
     "scrypt",
