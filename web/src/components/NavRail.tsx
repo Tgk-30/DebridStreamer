@@ -8,6 +8,7 @@ import { Icon, type IconName } from "./Icon";
 import { isServerMode } from "../lib/serverMode";
 import { useSimpleMode } from "../store/AppStore";
 import type { LocalProfile } from "../storage/ProfileRegistry";
+import { isImageAvatar } from "../data/profileAvatars";
 import {
   useServerProfiles,
   useServerSession,
@@ -179,15 +180,6 @@ const EMPTY_NAV_IDS: readonly ScreenId[] = [];
 function initialOf(name: string): string {
   const trimmed = name.trim();
   return trimmed.length > 0 ? trimmed[0]!.toUpperCase() : "?";
-}
-
-/** A local profile avatar can be an emoji/initial OR an image data/URL set via
- * the ProfileMenu; only the latter renders as an <img> (never as raw text). */
-function isImageAvatar(avatar: string | undefined): avatar is string {
-  return (
-    typeof avatar === "string" &&
-    (avatar.startsWith("data:") || avatar.startsWith("http") || avatar.startsWith("blob:"))
-  );
 }
 
 const NAV_COLLAPSED_KEY = "ds_nav_collapsed";

@@ -71,6 +71,8 @@ import {
 import { hashPassword } from "../lib/passwordHash";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
+import { AvatarPicker } from "../components/AvatarPicker";
+import { isImageAvatar } from "../data/profileAvatars";
 import { InfoTip } from "../components/InfoTip";
 import { AdvancedOnly } from "../components/AdvancedOnly";
 import { SettingsSearch } from "../components/SettingsSearch";
@@ -1029,17 +1031,11 @@ function ProfilesTab({
                   <div className="settings-profile-look">
                     <span className="settings-label">Avatar &amp; color</span>
                     <div className="settings-profile-avatars">
-                      {PROFILE_EMOJI.map((emoji) => (
-                        <button
-                          type="button"
-                          key={emoji}
-                          className={`settings-profile-emoji${!photo && profile.avatar === emoji ? " is-selected" : ""}`}
-                          onClick={() => editProfile(profile, { avatar: emoji })}
-                          aria-label={`Use ${emoji} avatar`}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
+                      <AvatarPicker
+                        value={photo ? "" : (profile.avatar ?? "")}
+                        onChange={(emoji) => editProfile(profile, { avatar: emoji })}
+                        idPrefix={`profile-${profile.id}`}
+                      />
                       <label className="settings-profile-color" title="Profile color">
                         <input type="color" value={profile.color ?? "#475569"} onChange={(event) => editProfile(profile, { color: event.target.value })} />
                       </label>
@@ -1066,12 +1062,6 @@ function ProfilesTab({
       {message && <p className="settings-note" role="status">{message}</p>}
     </div>
   );
-}
-
-const PROFILE_EMOJI = ["😀", "🎬", "🍿", "⭐", "🦊", "🌙", "🐱", "🚀"];
-
-function isImageAvatar(avatar?: string): avatar is string {
-  return typeof avatar === "string" && (avatar.startsWith("data:") || avatar.startsWith("http") || avatar.startsWith("blob:"));
 }
 
 function profileGlyph(profile: LocalProfile): string {

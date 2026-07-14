@@ -2,19 +2,14 @@ import { useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { createProfileRecord } from "../storage/ProfileRegistry";
 import { useModalA11y } from "./useModalA11y";
+import { AvatarPicker } from "./AvatarPicker";
+import {
+  DEFAULT_PROFILE_AVATAR,
+  isImageAvatar,
+} from "../data/profileAvatars";
 import "./ProfilePicker.css";
 
 const COLORS = ["#6366f1", "#ec4899", "#22c55e", "#f59e0b", "#06b6d4", "#a855f7"];
-const AVATARS = ["😀", "🎬", "🍿", "⭐", "🦊", "🌙"];
-
-/** A stored avatar can be an emoji/initial OR an image data/URL (set from the
- * top-right ProfileMenu). Only the latter should render as an <img>. */
-function isImageAvatar(avatar?: string): avatar is string {
-  return (
-    typeof avatar === "string" &&
-    (avatar.startsWith("data:") || avatar.startsWith("http") || avatar.startsWith("blob:"))
-  );
-}
 
 function initialFor(profile: { name: string; avatar?: string }) {
   return profile.avatar || profile.name.trim().charAt(0).toUpperCase() || "?";
@@ -50,7 +45,7 @@ export function LocalProfilePicker({
   const [password, setPassword] = useState("");
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
-  const [avatar, setAvatar] = useState("😀");
+  const [avatar, setAvatar] = useState(DEFAULT_PROFILE_AVATAR);
   const [color, setColor] = useState(COLORS[0]!);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -150,7 +145,7 @@ export function LocalProfilePicker({
           <div className="profile-form">
             <h2 className="profile-picker-title">Add profile</h2>
             <label className="profile-field">Name<input value={name} maxLength={40} onChange={(event) => setName(event.target.value)} autoFocus /></label>
-            <label className="profile-field">Avatar<select value={avatar} onChange={(event) => setAvatar(event.target.value)}>{AVATARS.map((value) => <option key={value}>{value}</option>)}</select></label>
+            <div className="profile-field"><span>Avatar</span><AvatarPicker value={avatar} onChange={setAvatar} idPrefix="new-profile" /></div>
             <label className="profile-field">Color<select value={color} onChange={(event) => setColor(event.target.value)}>{COLORS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
             <div className="profile-picker-foot"><button className="profile-text-btn" type="button" onClick={() => setAdding(false)}>Cancel</button><button className="profile-solid-btn" type="button" onClick={() => void addProfile()} disabled={busy}>Add profile</button></div>
           </div>
