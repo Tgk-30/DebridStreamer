@@ -316,7 +316,9 @@
 
 .settings-option-strip {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Wrap to one column when the panel is narrow instead of crushing the two
+     cards side by side. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--sp-sm);
 }
 
@@ -1952,8 +1954,28 @@
 }
 
 /* Simple/Advanced experience toggle (above the tab navigation). */
+/* Small, unobtrusive control tucked at the bottom-left below the panel (it is
+   a rarely-touched preference, not a headline). */
 .settings-experience {
-  margin: 0 0 var(--sp-md);
+  width: fit-content;
+  max-width: 100%;
+  margin: var(--sp-lg) 0 0;
+}
+.settings-experience .settings-segment-block {
+  gap: 6px;
+}
+.settings-experience .settings-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.settings-experience .settings-segmented {
+  min-height: 34px;
+}
+.settings-experience .settings-segmented button {
+  padding: 0 16px;
+  font-size: 12px;
 }
 
 /* Remote-access (Tailscale / Cloudflare Tunnel) guided steps in the Server tab. */
@@ -1994,4 +2016,215 @@
 }
 .settings-remote-step-body strong {
   font-size: 13.5px;
+}
+
+/* ---- Profiles tab ---------------------------------------------------------
+   A card per profile with a real avatar preview (never the raw data URL that
+   the old plain text input exposed), a compact emoji + color picker, and a
+   quiet inline password/delete treatment. */
+.settings-profiles .settings-toggle-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.settings-profile-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding: var(--sp-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  background: var(--glass-tint-control);
+}
+.settings-profile-card.is-current {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.22);
+}
+
+.settings-profile-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.settings-profile-avatar {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  border-radius: 13px;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.settings-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.settings-profile-identity {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.settings-profile-name-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+.settings-profile-name-line strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-profile-you,
+.settings-profile-admin {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.settings-profile-you {
+  color: var(--on-accent, #fff);
+  background: rgb(var(--accent-rgb));
+}
+.settings-profile-admin {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
+}
+.settings-profile-sub {
+  font-size: 12px;
+}
+
+.settings-profile-remove {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.14s, background 0.14s, border-color 0.14s;
+}
+.settings-profile-remove:hover {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.32);
+}
+
+.settings-profile-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding-top: var(--sp-md);
+  border-top: 1px solid var(--glass-border);
+}
+
+.settings-profile-look {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-profile-avatars {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.settings-profile-emoji {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--glass-border);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 19px;
+  cursor: pointer;
+  transition: border-color 0.14s, background 0.14s, transform 0.12s;
+}
+.settings-profile-emoji:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.08);
+}
+.settings-profile-emoji.is-selected {
+  border-color: rgb(var(--accent-rgb));
+  background: rgba(var(--accent-rgb), 0.16);
+}
+.settings-profile-color {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  border-radius: 11px;
+  cursor: pointer;
+}
+.settings-profile-color input[type="color"] {
+  width: 150%;
+  height: 150%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-profile-password {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.settings-profile-password input {
+  flex: 1 1 200px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  font: inherit;
+}
+.settings-profile-clearpw {
+  color: var(--text-secondary);
+}
+
+.settings-profile-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-xs);
+}
+.settings-profile-add input {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  font: inherit;
 }

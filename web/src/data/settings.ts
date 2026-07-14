@@ -432,7 +432,7 @@ export function defaultSettings(): AppSettings {
     streamMaxSizeGB: 0,
     dataSaver: false,
     autoAdvanceEpisodes: true,
-    showWatchStats: false,
+    showWatchStats: true,
     transcode: false,
     ratingScale: "ten",
     preferredExternalPlayer: "",

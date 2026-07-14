@@ -755,19 +755,6 @@ export function Settings() {
         visibleTabs={new Set(tabs.map((t) => t.id))}
       />
 
-      <div className="settings-experience">
-        <SegmentedControl
-          label="Experience tier"
-          value={simpleMode ? "simple" : "advanced"}
-          options={[
-            { value: "simple", label: "Simple" },
-            { value: "advanced", label: "Advanced" },
-          ]}
-          onChange={(v) => setExperience(v === "simple")}
-          infoTip="Advanced is the default for new profiles. Simple hides Calendar, Assistant, and Debrid while keeping the essential screens and settings available."
-        />
-      </div>
-
       <label className="settings-tab-select">
         <span className="settings-label">Settings category</span>
         <select value={tab} onChange={(event) => setTab(event.target.value as Tab)}>
@@ -819,6 +806,20 @@ export function Settings() {
           />
         )}
       </div>
+
+      <div className="settings-experience">
+        <SegmentedControl
+          label="Experience tier"
+          value={simpleMode ? "simple" : "advanced"}
+          options={[
+            { value: "simple", label: "Simple" },
+            { value: "advanced", label: "Advanced" },
+          ]}
+          onChange={(v) => setExperience(v === "simple")}
+          infoTip="Advanced is the default. Simple hides Calendar, Assistant, and Debrid while keeping the essential screens and settings."
+        />
+      </div>
+
       <p className="settings-version t-secondary">
         DebridStreamer v{appVersion ?? "…"}
       </p>
@@ -900,34 +901,93 @@ function ProfilesTab({
   }
 
   return (
-    <div className="settings-fields">
-      <SettingsInfo label="Profiles">
-        Each profile has separate settings, library, watchlist, history, and credentials on this device.
-      </SettingsInfo>
-      <label className="settings-field">
-        <span className="settings-label-line"><span className="settings-label">Enable multiple profiles</span><InfoTip label="About multiple profiles">Turning this off keeps only the current profile active. It does not delete other profiles or their data.</InfoTip></span>
+    <div className="settings-fields settings-profiles">
+      <label className="settings-field settings-toggle-row">
+        <span className="settings-label-line"><span className="settings-label">Enable multiple profiles</span><InfoTip label="Multiple profiles">Everyone on this device gets their own library, history, and watchlist. Turning this off keeps only the current profile active; it never deletes other profiles or their data.</InfoTip></span>
         <input type="checkbox" checked={multiUserEnabled} onChange={(event) => void setMultiUserEnabled(event.target.checked).then(() => refreshProfiles())} />
       </label>
-      {profiles.map((profile) => (
-        <div className="settings-source-card" key={profile.id}>
-          <div className="settings-source-card-head"><strong>{profile.name}{profile.id === activeProfile?.id ? " (current)" : ""}</strong>{profile.isAdmin && <span className="chip is-active">Admin</span>}</div>
-          <div className="settings-source-grid">
-            <Field label="Name"><input value={profile.name} maxLength={40} disabled={!canManage} onChange={(event) => editProfile(profile, { name: event.target.value })} /></Field>
-            <Field label="Avatar"><input value={profile.avatar ?? ""} maxLength={80} disabled={!canManage} onChange={(event) => editProfile(profile, { avatar: event.target.value })} /></Field>
-            <Field label="Color"><input type="color" value={profile.color ?? "#475569"} disabled={!canManage} onChange={(event) => editProfile(profile, { color: event.target.value })} /></Field>
-          </div>
-          {canManage && <div className="settings-source-actions">
-            <input type="password" value={passwords[profile.id] ?? ""} placeholder={profile.passwordHash ? "New password" : "Set password"} onChange={(event) => setPasswords((previous) => ({ ...previous, [profile.id]: event.target.value }))} />
-            <button type="button" className="btn" onClick={() => void savePassword(profile)}>{profile.passwordHash ? "Change password" : "Set password"}</button>
-            {profile.passwordHash && <button type="button" className="btn" onClick={() => void updateProfileRecord(profile.id, { passwordHash: undefined }).then(() => refresh("Password cleared."))}>Clear password</button>}
-            {!profile.isDefault && <button type="button" className="btn" onClick={() => void deleteProfile(profile)}>Delete</button>}
-          </div>}
+
+      <div className="settings-profile-list">
+        {profiles.map((profile) => {
+          const isCurrent = profile.id === activeProfile?.id;
+          const photo = isImageAvatar(profile.avatar);
+          return (
+            <div className={`settings-profile-card${isCurrent ? " is-current" : ""}`} key={profile.id}>
+              <div className="settings-profile-head">
+                <span className="settings-profile-avatar" style={{ background: profile.color ?? "#475569" }}>
+                  {photo ? <img src={profile.avatar} alt="" /> : profileGlyph(profile)}
+                </span>
+                <div className="settings-profile-identity">
+                  <span className="settings-profile-name-line">
+                    <strong>{profile.name || "Profile"}</strong>
+                    {isCurrent && <span className="settings-profile-you">You</span>}
+                    {profile.isAdmin && <span className="settings-profile-admin">Admin</span>}
+                  </span>
+                  <span className="settings-profile-sub t-secondary">
+                    {profile.passwordHash ? "Password protected" : "No password"}
+                  </span>
+                </div>
+                {canManage && !profile.isDefault && (
+                  <button type="button" className="settings-profile-remove" onClick={() => void deleteProfile(profile)} title="Delete profile" aria-label={`Delete ${profile.name}`}>
+                    <Icon name="trash" size={15} />
+                  </button>
+                )}
+              </div>
+
+              {canManage && (
+                <div className="settings-profile-edit">
+                  <Field label="Name"><input value={profile.name} maxLength={40} onChange={(event) => editProfile(profile, { name: event.target.value })} /></Field>
+                  <div className="settings-profile-look">
+                    <span className="settings-label">Avatar &amp; color</span>
+                    <div className="settings-profile-avatars">
+                      {PROFILE_EMOJI.map((emoji) => (
+                        <button
+                          type="button"
+                          key={emoji}
+                          className={`settings-profile-emoji${!photo && profile.avatar === emoji ? " is-selected" : ""}`}
+                          onClick={() => editProfile(profile, { avatar: emoji })}
+                          aria-label={`Use ${emoji} avatar`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                      <label className="settings-profile-color" title="Profile color">
+                        <input type="color" value={profile.color ?? "#475569"} onChange={(event) => editProfile(profile, { color: event.target.value })} />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="settings-profile-password">
+                    <input type="password" value={passwords[profile.id] ?? ""} placeholder={profile.passwordHash ? "New password" : "Set a password"} onChange={(event) => setPasswords((previous) => ({ ...previous, [profile.id]: event.target.value }))} />
+                    <button type="button" className="btn" onClick={() => void savePassword(profile)}>{profile.passwordHash ? "Change" : "Set"}</button>
+                    {profile.passwordHash && <button type="button" className="btn settings-profile-clearpw" onClick={() => void updateProfileRecord(profile.id, { passwordHash: undefined }).then(() => refresh("Password cleared."))}>Clear</button>}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {canManage && (
+        <div className="settings-profile-add">
+          <input value={newName} maxLength={40} placeholder="New profile name" onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void addProfile(); }} />
+          <button type="button" className="btn btn-prominent" onClick={() => void addProfile()}>Add profile</button>
         </div>
-      ))}
-      {canManage && <div className="settings-source-actions"><input value={newName} maxLength={40} placeholder="New profile name" onChange={(event) => setNewName(event.target.value)} /><button type="button" className="btn btn-prominent" onClick={() => void addProfile()}>Add profile</button></div>}
+      )}
       {message && <p className="settings-note" role="status">{message}</p>}
     </div>
   );
+}
+
+const PROFILE_EMOJI = ["😀", "🎬", "🍿", "⭐", "🦊", "🌙", "🐱", "🚀"];
+
+function isImageAvatar(avatar?: string): avatar is string {
+  return typeof avatar === "string" && (avatar.startsWith("data:") || avatar.startsWith("http") || avatar.startsWith("blob:"));
+}
+
+function profileGlyph(profile: LocalProfile): string {
+  if (profile.avatar && !isImageAvatar(profile.avatar)) return profile.avatar;
+  return profile.name.trim().charAt(0).toUpperCase() || "?";
 }
 
 function UpdatesTab({ draft, patch }: TabProps) {
