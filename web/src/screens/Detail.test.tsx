@@ -115,6 +115,7 @@ const listHistoryForMedia = vi.fn<(...a: any[]) => Promise<any[]>>(async () => [
 const getResume = vi.fn<(...a: any[]) => Promise<any>>(async () => null);
 const storeRecordHistory = vi.fn<(...a: any[]) => Promise<any>>(async () => ({}));
 const deleteHistory = vi.fn<(...a: any[]) => Promise<void>>(async () => {});
+let movieHistory: any = null;
 vi.mock("../storage", () => ({
   getStore: () => ({
     recentTasteEvents,
@@ -147,6 +148,8 @@ vi.mock("../components/DetailHero", () => ({
     downloadDisabledReason,
     externalRatings,
     completionLabel,
+    movieWatched,
+    onToggleMovieWatched,
   }: any) => (
     <div data-testid="hero">
       <span data-testid="hero-title">{item?.title}</span>
@@ -156,6 +159,11 @@ vi.mock("../components/DetailHero", () => ({
       <span data-testid="hero-completion">{completionLabel ?? "none"}</span>
       {externalRatings}
       <button onClick={onPlay}>play</button>
+      {onToggleMovieWatched && (
+        <button onClick={onToggleMovieWatched} aria-pressed={movieWatched}>
+          {movieWatched ? "Mark unwatched" : "Mark watched"}
+        </button>
+      )}
       {onDownload && (
         <button onClick={onDownload} disabled={downloadDisabledReason != null}>
           download
@@ -366,10 +374,20 @@ beforeEach(() => {
   };
   mockSettings = { transcode: false, ratingScale: "thumbs" };
   vi.clearAllMocks();
+  movieHistory = null;
   recentTasteEvents.mockResolvedValue([]);
   listHistory.mockResolvedValue([]);
   listHistoryForMedia.mockResolvedValue([]);
-  getResume.mockResolvedValue(null);
+  getResume.mockImplementation(async (_mediaId, episodeId) =>
+    episodeId == null ? movieHistory : null,
+  );
+  storeRecordHistory.mockImplementation(async (entry) => {
+    if (entry.episodeId == null) movieHistory = { ...entry };
+    return entry;
+  });
+  deleteHistory.mockImplementation(async (mediaId, episodeId) => {
+    if (mediaId === "m1" && episodeId == null) movieHistory = null;
+  });
 });
 
 afterEach(() => {
@@ -526,6 +544,34 @@ describe("Detail base render", () => {
     );
     expect(recordResume).not.toHaveBeenCalled();
     expect(refreshContinueWatching).not.toHaveBeenCalled();
+  });
+
+  it("marks and unmarks a movie through its completed history row", async () => {
+    render(<Detail />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Mark watched" }));
+    await waitFor(() =>
+      expect(storeRecordHistory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mediaId: "m1",
+          episodeId: null,
+          progressSeconds: 1,
+          durationSeconds: 1,
+          completed: true,
+        }),
+      ),
+    );
+    expect(await screen.findByRole("button", { name: "Mark unwatched" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Mark unwatched" }));
+    await waitFor(() => expect(deleteHistory).toHaveBeenCalledWith("m1", null));
+    expect(await screen.findByRole("button", { name: "Mark watched" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 });
 

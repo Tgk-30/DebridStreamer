@@ -31,8 +31,9 @@
 
 .episode-picker-watch-controls {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-sm);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-xs);
 }
 .episode-rollup-btn {
   display: inline-flex;
@@ -40,10 +41,10 @@
   gap: 6px;
   min-height: 34px;
   padding: 7px 11px;
-  border: 0.75px solid var(--glass-border);
+  border: 0.75px solid rgba(var(--accent-rgb), 0.55);
   border-radius: var(--r-pill);
-  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
-  color: var(--text-secondary);
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--text-primary);
   font: inherit;
   font-size: 12px;
   font-weight: 700;
@@ -51,8 +52,8 @@
   transition: background 0.16s, border-color 0.16s, color 0.16s;
 }
 .episode-rollup-btn:hover:not(:disabled) {
-  border-color: rgba(var(--accent-rgb), 0.56);
-  color: var(--text-primary);
+  border-color: rgba(var(--accent-rgb), 0.78);
+  background: rgba(var(--accent-rgb), 0.24);
 }
 .episode-rollup-btn.is-watched {
   border-color: rgba(102, 221, 155, 0.55);
@@ -64,6 +65,47 @@
   opacity: 0.5;
 }
 .episode-rollup-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.episode-rollup-series {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding-left: var(--sp-xs);
+}
+.episode-rollup-series-label {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 650;
+}
+.episode-rollup-series-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.episode-rollup-series-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+.episode-rollup-series-btn.is-watched {
+  color: rgb(157, 240, 190);
+}
+.episode-rollup-series-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.episode-rollup-series-btn:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }

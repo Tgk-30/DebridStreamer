@@ -662,6 +662,33 @@ export function Detail() {
       });
   }
 
+  function toggleMovieWatched(watched: boolean): void {
+    if (currentDetailItem.type !== "movie") return;
+    const mutationId = `movie:${currentDetailItem.id}`;
+    if (watchedMutationIds.current.has(mutationId)) return;
+    watchedMutationIds.current.add(mutationId);
+    const store = getStore();
+    void (
+      watched
+        ? store.recordHistory({
+            mediaId: currentDetailItem.id,
+            episodeId: null,
+            progressSeconds: 1,
+            durationSeconds: 1,
+            completed: true,
+            preview: currentDetailItem,
+          })
+        : store.deleteHistory(currentDetailItem.id, null)
+    )
+      .then(() => setWatchedRefreshVersion((version) => version + 1))
+      .catch(() => {
+        // Keep the existing display state when persistence fails.
+      })
+      .finally(() => {
+        watchedMutationIds.current.delete(mutationId);
+      });
+  }
+
   function toggleSeriesWatched(watched: boolean): void {
     if (!watched) {
       persistWatchedEpisodes(
@@ -1179,6 +1206,12 @@ export function Detail() {
               : undefined
           }
           downloadDisabledReason={downloadDisabledReason}
+          movieWatched={detailItem.type === "movie" ? watchedDetail.movieWatched : false}
+          onToggleMovieWatched={
+            detailItem.type === "movie"
+              ? () => toggleMovieWatched(!watchedDetail.movieWatched)
+              : undefined
+          }
           externalRatings={<OmdbRatings imdbId={detail.data.imdbId} />}
           completionLabel={
             detailItem.type === "movie"

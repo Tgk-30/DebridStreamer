@@ -227,7 +227,8 @@
   font-weight: 700;
 }
 .detail-watch,
-.detail-request {
+.detail-request,
+.detail-watched {
   padding: 15px 26px;
   font-size: 16px;
   background: rgba(255, 255, 255, 0.12);
@@ -235,11 +236,13 @@
   backdrop-filter: blur(12px);
 }
 .detail-watch:hover,
-.detail-request:not(:disabled):hover {
+.detail-request:not(:disabled):hover,
+.detail-watched:hover {
   background: rgba(255, 255, 255, 0.2);
 }
 .detail-watch.is-on,
-.detail-request.is-on {
+.detail-request.is-on,
+.detail-watched.is-on {
   border-color: rgba(var(--accent-rgb), 0.6);
   color: var(--accent);
   background: rgba(var(--accent-rgb), 0.14);

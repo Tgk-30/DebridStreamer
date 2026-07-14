@@ -215,6 +215,42 @@ describe("EpisodePicker - rich mode", () => {
     renderPicker();
     expect(document.querySelector(".episode-watched-btn")).toBeNull();
   });
+
+  it("makes the current season action primary and the entire-series action secondary", async () => {
+    const user = userEvent.setup();
+    mockUseSeasons.mockReturnValue({
+      seasons: [season(1), season(2)],
+      loading: false,
+      source: "live",
+    });
+    mockUseEpisodes.mockReturnValue({
+      episodes: [episode(1, 1), episode(1, 2)],
+      loading: false,
+      source: "live",
+    });
+    const onToggleSeasonWatched = vi.fn();
+    const onToggleSeriesWatched = vi.fn();
+    renderPicker({ onToggleSeasonWatched, onToggleSeriesWatched });
+
+    const seasonAction = screen.getByRole("button", { name: "Mark season watched" });
+    const seriesAction = screen.getByRole("button", {
+      name: "Mark entire series watched",
+    });
+    expect(seasonAction).toHaveClass("episode-rollup-btn");
+    expect(seriesAction).toHaveClass("episode-rollup-series-btn");
+    expect(screen.getByText("Entire series")).toBeInTheDocument();
+
+    await user.click(seasonAction);
+    expect(onToggleSeasonWatched).toHaveBeenCalledWith(
+      [
+        { season: 1, episode: 1 },
+        { season: 1, episode: 2 },
+      ],
+      true,
+    );
+    await user.click(seriesAction);
+    expect(onToggleSeriesWatched).toHaveBeenCalledWith(true);
+  });
 });
 
 describe("EpisodePicker - degraded stepper", () => {

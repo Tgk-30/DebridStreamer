@@ -38,6 +38,10 @@ interface DetailHeroProps {
   onDownload?: () => void;
   /** Honest explanation for a disabled download action. */
   downloadDisabledReason?: string | null;
+  /** Movie-only watched state, controlled by Detail's durable history row. */
+  movieWatched?: boolean;
+  /** Movie-only action to toggle the durable watched history row. */
+  onToggleMovieWatched?: () => void;
   /** Async external ratings owned by Detail, placed beside the TMDB score. */
   externalRatings?: ReactNode;
   /** Full-title completion state derived from durable watch history. */
@@ -59,6 +63,8 @@ export function DetailHero({
   playDisabledReason = null,
   onDownload,
   downloadDisabledReason = null,
+  movieWatched = false,
+  onToggleMovieWatched,
   externalRatings,
   completionLabel = null,
 }: DetailHeroProps) {
@@ -187,6 +193,18 @@ export function DetailHero({
               >
                 <Icon name="debrid" size={16} />
                 Download
+              </button>
+            )}
+            {onToggleMovieWatched && (
+              <button
+                type="button"
+                className={`btn detail-watched${movieWatched ? " is-on" : ""}`}
+                onClick={onToggleMovieWatched}
+                aria-pressed={movieWatched}
+                title={movieWatched ? "Watched. Mark unwatched" : "Mark watched"}
+              >
+                <Icon name="check" size={16} filled={movieWatched} />
+                {movieWatched ? "Mark unwatched" : "Mark watched"}
               </button>
             )}
             <button

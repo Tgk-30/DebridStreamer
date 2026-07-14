@@ -249,16 +249,21 @@ export function EpisodePicker({
             </button>
           )}
           {onToggleSeriesWatched != null && (
-            <button
-              type="button"
-              className={`episode-rollup-btn${seriesWatched ? " is-watched" : ""}`}
-              aria-pressed={seriesWatched}
-              disabled={seasons.loading || seasons.seasons.length === 0}
-              onClick={() => onToggleSeriesWatched(!seriesWatched)}
-            >
-              <Icon name="check" size={14} />
-              {seriesWatched ? "Mark series unwatched" : "Mark series watched"}
-            </button>
+            <div className="episode-rollup-series">
+              <span className="episode-rollup-series-label">Entire series</span>
+              <button
+                type="button"
+                className={`episode-rollup-series-btn${seriesWatched ? " is-watched" : ""}`}
+                aria-pressed={seriesWatched}
+                disabled={seasons.loading || seasons.seasons.length === 0}
+                onClick={() => onToggleSeriesWatched(!seriesWatched)}
+              >
+                <Icon name="check" size={13} />
+                {seriesWatched
+                  ? "Mark entire series unwatched"
+                  : "Mark entire series watched"}
+              </button>
+            </div>
           )}
         </div>
       )}
