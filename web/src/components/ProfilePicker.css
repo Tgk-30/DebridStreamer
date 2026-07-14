@@ -226,6 +226,10 @@
 /* ---- Add / edit form ---- */
 .profile-form {
   width: min(440px, 100%);
+  /* The 720px .profile-picker-inner is centred in the window, but it is a plain
+     block - without this the narrower form sits against its left edge and reads
+     as off-centre. Applies to the password prompt and the add-profile form. */
+  margin-inline: auto;
   text-align: left;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 16px;

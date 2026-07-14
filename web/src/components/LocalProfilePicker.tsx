@@ -52,6 +52,18 @@ export function LocalProfilePicker({
   // password must still be able to pick their own (unprotected) profile instead
   // of being trapped on a single locked tile with no way out.
   const shownProfiles = profiles.length > 0 ? profiles : activeProfile != null ? [activeProfile] : [];
+  // When the registry holds exactly one profile there is nothing to choose, so
+  // an unlock goes straight to its password rather than through a one-tile grid.
+  // With more than one, the grid comes first. Derived rather than seeded into
+  // useState so it stays correct when the async profile list lands: seeding
+  // would strand a multi-profile user on the password form for whichever
+  // profile happened to be active on the first render.
+  const soleLockedProfile =
+    mode === "lock" && profiles.length === 1 && profiles[0]?.passwordHash != null
+      ? profiles[0]
+      : null;
+  // The tile the user picked, or the sole profile we jumped straight to.
+  const unlockTarget = passwordFor ?? soleLockedProfile?.id ?? null;
 
   async function choose(id: string) {
     const profile = profiles.find((item) => item.id === id) ?? (activeProfile?.id === id ? activeProfile : undefined);
@@ -72,9 +84,9 @@ export function LocalProfilePicker({
   }
 
   async function unlock() {
-    if (passwordFor == null) return;
+    if (unlockTarget == null) return;
     setBusy(true);
-    const result = await switchLocalProfile(passwordFor, password);
+    const result = await switchLocalProfile(unlockTarget, password);
     setBusy(false);
     if (!result.ok) {
       setError(result.reason === "bad-password" ? "Incorrect password." : "That profile is no longer available.");
@@ -118,11 +130,18 @@ export function LocalProfilePicker({
             <label className="profile-field">Color<select value={color} onChange={(event) => setColor(event.target.value)}>{COLORS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
             <div className="profile-picker-foot"><button className="profile-text-btn" type="button" onClick={() => setAdding(false)}>Cancel</button><button className="profile-solid-btn" type="button" onClick={() => void addProfile()} disabled={busy}>Add profile</button></div>
           </div>
-        ) : passwordFor != null ? (
+        ) : unlockTarget != null ? (
           <div className="profile-form">
             <h2 className="profile-picker-title">Enter password</h2>
             <label className="profile-field">Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void unlock(); }} autoFocus /></label>
-            <div className="profile-picker-foot"><button className="profile-text-btn" type="button" onClick={() => { setPasswordFor(null); setError(null); }}>Back</button><button className="profile-solid-btn" type="button" onClick={() => void unlock()} disabled={busy}>Unlock</button></div>
+            <div className="profile-picker-foot">
+              {/* Back only exists when a grid was actually behind us - jumping
+                  straight to the sole profile's password has nowhere to go. */}
+              {passwordFor != null && (
+                <button className="profile-text-btn" type="button" onClick={() => { setPasswordFor(null); setError(null); }}>Back</button>
+              )}
+              <button className="profile-solid-btn" type="button" onClick={() => void unlock()} disabled={busy}>Unlock</button>
+            </div>
           </div>
         ) : (
           <>
