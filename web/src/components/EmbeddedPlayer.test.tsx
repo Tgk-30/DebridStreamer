@@ -336,7 +336,7 @@ describe("EmbeddedPlayer playback controls", () => {
     await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
     emitProperty("pause", true);
 
-    expect(screen.getByRole("button", { name: "Resume playback" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Paused:/)).toBeInTheDocument();
     expect(
       screen.getByText(
         (_, element) =>
@@ -346,9 +346,10 @@ describe("EmbeddedPlayer playback controls", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("The crew make a difficult discovery.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Resume playback" }));
+    // The whole pause screen is the resume affordance (no separate button).
+    fireEvent.click(screen.getByLabelText(/^Paused:/));
     expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("pause", false);
-    expect(screen.queryByRole("button", { name: "Resume playback" })).toBeNull();
+    expect(screen.queryByLabelText(/^Paused:/)).toBeNull();
   });
 
   it("keeps native chrome interactive above the pause overlay", async () => {
@@ -386,7 +387,7 @@ describe("EmbeddedPlayer playback controls", () => {
     await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
     emitProperty("pause", true);
 
-    expect(screen.getByRole("button", { name: "Resume playback" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Paused:/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Just the title" })).toBeInTheDocument();
     expect(document.querySelector(".player-pause-meta")).toBeNull();
   });

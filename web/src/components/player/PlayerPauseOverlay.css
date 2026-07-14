@@ -154,40 +154,9 @@
   -webkit-line-clamp: 3;
 }
 
-.player-pause-play {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 54px;
-  margin-top: 30px;
-  padding: 0 26px 0 21px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 999px;
-  background: linear-gradient(135deg, #ffffff 0%, #eceef6 100%);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.12);
-  color: #11131c;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease, filter 0.2s ease;
-}
 
-.player-pause-play:hover {
-  transform: translateY(-2px) scale(1.015);
-  box-shadow: 0 15px 36px rgba(0, 0, 0, 0.4), 0 0 24px rgba(255, 255, 255, 0.16);
-  filter: brightness(1.025);
-}
 
-.player-pause-play:active {
-  transform: translateY(0) scale(0.975);
-}
 
-.player-pause-play:focus-visible {
-  outline: 2px solid rgb(var(--accent-rgb));
-  outline-offset: 4px;
-}
 
 @media (max-width: 640px) {
   .player-pause-content {
@@ -203,8 +172,7 @@
   .player-pause-screen,
   .player-pause-content,
   .player-pause-art,
-  .player-pause-eyebrow::before,
-  .player-pause-play {
+  .player-pause-eyebrow::before {
     animation: none;
     transition: none;
   }

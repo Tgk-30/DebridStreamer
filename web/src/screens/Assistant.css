@@ -9,6 +9,13 @@
   max-width: 880px;
 }
 
+/* Empty state: EmptyState centers itself in its parent, so the 880px reading
+   column would park the card left of the window centre. Drop the cap for the
+   empty variant only - the heading stays left-aligned like every other screen. */
+.assistant-screen.is-empty {
+  max-width: none;
+}
+
 .assistant-h1 {
   margin: 0;
   font-size: 28px;

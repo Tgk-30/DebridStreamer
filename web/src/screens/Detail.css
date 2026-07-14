@@ -89,12 +89,18 @@
 }
 .detail-download-field {
   display: flex;
-  flex: 1 1 180px;
   flex-direction: column;
   gap: 5px;
   font-size: 12px;
   font-weight: 650;
   color: var(--text-secondary);
+}
+/* Only the side-by-side language fields share a row and need to flex. The
+   Resolution field is a direct child of the column-direction menu, where
+   `flex: 1 1 180px` would read as a 180px min HEIGHT that then grows - which is
+   what left a large empty gap above the size estimate. */
+.detail-download-language-fields .detail-download-field {
+  flex: 1 1 180px;
 }
 .detail-download-field select,
 .detail-download-field input {

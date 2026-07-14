@@ -1,4 +1,3 @@
-import { Icon } from "../Icon";
 import "./PlayerPauseOverlay.css";
 
 /** Compact display metadata supplied by Detail when a player is opened. */
@@ -83,19 +82,6 @@ export function PlayerPauseOverlay({
         {nowPlaying?.overview && (
           <p className="player-pause-overview">{nowPlaying.overview}</p>
         )}
-        <button
-          type="button"
-          className="player-pause-play"
-          onClick={(event) => {
-            event.stopPropagation();
-            onResume();
-          }}
-          aria-label="Resume playback"
-          title="Resume playback (Space)"
-        >
-          <Icon name="play" size={26} filled />
-          <span>Resume</span>
-        </button>
       </div>
     </section>
   );

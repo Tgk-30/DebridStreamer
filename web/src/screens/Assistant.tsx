@@ -59,7 +59,7 @@ export function Assistant() {
 
   if (!aiAvailable) {
     return (
-      <div className="assistant-screen">
+      <div className="assistant-screen is-empty">
         <h1 className="assistant-h1">AI Assistant</h1>
         <EmptyState
           icon="assistant"

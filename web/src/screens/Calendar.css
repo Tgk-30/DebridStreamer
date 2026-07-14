@@ -103,8 +103,9 @@
   border-bottom: 1px solid var(--border-subtle);
   background: rgba(0, 0, 0, 0.08);
 }
+/* Left padding matches .cal-day so each weekday sits over its date column. */
 .cal-weekdays span {
-  padding: 9px 12px;
+  padding: 9px 6px;
   color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 650;
@@ -132,9 +133,11 @@
   background: rgba(0, 0, 0, 0.11);
 }
 .cal-day.is-outside .cal-day-number { opacity: 0.35; }
+/* Today is marked by the filled circle on the date alone (the calendar
+   convention). A full inset ring on top of that read as a heavy selected-cell
+   box; a faint wash is enough to carry the eye to the column. */
 .cal-day.is-today {
-  background: rgba(var(--accent-rgb), 0.07);
-  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.4);
+  background: rgba(var(--accent-rgb), 0.06);
 }
 /* A fixed square so the today marker is a clean CIRCLE, not a stretched ellipse
    (it used to be display:block and filled the cell width). Sits top-left. */
@@ -359,10 +362,11 @@
   margin: 0 auto var(--sp-md);
 }
 .cal-day--skel { min-height: 116px; }
+/* Top-left, matching the real .cal-day-number - the skeleton used to park it on
+   the right, so the layout visibly jumped when the month resolved. */
 .cal-skel-day {
-  width: 20px;
-  height: 20px;
-  margin-left: auto;
+  width: 24px;
+  height: 24px;
 }
 .cal-skel-event {
   width: 82%;

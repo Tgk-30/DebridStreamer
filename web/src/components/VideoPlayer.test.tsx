@@ -599,7 +599,7 @@ describe("WebviewPlayer", () => {
       );
       const video = document.querySelector("video.player-video") as HTMLVideoElement;
       fireEvent.pause(video);
-      expect(screen.getByRole("button", { name: "Resume playback" })).toBeInTheDocument();
+      expect(screen.getByLabelText(/^Paused:/)).toBeInTheDocument();
       expect(
         screen.getByText(
           (_, element) =>
@@ -608,9 +608,10 @@ describe("WebviewPlayer", () => {
         ),
       ).toBeInTheDocument();
 
-      await userEvent.click(screen.getByRole("button", { name: "Resume playback" }));
+      // The whole pause screen is the resume affordance (no separate button).
+      await userEvent.click(screen.getByLabelText(/^Paused:/));
       expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
-      expect(screen.queryByRole("button", { name: "Resume playback" })).toBeNull();
+      expect(screen.queryByLabelText(/^Paused:/)).toBeNull();
     });
   });
 
