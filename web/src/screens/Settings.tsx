@@ -72,6 +72,12 @@ import { Icon } from "../components/Icon";
 import { InfoTip } from "../components/InfoTip";
 import { AdvancedOnly } from "../components/AdvancedOnly";
 import { SettingsSearch } from "../components/SettingsSearch";
+import {
+  NAV_RAIL_ITEMS,
+  NAV_RAIL_GROUPS,
+  isScreenHidden,
+  applyNavCustomization,
+} from "../components/NavRail";
 import type { ScreenId } from "../components/NavRail";
 import { CONCEPTS, signupUrl } from "../data/onboardingHelp";
 import {
@@ -3544,6 +3550,141 @@ function ServerUsagePanel({ usage }: { usage: ServerUsage }) {
   );
 }
 
+/** Reorder + show/hide the navigation items. Reorder is scoped within each nav
+ * group (moving an item never changes its group); "Settings" is always shown so
+ * the user can never lock themselves out of this very screen. Hidden items stay
+ * listed here (greyed) so they can be brought back. Changes apply live. */
+function NavCustomizer({
+  order,
+  hidden,
+  onChange,
+}: {
+  order: readonly ScreenId[];
+  hidden: readonly ScreenId[];
+  onChange: (next: { order: ScreenId[]; hidden: ScreenId[] }) => void;
+}) {
+  const serverMode = isServerMode();
+  // Offer only items that exist in the current mode (drop server-only-unavailable
+  // screens like Debrid/Downloads in Server Mode). simpleMode is left false so
+  // power-user items can still be pre-arranged before switching to Advanced.
+  const offered = NAV_RAIL_ITEMS.filter(
+    (item) => !isScreenHidden(item.id, { serverMode, simpleMode: false }),
+  );
+  // Show every offered item in the user's current order (hidden ones included so
+  // they can be un-hidden) - pass hidden:[] so nothing is filtered out here.
+  const ordered = applyNavCustomization(offered, { order, hidden: [] });
+  const hiddenSet = new Set(hidden);
+  const groups = NAV_RAIL_GROUPS.filter((group) =>
+    ordered.some((item) => item.group === group),
+  );
+  const isCustomized = order.length > 0 || hidden.length > 0;
+
+  function move(id: ScreenId, dir: -1 | 1) {
+    const flat = ordered.map((item) => item.id);
+    const groupOf = (sid: ScreenId) =>
+      ordered.find((item) => item.id === sid)?.group;
+    const idx = flat.indexOf(id);
+    const j = idx + dir;
+    // Group items are contiguous, so an in-group neighbor is exactly idx +/- 1;
+    // a cross-group neighbor means we're at a group edge - no move.
+    if (j < 0 || j >= flat.length || groupOf(flat[idx]) !== groupOf(flat[j])) {
+      return;
+    }
+    [flat[idx], flat[j]] = [flat[j], flat[idx]];
+    onChange({ order: flat, hidden: [...hidden] });
+  }
+
+  function toggleHidden(id: ScreenId) {
+    if (id === "settings") return;
+    const next = hiddenSet.has(id)
+      ? hidden.filter((h) => h !== id)
+      : [...hidden, id];
+    onChange({ order: [...order], hidden: next });
+  }
+
+  return (
+    <div className="settings-navcustom">
+      <div className="settings-navcustom-head">
+        <span className="settings-label-line">
+          <span className="settings-sources-title">Menu items</span>
+          <InfoTip label="About menu items">
+            Reorder items within a section or hide the ones you do not use.
+            Settings always stays visible.
+          </InfoTip>
+        </span>
+        <button
+          type="button"
+          className="settings-navcustom-reset"
+          disabled={!isCustomized}
+          onClick={() => onChange({ order: [], hidden: [] })}
+        >
+          Reset
+        </button>
+      </div>
+
+      {groups.map((group) => {
+        const groupItems = ordered.filter((item) => item.group === group);
+        return (
+          <div className="settings-navcustom-group" key={group}>
+            <div className="settings-navcustom-group-label">{group}</div>
+            {groupItems.map((item, indexInGroup) => {
+              const isHidden = hiddenSet.has(item.id);
+              const locked = item.id === "settings";
+              return (
+                <div
+                  className={`settings-navcustom-row${isHidden ? " is-hidden" : ""}`}
+                  key={item.id}
+                >
+                  <span className="settings-navcustom-icon" aria-hidden>
+                    <Icon name={item.icon} size={17} />
+                  </span>
+                  <span className="settings-navcustom-name">{item.label}</span>
+                  {locked && (
+                    <span className="settings-navcustom-lock">Always shown</span>
+                  )}
+                  <div className="settings-navcustom-actions">
+                    <button
+                      type="button"
+                      className="settings-navcustom-move"
+                      onClick={() => move(item.id, -1)}
+                      disabled={indexInGroup === 0}
+                      aria-label={`Move ${item.label} up`}
+                    >
+                      <span aria-hidden>↑</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-navcustom-move"
+                      onClick={() => move(item.id, 1)}
+                      disabled={indexInGroup === groupItems.length - 1}
+                      aria-label={`Move ${item.label} down`}
+                    >
+                      <span aria-hidden>↓</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-navcustom-toggle"
+                      onClick={() => toggleHidden(item.id)}
+                      disabled={locked}
+                      aria-pressed={!isHidden}
+                      aria-label={
+                        isHidden ? `Show ${item.label}` : `Hide ${item.label}`
+                      }
+                      title={isHidden ? "Show" : "Hide"}
+                    >
+                      <Icon name={isHidden ? "eye-off" : "eye"} size={16} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AppearanceTab({
   draft,
   applyAppearance,
@@ -3882,6 +4023,17 @@ function AppearanceTab({
           <option value="history">History</option>
         </select>
       </label>
+
+      <NavCustomizer
+        order={draft.appearanceNavOrder}
+        hidden={draft.appearanceNavHidden}
+        onChange={(next) =>
+          applyAppearance({
+            appearanceNavOrder: next.order,
+            appearanceNavHidden: next.hidden,
+          })
+        }
+      />
 
       <div className="settings-source glass-rest">
         <div className="settings-sources-head">

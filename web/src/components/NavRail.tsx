@@ -55,6 +55,49 @@ export function visibleNavItems(
   return items.filter((item) => !isScreenHidden(item.id, opts));
 }
 
+/** Apply the user's nav customization (from Settings -> Appearance -> Navigation):
+ * remove hidden items and reorder the rest. Reorder is scoped WITHIN each nav
+ * group so the grouped rail keeps its structure - moving an item changes its
+ * position among its group-mates, never its group. Items the user hasn't
+ * explicitly ranked keep their default order after the ranked ones (stable), and
+ * "settings" can never be hidden (it hosts the Simple/Advanced toggle). This runs
+ * before the mode filter, so a mode-gated screen still can't appear. Pure. */
+export function applyNavCustomization(
+  items: readonly RailItem[],
+  opts: { order: readonly ScreenId[]; hidden: readonly ScreenId[] },
+): RailItem[] {
+  const hidden = new Set<ScreenId>(opts.hidden.filter((id) => id !== "settings"));
+  const visible = items.filter((item) => !hidden.has(item.id));
+  if (opts.order.length === 0) return visible;
+
+  const rank = new Map<ScreenId, number>();
+  opts.order.forEach((id, i) => rank.set(id, i));
+
+  // Bucket by group, sort each bucket by (user rank, then original index) so the
+  // comparator is a proper total order, then re-emit groups in their original
+  // first-appearance order. Never sorts across groups.
+  const buckets = new Map<string, RailItem[]>();
+  for (const item of visible) {
+    const bucket = buckets.get(item.group);
+    if (bucket) bucket.push(item);
+    else buckets.set(item.group, [item]);
+  }
+  for (const bucket of buckets.values()) {
+    bucket
+      .map((item, i) => ({ item, i, r: rank.get(item.id) ?? Infinity }))
+      .sort((a, b) => a.r - b.r || a.i - b.i)
+      .forEach((entry, i) => (bucket[i] = entry.item));
+  }
+  const result: RailItem[] = [];
+  const emitted = new Set<string>();
+  for (const item of visible) {
+    if (emitted.has(item.group)) continue;
+    emitted.add(item.group);
+    result.push(...buckets.get(item.group)!);
+  }
+  return result;
+}
+
 export type ScreenId =
   | "discover"
   | "search"
@@ -67,12 +110,14 @@ export type ScreenId =
   | "downloads"
   | "settings";
 
-interface RailItem {
+export type NavGroup = "Primary" | "Library" | "Tools" | "Account";
+
+export interface RailItem {
   id: ScreenId;
   icon: IconName;
   label: string;
   mobileLabel?: string;
-  group: "Primary" | "Library" | "Tools" | "Account";
+  group: NavGroup;
   mobile?: boolean;
 }
 
@@ -106,6 +151,11 @@ const NAV_ITEMS: RailItem[] = [
 const MOBILE_MORE_ITEMS = NAV_ITEMS.filter((item) => !item.mobile || item.id === "settings");
 const GROUPS = ["Primary", "Library", "Tools", "Account"] as const;
 
+/** The full nav item set + group order, exported so Settings can render the
+ * reorder/hide customizer without duplicating this metadata. */
+export const NAV_RAIL_ITEMS: readonly RailItem[] = NAV_ITEMS;
+export const NAV_RAIL_GROUPS: readonly NavGroup[] = GROUPS;
+
 interface NavRailProps {
   selected: ScreenId;
   onSelect: (id: ScreenId) => void;
@@ -117,7 +167,14 @@ interface NavRailProps {
   localProfile?: LocalProfile | null;
   localProfileCount?: number;
   localMultiUserEnabled?: boolean;
+  /** User's per-item nav order (by screen id); [] means default order. */
+  navOrder?: readonly ScreenId[];
+  /** Screen ids the user hid from the nav; "settings" is always kept. */
+  navHidden?: readonly ScreenId[];
 }
+
+/** Shared empty default so an unset prop keeps a stable reference across renders. */
+const EMPTY_NAV_IDS: readonly ScreenId[] = [];
 
 function initialOf(name: string): string {
   const trimmed = name.trim();
@@ -135,7 +192,7 @@ function isImageAvatar(avatar: string | undefined): avatar is string {
 
 const NAV_COLLAPSED_KEY = "ds_nav_collapsed";
 
-export function NavRail({ selected, onSelect, onSwitchProfile, localProfile, localProfileCount = 0, localMultiUserEnabled = false }: NavRailProps) {
+export function NavRail({ selected, onSelect, onSwitchProfile, localProfile, localProfileCount = 0, localMultiUserEnabled = false, navOrder = EMPTY_NAV_IDS, navHidden = EMPTY_NAV_IDS }: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   // Collapsed (icons-only) side rail - an ephemeral UI preference persisted to
   // localStorage. Reflected on the root so the layout var + content inset track.
@@ -164,8 +221,15 @@ export function NavRail({ selected, onSelect, onSwitchProfile, localProfile, loc
   const simpleMode = useSimpleMode();
   const session = useServerSession();
   const profiles = useServerProfiles();
-  const navItems = visibleNavItems(NAV_ITEMS, { serverMode, simpleMode });
-  const moreItems = visibleNavItems(MOBILE_MORE_ITEMS, { serverMode, simpleMode });
+  const navCustom = { order: navOrder, hidden: navHidden };
+  const navItems = visibleNavItems(
+    applyNavCustomization(NAV_ITEMS, navCustom),
+    { serverMode, simpleMode },
+  );
+  const moreItems = visibleNavItems(
+    applyNavCustomization(MOBILE_MORE_ITEMS, navCustom),
+    { serverMode, simpleMode },
+  );
   const moreSelected = moreItems.some((item) => item.id === selected);
   // Show the switcher only in Server Mode with a handler AND more than one
   // profile - a single-profile account has no one to switch to (no forced

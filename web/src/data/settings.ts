@@ -90,6 +90,8 @@ const SettingsKeys = {
   appearanceNavTint: "appearance_nav_tint",
   appearancePosterSize: "appearance_poster_size",
   appearanceDefaultTab: "appearance_default_tab",
+  appearanceNavOrder: "appearance_nav_order",
+  appearanceNavHidden: "appearance_nav_hidden",
   subtitleFontScale: "subtitle_font_scale",
   subtitleTextColor: "subtitle_text_color",
   subtitleBgOpacity: "subtitle_bg_opacity",
@@ -210,6 +212,13 @@ export interface AppSettings {
   appearancePosterSize: AppearancePosterSize;
   /** The nav destination the app lands on at launch. Default "discover". */
   appearanceDefaultTab: ScreenId;
+  /** User's preferred order of nav items, by screen id. Reorder is scoped
+   * within each nav group; ids missing here keep their default relative order,
+   * and unknown ids are dropped. Empty means "default order". */
+  appearanceNavOrder: ScreenId[];
+  /** Nav items the user chose to hide, by screen id. "settings" is never
+   * hideable (it hosts the Simple/Advanced toggle) and is stripped on load. */
+  appearanceNavHidden: ScreenId[];
   /** Subtitle appearance, applied to the player's `::cue` (ported from
    * VPStudio's subtitle settings): font scale (1 = default), text color (hex),
    * and caption-background opacity (0–0.95). */
@@ -363,6 +372,59 @@ function normalizeAppearanceDefaultTab(value: unknown): ScreenId {
     : "discover";
 }
 
+/** Every nav destination that can be reordered or hidden. Kept in sync with
+ * NavRail's NAV_ITEMS; a superset of DEFAULT_TAB_VALUES (includes "downloads"). */
+const NAV_SCREEN_IDS: readonly ScreenId[] = [
+  "discover",
+  "search",
+  "library",
+  "watchlist",
+  "calendar",
+  "history",
+  "assistant",
+  "debrid",
+  "downloads",
+  "settings",
+];
+
+/** Coerce a persisted nav-id list (a real array from the localStorage blob, or a
+ * JSON string from the KV store) into a clean, de-duplicated ScreenId[]. Unknown
+ * ids are dropped so a stale/poisoned blob can never inject a phantom nav entry.
+ * When `dropSettings` is set, "settings" is stripped (it can never be hidden). */
+function normalizeNavIdList(
+  value: unknown,
+  opts?: { dropSettings?: boolean },
+): ScreenId[] {
+  let list: unknown = value;
+  if (typeof value === "string") {
+    try {
+      list = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  const seen = new Set<string>();
+  const out: ScreenId[] = [];
+  for (const entry of list) {
+    if (typeof entry !== "string") continue;
+    if (!(NAV_SCREEN_IDS as readonly string[]).includes(entry)) continue;
+    if (opts?.dropSettings && entry === "settings") continue;
+    if (seen.has(entry)) continue;
+    seen.add(entry);
+    out.push(entry as ScreenId);
+  }
+  return out;
+}
+
+export function normalizeAppearanceNavOrder(value: unknown): ScreenId[] {
+  return normalizeNavIdList(value);
+}
+
+export function normalizeAppearanceNavHidden(value: unknown): ScreenId[] {
+  return normalizeNavIdList(value, { dropSettings: true });
+}
+
 function toFiniteNumber(value: unknown): number | null {
   const n =
     typeof value === "number"
@@ -420,6 +482,8 @@ export function defaultSettings(): AppSettings {
     appearanceNavTint: "balanced",
     appearancePosterSize: "large",
     appearanceDefaultTab: "discover",
+    appearanceNavOrder: [],
+    appearanceNavHidden: [],
     subtitleFontScale: 1,
     subtitleTextColor: "#ffffff",
     subtitleBgOpacity: 0.55,
@@ -480,6 +544,8 @@ export function loadSettings(): AppSettings {
       appearanceNavTint: normalizeAppearanceNavTint(parsed.appearanceNavTint),
       appearancePosterSize: normalizeAppearancePosterSize(parsed.appearancePosterSize),
       appearanceDefaultTab: normalizeAppearanceDefaultTab(parsed.appearanceDefaultTab),
+      appearanceNavOrder: normalizeAppearanceNavOrder(parsed.appearanceNavOrder),
+      appearanceNavHidden: normalizeAppearanceNavHidden(parsed.appearanceNavHidden),
       subtitleFontScale: normalizeSubtitleFontScale(parsed.subtitleFontScale),
       subtitleTextColor: normalizeSubtitleTextColor(parsed.subtitleTextColor),
       subtitleBgOpacity: normalizeSubtitleBgOpacity(parsed.subtitleBgOpacity),
@@ -780,6 +846,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceNavTint,
     appearancePosterSize,
     appearanceDefaultTab,
+    appearanceNavOrder,
+    appearanceNavHidden,
     subtitleFontScale,
     subtitleTextColor,
     subtitleBgOpacity,
@@ -820,6 +888,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.appearanceNavTint),
     store.getSetting(SettingsKeys.appearancePosterSize),
     store.getSetting(SettingsKeys.appearanceDefaultTab),
+    store.getSetting(SettingsKeys.appearanceNavOrder),
+    store.getSetting(SettingsKeys.appearanceNavHidden),
     store.getSetting(SettingsKeys.subtitleFontScale),
     store.getSetting(SettingsKeys.subtitleTextColor),
     store.getSetting(SettingsKeys.subtitleBgOpacity),
@@ -924,6 +994,12 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     ),
     appearanceDefaultTab: normalizeAppearanceDefaultTab(
       appearanceDefaultTab ?? base.appearanceDefaultTab,
+    ),
+    appearanceNavOrder: normalizeAppearanceNavOrder(
+      appearanceNavOrder ?? base.appearanceNavOrder,
+    ),
+    appearanceNavHidden: normalizeAppearanceNavHidden(
+      appearanceNavHidden ?? base.appearanceNavHidden,
     ),
     subtitleFontScale: normalizeSubtitleFontScale(
       subtitleFontScale ?? base.subtitleFontScale,
@@ -1075,6 +1151,14 @@ export async function saveSettingsToStore(
     store.setSetting(
       SettingsKeys.appearanceDefaultTab,
       normalizeAppearanceDefaultTab(settings.appearanceDefaultTab),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceNavOrder,
+      JSON.stringify(normalizeAppearanceNavOrder(settings.appearanceNavOrder)),
+    ),
+    store.setSetting(
+      SettingsKeys.appearanceNavHidden,
+      JSON.stringify(normalizeAppearanceNavHidden(settings.appearanceNavHidden)),
     ),
     store.setSetting(
       SettingsKeys.subtitleFontScale,

@@ -2228,3 +2228,125 @@
   background: rgba(255, 255, 255, 0.05);
   font: inherit;
 }
+
+/* Navigation customizer (Appearance -> Navigation -> Menu items): reorder items
+   within a group and show/hide them. Mirrors the glass source-card treatment. */
+.settings-navcustom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  padding: var(--sp-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--glass-tint-control);
+}
+.settings-navcustom-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+}
+.settings-navcustom-reset {
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--r-pill);
+  padding: 4px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+.settings-navcustom-reset:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+.settings-navcustom-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.settings-navcustom-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-navcustom-group-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: var(--sp-sm) 0 2px;
+}
+.settings-navcustom-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: 7px var(--sp-sm);
+  border-radius: var(--r-sm);
+  background: var(--glass-tint-control);
+  border: 1px solid transparent;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.settings-navcustom-row:hover {
+  background: var(--glass-tint-control-hover);
+}
+.settings-navcustom-row.is-hidden {
+  opacity: 0.5;
+}
+.settings-navcustom-icon {
+  display: inline-flex;
+  color: var(--text-secondary);
+}
+.settings-navcustom-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-navcustom-lock {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.settings-navcustom-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.settings-navcustom-move,
+.settings-navcustom-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease,
+    opacity 0.12s ease;
+}
+.settings-navcustom-move:hover:not(:disabled),
+.settings-navcustom-toggle:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: rgba(var(--accent-rgb), 0.6);
+  background: var(--glass-tint-control-hover);
+}
+.settings-navcustom-move:disabled,
+.settings-navcustom-toggle:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.settings-navcustom-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}

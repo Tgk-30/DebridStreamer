@@ -194,6 +194,8 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     appearanceNavTint: "balanced",
     appearancePosterSize: "default",
     appearanceDefaultTab: "discover",
+    appearanceNavOrder: [],
+    appearanceNavHidden: [],
     subtitleFontScale: 1,
     subtitleTextColor: "#ffffff",
     subtitleBgOpacity: 0.55,

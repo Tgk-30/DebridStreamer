@@ -2,7 +2,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  applyNavCustomization,
   isScreenHidden,
+  NAV_RAIL_ITEMS,
   shouldShowProfileSwitch,
   visibleNavItems,
   type ScreenId,
@@ -94,6 +96,96 @@ describe("visibleNavItems", () => {
     expect(ids).not.toContain("debrid");
     expect(ids).not.toContain("calendar");
     expect(ids).toContain("discover");
+    expect(ids).toContain("settings");
+  });
+});
+
+describe("applyNavCustomization", () => {
+  const groupOf = (id: ScreenId) =>
+    NAV_RAIL_ITEMS.find((i) => i.id === id)!.group;
+  const idsOf = (items: readonly { id: ScreenId }[]) => items.map((i) => i.id);
+
+  it("is a no-op when order and hidden are both empty", () => {
+    const out = applyNavCustomization(NAV_RAIL_ITEMS, { order: [], hidden: [] });
+    expect(idsOf(out)).toEqual(idsOf(NAV_RAIL_ITEMS));
+  });
+
+  it("removes hidden items", () => {
+    const out = applyNavCustomization(NAV_RAIL_ITEMS, {
+      order: [],
+      hidden: ["calendar", "history"],
+    });
+    expect(idsOf(out)).not.toContain("calendar");
+    expect(idsOf(out)).not.toContain("history");
+    expect(idsOf(out)).toContain("library");
+  });
+
+  it("never hides Settings even if asked", () => {
+    const out = applyNavCustomization(NAV_RAIL_ITEMS, {
+      order: [],
+      hidden: ["settings"],
+    });
+    expect(idsOf(out)).toContain("settings");
+  });
+
+  it("reorders items within their group", () => {
+    // Ask for history before library (both in the Library group).
+    const out = applyNavCustomization(NAV_RAIL_ITEMS, {
+      order: ["history", "library"],
+      hidden: [],
+    });
+    const ids = idsOf(out);
+    expect(ids.indexOf("history")).toBeLessThan(ids.indexOf("library"));
+    // Unranked group-mates keep their relative order after the ranked ones.
+    expect(ids.indexOf("library")).toBeLessThan(ids.indexOf("watchlist"));
+  });
+
+  it("never moves an item into a different group", () => {
+    // discover is Primary; try to rank it after a Library item.
+    const out = applyNavCustomization(NAV_RAIL_ITEMS, {
+      order: ["library", "discover"],
+      hidden: [],
+    });
+    for (const item of out) {
+      expect(item.group).toBe(groupOf(item.id));
+    }
+    // Every Primary item still precedes every Library item (group order kept).
+    const ids = idsOf(out);
+    const lastPrimary = Math.max(
+      ...out.flatMap((i, idx) => (i.group === "Primary" ? [idx] : [])),
+    );
+    const firstLibrary = Math.min(
+      ...out.flatMap((i, idx) => (i.group === "Library" ? [idx] : [])),
+    );
+    expect(lastPrimary).toBeLessThan(firstLibrary);
+    expect(ids).toContain("discover");
+  });
+
+  it("ignores unknown ids in the order list", () => {
+    const out = applyNavCustomization(NAV_RAIL_ITEMS, {
+      order: ["not-a-screen" as ScreenId, "search"],
+      hidden: [],
+    });
+    expect(idsOf(out)).toEqual(
+      expect.arrayContaining(idsOf(NAV_RAIL_ITEMS).filter((id) => id !== "settings" || true)),
+    );
+    // Length unchanged (nothing hidden), and search still present.
+    expect(out).toHaveLength(NAV_RAIL_ITEMS.length);
+    expect(idsOf(out)).toContain("search");
+  });
+
+  it("composes with the mode filter (hidden + mode-gated both drop out)", () => {
+    const customized = applyNavCustomization(NAV_RAIL_ITEMS, {
+      order: [],
+      hidden: ["watchlist"],
+    });
+    const visible = visibleNavItems(customized, {
+      serverMode: true,
+      simpleMode: false,
+    });
+    const ids = idsOf(visible);
+    expect(ids).not.toContain("watchlist"); // user-hidden
+    expect(ids).not.toContain("debrid"); // server-mode gated
     expect(ids).toContain("settings");
   });
 });

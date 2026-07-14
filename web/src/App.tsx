@@ -491,6 +491,8 @@ export function App() {
         localProfile={activeProfile}
         localProfileCount={profiles.length}
         localMultiUserEnabled={multiUserEnabled}
+        navOrder={settings.appearanceNavOrder}
+        navHidden={settings.appearanceNavHidden}
       />
 
       <main className="app-content">

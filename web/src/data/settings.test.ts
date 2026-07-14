@@ -90,6 +90,8 @@ import {
   normalizeStreamMaxQuality,
   normalizeStreamMaxSizeGB,
   normalizeRatingScale,
+  normalizeAppearanceNavOrder,
+  normalizeAppearanceNavHidden,
   defaultSettings,
   loadSettings,
   saveSettings,
@@ -1087,5 +1089,84 @@ describe("saveSettingsToStore", () => {
       expect(idxIds).toContain("fresh-idx");
       expect(idxIds).not.toContain("stale-idx");
     });
+  });
+});
+
+// =============================================================================
+// Nav customization: normalizers + full persistence round-trip (both paths)
+// =============================================================================
+
+describe("normalizeAppearanceNavOrder / normalizeAppearanceNavHidden", () => {
+  it("defaults to an empty array for missing / non-array values", () => {
+    expect(normalizeAppearanceNavOrder(undefined)).toEqual([]);
+    expect(normalizeAppearanceNavOrder(null)).toEqual([]);
+    expect(normalizeAppearanceNavOrder(42)).toEqual([]);
+    expect(normalizeAppearanceNavHidden(undefined)).toEqual([]);
+  });
+
+  it("accepts a real array and keeps only known screen ids, de-duplicated", () => {
+    expect(
+      normalizeAppearanceNavOrder([
+        "history",
+        "bogus",
+        "history",
+        "library",
+        7,
+      ]),
+    ).toEqual(["history", "library"]);
+  });
+
+  it("parses a JSON-string payload (the KV-store encoding)", () => {
+    expect(normalizeAppearanceNavOrder('["search","discover"]')).toEqual([
+      "search",
+      "discover",
+    ]);
+    expect(normalizeAppearanceNavOrder("not json")).toEqual([]);
+  });
+
+  it("never lets 'settings' into the hidden list", () => {
+    expect(
+      normalizeAppearanceNavHidden(["calendar", "settings", "history"]),
+    ).toEqual(["calendar", "history"]);
+  });
+});
+
+describe("nav customization persistence round-trip", () => {
+  it("round-trips order + hidden through the localStorage blob", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({
+        appearanceNavOrder: ["history", "library", "settings", "bogus"],
+        appearanceNavHidden: ["calendar", "settings"],
+      }),
+    });
+    const s = loadSettings();
+    expect(s.appearanceNavOrder).toEqual(["history", "library", "settings"]);
+    expect(s.appearanceNavHidden).toEqual(["calendar"]); // settings stripped
+  });
+
+  it("defaults to empty arrays when the blob omits them", () => {
+    stubLocalStorage({ [KEY]: JSON.stringify({ tmdbKey: "x" }) });
+    const s = loadSettings();
+    expect(s.appearanceNavOrder).toEqual([]);
+    expect(s.appearanceNavHidden).toEqual([]);
+  });
+
+  it("round-trips order + hidden through the Store (JSON-encoded KV values)", async () => {
+    settingsMap.set("storage_port_initialized", "true");
+    await saveSettingsToStore({
+      ...defaultSettings(),
+      appearanceNavOrder: ["history", "library"],
+      appearanceNavHidden: ["calendar"],
+    });
+    // Stored as JSON strings under the KV keys.
+    expect(settingsMap.get("appearance_nav_order")).toBe(
+      JSON.stringify(["history", "library"]),
+    );
+    expect(settingsMap.get("appearance_nav_hidden")).toBe(
+      JSON.stringify(["calendar"]),
+    );
+    const loaded = await loadSettingsFromStore();
+    expect(loaded.appearanceNavOrder).toEqual(["history", "library"]);
+    expect(loaded.appearanceNavHidden).toEqual(["calendar"]);
   });
 });
