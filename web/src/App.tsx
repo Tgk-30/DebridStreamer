@@ -6,7 +6,7 @@
 // overlay that mounts over the content area whenever a media item is selected.
 
 import "./theme/theme.css";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { NavRail, isScreenHidden, type ScreenId } from "./components/NavRail";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SpotlightTour, type TourStep } from "./components/SpotlightTour";
@@ -58,6 +58,7 @@ import { useServerSession } from "./lib/ServerSessionContext";
 import { isServerMode } from "./lib/serverMode";
 import { isTauri } from "./lib/tauri";
 import { getStore } from "./storage";
+import { getAutoEnterProfileId } from "./storage/ProfileRegistry";
 import {
   startDownloadsRuntime,
   stopDownloadsRuntime,
@@ -279,7 +280,7 @@ export function FirstRunHost() {
 }
 
 export function App() {
-  const { route, navigate, detailItem, browseContext, openDetail, search, settings, simpleMode, services, activeProfile, multiUserEnabled = false, profiles = [] } =
+  const { route, navigate, detailItem, browseContext, openDetail, search, settings, simpleMode, services, activeProfile, multiUserEnabled = false, profiles = [], switchLocalProfile } =
     useAppStore();
 
   // "Who's watching" picker visibility, server or Local Mode.
@@ -288,6 +289,33 @@ export function App() {
   // once a profile has a password it stays gated until unlocked, even if
   // multi-user is later switched off (otherwise the toggle silently voids it).
   const localProfileLocked = !isServerMode() && activeProfile?.passwordHash != null && !isLocalProfileUnlocked(activeProfile.id);
+
+  // Launch choice: with several profiles, ask who's watching - unless the user
+  // nominated one to enter automatically (Settings -> Profiles). Runs once per
+  // launch. A protected profile still meets its password prompt via
+  // localProfileLocked above, so auto-enter never walks past a password.
+  const [launchPickerOpen, setLaunchPickerOpen] = useState(false);
+  const launchChoiceMade = useRef(false);
+  useEffect(() => {
+    if (launchChoiceMade.current || isServerMode()) return;
+    // Wait for the registry to report; [] is also "still loading" here.
+    if (profiles.length === 0) return;
+    launchChoiceMade.current = true;
+    if (profiles.length === 1) return; // nothing to choose between
+    void (async () => {
+      const autoId = await getAutoEnterProfileId();
+      const target = autoId != null ? profiles.find((p) => p.id === autoId) : undefined;
+      if (target == null) {
+        setLaunchPickerOpen(true); // no preference, or it was deleted -> ask
+        return;
+      }
+      if (target.id === activeProfile?.id) return; // already the active profile
+      // Switching to a protected profile needs its password, which this path
+      // cannot supply - fall back to the chooser so the prompt is shown there.
+      const result = await switchLocalProfile(target.id);
+      if (!result.ok) setLaunchPickerOpen(true);
+    })();
+  }, [profiles, activeProfile?.id, switchLocalProfile]);
 
   // First-run feature tour. App only mounts past the setup wizards, so this is
   // the moment to greet a new user. Shown once (localStorage flag); existing
@@ -552,6 +580,11 @@ export function App() {
         ) : (
           <LocalProfilePicker onClose={() => setProfilePickerOpen(false)} />
         ))}
+        {/* Launch choice. The lock gate wins when both apply, so a protected
+            profile shows its password prompt rather than two stacked pickers. */}
+        {launchPickerOpen && !localProfileLocked && (
+          <LocalProfilePicker mode="select" onClose={() => setLaunchPickerOpen(false)} />
+        )}
         {localProfileLocked && (
           <LocalProfilePicker mode="lock" onClose={() => {}} />
         )}

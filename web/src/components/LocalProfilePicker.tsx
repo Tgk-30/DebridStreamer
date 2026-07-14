@@ -25,12 +25,17 @@ function profileId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** "switch" - the who's-watching picker opened from the nav (dismissable).
+ *  "select" - the launch choice when several profiles exist (must choose).
+ *  "lock"   - the active profile is password protected (must unlock). */
+export type LocalProfilePickerMode = "switch" | "select" | "lock";
+
 export function LocalProfilePicker({
   onClose,
   mode = "switch",
 }: {
   onClose: () => void;
-  mode?: "switch" | "lock";
+  mode?: LocalProfilePickerMode;
 }) {
   const {
     activeProfile,
@@ -38,7 +43,9 @@ export function LocalProfilePicker({
     refreshProfiles,
     switchLocalProfile,
   } = useAppStore();
-  const pickerRef = useModalA11y<HTMLDivElement>(mode === "lock" ? () => {} : onClose);
+  // Escape closes only the dismissable picker: the launch choice and the lock
+  // are gates, and letting Escape dismiss them would walk straight past them.
+  const pickerRef = useModalA11y<HTMLDivElement>(mode === "switch" ? onClose : () => {});
   const [passwordFor, setPasswordFor] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [adding, setAdding] = useState(false);
@@ -48,6 +55,12 @@ export function LocalProfilePicker({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const canManage = activeProfile?.isAdmin ?? false;
+  // Anyone standing at the launch chooser or the lock can create their own
+  // profile: nobody is authenticated there, and a new profile is non-admin with
+  // its own empty database, so it cannot reach a protected profile's data (the
+  // chooser already admits anyone to an unprotected profile). In switch mode a
+  // profile IS authenticated, so the existing admin rule keeps applying.
+  const canAddProfile = mode === "switch" ? canManage : true;
   // Even in lock mode show ALL profiles: a member who does not know the owner's
   // password must still be able to pick their own (unprotected) profile instead
   // of being trapped on a single locked tile with no way out.
@@ -102,8 +115,9 @@ export function LocalProfilePicker({
       return;
     }
     setBusy(true);
+    const id = profileId();
     await createProfileRecord({
-      id: profileId(),
+      id,
       name: trimmed,
       avatar,
       color,
@@ -112,9 +126,19 @@ export function LocalProfilePicker({
       createdAt: Date.now(),
     });
     await refreshProfiles();
-    setBusy(false);
     setAdding(false);
     setName("");
+    // Created from the launch/lock chooser, the point was to get IN - so enter
+    // the new profile rather than dropping back to the grid to click it again.
+    // A brand new profile never has a password, so nothing is bypassed.
+    if (mode !== "switch") {
+      const result = await switchLocalProfile(id);
+      setBusy(false);
+      if (result.ok) onClose();
+      else setError("Could not open the new profile.");
+      return;
+    }
+    setBusy(false);
   }
 
   const title = mode === "lock" ? "Unlock a profile" : "Who’s watching?";
@@ -159,8 +183,8 @@ export function LocalProfilePicker({
                   </button>
                 </li>
               ))}
-              {mode === "switch" && canManage && (
-                <li><button className="profile-tile" type="button" onClick={() => setAdding(true)}><span className="profile-avatar profile-avatar-add">+</span><span className="profile-tile-name">Add profile</span></button></li>
+              {canAddProfile && (
+                <li><button className="profile-tile" type="button" onClick={() => setAdding(true)}><span className="profile-avatar profile-avatar-add">+</span><span className="profile-tile-name">{mode === "switch" ? "Add profile" : "Create your profile"}</span></button></li>
               )}
             </ul>
             {mode === "switch" && <div className="profile-picker-foot"><button className="profile-text-btn" type="button" onClick={onClose}>Cancel</button></div>}

@@ -63,6 +63,8 @@ import {
   createProfileRecord,
   deleteProfileRecord,
   setMultiUserEnabled,
+  getAutoEnterProfileId,
+  setAutoEnterProfileId,
   updateProfileRecord,
   type LocalProfile,
 } from "../storage/ProfileRegistry";
@@ -927,6 +929,19 @@ function ProfilesTab({
     await refresh("Password saved.");
   }
 
+  // The launch preference lives in the profile registry (it decides WHICH
+  // profile to load, so it cannot live in a profile's own settings).
+  const [autoEnterId, setAutoEnterId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void getAutoEnterProfileId().then((id) => {
+      if (!cancelled) setAutoEnterId(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function deleteProfile(profile: LocalProfile) {
     if (profiles.length <= 1) return setMessage("You need at least one profile.");
     if (profile.id === activeProfile?.id) return setMessage("Switch to another profile before deleting this one.");
@@ -940,6 +955,34 @@ function ProfilesTab({
         <span className="settings-label-line"><span className="settings-label">Enable multiple profiles</span><InfoTip label="Multiple profiles">Everyone on this device gets their own library, history, and watchlist. Turning this off keeps only the current profile active; it never deletes other profiles or their data.</InfoTip></span>
         <input type="checkbox" checked={multiUserEnabled} onChange={(event) => void setMultiUserEnabled(event.target.checked).then(() => refreshProfiles())} />
       </label>
+
+      {profiles.length > 1 && (
+        <label className="settings-field">
+          <span className="settings-label-line">
+            <span className="settings-label">Start as</span>
+            <InfoTip label="Start as">
+              Skip the &quot;Who&apos;s watching?&quot; screen and open straight into one
+              profile. A profile with a password still asks for it.
+            </InfoTip>
+          </span>
+          <select
+            value={autoEnterId ?? ""}
+            onChange={(event) => {
+              const next = event.target.value === "" ? null : event.target.value;
+              setAutoEnterId(next);
+              void setAutoEnterProfileId(next);
+            }}
+          >
+            <option value="">Ask every time</option>
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.name || "Profile"}
+                {profile.passwordHash != null ? " (asks for password)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="settings-profile-list">
         {profiles.map((profile) => {

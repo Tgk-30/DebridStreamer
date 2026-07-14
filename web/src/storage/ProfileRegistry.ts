@@ -16,7 +16,7 @@ export interface LocalProfile {
 }
 
 interface MetaRecord {
-  key: "activeProfileId" | "multiUserEnabled";
+  key: "activeProfileId" | "multiUserEnabled" | "autoEnterProfileId";
   value: string | boolean;
 }
 
@@ -74,6 +74,27 @@ export async function getActiveProfileId(): Promise<string | null> {
 
 export async function setActiveProfileId(id: string): Promise<void> {
   await registry.meta.put({ key: "activeProfileId", value: id });
+}
+
+/** The profile to enter at launch without asking, bypassing the "Who's watching?"
+ * choice. null (the default) means always ask when there are several profiles.
+ *
+ * This lives in the registry, not in AppSettings: it decides WHICH profile's
+ * settings to load, so it cannot be stored inside a profile's own database.
+ *
+ * A password is never bypassed by this - the lock prompt is a separate gate that
+ * still runs for a protected profile. */
+export async function getAutoEnterProfileId(): Promise<string | null> {
+  const record = await registry.meta.get("autoEnterProfileId");
+  return typeof record?.value === "string" ? record.value : null;
+}
+
+export async function setAutoEnterProfileId(id: string | null): Promise<void> {
+  if (id == null) {
+    await registry.meta.delete("autoEnterProfileId");
+    return;
+  }
+  await registry.meta.put({ key: "autoEnterProfileId", value: id });
 }
 
 export async function isMultiUserEnabled(): Promise<boolean> {

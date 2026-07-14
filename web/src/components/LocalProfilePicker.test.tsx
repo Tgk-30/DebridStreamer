@@ -130,3 +130,44 @@ describe("LocalProfilePicker lock screen", () => {
     expect(screen.queryByRole("heading", { name: "Enter password" })).toBeNull();
   });
 });
+
+describe("LocalProfilePicker create-your-profile", () => {
+  it("offers profile creation on the launch chooser and the lock, where nobody is signed in", () => {
+    const owner = profile({ passwordHash: "pbkdf2:v1:x", isAdmin: false });
+    const kid = profile({ id: "kid", name: "Kid", isDefault: false, isAdmin: false });
+    profiles = [owner, kid];
+    activeProfile = owner;
+
+    // Lock: the active profile is not admin, but a newcomer must still be able
+    // to make their own profile rather than being stuck at someone's password.
+    const { unmount } = render(<LocalProfilePicker mode="lock" onClose={() => {}} />);
+    expect(screen.getByText("Create your profile")).toBeInTheDocument();
+    unmount();
+
+    render(<LocalProfilePicker mode="select" onClose={() => {}} />);
+    expect(screen.getByText("Create your profile")).toBeInTheDocument();
+  });
+
+  it("keeps creation admin-only in switch mode, where a profile IS signed in", () => {
+    const owner = profile({ isAdmin: false });
+    const kid = profile({ id: "kid", name: "Kid", isDefault: false, isAdmin: false });
+    profiles = [owner, kid];
+    activeProfile = owner;
+
+    render(<LocalProfilePicker onClose={() => {}} />);
+    expect(screen.queryByText("Add profile")).toBeNull();
+    expect(screen.queryByText("Create your profile")).toBeNull();
+  });
+
+  it("asks who's watching (never 'unlock') on the launch chooser, with no way to dismiss it", () => {
+    const a = profile();
+    const b = profile({ id: "kid", name: "Kid", isDefault: false });
+    profiles = [a, b];
+    activeProfile = a;
+
+    render(<LocalProfilePicker mode="select" onClose={() => {}} />);
+    expect(screen.getByRole("heading", { name: "Who’s watching?" })).toBeInTheDocument();
+    // A launch choice has no Cancel: dismissing it would skip the choice.
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+});
