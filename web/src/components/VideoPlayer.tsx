@@ -21,7 +21,10 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import Hls from "hls.js";
+// Type-only: the runtime module is imported on demand inside the HLS effect
+// below, so this import contributes no bytes to the chunk.
+import type HlsType from "hls.js";
+type HlsInstance = InstanceType<typeof HlsType>;
 import { Icon } from "./Icon";
 import {
   isTauri,
@@ -649,13 +652,31 @@ function WebviewPlayer({
       if (video.src !== url) video.src = url;
       return;
     }
-    if (Hls.isSupported()) {
-      const hls = new Hls();
-      hls.loadSource(url);
-      hls.attachMedia(video);
-      return () => hls.destroy();
-    }
-    onHlsUnsupportedRef.current();
+
+    // hls.js is ~151 KB gz and is reachable ONLY here: an .m3u8 the browser
+    // cannot play natively. A static import pinned it into this chunk, so every
+    // player open paid for it - including the native-mpv and direct-file paths
+    // that return above and never touch it. Fetch it on demand instead.
+    let cancelled = false;
+    let instance: HlsInstance | null = null;
+    void import("hls.js").then(({ default: Hls }) => {
+      // The effect can be torn down (or the URL swapped) while the chunk is in
+      // flight; without this we would attach a player to a stale <video>.
+      if (cancelled) return;
+      const element = videoRef.current;
+      if (element == null) return;
+      if (!Hls.isSupported()) {
+        onHlsUnsupportedRef.current();
+        return;
+      }
+      instance = new Hls();
+      instance.loadSource(url);
+      instance.attachMedia(element);
+    });
+    return () => {
+      cancelled = true;
+      instance?.destroy();
+    };
   }, [url, isHls]);
 
   // Reflect the active subtitle track onto the <video>'s text tracks: show only

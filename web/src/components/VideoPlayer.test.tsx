@@ -679,12 +679,14 @@ describe("captions toggle", () => {
 // ---- HLS source branch -----------------------------------------------------
 
 describe("HLS source attach", () => {
-  it("attaches hls.js when the browser can't play HLS natively", () => {
+  // hls.js (~151 KB gz) is now fetched on demand, only once an .m3u8 the browser
+  // cannot play natively is reached - so the attach is async and these await it.
+  it("attaches hls.js when the browser can't play HLS natively", async () => {
     (HTMLMediaElement.prototype.canPlayType as ReturnType<typeof vi.fn>) = vi.fn(
       () => "",
     );
     render(<VideoPlayer url="https://x/stream.m3u8" title="T" onClose={() => {}} />);
-    expect(hlsInstances).toHaveLength(1);
+    await waitFor(() => expect(hlsInstances).toHaveLength(1));
     expect(hlsInstances[0].loadSource).toHaveBeenCalledWith(
       "https://x/stream.m3u8",
     );
@@ -703,19 +705,19 @@ describe("HLS source attach", () => {
     expect(video.src).toBe("https://x/stream.m3u8");
   });
 
-  it("destroys the hls.js instance on unmount", () => {
+  it("destroys the hls.js instance on unmount", async () => {
     (HTMLMediaElement.prototype.canPlayType as ReturnType<typeof vi.fn>) = vi.fn(
       () => "",
     );
     const { unmount } = render(
       <VideoPlayer url="https://x/stream.m3u8" title="T" onClose={() => {}} />,
     );
-    expect(hlsInstances).toHaveLength(1);
+    await waitFor(() => expect(hlsInstances).toHaveLength(1));
     unmount();
     expect(hlsInstances[0].destroy).toHaveBeenCalled();
   });
 
-  it("routes to the external panel when HLS is unsupported", () => {
+  it("routes to the external panel when HLS is unsupported", async () => {
     (HTMLMediaElement.prototype.canPlayType as ReturnType<typeof vi.fn>) = vi.fn(
       () => "",
     );
@@ -724,8 +726,11 @@ describe("HLS source attach", () => {
       <VideoPlayer url="https://x/stream.m3u8" title="T" onClose={() => {}} />,
     );
     // onHlsUnsupported sets externalError → the parent flips to ExternalPanel.
+    // Reached only after the on-demand hls.js chunk resolves.
+    await waitFor(() =>
+      expect(document.querySelector(".player-external")).not.toBeNull(),
+    );
     expect(hlsInstances).toHaveLength(0);
-    expect(document.querySelector(".player-external")).not.toBeNull();
     expect(
       screen.getByText("This browser can't play HLS. Try the desktop app."),
     ).toBeInTheDocument();
