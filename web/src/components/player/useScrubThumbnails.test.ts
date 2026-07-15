@@ -310,6 +310,57 @@ describe("useScrubThumbnails", () => {
     expect(result.current.preview).toEqual({ image: null, time: 40 });
   });
 
+  it("recovers from a media error during a seek so later hovers still capture", async () => {
+    const created = installDom();
+    const { result } = renderHook(() => useScrubThumbnails(SRC, true));
+    const v = created.video!;
+    v.duration = 600;
+    act(() => v.__fire("loadedmetadata"));
+    act(() => result.current.onHover(100));
+    expect(v.__currentTimeSets).toEqual([100]);
+    // The stream errors: no 'seeked' will ever arrive for that seek.
+    act(() => v.__fire("error"));
+    await new Promise((r) => setTimeout(r, 250)); // clear the throttle window
+    act(() => result.current.onHover(300));
+    expect(v.__currentTimeSets).toEqual([100, 300]);
+  });
+
+  it("recovers via the seek watchdog when 'seeked' never fires", () => {
+    vi.useFakeTimers();
+    const created = installDom();
+    const { result } = renderHook(() => useScrubThumbnails(SRC, true));
+    const v = created.video!;
+    v.duration = 600;
+    act(() => v.__fire("loadedmetadata"));
+    act(() => result.current.onHover(100));
+    expect(v.__currentTimeSets).toEqual([100]);
+    // No 'seeked' ever arrives. After SEEK_TIMEOUT_MS the flag must drop.
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    act(() => result.current.onHover(300));
+    expect(v.__currentTimeSets).toEqual([100, 300]);
+  });
+
+  it("resets in-flight seek state when the source url changes", async () => {
+    const created = installDom();
+    const { result, rerender } = renderHook(
+      ({ url }: { url: string }) => useScrubThumbnails(url, true),
+      { initialProps: { url: SRC } },
+    );
+    const first = created.video!;
+    first.duration = 600;
+    act(() => first.__fire("loadedmetadata"));
+    act(() => result.current.onHover(100)); // seek in flight, never completes
+    rerender({ url: "https://debrid.example/other.mkv" });
+    const second = created.video!;
+    second.duration = 600;
+    act(() => second.__fire("loadedmetadata"));
+    await new Promise((r) => setTimeout(r, 250)); // lastCaptureRef survives the rebuild
+    act(() => result.current.onHover(200));
+    expect(second.__currentTimeSets).toEqual([200]);
+  });
+
   it("bails out of capture when getContext returns null", () => {
     const created = installDom({ noCtx: true });
     const { result } = renderHook(() => useScrubThumbnails(SRC, true));
