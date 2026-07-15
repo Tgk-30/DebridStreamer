@@ -606,35 +606,40 @@ export class DexieStore extends Dexie implements Store, SecretStore {
 
   async deleteFolder(id: string): Promise<void> {
     await this.ready();
-    const folder = await this.folders.get(id);
-    if (folder == null) return;
-    if (folder.isSystem) {
-      throw new Error("System folders cannot be deleted");
-    }
-    // Reassign this folder's entries to the system root, then delete it.
-    const fallback = systemFolderID(folder.listType);
-    const entries = await this.library.where("folderId").equals(id).toArray();
-    for (const entry of entries) {
-      // Skip if the media already lives in the fallback (avoid a duplicate).
-      const collides = await this.library
-        .where("mediaId")
-        .equals(entry.mediaId)
-        .filter((r) => r.folderId === fallback)
-        .first();
-      if (collides) {
-        await this.library.delete(entry.id);
-      } else {
-        await this.library.update(entry.id, { folderId: fallback });
+    // One transaction over both tables: reassigning entries, re-parenting
+    // children and deleting the folder is a single logical edit, so a failure
+    // partway through must not leave entries pointing at a deleted folder.
+    await this.transaction("rw", this.library, this.folders, async () => {
+      const folder = await this.folders.get(id);
+      if (folder == null) return;
+      if (folder.isSystem) {
+        throw new Error("System folders cannot be deleted");
       }
-    }
-    // Re-parent child folders to the root (parentId: null) rather than leaving
-    // dangling parentId references - mirrors the server's ON DELETE SET NULL so
-    // a subtree stays reachable after its parent is deleted.
-    const children = await this.folders.where("parentId").equals(id).toArray();
-    for (const child of children) {
-      await this.folders.update(child.id, { parentId: null, updatedAt: nowISO() });
-    }
-    await this.folders.delete(id);
+      // Reassign this folder's entries to the system root, then delete it.
+      const fallback = systemFolderID(folder.listType);
+      const entries = await this.library.where("folderId").equals(id).toArray();
+      for (const entry of entries) {
+        // Skip if the media already lives in the fallback (avoid a duplicate).
+        const collides = await this.library
+          .where("mediaId")
+          .equals(entry.mediaId)
+          .filter((r) => r.folderId === fallback)
+          .first();
+        if (collides) {
+          await this.library.delete(entry.id);
+        } else {
+          await this.library.update(entry.id, { folderId: fallback });
+        }
+      }
+      // Re-parent child folders to the root (parentId: null) rather than leaving
+      // dangling parentId references - mirrors the server's ON DELETE SET NULL so
+      // a subtree stays reachable after its parent is deleted.
+      const children = await this.folders.where("parentId").equals(id).toArray();
+      for (const child of children) {
+        await this.folders.update(child.id, { parentId: null, updatedAt: nowISO() });
+      }
+      await this.folders.delete(id);
+    });
   }
 
   async ensureSystemFolders(): Promise<void> {
