@@ -13,6 +13,9 @@ import "./DebridLibrary.css";
 import "./Downloads.css";
 
 function percent(record: DownloadRecord): number | null {
+  if (record.status === "optimizing") {
+    return record.optimizePercent == null ? null : record.optimizePercent;
+  }
   if (record.bytesTotal == null || record.bytesTotal <= 0) return null;
   return Math.min(100, Math.round((record.bytesDone / record.bytesTotal) * 100));
 }
@@ -35,6 +38,10 @@ function statusLabel(status: DownloadRecord["status"]): string {
 
 function progressLabel(record: DownloadRecord, speedBps?: number): string {
   const progress = percent(record);
+  if (record.status === "optimizing") {
+    const sourceSize = formatBytes(record.bytesTotal ?? record.bytesDone);
+    return `Optimizing${progress == null ? "" : ` ${progress}%`} - ${sourceSize}`;
+  }
   const amount =
     record.bytesTotal != null
       ? `${formatBytes(record.bytesDone)} / ${formatBytes(record.bytesTotal)}`
@@ -433,7 +440,10 @@ function DownloadSection({
                 art={artwork[record.mediaId]}
                 title={record.title}
                 progress={progress}
-                indeterminate={knownProgress == null && record.status === "downloading"}
+                indeterminate={
+                  knownProgress == null &&
+                  (record.status === "downloading" || record.status === "optimizing")
+                }
                 active={!["completed", "canceled", "failed"].includes(record.status)}
               />
               <span className="downloads-title" title={record.title}>

@@ -436,6 +436,9 @@ export interface DownloadRecord {
     | "paused";
   bytesDone: number;
   bytesTotal: number | null;
+  /** Last reported transcode percentage (0-100), or null outside optimizing.
+   *  Separate from bytesDone/bytesTotal because ffmpeg measures time, not bytes. */
+  optimizePercent: number | null;
   destPath: string | null;
   error: string | null;
   createdAt: string;

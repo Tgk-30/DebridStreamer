@@ -89,6 +89,7 @@ function download(jobId: string): DownloadRecord {
     status: "queued",
     bytesDone: 0,
     bytesTotal: null,
+    optimizePercent: null,
     destPath: null,
     error: null,
     createdAt: "2024-01-01T00:00:00.000Z",

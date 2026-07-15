@@ -197,6 +197,99 @@ describe("DownloadManager", () => {
     expect(store.history).toEqual(expect.arrayContaining(["queued", "resolving", "downloading", "optimizing", "completed"]));
   });
 
+  it("stores transcode percent without overwriting downloaded byte counters", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "optimized-progress",
+      mediaId: "m",
+      title: "Optimized Progress",
+      infoHash: "hash",
+      mode: "optimized",
+      optimizeProfile: "remux",
+      sizeBytes: 8_000_000_000,
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+    native.emit({
+      jobId: record.jobId,
+      phase: "completed",
+      bytesDone: 8_000_000_000,
+      bytesTotal: 8_000_000_000,
+      outputPath: "/Downloads/Optimized Progress/Optimized Progress.source.mp4",
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("optimizing"));
+
+    native.emit({
+      jobId: record.jobId,
+      phase: "optimizing",
+      bytesDone: 0,
+      bytesTotal: null,
+      percent: 42,
+    });
+
+    await waitUntil(async () => {
+      expect((await store.listDownloads()).find((row) => row.jobId === record.jobId)).toEqual(
+        expect.objectContaining({
+          bytesDone: 8_000_000_000,
+          bytesTotal: 8_000_000_000,
+          optimizePercent: 42,
+        }),
+      );
+    });
+  });
+
+  it("completes a transcode without overwriting downloaded byte counters", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "optimized-completion",
+      mediaId: "m",
+      title: "Optimized Completion",
+      infoHash: "hash",
+      mode: "optimized",
+      optimizeProfile: "remux",
+      sizeBytes: 8_000_000_000,
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+    native.emit({
+      jobId: record.jobId,
+      phase: "completed",
+      bytesDone: 8_000_000_000,
+      bytesTotal: 8_000_000_000,
+      outputPath: "/Downloads/Optimized Completion/Optimized Completion.source.mp4",
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("optimizing"));
+
+    native.emit({
+      jobId: record.jobId,
+      phase: "completed",
+      bytesDone: 0,
+      bytesTotal: null,
+      percent: 100,
+      outputPath: "/Downloads/Optimized Completion/Optimized Completion.mkv",
+    });
+
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("completed"));
+    expect((await store.listDownloads()).find((row) => row.jobId === record.jobId)).toEqual(
+      expect.objectContaining({
+        status: "completed",
+        bytesDone: 8_000_000_000,
+        bytesTotal: 8_000_000_000,
+        optimizePercent: 100,
+      }),
+    );
+  });
+
   it("pauses and resumes the transcode phase instead of resuming the HTTP download", async () => {
     const store = new DownloadStore();
     const native = makeBridge();
@@ -497,6 +590,7 @@ describe("DownloadManager", () => {
       status: "downloading",
       bytesDone: 12,
       bytesTotal: 100,
+      optimizePercent: null,
       destPath: "/Downloads/Interrupted.mp4",
       error: null,
       createdAt: "2024-01-01T00:00:00.000Z",

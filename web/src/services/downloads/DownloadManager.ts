@@ -70,6 +70,7 @@ export function makeDownloadRecord(
     status: "queued",
     bytesDone: 0,
     bytesTotal: input.sizeBytes != null && input.sizeBytes > 0 ? input.sizeBytes : null,
+    optimizePercent: null,
     destPath: null,
     error: null,
     createdAt: now,
@@ -114,6 +115,25 @@ type ProgressListener = (progress: DownloadProgress) => void;
  * the in-memory progress listener below. */
 const PROGRESS_PERSIST_INTERVAL_MS = 1000;
 const PROGRESS_UI_INTERVAL_MS = 200;
+
+type ProgressMeasurements = Partial<
+  Pick<DownloadRecord, "bytesDone" | "bytesTotal" | "optimizePercent">
+>;
+
+function progressMeasurements(
+  progress: DownloadProgress,
+  record: DownloadRecord,
+): ProgressMeasurements {
+  if (progress.percent != null) {
+    return { optimizePercent: progress.percent };
+  }
+  return {
+    bytesDone: Math.max(0, progress.bytesDone),
+    // A host that sends no Content-Length reports bytesTotal null on every
+    // tick. Keep the total seeded from the picked source.
+    bytesTotal: progress.bytesTotal ?? record.bytesTotal,
+  };
+}
 
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) return Promise.reject(new Error("Download launch canceled."));
@@ -446,10 +466,7 @@ export class DownloadManager {
     const record = this.recordsByJobId.get(progress.jobId);
     if (record == null) return;
     if (["paused", "canceled", "completed", "failed"].includes(record.status)) return;
-    const measurements = {
-      bytesDone: Math.max(0, progress.bytesDone),
-      bytesTotal: progress.bytesTotal ?? record.bytesTotal,
-    };
+    const measurements = progressMeasurements(progress, record);
     switch (progress.phase) {
       case "downloading":
       case "optimizing": {
@@ -484,7 +501,7 @@ export class DownloadManager {
   private async completeNativePhase(
     record: DownloadRecord,
     progress: DownloadProgress,
-    measurements: Pick<DownloadRecord, "bytesDone" | "bytesTotal">,
+    measurements: ProgressMeasurements,
   ): Promise<void> {
     if (record.status === "optimizing") {
       const finalPath = progress.outputPath ?? this.optimizingOutputs.get(record.jobId) ?? record.destPath;
@@ -523,7 +540,7 @@ export class DownloadManager {
   private async startOptimization(
     record: DownloadRecord,
     rawPath: string,
-    measurements: Pick<DownloadRecord, "bytesDone" | "bytesTotal">,
+    measurements: ProgressMeasurements,
     allowedStatuses: DownloadRecord["status"][],
   ): Promise<void> {
     const profile = record.optimizeProfile;
@@ -675,11 +692,7 @@ export class DownloadManager {
       jobId,
       {
         status: progress.phase,
-        bytesDone: Math.max(0, progress.bytesDone),
-        // A host that sends no Content-Length reports bytesTotal null on every
-        // tick. Keep the total we seeded from the picked source rather than
-        // erasing it, or the bar loses its denominator mid-transfer.
-        bytesTotal: progress.bytesTotal ?? record.bytesTotal,
+        ...progressMeasurements(progress, record),
       },
       ["downloading", "optimizing"],
     );

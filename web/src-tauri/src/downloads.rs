@@ -64,6 +64,8 @@ struct DownloadProgress {
     bytes_done: u64,
     bytes_total: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    percent: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     speed_bps: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
@@ -107,9 +109,27 @@ fn progress(
         phase,
         bytes_done,
         bytes_total,
+        percent: None,
         speed_bps: None,
         error: None,
         output_path: None,
+    }
+}
+
+/// Transcode progress. ffmpeg reports a position in time, not bytes, and the
+/// output size is unknown until it finishes - so the transcode reports a
+/// percentage on its own field and leaves the byte counters alone. They keep
+/// the download phase's real values.
+fn transcode_progress(job_id: &str, phase: &'static str, percent: u8) -> DownloadProgress {
+    DownloadProgress {
+        job_id: job_id.to_string(),
+        phase,
+        bytes_done: 0,
+        bytes_total: None,
+        speed_bps: None,
+        error: None,
+        output_path: None,
+        percent: Some(percent),
     }
 }
 
@@ -857,7 +877,7 @@ fn spawn_transcode_worker<R: Runtime>(
             match result {
                 Ok(()) => {
                     last_done.store(100, Ordering::Relaxed);
-                    let mut terminal = progress(&args.job_id, "completed", 100, Some(100));
+                    let mut terminal = transcode_progress(&args.job_id, "completed", 100);
                     terminal.output_path = Some(args.output_path.clone());
                     finish_if_current(&app, generation, terminal);
                 }
@@ -982,28 +1002,39 @@ pub async fn download_force_stop<R: Runtime>(
     }
 
     let bytes_done = job.last_done.load(Ordering::Relaxed);
-    let (partial_path, bytes_total, failure_context) = match job.spec {
+    // The spec is the honest discriminator: a transcode reports a percentage on
+    // its own field, a download reports real bytes. Do not infer the phase from
+    // the byte fields.
+    let (partial_path, is_transcode, failure_context) = match job.spec {
         JobSpec::Download(args) => (
             PathBuf::from(args.dest_path),
-            None,
+            false,
             "partial download",
         ),
         JobSpec::Transcode { output_path } => (
             PathBuf::from(output_path),
-            Some(100),
+            true,
             "partial transcode",
         ),
     };
     if let Err(error) = remove_partial_file(&partial_path).await {
         let message = format!("Failed to remove {failure_context}: {error}");
-        let mut terminal = progress(&job_id, "failed", bytes_done, bytes_total);
+        let mut terminal = if is_transcode {
+            transcode_progress(&job_id, "failed", bytes_done.min(100) as u8)
+        } else {
+            progress(&job_id, "failed", bytes_done, None)
+        };
         terminal.error = Some(message.clone());
         let _ = app.emit("download-progress", terminal);
         return Err(message);
     }
     let _ = app.emit(
         "download-progress",
-        progress(&job_id, "canceled", bytes_done, bytes_total),
+        if is_transcode {
+            transcode_progress(&job_id, "canceled", bytes_done.min(100) as u8)
+        } else {
+            progress(&job_id, "canceled", bytes_done, None)
+        },
     );
     Ok(())
 }
@@ -1032,7 +1063,7 @@ async fn run_transcode<R: Runtime>(
     emit_progress_if_current(
         app,
         generation,
-        progress(&args.job_id, "optimizing", 0, Some(100)),
+        transcode_progress(&args.job_id, "optimizing", 0),
     );
     let mut child = Command::new(ffmpeg)
         .args(ffmpeg_args(args, &probe))
@@ -1079,7 +1110,7 @@ async fn run_transcode<R: Runtime>(
             emit_progress_if_current(
                 app,
                 generation,
-                progress(&args.job_id, "optimizing", percent, Some(100)),
+                transcode_progress(&args.job_id, "optimizing", percent.min(100) as u8),
             );
         }
     }

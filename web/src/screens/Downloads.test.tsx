@@ -63,6 +63,7 @@ function record(overrides: Partial<DownloadRecord>): DownloadRecord {
     status: "queued",
     bytesDone: 0,
     bytesTotal: null,
+    optimizePercent: null,
     destPath: null,
     error: null,
     createdAt: "2024-01-01T00:00:00.000Z",
@@ -120,6 +121,28 @@ describe("Downloads desktop queue progress", () => {
     expect(bar).toHaveClass("is-indeterminate");
     expect(bar).not.toHaveAttribute("aria-valuenow");
     expect(bar.firstElementChild).not.toHaveAttribute("style");
+  });
+
+  it("renders transcode percent without a fake byte pair", async () => {
+    tauriState.on = true;
+    desktopQueue.records = [
+      record({
+        mode: "optimized",
+        optimizeProfile: "remux",
+        status: "optimizing",
+        bytesDone: 8_000_000_000,
+        bytesTotal: 8_000_000_000,
+        optimizePercent: 42,
+      }),
+    ];
+
+    render(<Downloads />);
+
+    const bar = await screen.findByRole("progressbar", { name: "Movie download progress" });
+    expect(bar).toHaveAttribute("aria-valuenow", "42");
+    expect((bar.firstElementChild as HTMLElement).style.width).toBe("42%");
+    expect(screen.getByText(/Optimizing 42% -/)).toBeInTheDocument();
+    expect(screen.queryByText(/100 B/)).not.toBeInTheDocument();
   });
 });
 

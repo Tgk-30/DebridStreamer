@@ -24,6 +24,10 @@ export interface DownloadProgress {
   phase: "downloading" | "optimizing" | "completed" | "failed" | "canceled";
   bytesDone: number;
   bytesTotal: number | null;
+  /** Transcode progress, 0-100. Present ONLY on optimizing/transcode events;
+   *  those carry no meaningful byte counters, so the record keeps the ones the
+   *  download phase established. */
+  percent?: number;
   speedBps?: number;
   error?: string;
   outputPath?: string;
