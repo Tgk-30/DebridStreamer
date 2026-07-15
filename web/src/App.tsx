@@ -9,7 +9,7 @@ import "./theme/theme.css";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { NavRail, isScreenHidden, type ScreenId } from "./components/NavRail";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { SpotlightTour, type TourStep } from "./components/SpotlightTour";
+import type { TourStep } from "./components/SpotlightTour";
 
 // The point-and-highlight tour shown once after the welcome guide. Each step
 // spotlights a real nav destination by its stable [data-screen] anchor.
@@ -129,6 +129,9 @@ const KeyboardShortcuts = lazy(() =>
 );
 const SetupNudge = lazy(() =>
   import("./components/SetupNudge").then((m) => ({ default: m.SetupNudge })),
+);
+const SpotlightTour = lazy(() =>
+  import("./components/SpotlightTour").then((m) => ({ default: m.SpotlightTour })),
 );
 
 /** Gates a genuine first-run behind the right wizard, then the app:
@@ -280,7 +283,7 @@ export function FirstRunHost() {
 }
 
 export function App() {
-  const { route, navigate, detailItem, browseContext, openDetail, search, settings, simpleMode, services, activeProfile, multiUserEnabled = false, profiles = [], switchLocalProfile } =
+  const { route, navigate, detailItem, browseContext, closeBrowse, openDetail, closeDetail, search, settings, simpleMode, services, activeProfile, multiUserEnabled = false, profiles = [], switchLocalProfile } =
     useAppStore();
 
   // "Who's watching" picker visibility, server or Local Mode.
@@ -556,18 +559,40 @@ export function App() {
         </div>
 
         {/* Browse overlay - mounts over the current screen ("See all" +
-            advanced filters), below the Detail overlay. */}
+            advanced filters), below the Detail overlay. Its own boundary: a
+            crash here closes the overlay instead of sinking the app. */}
         {browseContext != null && (
-          <Suspense fallback={<Spinner variant="overlay" />}>
-            <Browse />
-          </Suspense>
+          <ErrorBoundary
+            label="browse"
+            resetKey={browseContext}
+            onGoHome={closeBrowse}
+            homeLabel="Close"
+            overlay
+          >
+            <Suspense fallback={<Spinner variant="overlay" />}>
+              <Browse />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
-        {/* Detail overlay - mounts over the current screen (and over Browse). */}
+        {/* Detail overlay - mounts over the current screen (and over Browse).
+            It hosts the VideoPlayer, so it gets its own boundary: a player
+            render crash closes the overlay rather than reaching the root
+            boundary in main.tsx and taking the whole app down. resetKey is the
+            item id, so navigating to a different title from inside a crashed
+            Detail recovers without a reload. */}
         {detailItem != null && (
-          <Suspense fallback={<Spinner variant="overlay" />}>
-            <Detail />
-          </Suspense>
+          <ErrorBoundary
+            label="detail"
+            resetKey={detailItem.id}
+            onGoHome={closeDetail}
+            homeLabel="Close"
+            overlay
+          >
+            <Suspense fallback={<Spinner variant="overlay" />}>
+              <Detail />
+            </Suspense>
+          </ErrorBoundary>
         )}
       </main>
 

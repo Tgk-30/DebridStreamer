@@ -22,6 +22,8 @@ import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/re
 
 const navigate = vi.fn();
 const openDetail = vi.fn();
+const closeDetail = vi.fn();
+const closeBrowse = vi.fn();
 const search = vi.fn();
 
 type StoreSlice = {
@@ -30,6 +32,8 @@ type StoreSlice = {
   detailItem: unknown;
   browseContext: unknown;
   openDetail: typeof openDetail;
+  closeDetail: typeof closeDetail;
+  closeBrowse: typeof closeBrowse;
   search: typeof search;
   settings: {
     autoUpdateChecks: boolean;
@@ -76,12 +80,16 @@ vi.mock("./App.css", () => ({}));
 // Each screen renders a unique marker so we can assert which one App routed to.
 // Discover gets the openDetail handler so we can verify it's wired through.
 
+let routeThrows = false;
 vi.mock("./screens/Discover", () => ({
-  Discover: ({ onSelect }: { onSelect: (i: unknown) => void }) => (
-    <button data-testid="screen-discover" onClick={() => onSelect({ id: "x" })}>
-      discover
-    </button>
-  ),
+  Discover: ({ onSelect }: { onSelect: (i: unknown) => void }) => {
+    if (routeThrows) throw new Error("route exploded");
+    return (
+      <button data-testid="screen-discover" onClick={() => onSelect({ id: "x" })}>
+        discover
+      </button>
+    );
+  },
 }));
 vi.mock("./screens/Search", () => ({
   Search: () => <div data-testid="screen-search">search</div>,
@@ -110,8 +118,12 @@ vi.mock("./screens/Settings", () => ({
 vi.mock("./screens/Browse", () => ({
   Browse: () => <div data-testid="overlay-browse">browse</div>,
 }));
+let detailThrows = false;
 vi.mock("./screens/Detail", () => ({
-  Detail: () => <div data-testid="overlay-detail">detail</div>,
+  Detail: () => {
+    if (detailThrows) throw new Error("player exploded");
+    return <div data-testid="overlay-detail">detail</div>;
+  },
 }));
 
 // --- Child component stubs ----------------------------------------------
@@ -275,6 +287,8 @@ function makeStore(over: Partial<StoreSlice> = {}): StoreSlice {
     detailItem: null,
     browseContext: null,
     openDetail,
+    closeDetail,
+    closeBrowse,
     search,
     settings: { autoUpdateChecks: true, autoInstallUpdates: false, tmdbKey: "k", omdbKey: "" },
     simpleMode: false,
@@ -291,7 +305,11 @@ function makeStore(over: Partial<StoreSlice> = {}): StoreSlice {
 beforeEach(() => {
   navigate.mockClear();
   openDetail.mockClear();
+  closeDetail.mockClear();
+  closeBrowse.mockClear();
   search.mockClear();
+  detailThrows = false;
+  routeThrows = false;
   whenIdle.mockClear();
   serverModeValue = false;
   smartPreloadEnabled = false;
@@ -452,6 +470,40 @@ describe("Browse + Detail overlays", () => {
     render(<App />);
     expect(await screen.findByTestId("overlay-browse")).toBeInTheDocument();
     expect(await screen.findByTestId("overlay-detail")).toBeInTheDocument();
+  });
+
+  it("a Detail render crash closes the overlay instead of escaping the shell", async () => {
+    const boom = vi.spyOn(console, "error").mockImplementation(() => {});
+    detailThrows = true;
+    store = makeStore({ detailItem: { id: "a" } });
+    render(<App />);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(closeDetail).toHaveBeenCalled();
+    boom.mockRestore();
+  });
+
+  it("adds the overlay class when the Detail boundary catches a crash", async () => {
+    const boom = vi.spyOn(console, "error").mockImplementation(() => {});
+    detailThrows = true;
+    store = makeStore({ detailItem: { id: "a" } });
+    render(<App />);
+    expect(await screen.findByRole("alert")).toHaveClass(
+      "error-boundary",
+      "error-boundary-overlay",
+    );
+    boom.mockRestore();
+  });
+
+  it("does not add the overlay class when the route boundary catches a crash", async () => {
+    const boom = vi.spyOn(console, "error").mockImplementation(() => {});
+    routeThrows = true;
+    store = makeStore({ route: "discover" });
+    render(<App />);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveClass("error-boundary");
+    expect(alert).not.toHaveClass("error-boundary-overlay");
+    boom.mockRestore();
   });
 });
 

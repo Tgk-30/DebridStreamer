@@ -7,6 +7,18 @@
   padding: var(--sp-xl, 32px);
 }
 
+/* Overlay variant (Browse / Detail). Those overlays are themselves fixed (see
+   Detail.css), so their boundary must be too: .app-content is a scroll
+   container, and an absolutely positioned card would be laid out at scroll
+   offset 0 and sit off-screen whenever the user has scrolled. Mirrors .detail's
+   geometry so the card lands over the content and not the nav rail. The opaque
+   background hides the live screen still mounted underneath. */
+.error-boundary-overlay {
+  position: fixed;
+  inset: 0 0 0 var(--nav-safe-left, 78px);
+  background: var(--bg-1);
+}
+
 .error-boundary-card {
   max-width: 440px;
   width: 100%;
