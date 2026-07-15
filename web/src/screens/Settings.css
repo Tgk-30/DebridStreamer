@@ -144,7 +144,8 @@
 }
 /* "Where do I get this?" external link under a key Field. */
 .settings-field-help {
-  margin-top: 6px;
+  /* No margin-top: .settings-field is a flex column with gap: 6px, so a margin
+     here stacked on the gap and doubled the space under the input. */
   font-size: 12.5px;
   color: var(--accent);
   text-decoration: none;
@@ -429,14 +430,6 @@
 }
 
 /* Groups the many appearance dials into scannable sections. */
-.settings-section-title {
-  margin: 6px 0 -2px;
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
 
 .settings-toggle-row {
   position: relative;

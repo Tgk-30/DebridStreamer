@@ -965,9 +965,12 @@ function ProfilesTab({
 
   return (
     <div className="settings-fields settings-profiles">
-      <label className="settings-field settings-toggle-row">
-        <span className="settings-label-line"><span className="settings-label">Enable multiple profiles</span><InfoTip label="Multiple profiles">Everyone on this device gets their own library, history, and watchlist. Turning this off keeps only the current profile active; it never deletes other profiles or their data.</InfoTip></span>
+      {/* Checkbox first, and WITHOUT settings-field: every other toggle row in
+          Settings is ordered this way, and settings-field is flex-direction:
+          column, which fights settings-toggle-row's row layout. */}
+      <label className="settings-toggle-row">
         <input type="checkbox" checked={multiUserEnabled} onChange={(event) => void setMultiUserEnabled(event.target.checked).then(() => refreshProfiles())} />
+        <span className="settings-label-line"><span className="settings-label">Enable multiple profiles</span><InfoTip label="Multiple profiles">Everyone on this device gets their own library, history, and watchlist. Turning this off keeps only the current profile active; it never deletes other profiles or their data.</InfoTip></span>
       </label>
 
       {profiles.length > 1 && (
@@ -3912,7 +3915,6 @@ function AppearanceTab({
         </div>
       </div>
 
-      <div className="settings-section-title">Display</div>
       <div className="settings-control-grid">
         <SegmentedControl
           label="Density"
@@ -4025,7 +4027,6 @@ function AppearanceTab({
         </div>
       </div>
 
-      <div className="settings-section-title">Navigation &amp; posters</div>
       <div className="settings-control-grid">
         <SegmentedControl
           label="Nav labels"
