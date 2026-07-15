@@ -1075,6 +1075,7 @@ export function Detail() {
       season: episodeContext?.season ?? null,
       episode: episodeContext?.episode ?? null,
       infoHash: source.infoHash,
+      sizeBytes: source.sizeBytes,
       fileHint:
         episodeContext == null
           ? null

@@ -1,13 +1,42 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { DownloadRecord } from "../storage/models";
+
+const tauriState = vi.hoisted(() => ({ on: false }));
+const desktopQueue = vi.hoisted(() => ({
+  records: [] as DownloadRecord[],
+  manager: {
+    subscribeProgress: vi.fn(() => () => {}),
+    speedFor: vi.fn(() => undefined),
+    pause: vi.fn(async () => {}),
+    resume: vi.fn(async () => {}),
+    forceStop: vi.fn(async () => {}),
+  },
+}));
+const downloadsFfmpegAvailable = vi.hoisted(() => vi.fn(async () => true));
 
 vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({ services: { debrid: null }, navigate: vi.fn() }),
 }));
-vi.mock("../lib/tauri", () => ({ isTauri: () => false }));
+vi.mock("../lib/tauri", () => ({ isTauri: () => tauriState.on }));
+vi.mock("../storage", () => ({
+  getStore: () => ({
+    subscribeDownloads: (listener: (records: DownloadRecord[]) => void) => {
+      listener(desktopQueue.records);
+      return () => {};
+    },
+    getMedia: async () => null,
+    deleteDownload: async () => {},
+  }),
+}));
+vi.mock("../services/downloads", () => ({
+  startDownloadsRuntime: () => desktopQueue.manager,
+}));
+vi.mock("../lib/downloadsBridge", () => ({
+  getDownloadsBridge: () => ({ downloadsFfmpegAvailable }),
+}));
 
 import {
   Downloads,
@@ -42,12 +71,55 @@ function record(overrides: Partial<DownloadRecord>): DownloadRecord {
   };
 }
 
+afterEach(() => {
+  tauriState.on = false;
+  desktopQueue.records = [];
+  vi.clearAllMocks();
+});
+
 describe("Downloads honest desktop gate", () => {
   it("does not show unusable queue controls in a browser", () => {
     render(<Downloads />);
     expect(screen.getByText("Open the desktop app to download")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /download desktop app/i })).toBeInTheDocument();
     expect(screen.queryByText("Your download queue is empty")).not.toBeInTheDocument();
+  });
+});
+
+describe("Downloads desktop queue progress", () => {
+  it("renders the known source denominator as a determinate progress bar", async () => {
+    tauriState.on = true;
+    desktopQueue.records = [
+      record({
+        status: "downloading",
+        bytesDone: 5_000_000_000,
+        bytesTotal: 10_000_000_000,
+      }),
+    ];
+
+    render(<Downloads />);
+
+    const bar = await screen.findByRole("progressbar", { name: "Movie download progress" });
+    expect(bar).toHaveAttribute("aria-valuenow", "50");
+    expect((bar.firstElementChild as HTMLElement).style.width).toBe("50%");
+  });
+
+  it("renders a Content-Length-less download as indeterminate", async () => {
+    tauriState.on = true;
+    desktopQueue.records = [
+      record({
+        status: "downloading",
+        bytesDone: 5_000_000_000,
+        bytesTotal: null,
+      }),
+    ];
+
+    render(<Downloads />);
+
+    const bar = await screen.findByRole("progressbar", { name: "Movie download progress" });
+    expect(bar).toHaveClass("is-indeterminate");
+    expect(bar).not.toHaveAttribute("aria-valuenow");
+    expect(bar.firstElementChild).not.toHaveAttribute("style");
   });
 });
 

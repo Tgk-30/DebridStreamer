@@ -32,6 +32,10 @@ export interface EnqueueDownloadInput {
   episode?: number | null;
   infoHash: string;
   fileHint?: string | null;
+  /** Known size of the picked source, used to seed the progress denominator.
+   *  The engine refines it from Content-Length when the host sends one; without
+   *  this the bar has no total and reads 0% for the whole transfer. */
+  sizeBytes?: number | null;
   mode: "full" | "optimized";
   optimizeProfile?: "remux" | "h265" | null;
   keepAudioLangs?: string[];
@@ -65,7 +69,7 @@ export function makeDownloadRecord(
     keepSubLangs: input.keepSubLangs ?? [],
     status: "queued",
     bytesDone: 0,
-    bytesTotal: null,
+    bytesTotal: input.sizeBytes != null && input.sizeBytes > 0 ? input.sizeBytes : null,
     destPath: null,
     error: null,
     createdAt: now,
@@ -415,7 +419,7 @@ export class DownloadManager {
         status: "downloading",
         destPath,
         bytesDone: 0,
-        bytesTotal: null,
+        bytesTotal: latest.bytesTotal,
         error: null,
       });
       if (!this.isCurrentLaunch(record.jobId, controller)) return;
@@ -444,7 +448,7 @@ export class DownloadManager {
     if (["paused", "canceled", "completed", "failed"].includes(record.status)) return;
     const measurements = {
       bytesDone: Math.max(0, progress.bytesDone),
-      bytesTotal: progress.bytesTotal,
+      bytesTotal: progress.bytesTotal ?? record.bytesTotal,
     };
     switch (progress.phase) {
       case "downloading":
@@ -672,7 +676,10 @@ export class DownloadManager {
       {
         status: progress.phase,
         bytesDone: Math.max(0, progress.bytesDone),
-        bytesTotal: progress.bytesTotal,
+        // A host that sends no Content-Length reports bytesTotal null on every
+        // tick. Keep the total we seeded from the picked source rather than
+        // erasing it, or the bar loses its denominator mid-transfer.
+        bytesTotal: progress.bytesTotal ?? record.bytesTotal,
       },
       ["downloading", "optimizing"],
     );

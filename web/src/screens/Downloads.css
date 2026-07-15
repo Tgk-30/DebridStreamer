@@ -186,6 +186,21 @@
   box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.7);
 }
 
+/* Unknown source size means no denominator, so there is nothing honest to fill
+   to. Sweep instead of sitting at a fake 0%. */
+.downloads-poster-bar.is-indeterminate > span {
+  width: 40%;
+  animation: downloadsIndeterminate 1.4s ease-in-out infinite;
+}
+@keyframes downloadsIndeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
 /* Series show banner ------------------------------------------------------ */
 
 .downloads-show-banner {

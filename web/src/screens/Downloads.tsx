@@ -122,11 +122,15 @@ export function DownloadPoster({
   art,
   title,
   progress,
+  indeterminate,
   active,
 }: {
   art?: DownloadArtwork;
   title: string;
   progress: number;
+  /** True when the source size is unknown, so there is no denominator. The bar
+   *  animates rather than sitting at a fake 0%. */
+  indeterminate?: boolean;
   active: boolean;
 }) {
   const poster = art?.poster ?? null;
@@ -140,14 +144,14 @@ export function DownloadPoster({
         </span>
       )}
       <span
-        className={`downloads-poster-bar${active ? " is-active" : ""}`}
+        className={`downloads-poster-bar${active ? " is-active" : ""}${indeterminate ? " is-indeterminate" : ""}`}
         role="progressbar"
-        aria-valuenow={progress}
+        aria-valuenow={indeterminate ? undefined : progress}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={`${title} download progress`}
       >
-        <span style={{ width: `${progress}%` }} />
+        <span style={indeterminate ? undefined : { width: `${progress}%` }} />
       </span>
     </span>
   );
@@ -410,7 +414,8 @@ function DownloadSection({
           <span className="dl-col-actions" />
         </div>
         {records.map((record) => {
-          const progress = percent(record) ?? 0;
+          const knownProgress = percent(record);
+          const progress = knownProgress ?? 0;
           const canPause = ["resolving", "downloading", "optimizing"].includes(record.status);
           const canResume = record.status === "paused";
           const canForceStop = !["completed", "canceled"].includes(record.status);
@@ -428,6 +433,7 @@ function DownloadSection({
                 art={artwork[record.mediaId]}
                 title={record.title}
                 progress={progress}
+                indeterminate={knownProgress == null && record.status === "downloading"}
                 active={!["completed", "canceled", "failed"].includes(record.status)}
               />
               <span className="downloads-title" title={record.title}>

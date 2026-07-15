@@ -28,6 +28,10 @@ let mockContinueWatching: any[] = [];
 let serverModeOn = false;
 const tauriState = vi.hoisted(() => ({ on: false }));
 const downloadsFfmpegAvailable = vi.hoisted(() => vi.fn(async () => true));
+const downloadsRuntime = vi.hoisted(() => ({
+  enqueue: vi.fn(async () => {}),
+  enqueueSeason: vi.fn(async () => {}),
+}));
 
 const closeDetail = vi.fn();
 const openDetail = vi.fn();
@@ -93,6 +97,9 @@ vi.mock("../lib/ServerSessionContext", () => ({
 
 vi.mock("../lib/downloadsBridge", () => ({
   getDownloadsBridge: () => ({ downloadsFfmpegAvailable }),
+}));
+vi.mock("../services/downloads", () => ({
+  startDownloadsRuntime: () => downloadsRuntime,
 }));
 
 const createRequest = vi.fn<(...a: any[]) => any>();
@@ -859,6 +866,35 @@ describe("Detail taste signal", () => {
 });
 
 describe("Detail downloads", () => {
+  it("passes the selected source size into the download queue", async () => {
+    tauriState.on = true;
+    mockServices = {
+      tmdb: null,
+      indexers: {},
+      debrid: { hasServices: true },
+      ai: null,
+      subtitles: null,
+      translator: null,
+    };
+    mockSettings = {
+      transcode: false,
+      ratingScale: "thumbs",
+      streamCachedOnly: false,
+    };
+    mockStreams = streamsState();
+    mockStreams.rows = [downloadRow("Movie 2160p", 8_000_000_000)];
+
+    render(<Detail />);
+    await userEvent.click(screen.getByRole("button", { name: "download" }));
+    await userEvent.click(screen.getByRole("button", { name: "Download movie" }));
+
+    await waitFor(() =>
+      expect(downloadsRuntime.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ sizeBytes: 8_000_000_000 }),
+      ),
+    );
+  });
+
   it("shows an estimate for the selected resolution and updates it for optimization", async () => {
     tauriState.on = true;
     mockServices = {

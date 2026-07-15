@@ -5,6 +5,7 @@ import type { Store } from "../../storage/types";
 import {
   DownloadManager,
   enqueueSeasonDownloads,
+  makeDownloadRecord,
   type DownloadDebridResolver,
 } from "./DownloadManager";
 
@@ -130,6 +131,25 @@ async function waitUntil(assertion: () => Promise<void>, timeoutMs = 1000): Prom
   }
   throw lastError;
 }
+
+describe("makeDownloadRecord", () => {
+  it("seeds a positive picked source size and rejects unknown or invalid totals", () => {
+    const input = {
+      jobId: "seeded-size",
+      mediaId: "m",
+      title: "Sized",
+      infoHash: "hash",
+      mode: "full" as const,
+    };
+
+    expect(makeDownloadRecord({ ...input, sizeBytes: 8_000_000_000 }).bytesTotal).toBe(
+      8_000_000_000,
+    );
+    for (const sizeBytes of [0, -1, null, undefined]) {
+      expect(makeDownloadRecord({ ...input, sizeBytes }).bytesTotal).toBeNull();
+    }
+  });
+});
 
 describe("DownloadManager", () => {
   const managers: DownloadManager[] = [];
@@ -542,6 +562,73 @@ describe("DownloadManager", () => {
     expect(store.updateCalls).toBe(2);
     expect(store.listCalls).toBe(0);
     expect((await store.listDownloads()).find((row) => row.jobId === record.jobId)?.bytesDone).toBe(40);
+  });
+
+  it("keeps a seeded total when a progress tick lacks Content-Length", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "seeded-progress",
+      mediaId: "m",
+      title: "Seeded Progress",
+      infoHash: "hash",
+      mode: "full",
+      sizeBytes: 8_000_000_000,
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+    expect((await store.listDownloads()).find((row) => row.jobId === record.jobId)?.bytesTotal).toBe(
+      8_000_000_000,
+    );
+
+    native.emit({
+      jobId: record.jobId,
+      phase: "downloading",
+      bytesDone: 1_000_000,
+      bytesTotal: null,
+    });
+
+    await waitUntil(async () => {
+      expect((await store.listDownloads()).find((row) => row.jobId === record.jobId)).toEqual(
+        expect.objectContaining({ bytesDone: 1_000_000, bytesTotal: 8_000_000_000 }),
+      );
+    });
+  });
+
+  it("keeps a seeded total when completion lacks Content-Length", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "seeded-completion",
+      mediaId: "m",
+      title: "Seeded Completion",
+      infoHash: "hash",
+      mode: "full",
+      sizeBytes: 8_000_000_000,
+    });
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+
+    native.emit({
+      jobId: record.jobId,
+      phase: "completed",
+      bytesDone: 8_000_000_000,
+      bytesTotal: null,
+      outputPath: "/Downloads/Seeded Completion/Seeded Completion.mp4",
+    });
+
+    await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("completed"));
+    expect((await store.listDownloads()).find((row) => row.jobId === record.jobId)?.bytesTotal).toBe(
+      8_000_000_000,
+    );
   });
 
   it("enqueues every supplied season episode as an independent durable record", async () => {
