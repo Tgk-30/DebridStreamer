@@ -485,15 +485,19 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [services.hasDebrid, refreshCachedResolutions]);
 
-  const openDetail = useCallback(
-    (item: MediaPreview) => {
-      setDetailItem(item);
-      // Recording a view also feeds the History screen (zero-progress entry;
-      // a real resume position is written later from the player).
-      void recordHistory(item).then(() => void refreshHistory());
-    },
-    [refreshHistory],
-  );
+  const openDetail = useCallback((item: MediaPreview) => {
+    setDetailItem(item);
+    // Recording a view also feeds the History screen (zero-progress entry;
+    // a real resume position is written later from the player).
+    // `recordHistory` already reads the refreshed history list back, so adopt
+    // ITS result rather than calling refreshHistory(): that re-read history a
+    // second time AND ran the unbounded continueWatching scan on every title
+    // open. Continue Watching cannot change here anyway - a viewed-only record
+    // preserves the existing progress fields, so the resumable set is
+    // identical; only its lastWatched order could shift, and the playback-close
+    // refresh plus the History route refresh already cover that.
+    void recordHistory(item).then(setHistory);
+  }, []);
 
   const closeDetail = useCallback(() => setDetailItem(null), []);
 

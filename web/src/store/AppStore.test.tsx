@@ -474,14 +474,14 @@ describe("browse overlay", () => {
 });
 
 describe("openDetail / closeDetail", () => {
-  it("sets the detail item and records a (viewed) history entry, then refreshes history", async () => {
-    recordHistory.mockResolvedValue([]);
-    loadHistory.mockResolvedValueOnce([]); // mount
+  it("sets the detail item and adopts the history list recordHistory read back", async () => {
     const { result } = await renderStore();
 
-    // After mount, loadHistory is refreshed via recordHistory().then(refreshHistory).
-    loadHistory.mockResolvedValue([media("d1")]);
-    loadContinueWatching.mockResolvedValue([]);
+    // recordHistory already returns the refreshed list, so a title open must
+    // NOT re-read history or run the continue-watching scan.
+    recordHistory.mockResolvedValue([media("d1")]);
+    loadHistory.mockClear();
+    loadContinueWatching.mockClear();
 
     act(() => result.current.openDetail(media("d1")));
     expect(result.current.detailItem).toEqual(media("d1"));
@@ -489,9 +489,9 @@ describe("openDetail / closeDetail", () => {
     // wrapper forwards the (undefined) second arg, so match it explicitly.
     expect(recordHistory).toHaveBeenCalledWith(media("d1"), undefined);
 
-    await waitFor(() =>
-      expect(result.current.history).toEqual([media("d1")]),
-    );
+    await waitFor(() => expect(result.current.history).toEqual([media("d1")]));
+    expect(loadHistory).not.toHaveBeenCalled();
+    expect(loadContinueWatching).not.toHaveBeenCalled();
 
     act(() => result.current.closeDetail());
     expect(result.current.detailItem).toBeNull();
