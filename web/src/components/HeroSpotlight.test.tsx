@@ -6,7 +6,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, act, fireEvent } from "@testing-library/react";
-import { createElement, forwardRef } from "react";
 import { HeroSpotlight } from "./HeroSpotlight";
 import type { MediaPreview } from "../models/media";
 
@@ -15,45 +14,6 @@ const isSmartPreloadEnabled = vi.fn(() => true);
 vi.mock("../lib/smartPreload", () => ({
   isSmartPreloadEnabled: () => isSmartPreloadEnabled(),
 }));
-
-// Replace motion with passthrough so AnimatePresence renders children
-// synchronously (no exit-animation gating, no real-timer animation loops that
-// would hang fake timers). We assert on real component behavior; the animation
-// library is not under test.
-vi.mock("motion/react", () => {
-  const cache = new Map<string, unknown>();
-  const makeTag = (tag: string) =>
-    forwardRef(
-      ({ children, ...props }: { children?: unknown }, ref: unknown) => {
-        // Strip motion-only props that React would warn about on a DOM node.
-        const {
-          initial: _i,
-          animate: _a,
-          exit: _e,
-          transition: _t,
-          ...rest
-        } = props as Record<string, unknown>;
-        void _i;
-        void _a;
-        void _e;
-        void _t;
-        return createElement(tag, { ...rest, ref }, children as never);
-      },
-    );
-  const motion = new Proxy(
-    {},
-    {
-      get: (_t, tag: string) => {
-        if (!cache.has(tag)) cache.set(tag, makeTag(tag));
-        return cache.get(tag);
-      },
-    },
-  );
-  return {
-    motion,
-    AnimatePresence: ({ children }: { children?: unknown }) => children,
-  };
-});
 
 const items: MediaPreview[] = [
   { id: "a", type: "movie", title: "Alpha", year: 2001, imdbRating: 8.2, backdropPath: "/alpha.jpg" },

@@ -1,14 +1,21 @@
 // Cinematic billboard hero: auto-rotates through a few featured titles with a
 // crossfade + slow Ken Burns zoom on the backdrop, a layered scrim for legibility,
 // large title, badges, Play/Details, and bar indicators. Pauses on hover. Falls
-// back to a single item. Motion via `motion` + AnimatePresence.
+// back to a single item. Animation is pure CSS (see the route-frame note in App).
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import type { MediaPreview } from "../models/media";
 import { Icon } from "./Icon";
 import "./HeroSpotlight.css";
+
+/** One backdrop layer in the crossfade stack. `seq` keys the layer (item ids
+ *  repeat when the carousel rotates back to a title). */
+interface BackdropLayer {
+  seq: number;
+  id: string;
+  url: string | null;
+}
 
 interface HeroSpotlightProps {
   /** One or more featured items; rotates when >1. */
@@ -20,8 +27,6 @@ interface HeroSpotlightProps {
   onDetails?: (item: MediaPreview) => void;
   intervalMs?: number;
 }
-
-const EASE = [0.16, 1, 0.3, 1] as const;
 
 /**
  * Content-aware accent: sample the backdrop down to a tiny canvas and average
@@ -97,6 +102,26 @@ export function HeroSpotlight({
   const heroRef = useRef<HTMLDivElement>(null);
   const active = list[Math.min(index, list.length - 1)];
   const backdrop = active ? MediaPreviewNS.backdropURL(active) : null;
+
+  // Backdrop crossfade layers, oldest first. The incoming layer fades in ON TOP
+  // of the previous one, which stays fully opaque underneath until it is covered
+  // and then drops out on animationend - so there is never a luminance dip or a
+  // frame of empty hero, even if a dot is clicked mid-crossfade.
+  const [layers, setLayers] = useState<BackdropLayer[]>(() =>
+    active ? [{ seq: 1, id: active.id, url: backdrop }] : [],
+  );
+
+  useEffect(() => {
+    if (!active) return;
+    setLayers((prev) => {
+      // Idempotent: never stack the same slide twice in a row (StrictMode
+      // re-runs mount effects). `seq` is derived from the tail so it stays
+      // unique across the live list without an impure ref bump.
+      const last = prev[prev.length - 1];
+      if (last && last.id === active.id) return prev;
+      return [...prev, { seq: (last?.seq ?? 0) + 1, id: active.id, url: backdrop }];
+    });
+  }, [active, backdrop]);
 
   useEffect(() => {
     const onVis = () => setHidden(document.hidden);
@@ -176,24 +201,29 @@ export function HeroSpotlight({
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      {/* Backdrop crossfade + Ken Burns.
+      {/* Backdrop crossfade + Ken Burns, both pure CSS.
           PERF: the Ken Burns scale used to run `intervalMs/1000 + 1` = 8s - 
-          longer than the 7s rotation, so motion's rAF loop NEVER went idle
-          (each new slide started a zoom that outlived the slide). A fixed 4s
-          zoom completes with ~3s of genuine idle per cycle. */}
-      <AnimatePresence mode="popLayout">
-        <motion.div
-          key={active.id}
+          longer than the 7s rotation, so the zoom NEVER went idle (each new
+          slide started a zoom that outlived the slide). A fixed 4s zoom
+          completes with ~3s of genuine idle per cycle. */}
+      {layers.map((layer) => (
+        <div
+          key={layer.seq}
           className="hero-backdrop-layer"
-          initial={{ opacity: 0, scale: 1.08 }}
-          animate={{ opacity: 1, scale: 1.0 }}
-          exit={{ opacity: 0 }}
-          transition={{ opacity: { duration: 0.9, ease: "easeInOut" }, scale: { duration: 4, ease: "linear" } }}
+          onAnimationEnd={(e) => {
+            // Only the fade-in settles the crossfade; the Ken Burns animation on
+            // the same element also fires animationend (at 4s) - ignore it.
+            if (e.animationName !== "heroBackdropIn") return;
+            setLayers((prev) => {
+              const i = prev.findIndex((l) => l.seq === layer.seq);
+              return i <= 0 ? prev : prev.slice(i);
+            });
+          }}
         >
-          {backdrop ? (
+          {layer.url ? (
             <img
               className="hero-backdrop"
-              src={backdrop}
+              src={layer.url}
               alt=""
               draggable={false}
               decoding="async"
@@ -205,57 +235,48 @@ export function HeroSpotlight({
           ) : (
             <div className="hero-backdrop hero-gradient" />
           )}
-        </motion.div>
-      </AnimatePresence>
+        </div>
+      ))}
 
       <div className="hero-scrim" />
       <div className="hero-vignette" />
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={active.id}
-          className="hero-content"
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.55, ease: EASE }}
-        >
-          <div className="hero-badges">
-            <span className="chip hero-featured">
-              Featured
-            </span>
-            {active.year != null && (
-              <>
-                <span className="hero-meta-separator" aria-hidden="true" />
-                <span className="hero-year">{active.year}</span>
-              </>
-            )}
-            {rating !== "" && (
-              <>
-                <span className="hero-meta-separator" aria-hidden="true" />
-                <span className="hero-rating">
-                  <Icon name="star" size={12} className="t-warning" />
-                  {rating}
-                </span>
-              </>
-            )}
-          </div>
+      <div key={active.id} className="hero-content">
+        <div className="hero-badges">
+          <span className="chip hero-featured">
+            Featured
+          </span>
+          {active.year != null && (
+            <>
+              <span className="hero-meta-separator" aria-hidden="true" />
+              <span className="hero-year">{active.year}</span>
+            </>
+          )}
+          {rating !== "" && (
+            <>
+              <span className="hero-meta-separator" aria-hidden="true" />
+              <span className="hero-rating">
+                <Icon name="star" size={12} className="t-warning" />
+                {rating}
+              </span>
+            </>
+          )}
+        </div>
 
-          <h1 className="hero-title">{active.title}</h1>
-          {overview && <p className="hero-overview">{overview}</p>}
+        <h1 className="hero-title">{active.title}</h1>
+        {overview && <p className="hero-overview">{overview}</p>}
 
-          <div className="hero-actions">
-            <button type="button" className="btn btn-prominent hero-play" onClick={() => onPlay?.(active)}>
-              <Icon name="play" size={16} />
-              Play
-            </button>
-            <button type="button" className="btn hero-info" onClick={() => onDetails?.(active)}>
-              <Icon name="info" size={16} />
-              More info
-            </button>
-          </div>
-        </motion.div>
-      </AnimatePresence>
+        <div className="hero-actions">
+          <button type="button" className="btn btn-prominent hero-play" onClick={() => onPlay?.(active)}>
+            <Icon name="play" size={16} />
+            Play
+          </button>
+          <button type="button" className="btn hero-info" onClick={() => onDetails?.(active)}>
+            <Icon name="info" size={16} />
+            More info
+          </button>
+        </div>
+      </div>
 
       {list.length > 1 && (
         <div className="hero-dots" role="tablist" aria-label="Featured titles">
