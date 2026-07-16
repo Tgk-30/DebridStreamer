@@ -816,6 +816,29 @@ describe("saveSettingsToStore", () => {
     expect(settingsMap.get("appearance_blur")).toBe("28"); // clamped
   });
 
+  it("writes only a changed scalar when the caller supplies the prior settings", async () => {
+    const previous = settingsWith({ simpleMode: true });
+    const next = { ...previous, simpleMode: false };
+
+    await saveSettingsToStore(next, { previous });
+
+    const scalarWrites = fakeStore.setSetting.mock.calls.filter(
+      ([key]) => !["tmdb_api_key", "omdb_api_key", "ai_api_key", "opensubtitles_api_key"].includes(key),
+    );
+    expect(scalarWrites).toEqual([["simple_mode", "false"]]);
+  });
+
+  it("writes zero scalars when the next settings equal the supplied prior settings", async () => {
+    const current = settingsWith({ theme: "aurora" });
+
+    await saveSettingsToStore(current, { previous: current });
+
+    const scalarWrites = fakeStore.setSetting.mock.calls.filter(
+      ([key]) => !["tmdb_api_key", "omdb_api_key", "ai_api_key", "opensubtitles_api_key"].includes(key),
+    );
+    expect(scalarWrites).toEqual([]);
+  });
+
   it("writes debrid tokens to SecretStore + a marker'd config row, skipping blank tokens", async () => {
     await saveSettingsToStore(
       settingsWith({

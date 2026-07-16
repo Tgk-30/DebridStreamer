@@ -8,6 +8,10 @@ const tauriState = vi.hoisted(() => ({ on: false }));
 const desktopQueue = vi.hoisted(() => ({
   records: [] as DownloadRecord[],
   manager: {
+    subscribeRecords: vi.fn((listener: (records: DownloadRecord[]) => void) => {
+      listener(desktopQueue.records);
+      return () => {};
+    }),
     subscribeProgress: vi.fn(() => () => {}),
     speedFor: vi.fn(() => undefined),
     pause: vi.fn(async () => {}),
@@ -23,10 +27,6 @@ vi.mock("../store/AppStore", () => ({
 vi.mock("../lib/tauri", () => ({ isTauri: () => tauriState.on }));
 vi.mock("../storage", () => ({
   getStore: () => ({
-    subscribeDownloads: (listener: (records: DownloadRecord[]) => void) => {
-      listener(desktopQueue.records);
-      return () => {};
-    },
     getMedia: async () => null,
     deleteDownload: async () => {},
   }),

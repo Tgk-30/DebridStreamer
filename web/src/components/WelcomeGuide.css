@@ -68,6 +68,32 @@
   text-align: center;
   padding-top: 8px;
 }
+@keyframes welcomeStepInForward {
+  from {
+    opacity: 0;
+    transform: translateX(26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes welcomeStepInBackward {
+  from {
+    opacity: 0;
+    transform: translateX(-26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.welcome-step-forward {
+  animation: welcomeStepInForward 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.welcome-step-backward {
+  animation: welcomeStepInBackward 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
 
 .welcome-halo {
   display: grid;

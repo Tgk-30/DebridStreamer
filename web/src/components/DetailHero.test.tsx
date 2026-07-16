@@ -7,43 +7,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { createElement, forwardRef } from "react";
 import { DetailHero } from "./DetailHero";
 import type { MediaItem } from "../models/media";
-
-// Replace motion with passthrough DOM tags so children render synchronously and
-// motion-only props don't trip React DOM-attribute warnings. Animation is not
-// under test.
-vi.mock("motion/react", () => {
-  const cache = new Map<string, unknown>();
-  const makeTag = (tag: string) =>
-    forwardRef(
-      ({ children, ...props }: { children?: unknown }, ref: unknown) => {
-        const {
-          initial: _i,
-          animate: _a,
-          exit: _e,
-          transition: _t,
-          ...rest
-        } = props as Record<string, unknown>;
-        void _i;
-        void _a;
-        void _e;
-        void _t;
-        return createElement(tag, { ...rest, ref }, children as never);
-      },
-    );
-  const motion = new Proxy(
-    {},
-    {
-      get: (_t, tag: string) => {
-        if (!cache.has(tag)) cache.set(tag, makeTag(tag));
-        return cache.get(tag);
-      },
-    },
-  );
-  return { motion };
-});
 
 function makeItem(overrides: Partial<MediaItem> = {}): MediaItem {
   return {
@@ -99,6 +64,33 @@ describe("DetailHero backdrop", () => {
     expect(container.querySelector(".detail-hero-backdrop.hero-gradient")).not.toBeNull();
   });
 
+  it("does not carry a failed backdrop fallback to a different detail item", () => {
+    const { container, rerender } = render(
+      <DetailHero
+        item={makeItem()}
+        inWatchlist={false}
+        onPlay={noop}
+        onToggleWatchlist={noop}
+        onClose={noop}
+      />,
+    );
+    fireEvent.error(container.querySelector("img.detail-hero-backdrop")!);
+
+    rerender(
+      <DetailHero
+        item={makeItem({ id: "m2", title: "Alien", backdropPath: "/alien.jpg" })}
+        inWatchlist={false}
+        onPlay={noop}
+        onToggleWatchlist={noop}
+        onClose={noop}
+      />,
+    );
+
+    const img = container.querySelector("img.detail-hero-backdrop") as HTMLImageElement;
+    expect(img.src).toBe("https://image.tmdb.org/t/p/w1280/alien.jpg");
+    expect(container.querySelector(".detail-hero-backdrop.hero-gradient")).toBeNull();
+  });
+
   it("renders the gradient directly when the item has no backdrop", () => {
     const { container } = render(
       <DetailHero
@@ -111,6 +103,33 @@ describe("DetailHero backdrop", () => {
     );
     expect(container.querySelector("img.detail-hero-backdrop")).toBeNull();
     expect(container.querySelector(".detail-hero-backdrop.hero-gradient")).not.toBeNull();
+  });
+
+  it("replays the CSS animation layers when the detail title changes", () => {
+    const { container, rerender } = render(
+      <DetailHero
+        item={makeItem()}
+        inWatchlist={false}
+        onPlay={noop}
+        onToggleWatchlist={noop}
+        onClose={noop}
+      />,
+    );
+    const firstContent = container.querySelector(".detail-hero-content");
+    const firstBackdrop = container.querySelector(".detail-hero-backdrop-layer");
+
+    rerender(
+      <DetailHero
+        item={makeItem({ id: "m2", title: "Alien" })}
+        inWatchlist={false}
+        onPlay={noop}
+        onToggleWatchlist={noop}
+        onClose={noop}
+      />,
+    );
+
+    expect(container.querySelector(".detail-hero-content")).not.toBe(firstContent);
+    expect(container.querySelector(".detail-hero-backdrop-layer")).not.toBe(firstBackdrop);
   });
 });
 

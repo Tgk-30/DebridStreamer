@@ -200,15 +200,47 @@ describe("resolveOne - cached-source preference", () => {
     expect(Number.isNaN(Date.parse(record!.resolvedAt))).toBe(false);
     expect(putCachedResolution).toHaveBeenCalledWith(record);
   });
+
+  it("skips an identical resolution write until its freshness clock reaches half TTL", async () => {
+    const now = 2_000_000_000_000;
+    const putCachedResolution = vi.fn(async () => {});
+    const d = makeDeps({
+      results: [torrent("same-hash", VideoQuality.hd1080p, 4)],
+      resolveStream: vi.fn(async () => ({
+        debridService: "real_debrid",
+        streamURL: "https://cdn.example/same.mkv",
+      })),
+      putCachedResolution,
+    });
+    const existing = {
+      mediaId: "tt1",
+      stream: { streamURL: "https://cdn.example/same.mkv" },
+      resolvedAt: new Date(now - RESOLUTION_TTL_MS / 2 + 1).toISOString(),
+      debridService: "real_debrid",
+      infoHash: "same-hash",
+    } as CachedResolutionRecord;
+
+    expect(await resolveOne(previewOf(), d, existing, now)).toBe(existing);
+    expect(putCachedResolution).not.toHaveBeenCalled();
+
+    const refreshed = await resolveOne(
+      previewOf(),
+      d,
+      { ...existing, resolvedAt: new Date(now - RESOLUTION_TTL_MS / 2).toISOString() },
+      now,
+    );
+    expect(putCachedResolution).toHaveBeenCalledTimes(1);
+    expect(refreshed?.resolvedAt).toBe(new Date(now).toISOString());
+  });
 });
 
 /** Store stub for resolveWatchlistOnce that drives the freshness gate. */
 function watchlistStore(over: Partial<{
-  getCachedResolution: ReturnType<typeof vi.fn>;
+  getCachedResolutions: ReturnType<typeof vi.fn>;
   putCachedResolution: ReturnType<typeof vi.fn>;
 }> = {}): Store {
   return {
-    getCachedResolution: over.getCachedResolution ?? vi.fn(async () => null),
+    getCachedResolutions: over.getCachedResolutions ?? vi.fn(async () => []),
     putCachedResolution: over.putCachedResolution ?? vi.fn(async () => {}),
   } as unknown as Store;
 }
@@ -238,11 +270,11 @@ describe("resolveWatchlistOnce - queueing & freshness", () => {
 
   it("skips titles with a fresh cached resolution and attempts the rest", async () => {
     const now = 1_000_000_000_000;
-    const getCachedResolution = vi.fn(async (id: string) =>
-      id === "tt-fresh" ? freshRecord(now, 1000) : null,
-    );
+    const getCachedResolutions = vi.fn(async () => [
+      { ...freshRecord(now, 1000), mediaId: "tt-fresh" },
+    ]);
     const d = makeDeps();
-    d.store = watchlistStore({ getCachedResolution });
+    d.store = watchlistStore({ getCachedResolutions });
     const res = await resolveWatchlistOnce(
       [previewOf("tt-fresh"), previewOf("tt-stale")],
       d,
@@ -255,9 +287,9 @@ describe("resolveWatchlistOnce - queueing & freshness", () => {
 
   it("treats a record at exactly the TTL boundary as stale (re-resolves it)", async () => {
     const now = 2_000_000_000_000;
-    const getCachedResolution = vi.fn(async () => freshRecord(now, RESOLUTION_TTL_MS));
+    const getCachedResolutions = vi.fn(async () => [freshRecord(now, RESOLUTION_TTL_MS)]);
     const d = makeDeps();
-    d.store = watchlistStore({ getCachedResolution });
+    d.store = watchlistStore({ getCachedResolutions });
     const res = await resolveWatchlistOnce([previewOf("tt1")], d, now);
     // now - at === TTL, not < TTL → not fresh → attempted.
     expect(res.skipped).toBe(0);
@@ -267,20 +299,20 @@ describe("resolveWatchlistOnce - queueing & freshness", () => {
   it("treats a record with an unparseable resolvedAt as stale", async () => {
     const now = 2_000_000_000_000;
     const bad = { ...freshRecord(now, 0), resolvedAt: "not-a-date" };
-    const getCachedResolution = vi.fn(async () => bad);
+    const getCachedResolutions = vi.fn(async () => [bad]);
     const d = makeDeps();
-    d.store = watchlistStore({ getCachedResolution });
+    d.store = watchlistStore({ getCachedResolutions });
     const res = await resolveWatchlistOnce([previewOf("tt1")], d, now);
     expect(res.skipped).toBe(0);
     expect(res.attempted).toBe(1);
   });
 
-  it("treats a getCachedResolution rejection as no-cache (stale) and continues", async () => {
-    const getCachedResolution = vi.fn(async () => {
+  it("treats a keyed cache read rejection as no-cache (stale) and continues", async () => {
+    const getCachedResolutions = vi.fn(async () => {
       throw new Error("read failed");
     });
     const d = makeDeps();
-    d.store = watchlistStore({ getCachedResolution });
+    d.store = watchlistStore({ getCachedResolutions });
     const res = await resolveWatchlistOnce([previewOf("tt1")], d, Date.now());
     expect(res.attempted).toBe(1);
     expect(res.skipped).toBe(0);
@@ -294,6 +326,17 @@ describe("resolveWatchlistOnce - queueing & freshness", () => {
       resolved: 0,
       skipped: 0,
     });
+  });
+
+  it("bulk-reads the watchlist cache once before selecting stale titles", async () => {
+    const getCachedResolutions = vi.fn(async () => []);
+    const d = makeDeps();
+    d.store = watchlistStore({ getCachedResolutions });
+
+    await resolveWatchlistOnce([previewOf("tt1"), previewOf("tt2")], d, Date.now());
+
+    expect(getCachedResolutions).toHaveBeenCalledTimes(1);
+    expect(getCachedResolutions).toHaveBeenCalledWith(["tt1", "tt2"]);
   });
 });
 
@@ -352,7 +395,7 @@ describe("AutoResolveScheduler - gate, throttle, re-entrancy", () => {
     (base.indexers as unknown as { activeIndexers: string[] }).activeIndexers =
       over.activeIndexers ?? ["ix"];
     base.store = {
-      getCachedResolution: vi.fn(async () => null),
+      getCachedResolutions: vi.fn(async () => []),
       putCachedResolution: vi.fn(async () => {}),
       listWatchlist:
         over.listWatchlist ?? vi.fn(async () => [{ preview: previewOf("tt1") }]),
@@ -491,7 +534,7 @@ describe("AutoResolveScheduler - defaultEnabled gate (real Tauri check)", () => 
     const base = makeDeps();
     (base.indexers as unknown as { activeIndexers: string[] }).activeIndexers = ["ix"];
     base.store = {
-      getCachedResolution: vi.fn(async () => null),
+      getCachedResolutions: vi.fn(async () => []),
       putCachedResolution: vi.fn(async () => {}),
       listWatchlist: vi.fn(async () => [{ preview: previewOf("tt1") }]),
     } as unknown as Store;

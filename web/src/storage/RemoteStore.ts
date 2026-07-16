@@ -605,6 +605,10 @@ export class RemoteStore implements Store, SecretStore {
     return null;
   }
 
+  async getCachedResolutions(_mediaIds: string[]): Promise<CachedResolutionRecord[]> {
+    return [];
+  }
+
   async listCachedResolutions(): Promise<CachedResolutionRecord[]> {
     return [];
   }

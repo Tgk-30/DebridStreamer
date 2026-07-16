@@ -18,7 +18,7 @@ import {
   it,
   vi,
 } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { render, renderHook, act, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import type { MediaPreview } from "../models/media";
 import type { AppServices, AppSettings } from "../data/settings";
@@ -76,11 +76,13 @@ vi.mock("../data/library", () => ({
 }));
 
 const listCachedResolutions = vi.fn<() => Promise<Array<{ mediaId: string }>>>();
+const getCachedResolutions = vi.fn<(ids: string[]) => Promise<Array<{ mediaId: string }>>>();
 const deleteCachedResolution = vi.fn<(id: string) => Promise<void>>();
 const isInWatchlist = vi.fn<(id: string) => Promise<boolean>>();
 const addToWatchlist = vi.fn<(preview: MediaPreview) => Promise<void>>();
 const fakeStore = {
   listCachedResolutions: () => listCachedResolutions(),
+  getCachedResolutions: (ids: string[]) => getCachedResolutions(ids),
   deleteCachedResolution: (id: string) => deleteCachedResolution(id),
   isInWatchlist: (id: string) => isInWatchlist(id),
   addToWatchlist: (preview: MediaPreview) => addToWatchlist(preview),
@@ -155,7 +157,7 @@ vi.mock("../lib/serverMode", () => ({
 }));
 
 // Imported AFTER mocks (vi.mock is hoisted).
-import { AppStoreProvider, useAppStore, useSimpleMode } from "./AppStore";
+import { AppStoreProvider, useAppActions, useAppStore, useSimpleMode } from "./AppStore";
 import {
   ServerSessionProvider,
   type ServerSession,
@@ -260,6 +262,7 @@ beforeEach(() => {
   toggleWatchlistStore.mockResolvedValue([]);
   removeFromWatchlistStore.mockResolvedValue([]);
   listCachedResolutions.mockResolvedValue([]);
+  getCachedResolutions.mockResolvedValue([]);
   deleteCachedResolution.mockResolvedValue(undefined);
   isInWatchlist.mockResolvedValue(false);
   addToWatchlist.mockResolvedValue(undefined);
@@ -291,6 +294,37 @@ describe("useAppStore guard", () => {
       /must be used within an <AppStoreProvider>/,
     );
     spy.mockRestore();
+  });
+});
+
+describe("useAppActions", () => {
+  it("does not re-render an action-only consumer when detailItem changes", async () => {
+    let actionRenders = 0;
+    let openDetail!: (item: MediaPreview) => void;
+    function ActionProbe() {
+      useAppActions();
+      actionRenders += 1;
+      return null;
+    }
+    function StateDriver() {
+      openDetail = useAppStore().openDetail;
+      return null;
+    }
+
+    render(
+      <ServerSessionProvider initial={null}>
+        <AppStoreProvider>
+          <ActionProbe />
+          <StateDriver />
+        </AppStoreProvider>
+      </ServerSessionProvider>,
+    );
+    await waitFor(() => expect(openDetail).toBeTypeOf("function"));
+    const beforeDetailOpen = actionRenders;
+
+    act(() => openDetail(media("detail-item")));
+
+    expect(actionRenders).toBe(beforeDetailOpen);
   });
 });
 
@@ -811,28 +845,52 @@ describe("recordResume", () => {
 });
 
 describe("refreshCachedResolutions", () => {
-  it("re-reads the cached-resolution table into the keyed map", async () => {
+  it("re-reads only watchlist cached resolutions into the keyed map", async () => {
+    loadWatchlist.mockResolvedValue([media("a"), media("b")]);
     const { result } = await renderStore();
-    listCachedResolutions.mockResolvedValue([{ mediaId: "a" }, { mediaId: "b" }]);
+    getCachedResolutions.mockResolvedValue([{ mediaId: "a" }, { mediaId: "b" }]);
 
     await act(async () => {
       await result.current.refreshCachedResolutions();
     });
+    expect(getCachedResolutions).toHaveBeenLastCalledWith(["a", "b"]);
     expect(Object.keys(result.current.cachedResolutions).sort()).toEqual([
       "a",
       "b",
     ]);
   });
 
-  it("swallows a listCachedResolutions rejection (best-effort)", async () => {
+  it("swallows a keyed cached-resolution read rejection (best-effort)", async () => {
     const { result } = await renderStore();
     const before = result.current.cachedResolutions;
-    listCachedResolutions.mockRejectedValue(new Error("boom"));
+    getCachedResolutions.mockRejectedValue(new Error("boom"));
     await act(async () => {
       await result.current.refreshCachedResolutions();
     });
     // No throw; map unchanged.
     expect(result.current.cachedResolutions).toEqual(before);
+  });
+
+  it("uses a keyed read for five watchlist badges instead of the full cache table", async () => {
+    const watchlist = Array.from({ length: 5 }, (_, index) => media(`watch-${index}`));
+    const completeCache = Array.from({ length: 100 }, (_, index) => ({
+      mediaId: `cache-${index}`,
+    }));
+    loadWatchlist.mockResolvedValue(watchlist);
+    listCachedResolutions.mockResolvedValue(completeCache);
+    const { result } = await renderStore();
+    const scopedRows = watchlist.map((item) => ({ mediaId: item.id }));
+    getCachedResolutions.mockResolvedValue(scopedRows);
+    getCachedResolutions.mockClear();
+
+    await act(async () => {
+      await result.current.refreshCachedResolutions();
+    });
+
+    expect(getCachedResolutions).toHaveBeenCalledWith(watchlist.map((item) => item.id));
+    expect(Object.keys(result.current.cachedResolutions).sort()).toEqual(
+      watchlist.map((item) => item.id).sort(),
+    );
   });
 });
 
@@ -849,7 +907,7 @@ describe("auto-resolve scheduler effect", () => {
     await renderStore();
     expect(schedulerStart).toHaveBeenCalled();
     // The effect calls refreshCachedResolutions() immediately on start.
-    await waitFor(() => expect(listCachedResolutions).toHaveBeenCalled());
+    await waitFor(() => expect(getCachedResolutions).toHaveBeenCalled());
   });
 });
 

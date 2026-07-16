@@ -10,7 +10,6 @@
 // local AI usage record (token/cost estimate) into the Store.
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import type { MediaItem } from "../models/media";
 import type {
   AIAssistantProvider,
@@ -27,8 +26,6 @@ interface DetailAnalysisProps {
   item: MediaItem;
   provider: AIAssistantProvider;
 }
-
-const EASE = [0.16, 1, 0.3, 1] as const;
 
 /** Human-facing verdict labels. */
 const VERDICT_LABEL: Record<AIPersonalizedVerdict, string> = {
@@ -109,17 +106,12 @@ export function DetailAnalysis({ item, provider }: DetailAnalysisProps) {
 
   return (
     <div className="detail-analysis">
-      <AnimatePresence mode="wait" initial={false}>
-        {analysis != null ? (
-          <motion.div
+      {analysis != null ? (
+          <div
             key="result"
-            className={`detail-analysis-card glass-raised glass-lit ${verdictTone(
+            className={`detail-analysis-card detail-analysis-in glass-raised glass-lit ${verdictTone(
               analysis.verdict,
             )}`}
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.32, ease: EASE }}
           >
             <div className="detail-analysis-head">
               <div className="detail-analysis-score" aria-hidden="true">
@@ -158,27 +150,21 @@ export function DetailAnalysis({ item, provider }: DetailAnalysisProps) {
                 ))}
               </ul>
             )}
-          </motion.div>
+          </div>
         ) : loading ? (
-          <motion.div
+          <div
             key="loading"
-            className="detail-analysis-status"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            className="detail-analysis-status detail-analysis-fade-in"
           >
             <span className="detail-analysis-spinner" aria-hidden />
             <span className="t-secondary">
               Analyzing based on your taste profile…
             </span>
-          </motion.div>
+          </div>
         ) : error != null ? (
-          <motion.div
+          <div
             key="error"
-            className="detail-analysis-status detail-analysis-error"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            className="detail-analysis-status detail-analysis-error detail-analysis-fade-in"
           >
             <Icon name="info" size={15} className="t-warning" />
             <span className="t-secondary">{error}</span>
@@ -189,22 +175,18 @@ export function DetailAnalysis({ item, provider }: DetailAnalysisProps) {
             >
               Try again
             </button>
-          </motion.div>
+          </div>
         ) : (
-          <motion.button
+          <button
             key="cta"
             type="button"
-            className="detail-analysis-cta chip"
+            className="detail-analysis-cta detail-analysis-fade-in chip"
             onClick={() => void run()}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
           >
             <Icon name="sparkles" size={15} className="t-accent" />
             Will I like this?
-          </motion.button>
+          </button>
         )}
-      </AnimatePresence>
     </div>
   );
 }

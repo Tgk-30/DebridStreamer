@@ -15,6 +15,7 @@ class DownloadStore {
   history: DownloadRecord["status"][] = [];
   updateCalls = 0;
   listCalls = 0;
+  queryExecutions = 0;
   beforeUpdate: (
     changes: Partial<Omit<DownloadRecord, "jobId" | "createdAt">>,
   ) => Promise<void> = async () => {};
@@ -52,12 +53,17 @@ class DownloadStore {
   }
   subscribeDownloads(listener: (records: DownloadRecord[]) => void): () => void {
     this.listeners.add(listener);
-    listener([...this.records.values()]);
+    this.runQueueQuery(listener);
     return () => this.listeners.delete(listener);
   }
   private notify() {
-    const rows = [...this.records.values()];
-    this.listeners.forEach((listener) => listener(rows));
+    this.listeners.forEach((listener) => this.runQueueQuery(listener));
+  }
+  private runQueueQuery(listener: (records: DownloadRecord[]) => void) {
+    this.queryExecutions += 1;
+    listener(
+      [...this.records.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    );
   }
 }
 
@@ -156,6 +162,66 @@ describe("DownloadManager", () => {
   afterEach(() => {
     managers.splice(0).forEach((manager) => manager.stop());
     vi.useRealTimers();
+  });
+
+  it("shares one queue query with two consumers and patches progress in createdAt order", async () => {
+    const store = new DownloadStore();
+    const older = {
+      ...makeDownloadRecord(
+        { jobId: "older", mediaId: "m1", title: "Older", infoHash: "a", mode: "full" },
+        "2026-01-01T00:00:00.000Z",
+      ),
+      status: "paused" as const,
+    };
+    const newer = {
+      ...makeDownloadRecord(
+        { jobId: "newer", mediaId: "m2", title: "Newer", infoHash: "b", mode: "full" },
+        "2026-01-02T00:00:00.000Z",
+      ),
+      status: "paused" as const,
+    };
+    await store.saveDownload(older);
+    await store.saveDownload(newer);
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: makeBridge().bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+
+    const firstConsumer = vi.fn();
+    const secondConsumer = vi.fn();
+    const unlistenFirst = manager.subscribeRecords(firstConsumer);
+    const unlistenSecond = manager.subscribeRecords(secondConsumer);
+    firstConsumer.mockClear();
+    secondConsumer.mockClear();
+    store.queryExecutions = 0;
+
+    await store.updateDownload("newer", { bytesDone: 50 });
+
+    expect(store.queryExecutions).toBe(1);
+    expect(firstConsumer).toHaveBeenCalledTimes(1);
+    expect(secondConsumer).toHaveBeenCalledTimes(1);
+    expect(firstConsumer.mock.calls[0]![0].map((row: DownloadRecord) => row.jobId)).toEqual([
+      "newer",
+      "older",
+    ]);
+    expect(firstConsumer.mock.calls[0]![0][0]).toMatchObject({ bytesDone: 50 });
+
+    store.queryExecutions = 0;
+    await store.saveDownload({
+      ...makeDownloadRecord(
+        { jobId: "added", mediaId: "m3", title: "Added", infoHash: "c", mode: "full" },
+        "2026-01-03T00:00:00.000Z",
+      ),
+      status: "paused",
+    });
+    expect(store.queryExecutions).toBe(1);
+
+    store.queryExecutions = 0;
+    await store.deleteDownload("added");
+    expect(store.queryExecutions).toBe(1);
+    unlistenFirst();
+    unlistenSecond();
   });
 
   it("moves an optimized job through queued, resolving, downloading, optimizing, and completed", async () => {

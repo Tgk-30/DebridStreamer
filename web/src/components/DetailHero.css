@@ -13,6 +13,16 @@
 .detail-hero-backdrop-layer {
   position: absolute;
   inset: 0;
+  will-change: transform;
+  animation: detailHeroKenBurns 18s ease-out both;
+}
+@keyframes detailHeroKenBurns {
+  from {
+    transform: scale(1.12);
+  }
+  to {
+    transform: scale(1.04);
+  }
 }
 .detail-hero-backdrop {
   position: absolute;
@@ -69,6 +79,18 @@
   align-items: flex-end;
   gap: clamp(var(--sp-lg), 2.8vw, 40px);
   padding: clamp(var(--sp-xl), 4vw, 60px);
+  will-change: transform, opacity;
+  animation: detailHeroContentIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+@keyframes detailHeroContentIn {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .detail-hero-poster {

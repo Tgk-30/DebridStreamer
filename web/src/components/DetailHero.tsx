@@ -5,7 +5,6 @@
 // primary actions (Play prominent + Watchlist). Content settles in with motion.
 
 import { useState, type ReactNode } from "react";
-import { motion } from "motion/react";
 import { MediaItem as MediaItemNS } from "../models/media";
 import type { MediaItem } from "../models/media";
 import { Icon } from "./Icon";
@@ -48,8 +47,6 @@ interface DetailHeroProps {
   completionLabel?: "Watched" | "Completed" | null;
 }
 
-const EASE = [0.16, 1, 0.3, 1] as const;
-
 export function DetailHero({
   item,
   inWatchlist,
@@ -68,8 +65,10 @@ export function DetailHero({
   externalRatings,
   completionLabel = null,
 }: DetailHeroProps) {
+  const itemKey = `${item.type}:${item.id}`;
   const backdrop = MediaItemNS.backdropURL(item);
-  const [backdropFailed, setBackdropFailed] = useState(false);
+  const [backdropFailedFor, setBackdropFailedFor] = useState<string | null>(null);
+  const backdropFailed = backdropFailedFor === itemKey;
   const poster = MediaItemNS.posterThumbnailURL(item);
   const rating = MediaItemNS.ratingString(item);
   const runtime = MediaItemNS.runtimeString(item);
@@ -82,11 +81,9 @@ export function DetailHero({
 
   return (
     <div className="detail-hero">
-      <motion.div
+      <div
+        key={`backdrop:${itemKey}`}
         className="detail-hero-backdrop-layer"
-        initial={{ scale: 1.12 }}
-        animate={{ scale: 1.04 }}
-        transition={{ duration: 18, ease: "easeOut" }}
       >
         {backdrop && !backdropFailed ? (
           <img
@@ -94,14 +91,14 @@ export function DetailHero({
             src={backdrop}
             alt=""
             draggable={false}
-            onError={() => setBackdropFailed(true)}
+            onError={() => setBackdropFailedFor(itemKey)}
           />
         ) : (
           // No backdrop, or it failed to load → the on-brand gradient instead of
           // a broken-image frame.
           <div className="detail-hero-backdrop hero-gradient" />
         )}
-      </motion.div>
+      </div>
       <div className="detail-hero-scrim" />
       <div className="detail-hero-vignette" />
 
@@ -115,11 +112,9 @@ export function DetailHero({
         <Icon name="xmark" size={17} />
       </button>
 
-      <motion.div
+      <div
+        key={`content:${itemKey}`}
         className="detail-hero-content"
-        initial={{ opacity: 0, y: 22 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: EASE, delay: 0.05 }}
       >
         {poster && (
           <img
@@ -293,7 +288,7 @@ export function DetailHero({
             )}
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

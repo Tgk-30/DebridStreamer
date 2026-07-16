@@ -163,6 +163,8 @@ export interface Store {
   putCachedResolution(record: CachedResolutionRecord): Promise<void>;
   /** The cached resolution for a media id, or null. */
   getCachedResolution(mediaId: string): Promise<CachedResolutionRecord | null>;
+  /** Cached resolutions for a bounded set of media ids. */
+  getCachedResolutions(mediaIds: string[]): Promise<CachedResolutionRecord[]>;
   /** All cached resolutions (for the watchlist "Ready to play" badge pass). */
   listCachedResolutions(): Promise<CachedResolutionRecord[]>;
   /** Drop a cached resolution by media id (e.g. when removed from watchlist). */

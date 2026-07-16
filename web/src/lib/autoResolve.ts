@@ -54,6 +54,7 @@ interface AutoResolveResult {
 /** How long a cached resolution stays "fresh" before we try to re-resolve it
  * (debrid direct links expire, so we periodically refresh). 6 hours. */
 export const RESOLUTION_TTL_MS = 6 * 60 * 60 * 1000;
+const RESOLUTION_REFRESH_HALF_TTL_MS = RESOLUTION_TTL_MS / 2;
 
 /** Bounded concurrency so a large watchlist doesn't fire every search at once. */
 const MAX_CONCURRENCY = 3;
@@ -66,12 +67,33 @@ function isFresh(record: CachedResolutionRecord | null, now: number): boolean {
   return now - at < RESOLUTION_TTL_MS;
 }
 
+function hasSameResolutionIdentity(
+  existing: CachedResolutionRecord,
+  next: CachedResolutionRecord,
+): boolean {
+  return (
+    existing.stream.streamURL === next.stream.streamURL &&
+    existing.infoHash === next.infoHash &&
+    existing.debridService === next.debridService
+  );
+}
+
+function shouldRefreshUnchangedResolution(
+  existing: CachedResolutionRecord,
+  now: number,
+): boolean {
+  const resolvedAt = Date.parse(existing.resolvedAt);
+  return Number.isNaN(resolvedAt) || now - resolvedAt >= RESOLUTION_REFRESH_HALF_TTL_MS;
+}
+
 /** Resolve and cache the best ready-to-play stream for one title. Returns the
  * cached record on success, or null when nothing ready was found / an error was
  * swallowed. Fault-tolerant: never throws. */
 export async function resolveOne(
   preview: MediaPreview,
   deps: AutoResolveDeps,
+  existing: CachedResolutionRecord | null = null,
+  now = Date.now(),
 ): Promise<CachedResolutionRecord | null> {
   const { tmdb, indexers, debrid, store, settings } = deps;
   if (debrid == null || !debrid.hasServices) return null;
@@ -129,10 +151,16 @@ export async function resolveOne(
     const record: CachedResolutionRecord = {
       mediaId: preview.id,
       stream,
-      resolvedAt: new Date().toISOString(),
+      resolvedAt: new Date(now).toISOString(),
       debridService: stream.debridService,
       infoHash: chosen.infoHash,
     };
+    if (existing != null && hasSameResolutionIdentity(existing, record)) {
+      // resolvedAt is the freshness clock for expiring direct links. Keep an
+      // identical row untouched until half the TTL has elapsed, then refresh
+      // only that timestamp so a manual resolve cannot churn durable writes.
+      if (!shouldRefreshUnchangedResolution(existing, now)) return existing;
+    }
     await store.putCachedResolution(record);
     return record;
   } catch {
@@ -153,15 +181,22 @@ export async function resolveWatchlistOnce(
     return { attempted: 0, resolved: 0, skipped: 0 };
   }
 
+  // Read the cache in one keyed batch instead of one serial point read per
+  // title. The table is keyed by mediaId, so the map is an exact lookup cache.
+  const cachedRows = await deps.store
+    .getCachedResolutions(watchlist.map((preview) => preview.id))
+    .catch(() => []);
+  const cachedByMediaId = new Map(cachedRows.map((record) => [record.mediaId, record]));
+
   // Decide which titles need work (no fresh cached resolution).
-  const pending: MediaPreview[] = [];
+  const pending: Array<{ preview: MediaPreview; existing: CachedResolutionRecord | null }> = [];
   let skipped = 0;
   for (const preview of watchlist) {
-    const existing = await deps.store.getCachedResolution(preview.id).catch(() => null);
+    const existing = cachedByMediaId.get(preview.id) ?? null;
     if (isFresh(existing, now)) {
       skipped += 1;
     } else {
-      pending.push(preview);
+      pending.push({ preview, existing });
     }
   }
 
@@ -172,7 +207,12 @@ export async function resolveWatchlistOnce(
     while (cursor < pending.length) {
       const index = cursor;
       cursor += 1;
-      const record = await resolveOne(pending[index], deps);
+      const record = await resolveOne(
+        pending[index].preview,
+        deps,
+        pending[index].existing,
+        now,
+      );
       if (record != null) resolved += 1;
     }
   }

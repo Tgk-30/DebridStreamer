@@ -197,6 +197,8 @@
   padding: 10px 12px;
   border-radius: var(--r-card, 14px);
   border: 0.75px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  content-visibility: auto;
+  contain-intrinsic-size: auto 90px;
 }
 .lib-org-poster {
   flex: 0 0 auto;

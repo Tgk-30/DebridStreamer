@@ -166,7 +166,32 @@ export interface AppStore {
   ) => void;
 }
 
+/** Stable command/service access for shell controls that do not render data. */
+export interface AppActions {
+  /** Read the current services inside an event path. Render-time service users
+   * stay on useAppStore so a configuration change can update their UI. */
+  getServices: () => AppServices;
+  navigate: AppStore["navigate"];
+  openDetail: AppStore["openDetail"];
+  closeDetail: AppStore["closeDetail"];
+  openBrowse: AppStore["openBrowse"];
+  closeBrowse: AppStore["closeBrowse"];
+  search: AppStore["search"];
+  consumePendingSearch: AppStore["consumePendingSearch"];
+  updateSettings: AppStore["updateSettings"];
+  refreshContinueWatching: AppStore["refreshContinueWatching"];
+  refreshCachedResolutions: AppStore["refreshCachedResolutions"];
+  toggleWatchlist: AppStore["toggleWatchlist"];
+  removeFromWatchlist: AppStore["removeFromWatchlist"];
+  importToWatchlist: AppStore["importToWatchlist"];
+  reloadProfileData: AppStore["reloadProfileData"];
+  refreshProfiles: AppStore["refreshProfiles"];
+  switchLocalProfile: AppStore["switchLocalProfile"];
+  recordResume: AppStore["recordResume"];
+}
+
 const AppStoreContext = createContext<AppStore | null>(null);
+const AppActionsContext = createContext<AppActions | null>(null);
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [route, setRoute] = useState<ScreenId>("discover");
@@ -185,6 +210,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return initial;
   });
   const [watchlist, setWatchlist] = useState<MediaPreview[]>([]);
+  const watchlistRef = useRef(watchlist);
+  watchlistRef.current = watchlist;
   const [history, setHistory] = useState<MediaPreview[]>([]);
   const [continueWatching, setContinueWatching] = useState<WatchHistoryRecord[]>(
     [],
@@ -375,14 +402,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const refreshCachedResolutions = useCallback(async () => {
     try {
-      const rows = await getStore().listCachedResolutions();
+      const mediaIds = watchlistRef.current.map((item) => item.id);
+      const rows = await getStore().getCachedResolutions(mediaIds);
       setCachedResolutions((prev) => {
-        // The 30s badge poll almost always returns an identical set. Replacing
-        // the map with a fresh object each tick changes the context value's
-        // identity and re-renders EVERY useAppStore() consumer - expensive idle
-        // churn. Bail out (return the same reference) unless a resolution
-        // actually changed, comparing only the scalar identity fields (`stream`
-        // is a freshly-built object every fetch, so it can't be compared by ref).
+        // The 30s badge poll reads only current watchlist ids. Replacing the map
+        // with a fresh object each tick changes the context value's identity and
+        // re-renders every useAppStore() consumer. Bail out unless a resolution
+        // changed, comparing scalar identity fields because stream is rebuilt.
         const unchanged =
           rows.length === Object.keys(prev).length &&
           rows.every((r) => {
@@ -523,7 +549,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     // every existing caller safe to ignore the result.
     setNetworkMode(next.networkMode);
     setSettings(next);
-    return saveSettingsToStore(next).then(
+    return saveSettingsToStore(next, { previous: settingsRef.current }).then(
       () => ({ ok: true as const }),
       (err: unknown) => {
         // eslint-disable-next-line no-console
@@ -650,6 +676,52 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     ? (serverSession?.simpleMode ?? false)
     : settings.simpleMode;
 
+  // Every command below is useCallback-stable and getServices reads a ref, so
+  // this provider value stays identical after mount. It lets memoized shell
+  // controls avoid unrelated AppStore context fan-out without making services
+  // stale inside an event handler.
+  const actionsValue: AppActions = useMemo(
+    () => ({
+      getServices: () => servicesRef.current,
+      navigate,
+      openDetail,
+      closeDetail,
+      openBrowse,
+      closeBrowse,
+      search,
+      consumePendingSearch,
+      updateSettings,
+      refreshContinueWatching,
+      refreshCachedResolutions,
+      toggleWatchlist,
+      removeFromWatchlist,
+      importToWatchlist,
+      reloadProfileData,
+      refreshProfiles,
+      switchLocalProfile,
+      recordResume,
+    }),
+    [
+      navigate,
+      openDetail,
+      closeDetail,
+      openBrowse,
+      closeBrowse,
+      search,
+      consumePendingSearch,
+      updateSettings,
+      refreshContinueWatching,
+      refreshCachedResolutions,
+      toggleWatchlist,
+      removeFromWatchlist,
+      importToWatchlist,
+      reloadProfileData,
+      refreshProfiles,
+      switchLocalProfile,
+      recordResume,
+    ],
+  );
+
   // PERF: memoize the context value. Every member below is already referentially
   // stable between unrelated updates (useCallback/useState); without useMemo the
   // provider handed out a FRESH object on every render - so each 30s badge poll
@@ -726,9 +798,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AppStoreContext.Provider value={value}>
-      {children}
-    </AppStoreContext.Provider>
+    <AppActionsContext.Provider value={actionsValue}>
+      <AppStoreContext.Provider value={value}>
+        {children}
+      </AppStoreContext.Provider>
+    </AppActionsContext.Provider>
   );
 }
 
@@ -739,6 +813,15 @@ export function useAppStore(): AppStore {
     throw new Error("useAppStore must be used within an <AppStoreProvider>");
   }
   return store;
+}
+
+/** Access stable commands without subscribing to mutable app state. */
+export function useAppActions(): AppActions {
+  const actions = useContext(AppActionsContext);
+  if (actions == null) {
+    throw new Error("useAppActions must be used within an <AppStoreProvider>");
+  }
+  return actions;
 }
 
 /** Convenience hook for the effective Simple/Advanced experience tier. */

@@ -197,7 +197,7 @@ export function DownloadShowBanner({ title, art }: { title: string; art?: Downlo
 }
 
 export function Downloads() {
-  const { services, navigate } = useAppStore();
+  const { services, navigate, activeProfile } = useAppStore();
   const tauri = isTauri();
   const [records, setRecords] = useState<DownloadRecord[]>([]);
   const [speeds, setSpeeds] = useState<Record<string, number>>({});
@@ -208,7 +208,7 @@ export function Downloads() {
     if (!tauri) return;
     const store = getStore();
     const manager = startDownloadsRuntime(store, services.debrid);
-    const unlistenStore = store.subscribeDownloads(setRecords);
+    const unlistenRecords = manager.subscribeRecords(setRecords);
     const unlistenProgress = manager.subscribeProgress((progress: DownloadProgress) => {
       if (progress.speedBps == null) return;
       setSpeeds((previous) => ({ ...previous, [progress.jobId]: progress.speedBps! }));
@@ -218,10 +218,10 @@ export function Downloads() {
       .then(setFfmpegAvailable)
       .catch(() => setFfmpegAvailable(false));
     return () => {
-      unlistenStore();
+      unlistenRecords();
       unlistenProgress();
     };
-  }, [services.debrid, tauri]);
+  }, [activeProfile?.id, services.debrid, tauri]);
 
   const selectedRecords = useMemo(
     () => records.filter((record) => selected.has(record.jobId)),

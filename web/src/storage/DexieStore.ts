@@ -821,6 +821,13 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     return (await this.cachedResolutions.get(mediaId)) ?? null;
   }
 
+  async getCachedResolutions(mediaIds: string[]): Promise<CachedResolutionRecord[]> {
+    await this.ready();
+    if (mediaIds.length === 0) return [];
+    const rows = await this.cachedResolutions.bulkGet(mediaIds);
+    return rows.filter((row): row is CachedResolutionRecord => row != null);
+  }
+
   async listCachedResolutions(): Promise<CachedResolutionRecord[]> {
     await this.ready();
     return this.cachedResolutions.toArray();

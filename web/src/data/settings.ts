@@ -741,6 +741,54 @@ async function setStoredValue(
   await store.setSetting(key, value);
 }
 
+/** Normalized non-secret KV entries. Secrets and config-row reconciliation have
+ * their own ordering/error semantics and deliberately stay outside this diff. */
+function scalarSettingEntries(settings: AppSettings): Array<[string, string]> {
+  return [
+    [SettingsKeys.aiProvider, settings.aiProvider],
+    [SettingsKeys.aiModel, settings.aiModel],
+    [SettingsKeys.ollamaEndpoint, settings.ollamaEndpoint],
+    [SettingsKeys.networkMode, settings.networkMode],
+    [SettingsKeys.theme, resolveThemeId(settings.theme)],
+    [SettingsKeys.appearanceAccent, normalizeAppearanceAccent(settings.appearanceAccent)],
+    [SettingsKeys.appearanceDensity, normalizeAppearanceDensity(settings.appearanceDensity)],
+    [SettingsKeys.appearanceTextSize, normalizeAppearanceTextSize(settings.appearanceTextSize)],
+    [SettingsKeys.appearanceMotion, normalizeAppearanceMotion(settings.appearanceMotion)],
+    [SettingsKeys.appearanceRadius, normalizeAppearanceRadius(settings.appearanceRadius)],
+    [SettingsKeys.appearanceBlur, String(normalizeAppearanceBlur(settings.appearanceBlur))],
+    [SettingsKeys.appearanceChrome, normalizeAppearanceChrome(settings.appearanceChrome)],
+    [SettingsKeys.appearanceBackdrop, normalizeAppearanceBackdrop(settings.appearanceBackdrop)],
+    [SettingsKeys.appearanceHeroScale, normalizeAppearanceHeroScale(settings.appearanceHeroScale)],
+    [SettingsKeys.appearancePanelContrast, normalizeAppearancePanelContrast(settings.appearancePanelContrast)],
+    [SettingsKeys.appearanceNavLabels, normalizeAppearanceNavLabels(settings.appearanceNavLabels)],
+    [SettingsKeys.appearanceNavPosition, normalizeAppearanceNavPosition(settings.appearanceNavPosition)],
+    [SettingsKeys.appearanceNavTint, normalizeAppearanceNavTint(settings.appearanceNavTint)],
+    [SettingsKeys.appearancePosterSize, normalizeAppearancePosterSize(settings.appearancePosterSize)],
+    [SettingsKeys.appearanceDefaultTab, normalizeAppearanceDefaultTab(settings.appearanceDefaultTab)],
+    [SettingsKeys.appearanceNavOrder, JSON.stringify(normalizeAppearanceNavOrder(settings.appearanceNavOrder))],
+    [SettingsKeys.appearanceNavHidden, JSON.stringify(normalizeAppearanceNavHidden(settings.appearanceNavHidden))],
+    [SettingsKeys.subtitleFontScale, String(normalizeSubtitleFontScale(settings.subtitleFontScale))],
+    [SettingsKeys.subtitleTextColor, normalizeSubtitleTextColor(settings.subtitleTextColor)],
+    [SettingsKeys.subtitleBgOpacity, String(normalizeSubtitleBgOpacity(settings.subtitleBgOpacity))],
+    [SettingsKeys.autoUpdateChecks, settings.autoUpdateChecks ? "true" : "false"],
+    [SettingsKeys.simpleMode, settings.simpleMode ? "true" : "false"],
+    [SettingsKeys.autoInstallUpdates, settings.autoInstallUpdates ? "true" : "false"],
+    [SettingsKeys.streamCachedOnly, settings.streamCachedOnly ? "true" : "false"],
+    [SettingsKeys.streamMaxQuality, normalizeStreamMaxQuality(settings.streamMaxQuality)],
+    [SettingsKeys.streamMaxSizeGB, String(normalizeStreamMaxSizeGB(settings.streamMaxSizeGB))],
+    [SettingsKeys.dataSaver, settings.dataSaver ? "true" : "false"],
+    [SettingsKeys.autoAdvanceEpisodes, settings.autoAdvanceEpisodes ? "true" : "false"],
+    [SettingsKeys.showWatchStats, settings.showWatchStats ? "true" : "false"],
+    [SettingsKeys.transcode, settings.transcode ? "true" : "false"],
+    [SettingsKeys.ratingScale, settings.ratingScale],
+    [SettingsKeys.preferredExternalPlayer, settings.preferredExternalPlayer],
+    [SettingsKeys.builtInPlayer, settings.builtInPlayer ? "true" : "false"],
+    [SettingsKeys.userName, settings.userName],
+    [SettingsKeys.userAvatar, settings.userAvatar],
+    [SettingsKeys.builtInIndexersEnabled, settings.builtInIndexersEnabled ? "true" : "false"],
+  ];
+}
+
 /** Best-effort secret deletion for the REMOVAL path. On the Tauri desktop build
  * `deleteSecret` fails CLOSED - it rejects if the OS keychain is locked/denied
  * (see KeychainSecretStore). But by the time we call this we have already
@@ -1060,9 +1108,9 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
  * the plaintext legacy intact for a retry. */
 export async function saveSettingsToStore(
   settings: AppSettings,
-  options: { redactCache?: boolean; mergeOnly?: boolean } = {},
+  options: { redactCache?: boolean; mergeOnly?: boolean; previous?: AppSettings } = {},
 ): Promise<void> {
-  const { redactCache = true, mergeOnly = false } = options;
+  const { redactCache = true, mergeOnly = false, previous } = options;
   const store = getStore();
   const secrets = getSecretStore();
 
@@ -1078,6 +1126,11 @@ export async function saveSettingsToStore(
   // allSettled (not all): a single write that fails (keychain locked, or a DB
   // error) must not abort the remaining KV writes or the debrid/indexer
   // reconciliation below.
+  const previousScalars =
+    previous == null ? null : new Map(scalarSettingEntries(previous));
+  const changedScalarWrites = scalarSettingEntries(settings).filter(
+    ([key, value]) => mergeOnly || previousScalars == null || previousScalars.get(key) !== value,
+  );
   const kvResults = await Promise.allSettled([
     setStoredValue(SettingsKeys.tmdbApiKey, settings.tmdbKey, mergeOnly),
     setStoredValue(SettingsKeys.omdbApiKey, settings.omdbKey, mergeOnly),
@@ -1087,143 +1140,7 @@ export async function saveSettingsToStore(
       settings.openSubtitlesApiKey,
       mergeOnly,
     ),
-    store.setSetting(SettingsKeys.aiProvider, settings.aiProvider),
-    store.setSetting(SettingsKeys.aiModel, settings.aiModel),
-    store.setSetting(SettingsKeys.ollamaEndpoint, settings.ollamaEndpoint),
-    store.setSetting(SettingsKeys.networkMode, settings.networkMode),
-    store.setSetting(SettingsKeys.theme, resolveThemeId(settings.theme)),
-    store.setSetting(
-      SettingsKeys.appearanceAccent,
-      normalizeAppearanceAccent(settings.appearanceAccent),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceDensity,
-      normalizeAppearanceDensity(settings.appearanceDensity),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceTextSize,
-      normalizeAppearanceTextSize(settings.appearanceTextSize),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceMotion,
-      normalizeAppearanceMotion(settings.appearanceMotion),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceRadius,
-      normalizeAppearanceRadius(settings.appearanceRadius),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceBlur,
-      String(normalizeAppearanceBlur(settings.appearanceBlur)),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceChrome,
-      normalizeAppearanceChrome(settings.appearanceChrome),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceBackdrop,
-      normalizeAppearanceBackdrop(settings.appearanceBackdrop),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceHeroScale,
-      normalizeAppearanceHeroScale(settings.appearanceHeroScale),
-    ),
-    store.setSetting(
-      SettingsKeys.appearancePanelContrast,
-      normalizeAppearancePanelContrast(settings.appearancePanelContrast),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceNavLabels,
-      normalizeAppearanceNavLabels(settings.appearanceNavLabels),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceNavPosition,
-      normalizeAppearanceNavPosition(settings.appearanceNavPosition),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceNavTint,
-      normalizeAppearanceNavTint(settings.appearanceNavTint),
-    ),
-    store.setSetting(
-      SettingsKeys.appearancePosterSize,
-      normalizeAppearancePosterSize(settings.appearancePosterSize),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceDefaultTab,
-      normalizeAppearanceDefaultTab(settings.appearanceDefaultTab),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceNavOrder,
-      JSON.stringify(normalizeAppearanceNavOrder(settings.appearanceNavOrder)),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceNavHidden,
-      JSON.stringify(normalizeAppearanceNavHidden(settings.appearanceNavHidden)),
-    ),
-    store.setSetting(
-      SettingsKeys.subtitleFontScale,
-      String(normalizeSubtitleFontScale(settings.subtitleFontScale)),
-    ),
-    store.setSetting(
-      SettingsKeys.subtitleTextColor,
-      normalizeSubtitleTextColor(settings.subtitleTextColor),
-    ),
-    store.setSetting(
-      SettingsKeys.subtitleBgOpacity,
-      String(normalizeSubtitleBgOpacity(settings.subtitleBgOpacity)),
-    ),
-    store.setSetting(
-      SettingsKeys.autoUpdateChecks,
-      settings.autoUpdateChecks ? "true" : "false",
-    ),
-    store.setSetting(SettingsKeys.simpleMode, settings.simpleMode ? "true" : "false"),
-    store.setSetting(
-      SettingsKeys.autoInstallUpdates,
-      settings.autoInstallUpdates ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.streamCachedOnly,
-      settings.streamCachedOnly ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.streamMaxQuality,
-      normalizeStreamMaxQuality(settings.streamMaxQuality),
-    ),
-    store.setSetting(
-      SettingsKeys.streamMaxSizeGB,
-      String(normalizeStreamMaxSizeGB(settings.streamMaxSizeGB)),
-    ),
-    store.setSetting(
-      SettingsKeys.dataSaver,
-      settings.dataSaver ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.autoAdvanceEpisodes,
-      settings.autoAdvanceEpisodes ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.showWatchStats,
-      settings.showWatchStats ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.transcode,
-      settings.transcode ? "true" : "false",
-    ),
-    store.setSetting(SettingsKeys.ratingScale, settings.ratingScale),
-    store.setSetting(
-      SettingsKeys.preferredExternalPlayer,
-      settings.preferredExternalPlayer,
-    ),
-    store.setSetting(
-      SettingsKeys.builtInPlayer,
-      settings.builtInPlayer ? "true" : "false",
-    ),
-    store.setSetting(SettingsKeys.userName, settings.userName),
-    store.setSetting(SettingsKeys.userAvatar, settings.userAvatar),
-    store.setSetting(
-      SettingsKeys.builtInIndexersEnabled,
-      settings.builtInIndexersEnabled ? "true" : "false",
-    ),
+    ...changedScalarWrites.map(([key, value]) => store.setSetting(key, value)),
   ]);
   for (const r of kvResults) {
     if (r.status === "rejected") writeFailures.push(r.reason);

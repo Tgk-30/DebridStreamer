@@ -25,6 +25,15 @@
   margin-inline: auto;
 }
 
+/* A default desktop rail contributes about 316px to the stack: 28px title,
+   12px gap, and a 252px poster row with the scroll track's net 24px vertical
+   padding/margin. Reserve 390px so large poster-size and wrapped header cases
+   materialize without a scroll-anchor jump. */
+.discover-body > .rail {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 390px;
+}
+
 /* Without a hero above it (cold start / no artwork), the first block must still
    clear the floating global search field. */
 .discover > .discover-body:first-child {

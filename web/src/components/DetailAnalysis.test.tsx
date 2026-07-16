@@ -14,33 +14,6 @@ import type {
   AIProviderAnalysisResult,
 } from "../services/ai/types";
 
-// motion/react: render the animated elements as their plain DOM tags so the
-// component tree is assertable and AnimatePresence doesn't defer mounts.
-vi.mock("motion/react", () => {
-  const passthrough = (Tag: string) => (props: Record<string, unknown>) => {
-    // Drop motion-only props that React would warn about on a DOM node.
-    const {
-      initial: _i,
-      animate: _a,
-      exit: _e,
-      transition: _t,
-      ...rest
-    } = props;
-    return <Tag {...rest} />;
-  };
-  return {
-    AnimatePresence: ({ children }: { children: React.ReactNode }) => (
-      <>{children}</>
-    ),
-    motion: new Proxy(
-      {},
-      {
-        get: (_target, tag: string) => passthrough(tag),
-      },
-    ),
-  };
-});
-
 vi.mock("./Icon", () => ({
   Icon: ({ name }: { name: string }) => <span data-icon={name} />,
 }));

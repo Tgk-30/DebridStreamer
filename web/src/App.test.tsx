@@ -53,6 +53,7 @@ let store: StoreSlice;
 
 vi.mock("./store/AppStore", () => ({
   useAppStore: () => store,
+  useAppActions: () => ({ search }),
 }));
 
 // --- serverMode / preload helpers ---------------------------------------
@@ -158,8 +159,8 @@ vi.mock("./components/NavRail", async () => {
 });
 
 vi.mock("./components/GlobalSearch", () => ({
-  GlobalSearch: ({ onSubmit }: { onSubmit: (q: string) => void }) => (
-    <button data-testid="global-search" onClick={() => onSubmit("q")}>
+  GlobalSearch: () => (
+    <button data-testid="global-search" onClick={() => search("q")}>
       global-search
     </button>
   ),

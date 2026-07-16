@@ -284,7 +284,7 @@ export function FirstRunHost() {
 }
 
 export function App() {
-  const { route, navigate, detailItem, browseContext, closeBrowse, openDetail, closeDetail, search, settings, simpleMode, services, activeProfile, multiUserEnabled = false, profiles = [], switchLocalProfile } =
+  const { route, navigate, detailItem, browseContext, closeBrowse, openDetail, closeDetail, settings, simpleMode, services, activeProfile, multiUserEnabled = false, profiles = [], switchLocalProfile } =
     useAppStore();
   const playerMounted = usePlayerMounted();
 
@@ -546,7 +546,7 @@ export function App() {
       />
 
       <main className="app-content">
-        {showsGlobalSearch && <GlobalSearch onSubmit={search} />}
+        {showsGlobalSearch && <GlobalSearch />}
         {showsGlobalSearch && (
           <ProfileMenu
             onSwitchProfile={() => setProfilePickerOpen(true)}

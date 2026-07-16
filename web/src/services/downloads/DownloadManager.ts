@@ -109,6 +109,7 @@ export async function downloadsDirectory(
 }
 
 type ProgressListener = (progress: DownloadProgress) => void;
+type DownloadRecordsListener = (records: DownloadRecord[]) => void;
 
 /** Native transfers can report many times per second. The only consumer of the
  * in-memory progress listener is the Downloads screen's speed text, so 1Hz
@@ -178,7 +179,9 @@ export class DownloadManager {
   private readonly optimizingOutputs = new Map<string, string>();
   private readonly speeds = new Map<string, number>();
   private readonly progressListeners = new Set<ProgressListener>();
+  private readonly recordsListeners = new Set<DownloadRecordsListener>();
   private recordsByJobId = new Map<string, DownloadRecord>();
+  private records: DownloadRecord[] = [];
   private readonly pendingProgress = new Map<string, DownloadProgress>();
   private readonly progressTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly lastProgressPersistedAt = new Map<string, number>();
@@ -203,9 +206,9 @@ export class DownloadManager {
     await this.recoverInterrupted();
     if (!this.started) return;
     this.queueUnlisten = this.store.subscribeDownloads((records) => {
-      // Dexie liveQuery still keeps the UI in sync, but byte-only persistence
-      // must not make the scheduler run another full queue scan. Cache every
-      // row for direct progress lookup and pump only after queue/status changes.
+      // This is the one liveQuery-backed queue subscription for scheduler and
+      // UI. Cache every row for direct progress lookup and pump only after
+      // queue/status changes, so byte persistence never re-runs a queue scan.
       if (this.syncRecords(records)) void this.pump();
     });
     try {
@@ -253,6 +256,13 @@ export class DownloadManager {
   subscribeProgress(listener: ProgressListener): () => void {
     this.progressListeners.add(listener);
     return () => this.progressListeners.delete(listener);
+  }
+
+  /** Share the runtime's one queue subscription with mounted queue views. */
+  subscribeRecords(listener: DownloadRecordsListener): () => void {
+    this.recordsListeners.add(listener);
+    listener(this.records);
+    return () => this.recordsListeners.delete(listener);
   }
 
   speedFor(jobId: string): number | undefined {
@@ -607,7 +617,48 @@ export class DownloadManager {
       previous.size !== records.length ||
       records.some((record) => previous.get(record.jobId)?.status !== record.status);
     this.recordsByJobId = new Map(records.map((record) => [record.jobId, record]));
+    this.applyRecords(records);
     return needsPump;
+  }
+
+  /**
+   * Keep the queue's createdAt ordering from the one Store query. createdAt is
+   * immutable after enqueue, so a byte/status update for an existing job can
+   * replace just that cached row without another consumer-side sort.
+   */
+  private applyRecords(records: DownloadRecord[]): void {
+    const sameOrder =
+      records.length === this.records.length &&
+      records.every((record, index) => this.records[index]?.jobId === record.jobId);
+    if (!sameOrder) {
+      this.records = records;
+      this.publishRecords();
+      return;
+    }
+
+    let next: DownloadRecord[] | null = null;
+    records.forEach((record, index) => {
+      if (sameDownloadRecord(this.records[index]!, record)) return;
+      next ??= [...this.records];
+      next[index] = record;
+    });
+    if (next != null) {
+      this.records = next;
+      this.publishRecords();
+    }
+  }
+
+  private patchRecord(record: DownloadRecord): void {
+    const index = this.records.findIndex((current) => current.jobId === record.jobId);
+    if (index < 0 || sameDownloadRecord(this.records[index]!, record)) return;
+    const next = [...this.records];
+    next[index] = record;
+    this.records = next;
+    this.publishRecords();
+  }
+
+  private publishRecords(): void {
+    this.recordsListeners.forEach((listener) => listener(this.records));
   }
 
   private async recordForControl(jobId: string): Promise<DownloadRecord | null> {
@@ -642,15 +693,20 @@ export class DownloadManager {
         return current ?? null;
       }
       if (current != null) {
-        this.recordsByJobId.set(jobId, {
+        const next = {
           ...current,
           ...changes,
           jobId,
           createdAt: current.createdAt,
-        });
+        };
+        this.recordsByJobId.set(jobId, next);
+        this.patchRecord(next);
       }
       const saved = await this.store.updateDownload(jobId, changes);
-      if (saved != null) this.recordsByJobId.set(jobId, saved);
+      if (saved != null) {
+        this.recordsByJobId.set(jobId, saved);
+        this.patchRecord(saved);
+      }
       return saved;
     });
     const tail = operation.then(
@@ -733,6 +789,33 @@ export class DownloadManager {
     this.lastProgressNotifiedAt.set(jobId, Date.now());
     this.progressListeners.forEach((listener) => listener(progress));
   }
+}
+
+function sameDownloadRecord(a: DownloadRecord, b: DownloadRecord): boolean {
+  return (
+    a.jobId === b.jobId &&
+    a.mediaId === b.mediaId &&
+    a.episodeId === b.episodeId &&
+    a.title === b.title &&
+    a.season === b.season &&
+    a.episode === b.episode &&
+    a.infoHash === b.infoHash &&
+    a.fileHint === b.fileHint &&
+    a.mode === b.mode &&
+    a.optimizeProfile === b.optimizeProfile &&
+    a.status === b.status &&
+    a.bytesDone === b.bytesDone &&
+    a.bytesTotal === b.bytesTotal &&
+    a.optimizePercent === b.optimizePercent &&
+    a.destPath === b.destPath &&
+    a.error === b.error &&
+    a.createdAt === b.createdAt &&
+    a.updatedAt === b.updatedAt &&
+    a.keepAudioLangs.length === b.keepAudioLangs.length &&
+    a.keepAudioLangs.every((lang, index) => lang === b.keepAudioLangs[index]) &&
+    a.keepSubLangs.length === b.keepSubLangs.length &&
+    a.keepSubLangs.every((lang, index) => lang === b.keepSubLangs[index])
+  );
 }
 
 function errorMessage(error: unknown): string {

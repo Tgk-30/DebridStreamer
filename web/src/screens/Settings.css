@@ -830,6 +830,8 @@
   padding: var(--sp-md);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-md);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 170px;
 }
 .settings-source-row {
   display: flex;
@@ -926,6 +928,8 @@
   padding: var(--sp-sm);
   background: var(--glass-tint-control);
   font-size: 13px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
 }
 .settings-usage-row > span {
   min-width: 0;
@@ -2035,6 +2039,8 @@
   border: 1px solid var(--glass-border);
   border-radius: var(--r-lg);
   background: var(--glass-tint-control);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 250px;
 }
 .settings-profile-card.is-current {
   border-color: rgba(var(--accent-rgb), 0.5);

@@ -882,6 +882,14 @@ describe("cached resolutions", () => {
     expect(got?.infoHash).toBe("hash-tt1");
   });
 
+  it("bulk-gets only the requested cached resolution ids", async () => {
+    await db.putCachedResolution(resolution("tt1", "2024-01-01T00:00:00.000Z"));
+    await db.putCachedResolution(resolution("tt2", "2024-01-02T00:00:00.000Z"));
+    expect((await db.getCachedResolutions(["tt2", "missing"])).map((row) => row.mediaId)).toEqual([
+      "tt2",
+    ]);
+  });
+
   it("put is an upsert keyed by mediaId (newest wins)", async () => {
     await db.putCachedResolution(resolution("tt1", "2024-01-01T00:00:00.000Z"));
     await db.putCachedResolution(resolution("tt1", "2024-02-02T00:00:00.000Z"));

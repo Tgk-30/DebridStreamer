@@ -8,7 +8,6 @@
 // the global reduced-motion rule damps, and tokens so it themes everywhere.
 
 import { useCallback, useEffect, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import { Icon, type IconName } from "./Icon";
 import "./WelcomeGuide.css";
 
@@ -120,15 +119,9 @@ export function WelcomeGuide({
         </button>
 
         <div className="welcome-stage">
-          <AnimatePresence mode="wait" custom={dir}>
-            <motion.div
+            <div
               key={step}
-              className="welcome-step"
-              custom={dir}
-              initial={{ opacity: 0, x: dir * 26 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: dir * -26 }}
-              transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
+              className={`welcome-step ${dir > 0 ? "welcome-step-forward" : "welcome-step-backward"}`}
             >
               <div className="welcome-halo">
                 <Icon name={current.icon} size={30} />
@@ -155,8 +148,7 @@ export function WelcomeGuide({
                   Set up streaming in Settings
                 </button>
               )}
-            </motion.div>
-          </AnimatePresence>
+            </div>
         </div>
 
         <div className="welcome-dots" aria-hidden>
