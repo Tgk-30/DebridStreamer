@@ -514,8 +514,8 @@ html.mpv-active .embed-player * {
   background: rgba(12, 14, 22, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
-  /* No backdrop-filter: the 94% opaque base already hides what is behind it,
-     and a blur over live video re-samples every frame. */
+  /* The old local blur and inherited glass-raised blur are both gone: Popover
+     no longer applies that class, and this 94% opaque base hides live video. */
 }
 .embed-menu-title {
   padding: 6px 12px 8px;

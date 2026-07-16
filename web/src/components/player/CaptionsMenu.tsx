@@ -89,7 +89,7 @@ export function CaptionsMenu({
   return (
     <div
       ref={menuRef}
-      className="captions-menu glass-raised glass-lit"
+      className="captions-menu glass-lit"
       role="dialog"
       aria-modal="true"
       aria-label="Subtitles"

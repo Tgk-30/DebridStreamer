@@ -104,6 +104,8 @@ export function Search() {
     consumePendingSearch,
     openDetail,
     openBrowse,
+    browseContext,
+    detailItem,
   } = useAppStore();
 
   const [query, setQuery] = useState("");
@@ -391,6 +393,7 @@ export function Search() {
             type={filter === "series" ? "series" : "movie"}
             onOpen={openBrowse}
             tmdb={services.tmdb}
+            suspended={browseContext != null || detailItem != null}
           />
           <h2 className="search-section-title search-section-title-spaced">
             Trending now

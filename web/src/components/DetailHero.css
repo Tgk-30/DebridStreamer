@@ -13,7 +13,6 @@
 .detail-hero-backdrop-layer {
   position: absolute;
   inset: 0;
-  will-change: transform;
 }
 .detail-hero-backdrop {
   position: absolute;
@@ -70,7 +69,6 @@
   align-items: flex-end;
   gap: clamp(var(--sp-lg), 2.8vw, 40px);
   padding: clamp(var(--sp-xl), 4vw, 60px);
-  will-change: transform, opacity;
 }
 
 .detail-hero-poster {

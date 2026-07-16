@@ -34,7 +34,6 @@
 .hero-backdrop-layer {
   position: absolute;
   inset: 0;
-  will-change: transform, opacity;
   animation:
     heroBackdropIn 0.9s ease-in-out both,
     heroKenBurns 4s linear both;
@@ -91,7 +90,6 @@
   gap: var(--sp-lg);
   padding: clamp(var(--sp-xl), 4.5vw, 68px);
   max-width: 760px;
-  will-change: transform, opacity;
   animation: heroContentIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 

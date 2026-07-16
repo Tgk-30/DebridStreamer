@@ -110,11 +110,11 @@ export async function downloadsDirectory(
 
 type ProgressListener = (progress: DownloadProgress) => void;
 
-/** Native transfers can report many times per second. Durable records only need
- * enough cadence for recovery and a background Downloads screen; live UI uses
- * the in-memory progress listener below. */
+/** Native transfers can report many times per second. The only consumer of the
+ * in-memory progress listener is the Downloads screen's speed text, so 1Hz
+ * aligns with durable persistence; terminal events bypass the throttle. */
 const PROGRESS_PERSIST_INTERVAL_MS = 1000;
-const PROGRESS_UI_INTERVAL_MS = 200;
+const PROGRESS_UI_INTERVAL_MS = 1000;
 
 type ProgressMeasurements = Partial<
   Pick<DownloadRecord, "bytesDone" | "bytesTotal" | "optimizePercent">

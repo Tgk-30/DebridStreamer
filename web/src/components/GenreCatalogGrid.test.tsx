@@ -85,8 +85,9 @@ describe("GenreCatalogGrid", () => {
       expect(container.querySelectorAll("img.genre-tile-art").length).toBeGreaterThan(0);
     });
     const img = container.querySelector("img.genre-tile-art") as HTMLImageElement;
-    // w780 sizing + the returned backdrop path.
-    expect(img.getAttribute("src")).toContain("/w780/");
+    // w342 sizing + the returned backdrop path.
+    expect(img.getAttribute("src")).toContain("/w342/");
+    expect(img).toHaveAttribute("loading", "lazy");
     expect(tmdb.discover).toHaveBeenCalled();
     // Special "New Releases" tile is a category lookup, not a genre discover.
     expect(tmdb.getCategory).toHaveBeenCalled();
@@ -148,5 +149,41 @@ describe("GenreCatalogGrid", () => {
       expect(container.querySelectorAll("img.genre-tile-art").length).toBeGreaterThan(0);
     });
     expect(tmdb.discover).toHaveBeenCalled();
+  });
+
+  it("does not rotate artwork while suspended behind an overlay", async () => {
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+    try {
+      const preview = (backdropPath: string) => ({
+        items: [
+          { id: `${backdropPath}-a`, type: "movie" as const, title: "A", backdropPath },
+          {
+            id: `${backdropPath}-b`,
+            type: "movie" as const,
+            title: "B",
+            backdropPath: backdropPath.replace(".jpg", "-next.jpg"),
+          },
+        ],
+        page: 1,
+        totalPages: 1,
+        totalResults: 2,
+      });
+      const tmdb = {
+        discover: vi.fn(async () => preview("/genre.jpg")),
+        getCategory: vi.fn(async () => preview("/category.jpg")),
+      } as unknown as MetadataProvider;
+
+      const { container } = render(
+        <GenreCatalogGrid type="movie" onOpen={() => {}} tmdb={tmdb} suspended />,
+      );
+
+      await waitFor(() => {
+        expect(container.querySelector("img.genre-tile-art.is-current")).not.toBeNull();
+      });
+      const rotationTimers = setTimeoutSpy.mock.calls.filter(([, delay]) => Number(delay) >= 9_000);
+      expect(rotationTimers).toHaveLength(0);
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
   });
 });

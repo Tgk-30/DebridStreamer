@@ -409,6 +409,38 @@ describe("EmbeddedPlayer playback controls", () => {
   });
 });
 
+describe("EmbeddedPlayer popover material", () => {
+  it("player popovers must not sample live video through a backdrop blur", () => {
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Speed" }));
+    const menu = screen.getByRole("menu");
+    expect(menu.classList).not.toContain("glass-raised");
+    expect((menu as HTMLElement).style.backdropFilter).toBe("");
+    expect((menu as HTMLElement).style.getPropertyValue("-webkit-backdrop-filter")).toBe("");
+
+    const css = readFileSync("src/components/EmbeddedPlayer.css", "utf8");
+    expect(css).not.toMatch(/\.embed-menu\s*\{[^}]*backdrop-filter/);
+  });
+
+  it("player details must not sample live video through a backdrop blur", () => {
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Player details and shortcuts" }));
+    const panel = screen.getByRole("dialog", { name: "Player details and shortcuts" });
+    expect(panel.classList).not.toContain("glass-raised");
+    expect((panel as HTMLElement).style.backdropFilter).toBe("");
+    expect((panel as HTMLElement).style.getPropertyValue("-webkit-backdrop-filter")).toBe("");
+
+    const css = readFileSync("src/components/player/PlayerInfoPopover.css", "utf8");
+    expect(css).not.toMatch(/\.player-info-popover\s*\{[^}]*backdrop-filter/);
+  });
+});
+
 describe("window-anchored controls and playback diagnostics", () => {
   it("escapes an inset Detail block and stays window-anchored after dimensions arrive", async () => {
     // This is the shipped sequence: Detail starts 244 CSS px from the left at

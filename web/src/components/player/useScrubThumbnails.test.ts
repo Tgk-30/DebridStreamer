@@ -231,6 +231,36 @@ describe("useScrubThumbnails", () => {
     });
   });
 
+  it("evicts the first thumbnail when the 121st bucket is inserted", () => {
+    const created = installDom();
+    const { result } = renderHook(() => useScrubThumbnails(SRC, true));
+    const v = created.video!;
+    const c = created.canvas!;
+    v.duration = 1_000;
+    let now = 0;
+    let captures = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    c.toDataURL.mockImplementation(() => `data:image/jpeg;base64,${++captures}`);
+    act(() => v.__fire("loadedmetadata"));
+
+    for (let bucket = 0; bucket <= 120; bucket += 1) {
+      now += 121;
+      act(() => result.current.onHover(bucket * 5));
+      if (bucket > 0) act(() => v.__fire("seeked"));
+    }
+    expect(captures).toBe(121);
+
+    // Bucket 0 has been evicted, so its hover keeps the most recent image until
+    // the new seek completes rather than serving the original cached data URL.
+    now += 121;
+    act(() => result.current.onHover(0));
+    expect(result.current.preview).toEqual({
+      image: "data:image/jpeg;base64,121",
+      time: 0,
+    });
+    act(() => v.__fire("seeked"));
+  });
+
   it("throttles rapid hovers: the second within the window stores a pending time and does not seek again", () => {
     const created = installDom();
     const { result } = renderHook(() => useScrubThumbnails(SRC, true));

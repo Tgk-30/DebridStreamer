@@ -631,9 +631,11 @@ describe("DownloadManager", () => {
       native.emit({ jobId: record.jobId, phase: "downloading", bytesDone, bytesTotal: 100 });
     }
     // The first value is immediate; the latest burst value is delivered at
-    // 5Hz, independently of the 1Hz durable write cadence.
+    // 1Hz, independently of the 1Hz durable write cadence.
     expect(liveProgress).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(liveProgress).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
     await Promise.resolve();
     expect(liveProgress).toHaveBeenCalledTimes(2);
     expect(liveProgress).toHaveBeenLastCalledWith(
@@ -649,10 +651,16 @@ describe("DownloadManager", () => {
     for (let bytesDone = 21; bytesDone <= 40; bytesDone += 1) {
       native.emit({ jobId: record.jobId, phase: "downloading", bytesDone, bytesTotal: 100 });
     }
-    await vi.advanceTimersByTimeAsync(799);
-    expect(store.updateCalls).toBe(1);
+    expect(liveProgress).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(liveProgress).toHaveBeenCalledTimes(2);
+    expect(store.updateCalls).toBe(2);
     await vi.advanceTimersByTimeAsync(1);
     await Promise.resolve();
+    expect(liveProgress).toHaveBeenCalledTimes(3);
+    expect(liveProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bytesDone: 40 }),
+    );
     expect(store.updateCalls).toBe(2);
     expect(store.listCalls).toBe(0);
     expect((await store.listDownloads()).find((row) => row.jobId === record.jobId)?.bytesDone).toBe(40);

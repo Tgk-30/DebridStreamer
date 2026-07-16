@@ -97,7 +97,7 @@ async function loadTileBackdrops(
         .map((it) => it.backdropPath)
         .filter((p): p is string => p != null)
         .slice(0, MAX_BACKDROPS)
-        .map((p) => `${TMDB_IMAGE_BASE}/w780${p}`) : [];
+        .map((p) => `${TMDB_IMAGE_BASE}/w342${p}`) : [];
       // A successful lookup (even an empty one → []) is cached with a TTL, so it
       // stops re-asking for a while but recovers after the entry expires. A
       // THROWN error is NOT cached, so a transient failure retries on remount.

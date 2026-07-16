@@ -21,6 +21,8 @@ interface Props {
   onOpen: (ctx: BrowseContext) => void;
   /** Metadata source for live tile artwork; gradient-only when null. */
   tmdb?: MetadataProvider | null;
+  /** Pause artwork rotation while a full-screen overlay covers Search. */
+  suspended?: boolean;
 }
 
 // A tile cycles through its representative backdrops on this cadence, cross-
@@ -30,7 +32,15 @@ const ROTATE_MS = 9000;
 /** Two-layer cross-fade over a tile's backdrops. Only two <img>s are ever in the
  * DOM (current + incoming), so a 15-tile grid loads ~30 images, not ~90. The
  * rotation is staggered per tile and suppressed under reduced-motion. */
-function GenreTileArt({ urls, index }: { urls: string[]; index: number }) {
+function GenreTileArt({
+  urls,
+  index,
+  suspended,
+}: {
+  urls: string[];
+  index: number;
+  suspended: boolean;
+}) {
   const showImages = isNetworkAllowed("images");
   // Two ping-pong layers; `top` says which one is currently visible.
   const [layers, setLayers] = useState<{ a: string; b: string; top: "a" | "b" }>(
@@ -43,7 +53,7 @@ function GenreTileArt({ urls, index }: { urls: string[]; index: number }) {
   }, [urls]);
 
   useEffect(() => {
-    if (urls.length < 2 || prefersReducedMotion()) return;
+    if (suspended || urls.length < 2 || prefersReducedMotion()) return;
     let frame = 0;
     let tick: number | undefined;
     // Stagger the first flip so the tiles don't all change at the same instant.
@@ -59,7 +69,7 @@ function GenreTileArt({ urls, index }: { urls: string[]; index: number }) {
       window.clearTimeout(kickoff);
       window.clearTimeout(tick);
     };
-  }, [urls, index]);
+  }, [urls, index, suspended]);
 
   if (!showImages) return null;
 
@@ -71,6 +81,7 @@ function GenreTileArt({ urls, index }: { urls: string[]; index: number }) {
         alt=""
         aria-hidden
         decoding="async"
+        loading="lazy"
       />
       <img
         className={"genre-tile-art" + (layers.top === "b" ? " is-current" : "")}
@@ -78,14 +89,22 @@ function GenreTileArt({ urls, index }: { urls: string[]; index: number }) {
         alt=""
         aria-hidden
         decoding="async"
+        loading="lazy"
       />
     </span>
   );
 }
 
-export function GenreCatalogGrid({ type, onOpen, tmdb = null }: Props) {
+export function GenreCatalogGrid({ type, onOpen, tmdb = null, suspended = false }: Props) {
   const tiles = catalogTilesFor(type);
   const artwork = useGenreArtwork(type, tmdb);
+  const [hidden, setHidden] = useState(() => document.hidden);
+
+  useEffect(() => {
+    const onVisibilityChange = () => setHidden(document.hidden);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
 
   const genreName = (tile: GenreCatalogTile): string => {
     const gid = tileGenreId(tile, type);
@@ -122,7 +141,7 @@ export function GenreCatalogGrid({ type, onOpen, tmdb = null }: Props) {
             onClick={() => open(t)}
             aria-label={`Browse ${t.category != null ? t.label : genreName(t)}`}
           >
-            {hasArt && <GenreTileArt urls={art} index={i} />}
+            {hasArt && <GenreTileArt urls={art} index={i} suspended={suspended || hidden} />}
             <span className="genre-tile-glyph" aria-hidden>
               {t.glyph}
             </span>

@@ -669,7 +669,11 @@ function WebviewPlayer({
         onHlsUnsupportedRef.current();
         return;
       }
-      instance = new Hls();
+      // Bound the media buffers - hls.js defaults to backBufferLength: Infinity,
+      // which retains every played segment: a 2h stream grows to GBs in the
+      // WebContent process. 60s behind + 30s (up to 120s) ahead keeps seeks snappy
+      // without the balloon.
+      instance = new Hls({ backBufferLength: 60, maxBufferLength: 30, maxMaxBufferLength: 120 });
       instance.loadSource(url);
       instance.attachMedia(element);
     });

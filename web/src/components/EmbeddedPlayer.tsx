@@ -1582,7 +1582,7 @@ function Popover({
       />
       <div
         ref={menuRef}
-        className={"embed-menu glass-raised glass-lit" + (className ? " " + className : "")}
+        className={"embed-menu glass-lit" + (className ? " " + className : "")}
         role="menu"
         onKeyDown={handleKeyDown}
       >

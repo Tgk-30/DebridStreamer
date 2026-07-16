@@ -26,6 +26,7 @@ const THUMB_WIDTH = 168; // capped canvas width for performance
 const BUCKET_SECONDS = 5; // quantize hovered time into 5s buckets for caching
 const THROTTLE_MS = 120; // min gap between seek-driven captures
 const SEEK_TIMEOUT_MS = 3000; // give up on a seek that never reports 'seeked'
+const MAX_CACHED_THUMBNAILS = 120;
 
 interface UseScrubThumbnails {
   /** The currently-previewed frame, or null when not hovering. */
@@ -52,6 +53,7 @@ export function useScrubThumbnails(
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Two hours of scrubbing otherwise creates about 1,440 base64 JPEG buckets.
   const cacheRef = useRef<Map<number, string | null>>(new Map());
   const lastCaptureRef = useRef(0);
   const pendingTimeRef = useRef<number | null>(null);
@@ -149,6 +151,10 @@ export function useScrubThumbnails(
     }
     const bucket = Math.round(video.currentTime / BUCKET_SECONDS);
     cacheRef.current.set(bucket, image);
+    if (cacheRef.current.size > MAX_CACHED_THUMBNAILS) {
+      const oldestBucket = cacheRef.current.keys().next().value;
+      if (oldestBucket != null) cacheRef.current.delete(oldestBucket);
+    }
     setPreview({ image, time: video.currentTime });
   }, []);
 

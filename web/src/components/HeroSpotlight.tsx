@@ -93,7 +93,10 @@ export function HeroSpotlight({
   overview,
   onPlay,
   onDetails,
-  intervalMs = 7000,
+  // 12s cadence - the 4s Ken Burns still plays per slide, but the blur-sampled
+  // animation duty cycle drops from 57% to 33% (measured +6-7 points of device
+  // GPU while idle on Discover). Trivially reversible.
+  intervalMs = 12000,
   suspended = false,
 }: HeroSpotlightProps) {
   const list = (items && items.length > 0 ? items : item ? [item] : []).slice(0, 6);
@@ -141,7 +144,7 @@ export function HeroSpotlight({
 
   // Invisible polish: preload the next backdrop so the crossfade never flashes a
   // half-loaded image. This is a single image the carousel is about to show in
-  // ~7s regardless, so we preload it unconditionally (it's the same bytes, just
+  // ~12s regardless, so we preload it unconditionally (it's the same bytes, just
   // a beat earlier - not extra data) rather than gating on smart-preload; only
   // the expensive code-chunk preloads stay gated (see App). The Image is held
   // and detached on cleanup so an in-flight preload doesn't keep loading (and

@@ -5,6 +5,7 @@
 // search / no-key states. Driven by a fully-mocked UseSubtitleTracks prop and a
 // mocked AppStore slice.
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -88,6 +89,19 @@ function renderMenu(subs: UseSubtitleTracks, props: Partial<{
 beforeEach(() => {
   mockSettings = baseSettings();
   updateSettings.mockClear();
+});
+
+describe("CaptionsMenu popover material", () => {
+  it("captions must not sample live video through a backdrop blur", () => {
+    renderMenu(makeSubs());
+    const menu = screen.getByRole("dialog", { name: "Subtitles" });
+    expect(menu.classList).not.toContain("glass-raised");
+    expect((menu as HTMLElement).style.backdropFilter).toBe("");
+    expect((menu as HTMLElement).style.getPropertyValue("-webkit-backdrop-filter")).toBe("");
+
+    const css = readFileSync("src/components/VideoPlayer.css", "utf8");
+    expect(css).not.toMatch(/\.captions-menu\s*\{[^}]*backdrop-filter/);
+  });
 });
 
 describe("track list & toggles", () => {
