@@ -462,6 +462,16 @@ describe("Browse + Detail overlays", () => {
     expect(await screen.findByTestId("overlay-detail")).toBeInTheDocument();
   });
 
+  it("mirrors overlay state to the document root and removes it on close", () => {
+    store = makeStore({ detailItem: { id: "a" } });
+    const { rerender } = render(<App />);
+    expect(document.documentElement).toHaveAttribute("data-overlay-open");
+
+    store = makeStore();
+    rerender(<App />);
+    expect(document.documentElement).not.toHaveAttribute("data-overlay-open");
+  });
+
   it("mounts both overlays together (Detail over Browse)", async () => {
     store = makeStore({
       browseContext: { kind: "category" },

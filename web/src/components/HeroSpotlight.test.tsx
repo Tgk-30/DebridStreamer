@@ -139,6 +139,14 @@ describe("HeroSpotlight auto-advance", () => {
     });
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Alpha");
   });
+
+  it("does not auto-advance while suspended", () => {
+    render(<HeroSpotlight items={items} intervalMs={1000} suspended />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Alpha");
+  });
 });
 
 describe("HeroSpotlight dot navigation & hover pause", () => {

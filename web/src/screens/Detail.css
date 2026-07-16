@@ -17,8 +17,10 @@
     radial-gradient(circle at 16% 10%, rgba(var(--accent-rgb), 0.16), transparent 38%),
     radial-gradient(circle at 88% 4%, rgba(var(--accent-secondary-rgb), 0.1), transparent 34%),
     color-mix(in srgb, var(--bg-1) 96%, transparent);
-  backdrop-filter: blur(28px) saturate(1.25);
-  -webkit-backdrop-filter: blur(28px) saturate(1.25);
+  /* No backdrop-filter here on purpose: the base above is 96% opaque, so the
+     blur was invisible - but as a full-viewport filter it re-rasterized the
+     whole screen every frame anything animated underneath (hero carousel,
+     video). The aurora radials above supply the glass look. */
 }
 /* The container takes programmatic focus on open (a11y) - no ring on the
    surface itself; interactive children keep their own focus-visible rings. */

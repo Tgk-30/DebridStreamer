@@ -91,7 +91,7 @@
     rgba(255, 255, 255, 0.02) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.4s ease-in-out 12;
   border-radius: var(--r-md);
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
 }

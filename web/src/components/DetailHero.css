@@ -91,7 +91,10 @@
     rgba(255, 255, 255, 0.04) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  /* Bounded, not infinite - the loaded image covers this element, but an
+     animated background keeps repainting it every frame anyway. Matches the
+     MediaCard shimmer bound. */
+  animation: shimmer 1.4s ease-in-out 12;
 }
 
 .detail-hero-info {

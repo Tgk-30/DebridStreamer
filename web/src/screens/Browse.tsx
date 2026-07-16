@@ -362,7 +362,7 @@ function BrowseSkeleton() {
   return (
     <div className="browse-grid">
       {Array.from({ length: 18 }).map((_, i) => (
-        <div className="browse-skel glass-rest" key={i} />
+        <div className="browse-skel" key={i} />
       ))}
     </div>
   );

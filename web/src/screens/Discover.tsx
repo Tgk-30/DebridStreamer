@@ -21,7 +21,14 @@ interface DiscoverProps {
 }
 
 export function Discover({ onSelect }: DiscoverProps) {
-  const { services, openBrowse, openDetail, continueWatching } = useAppStore();
+  const {
+    services,
+    openBrowse,
+    openDetail,
+    continueWatching,
+    detailItem,
+    browseContext,
+  } = useAppStore();
   const { data, loading, railsLoading } = useDiscover(services.tmdb);
 
   // Continue Watching - resumable history (>2% and <95%) surfaced at the top of
@@ -83,6 +90,7 @@ export function Discover({ onSelect }: DiscoverProps) {
             .slice(0, 5)}
           onPlay={onSelect}
           onDetails={onSelect}
+          suspended={detailItem != null || browseContext != null}
         />
       )}
 
@@ -140,7 +148,7 @@ function RailSkeleton({ title }: { title: string }) {
       </div>
       <div className="skel-cards">
         {[0, 1, 2, 3, 4, 5].map((c) => (
-          <div className="skel-card glass-rest" key={c} />
+          <div className="skel-card" key={c} />
         ))}
       </div>
     </section>
@@ -153,13 +161,13 @@ function DiscoverSkeleton() {
   return (
     <div className="discover">
       <div className="discover-body">
-        <div className="skel-hero glass-rest" />
+        <div className="skel-hero" />
         {[0, 1, 2].map((r) => (
           <div className="skel-rail" key={r}>
             <div className="skel-title" />
             <div className="skel-cards">
               {[0, 1, 2, 3, 4, 5].map((c) => (
-                <div className="skel-card glass-rest" key={c} />
+                <div className="skel-card" key={c} />
               ))}
             </div>
           </div>

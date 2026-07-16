@@ -252,7 +252,7 @@ export function DebridLibrary() {
 
       {state.loading ? (
         <div
-          className="dl-table glass-rest glass-lit dl-skel-table"
+          className="dl-table glass-lit dl-skel-table"
           aria-busy="true"
           aria-label="Loading your debrid library"
         >

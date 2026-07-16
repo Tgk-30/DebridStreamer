@@ -641,6 +641,17 @@ textarea::placeholder {
 :root[data-suspended] *::after {
   animation-play-state: paused !important;
 }
+
+/* A covered screen is invisible but still composites: its animations force the
+   overlay's full-viewport backdrop-filter to re-rasterize every frame. Park
+   looping keyframes on the covered route while a Detail/Browse overlay is up
+   (same mechanism as data-suspended above). */
+:root[data-overlay-open] .route-frame *,
+:root[data-overlay-open] .route-frame *::before,
+:root[data-overlay-open] .route-frame *::after {
+  animation-play-state: paused !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Honor the OS preference app-wide (CSS layer) without needing the in-app
      toggle. The JS/motion layer is handled by <MotionConfig reducedMotion="user">. */

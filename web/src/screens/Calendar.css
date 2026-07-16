@@ -370,7 +370,7 @@
     rgba(255, 255, 255, 0.02) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.4s ease-in-out 12;
 }
 .cal-skel-heading {
   width: 140px;

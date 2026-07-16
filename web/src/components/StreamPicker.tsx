@@ -266,7 +266,7 @@ function StreamBody({
       <ul className="streams-list streams-skeleton" aria-busy="true" aria-label="Searching sources">
         {Array.from({ length: 4 }).map((_, i) => (
           <li key={i}>
-            <div className="stream-row stream-row-skel glass-rest" aria-hidden="true">
+            <div className="stream-row stream-row-skel" aria-hidden="true">
               <span className="stream-quality-skel skel" />
               <div className="stream-main">
                 <span className="skel-line skel-name skel" />

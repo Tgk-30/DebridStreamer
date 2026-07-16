@@ -473,6 +473,15 @@ export function App() {
   // startup once the Store hydrates the saved choice).
   useTheme(settings);
 
+  // A covered screen keeps compositing: its animations invalidate the
+  // full-viewport backdrop-filter of the overlay above it every frame.
+  // Mirror overlay state onto the root so CSS can park the covered tree.
+  useEffect(() => {
+    const covered = detailItem != null || browseContext != null;
+    document.documentElement.toggleAttribute("data-overlay-open", covered);
+    return () => document.documentElement.removeAttribute("data-overlay-open");
+  }, [detailItem, browseContext]);
+
   // The native executor is durable but its event subscription is not. Start
   // one local-mode runtime at app launch so interrupted jobs are recovered even
   // before the user opens the Downloads screen.

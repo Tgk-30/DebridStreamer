@@ -26,6 +26,9 @@ interface HeroSpotlightProps {
   onPlay?: (item: MediaPreview) => void;
   onDetails?: (item: MediaPreview) => void;
   intervalMs?: number;
+  /** Park the rotation while an overlay covers this screen - a covered
+   *  carousel still invalidates the overlay's backdrop blur every frame. */
+  suspended?: boolean;
 }
 
 /**
@@ -91,6 +94,7 @@ export function HeroSpotlight({
   onPlay,
   onDetails,
   intervalMs = 7000,
+  suspended = false,
 }: HeroSpotlightProps) {
   const list = (items && items.length > 0 ? items : item ? [item] : []).slice(0, 6);
   const [index, setIndex] = useState(0);
@@ -130,10 +134,10 @@ export function HeroSpotlight({
   }, []);
 
   useEffect(() => {
-    if (list.length <= 1 || paused || hidden) return;
+    if (list.length <= 1 || paused || hidden || suspended) return;
     const t = setInterval(() => setIndex((i) => (i + 1) % list.length), intervalMs);
     return () => clearInterval(t);
-  }, [list.length, paused, hidden, intervalMs]);
+  }, [list.length, paused, hidden, suspended, intervalMs]);
 
   // Invisible polish: preload the next backdrop so the crossfade never flashes a
   // half-loaded image. This is a single image the carousel is about to show in

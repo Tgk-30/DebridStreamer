@@ -128,11 +128,12 @@
     rgba(255, 255, 255, 0.02) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.4s ease-in-out 12;
   border-radius: var(--r-md);
 }
 
 .stream-row-skel {
+  background: var(--glass-tint-rest);
   cursor: default;
 }
 
