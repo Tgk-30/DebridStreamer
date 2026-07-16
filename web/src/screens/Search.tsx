@@ -18,6 +18,7 @@ import { MoodStrip } from "../components/MoodStrip";
 import { Rail } from "../components/Rail";
 import { searchServerMedia, curateServerAI } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
+import { useAttentionParked } from "../lib/attention";
 import { emptyBrowseFilters, type BrowseFilters } from "../data/browse";
 import { SortOption } from "../services/metadata/types";
 import type { AIMovieRecommendation } from "../services/ai/models";
@@ -107,6 +108,7 @@ export function Search() {
     browseContext,
     detailItem,
   } = useAppStore();
+  const attentionParked = useAttentionParked();
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TypeFilter>("all");
@@ -393,7 +395,7 @@ export function Search() {
             type={filter === "series" ? "series" : "movie"}
             onOpen={openBrowse}
             tmdb={services.tmdb}
-            suspended={browseContext != null || detailItem != null}
+            suspended={browseContext != null || detailItem != null || attentionParked}
           />
           <h2 className="search-section-title search-section-title-spaced">
             Trending now

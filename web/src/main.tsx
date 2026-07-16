@@ -6,6 +6,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ServerModeGate } from "./components/ServerModeGate";
 import { AppStoreProvider } from "./store/AppStore";
 import { installSuspendOnHidden } from "./lib/suspendOnHidden";
+import { installAttentionGate } from "./lib/attention";
 import { initInstallPromptCapture } from "./lib/installPrompt";
 import { installExternalLinkHandler } from "./lib/externalLinks";
 
@@ -31,6 +32,9 @@ window.addEventListener("error", (event) => {
 
 // Park all CSS animations whenever the window is hidden/minimized/covered.
 installSuspendOnHidden();
+
+// Park unattended CSS and JavaScript work when this visible window is not attended.
+installAttentionGate();
 
 // Capture beforeinstallprompt before React mounts - Chromium can fire it
 // before the first component effect runs.

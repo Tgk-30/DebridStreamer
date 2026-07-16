@@ -14,6 +14,7 @@ import { type BrowseContext } from "../data/browse";
 import { HeroSpotlight } from "../components/HeroSpotlight";
 import { ContinueWatchingRail } from "../components/ContinueWatchingRail";
 import { Rail } from "../components/Rail";
+import { useAttentionParked } from "../lib/attention";
 import "./Discover.css";
 
 interface DiscoverProps {
@@ -29,6 +30,7 @@ export function Discover({ onSelect }: DiscoverProps) {
     detailItem,
     browseContext,
   } = useAppStore();
+  const attentionParked = useAttentionParked();
   const { data, loading, railsLoading } = useDiscover(services.tmdb);
 
   // Continue Watching - resumable history (>2% and <95%) surfaced at the top of
@@ -90,7 +92,7 @@ export function Discover({ onSelect }: DiscoverProps) {
             .slice(0, 5)}
           onPlay={onSelect}
           onDetails={onSelect}
-          suspended={detailItem != null || browseContext != null}
+          suspended={detailItem != null || browseContext != null || attentionParked}
         />
       )}
 

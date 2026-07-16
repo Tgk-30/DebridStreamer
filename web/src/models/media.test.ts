@@ -57,6 +57,12 @@ describe("MediaPreview helpers", () => {
     expect(MediaPreview.backdropURL(preview({ backdropPath: null }))).toBeNull();
     expect(MediaPreview.backdropURL(preview())).toBeNull();
   });
+  it("backdropThumbnailURL builds a w780 URL or null", () => {
+    expect(MediaPreview.backdropThumbnailURL(preview({ backdropPath: "/b.jpg" }))).toBe(
+      `${IMG}/w780/b.jpg`,
+    );
+    expect(MediaPreview.backdropThumbnailURL(preview())).toBeNull();
+  });
   it("ratingString formats to 1 decimal, '' when missing", () => {
     expect(MediaPreview.ratingString(preview({ imdbRating: 8.27 }))).toBe("8.3");
     expect(MediaPreview.ratingString(preview({ imdbRating: 0 }))).toBe("0.0");
@@ -76,9 +82,13 @@ describe("MediaItem helpers", () => {
     expect(MediaItem.backdropURL(item({ backdropPath: "/b.jpg" }))).toBe(
       `${IMG}/w1280/b.jpg`,
     );
+    expect(MediaItem.backdropThumbnailURL(item({ backdropPath: "/b.jpg" }))).toBe(
+      `${IMG}/w780/b.jpg`,
+    );
     expect(MediaItem.posterURL(item({ posterPath: null }))).toBeNull();
     expect(MediaItem.posterThumbnailURL(item())).toBeNull();
     expect(MediaItem.backdropURL(item())).toBeNull();
+    expect(MediaItem.backdropThumbnailURL(item())).toBeNull();
   });
   it("yearString stringifies or returns ''", () => {
     expect(MediaItem.yearString(item({ year: 1999 }))).toBe("1999");

@@ -58,6 +58,11 @@ export const MediaPreview = {
     return imageURL(p.backdropPath, "w1280");
   },
 
+  /** w780 backdrop thumbnail, mirrors `MediaPreview.backdropThumbnailURL`. */
+  backdropThumbnailURL(p: MediaPreview): string | null {
+    return imageURL(p.backdropPath, "w780");
+  },
+
   /** "%.1f" rating or "" when missing, mirrors `MediaPreview.ratingString`. */
   ratingString(p: MediaPreview): string {
     return p.imdbRating != null ? p.imdbRating.toFixed(1) : "";
@@ -95,6 +100,11 @@ export const MediaItem = {
   /** w1280 backdrop, mirrors `MediaItem.backdropURL`. */
   backdropURL(m: MediaItem): string | null {
     return imageURL(m.backdropPath, "w1280");
+  },
+
+  /** w780 backdrop thumbnail, mirrors `MediaItem.backdropThumbnailURL`. */
+  backdropThumbnailURL(m: MediaItem): string | null {
+    return imageURL(m.backdropPath, "w780");
   },
 
   /** w342 poster thumbnail, mirrors `MediaItem.posterThumbnailURL`. */

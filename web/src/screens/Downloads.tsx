@@ -246,7 +246,7 @@ export function Downloads() {
             if (cached?.item != null) {
               next[mediaId] = {
                 poster: MediaItemNS.posterThumbnailURL(cached.item),
-                backdrop: MediaItemNS.backdropURL(cached.item),
+                backdrop: MediaItemNS.backdropThumbnailURL(cached.item),
               };
             }
           } catch {

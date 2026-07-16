@@ -53,6 +53,7 @@ import { CommandPalette } from "./components/CommandPalette";
 // behind a null Suspense fallback before the gate appears.
 import { LocalProfilePicker } from "./components/LocalProfilePicker";
 import { isSmartPreloadEnabled, whenIdle } from "./lib/smartPreload";
+import { setIdleGateSuppressed, usePlayerMounted } from "./lib/attention";
 import { isLocalProfileUnlocked, useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
 import { isServerMode } from "./lib/serverMode";
@@ -285,6 +286,15 @@ export function FirstRunHost() {
 export function App() {
   const { route, navigate, detailItem, browseContext, closeBrowse, openDetail, closeDetail, search, settings, simpleMode, services, activeProfile, multiUserEnabled = false, profiles = [], switchLocalProfile } =
     useAppStore();
+  const playerMounted = usePlayerMounted();
+
+  // A mounted player can play for hours without pointer or keyboard activity.
+  // Keep the input-idle route parking from treating that as unattended, while
+  // the unfocused signal still parks non-video chrome in another window.
+  useEffect(() => {
+    setIdleGateSuppressed(playerMounted);
+    return () => setIdleGateSuppressed(false);
+  }, [playerMounted]);
 
   // "Who's watching" picker visibility, server or Local Mode.
   const [profilePickerOpen, setProfilePickerOpen] = useState(false);

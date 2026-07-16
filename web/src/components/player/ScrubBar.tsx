@@ -33,6 +33,8 @@ interface ScrubBarProps {
   onSeek: (timeSeconds: number) => void;
   /** Lets a parent suppress transient overlays while a pointer seek is active. */
   onScrubbingChange?: (scrubbing: boolean) => void;
+  /** Hidden player chrome leaves the bar out of pointer and keyboard navigation. */
+  disabled?: boolean;
 }
 
 export function ScrubBar({
@@ -43,6 +45,7 @@ export function ScrubBar({
   onLeave,
   onSeek,
   onScrubbingChange,
+  disabled = false,
 }: ScrubBarProps) {
   const barRef = useRef<HTMLDivElement | null>(null);
   const [hoverX, setHoverX] = useState<number | null>(null);
@@ -60,33 +63,37 @@ export function ScrubBar({
 
   const handleMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      if (disabled) return;
       const at = timeAtX(e.clientX);
       if (at == null) return;
       const rect = barRef.current!.getBoundingClientRect();
       setHoverX(e.clientX - rect.left);
       onHover(at.time);
     },
-    [timeAtX, onHover],
+    [disabled, timeAtX, onHover],
   );
 
   const handleLeave = useCallback(() => {
+    if (disabled) return;
     setHoverX(null);
     onLeave();
     onScrubbingChange?.(false);
-  }, [onLeave, onScrubbingChange]);
+  }, [disabled, onLeave, onScrubbingChange]);
 
   const handleClick = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      if (disabled) return;
       const at = timeAtX(e.clientX);
       if (at != null) onSeek(at.time);
     },
-    [timeAtX, onSeek],
+    [disabled, timeAtX, onSeek],
   );
 
   // Keyboard seeking - a role="slider" must respond to arrows/Home/End (WCAG
   // 2.1). Arrows nudge ±5s, PageUp/Down ±60s, Home/End jump to the ends.
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (disabled) return;
       if (!Number.isFinite(duration) || duration <= 0) return;
       const STEP = 5;
       const BIG = 60;
@@ -118,7 +125,7 @@ export function ScrubBar({
       e.preventDefault();
       onSeek(Math.max(0, Math.min(duration, next)));
     },
-    [currentTime, duration, onSeek],
+    [currentTime, disabled, duration, onSeek],
   );
 
   const progress =
@@ -154,11 +161,16 @@ export function ScrubBar({
         onPointerMove={handleMove}
         onPointerLeave={handleLeave}
         onPointerDown={(event) => {
+          if (disabled) return;
           onScrubbingChange?.(true);
           handleClick(event);
         }}
-        onPointerUp={() => onScrubbingChange?.(false)}
-        onPointerCancel={() => onScrubbingChange?.(false)}
+        onPointerUp={() => {
+          if (!disabled) onScrubbingChange?.(false);
+        }}
+        onPointerCancel={() => {
+          if (!disabled) onScrubbingChange?.(false);
+        }}
         onKeyDown={handleKeyDown}
         role="slider"
         aria-label="Seek"
@@ -166,12 +178,12 @@ export function ScrubBar({
         aria-valuemax={Number.isFinite(duration) ? Math.floor(duration) : 0}
         aria-valuenow={Math.floor(currentTime)}
         aria-valuetext={formatTime(currentTime)}
-        tabIndex={0}
+        tabIndex={disabled ? -1 : 0}
       >
         <div className="scrubbar-track">
           <div
             className="scrubbar-fill"
-            style={{ width: `${progress * 100}%` }}
+            style={{ transform: `scaleX(${progress})` }}
           />
           {hoverX != null && (
             <div className="scrubbar-hover" style={{ left: `${hoverX}px` }} />

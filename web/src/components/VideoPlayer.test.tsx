@@ -378,6 +378,57 @@ describe("WebviewPlayer", () => {
     expect(iconMock).not.toHaveBeenCalled();
   });
 
+  it("hides inactive web chrome, preserves it for pause or menus, and reveals it on pointer activity", () => {
+    vi.useFakeTimers();
+    try {
+      render(<VideoPlayer url="https://x/movie.mp4" title="T" onClose={() => {}} />);
+      const bar = document.querySelector(".player-bar") as HTMLElement;
+      const osd = document.querySelector(".player-osd") as HTMLElement;
+      const player = document.querySelector(".player") as HTMLElement;
+      const video = document.querySelector("video.player-video") as HTMLVideoElement;
+
+      act(() => vi.advanceTimersByTime(3200));
+      expect(bar).not.toHaveClass("is-visible");
+      expect(osd).not.toHaveClass("is-visible");
+      expect(document.querySelector(".player-osd .chip")).toHaveAttribute("tabindex", "-1");
+
+      fireEvent.pointerMove(player);
+      expect(bar).toHaveClass("is-visible");
+      expect(osd).toHaveClass("is-visible");
+
+      fireEvent(video, new Event("pause"));
+      act(() => vi.advanceTimersByTime(3200));
+      expect(bar).toHaveClass("is-visible");
+
+      fireEvent(video, new Event("play"));
+      fireEvent.click(screen.getByRole("button", { name: "Subtitles" }));
+      act(() => vi.advanceTimersByTime(3200));
+      expect(osd).toHaveClass("is-visible");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the scrubber stale while hidden and flushes it when chrome returns", () => {
+    vi.useFakeTimers();
+    try {
+      render(<VideoPlayer url="https://x/movie.mp4" title="T" onClose={() => {}} />);
+      const player = document.querySelector(".player") as HTMLElement;
+      const video = document.querySelector("video.player-video") as HTMLVideoElement;
+      act(() => vi.advanceTimersByTime(3200));
+      scrubBarMock.mockClear();
+      Object.defineProperty(video, "currentTime", { configurable: true, value: 42 });
+
+      fireEvent.timeUpdate(video);
+      expect(scrubBarMock).not.toHaveBeenCalled();
+
+      fireEvent.pointerMove(player);
+      expect(screen.getByTestId("scrub-bar")).toHaveAttribute("data-current-time", "42");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("assigns the progressive src directly on the <video>", () => {
     render(
       <VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />,

@@ -34,16 +34,17 @@ function remainingLabel(
 
 export function ContinueWatchingRail({ records, onResume }: Props) {
   if (records.length === 0) return null;
+  const shown = records.slice(0, 8);
 
   return (
     <section className="cw-rail" aria-label="Continue Watching">
       <h2 className="cw-rail-title">Continue Watching</h2>
       <div className="cw-track">
-        {records.map((r) => {
+        {shown.map((r) => {
           const p = watchProgressPercent(r);
           const ep = parseEpisodeId(r.episodeId);
           const img =
-            MediaPreview.backdropURL(r.preview) ?? MediaPreview.posterURL(r.preview);
+            MediaPreview.backdropThumbnailURL(r.preview) ?? MediaPreview.posterURL(r.preview);
           const remaining = remainingLabel(r.progressSeconds, r.durationSeconds);
           return (
             <button

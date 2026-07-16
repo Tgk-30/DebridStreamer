@@ -51,6 +51,7 @@ import {
   PlayerPauseOverlay,
   type NowPlayingMetadata,
 } from "./player/PlayerPauseOverlay";
+import { registerPlayerMount } from "../lib/attention";
 import "./VideoPlayer.css";
 
 type Playability = "webview" | "external";
@@ -193,19 +194,32 @@ interface WebviewScrubberHandle {
 const WebviewScrubber = memo(
   forwardRef<
     WebviewScrubberHandle,
-    Omit<React.ComponentProps<typeof ScrubBar>, "currentTime">
-  >(function WebviewScrubber({ duration, ...props }, ref) {
+    Omit<React.ComponentProps<typeof ScrubBar>, "currentTime"> & { active: boolean }
+  >(function WebviewScrubber({ duration, active, ...props }, ref) {
     const [currentTime, setCurrentTime] = useState(0);
+    const latestTimeRef = useRef(0);
+    const activeRef = useRef(active);
+    activeRef.current = active;
+
+    const flush = useCallback(() => {
+      const next = latestTimeRef.current;
+      setCurrentTime((current) => (current === next ? current : next));
+    }, []);
 
     useImperativeHandle(
       ref,
       () => ({
         setCurrentTime(time) {
-          setCurrentTime((current) => (current === time ? current : time));
+          latestTimeRef.current = time;
+          if (activeRef.current) flush();
         },
       }),
-      [],
+      [flush],
     );
+
+    useEffect(() => {
+      if (active) flush();
+    }, [active, flush]);
 
     return <ScrubBar {...props} duration={duration} currentTime={currentTime} />;
   }),
@@ -272,6 +286,74 @@ export function VideoPlayer({
   const [displaySize, setDisplaySize] = useState<PixelSize | null>(() =>
     currentViewportPixelSize(),
   );
+  const [webChromeVisible, setWebChromeVisible] = useState(true);
+  const [webviewPaused, setWebviewPaused] = useState(false);
+  const [captionsOpen, setCaptionsOpen] = useState(false);
+  const [chromeHovered, setChromeHovered] = useState(false);
+  const [chromeFocused, setChromeFocused] = useState(false);
+  const chromeHideTimer = useRef<number | undefined>(undefined);
+  const chromePinned =
+    webviewPaused || captionsOpen || detailsSection != null || chromeHovered || chromeFocused;
+  const chromePinnedRef = useRef(chromePinned);
+  chromePinnedRef.current = chromePinned;
+
+  const clearChromeTimer = useCallback(() => {
+    window.clearTimeout(chromeHideTimer.current);
+    chromeHideTimer.current = undefined;
+  }, []);
+  const nudgeChrome = useCallback(() => {
+    if (mode !== "webview") return;
+    setWebChromeVisible(true);
+    clearChromeTimer();
+    chromeHideTimer.current = window.setTimeout(() => {
+      chromeHideTimer.current = undefined;
+      if (!chromePinnedRef.current) setWebChromeVisible(false);
+    }, 3200);
+  }, [clearChromeTimer, mode]);
+  const holdChrome = useCallback(() => {
+    setChromeHovered(true);
+    nudgeChrome();
+  }, [nudgeChrome]);
+  const releaseChrome = useCallback(() => {
+    setChromeHovered(false);
+    nudgeChrome();
+  }, [nudgeChrome]);
+  const focusChrome = useCallback(() => {
+    setChromeFocused(true);
+    nudgeChrome();
+  }, [nudgeChrome]);
+  const blurChrome = useCallback(
+    (event: React.FocusEvent<HTMLElement>) => {
+      if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+        return;
+      }
+      setChromeFocused(false);
+      nudgeChrome();
+    },
+    [nudgeChrome],
+  );
+
+  useEffect(() => registerPlayerMount(), []);
+  useEffect(() => {
+    if (mode !== "webview") {
+      clearChromeTimer();
+      setWebChromeVisible(true);
+      return;
+    }
+    nudgeChrome();
+    return clearChromeTimer;
+  }, [clearChromeTimer, mode, nudgeChrome]);
+  useEffect(() => {
+    if (mode !== "webview") return;
+    if (chromePinned) {
+      clearChromeTimer();
+      setWebChromeVisible(true);
+      return;
+    }
+    nudgeChrome();
+  }, [chromePinned, clearChromeTimer, mode, nudgeChrome]);
+  const webChromeShown = mode !== "webview" || webChromeVisible || chromePinned;
+  const hiddenWebChrome = mode === "webview" && !webChromeShown;
 
   useEffect(() => {
     setSourceSize(null);
@@ -396,8 +478,16 @@ export function VideoPlayer({
       <div
         className="player"
         onClick={(e) => e.stopPropagation()}
+        onPointerMove={mode === "webview" ? nudgeChrome : undefined}
       >
-        <div className="player-bar">
+        <div
+          className={`player-bar${webChromeShown ? " is-visible" : ""}`}
+          aria-hidden={hiddenWebChrome || undefined}
+          onPointerEnter={holdChrome}
+          onPointerLeave={releaseChrome}
+          onFocusCapture={focusChrome}
+          onBlurCapture={blurChrome}
+        >
           <div className="player-title-group">
             <span className="player-title">{title}</span>
             {subtitle && <span className="player-subtitle">{subtitle}</span>}
@@ -413,6 +503,7 @@ export function VideoPlayer({
               aria-haspopup="dialog"
               aria-expanded={detailsSection != null}
               title="Player details and shortcuts (?)"
+              tabIndex={hiddenWebChrome ? -1 : undefined}
             >
               <Icon name="info" size={17} />
             </button>
@@ -421,6 +512,7 @@ export function VideoPlayer({
               className="player-close"
               onClick={onClose}
               aria-label="Close player"
+              tabIndex={hiddenWebChrome ? -1 : undefined}
             >
               <Icon name="xmark" size={18} />
             </button>
@@ -446,6 +538,14 @@ export function VideoPlayer({
             title={title}
             nowPlaying={nowPlaying}
             detailsOpen={detailsSection != null}
+            chromeVisible={webChromeShown}
+            onChromeEnter={holdChrome}
+            onChromeLeave={releaseChrome}
+            onChromeFocus={focusChrome}
+            onChromeBlur={blurChrome}
+            onActivity={nudgeChrome}
+            onPausedChange={setWebviewPaused}
+            onCaptionsOpenChange={setCaptionsOpen}
             onOpenShortcuts={() => setDetailsSection("shortcuts")}
             onSourceSize={setSourceSize}
             onProgress={onProgress}
@@ -484,6 +584,14 @@ function WebviewPlayer({
   title,
   nowPlaying,
   detailsOpen,
+  chromeVisible,
+  onChromeEnter,
+  onChromeLeave,
+  onChromeFocus,
+  onChromeBlur,
+  onActivity,
+  onPausedChange,
+  onCaptionsOpenChange,
   onOpenShortcuts,
   onSourceSize,
   onProgress,
@@ -502,6 +610,14 @@ function WebviewPlayer({
   title: string;
   nowPlaying?: NowPlayingMetadata | null;
   detailsOpen: boolean;
+  chromeVisible: boolean;
+  onChromeEnter: () => void;
+  onChromeLeave: () => void;
+  onChromeFocus: () => void;
+  onChromeBlur: (event: React.FocusEvent<HTMLElement>) => void;
+  onActivity: () => void;
+  onPausedChange: (paused: boolean) => void;
+  onCaptionsOpenChange: (open: boolean) => void;
   onOpenShortcuts: () => void;
   onSourceSize: (size: PixelSize | null) => void;
   onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
@@ -524,6 +640,10 @@ function WebviewPlayer({
   const [scrubbing, setScrubbing] = useState(false);
   // Set when the video reaches its natural end - drives the Up-next card.
   const [ended, setEnded] = useState(false);
+
+  useEffect(() => {
+    onCaptionsOpenChange(captionsOpen);
+  }, [captionsOpen, onCaptionsOpenChange]);
 
   const subs = useSubtitleTracks(subtitleClient, translator);
   // Thumbnails only work on a progressive source the browser can re-open and
@@ -614,10 +734,17 @@ function WebviewPlayer({
       applyResume();
     };
     const onEnded = () => setEnded(true);
-    const onPause = () => setPaused(true);
-    const onPlay = () => setPaused(false);
+    const onPause = () => {
+      setPaused(true);
+      onPausedChange(true);
+    };
+    const onPlay = () => {
+      setPaused(false);
+      onPausedChange(false);
+    };
     setEnded(false); // a new URL is a new playback - clear any stale end state
     setPaused(false);
+    onPausedChange(false);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMeta);
     video.addEventListener("durationchange", onDurationChange);
@@ -635,7 +762,7 @@ function WebviewPlayer({
       video.removeEventListener("play", onPlay);
       if (onProgressRef.current != null && video.currentTime > 0) report();
     };
-  }, [url]);
+  }, [onPausedChange, url]);
 
   // Wire hls.js for HLS streams when the browser can't play them natively.
   useEffect(() => {
@@ -720,6 +847,7 @@ function WebviewPlayer({
       const video = videoRef.current;
       if (video == null) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      onActivity();
       if (shouldIgnoreShortcut(e.target, video)) return;
       const dur = Number.isFinite(video.duration) ? video.duration : 0;
       const seekTo = (t: number) => {
@@ -792,7 +920,7 @@ function WebviewPlayer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onOpenShortcuts]);
+  }, [onActivity, onOpenShortcuts]);
 
   const resumePlayback = useCallback(() => {
     setPaused(false);
@@ -800,7 +928,7 @@ function WebviewPlayer({
   }, []);
 
   return (
-    <div className="webview-player">
+    <div className="webview-player" onPointerMove={onActivity}>
       <div className="player-stage">
         <video
           ref={videoRef}
@@ -830,16 +958,25 @@ function WebviewPlayer({
         />
       )}
 
-      <div className="player-osd">
+      <div
+        className={`player-osd${chromeVisible ? " is-visible" : ""}`}
+        aria-hidden={!chromeVisible || undefined}
+        onPointerEnter={onChromeEnter}
+        onPointerLeave={onChromeLeave}
+        onFocusCapture={onChromeFocus}
+        onBlurCapture={onChromeBlur}
+      >
         <WebviewScrubber
           key={url}
           ref={scrubberRef}
+          active={chromeVisible}
           duration={duration}
           preview={thumbs.available ? thumbs.preview : null}
           onHover={thumbs.onHover}
           onLeave={thumbs.onLeave}
           onSeek={seek}
           onScrubbingChange={setScrubbing}
+          disabled={!chromeVisible}
         />
         <div className="player-osd-row">
           <button
@@ -850,6 +987,7 @@ function WebviewPlayer({
             aria-haspopup="dialog"
             aria-expanded={captionsOpen}
             title="Subtitles"
+            tabIndex={chromeVisible ? undefined : -1}
           >
             <Icon name="captions" size={14} />
             CC

@@ -40,7 +40,12 @@
   background:
     linear-gradient(to bottom, rgba(2, 3, 8, 0.82) 0%, rgba(3, 4, 10, 0.54) 48%, transparent 100%),
     linear-gradient(90deg, rgba(5, 7, 15, 0.34), transparent 65%);
+  opacity: 0;
   pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.player-bar.is-visible {
+  opacity: 1;
 }
 .player-title-group {
   min-width: 0;
@@ -69,6 +74,8 @@
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
+}
+.player-bar.is-visible .player-bar-actions {
   pointer-events: auto;
 }
 .player-close,
@@ -184,12 +191,20 @@
   background:
     linear-gradient(to top, rgba(2, 3, 8, 0.82) 0%, rgba(3, 4, 10, 0.52) 48%, transparent 100%),
     linear-gradient(90deg, rgba(6, 8, 17, 0.22), transparent 64%);
+  opacity: 0;
   pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.player-osd.is-visible {
+  opacity: 1;
 }
 .player-osd-row {
   display: flex;
   align-items: center;
   gap: var(--sp-sm);
+}
+.player-osd.is-visible .player-osd-row,
+.player-osd.is-visible .scrubbar-wrap {
   pointer-events: auto;
 }
 .player-osd .chip {
@@ -216,9 +231,6 @@
   background: linear-gradient(145deg, rgba(var(--accent-rgb), 0.38), rgba(var(--accent-rgb), 0.18));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), 0 0 18px rgba(var(--accent-rgb), 0.2);
 }
-.player-osd .scrubbar-wrap {
-  pointer-events: auto;
-}
 .captions-active-dot {
   width: 6px;
   height: 6px;
@@ -229,6 +241,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .player-backdrop,
+  .player-bar,
+  .player-osd,
   .player-close,
   .player-info-button,
   .player-osd .chip,
@@ -273,10 +287,12 @@
 .scrubbar-fill {
   position: absolute;
   inset: 0 auto 0 0;
+  width: 100%;
   height: 100%;
   border-radius: var(--r-pill);
   background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
   box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.6);
+  transform-origin: left center;
 }
 .scrubbar-hover {
   position: absolute;

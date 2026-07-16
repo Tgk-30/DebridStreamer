@@ -25,7 +25,9 @@ interface RailProps {
 
 export function Rail({ title, items, onSelect, onSeeAll, progressById, labelById, ranked }: RailProps) {
   if (items.length === 0) return null;
-  const shown = ranked ? items.slice(0, 10) : items;
+  // Cap only rails that offer a See-all path - capping a rail without one
+  // (Library household, History, Detail "More like this") strands content.
+  const shown = ranked ? items.slice(0, 10) : onSeeAll ? items.slice(0, 12) : items;
 
   return (
     <section className={ranked ? "rail rail-ranked" : "rail"}>

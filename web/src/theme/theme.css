@@ -642,6 +642,22 @@ textarea::placeholder {
   animation-play-state: paused !important;
 }
 
+/* An unfocused app window is invisible in practice, so park all looping
+   keyframes just like a hidden/minimized/covered window. Video is unaffected. */
+:root[data-unfocused] *,
+:root[data-unfocused] *::before,
+:root[data-unfocused] *::after {
+  animation-play-state: paused !important;
+}
+
+/* After input has been idle, park only the route under the interactive chrome.
+   Overlays and player controls stay live for someone reading a long synopsis. */
+:root[data-input-idle] .route-frame *,
+:root[data-input-idle] .route-frame *::before,
+:root[data-input-idle] .route-frame *::after {
+  animation-play-state: paused !important;
+}
+
 /* A covered screen is invisible but still composites: its animations force the
    overlay's full-viewport backdrop-filter to re-rasterize every frame. Park
    looping keyframes on the covered route while a Detail/Browse overlay is up

@@ -59,4 +59,24 @@ describe("Rail", () => {
     expect(cards[0]).toHaveAttribute("data-progress", "0.4");
     expect(cards[1]).toHaveAttribute("data-progress", "");
   });
+
+  it("caps ordinary rails at twelve cards when a See-all path exists", () => {
+    const many = Array.from({ length: 13 }, (_, i) => ({
+      id: String(i),
+      type: "movie" as const,
+      title: `Title ${i}`,
+    }));
+    render(<Rail title="Trending" items={many} onSeeAll={() => {}} />);
+    expect(screen.getAllByTestId("card")).toHaveLength(12);
+  });
+
+  it("never caps a rail without a See-all path - capping would strand content", () => {
+    const many = Array.from({ length: 13 }, (_, i) => ({
+      id: String(i),
+      type: "movie" as const,
+      title: `Title ${i}`,
+    }));
+    render(<Rail title="More like this" items={many} />);
+    expect(screen.getAllByTestId("card")).toHaveLength(13);
+  });
 });
