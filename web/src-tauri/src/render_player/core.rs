@@ -584,13 +584,23 @@ pub fn create_player<R: Runtime>(
         surface.clone(),
     ));
 
-    let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
-    *guard = Some(Player {
+    let mut player = Player {
         mpv,
         surface,
         event_stop,
         event_thread,
-    });
+    };
+    let mut guard = match state.0.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            // Surface attachment has already made the macOS WKWebView transparent.
+            // Route this late init failure through the normal ordered teardown so
+            // every native resource and the default opacity are restored.
+            player.shutdown();
+            return Err("player state poisoned".to_string());
+        }
+    };
+    *guard = Some(player);
     rp_log("create_player: ready");
     rp_log("RPGEO event=player-ready engine=native-mpv");
     Ok(())

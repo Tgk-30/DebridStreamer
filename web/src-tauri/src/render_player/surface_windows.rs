@@ -21,6 +21,12 @@ use tauri::{AppHandle, Manager, Runtime};
 
 use super::core::{rp_log, PreInit, VideoSurface};
 
+/// WebView2 uses a different surface/compositor model. The measured transparent
+/// WKWebView tax and its opacity controls are macOS-only.
+pub(crate) fn set_initial_webview_opaque<R: Runtime>(_app: &AppHandle<R>) -> Result<(), String> {
+    Ok(())
+}
+
 /// Read the Tauri window's HWND (as an i64) to use as mpv's `wid`.
 fn window_wid<R: Runtime>(app: &AppHandle<R>) -> Result<i64, String> {
     let window = app

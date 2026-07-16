@@ -29,7 +29,7 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSView, NSWindow, NSWindowDidEnterFullScreenNotification,
+    NSColor, NSView, NSWindow, NSWindowDidEnterFullScreenNotification,
     NSWindowDidExitFullScreenNotification, NSWindowOrderingMode, NSWindowStyleMask,
     NSWindowWillCloseNotification, NSWindowWillEnterFullScreenNotification,
     NSWindowWillExitFullScreenNotification,
@@ -37,22 +37,75 @@ use objc2_app_kit::{
 use objc2_core_foundation::CFTimeInterval;
 use objc2_core_video::CVTimeStamp;
 use objc2_foundation::{
-    NSNotification, NSNotificationCenter, NSObject, NSPoint, NSRect, NSSize,
+    ns_string, NSNumber, NSNotification, NSNotificationCenter, NSObject, NSPoint, NSRect,
+    NSSize,
 };
 use objc2_open_gl::{
     CGLChoosePixelFormat, CGLContextObj, CGLLockContext, CGLPixelFormatAttribute,
     CGLPixelFormatObj, CGLUnlockContext,
 };
 use objc2_quartz_core::{CAAutoresizingMask, CALayer, CAOpenGLLayer};
+use objc2_web_kit::WKWebView;
 
 use tauri::{AppHandle, Manager, Runtime};
 
 use super::core::{rp_debug_enabled, rp_log, PreInit, VideoSurface};
+use super::APP_BASE_BACKGROUND_RGB;
 
 // GL enum constants we need (not worth a GL crate).
 const GL_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
 // 3.2 Core profile value for kCGLPFAOpenGLProfile.
 const CGL_OGLP_VERSION_3_2_CORE: u32 = 0x3200;
+
+/// Apply the WKWebView half of the playback compositing contract. `setOpaque:`
+/// and the `drawsBackground` KVC key are private WebKit controls, but this app is
+/// notarized outside the App Store and Wry already relies on the inverse setup
+/// for transparent windows. `underPageBackgroundColor` is public on macOS 12+.
+/// Every caller reaches this function on AppKit's main thread.
+fn set_webview_opaque(webview: &WKWebView, opaque: bool) {
+    let _mtm = MainThreadMarker::new()
+        .expect("WKWebView opacity must be changed on the main thread");
+    let draws_background = NSNumber::new_bool(opaque);
+    let color = if opaque {
+        let (red, green, blue) = APP_BASE_BACKGROUND_RGB;
+        NSColor::colorWithSRGBRed_green_blue_alpha(
+            red / 255.0,
+            green / 255.0,
+            blue / 255.0,
+            1.0,
+        )
+    } else {
+        NSColor::clearColor()
+    };
+
+    unsafe {
+        let _: () = msg_send![webview, setOpaque: opaque];
+        let _: () = msg_send![webview,
+            setValue: &*draws_background,
+            forKey: ns_string!("drawsBackground")
+        ];
+        webview.setUnderPageBackgroundColor(Some(&color));
+    }
+}
+
+/// Wry creates this WKWebView non-opaque because the window remains configured
+/// as transparent for embedded playback. Override that default during app setup;
+/// the surface lifecycle temporarily reverses it while native video is attached.
+pub(crate) fn set_initial_webview_opaque<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let webview_window = app
+        .get_webview_window("main")
+        .or_else(|| app.webview_windows().into_values().next())
+        .ok_or("no app webview window for opacity setup")?;
+    webview_window
+        .with_webview(|webview| {
+            let webview_ptr = webview.inner() as usize;
+            if webview_ptr != 0 {
+                let webview: &WKWebView = unsafe { &*(webview_ptr as *const WKWebView) };
+                set_webview_opaque(webview, true);
+            }
+        })
+        .map_err(|e| format!("could not configure native webview opacity: {e}"))
+}
 
 // ---- GL symbol resolution ------------------------------------------------
 fn gl_get_proc_address(_ctx: &(), name: &str) -> *mut c_void {
@@ -173,6 +226,7 @@ struct SurfaceState {
     fullscreen_enter_in_flight: AtomicBool,
     fullscreen_exit_in_flight: AtomicBool,
     fullscreen_transition_seq: AtomicUsize,
+    webview_transparent: AtomicBool,
     dead: AtomicBool,
 }
 
@@ -209,6 +263,7 @@ impl SurfaceState {
             fullscreen_enter_in_flight: AtomicBool::new(false),
             fullscreen_exit_in_flight: AtomicBool::new(false),
             fullscreen_transition_seq: AtomicUsize::new(0),
+            webview_transparent: AtomicBool::new(false),
             dead: AtomicBool::new(false),
         })
     }
@@ -229,6 +284,40 @@ impl SurfaceState {
             },
         )
     }
+}
+
+fn claim_webview_transparency(surface: &SurfaceState) -> bool {
+    !surface.webview_transparent.swap(true, Ordering::AcqRel)
+}
+
+fn claim_webview_opacity_restore(surface: &SurfaceState) -> bool {
+    surface.webview_transparent.swap(false, Ordering::AcqRel)
+}
+
+fn make_webview_transparent_on_main(surface: &SurfaceState) -> bool {
+    if surface.webview_ptr == 0 || !claim_webview_transparency(surface) {
+        return false;
+    }
+    let webview: &WKWebView = unsafe { &*(surface.webview_ptr as *const WKWebView) };
+    set_webview_opaque(webview, false);
+    rp_log(&format!(
+        "RPGEO event=webview-opacity engine=native-mpv opaque=false window=0x{:x}",
+        surface.window_ptr
+    ));
+    true
+}
+
+fn restore_webview_opacity_on_main(surface: &SurfaceState, reason: &str) -> bool {
+    if surface.webview_ptr == 0 || !claim_webview_opacity_restore(surface) {
+        return false;
+    }
+    let webview: &WKWebView = unsafe { &*(surface.webview_ptr as *const WKWebView) };
+    set_webview_opaque(webview, true);
+    rp_log(&format!(
+        "RPGEO event=webview-opacity engine=native-mpv opaque=true reason={reason} window=0x{:x}",
+        surface.window_ptr
+    ));
+    true
 }
 
 fn note_fullscreen_will_enter(surface: &Arc<SurfaceState>) {
@@ -1328,7 +1417,7 @@ fn discard_window_wrap_state(surface: &SurfaceState) {
 fn cancel_post_fullscreen_cleanup_on_main(
     window_ptr: usize,
     reason: &str,
-) -> Option<(bool, bool, bool)> {
+) -> Option<(bool, bool, bool, bool)> {
     let Some(observer) = take_post_fullscreen_cleanup_on_main(window_ptr, None) else {
         return None;
     };
@@ -1345,6 +1434,7 @@ fn cancel_post_fullscreen_cleanup_on_main(
         surface
             .fullscreen_exit_in_flight
             .load(Ordering::Acquire),
+        surface.webview_transparent.load(Ordering::Acquire),
     );
     discard_window_wrap_state(surface);
     rp_log(&format!(
@@ -1435,6 +1525,11 @@ fn finish_post_fullscreen_cleanup_on_main(
             restore_pre_wrap_frame_on_main(surface, reason);
         }
     }
+    // Teardown deliberately kept the webview transparent for the same complete
+    // fullscreen interval as the deferred NSWindow cleanup. This is a view-only
+    // WebKit mutation, not an NSWindow frame/aspect mutation, but sharing the
+    // established DidExit point keeps one lifecycle authority.
+    restore_webview_opacity_on_main(surface, reason);
     discard_window_wrap_state(surface);
     rp_log(&format!(
         "post-fullscreen-cleanup: action=finish window=0x{window_ptr:x} observer=0x{observer_ptr:x} reason={reason} applied={window_cleanup_applied}"
@@ -1950,6 +2045,9 @@ fn teardown_surface_on_main(
     }
     surface.host_ptr.store(0, Ordering::Release);
     surface.layer_ptr.store(0, Ordering::Release);
+    if !window_cleanup_deferred {
+        restore_webview_opacity_on_main(surface, reason);
+    }
 }
 
 /// The macOS surface handle. Native pointers and cleanup ownership live in the
@@ -2065,7 +2163,15 @@ pub fn surface_attach<R: Runtime>(
         .with_webview(move |webview| {
             let window_ptr = webview.ns_window() as usize;
             let webview_ptr = webview.inner() as usize;
-            let _ = tx.send(setup_on_main(mpv, window_ptr, webview_ptr));
+            let setup = setup_on_main(mpv, window_ptr, webview_ptr);
+            if let Err(send_error) = tx.send(setup) {
+                // A timeout can drop the receiver while this main-thread callback
+                // is still queued. If setup already attached the view and made the
+                // webview transparent, immediately route it through normal teardown.
+                if let Ok((_host_ptr, _layer_ptr, state)) = send_error.0 {
+                    teardown_surface_on_main(&state, "attach-result-abandoned", true);
+                }
+            }
         })
         .map_err(|e| format!("could not access the native webview: {e}"))?;
     let (_host_view_ptr, layer_ptr, state) = rx
@@ -2144,13 +2250,6 @@ fn setup_on_main(
         return Err("Tauri returned a null native window or webview".to_string());
     }
     let ns_window: &NSWindow = unsafe { &*(window_ptr as *const NSWindow) };
-    // A newly attached live surface supersedes any cleanup left by an older
-    // surface on the same window. It will observe and reconcile the eventual
-    // DidExit itself, so the old one-shot must not mutate the new session later.
-    // Carry its transition state forward in case reattach occurs after WillExit
-    // and after AppKit has already cleared the fullscreen style bit.
-    let inherited_fullscreen_state =
-        cancel_post_fullscreen_cleanup_on_main(window_ptr, "surface-reattach");
     let webview: &NSView = unsafe { &*(webview_ptr as *const NSView) };
     let content = ns_window.contentView().ok_or("no content view")?;
     let content_ptr = Retained::as_ptr(&content) as usize;
@@ -2163,7 +2262,18 @@ fn setup_on_main(
         webview_ptr,
         webview_sibling_ptr,
     );
-    if let Some((session_active, enter_in_flight, exit_in_flight)) =
+    // A newly attached live surface supersedes any cleanup left by an older
+    // surface on the same window. Cancel only after all fallible discovery is
+    // complete, then carry its transition and opacity ownership into this state.
+    // The new surface observes and reconciles the eventual DidExit itself.
+    let inherited_fullscreen_state =
+        cancel_post_fullscreen_cleanup_on_main(window_ptr, "surface-reattach");
+    if let Some((
+        session_active,
+        enter_in_flight,
+        exit_in_flight,
+        webview_transparent,
+    )) =
         inherited_fullscreen_state
     {
         state
@@ -2175,6 +2285,12 @@ fn setup_on_main(
         state
             .fullscreen_exit_in_flight
             .store(exit_in_flight, Ordering::Release);
+        // The old deferred cleanup is being replaced by a new live surface. Carry
+        // opacity ownership with the fullscreen latches so setup does not issue a
+        // redundant transparent flip and the new teardown performs the one restore.
+        state
+            .webview_transparent
+            .store(webview_transparent, Ordering::Release);
         if enter_in_flight {
             schedule_fullscreen_enter_revalidation(state.clone());
         }
@@ -2248,6 +2364,10 @@ fn setup_on_main(
     } else {
         None
     };
+    // This is the exact player-init visibility boundary: make the WKWebView
+    // transparent immediately before attaching the native video view, and before
+    // the synchronous first draw below can produce a visible frame.
+    make_webview_transparent_on_main(&state);
     content.addSubview_positioned_relativeTo(&host, NSWindowOrderingMode::Below, sibling);
     host.setFrame(content.bounds());
     register_window_observers(&host, ns_window);
@@ -2278,4 +2398,19 @@ fn setup_on_main(
         Retained::as_ptr(&layer) as usize,
         state,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{claim_webview_opacity_restore, claim_webview_transparency, SurfaceState};
+
+    #[test]
+    fn webview_opacity_lifecycle_claims_each_flip_once() {
+        let state = SurfaceState::new(0, 0, 0, 0);
+
+        assert!(claim_webview_transparency(&state));
+        assert!(!claim_webview_transparency(&state));
+        assert!(claim_webview_opacity_restore(&state));
+        assert!(!claim_webview_opacity_restore(&state));
+    }
 }

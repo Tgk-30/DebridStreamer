@@ -28,6 +28,12 @@ use tauri::{AppHandle, Manager, Runtime};
 
 use super::core::{rp_log, PreInit, VideoSurface};
 
+/// WebKitGTK uses a different surface/compositor model. The measured transparent
+/// WKWebView tax and its opacity controls are macOS-only.
+pub(crate) fn set_initial_webview_opaque<R: Runtime>(_app: &AppHandle<R>) -> Result<(), String> {
+    Ok(())
+}
+
 /// Read the Tauri window's X11 window id (as an i64) to use as mpv's `wid`.
 /// Returns a clear error under a native Wayland session (no XID available).
 fn window_wid<R: Runtime>(app: &AppHandle<R>) -> Result<i64, String> {

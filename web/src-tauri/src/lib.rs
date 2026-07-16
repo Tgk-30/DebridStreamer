@@ -159,16 +159,11 @@ async fn open_in_external_player(
         .map_err(|error| error.to_string())?
 }
 
-/// macOS: the window is created `transparent: true` (the in-window player reveals
-/// a native video layer through the transparent webview). But a fully transparent
-/// window shows THE DESKTOP through any not-yet-painted region - so for the first
-/// ~1s after launch the app was see-through wherever the webview hadn't painted
-/// (the "wrong background color on launch" bug), and the window server pays a
-/// desktop-blend compositing cost on every frame forever.
-/// Fix: give the NSWindow an OPAQUE background in the app's base color and mark it
-/// opaque. The player is unaffected - the video view lives INSIDE the window
-/// (above its background, below the webview); only the WEBVIEW needs transparency,
-/// which wry configures independently of window opacity.
+/// macOS: the window is created `transparent: true` so the in-window player can
+/// reveal a native video layer through the webview. Give the NSWindow an opaque
+/// app-color background permanently. The video view lives above this background
+/// and below the webview. The webview itself is made opaque separately at startup
+/// and becomes transparent only for the render player's lifetime.
 #[cfg(target_os = "macos")]
 fn opaque_window_background<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     use objc2_app_kit::{NSColor, NSWindow};
@@ -180,11 +175,12 @@ fn opaque_window_background<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     // Setup runs on the main thread; NSWindow properties must be set there.
     let ns_window: &NSWindow = unsafe { &*(ns as *const NSWindow) };
     unsafe {
-        // --bg-1 (rgb 13,15,26) - the app's base background.
+        // The default Midnight --bg-1, shared with the WKWebView fallback.
+        let (red, green, blue) = render_player::APP_BASE_BACKGROUND_RGB;
         let color = NSColor::colorWithSRGBRed_green_blue_alpha(
-            13.0 / 255.0,
-            15.0 / 255.0,
-            26.0 / 255.0,
+            red / 255.0,
+            green / 255.0,
+            blue / 255.0,
             1.0,
         );
         ns_window.setBackgroundColor(Some(&color));
@@ -225,6 +221,9 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             opaque_window_background(app.handle());
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            render_player::set_initial_webview_opaque(app.handle())
+                .map_err(std::io::Error::other)?;
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             render_player::debug_log_startup();
             // Dev-only player smoke: DS_PLAYER_SMOKE=<url> auto-loads a stream in

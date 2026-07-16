@@ -76,6 +76,11 @@ dispatch2 = "0.3"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
+# Typed WKWebView access for the render surface's playback-scoped opacity flips.
+objc2-web-kit = { version = "0.3.2", default-features = false, features = [
+    "WKWebView",
+    "objc2-app-kit",
+] }
 # CAOpenGLLayer (layer-backed GL surface - survives window occlusion/activation,
 # unlike a bare NSOpenGLContext+NSView) needs the GL/CV/CF interop features.
 objc2-quartz-core = { version = "0.3", features = [
