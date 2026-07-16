@@ -346,7 +346,7 @@
   overflow-y: auto;
   padding: var(--sp-md);
   border-radius: var(--r-lg);
-  background: rgba(12, 14, 22, 0.94);
+  background: rgba(12, 14, 22, 1);
   border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
   display: flex;

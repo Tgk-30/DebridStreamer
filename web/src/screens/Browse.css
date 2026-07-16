@@ -17,8 +17,8 @@
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--bg-1) 62%, transparent),
-    color-mix(in srgb, var(--bg-1) 88%, transparent)
+    color-mix(in srgb, var(--bg-1) 90%, transparent),
+    color-mix(in srgb, var(--bg-1) 96%, transparent)
   );
   backdrop-filter: blur(20px) saturate(1.2);
   -webkit-backdrop-filter: blur(20px) saturate(1.2);

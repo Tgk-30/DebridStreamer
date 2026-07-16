@@ -407,6 +407,33 @@ describe("EmbeddedPlayer playback controls", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("closes on one Escape after the auto-hide timer hides clean player chrome", async () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={onClose} />,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    emitProperty("duration", 120);
+    emitProperty("time-pos", 8);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3200);
+    });
+    expect(document.querySelector(".embed-player")).not.toHaveClass("show-controls");
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("EmbeddedPlayer popover material", () => {
@@ -423,6 +450,7 @@ describe("EmbeddedPlayer popover material", () => {
 
     const css = readFileSync("src/components/EmbeddedPlayer.css", "utf8");
     expect(css).not.toMatch(/\.embed-menu\s*\{[^}]*backdrop-filter/);
+    expect(css).toMatch(/\.embed-menu\s*\{[^}]*background:\s*rgba\(12, 14, 22, 1\);/s);
   });
 
   it("player details must not sample live video through a backdrop blur", () => {
@@ -438,6 +466,9 @@ describe("EmbeddedPlayer popover material", () => {
 
     const css = readFileSync("src/components/player/PlayerInfoPopover.css", "utf8");
     expect(css).not.toMatch(/\.player-info-popover\s*\{[^}]*backdrop-filter/);
+    expect(css).toMatch(
+      /\.player-info-popover\s*\{[^}]*background:\s*rgba\(12, 14, 22, 1\);/s,
+    );
   });
 });
 

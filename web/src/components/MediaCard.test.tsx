@@ -5,7 +5,7 @@
 // be aria-hidden (not exposed as unreachable interactive controls).
 
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MediaCard } from "./MediaCard";
 import type { MediaPreview } from "../models/media";
@@ -51,5 +51,24 @@ describe("MediaCard watched badge", () => {
   it("keeps the card a single button when the badge is shown (badge is not interactive)", () => {
     render(<MediaCard item={item} onSelect={() => {}} watched />);
     expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+});
+
+describe("MediaCard poster fallback", () => {
+  it("uses the designed fallback for both a missing and failed search-result poster", () => {
+    const noPoster: MediaPreview = { ...item, id: "missing", posterPath: null };
+    const { container, rerender } = render(<MediaCard item={noPoster} onSelect={() => {}} />);
+    expect(container.querySelector(".media-card-fallback")).toBeInTheDocument();
+    expect(container.querySelector(".media-card-fallback-initial")).toHaveTextContent("I");
+
+    rerender(
+      <MediaCard
+        item={{ ...item, id: "failed", posterPath: "/missing-poster.jpg" }}
+        onSelect={() => {}}
+      />,
+    );
+    fireEvent.error(screen.getByRole("img", { name: "Inception" }));
+    expect(container.querySelector(".media-card-fallback")).toBeInTheDocument();
+    expect(container.querySelector("img")).toBeNull();
   });
 });

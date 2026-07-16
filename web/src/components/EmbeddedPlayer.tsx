@@ -974,7 +974,19 @@ export function EmbeddedPlayer({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key !== "Escape" && isInteractiveTarget(e.target)) return;
+      // Escape owns the player-level dismissal ladder. Capture it before a
+      // hidden chrome control or the transparent native-video surface can let
+      // the WebView's default Escape handling consume the first press.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (detailsSection != null) setDetailsSection(null);
+        else if (menu != null) setMenu(null);
+        else if (fullscreen) toggleFullscreen();
+        else doClose();
+        return;
+      }
+      if (isInteractiveTarget(e.target)) return;
       switch (e.key) {
         case " ":
         case "k":
@@ -1027,12 +1039,6 @@ export function EmbeddedPlayer({
             section === "shortcuts" ? null : "shortcuts",
           );
           break;
-        case "Escape":
-          if (detailsSection != null) setDetailsSection(null);
-          else if (menu != null) setMenu(null);
-          else if (fullscreen) toggleFullscreen();
-          else doClose();
-          break;
         default:
           if (/^[0-9]$/.test(e.key) && durRef.current > 0) {
             seekTo((Number(e.key) / 10) * durRef.current);
@@ -1040,8 +1046,8 @@ export function EmbeddedPlayer({
       }
       nudgeControls();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [
     togglePause, relSeek, changeVolume, volume, toggleMute, toggleFullscreen,
     applySpeed, speed, doClose, seekTo, nudgeControls, menu, fullscreen,

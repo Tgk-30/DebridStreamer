@@ -511,11 +511,11 @@ html.mpv-active .embed-player * {
   padding: 8px;
   border-radius: var(--r-lg, 16px);
   color: #fff;
-  background: rgba(12, 14, 22, 0.94);
+  background: rgba(12, 14, 22, 1);
   border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
   /* The old local blur and inherited glass-raised blur are both gone: Popover
-     no longer applies that class, and this 94% opaque base hides live video. */
+     no longer applies that class, and this opaque base blocks live video. */
 }
 .embed-menu-title {
   padding: 6px 12px 8px;

@@ -10,17 +10,16 @@
   z-index: 20;
   overflow-y: auto;
   scroll-padding-top: var(--sp-xl);
-  /* Near-opaque immersive surface: the screen behind must not bleed through
-     (a faint underlying rail/hero used to show past the old 72% tint). Keep a
-     soft aurora glow + a subtle glass hint over a solid deep base. */
+  /* Opaque immersive surface: nothing behind it can bleed through. Keep the
+     soft aurora glow + subtle glass hint over a solid deep base. */
   background:
     radial-gradient(circle at 16% 10%, rgba(var(--accent-rgb), 0.16), transparent 38%),
     radial-gradient(circle at 88% 4%, rgba(var(--accent-secondary-rgb), 0.1), transparent 34%),
-    color-mix(in srgb, var(--bg-1) 96%, transparent);
-  /* No backdrop-filter here on purpose: the base above is 96% opaque, so the
-     blur was invisible - but as a full-viewport filter it re-rasterized the
-     whole screen every frame anything animated underneath (hero carousel,
-     video). The aurora radials above supply the glass look. */
+    var(--bg-1);
+  /* No backdrop-filter here on purpose: the fully opaque base prevents
+     background bleed, while a full-viewport filter re-rasterizes the screen
+     every frame anything underneath animates. The aurora radials supply the
+     glass hint without that GPU cost. */
 }
 /* The container takes programmatic focus on open (a11y) - no ring on the
    surface itself; interactive children keep their own focus-visible rings. */
