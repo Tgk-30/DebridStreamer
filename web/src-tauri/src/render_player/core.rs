@@ -93,6 +93,10 @@ impl Player {
     /// owns the ordered render-context-before-mpv teardown; `self.mpv` drops after.
     fn shutdown(&mut self) {
         self.event_stop.store(true, Ordering::Release);
+        // The event thread blocks indefinitely in mpv_wait_event while quiet.
+        // mpv_wakeup is the matching thread-safe interrupt and prevents shutdown
+        // from depending on a periodic polling timeout.
+        unsafe { libmpv2_sys::mpv_wakeup(self.mpv.ctx.as_ptr()) };
         if let Some(t) = self.event_thread.take() {
             let _ = t.join();
         }
@@ -164,7 +168,9 @@ fn spawn_event_thread<R: Runtime>(
         const HOT_PROPERTY_INTERVAL: Duration = Duration::from_millis(200);
         while !stop.load(Ordering::Acquire) {
             let mut pending_properties: HashMap<String, Value> = HashMap::new();
-            let mut wait_seconds = 0.25;
+            // Sleep until libmpv has an event. Player::shutdown calls mpv_wakeup
+            // after setting `stop`, so this has no teardown-latency tradeoff.
+            let mut wait_seconds = -1.0;
             let mut shutdown = false;
             loop {
                 let ev = unsafe { &*libmpv2_sys::mpv_wait_event(ctx, wait_seconds) };
@@ -353,8 +359,72 @@ fn is_forced_mpv_option(name: &str) -> bool {
     FORCED_MPV_OPTIONS.iter().any(|(forced, _)| *forced == name)
 }
 
+#[cfg(target_os = "macos")]
+fn is_macos_opaque_surface_option(name: &str) -> bool {
+    matches!(name, "background" | "background-color")
+}
+
+#[derive(Clone, Copy)]
+enum VideoQualityProfile {
+    Balanced,
+    #[allow(dead_code)]
+    Maximum,
+}
+
+const DEFAULT_VIDEO_QUALITY_PROFILE: VideoQualityProfile = VideoQualityProfile::Balanced;
+
+// Keep the previous maximum-quality stack intact so a future native setting can
+// select it without reconstructing or drifting any of its mpv options.
+const MAXIMUM_QUALITY_PROFILE: &[(&str, &str)] = &[
+    ("scale", "ewa_lanczossharp"),
+    ("cscale", "ewa_lanczossharp"),
+    ("dscale", "mitchell"),
+    ("scale-antiring", "0.6"),
+    ("cscale-antiring", "0.6"),
+    ("correct-downscaling", "yes"),
+    ("linear-downscaling", "yes"),
+    ("sigmoid-upscaling", "yes"),
+    ("deband", "yes"),
+    ("deband-iterations", "2"),
+    ("deband-threshold", "35"),
+    ("deband-range", "16"),
+    ("deband-grain", "4"),
+    ("dither-depth", "auto"),
+    ("dither", "error-diffusion"),
+    ("error-diffusion", "sierra-lite"),
+];
+
+// Balanced keeps the audit's EWA luma scaler and the rest of the established
+// quality controls, but makes the two targeted per-pixel savings: separable
+// Lanczos chroma scaling and one deband step instead of two.
+const BALANCED_QUALITY_PROFILE: &[(&str, &str)] = &[
+    ("scale", "ewa_lanczossharp"),
+    ("cscale", "lanczos"),
+    ("dscale", "mitchell"),
+    ("scale-antiring", "0.6"),
+    ("cscale-antiring", "0.6"),
+    ("correct-downscaling", "yes"),
+    ("linear-downscaling", "yes"),
+    ("sigmoid-upscaling", "yes"),
+    ("deband", "yes"),
+    ("deband-iterations", "1"),
+    ("deband-threshold", "35"),
+    ("deband-range", "16"),
+    ("deband-grain", "4"),
+    ("dither-depth", "auto"),
+    ("dither", "error-diffusion"),
+    ("error-diffusion", "sierra-lite"),
+];
+
+fn video_quality_options(profile: VideoQualityProfile) -> &'static [(&'static str, &'static str)] {
+    match profile {
+        VideoQualityProfile::Balanced => BALANCED_QUALITY_PROFILE,
+        VideoQualityProfile::Maximum => MAXIMUM_QUALITY_PROFILE,
+    }
+}
+
 /// Best-in-class mpv options applied to EVERY player before user overrides -
-/// the same engine mpv/IINA use, tuned for high-quality scaling, debanding,
+/// the same engine mpv/IINA use, tuned for balanced scaling, debanding,
 /// hardware decode, and streaming-cache "debrid feel". Per-platform decode +
 /// output are selected by `cfg!(target_os)`:
 ///   * macOS/Linux use the OpenGL render API → `vo=libmpv` is MANDATORY; the
@@ -370,24 +440,9 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
         // The native surface always fills the window; mpv owns any genuine
         // letterboxing and must never stretch the decoded picture to that surface.
         ("keepaspect", "yes"),
-        // Rendering quality (libplacebo-grade scaling + downscale correctness).
-        ("scale", "ewa_lanczossharp"),
-        ("cscale", "ewa_lanczossharp"),
-        ("dscale", "mitchell"),
-        ("scale-antiring", "0.6"),
-        ("cscale-antiring", "0.6"),
-        ("correct-downscaling", "yes"),
-        ("linear-downscaling", "yes"),
-        ("sigmoid-upscaling", "yes"),
-        // Debanding + dithering (big win on compressed debrid streams).
-        ("deband", "yes"),
-        ("deband-iterations", "2"),
-        ("deband-threshold", "35"),
-        ("deband-range", "16"),
-        ("deband-grain", "4"),
-        ("dither-depth", "auto"),
-        ("dither", "error-diffusion"),
-        ("error-diffusion", "sierra-lite"),
+    ];
+    o.extend_from_slice(video_quality_options(DEFAULT_VIDEO_QUALITY_PROFILE));
+    o.extend_from_slice(&[
         // Streaming cache - the debrid-feel levers (instant seek both directions).
         ("cache", "yes"),
         // 256MiB forward buffer absorbs debrid latency spikes on 4K HEVC/AV1
@@ -415,7 +470,7 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
         // Normalize surround→stereo downmix so loud 5.1/7.1 scenes don't clip on
         // Mac laptop/desktop speakers (default is off).
         ("audio-normalize-downmix", "yes"),
-    ];
+    ]);
     #[cfg(target_os = "macos")]
     {
         o.push(("vo", "libmpv")); // render API requires vo=libmpv
@@ -427,6 +482,11 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
         // Software decode remains the automatic fallback if VT can't handle a codec.
         o.push(("hwdec", "videotoolbox"));
         o.push(("ao", "coreaudio"));
+        // The full-window CAOpenGLLayer is marked opaque. Explicitly make mpv
+        // blend alpha-bearing frames over opaque black and paint uncovered
+        // keepaspect bars black so every pixel in the layer is genuinely opaque.
+        o.push(("background", "color"));
+        o.push(("background-color", "#000000"));
     }
     #[cfg(target_os = "linux")]
     {
@@ -554,6 +614,13 @@ pub fn create_player<R: Runtime>(
             // override either - vo=libmpv is a render-API mandate on macOS, and
             // hwdec is a stability/perf decision the webview no longer makes.
             if k == "vo" || k == "hwdec" {
+                continue;
+            }
+            // The CAOpenGLLayer is marked opaque, so its mpv background policy
+            // is part of the native compositing contract rather than a frontend
+            // customization point.
+            #[cfg(target_os = "macos")]
+            if is_macos_opaque_surface_option(k) {
                 continue;
             }
             // Never let a frontend value re-enable a renderer-owned safety option.
@@ -1056,8 +1123,9 @@ mod tests {
         // Cross-platform quality baseline.
         assert_eq!(map.get("keepaspect"), Some(&"yes"));
         assert_eq!(map.get("scale"), Some(&"ewa_lanczossharp"));
-        assert_eq!(map.get("cscale"), Some(&"ewa_lanczossharp"));
+        assert_eq!(map.get("cscale"), Some(&"lanczos"));
         assert_eq!(map.get("deband"), Some(&"yes"));
+        assert_eq!(map.get("deband-iterations"), Some(&"1"));
         assert_eq!(map.get("dither"), Some(&"error-diffusion"));
         assert_eq!(map.get("cache"), Some(&"yes"));
         assert_eq!(map.get("demuxer-max-back-bytes"), Some(&"50MiB"));
@@ -1072,6 +1140,8 @@ mod tests {
             assert_eq!(map.get("vo"), Some(&"libmpv")); // render API mandate
             assert_eq!(map.get("hwdec"), Some(&"videotoolbox")); // zero-copy VT
             assert_eq!(map.get("ao"), Some(&"coreaudio"));
+            assert_eq!(map.get("background"), Some(&"color"));
+            assert_eq!(map.get("background-color"), Some(&"#000000"));
         }
         #[cfg(target_os = "linux")]
         {
@@ -1085,5 +1155,16 @@ mod tests {
             assert_eq!(map.get("hwdec"), Some(&"d3d11va"));
             assert_eq!(map.get("gpu-api"), Some(&"d3d11"));
         }
+    }
+
+    #[test]
+    fn maximum_quality_profile_preserves_previous_expensive_settings() {
+        let map: HashMap<&str, &str> = super::MAXIMUM_QUALITY_PROFILE
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(map.get("scale"), Some(&"ewa_lanczossharp"));
+        assert_eq!(map.get("cscale"), Some(&"ewa_lanczossharp"));
+        assert_eq!(map.get("deband-iterations"), Some(&"2"));
     }
 }

@@ -21,7 +21,10 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use libmpv2::render::{OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType};
+use libmpv2::render::{
+    mpv_render_update, MpvRenderUpdate, OpenGLInitParams, RenderContext, RenderParam,
+    RenderParamApiType,
+};
 use libmpv2::Mpv;
 
 use dispatch2::{DispatchQueue, DispatchTime};
@@ -56,6 +59,10 @@ use super::APP_BASE_BACKGROUND_RGB;
 const GL_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
 // 3.2 Core profile value for kCGLPFAOpenGLProfile.
 const CGL_OGLP_VERSION_3_2_CORE: u32 = 0x3200;
+// Render at no more than 1.5x the video's display dimensions on each axis.
+// The layer keeps its full point bounds, so Core Animation performs any final
+// window-sized composite scaling without changing NSWindow geometry.
+const VIDEO_RENDER_SUPERSAMPLE: f64 = 1.5;
 
 /// Apply the WKWebView half of the playback compositing contract. `setOpaque:`
 /// and the `drawsBackground` KVC key are private WebKit controls, but this app is
@@ -154,6 +161,105 @@ fn gl_set_viewport(w: i32, h: i32) {
     }
 }
 
+fn positive_finite(value: f64) -> bool {
+    value.is_finite() && value > 0.0
+}
+
+fn safe_render_dimension(value: f64) -> i32 {
+    if !positive_finite(value) {
+        return 1;
+    }
+    value.round().clamp(1.0, i32::MAX as f64) as i32
+}
+
+/// Return the uniform linear scale applied to a full-window backing target.
+/// A uniform factor preserves the layer/window aspect, so mpv still owns the
+/// aspect-fit bars inside its FBO instead of Core Animation stretching them.
+fn render_target_budget_factor(
+    backing_width: f64,
+    backing_height: f64,
+    video_width: i64,
+    video_height: i64,
+) -> f64 {
+    if !positive_finite(backing_width)
+        || !positive_finite(backing_height)
+        || video_width <= 0
+        || video_height <= 0
+    {
+        return 1.0;
+    }
+    let cap_width = video_width as f64 * VIDEO_RENDER_SUPERSAMPLE;
+    let cap_height = video_height as f64 * VIDEO_RENDER_SUPERSAMPLE;
+    if !positive_finite(cap_width) || !positive_finite(cap_height) {
+        return 1.0;
+    }
+    let factor = (cap_width / backing_width)
+        .min(cap_height / backing_height)
+        .min(1.0);
+    if positive_finite(factor) {
+        factor
+    } else {
+        1.0
+    }
+}
+
+#[cfg(test)]
+fn capped_render_target_dimensions(
+    backing_width: f64,
+    backing_height: f64,
+    video_width: i64,
+    video_height: i64,
+) -> (i32, i32) {
+    let factor = render_target_budget_factor(
+        backing_width,
+        backing_height,
+        video_width,
+        video_height,
+    );
+    (
+        safe_render_dimension(backing_width * factor),
+        safe_render_dimension(backing_height * factor),
+    )
+}
+
+fn effective_contents_scale(
+    bounds: NSSize,
+    backing_scale: f64,
+    video_width: i64,
+    video_height: i64,
+) -> f64 {
+    let safe_backing_scale = if positive_finite(backing_scale) {
+        backing_scale
+    } else {
+        1.0
+    };
+    if !positive_finite(bounds.width) || !positive_finite(bounds.height) {
+        return safe_backing_scale;
+    }
+    let backing_width = bounds.width * safe_backing_scale;
+    let backing_height = bounds.height * safe_backing_scale;
+    let factor = render_target_budget_factor(
+        backing_width,
+        backing_height,
+        video_width,
+        video_height,
+    );
+    let scale = safe_backing_scale * factor;
+    if positive_finite(scale) {
+        scale
+    } else {
+        safe_backing_scale
+    }
+}
+
+fn render_update_has_frame(flags: MpvRenderUpdate) -> bool {
+    flags & mpv_render_update::Frame != 0
+}
+
+fn should_queue_callback_redraw(dead: bool, update_pending: bool, redraw_queued: bool) -> bool {
+    !dead && update_pending && !redraw_queued
+}
+
 // ---- The layer-backed video surface -------------------------------------
 // The RenderContext is created on the CA render thread but must be FREED at
 // teardown (before mpv is destroyed) from the main thread. mpv_render_context_free
@@ -169,6 +275,50 @@ unsafe impl Send for SendRender {}
 struct RenderCallbackState {
     layer_ptr: AtomicUsize,
     dead: AtomicBool,
+    update_pending: AtomicBool,
+    redraw_queued: AtomicBool,
+    force_render: AtomicBool,
+}
+
+fn queue_callback_redraw(callback: Arc<RenderCallbackState>) {
+    let dead = callback.dead.load(Ordering::Acquire);
+    let update_pending = callback.update_pending.load(Ordering::Acquire);
+    let redraw_queued = callback.redraw_queued.load(Ordering::Acquire);
+    if !should_queue_callback_redraw(dead, update_pending, redraw_queued)
+        || callback
+            .redraw_queued
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+    {
+        return;
+    }
+
+    DispatchQueue::main().exec_async(move || {
+        // Teardown and this closure both serialize on the main queue. Re-check
+        // the flag because the redraw may have been queued before teardown ran.
+        if callback.dead.load(Ordering::Acquire) {
+            callback.redraw_queued.store(false, Ordering::Release);
+            return;
+        }
+        let ptr = callback.layer_ptr.load(Ordering::Acquire);
+        if ptr == 0 {
+            callback.redraw_queued.store(false, Ordering::Release);
+            return;
+        }
+        let layer: &VideoLayer = unsafe { &*(ptr as *const VideoLayer) };
+        // This invalidation is only a coalesced wake for the CA render thread.
+        // VideoLayer.draw consumes update() and calls render() only for FRAME.
+        layer.setNeedsDisplay();
+    });
+}
+
+fn finish_callback_redraw(callback: &Arc<RenderCallbackState>) {
+    callback.redraw_queued.store(false, Ordering::Release);
+    // Close the race where an update arrived after draw swapped pending=false
+    // but before the outstanding-redraw latch was released.
+    if callback.update_pending.load(Ordering::Acquire) {
+        queue_callback_redraw(callback.clone());
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -608,31 +758,19 @@ define_class!(
                     ],
                 ) {
                     Ok(mut rc) => {
-                        // When mpv has a new frame, poke the layer to redraw (on the
-                        // main thread - CALayer.setNeedsDisplay). mpv may invoke this
-                        // callback while the render context is being freed, so capture
-                        // only send-safe state: a raw VideoLayer pointer here caused a
-                        // reproducible use-after-free during teardown.
+                        // The callback itself may not call mpv APIs. Record the update
+                        // and coalesce a main-thread layer invalidation. The CA render
+                        // thread consumes update() below and renders only for FRAME.
+                        // mpv may invoke this while the render context is being freed,
+                        // so capture only send-safe state: a raw VideoLayer pointer here
+                        // caused a reproducible use-after-free during teardown.
                         let callback = ivars.callback.clone();
                         rc.set_update_callback(move || {
                             if callback.dead.load(Ordering::Acquire) {
                                 return;
                             }
-                            let redraw = callback.clone();
-                            DispatchQueue::main().exec_async(move || {
-                                // Teardown and this closure both serialize on the main
-                                // queue. Re-check the flag because the redraw may have
-                                // been queued before teardown ran.
-                                if redraw.dead.load(Ordering::Acquire) {
-                                    return;
-                                }
-                                let ptr = redraw.layer_ptr.load(Ordering::Acquire);
-                                if ptr != 0 {
-                                    let layer: &VideoLayer =
-                                        unsafe { &*(ptr as *const VideoLayer) };
-                                    layer.setNeedsDisplay();
-                                }
-                            });
+                            callback.update_pending.store(true, Ordering::Release);
+                            queue_callback_redraw(callback.clone());
                         });
                         rp_log("VideoLayer.draw: RenderContext created");
                         *render_slot = Some(SendRender(rc));
@@ -641,30 +779,41 @@ define_class!(
                 }
             }
 
-            // CALayer bounds are points; contentsScale maps them to the backing
-            // store's pixels. GL_VIEWPORT is mutable drawing state (including
-            // state left by mpv), not framebuffer-size metadata, so feeding it
-            // back as mpv_opengl_fbo.w/h can render into only part of the drawable
-            // and can give mpv the wrong target aspect after a resize.
-            let bounds = self.bounds();
-            let scale = self.contentsScale();
-            let w = (bounds.size.width * scale).round().max(1.0) as i32;
-            let h = (bounds.size.height * scale).round().max(1.0) as i32;
-            let fbo = gl_get_int(GL_FRAMEBUFFER_BINDING);
-            let previous_w = ivars
-                .surface
-                .last_draw_width
-                .swap(i64::from(w), Ordering::AcqRel);
-            let previous_h = ivars
-                .surface
-                .last_draw_height
-                .swap(i64::from(h), Ordering::AcqRel);
-            let first_draw = !ivars
-                .surface
-                .first_draw_logged
-                .swap(true, Ordering::AcqRel);
-            if first_draw {
-                if rp_debug_enabled() {
+            let forced = ivars.callback.force_render.swap(false, Ordering::AcqRel);
+            let had_update = ivars.callback.update_pending.swap(false, Ordering::AcqRel);
+            let mut should_render = forced;
+            if had_update {
+                if let Some(sr) = render_slot.as_ref() {
+                    match sr.0.update() {
+                        Ok(flags) => should_render |= render_update_has_frame(flags),
+                        Err(e) => rp_log(&format!("VideoLayer.draw: update failed: {e}")),
+                    }
+                }
+            }
+
+            if should_render {
+                // CALayer bounds are points; contentsScale maps them to the
+                // backing store's capped pixels. GL_VIEWPORT is mutable drawing
+                // state, not framebuffer-size metadata, so never feed it back as
+                // the drawable size after mpv has changed it.
+                let bounds = self.bounds();
+                let scale = self.contentsScale();
+                let w = safe_render_dimension(bounds.size.width * scale);
+                let h = safe_render_dimension(bounds.size.height * scale);
+                let fbo = gl_get_int(GL_FRAMEBUFFER_BINDING);
+                let previous_w = ivars
+                    .surface
+                    .last_draw_width
+                    .swap(i64::from(w), Ordering::AcqRel);
+                let previous_h = ivars
+                    .surface
+                    .last_draw_height
+                    .swap(i64::from(h), Ordering::AcqRel);
+                let first_draw = !ivars
+                    .surface
+                    .first_draw_logged
+                    .swap(true, Ordering::AcqRel);
+                if first_draw && rp_debug_enabled() {
                     let cached = ivars
                         .surface
                         .last_main_geometry
@@ -679,24 +828,24 @@ define_class!(
                         rect_text(bounds),
                     ));
                 }
-            }
-            // The attach-time check is not enough: AppKit can resize the
-            // fullscreen content hierarchy after the first frame. Re-arm the
-            // cheap main-thread geometry check whenever the actual target handed
-            // to mpv changes. Multiple transition draws coalesce into one check.
-            if first_draw
-                || previous_w != i64::from(w)
-                || previous_h != i64::from(h)
-            {
-                queue_geometry_check(ivars.surface.clone(), first_draw);
-            }
-            gl_set_viewport(w, h);
-            if let Some(sr) = render_slot.as_ref() {
-                if let Err(e) = sr.0.render::<()>(fbo, w, h, true) {
-                    rp_log(&format!("VideoLayer.draw: render failed: {e}"));
+                // AppKit can resize the fullscreen content hierarchy after the
+                // first frame. Re-arm the main-thread check whenever the target
+                // handed to mpv changes. Transition draws coalesce into one check.
+                if first_draw
+                    || previous_w != i64::from(w)
+                    || previous_h != i64::from(h)
+                {
+                    queue_geometry_check(ivars.surface.clone(), first_draw);
+                }
+                gl_set_viewport(w, h);
+                if let Some(sr) = render_slot.as_ref() {
+                    if let Err(e) = sr.0.render::<()>(fbo, w, h, true) {
+                        rp_log(&format!("VideoLayer.draw: render failed: {e}"));
+                    }
                 }
             }
             drop(render_slot);
+            finish_callback_redraw(&ivars.callback);
             unsafe { CGLUnlockContext(ctx) };
             // Let CAOpenGLLayer's default implementation flush the context.
             unsafe {
@@ -715,6 +864,9 @@ impl VideoLayer {
         let callback = Arc::new(RenderCallbackState {
             layer_ptr: AtomicUsize::new(0),
             dead: AtomicBool::new(false),
+            update_pending: AtomicBool::new(false),
+            redraw_queued: AtomicBool::new(false),
+            force_render: AtomicBool::new(false),
         });
         let this = Self::alloc().set_ivars(VideoLayerIvars {
             mpv,
@@ -736,11 +888,36 @@ impl VideoLayer {
     }
 }
 
+fn sync_layer_render_scale(
+    layer: &VideoLayer,
+    surface: &SurfaceState,
+    bounds: NSSize,
+    backing_scale: f64,
+) -> bool {
+    let video_width = surface.dwidth.load(Ordering::Acquire);
+    let video_height = surface.dheight.load(Ordering::Acquire);
+    let expected = effective_contents_scale(bounds, backing_scale, video_width, video_height);
+    if (layer.contentsScale() - expected).abs() <= 0.001 {
+        return false;
+    }
+    unsafe { layer.setContentsScale(expected) };
+    true
+}
+
+fn display_layer_forced(layer: &VideoLayer) {
+    layer
+        .ivars()
+        .callback
+        .force_render
+        .store(true, Ordering::Release);
+    unsafe { layer.display() };
+}
+
 // ---- Host view: redraws the video layer on every resize -----------------
 // The video layer autoresizes to fill this view, but CAOpenGLLayer only
 // reallocates its GL drawable + re-renders when explicitly asked. Overriding
 // setFrameSize (called by AppKit on every resize step) to poke the layer makes
-// the video re-render at the new native resolution - even while paused/ended - 
+// the video re-render at the new capped resolution - even while paused/ended -
 // instead of stretching a stale texture.
 struct HostIvars {
     layer: Retained<VideoLayer>,
@@ -769,16 +946,13 @@ define_class!(
             // different backing scale without delivering the backing callback
             // before this resize. Always pair the resized bounds with the live
             // window scale before the synchronous draw.
+            let b = self.bounds();
             if let Some(window) = self.window() {
-                let scale = window.backingScaleFactor();
-                if (layer.contentsScale() - scale).abs() > 0.001 {
-                    unsafe { layer.setContentsScale(scale) };
-                }
+                sync_layer_render_scale(layer, surface, b.size, window.backingScaleFactor());
             }
             // Resize the layer to the view + force CAOpenGLLayer to reallocate
             // its GL drawable at the new size (a plain setNeedsDisplay does not
             // reliably grow it). Wrapped so the geometry change doesn't animate.
-            let b = self.bounds();
             layer.setFrame(b);
             unsafe {
                 layer.setBounds(NSRect::new(NSPoint::new(0.0, 0.0), b.size));
@@ -788,7 +962,7 @@ define_class!(
                 surface,
                 &format!("requested={:.2}x{:.2}", size.width, size.height),
             );
-            unsafe { layer.display() };
+            display_layer_forced(layer);
         }
 
         // AppKit fires this whenever the backing SCALE FACTOR changes - most often
@@ -796,7 +970,7 @@ define_class!(
         // display. contentsScale is otherwise set ONCE at setup, so without this the
         // CAOpenGLLayer keeps rendering at the launch display's pixel density:
         // half-resolution (soft/blurry) on 1x→2x, or wastefully 2x on 2x→1x. Re-sync
-        // it and force a native-res re-render.
+        // it and force a render at the current capped target resolution.
         #[unsafe(method(viewDidChangeBackingProperties))]
         fn view_did_change_backing_properties(&self) {
             unsafe {
@@ -807,8 +981,8 @@ define_class!(
                 .map(|w| w.backingScaleFactor())
                 .unwrap_or(1.0);
             let layer = &self.ivars().layer;
-            unsafe { layer.setContentsScale(scale) };
             let b = self.bounds();
+            sync_layer_render_scale(layer, &self.ivars().surface, b.size, scale);
             layer.setFrame(b);
             unsafe {
                 layer.setBounds(NSRect::new(NSPoint::new(0.0, 0.0), b.size));
@@ -818,7 +992,7 @@ define_class!(
                 &self.ivars().surface,
                 &format!("new_scale={scale:.3}"),
             );
-            unsafe { layer.display() };
+            display_layer_forced(layer);
         }
 
         #[unsafe(method(windowWillEnterFullScreen:))]
@@ -1108,13 +1282,16 @@ fn verify_and_repair_geometry_on_main(
         unsafe { layer.setBounds(expected_layer_bounds) };
         corrections.push("layer-bounds");
     }
-    let expected_scale = window.backingScaleFactor();
-    if (layer.contentsScale() - expected_scale).abs() > 0.001 {
-        unsafe { layer.setContentsScale(expected_scale) };
+    if sync_layer_render_scale(
+        layer,
+        surface,
+        host_bounds.size,
+        window.backingScaleFactor(),
+    ) {
         corrections.push("contents-scale");
     }
     if force_display || !corrections.is_empty() {
-        unsafe { layer.display() };
+        display_layer_forced(layer);
     }
     let correction = if corrections.is_empty() {
         "none".to_string()
@@ -2315,11 +2492,16 @@ fn setup_on_main(
     // ever supplies one; contentsScale is applied only to the GL target below.
     let frame = bounds;
     let layer = VideoLayer::new(mpv, state.clone());
-    unsafe { layer.setContentsScale(backing_scale) };
+    sync_layer_render_scale(&layer, &state, bounds.size, backing_scale);
+    // mpv renders into the full layer FBO. keepaspect bars are inside that FBO,
+    // and the macOS profile explicitly paints them opaque black. Decoded frames
+    // also fill their video rectangle, so the complete layer is opaque.
+    layer.setOpaque(true);
     // Draw only when there's a new frame (mpv's update callback pokes
     // setNeedsDisplay) or the bounds change - not 60fps continuously. This also
     // makes CA reallocate the GL drawable to the new size on resize, so the
-    // video always renders at native resolution instead of a stretched texture.
+    // video always refreshes at its current capped resolution instead of keeping
+    // a stretched stale texture.
     layer.setAsynchronous(false);
     unsafe { layer.setNeedsDisplayOnBoundsChange(true) };
     layer.setAutoresizingMask(
@@ -2388,7 +2570,7 @@ fn setup_on_main(
     // draw runs, and mpv opens vo=libmpv with "No render context set" → the video
     // output fails permanently (vo-configured=no, black). Eager creation makes the
     // player robust to a load-immediately-after-init sequence.
-    unsafe { layer.display() };
+    display_layer_forced(&layer);
     rp_log(&format!(
         "setup_on_main: layer host inserted below webview; render_ready={}",
         layer.ivars().render.lock().map(|g| g.is_some()).unwrap_or(false)
@@ -2402,7 +2584,51 @@ fn setup_on_main(
 
 #[cfg(test)]
 mod tests {
-    use super::{claim_webview_opacity_restore, claim_webview_transparency, SurfaceState};
+    use super::{
+        capped_render_target_dimensions, claim_webview_opacity_restore,
+        claim_webview_transparency, mpv_render_update, render_update_has_frame,
+        should_queue_callback_redraw, SurfaceState,
+    };
+
+    #[test]
+    fn render_target_pixel_budget_preserves_window_aspect() {
+        assert_eq!(
+            capped_render_target_dimensions(5120.0, 2880.0, 1920, 1080),
+            (2880, 1620)
+        );
+        assert_eq!(
+            capped_render_target_dimensions(5120.0, 2160.0, 1920, 1080),
+            (2880, 1215)
+        );
+        assert_eq!(
+            capped_render_target_dimensions(1440.0, 900.0, 1920, 1080),
+            (1440, 900)
+        );
+    }
+
+    #[test]
+    fn render_target_pixel_budget_rejects_degenerate_domains() {
+        assert_eq!(
+            capped_render_target_dimensions(5120.0, 2880.0, 0, 1080),
+            (5120, 2880)
+        );
+        assert_eq!(
+            capped_render_target_dimensions(f64::NAN, 0.0, 1920, 1080),
+            (1, 1)
+        );
+    }
+
+    #[test]
+    fn render_update_flags_and_queue_decisions_are_coalesced() {
+        assert!(!render_update_has_frame(0));
+        assert!(render_update_has_frame(mpv_render_update::Frame));
+        assert!(render_update_has_frame(mpv_render_update::Frame | 0x80));
+
+        assert!(should_queue_callback_redraw(false, true, false));
+        assert!(!should_queue_callback_redraw(false, true, true));
+        assert!(!should_queue_callback_redraw(false, false, false));
+        assert!(!should_queue_callback_redraw(true, true, false));
+    }
 
     #[test]
     fn webview_opacity_lifecycle_claims_each_flip_once() {
