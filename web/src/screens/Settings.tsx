@@ -72,6 +72,7 @@ import { hashPassword } from "../lib/passwordHash";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import { AvatarPicker } from "../components/AvatarPicker";
+import { SUBTITLE_COLORS } from "../components/player/CaptionsMenu";
 import { isImageAvatar } from "../data/profileAvatars";
 import { InfoTip } from "../components/InfoTip";
 import { AdvancedOnly } from "../components/AdvancedOnly";
@@ -4166,6 +4167,97 @@ function AppearanceTab({
           <div className="settings-range-labels" aria-hidden="true">
             <span>Solid</span>
             <span>Frosted</span>
+          </div>
+        </div>
+      </Field>
+
+      <div className="appearance-section-head">
+        <div>
+          <span className="settings-label-line">
+            <span className="settings-sources-title">Subtitles</span>
+            <InfoTip label="About subtitle appearance">
+              Adjust the size, text color, and background of captions in the player.
+            </InfoTip>
+          </span>
+        </div>
+      </div>
+
+      <Field
+        label="Font scale"
+        hint="Adjust the size of subtitle text in the player."
+      >
+        <div className="settings-range-shell">
+          <div className="settings-range-control">
+            <input
+              type="range"
+              min={0.7}
+              max={1.8}
+              step={0.1}
+              value={draft.subtitleFontScale}
+              onChange={(event) =>
+                applyAppearance({ subtitleFontScale: Number(event.target.value) })
+              }
+              aria-label="Subtitle font scale"
+            />
+            <output aria-live="polite">
+              {Math.round(draft.subtitleFontScale * 100)}%
+            </output>
+          </div>
+          <div className="settings-range-labels" aria-hidden="true">
+            <span>Smaller</span>
+            <span>Larger</span>
+          </div>
+        </div>
+      </Field>
+
+      <div className="settings-source glass-rest">
+        <div className="settings-sources-head">
+          <span className="settings-sources-title">Text color</span>
+          <span className="settings-hint t-secondary">High-legibility presets</span>
+        </div>
+        <div className="accent-grid" role="radiogroup" aria-label="Subtitle text color">
+          {SUBTITLE_COLORS.map((color) => {
+            const active = draft.subtitleTextColor === color;
+            return (
+              <button
+                key={color}
+                type="button"
+                className={`accent-swatch${active ? " is-active" : ""}`}
+                style={{ background: color }}
+                onClick={() => applyAppearance({ subtitleTextColor: color })}
+                role="radio"
+                aria-checked={active}
+                aria-label={`Subtitle color ${color}`}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <Field
+        label="Background opacity"
+        hint="Add contrast behind subtitles when the video is bright."
+      >
+        <div className="settings-range-shell">
+          <div className="settings-range-control">
+            <input
+              type="range"
+              min={0}
+              max={0.95}
+              step={0.05}
+              value={draft.subtitleBgOpacity}
+              onChange={(event) =>
+                applyAppearance({ subtitleBgOpacity: Number(event.target.value) })
+              }
+              aria-label="Subtitle background opacity"
+            />
+            <output aria-live="polite">
+              {Math.round(draft.subtitleBgOpacity * 100)}%
+            </output>
+          </div>
+          <div className="settings-range-labels" aria-hidden="true">
+            <span>None</span>
+            <span>Solid</span>
           </div>
         </div>
       </Field>

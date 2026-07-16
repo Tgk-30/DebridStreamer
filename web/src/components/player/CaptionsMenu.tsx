@@ -20,7 +20,7 @@ import type { UseSubtitleTracks } from "./useSubtitleTracks";
 import type { SubtitleSearchParams } from "../../services/subtitles/OpenSubtitlesClient";
 
 /** Caption text-color presets (white + the common high-legibility tints). */
-const SUBTITLE_COLORS = ["#ffffff", "#ffe066", "#9be7ff", "#9bffb0"];
+export const SUBTITLE_COLORS = ["#ffffff", "#ffe066", "#9be7ff", "#9bffb0"];
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 

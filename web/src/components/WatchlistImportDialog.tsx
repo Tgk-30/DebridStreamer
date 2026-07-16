@@ -18,6 +18,7 @@ import {
 import { searchServerMedia } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 import { getStore } from "../storage";
+import { IMDbCSVSyncService } from "../services/sync/IMDbCSVSyncService";
 import "./WatchlistImportDialog.css";
 
 interface Summary {
@@ -37,9 +38,11 @@ const MAX_ENTRIES = 500;
 export function WatchlistImportDialog({
   onClose,
   onImported,
+  watchlist,
 }: {
   onClose: () => void;
   onImported?: () => void;
+  watchlist: MediaPreview[];
 }) {
   const { services, importToWatchlist } = useAppStore();
   const dialogRef = useModalA11y<HTMLDivElement>(onClose);
@@ -57,6 +60,35 @@ export function WatchlistImportDialog({
   const canResolve = serverMode || services.tmdb != null;
   const parsed = parseWatchlistImport(text, fileName);
   const entries = parsed.entries.slice(0, MAX_ENTRIES);
+  const missingIMDbCount = watchlist.filter((item) => item.id.startsWith("tmdb-")).length;
+
+  function exportWatchlist() {
+    const csv = new IMDbCSVSyncService().exportCSV(watchlist);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "debridstreamer-watchlist.csv";
+      anchor.click();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  const exportAction = watchlist.length > 0 ? (
+    <button type="button" className="btn" onClick={exportWatchlist}>
+      Export for IMDb
+    </button>
+  ) : null;
+
+  const exportNote = watchlist.length > 0 ? (
+    <p className="wli-note t-secondary">
+      Download a CSV to upload to imdb.com yourself - IMDb has no automatic sync.
+      {missingIMDbCount > 0 &&
+        ` ${missingIMDbCount} of ${watchlist.length} title${watchlist.length === 1 ? "" : "s"} ${missingIMDbCount === 1 ? "has" : "have"} no IMDb id (exported by title only).`}
+    </p>
+  ) : null;
 
   function search(query: string, type: MediaType | null): Promise<MediaPreview[]> {
     if (serverMode) {
@@ -159,11 +191,11 @@ export function WatchlistImportDialog({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Import watchlist"
+        aria-label="Import and export watchlist"
         tabIndex={-1}
       >
         <div className="wli-head">
-          <h2 className="wli-title">Import to watchlist</h2>
+          <h2 className="wli-title">Import and export</h2>
           <button
             type="button"
             className="wli-close"
@@ -240,8 +272,11 @@ export function WatchlistImportDialog({
                       ? `Importing ${progress.done}/${progress.total}…`
                       : "Import"}
                   </button>
+                  {exportAction}
                 </div>
               </div>
+
+              {exportNote}
 
               {error && <p className="wli-error">{error}</p>}
 
@@ -278,6 +313,17 @@ export function WatchlistImportDialog({
                   )}
                 </div>
               )}
+            </>
+          )}
+          {!canResolve && exportAction != null && (
+            <>
+              <div className="wli-row">
+                <span className="t-secondary wli-count">
+                  {watchlist.length} title{watchlist.length === 1 ? "" : "s"} ready to export
+                </span>
+                <div className="wli-actions">{exportAction}</div>
+              </div>
+              {exportNote}
             </>
           )}
         </div>

@@ -93,10 +93,14 @@ export class IMDbCSVSyncService {
    * Serializes media items into an IMDb-compatible CSV with a
    * `Const,Title,Year` header. Mirrors Swift `exportCSV(mediaItems:)`.
    */
-  exportCSV(mediaItems: MediaItem[]): string {
+  exportCSV(mediaItems: Pick<MediaItem, "id" | "title" | "year">[]): string {
     const rows: string[][] = [["Const", "Title", "Year"]];
     for (const item of mediaItems) {
-      rows.push([item.id, item.title, item.year != null ? String(item.year) : ""]);
+      rows.push([
+        item.id.startsWith("tmdb-") ? "" : item.id,
+        item.title,
+        item.year != null ? String(item.year) : "",
+      ]);
     }
     return CSVParser.serialize(rows);
   }

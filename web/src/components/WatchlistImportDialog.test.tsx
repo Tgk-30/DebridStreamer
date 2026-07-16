@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { MediaPreview, MediaType } from "../models/media";
+import { IMDbCSVSyncService } from "../services/sync/IMDbCSVSyncService";
 
 // --- mutable mock state -----------------------------------------------------
 
@@ -46,13 +47,13 @@ describe("WatchlistImportDialog", () => {
   it("gates when neither a TMDB key nor a server is available", () => {
     tmdb = null;
     serverMode = false;
-    render(<WatchlistImportDialog onClose={() => {}} />);
+    render(<WatchlistImportDialog onClose={() => {}} watchlist={[]} />);
     expect(screen.getByText(/Add a TMDB API key/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Import" })).not.toBeInTheDocument();
   });
 
   it("shows a live count of detected titles", () => {
-    render(<WatchlistImportDialog onClose={() => {}} />);
+    render(<WatchlistImportDialog onClose={() => {}} watchlist={[]} />);
     fireEvent.change(screen.getByLabelText("Titles or CSV to import"), {
       target: { value: "The Matrix (1999)\nDune" },
     });
@@ -68,7 +69,7 @@ describe("WatchlistImportDialog", () => {
     );
     importToWatchlist.mockResolvedValue({ added: 1, skipped: 0 });
 
-    render(<WatchlistImportDialog onClose={() => {}} />);
+    render(<WatchlistImportDialog onClose={() => {}} watchlist={[]} />);
     fireEvent.change(screen.getByLabelText("Titles or CSV to import"), {
       target: { value: "The Matrix (1999)\nNope" },
     });
@@ -91,7 +92,7 @@ describe("WatchlistImportDialog", () => {
     }));
     importToWatchlist.mockResolvedValue({ added: 2, skipped: 0 });
 
-    render(<WatchlistImportDialog onClose={() => {}} />);
+    render(<WatchlistImportDialog onClose={() => {}} watchlist={[]} />);
     fireEvent.change(screen.getByLabelText("Titles or CSV to import"), {
       target: {
         value: [
@@ -107,5 +108,43 @@ describe("WatchlistImportDialog", () => {
     expect(assignWatchlistFolder).toHaveBeenCalledWith("tmdb-Heat", "folder-imdb");
     expect(assignWatchlistFolder).toHaveBeenCalledWith("tmdb-The Matrix", "folder-imdb");
     expect(screen.getByText(/Organized in the IMDb import folder/i)).toBeInTheDocument();
+  });
+
+  it("exports the watchlist as an IMDb CSV download", () => {
+    const watchlist = [
+      preview("tt0133093", { title: "The Matrix", year: 1999 }),
+      preview("tmdb-603", { title: "The Matrix", year: 1999 }),
+    ];
+    const exportCSV = vi.spyOn(IMDbCSVSyncService.prototype, "exportCSV");
+    const createObjectURL = vi.fn(() => "blob:watchlist");
+    const revokeObjectURL = vi.fn();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    Object.defineProperties(URL, {
+      createObjectURL: { configurable: true, value: createObjectURL },
+      revokeObjectURL: { configurable: true, value: revokeObjectURL },
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    try {
+      render(<WatchlistImportDialog onClose={() => {}} watchlist={watchlist} />);
+      expect(screen.getByText(/1 of 2 titles has no IMDb id/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Export for IMDb" }));
+
+      expect(exportCSV).toHaveBeenCalledWith(watchlist);
+      expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+      expect(click).toHaveBeenCalled();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:watchlist");
+    } finally {
+      Object.defineProperties(URL, {
+        createObjectURL: { configurable: true, value: originalCreateObjectURL },
+        revokeObjectURL: { configurable: true, value: originalRevokeObjectURL },
+      });
+    }
+  });
+
+  it("hides Export for IMDb when the watchlist is empty", () => {
+    render(<WatchlistImportDialog onClose={() => {}} watchlist={[]} />);
+    expect(screen.queryByRole("button", { name: "Export for IMDb" })).toBeNull();
   });
 });

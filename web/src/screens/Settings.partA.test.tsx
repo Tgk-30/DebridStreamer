@@ -563,6 +563,40 @@ describe("Settings · Appearance", () => {
     expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ appearanceBlur: 10 }));
   });
 
+  it("selecting a subtitle swatch applies subtitleTextColor", async () => {
+    const user = userEvent.setup();
+    renderAt("appearance");
+    await user.click(screen.getByRole("radio", { name: "Subtitle color #ffe066" }));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ subtitleTextColor: "#ffe066" }),
+    );
+  });
+
+  it("the subtitle font-scale range applies subtitleFontScale", () => {
+    renderAt("appearance");
+    const range = screen.getByRole("slider", { name: "Subtitle font scale" }) as HTMLInputElement;
+    fireEvent.change(range, { target: { value: "1.4" } });
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ subtitleFontScale: 1.4 }),
+    );
+  });
+
+  it("the subtitle background range applies subtitleBgOpacity", () => {
+    renderAt("appearance");
+    const range = screen.getByRole("slider", { name: "Subtitle background opacity" }) as HTMLInputElement;
+    fireEvent.change(range, { target: { value: "0.3" } });
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ subtitleBgOpacity: 0.3 }),
+    );
+  });
+
+  it("marks the saved subtitle color swatch active", () => {
+    renderAt("appearance", { subtitleTextColor: "#9be7ff" });
+    const swatch = screen.getByRole("radio", { name: "Subtitle color #9be7ff" });
+    expect(swatch).toHaveAttribute("aria-checked", "true");
+    expect(swatch).toHaveClass("is-active");
+  });
+
   it("toggling Smart preloading writes the per-device preference", async () => {
     const user = userEvent.setup();
     renderAt("appearance");

@@ -154,6 +154,7 @@ export function Watchlist() {
         <WatchlistImportDialog
           onClose={() => setImporting(false)}
           onImported={() => void reloadOrganization()}
+          watchlist={watchlist}
         />
       )}
 
