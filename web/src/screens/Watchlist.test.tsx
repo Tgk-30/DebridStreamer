@@ -10,7 +10,7 @@
 // on the `ready` prop and item title without the real image plumbing.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MediaPreview } from "../models/media";
 import type {
@@ -30,9 +30,20 @@ const createWatchlistFolder = vi.fn();
 const renameWatchlistFolder = vi.fn();
 const deleteWatchlistFolder = vi.fn();
 const assignWatchlistFolder = vi.fn();
+const importToWatchlist = vi.fn();
+const isTraktConnected = vi.hoisted(() => vi.fn());
+const getValidAccessToken = vi.hoisted(() => vi.fn());
+const fetchWatchlist = vi.hoisted(() => vi.fn());
+const pushWatchlist = vi.hoisted(() => vi.fn());
+const findByImdbId = vi.fn();
+const getDetail = vi.fn();
+const search = vi.fn();
+const getExternalIds = vi.fn();
+let serverMode = false;
 let mockWatchlist: MediaPreview[] = [];
 let mockCachedResolutions: Record<string, CachedResolutionRecord> = {};
 let mockContinueWatching: WatchHistoryRecord[] = [];
+const settings = { traktClientId: "trakt-client", traktClientSecret: "trakt-secret" };
 
 vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({
@@ -43,7 +54,30 @@ vi.mock("../store/AppStore", () => ({
     continueWatching: mockContinueWatching,
     openBrowse,
     navigate,
+    services: {
+      tmdb: { findByImdbId, getDetail, search, getExternalIds },
+    },
+    settings,
+    importToWatchlist,
   }),
+}));
+
+vi.mock("../lib/serverMode", () => ({ isServerMode: () => serverMode }));
+
+vi.mock("../data/traktConnection", () => ({
+  isTraktConnected,
+  getValidAccessToken,
+}));
+
+vi.mock("../services/sync/TraktSyncService", () => ({
+  TraktSyncService: class {
+    fetchWatchlist(...args: unknown[]) {
+      return fetchWatchlist(...args);
+    }
+    pushWatchlist(...args: unknown[]) {
+      return pushWatchlist(...args);
+    }
+  },
 }));
 
 vi.mock("../storage", () => ({
@@ -83,7 +117,7 @@ vi.mock("../data/useWatchedIds", () => ({
   useWatchedIds: () => mockWatchedIds,
 }));
 
-import { Watchlist } from "./Watchlist";
+import { shouldShowTraktWatchlistSync, Watchlist } from "./Watchlist";
 
 // --- helpers ----------------------------------------------------------------
 
@@ -104,6 +138,16 @@ beforeEach(() => {
   mockCachedResolutions = {};
   mockContinueWatching = [];
   mockWatchedIds = new Set<string>();
+  serverMode = false;
+  isTraktConnected.mockResolvedValue(false);
+  getValidAccessToken.mockResolvedValue("access-token");
+  fetchWatchlist.mockResolvedValue([]);
+  pushWatchlist.mockResolvedValue({});
+  findByImdbId.mockResolvedValue(null);
+  getDetail.mockReset();
+  search.mockResolvedValue({ items: [] });
+  getExternalIds.mockResolvedValue({ imdbId: null });
+  importToWatchlist.mockResolvedValue({ added: 0, skipped: 0 });
   listWatchlistFolders.mockResolvedValue([]);
   listWatchlistRows.mockResolvedValue([]);
   createWatchlistFolder.mockResolvedValue({ id: "folder-1", name: "New Folder" });
@@ -209,5 +253,35 @@ describe("Watchlist - populated", () => {
     await userEvent.type(screen.getByRole("searchbox", { name: /search watchlist/i }), "dune");
     expect(screen.getByText("card:Dune")).toBeInTheDocument();
     expect(screen.queryByText("card:Tenet")).not.toBeInTheDocument();
+  });
+});
+
+describe("Watchlist - Trakt pull", () => {
+  it("imports resolved Trakt movies and reports added and skipped titles", async () => {
+    isTraktConnected.mockResolvedValue(true);
+    fetchWatchlist.mockResolvedValue([
+      { imdbID: "tt0133093", title: "The Matrix", year: 1999 },
+    ]);
+    search.mockResolvedValue({
+      items: [preview("tmdb-603", "The Matrix")],
+    });
+    importToWatchlist.mockResolvedValue({ added: 1, skipped: 2 });
+
+    render(<Watchlist />);
+    const pull = await screen.findByRole("button", { name: "Pull from Trakt" });
+    await userEvent.click(pull);
+
+    await waitFor(() =>
+      expect(importToWatchlist).toHaveBeenCalledWith([
+        expect.objectContaining({ id: "tmdb-603", title: "The Matrix" }),
+      ]),
+    );
+    expect(fetchWatchlist).toHaveBeenCalledWith("trakt-client", "access-token");
+    expect(screen.getByText(/Pulled from Trakt: added 1, skipped 2 already saved/i)).toBeInTheDocument();
+  });
+
+  it("hides Trakt actions in Server Mode", () => {
+    expect(shouldShowTraktWatchlistSync(true, true)).toBe(false);
+    expect(shouldShowTraktWatchlistSync(true, false)).toBe(true);
   });
 });

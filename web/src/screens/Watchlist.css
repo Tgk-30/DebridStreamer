@@ -3,7 +3,9 @@
 
 .watchlist-folder-bar,
 .watchlist-tools,
-.watchlist-delete-confirm {
+.watchlist-delete-confirm,
+.watchlist-head-actions,
+.watchlist-sync-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -47,6 +49,26 @@
 
 .watchlist-tools {
   justify-content: space-between;
+}
+
+.watchlist-head-actions,
+.watchlist-sync-actions {
+  justify-content: flex-end;
+}
+
+.watchlist-sync-note,
+.watchlist-sync-status,
+.watchlist-sync-error {
+  margin: 0;
+  font-size: 13px;
+}
+
+.watchlist-sync-status {
+  color: var(--text-secondary);
+}
+
+.watchlist-sync-error {
+  color: var(--danger);
 }
 
 .watchlist-search {
@@ -142,6 +164,10 @@
 
   .watchlist-tools {
     align-items: stretch;
+  }
+
+  .watchlist-head-actions {
+    align-items: flex-end;
   }
 
   .watchlist-search {

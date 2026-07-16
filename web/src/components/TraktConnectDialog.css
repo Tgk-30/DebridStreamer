@@ -1,0 +1,79 @@
+/* Trakt device-code dialog. */
+
+.trakt-connect-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-xl);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.trakt-connect-dialog {
+  width: min(440px, 100%);
+  padding: var(--sp-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.trakt-connect-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+
+.trakt-connect-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.trakt-connect-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--glass-tint-control);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.trakt-connect-close:hover {
+  background: var(--glass-tint-control-hover);
+  color: var(--text-primary);
+}
+
+.trakt-connect-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-md);
+}
+
+.trakt-connect-note,
+.trakt-connect-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.trakt-connect-code {
+  padding: var(--sp-md) var(--sp-lg);
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  border-radius: var(--r-md);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--text-primary);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.trakt-connect-error {
+  color: var(--danger);
+}

@@ -71,6 +71,7 @@ vi.mock("../store/AppStore", () => ({
     updateSettings,
     simpleMode: mockSimpleMode,
   }),
+  useSimpleMode: () => mockSimpleMode,
 }));
 
 // qrcode is pulled in by DesktopHostPanel (which short-circuits when !isTauri),
@@ -241,6 +242,12 @@ describe("Settings tab gating (Server Mode)", () => {
     renderSettings(null);
     expect(await screen.findByRole("button", { name: "Appearance" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Server" })).not.toBeInTheDocument();
+  });
+
+  it("hides the personal Trakt connection section in Server Mode", async () => {
+    renderSettings();
+    await userEvent.click(await screen.findByRole("button", { name: "API keys" }));
+    expect(screen.queryByLabelText("Trakt connection")).not.toBeInTheDocument();
   });
 });
 

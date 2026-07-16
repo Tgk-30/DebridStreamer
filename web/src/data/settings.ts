@@ -68,6 +68,8 @@ const STORAGE_KEY = "debridstreamer.settings.v1";
  * `secret:<key>` marker left in the KV table so a later sweep can find them. */
 const SettingsKeys = {
   tmdbApiKey: "tmdb_api_key",
+  traktClientId: "trakt_client_id",
+  traktClientSecret: "trakt_client_secret",
   omdbApiKey: "omdb_api_key",
   builtInIndexersEnabled: "built_in_indexers_enabled",
   aiProvider: "ai_provider",
@@ -122,6 +124,8 @@ const SECRET_MARKER = "secret:";
 /** Keys whose values are credentials and must go through `SecretStore`. */
 const SECRET_KEYS = new Set<string>([
   SettingsKeys.tmdbApiKey,
+  SettingsKeys.traktClientId,
+  SettingsKeys.traktClientSecret,
   SettingsKeys.omdbApiKey,
   SettingsKeys.aiApiKey,
   SettingsKeys.openSubtitlesApiKey,
@@ -183,6 +187,11 @@ export function normalizeRatingScale(v: unknown): RatingScale {
 
 export interface AppSettings {
   tmdbKey: string;
+  /** Trakt OAuth app credentials (user-registered, like every other key in
+   *  this app). Empty until the user connects Trakt. The access/refresh tokens
+   *  themselves live outside AppSettings in traktConnection.ts. */
+  traktClientId: string;
+  traktClientSecret: string;
   omdbKey: string;
   debridTokens: DebridTokenEntry[];
   sources: SourceEntry[];
@@ -457,6 +466,8 @@ function normalizeSubtitleTextColor(value: unknown): string {
 export function defaultSettings(): AppSettings {
   return {
     tmdbKey: env("VITE_TMDB_KEY"),
+    traktClientId: "",
+    traktClientSecret: "",
     omdbKey: env("VITE_OMDB_KEY"),
     debridTokens: [],
     sources: [],
@@ -686,6 +697,8 @@ export function redactSecrets(settings: AppSettings): AppSettings {
   return {
     ...settings,
     tmdbKey: "",
+    traktClientId: "",
+    traktClientSecret: "",
     omdbKey: "",
     aiApiKey: "",
     openSubtitlesApiKey: "",
@@ -867,8 +880,17 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     skippedMigration = true;
   }
 
-  const [tmdbKey, omdbKey, aiApiKey, openSubtitlesApiKey] = await Promise.all([
+  const [
+    tmdbKey,
+    traktClientId,
+    traktClientSecret,
+    omdbKey,
+    aiApiKey,
+    openSubtitlesApiKey,
+  ] = await Promise.all([
     getStoredValue(SettingsKeys.tmdbApiKey),
+    getStoredValue(SettingsKeys.traktClientId),
+    getStoredValue(SettingsKeys.traktClientSecret),
     getStoredValue(SettingsKeys.omdbApiKey),
     getStoredValue(SettingsKeys.aiApiKey),
     getStoredValue(SettingsKeys.openSubtitlesApiKey),
@@ -985,6 +1007,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
 
   const loaded: AppSettings = {
     tmdbKey: tmdbKey ?? base.tmdbKey,
+    traktClientId: traktClientId ?? base.traktClientId,
+    traktClientSecret: traktClientSecret ?? base.traktClientSecret,
     omdbKey: omdbKey ?? base.omdbKey,
     debridTokens,
     sources,
@@ -1133,6 +1157,12 @@ export async function saveSettingsToStore(
   );
   const kvResults = await Promise.allSettled([
     setStoredValue(SettingsKeys.tmdbApiKey, settings.tmdbKey, mergeOnly),
+    setStoredValue(SettingsKeys.traktClientId, settings.traktClientId, mergeOnly),
+    setStoredValue(
+      SettingsKeys.traktClientSecret,
+      settings.traktClientSecret,
+      mergeOnly,
+    ),
     setStoredValue(SettingsKeys.omdbApiKey, settings.omdbKey, mergeOnly),
     setStoredValue(SettingsKeys.aiApiKey, settings.aiApiKey, mergeOnly),
     setStoredValue(

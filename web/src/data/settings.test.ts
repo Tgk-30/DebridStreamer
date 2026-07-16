@@ -823,7 +823,7 @@ describe("saveSettingsToStore", () => {
     await saveSettingsToStore(next, { previous });
 
     const scalarWrites = fakeStore.setSetting.mock.calls.filter(
-      ([key]) => !["tmdb_api_key", "omdb_api_key", "ai_api_key", "opensubtitles_api_key"].includes(key),
+      ([key]) => !["tmdb_api_key", "trakt_client_id", "trakt_client_secret", "omdb_api_key", "ai_api_key", "opensubtitles_api_key"].includes(key),
     );
     expect(scalarWrites).toEqual([["simple_mode", "false"]]);
   });
@@ -834,7 +834,7 @@ describe("saveSettingsToStore", () => {
     await saveSettingsToStore(current, { previous: current });
 
     const scalarWrites = fakeStore.setSetting.mock.calls.filter(
-      ([key]) => !["tmdb_api_key", "omdb_api_key", "ai_api_key", "opensubtitles_api_key"].includes(key),
+      ([key]) => !["tmdb_api_key", "trakt_client_id", "trakt_client_secret", "omdb_api_key", "ai_api_key", "opensubtitles_api_key"].includes(key),
     );
     expect(scalarWrites).toEqual([]);
   });

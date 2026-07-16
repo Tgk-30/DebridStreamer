@@ -112,6 +112,12 @@ import {
   DOWNLOADS_DIRECTORY_SETTING,
   downloadsDirectory,
 } from "../services/downloads";
+import {
+  clearTraktConnection,
+  isTraktConnected,
+  loadTraktConnection,
+} from "../data/traktConnection";
+import { TraktConnectDialog } from "../components/TraktConnectDialog";
 import "./Settings.css";
 
 /** The selectable external-source types. */
@@ -4582,6 +4588,7 @@ function ModelSelectField({ draft, patch }: TabProps) {
 
 function KeysTab({ draft, patch }: TabProps) {
   const [keyPanel, setKeyPanel] = useState<"catalog" | "assistant">("catalog");
+  const serverMode = isServerMode();
   const keyPanels: Array<{
     id: "catalog" | "assistant";
     label: string;
@@ -4640,44 +4647,47 @@ function KeysTab({ draft, patch }: TabProps) {
 
       <div className="settings-key-grid is-single">
         {keyPanel === "catalog" && (
-          <section className="settings-key-card glass-rest" aria-label="Catalog metadata credentials">
-            <Field
-              label="TMDB API key"
-              hint="Powers Discover, Search, and Detail metadata. Free to sign up."
-              helpUrl={signupUrl("tmdb") ?? undefined}
-              helpLabel="Get a free TMDB key"
-            >
-              <SecretInput
-                value={draft.tmdbKey}
-                onChange={(e) => patch({ tmdbKey: e.target.value })}
-                placeholder="v3 API key"
-              />
-            </Field>
-
-            {/* OMDB is optional enrichment on top of TMDB - an Advanced extra. */}
-            <AdvancedOnly>
-              <Field label="OMDB API key" hint="Optional IMDb / Rotten Tomatoes enrichment.">
+          <>
+            <section className="settings-key-card glass-rest" aria-label="Catalog metadata credentials">
+              <Field
+                label="TMDB API key"
+                hint="Powers Discover, Search, and Detail metadata. Free to sign up."
+                helpUrl={signupUrl("tmdb") ?? undefined}
+                helpLabel="Get a free TMDB key"
+              >
                 <SecretInput
-                  value={draft.omdbKey}
-                  onChange={(e) => patch({ omdbKey: e.target.value })}
-                  placeholder="OMDB key"
+                  value={draft.tmdbKey}
+                  onChange={(e) => patch({ tmdbKey: e.target.value })}
+                  placeholder="v3 API key"
                 />
               </Field>
-            </AdvancedOnly>
 
-            <Field
-              label="OpenSubtitles API key"
-              hint="Enables in-player subtitle search and download."
-              helpUrl={signupUrl("openSubtitles") ?? undefined}
-              helpLabel="Create an OpenSubtitles account"
-            >
-              <SecretInput
-                value={draft.openSubtitlesApiKey}
-                onChange={(e) => patch({ openSubtitlesApiKey: e.target.value })}
-                placeholder="OpenSubtitles key"
-              />
-            </Field>
-          </section>
+              {/* OMDB is optional enrichment on top of TMDB - an Advanced extra. */}
+              <AdvancedOnly>
+                <Field label="OMDB API key" hint="Optional IMDb / Rotten Tomatoes enrichment.">
+                  <SecretInput
+                    value={draft.omdbKey}
+                    onChange={(e) => patch({ omdbKey: e.target.value })}
+                    placeholder="OMDB key"
+                  />
+                </Field>
+              </AdvancedOnly>
+
+              <Field
+                label="OpenSubtitles API key"
+                hint="Enables in-player subtitle search and download."
+                helpUrl={signupUrl("openSubtitles") ?? undefined}
+                helpLabel="Create an OpenSubtitles account"
+              >
+                <SecretInput
+                  value={draft.openSubtitlesApiKey}
+                  onChange={(e) => patch({ openSubtitlesApiKey: e.target.value })}
+                  placeholder="OpenSubtitles key"
+                />
+              </Field>
+            </section>
+            {!serverMode && <TraktConnectionSection draft={draft} patch={patch} />}
+          </>
         )}
 
         {keyPanel === "assistant" && (
@@ -4736,6 +4746,132 @@ function KeysTab({ draft, patch }: TabProps) {
         )}
       </div>
     </div>
+  );
+}
+
+function TraktConnectionSection({ draft, patch }: TabProps) {
+  const [connection, setConnection] = useState<{
+    connected: boolean;
+    username: string | null;
+  }>({ connected: false, username: null });
+  const [checking, setChecking] = useState(true);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const loadConnection = useCallback(async () => {
+    try {
+      const connected = await isTraktConnected();
+      const stored = connected ? await loadTraktConnection() : null;
+      return {
+        connected,
+        username: stored?.meta.username ?? null,
+      };
+    } catch {
+      return { connected: false, username: null };
+    }
+  }, []);
+
+  const refreshConnection = useCallback(async () => {
+    setChecking(true);
+    setConnection(await loadConnection());
+    setChecking(false);
+  }, [loadConnection]);
+
+  useEffect(() => {
+    let active = true;
+    setChecking(true);
+    void loadConnection().then((next) => {
+      if (!active) return;
+      setConnection(next);
+      setChecking(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [loadConnection]);
+
+  async function disconnect() {
+    setDisconnecting(true);
+    try {
+      await clearTraktConnection();
+      await refreshConnection();
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  const hasCredentials =
+    draft.traktClientId.trim().length > 0 &&
+    draft.traktClientSecret.trim().length > 0;
+
+  return (
+    <section className="settings-key-card glass-rest" aria-label="Trakt connection">
+      <div className="settings-key-card-head">
+        <div>
+          <strong>Trakt</strong>
+          <p className="settings-hint">
+            Register a free app at trakt.tv/oauth/applications, then paste its Client ID and Secret.
+          </p>
+        </div>
+      </div>
+
+      <Field label="Trakt Client ID">
+        <SecretInput
+          value={draft.traktClientId}
+          onChange={(event) => patch({ traktClientId: event.target.value })}
+          placeholder="Client ID"
+        />
+      </Field>
+      <Field label="Trakt Client Secret">
+        <SecretInput
+          value={draft.traktClientSecret}
+          onChange={(event) => patch({ traktClientSecret: event.target.value })}
+          placeholder="Client Secret"
+        />
+      </Field>
+
+      <div className="settings-model-row">
+        <span className="settings-model-msg t-secondary" aria-live="polite">
+          {checking
+            ? "Checking Trakt connection…"
+            : connection.connected
+              ? `Connected${connection.username != null ? ` as ${connection.username}` : ""}`
+              : "Not connected"}
+        </span>
+        {connection.connected ? (
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => void disconnect()}
+            disabled={disconnecting}
+          >
+            {disconnecting ? "Disconnecting…" : "Disconnect"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-prominent btn-sm"
+            onClick={() => setDialogOpen(true)}
+            disabled={!hasCredentials || checking}
+          >
+            Connect
+          </button>
+        )}
+      </div>
+
+      <p className="settings-model-msg t-secondary">
+        Syncs the movie watchlist only. Series, history, ratings, and background sync are not included.
+      </p>
+
+      {dialogOpen && (
+        <TraktConnectDialog
+          clientId={draft.traktClientId.trim()}
+          clientSecret={draft.traktClientSecret.trim()}
+          onClose={() => setDialogOpen(false)}
+          onConnected={() => void refreshConnection()}
+        />
+      )}
+    </section>
   );
 }
 

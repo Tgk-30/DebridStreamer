@@ -14,7 +14,7 @@
 // debrid/ai model modules drive the provider/option lists (no mock needed).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { defaultSettings, type AppSettings } from "../data/settings";
 
@@ -25,6 +25,9 @@ let mockSimpleMode = false;
 const updateSettings = vi.fn();
 const getAppVersion = vi.hoisted(() => vi.fn(async () => "test-version"));
 const setSmartPreloadEnabled = vi.fn();
+const isTraktConnected = vi.hoisted(() => vi.fn());
+const loadTraktConnection = vi.hoisted(() => vi.fn());
+const clearTraktConnection = vi.hoisted(() => vi.fn());
 let smartPreloadOn = false;
 
 vi.mock("../store/AppStore", () => ({
@@ -78,6 +81,12 @@ vi.mock("../lib/smartPreload", () => ({
   },
 }));
 
+vi.mock("../data/traktConnection", () => ({
+  isTraktConnected,
+  loadTraktConnection,
+  clearTraktConnection,
+}));
+
 // QRCode is only used in desktop-host (mocked tauri = not desktop), but import
 // it harmlessly so the module graph stays satisfied.
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn(async () => "data:,") } }));
@@ -104,6 +113,12 @@ beforeEach(() => {
   updateSettings.mockClear();
   getAppVersion.mockClear();
   setSmartPreloadEnabled.mockClear();
+  isTraktConnected.mockReset();
+  loadTraktConnection.mockReset();
+  clearTraktConnection.mockReset();
+  isTraktConnected.mockResolvedValue(false);
+  loadTraktConnection.mockResolvedValue(null);
+  clearTraktConnection.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -232,6 +247,25 @@ describe("Settings · API keys (catalog)", () => {
   it("reflects an existing OpenSubtitles key value from the draft", () => {
     renderAt("keys", { openSubtitlesApiKey: "os-key-123" });
     expect(screen.getByPlaceholderText("OpenSubtitles key")).toHaveValue("os-key-123");
+  });
+
+  it("keeps Connect disabled until both Trakt credentials are present", async () => {
+    renderAt("keys");
+    const connect = await screen.findByRole("button", { name: "Connect" });
+    expect(connect).toBeDisabled();
+  });
+
+  it("disconnects an existing Trakt connection", async () => {
+    const user = userEvent.setup();
+    isTraktConnected.mockResolvedValue(true);
+    loadTraktConnection.mockResolvedValue({
+      meta: { username: "alice" },
+    });
+    renderAt("keys", { traktClientId: "client", traktClientSecret: "secret" });
+
+    expect(await screen.findByText("Connected as alice")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Disconnect" }));
+    await waitFor(() => expect(clearTraktConnection).toHaveBeenCalledTimes(1));
   });
 
   it("switches to the Assistant AI panel and shows the provider select", async () => {

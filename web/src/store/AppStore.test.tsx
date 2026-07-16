@@ -171,6 +171,8 @@ import { RemoteStore as MockRemoteStore } from "../storage/RemoteStore";
 function settings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
     tmdbKey: "",
+    traktClientId: "",
+    traktClientSecret: "",
     omdbKey: "",
     debridTokens: [],
     sources: [],
