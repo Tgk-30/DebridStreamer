@@ -38,6 +38,7 @@ import {
 } from "../lib/playbackEngine";
 import type { PlaybackPrefs } from "../storage/models";
 import { Icon } from "./Icon";
+import { CastControls } from "./CastControls";
 import { PlayerInfoPopover } from "./player/PlayerInfoPopover";
 import {
   PlayerPauseOverlay,
@@ -89,6 +90,7 @@ interface Track {
   selected: boolean;
   codec: string | null;
   external: boolean;
+  sourceUrl: string | null;
 }
 interface Chapter {
   title: string;
@@ -187,6 +189,11 @@ function parseTracks(raw: unknown): Track[] {
       selected: t.selected === true,
       codec: typeof t.codec === "string" ? t.codec : null,
       external: t.external === true,
+      sourceUrl:
+        typeof t["external-filename"] === "string" &&
+        /^https?:\/\//i.test(t["external-filename"])
+          ? t["external-filename"]
+          : null,
     });
   }
   return out;
@@ -433,6 +440,7 @@ export function EmbeddedPlayer({
   const [detailsSection, setDetailsSection] = useState<"info" | "shortcuts" | null>(null);
   const [scrubbing, setScrubbing] = useState(false);
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
+  const [castSuspended, setCastSuspended] = useState(false);
   // Source dimensions are diagnostic only. Player chrome is deliberately never
   // fitted to this rectangle: it belongs to the window, while mpv owns genuine
   // source-aspect letterboxing inside its full-window native surface.
@@ -463,15 +471,37 @@ export function EmbeddedPlayer({
   const endedRef = useRef(false);
   const lastAudibleVolume = useRef(100);
   const menuOpenRef = useRef(false);
+  const wasCastSuspendedRef = useRef(false);
+  const castSuspendedRef = useRef(castSuspended);
+  const pausedBeforeCastRef = useRef(false);
   menuOpenRef.current = menu != null || detailsSection != null;
   const chaptersRef = useRef(chapters);
   chaptersRef.current = chapters;
 
   durRef.current = dur;
   pausedRef.current = paused;
+  castSuspendedRef.current = castSuspended;
 
   const audioTracks = useMemo(() => tracks.filter((t) => t.type === "audio"), [tracks]);
   const subTracks = useMemo(() => tracks.filter((t) => t.type === "sub"), [tracks]);
+  const activeSubtitleUrl = useMemo(
+    () =>
+      subTracks.find((track) => String(track.id) === activeSid)?.sourceUrl ??
+      null,
+    [activeSid, subTracks],
+  );
+
+  useEffect(() => {
+    if (castSuspended && !wasCastSuspendedRef.current) {
+      pausedBeforeCastRef.current = pausedRef.current;
+      void setProperty("pause", true).catch(() => {});
+    } else if (!castSuspended && wasCastSuspendedRef.current) {
+      if (!pausedBeforeCastRef.current) {
+        void setProperty("pause", false).catch(() => {});
+      }
+    }
+    wasCastSuspendedRef.current = castSuspended;
+  }, [castSuspended]);
 
   // Page transparent + app UI hidden so the native mpv surface shows through.
   useEffect(() => {
@@ -728,6 +758,9 @@ export function EmbeddedPlayer({
             : [url, "replace", "-1", `start=+${resumeSeconds}`],
         );
         await setProperty("pause", false);
+        if (castSuspendedRef.current) {
+          await setProperty("pause", true);
+        }
         startedRef.current = true;
         // Arm the first-frame watchdog. loadfile has been accepted, but mpv can
         // still stall forever without ever decoding a frame; if we're still
@@ -1036,6 +1069,7 @@ export function EmbeddedPlayer({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (castSuspendedRef.current) return;
       // Escape owns the player-level dismissal ladder. Capture it before a
       // hidden chrome control or the transparent native-video surface can let
       // the WebView's default Escape handling consume the first press.
@@ -1168,8 +1202,12 @@ export function EmbeddedPlayer({
   // app overlays that would otherwise become its fixed-position containing block.
   return createPortal(
     <div
-      className={`embed-player${
-        controlsVisible || menu != null || detailsSection != null || fullscreenError != null
+      className={`embed-player${castSuspended ? " is-casting" : ""}${
+        controlsVisible ||
+        menu != null ||
+        detailsSection != null ||
+        fullscreenError != null ||
+        castSuspended
           ? " show-controls"
           : ""
       }`}
@@ -1179,8 +1217,8 @@ export function EmbeddedPlayer({
           (not the controls) toggles play/pause. */}
       <div
         className="embed-stage"
-        onClick={handleStageClick}
-        onDoubleClick={handleStageDoubleClick}
+        onClick={castSuspended ? undefined : handleStageClick}
+        onDoubleClick={castSuspended ? undefined : handleStageDoubleClick}
       />
 
       {buffering && !ended && !paused && (
@@ -1359,6 +1397,11 @@ export function EmbeddedPlayer({
             </div>
 
             <div className="embed-buttons-right">
+              <CastControls
+                media={{ url, title, subtitleUrl: activeSubtitleUrl }}
+                buttonClassName="embed-icon-btn"
+                onLocalPlaybackChange={setCastSuspended}
+              />
               {onPlayNext != null && (
                 <button
                   type="button"

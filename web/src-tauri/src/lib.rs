@@ -27,6 +27,9 @@ mod server_host;
 // Native downloads and optional ffmpeg optimization pipeline.
 mod downloads;
 
+// DLNA/UPnP discovery and transport control for LAN MediaRenderers.
+mod cast;
+
 // The external players we can detect + hand a stream to, in default-preference
 // order. macOS entries are .app names (opened via LaunchServices); "mpv" is also
 // probed on PATH for a CLI/Homebrew install with no .app.
@@ -296,6 +299,11 @@ pub fn run() {
             downloads::transcode_cancel,
             downloads::downloads_ffmpeg_available,
             downloads::downloads_default_dir,
+            cast::cast_discover,
+            cast::cast_load,
+            cast::cast_control,
+            cast::cast_status,
+            cast::cast_set_volume,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

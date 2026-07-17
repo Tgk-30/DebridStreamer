@@ -4,6 +4,7 @@ import {
   AudioLines,
   CalendarDays,
   Captions,
+  Cast,
   Check,
   CircleHelp,
   Compass,
@@ -18,6 +19,7 @@ import {
   Info,
   Maximize,
   Minimize,
+  Pause,
   Play,
   RefreshCw,
   RotateCcw,
@@ -49,6 +51,7 @@ export type IconName =
   | "settings"
   | "search"
   | "play"
+  | "pause"
   | "star"
   | "sparkles"
   | "sliders"
@@ -62,6 +65,7 @@ export type IconName =
   | "refresh"
   | "share"
   | "captions"
+  | "cast"
   | "audio"
   | "check"
   | "copy"
@@ -98,6 +102,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   settings: SlidersHorizontal,
   search: Search,
   play: Play,
+  pause: Pause,
   star: Star,
   sparkles: Sparkles,
   sliders: SlidersHorizontal,
@@ -111,6 +116,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   refresh: RefreshCw,
   share: Share2,
   captions: Captions,
+  cast: Cast,
   audio: AudioLines,
   check: Check,
   help: CircleHelp,

@@ -26,6 +26,21 @@ html.mpv-active .embed-player * {
   color: #fff;
   font-family: inherit;
 }
+.embed-player.is-casting {
+  background: #07080e;
+}
+.embed-player.is-casting .embed-stage {
+  background: #07080e;
+}
+.embed-player.is-casting .embed-spinner,
+.embed-player.is-casting .player-pause-overlay,
+.embed-player.is-casting .embed-endcard {
+  display: none;
+}
+.embed-player.is-casting .embed-bottom {
+  visibility: hidden;
+  pointer-events: none;
+}
 .embed-player:not(.show-controls) {
   cursor: none;
 }

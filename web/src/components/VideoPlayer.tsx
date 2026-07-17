@@ -40,6 +40,7 @@ import { useScrubThumbnails } from "./player/useScrubThumbnails";
 import { ScrubBar } from "./player/ScrubBar";
 import { CaptionsMenu } from "./player/CaptionsMenu";
 import { EmbeddedPlayer } from "./EmbeddedPlayer";
+import { CastControls } from "./CastControls";
 import type { PlaybackPrefs } from "../storage/models";
 import {
   currentViewportPixelSize,
@@ -306,6 +307,8 @@ export function VideoPlayer({
   const [webChromeVisible, setWebChromeVisible] = useState(true);
   const [webviewPaused, setWebviewPaused] = useState(false);
   const [captionsOpen, setCaptionsOpen] = useState(false);
+  const [castSuspended, setCastSuspended] = useState(false);
+  const [activeSubtitleUrl, setActiveSubtitleUrl] = useState<string | null>(null);
   const [chromeHovered, setChromeHovered] = useState(false);
   const [chromeFocused, setChromeFocused] = useState(false);
   const chromeHideTimer = useRef<number | undefined>(undefined);
@@ -420,6 +423,8 @@ export function VideoPlayer({
   // mpv's `--wid` in-window embedding is unreliable, so mpv typically opens its
   // own window - see src-tauri/src/player.rs. mpv is stopped when this closes.
   const startedMpvRef = useRef(false);
+  const castSuspendedRef = useRef(castSuspended);
+  castSuspendedRef.current = castSuspended;
   useEffect(() => {
     if (mode !== "external" || !underTauri || useEmbedded) return;
     let cancelled = false;
@@ -429,6 +434,11 @@ export function VideoPlayer({
       .then((res) => {
         if (cancelled) return;
         startedMpvRef.current = true;
+        if (castSuspendedRef.current) {
+          void import("../lib/tauri")
+            .then(({ mpvPause }) => mpvPause())
+            .catch(() => {});
+        }
         setExternalStatus(
           res.embedded
             ? "Playing in the bundled mpv (in-window embedding attempted)."
@@ -457,6 +467,15 @@ export function VideoPlayer({
       }
     };
   }, [mode, underTauri, effectiveUrl, preferredPlayer, useEmbedded]);
+
+  useEffect(() => {
+    if (mode !== "external" || useEmbedded || !startedMpvRef.current) return;
+    void import("../lib/tauri")
+      .then(({ mpvPause, mpvResume }) =>
+        castSuspended ? mpvPause() : mpvResume(),
+      )
+      .catch(() => {});
+  }, [castSuspended, mode, useEmbedded]);
 
   // In-window native player takes over the whole window (transparent surface +
   // hidden app chrome), so render it standalone - outside the modal frame.
@@ -511,6 +530,15 @@ export function VideoPlayer({
             {subtitle && <span className="player-subtitle">{subtitle}</span>}
           </div>
           <div className="player-bar-actions">
+            <CastControls
+              media={{
+                url: effectiveUrl,
+                title,
+                subtitleUrl: activeSubtitleUrl,
+              }}
+              buttonClassName="player-info-button"
+              onLocalPlaybackChange={setCastSuspended}
+            />
             <button
               type="button"
               className="player-info-button"
@@ -564,6 +592,8 @@ export function VideoPlayer({
             onActivity={nudgeChrome}
             onPausedChange={setWebviewPaused}
             onCaptionsOpenChange={setCaptionsOpen}
+            suspended={castSuspended}
+            onActiveSubtitleUrlChange={setActiveSubtitleUrl}
             onOpenShortcuts={() => setDetailsSection("shortcuts")}
             onSourceSize={setSourceSize}
             onProgress={onProgress}
@@ -611,6 +641,8 @@ function WebviewPlayer({
   onActivity,
   onPausedChange,
   onCaptionsOpenChange,
+  suspended,
+  onActiveSubtitleUrlChange,
   onOpenShortcuts,
   onSourceSize,
   onProgress,
@@ -638,6 +670,8 @@ function WebviewPlayer({
   onActivity: () => void;
   onPausedChange: (paused: boolean) => void;
   onCaptionsOpenChange: (open: boolean) => void;
+  suspended: boolean;
+  onActiveSubtitleUrlChange: (url: string | null) => void;
   onOpenShortcuts: () => void;
   onSourceSize: (size: PixelSize | null) => void;
   onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
@@ -654,6 +688,9 @@ function WebviewPlayer({
   autoCountdown?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const pausedForCastRef = useRef(false);
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
   const scrubberRef = useRef<WebviewScrubberHandle | null>(null);
   const [duration, setDuration] = useState(0);
   const [captionsOpen, setCaptionsOpen] = useState(false);
@@ -667,6 +704,31 @@ function WebviewPlayer({
   }, [captionsOpen, onCaptionsOpenChange]);
 
   const subs = useSubtitleTracks(subtitleClient, translator);
+  useEffect(() => {
+    const activeTrack = subs.tracks.find(
+      (track) => track.id === subs.activeTrackId,
+    );
+    const subtitleUrl =
+      activeTrack != null && /^https?:\/\//i.test(activeTrack.vttUrl)
+        ? activeTrack.vttUrl
+        : null;
+    onActiveSubtitleUrlChange(subtitleUrl);
+    return () => onActiveSubtitleUrlChange(null);
+  }, [onActiveSubtitleUrlChange, subs.activeTrackId, subs.tracks]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video == null) return;
+    if (suspended) {
+      pausedForCastRef.current = !video.paused;
+      video.pause();
+      return;
+    }
+    if (pausedForCastRef.current) {
+      pausedForCastRef.current = false;
+      void video.play().catch(() => {});
+    }
+  }, [suspended]);
   // Thumbnails only work on a progressive source the browser can re-open and
   // seek (MP4/WebM). For HLS the manifest URL can't drive a second <video>
   // reliably, so gate them to non-HLS in-webview sources.
@@ -767,6 +829,10 @@ function WebviewPlayer({
       }
     };
     const onPlay = () => {
+      if (suspendedRef.current) {
+        video.pause();
+        return;
+      }
       setPaused(false);
       onPausedChange(false);
       if (scrobbleContext != null) {
@@ -879,6 +945,7 @@ function WebviewPlayer({
       const video = videoRef.current;
       if (video == null) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (suspendedRef.current) return;
       onActivity();
       if (shouldIgnoreShortcut(e.target, video)) return;
       const dur = Number.isFinite(video.duration) ? video.duration : 0;
@@ -960,7 +1027,10 @@ function WebviewPlayer({
   }, []);
 
   return (
-    <div className="webview-player" onPointerMove={onActivity}>
+    <div
+      className={`webview-player${suspended ? " is-casting" : ""}`}
+      onPointerMove={onActivity}
+    >
       <div className="player-stage">
         <video
           ref={videoRef}
@@ -981,6 +1051,13 @@ function WebviewPlayer({
           ))}
         </video>
       </div>
+
+      {suspended && (
+        <div className="cast-local-placeholder" aria-hidden="true">
+          <Icon name="cast" size={36} />
+          <span>Playing on your cast device</span>
+        </div>
+      )}
 
       {paused && !ended && !captionsOpen && !detailsOpen && !scrubbing && (
         <PlayerPauseOverlay

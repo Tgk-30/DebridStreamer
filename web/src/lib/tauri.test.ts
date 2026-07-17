@@ -43,6 +43,12 @@ import {
   downloadCancel,
   downloadForceStop,
   listenDownloadProgress,
+  castDiscover,
+  castLoad,
+  castControl,
+  castStatus,
+  castSetVolume,
+  type CastDevice,
   type DesktopServerStatus,
   type MpvPlayResult,
 } from "./tauri";
@@ -161,6 +167,79 @@ describe("mpv control commands (no isTauri gate)", () => {
     invokeMock.mockResolvedValue(undefined);
     await mpvStop();
     expect(invokeMock).toHaveBeenCalledWith("mpv_stop");
+  });
+});
+
+describe("DLNA cast IPC bridge", () => {
+  const device: CastDevice = {
+    id: "uuid:tv-1",
+    name: "Living Room TV",
+    avControlUrl: "http://10.0.0.10/av",
+    renderingControlUrl: "http://10.0.0.10/volume",
+    location: "http://10.0.0.10/device.xml",
+  };
+
+  it("guards every cast command outside Tauri", async () => {
+    await expect(castDiscover()).rejects.toThrow(/Not running under Tauri/);
+    await expect(
+      castLoad(device, "https://cdn.example/movie.mkv", "Movie"),
+    ).rejects.toThrow(/Not running under Tauri/);
+    await expect(castControl(device, "pause")).rejects.toThrow(
+      /Not running under Tauri/,
+    );
+    await expect(castStatus(device)).rejects.toThrow(/Not running under Tauri/);
+    await expect(castSetVolume(device, 50)).rejects.toThrow(
+      /Not running under Tauri/,
+    );
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the typed native command payloads", async () => {
+    enterTauri();
+    invokeMock
+      .mockResolvedValueOnce([device])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({
+        state: "PLAYING",
+        positionSecs: 12,
+        durationSecs: 120,
+      })
+      .mockResolvedValueOnce(undefined);
+
+    await expect(castDiscover(1800)).resolves.toEqual([device]);
+    await castLoad(
+      device,
+      "https://cdn.example/movie.mkv",
+      "Movie & More",
+      "https://cdn.example/movie.srt",
+    );
+    await castControl(device, "seek", 42);
+    await expect(castStatus(device)).resolves.toEqual({
+      state: "PLAYING",
+      positionSecs: 12,
+      durationSecs: 120,
+    });
+    await castSetVolume(device, 101);
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "cast_discover", {
+      timeoutMs: 1800,
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "cast_load", {
+      args: {
+        device,
+        url: "https://cdn.example/movie.mkv",
+        title: "Movie & More",
+        subtitleUrl: "https://cdn.example/movie.srt",
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, "cast_control", {
+      args: { device, action: "seek", positionSecs: 42 },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(4, "cast_status", { device });
+    expect(invokeMock).toHaveBeenNthCalledWith(5, "cast_set_volume", {
+      args: { device, level: 100 },
+    });
   });
 });
 

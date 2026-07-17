@@ -54,6 +54,91 @@ export async function listExternalPlayers(): Promise<string[]> {
   }
 }
 
+// DLNA casting bridge. The TV fetches the public debrid stream directly; the
+// desktop app only discovers renderers and sends UPnP control messages.
+
+export interface CastDevice {
+  id: string;
+  name: string;
+  avControlUrl: string;
+  renderingControlUrl: string | null;
+  location: string;
+}
+
+export interface CastStatus {
+  state: string;
+  positionSecs: number;
+  durationSecs: number;
+}
+
+export type CastAction = "play" | "pause" | "stop" | "seek";
+
+function requireTauriCasting(): void {
+  if (!isTauri()) {
+    throw new Error("Not running under Tauri - no LAN casting available.");
+  }
+}
+
+export async function castDiscover(timeoutMs = 2500): Promise<CastDevice[]> {
+  requireTauriCasting();
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<CastDevice[]>("cast_discover", { timeoutMs });
+}
+
+export async function castLoad(
+  device: CastDevice,
+  url: string,
+  title: string,
+  subtitleUrl?: string | null,
+): Promise<void> {
+  requireTauriCasting();
+  if (/^https?:\/\//i.test(url) && !isRequestExempt(url)) {
+    assertNetworkAllowed("streaming", "DLNA cast");
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("cast_load", {
+    args: {
+      device,
+      url,
+      title,
+      subtitleUrl: subtitleUrl ?? null,
+    },
+  });
+}
+
+export async function castControl(
+  device: CastDevice,
+  action: CastAction,
+  positionSecs?: number | null,
+): Promise<void> {
+  requireTauriCasting();
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("cast_control", {
+    args: {
+      device,
+      action,
+      positionSecs: positionSecs ?? null,
+    },
+  });
+}
+
+export async function castStatus(device: CastDevice): Promise<CastStatus> {
+  requireTauriCasting();
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<CastStatus>("cast_status", { device });
+}
+
+export async function castSetVolume(
+  device: CastDevice,
+  level: number,
+): Promise<void> {
+  requireTauriCasting();
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("cast_set_volume", {
+    args: { device, level: Math.max(0, Math.min(100, Math.round(level))) },
+  });
+}
+
 /** Result of {@link playWithMpv}: whether mpv attempted in-window embedding and
  * a human-readable status. On macOS `embedded` being true does NOT guarantee the
  * video rendered inside the app window - mpv often falls back to its own window
