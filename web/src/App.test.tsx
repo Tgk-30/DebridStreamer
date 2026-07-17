@@ -245,6 +245,7 @@ vi.mock("./components/TierOnboarding", () => ({
 let sessionValue: { role: string } | null = null;
 vi.mock("./lib/ServerSessionContext", () => ({
   useServerSession: () => sessionValue,
+  useServerProfiles: () => [],
 }));
 
 let firstRunValue = false;

@@ -436,6 +436,9 @@ interface ServerUsageProfile {
   totalBytes: number;
   streamCount: number;
   lastAccessedAt: string | null;
+  bandwidthCapBytes?: number | null;
+  bandwidthUsageBytes?: number;
+  bandwidthStatus?: "ok" | "approaching" | "over";
 }
 
 interface ServerUsage {
@@ -445,6 +448,9 @@ interface ServerUsage {
   lastAccessedAt?: string | null;
   sessions?: ServerUsageSession[];
   profiles?: ServerUsageProfile[];
+  bandwidthCapBytes?: number | null;
+  bandwidthUsageBytes?: number;
+  bandwidthStatus?: "ok" | "approaching" | "over";
 }
 
 interface ServerHealth {
@@ -3752,6 +3758,9 @@ function ServerUsagePanel({ usage }: { usage: ServerUsage }) {
               </span>
               <span className="t-secondary">
                 {formatBytes(profile.totalBytes)} · {profile.streamCount} streams
+                {profile.bandwidthCapBytes != null
+                  ? ` · ${formatBytes(profile.bandwidthUsageBytes ?? 0)} of ${formatBytes(profile.bandwidthCapBytes)} cap (${profile.bandwidthStatus ?? "ok"})`
+                  : " · No monthly cap"}
               </span>
             </div>
           ))}

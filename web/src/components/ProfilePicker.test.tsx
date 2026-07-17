@@ -21,6 +21,8 @@ const createAccountProfile = vi.fn();
 const switchAccountProfile = vi.fn();
 const updateAccountProfile = vi.fn();
 const deleteAccountProfile = vi.fn();
+const setProfilePin = vi.fn();
+const setProfileBandwidthQuota = vi.fn();
 
 vi.mock("../lib/serverApi", () => ({
   fetchAccountProfiles: (...a: unknown[]) => fetchAccountProfiles(...a),
@@ -28,10 +30,12 @@ vi.mock("../lib/serverApi", () => ({
   switchAccountProfile: (...a: unknown[]) => switchAccountProfile(...a),
   updateAccountProfile: (...a: unknown[]) => updateAccountProfile(...a),
   deleteAccountProfile: (...a: unknown[]) => deleteAccountProfile(...a),
+  setProfilePin: (...a: unknown[]) => setProfilePin(...a),
+  setProfileBandwidthQuota: (...a: unknown[]) => setProfileBandwidthQuota(...a),
 }));
 
 // ---- ServerSessionContext mocks --------------------------------------------
-let mockSession: { profileId: string } | null;
+let mockSession: { profileId: string; role?: "owner" | "admin" | "member" } | null;
 let mockProfiles: ServerProfileSummary[];
 const setSession = vi.fn();
 const setProfiles = vi.fn();
@@ -59,6 +63,10 @@ function profile(over: Partial<ServerProfileSummary> = {}): ServerProfileSummary
     simpleMode: false,
     isDefault: true,
     isKid: false,
+    hasPin: false,
+    bandwidthCapBytes: null,
+    bandwidthUsageBytes: 0,
+    bandwidthStatus: "ok",
     ...over,
   };
 }
@@ -77,6 +85,12 @@ beforeEach(() => {
     activeProfileId: "p1",
   });
   reloadProfileData.mockResolvedValue(undefined);
+  setProfilePin.mockResolvedValue({
+    profiles: { profiles: mockProfiles, activeProfileId: "p1" },
+  });
+  setProfileBandwidthQuota.mockResolvedValue({
+    profiles: { profiles: mockProfiles, activeProfileId: "p1" },
+  });
 });
 
 describe("ProfilePicker grid", () => {
@@ -187,6 +201,50 @@ describe("ProfilePicker switch", () => {
     expect(await screen.findByText("boom")).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it("shows a lock and prompts for the target profile PIN before switching", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const lockedBob = profile({ id: "p2", displayName: "Bob", isDefault: false, hasPin: true });
+    mockProfiles = [ALICE, lockedBob, KID];
+    switchAccountProfile.mockResolvedValue({
+      session: {
+        profileId: "p2",
+        username: "bob",
+        displayName: "Bob",
+        role: "member",
+        avatarColor: "#22c55e",
+        simpleMode: true,
+      },
+      profiles: { profiles: mockProfiles, activeProfileId: "p2" },
+    });
+
+    render(<ProfilePicker onClose={onClose} />);
+    expect(screen.getByLabelText("PIN protected")).toBeInTheDocument();
+    await user.click(screen.getByText("Bob"));
+    expect(screen.getByRole("dialog", { name: "Enter profile PIN" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+
+    await waitFor(() => expect(switchAccountProfile).toHaveBeenCalledWith("p2", "1234"));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it("shows Incorrect PIN after a 403 and leaves the current profile in place", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    mockProfiles = [ALICE, profile({ id: "p2", displayName: "Bob", isDefault: false, hasPin: true })];
+    switchAccountProfile.mockRejectedValue(Object.assign(new Error("protected"), { status: 403 }));
+
+    render(<ProfilePicker onClose={onClose} />);
+    await user.click(screen.getByText("Bob"));
+    await user.type(screen.getByLabelText("PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+
+    expect(await screen.findByText("Incorrect PIN")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(setSession).not.toHaveBeenCalled();
+  });
 });
 
 describe("ProfilePicker edit mode", () => {
@@ -215,6 +273,56 @@ describe("ProfilePicker edit mode", () => {
 
     await user.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.queryByText("Add profile")).not.toBeInTheDocument();
+  });
+
+  it("sets and clears a PIN, with the honest household-gate copy", async () => {
+    const user = userEvent.setup();
+    setProfilePin.mockImplementationOnce(() => {
+      mockProfiles = [profile({ id: "p1", displayName: "Alice", hasPin: true }), BOB, KID];
+      return Promise.resolve({ profiles: { profiles: mockProfiles, activeProfileId: "p1" } });
+    });
+    render(<ProfilePicker onClose={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Manage profiles" }));
+    await user.click(screen.getByRole("button", { name: "Set PIN for Alice" }));
+
+    expect(
+      screen.getByText("A household gate - it asks for a PIN to switch into this profile. It is not encryption and does not protect your data files."),
+    ).toBeInTheDocument();
+    await user.type(screen.getByLabelText("New PIN (4-6 digits)"), "1234");
+    await user.type(screen.getByLabelText("Confirm PIN"), "1234");
+    await user.click(screen.getByRole("button", { name: "Set PIN" }));
+    await waitFor(() => expect(setProfilePin).toHaveBeenCalledWith("p1", "1234"));
+
+    // The picker now has the refreshed list from Set PIN, including its clear
+    // action.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove PIN for Alice" })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Remove PIN for Alice" }));
+    await waitFor(() => expect(setProfilePin).toHaveBeenCalledWith("p1", null));
+  });
+
+  it("owner sets and clears a warn-only monthly cap", async () => {
+    const user = userEvent.setup();
+    mockSession = { profileId: "p1", role: "owner" };
+    setProfileBandwidthQuota.mockImplementationOnce(() => {
+      mockProfiles = [
+        profile({ id: "p1", displayName: "Alice", bandwidthCapBytes: 1024 ** 3 }),
+        BOB,
+        KID,
+      ];
+      return Promise.resolve({ profiles: { profiles: mockProfiles, activeProfileId: "p1" } });
+    });
+    render(<ProfilePicker onClose={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Manage profiles" }));
+    await user.click(screen.getByRole("button", { name: "Set monthly cap for Alice" }));
+    await user.type(screen.getByLabelText("Monthly cap (GB)"), "1");
+    await user.click(screen.getByRole("button", { name: "Save cap" }));
+    await waitFor(() =>
+      expect(setProfileBandwidthQuota).toHaveBeenCalledWith("p1", 1024 ** 3),
+    );
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Clear monthly cap for Alice" })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Clear monthly cap for Alice" }));
+    await waitFor(() => expect(setProfileBandwidthQuota).toHaveBeenCalledWith("p1", null));
   });
 
   it("Add → ProfileForm creates a profile and returns to the grid", async () => {

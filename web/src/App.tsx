@@ -45,6 +45,7 @@ import { GlobalSearch } from "./components/GlobalSearch";
 import { ProfileMenu } from "./components/ProfileMenu";
 import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { BandwidthWarningBanner } from "./components/BandwidthWarningBanner";
 import { InstallPrompt, isInstallPromptEligible } from "./components/InstallPrompt";
 import { LocalPlayerHost } from "./components/LocalPlayerHost";
 // Eager (not lazy): the lock screen must paint in the SAME commit as the app
@@ -576,6 +577,7 @@ export function App() {
     // (App.css) so the last content row is never stranded behind it.
     <div className="app" data-setup-nudge={showSetupNudge || showInstallPrompt || undefined}>
       <div className="aurora-glow" />
+      <BandwidthWarningBanner />
 
       <NavRail
         selected={route}

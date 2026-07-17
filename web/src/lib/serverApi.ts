@@ -310,9 +310,15 @@ export interface AccountProfile {
   isKid: boolean;
   /** US movie cert cap ("G"|"PG"|"PG-13"|"R"|"NC-17"), or null when not a kid. */
   maturityMax: string | null;
+  /** A server-side household PIN is set. The PIN hash never leaves the server. */
+  hasPin?: boolean;
+  /** Warn-only rolling 30-day household bandwidth data. */
+  bandwidthCapBytes?: number | null;
+  bandwidthUsageBytes?: number;
+  bandwidthStatus?: "ok" | "approaching" | "over";
 }
 
-interface AccountProfileState {
+export interface AccountProfileState {
   profiles: AccountProfile[];
   activeProfileId: string;
 }
@@ -379,12 +385,30 @@ export async function switchAccountProfile(
   } | null;
   profiles: AccountProfileState | null;
 }> {
-  // The password is only required when LEAVING a kid profile; send it when given
-  // so the server can verify it (a wrong/missing one 403s in that case).
+  // The same server contract carries the account password when leaving a kid
+  // profile and the target profile PIN when entering a PIN-protected profile.
   return serverRequest("POST", "/api/profiles/switch", {
     profileId,
     ...(password != null && password.length > 0 ? { password } : {}),
   });
+}
+
+/** Set or clear a viewer profile's 4-6 digit household PIN. The response is the
+ * refreshed picker state so the lock glyph updates without a separate fetch. */
+export async function setProfilePin(
+  profileId: string,
+  pin: string | null,
+): Promise<{ profiles: AccountProfileState }> {
+  return serverRequest("POST", "/api/profiles/pin", { profileId, pin });
+}
+
+/** Owner/admin only. A rolling monthly household warning cap, never playback
+ * enforcement. `null` clears the cap and returns refreshed picker state. */
+export async function setProfileBandwidthQuota(
+  profileId: string,
+  capBytes: number | null,
+): Promise<{ profiles: AccountProfileState }> {
+  return serverRequest("POST", "/api/profiles/quota", { profileId, capBytes });
 }
 
 // ---- Title requests (Phase 4) ---------------------------------------------

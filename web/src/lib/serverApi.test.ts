@@ -568,6 +568,32 @@ describe("household sub-profiles", () => {
       profileId: "p1",
     });
   });
+
+  it("setProfilePin posts the PIN endpoint and returns refreshed profile state", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ profiles: { profiles: [], activeProfileId: "p1" } }) as never,
+    );
+    await expect(api.setProfilePin("p 1", "1234")).resolves.toEqual({
+      profiles: { profiles: [], activeProfileId: "p1" },
+    });
+    expect(lastCall().url).toBe("https://server.example/api/profiles/pin");
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({
+      profileId: "p 1",
+      pin: "1234",
+    });
+  });
+
+  it("setProfileBandwidthQuota posts a clear as capBytes:null", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ profiles: { profiles: [], activeProfileId: "p1" } }) as never,
+    );
+    await api.setProfileBandwidthQuota("p1", null);
+    expect(lastCall().url).toBe("https://server.example/api/profiles/quota");
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({
+      profileId: "p1",
+      capBytes: null,
+    });
+  });
 });
 
 describe("title requests", () => {

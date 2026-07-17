@@ -53,6 +53,7 @@ import {
 import { assertSafeUpstream, fetchUpstreamSafely } from "./ssrf.js";
 import { fetchOmdbRatings, fetchOmdbViaBroker, type OMDBRatings } from "./omdb.js";
 import { embeddedSecret } from "./embeddedSecrets.js";
+import { bandwidthCapStatus, type BandwidthCapStatus } from "./bandwidth.js";
 import { readFile } from "node:fs/promises";
 import { realTranscoder } from "./transcode.js";
 import { MANIFEST_NAME, TranscodeRegistry } from "./transcodeSession.js";
@@ -169,8 +170,27 @@ const patchAccountProfileSchema = z
 const switchProfileSchema = z.object({
   profileId: z.string().trim().min(1).max(128),
   // Parental unlock: required only when LEAVING a kid profile (verified against
-  // the account password). Optional/ignored for all other switches.
+  // the account password). Also carries the per-profile PIN when ENTERING a
+  // PIN-protected profile. Optional/ignored for all other switches.
   password: z.string().min(1).max(512).optional(),
+});
+
+// Set or clear a profile's household PIN. A 4-6 digit numeric PIN; null clears
+// it. The owner/admin may set any owned profile's PIN; a member may set their
+// own. It gates SWITCHING into the profile - a household gate, not encryption.
+const setProfilePinSchema = z.object({
+  profileId: z.string().trim().min(1).max(128),
+  pin: z
+    .string()
+    .regex(/^\d{4,6}$/, "PIN must be 4 to 6 digits.")
+    .nullable(),
+});
+
+// Household bandwidth is warn-only. The cap is represented as an exact byte
+// count so the server, API, and clients all agree on the 80% warning boundary.
+const setProfileBandwidthQuotaSchema = z.object({
+  profileId: z.string().trim().min(1).max(128),
+  capBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
 });
 
 const accountProfileIdParamSchema = z.string().trim().min(1).max(128);
@@ -417,10 +437,11 @@ const profileSettingSchema = z.object({
 
 // Profile-settings keys written server-side that must never be read back by, or
 // be writable from, the generic /api/settings/profile surface (it round-trips
-// arbitrary client key/values). Currently the optional sub-profile password hash
-// is the only such key - it's write-only by design (reserved for a future PIN).
+// arbitrary client key/values). PIN hashes are write-only and bandwidth caps
+// have their own owner/admin endpoint, so neither can be clobbered by settings.
 const PROTECTED_PROFILE_SETTING_KEYS: ReadonlySet<string> = new Set([
   "profile_password_hash",
+  "bandwidth_cap_bytes",
 ]);
 
 function httpError(statusCode: number, message: string): Error & { statusCode: number } {
@@ -488,6 +509,9 @@ function stringQueryParams(
 function isAdmin(role: UserRole): boolean {
   return role === "owner" || role === "admin";
 }
+
+const BANDWIDTH_CAP_SETTING = "bandwidth_cap_bytes";
+const BANDWIDTH_PERIOD_DAYS = 30;
 
 // Maturity ladder (kid gating). The owner-set cap (`maturity_max`) is always a US
 // movie certification; a title's certification can be a US movie cert OR a US TV
@@ -1175,9 +1199,35 @@ interface AccountProfileRow {
   is_default: number;
   is_kid: number;
   maturity_max: string | null;
+  has_pin: number;
+  bandwidth_cap_bytes: string | null;
+  bandwidth_usage_bytes: number;
+}
+
+function parseBandwidthCap(raw: string | null): number | null {
+  if (raw == null) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function bandwidthProfileState(
+  capBytes: number | null,
+  usageBytes: number,
+): {
+  bandwidthCapBytes: number | null;
+  bandwidthUsageBytes: number;
+  bandwidthStatus: BandwidthCapStatus;
+} {
+  const safeUsage = Number.isFinite(usageBytes) ? Math.max(0, usageBytes) : 0;
+  return {
+    bandwidthCapBytes: capBytes,
+    bandwidthUsageBytes: safeUsage,
+    bandwidthStatus: bandwidthCapStatus(safeUsage, capBytes),
+  };
 }
 
 function mapAccountProfile(row: AccountProfileRow) {
+  const capBytes = parseBandwidthCap(row.bandwidth_cap_bytes);
   return {
     id: row.id,
     displayName: row.display_name,
@@ -1186,6 +1236,13 @@ function mapAccountProfile(row: AccountProfileRow) {
     isDefault: row.is_default === 1,
     isKid: row.is_kid === 1,
     maturityMax: row.maturity_max,
+    // Whether a per-profile PIN is set (the switch gate below). The hash itself
+    // stays server-side and write-only; the client only learns that a PIN
+    // exists, so it can prompt on switch and show the lock affordance.
+    hasPin: row.has_pin === 1,
+    // A rolling 30-day household signal only. This is intentionally advisory:
+    // no streaming route reads this status or uses it to cut playback off.
+    ...bandwidthProfileState(capBytes, row.bandwidth_usage_bytes),
   };
 }
 
@@ -1193,15 +1250,30 @@ function mapAccountProfile(row: AccountProfileRow) {
  *  Drives the picker. Account-scoped, so it can never surface another user's
  *  profiles. */
 function listAccountProfiles(db: AppDatabase, userId: string) {
+  const since = usageSinceISO(BANDWIDTH_PERIOD_DAYS);
   const rows = db.sqlite
     .prepare(
       `SELECT id, display_name, avatar_color, simple_mode, is_default,
-              is_kid, maturity_max
+              is_kid, maturity_max,
+              EXISTS(
+                SELECT 1 FROM profile_settings ps
+                WHERE ps.profile_id = profiles.id
+                  AND ps.key = 'profile_password_hash'
+              ) AS has_pin,
+              (
+                SELECT value FROM profile_settings ps
+                WHERE ps.profile_id = profiles.id
+                  AND ps.key = 'bandwidth_cap_bytes'
+              ) AS bandwidth_cap_bytes,
+              COALESCE((
+                SELECT SUM(ss.bytes_served) FROM stream_sessions ss
+                WHERE ss.profile_id = profiles.id AND ss.created_at >= ?
+              ), 0) AS bandwidth_usage_bytes
        FROM profiles
        WHERE user_id = ? AND disabled_at IS NULL
        ORDER BY is_default DESC, created_at ASC`,
     )
-    .all(userId) as unknown as AccountProfileRow[];
+    .all(since, userId) as unknown as AccountProfileRow[];
   return rows.map(mapAccountProfile);
 }
 
@@ -1604,6 +1676,27 @@ function streamUsageSummary(db: AppDatabase, profileId: string, days: number) {
     completed_at: string | null;
     last_status: number | null;
   }>;
+  // The quota period remains a rolling 30 days even if an operator requests a
+  // differently sized usage history. It is informational only; no playback
+  // or stream-session route consults this value.
+  const quota = db.sqlite
+    .prepare(
+      `SELECT (
+                SELECT value FROM profile_settings
+                WHERE profile_id = ? AND key = 'bandwidth_cap_bytes'
+              ) AS bandwidth_cap_bytes,
+              COALESCE(SUM(bytes_served), 0) AS bandwidth_usage_bytes
+       FROM stream_sessions
+       WHERE profile_id = ? AND created_at >= ?`,
+    )
+    .get(profileId, profileId, usageSinceISO(BANDWIDTH_PERIOD_DAYS)) as {
+    bandwidth_cap_bytes: string | null;
+    bandwidth_usage_bytes: number;
+  };
+  const bandwidth = bandwidthProfileState(
+    parseBandwidthCap(quota.bandwidth_cap_bytes),
+    quota.bandwidth_usage_bytes,
+  );
   return {
     days,
     totalBytes: summary.total_bytes,
@@ -1619,22 +1712,33 @@ function streamUsageSummary(db: AppDatabase, profileId: string, days: number) {
       completedAt: row.completed_at,
       lastStatus: row.last_status,
     })),
+    ...bandwidth,
   };
 }
 
 function adminStreamUsageSummary(db: AppDatabase, days: number) {
   const since = usageSinceISO(days);
+  const bandwidthSince = usageSinceISO(BANDWIDTH_PERIOD_DAYS);
+  // Include just the oldest period either summary needs, then conditionally
+  // aggregate each period. This keeps the admin payload's normal `days` data
+  // intact while the cap always uses the rolling monthly period.
+  const earliestSince = days > BANDWIDTH_PERIOD_DAYS ? bandwidthSince : since;
   const rows = db.sqlite
     .prepare(
       `SELECT profiles.id AS profile_id,
               users.username,
               profiles.display_name,
               users.role,
-              COUNT(stream_sessions.id) AS stream_count,
-              COALESCE(SUM(stream_sessions.bytes_served), 0) AS total_bytes,
-              MAX(stream_sessions.last_accessed_at) AS last_accessed_at
+              COUNT(CASE WHEN stream_sessions.created_at >= ? THEN stream_sessions.id END) AS stream_count,
+              COALESCE(SUM(CASE WHEN stream_sessions.created_at >= ? THEN stream_sessions.bytes_served ELSE 0 END), 0) AS total_bytes,
+              MAX(CASE WHEN stream_sessions.created_at >= ? THEN stream_sessions.last_accessed_at END) AS last_accessed_at,
+              settings.value AS bandwidth_cap_bytes,
+              COALESCE(SUM(CASE WHEN stream_sessions.created_at >= ? THEN stream_sessions.bytes_served ELSE 0 END), 0) AS bandwidth_usage_bytes
        FROM profiles
        JOIN users ON users.id = profiles.user_id
+       LEFT JOIN profile_settings settings
+         ON settings.profile_id = profiles.id
+        AND settings.key = 'bandwidth_cap_bytes'
        LEFT JOIN stream_sessions
          ON stream_sessions.profile_id = profiles.id
         AND stream_sessions.created_at >= ?
@@ -1642,7 +1746,7 @@ function adminStreamUsageSummary(db: AppDatabase, days: number) {
        GROUP BY profiles.id
        ORDER BY total_bytes DESC, stream_count DESC, profiles.display_name ASC`,
     )
-    .all(since) as Array<{
+    .all(since, since, since, bandwidthSince, earliestSince) as Array<{
     profile_id: string;
     username: string;
     display_name: string;
@@ -1650,6 +1754,8 @@ function adminStreamUsageSummary(db: AppDatabase, days: number) {
     stream_count: number;
     total_bytes: number;
     last_accessed_at: string | null;
+    bandwidth_cap_bytes: string | null;
+    bandwidth_usage_bytes: number;
   }>;
   const totalBytes = rows.reduce((sum, row) => sum + row.total_bytes, 0);
   const streamCount = rows.reduce((sum, row) => sum + row.stream_count, 0);
@@ -1672,6 +1778,10 @@ function adminStreamUsageSummary(db: AppDatabase, days: number) {
       totalBytes: row.total_bytes,
       streamCount: row.stream_count,
       lastAccessedAt: row.last_accessed_at,
+      ...bandwidthProfileState(
+        parseBandwidthCap(row.bandwidth_cap_bytes),
+        row.bandwidth_usage_bytes,
+      ),
     })),
   };
 }
@@ -2637,6 +2747,29 @@ function registerRoutes(
         throw httpError(403, "The account password is required to leave a kid profile.");
       }
     }
+    // Per-profile PIN: a household gate, NOT encryption. ENTERING a profile that
+    // has a PIN requires it (a no-op re-select of the currently-active profile is
+    // free - you already passed it, and re-locking yourself out mid-session helps
+    // no one). Only FAILED attempts are rate-limited, to slow brute force. The
+    // hash never leaves the server; the client learns only that a PIN exists.
+    if (body.profileId !== auth.profileId) {
+      const pinRow = db.sqlite
+        .prepare(
+          `SELECT value FROM profile_settings
+           WHERE profile_id = ? AND key = 'profile_password_hash'`,
+        )
+        .get(body.profileId) as { value: string } | undefined;
+      if (pinRow != null) {
+        const ok =
+          body.password != null &&
+          (await verifyPassword(pinRow.value, body.password));
+        if (!ok) {
+          rateLimit(request, `profile:pin:${body.profileId}`, 10, 60 * 1000);
+          audit(db, auth, "account.profile.switch.locked", "profile", body.profileId);
+          throw httpError(403, "This profile is protected by a PIN.");
+        }
+      }
+    }
     db.sqlite
       .prepare("UPDATE sessions SET active_profile_id = ? WHERE id = ?")
       .run(body.profileId, auth.sessionId);
@@ -2648,6 +2781,85 @@ function registerRoutes(
       session: next,
       profiles: next != null ? accountProfileState(db, next) : null,
     };
+  });
+
+  // Set or clear a profile's household PIN. Owner/admin sets any owned profile's
+  // PIN; a member sets only their own. The PIN gates switching INTO the profile
+  // (see /api/profiles/switch). It is a household gate, not encryption - local
+  // data is not encrypted at rest and the copy must not over-promise.
+  app.post("/api/profiles/pin", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(setProfilePinSchema, request.body);
+    // Ownership IDOR gate, same as switch: a profile that isn't this account's
+    // (or is disabled) 404s.
+    if (ownedLiveProfile(auth.userId, body.profileId) == null) {
+      throw httpError(404, "Profile not found.");
+    }
+    // A member may only manage their OWN profile's PIN; owner/admin may manage
+    // any profile in the account (so a parent can set/reset a member's PIN).
+    const isSelf = body.profileId === auth.profileId;
+    const isManager = auth.role === "owner" || auth.role === "admin";
+    if (!isSelf && !isManager) {
+      throw httpError(403, "You can only change your own profile PIN.");
+    }
+    if (body.pin == null) {
+      db.sqlite
+        .prepare(
+          `DELETE FROM profile_settings
+           WHERE profile_id = ? AND key = 'profile_password_hash'`,
+        )
+        .run(body.profileId);
+      audit(db, auth, "account.profile.pin.clear", "profile", body.profileId);
+    } else {
+      const pinHash = await hashPassword(body.pin);
+      db.sqlite
+        .prepare(
+          `INSERT INTO profile_settings (profile_id, key, value)
+           VALUES (?, 'profile_password_hash', ?)
+           ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
+        )
+        .run(body.profileId, pinHash);
+      audit(db, auth, "account.profile.pin.set", "profile", body.profileId);
+    }
+    // Echo the refreshed picker so the client updates the lock affordance.
+    return { profiles: accountProfileState(db, auth) };
+  });
+
+  // Set or clear a household viewer's rolling-month bandwidth advisory. This
+  // is warn-only by design: do not add enforcement to stream creation or the
+  // /api/stream proxy path. Playback must continue when a profile is over cap.
+  app.post("/api/profiles/quota", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(setProfileBandwidthQuotaSchema, request.body);
+    // Match the account-scoped ownership gate used by the PIN endpoint before
+    // the role check, so another household's profile is never discoverable.
+    if (ownedLiveProfile(auth.userId, body.profileId) == null) {
+      throw httpError(404, "Profile not found.");
+    }
+    requireAdmin(auth);
+    if (body.capBytes == null) {
+      db.sqlite
+        .prepare(
+          `DELETE FROM profile_settings
+           WHERE profile_id = ? AND key = ?`,
+        )
+        .run(body.profileId, BANDWIDTH_CAP_SETTING);
+      audit(db, auth, "account.profile.quota.clear", "profile", body.profileId);
+    } else {
+      db.sqlite
+        .prepare(
+          `INSERT INTO profile_settings (profile_id, key, value)
+           VALUES (?, ?, ?)
+           ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
+        )
+        .run(body.profileId, BANDWIDTH_CAP_SETTING, String(body.capBytes));
+      audit(db, auth, "account.profile.quota.set", "profile", body.profileId, {
+        capBytes: body.capBytes,
+      });
+    }
+    return { profiles: accountProfileState(db, auth) };
   });
 
   app.get("/api/admin/invites", async (request) => {

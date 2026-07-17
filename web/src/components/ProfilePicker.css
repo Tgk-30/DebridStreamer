@@ -110,6 +110,10 @@
   color: rgba(248, 250, 252, 0.82);
 }
 
+.profile-lock-glyph {
+  font-size: 0.86em;
+}
+
 .profile-tile-busy {
   font-size: 0.78rem;
   color: rgba(248, 250, 252, 0.6);
@@ -140,7 +144,25 @@
 
 .profile-tile-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
+}
+
+.profile-bandwidth-status {
+  width: 100%;
+  color: rgba(248, 250, 252, 0.62);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.profile-bandwidth-status.is-approaching {
+  color: #fde68a;
+}
+
+.profile-bandwidth-status.is-over {
+  color: #fecaca;
 }
 
 .profile-mini-btn {
