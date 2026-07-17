@@ -116,6 +116,11 @@
      MediaCard shimmer bound. */
   animation: shimmer 1.4s ease-in-out 12;
 }
+.detail-hero-poster-placeholder {
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.68);
+}
 
 .detail-hero-info {
   flex: 1 1 auto;

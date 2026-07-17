@@ -16,6 +16,7 @@ import {
 } from "../data/debridLibrary";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { ErrorNote } from "../components/ErrorNote";
 import { Spinner } from "../components/Spinner";
 import { isTauri } from "../lib/tauri";
 import "./LibraryScreens.css";
@@ -274,8 +275,8 @@ export function DebridLibrary() {
         </div>
       )}
 
-      {actionError && <p className="dl-error">{actionError}</p>}
-      {state.error && <p className="dl-error">{state.error}</p>}
+      {actionError && <ErrorNote className="dl-error">{actionError}</ErrorNote>}
+      {state.error && <ErrorNote className="dl-error">{state.error}</ErrorNote>}
 
       {state.loading ? (
         <div

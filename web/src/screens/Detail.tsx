@@ -33,6 +33,7 @@ import { OmdbRatings } from "../components/OmdbRatings";
 import { StreamPicker } from "../components/StreamPicker";
 import { CastRail } from "../components/CastRail";
 import { TrailerModal } from "../components/TrailerModal";
+import { useModalA11y } from "../components/useModalA11y";
 import { useTrailer } from "../data/trailer";
 import { Rail } from "../components/Rail";
 import { Spinner } from "../components/Spinner";
@@ -483,7 +484,7 @@ export function Detail() {
     streamsBackRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         setStreamsPageOpen(false);
       }
     };
@@ -537,17 +538,13 @@ export function Detail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPlayPending, streams.loading, streams.rows, selected, settings]);
 
-  // A11y: move focus into the overlay on open (so keyboard/screen-reader users
-  // land in context) and hand it back to whatever opened the Detail on close.
-  const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const opener =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    rootRef.current?.focus({ preventScroll: true });
-    return () => opener?.focus({ preventScroll: true });
-  }, []);
+  // Focus, Escape-to-close, and tab containment are shared by all modal
+  // surfaces. The episode streams page above intercepts Escape first so it can
+  // return to the episode picker rather than closing this overlay.
+  const rootRef = useModalA11y<HTMLDivElement>(
+    closeDetail,
+    player == null && !trailerOpen,
+  );
   // Server Mode "title request" state for this detail. Detail doesn't remount
   // between titles (openDetail just swaps detailItem), so reset on id change.
   const [requestState, setRequestState] = useState<
@@ -1208,7 +1205,14 @@ export function Detail() {
   }
 
   return (
-    <div className="detail" ref={rootRef} tabIndex={-1}>
+    <div
+      className="detail"
+      ref={rootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${detailItem.title} details`}
+      tabIndex={-1}
+    >
       <div className="detail-inner">
       {item && (
         <DetailHero

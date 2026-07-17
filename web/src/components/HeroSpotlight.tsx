@@ -234,6 +234,13 @@ export function HeroSpotlight({
               alt=""
               draggable={false}
               decoding="async"
+              onError={() => {
+                setLayers((previous) =>
+                  previous.map((entry) =>
+                    entry.seq === layer.seq ? { ...entry, url: null } : entry,
+                  ),
+                );
+              }}
               /* `fetchpriority` (lowercase) is the LCP resource hint React 18
                  forwards to the DOM without warning; the camelCase `fetchPriority`
                  prop is React 19-only and logs an unknown-prop warning under 18. */

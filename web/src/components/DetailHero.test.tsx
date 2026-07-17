@@ -163,6 +163,21 @@ describe("DetailHero content", () => {
     expect(container.querySelector("img.detail-hero-poster")).toBeNull();
   });
 
+  it("replaces a failed poster with a placeholder tile", () => {
+    const { container } = render(
+      <DetailHero
+        item={makeItem()}
+        inWatchlist={false}
+        onPlay={noop}
+        onToggleWatchlist={noop}
+        onClose={noop}
+      />,
+    );
+    fireEvent.error(container.querySelector("img.detail-hero-poster")!);
+    expect(container.querySelector("img.detail-hero-poster")).toBeNull();
+    expect(container.querySelector(".detail-hero-poster-placeholder")).not.toBeNull();
+  });
+
   it("renders the title, rating, meta bits, genres and overview", () => {
     const { container } = render(
       <DetailHero

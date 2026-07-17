@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("./Icon", () => ({
@@ -35,6 +35,13 @@ describe("CastRail", () => {
     expect(img).toHaveAttribute("src", "/jane.jpg");
     // The member without a photo shows a placeholder icon.
     expect(screen.getByTestId("icon")).toBeInTheDocument();
+  });
+
+  it("replaces a failed profile photo with the existing placeholder", () => {
+    const { container } = render(<CastRail cast={cast} />);
+    fireEvent.error(screen.getByRole("img", { name: "Jane Doe" }));
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector(".cast-photo-placeholder")).not.toBeNull();
   });
 
   it("caps the rail at 20 members", () => {

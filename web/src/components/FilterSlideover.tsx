@@ -9,7 +9,7 @@
 // release-year range, min vote average + min vote count, max runtime, original
 // language, and sort. Accent is used only for selected/active state.
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import type { MediaType } from "../models/media";
 import { useAppStore } from "../store/AppStore";
 import { useGenres } from "../data/genres";
@@ -123,6 +123,12 @@ export function FilterSlideover({
     draftType !== type ||
     JSON.stringify(sanitizeFilters(draft)) !== JSON.stringify(sanitizeFilters(filters));
   const panelRef = useModalA11y<HTMLElement>(onClose, open);
+
+  // Layout effect (not passive) so `inert` is cleared BEFORE useModalA11y's
+  // passive focus effect runs on open; focusing an still-inert panel is a no-op.
+  useLayoutEffect(() => {
+    panelRef.current?.toggleAttribute("inert", !open);
+  }, [open, panelRef]);
 
   return (
     <div

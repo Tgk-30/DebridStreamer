@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { ImgWithFallback } from "../components/ImgWithFallback";
 import {
   calendarEntries,
   type CalendarEntry,
@@ -122,7 +123,17 @@ function ReleaseRow({
     >
       <div className="cal-release-poster">
         {poster != null ? (
-          <img src={poster} alt={entry.media.title} loading="lazy" draggable={false} />
+          <ImgWithFallback
+            src={poster}
+            alt={entry.media.title}
+            loading="lazy"
+            draggable={false}
+            fallback={
+              <div className="cal-release-poster-ph" aria-hidden="true">
+                <Icon name={entry.kind === "episode" ? "calendar" : "discover"} size={17} />
+              </div>
+            }
+          />
         ) : (
           <div className="cal-release-poster-ph">
             <Icon name={entry.kind === "episode" ? "calendar" : "discover"} size={17} />
@@ -310,12 +321,15 @@ export function Calendar() {
                           aria-label={`${entry.media.title}, ${entry.detail}`}
                         >
                           {thumb != null ? (
-                            <img
+                            <ImgWithFallback
                               className="cal-event-thumb"
                               src={thumb}
                               alt=""
                               loading="lazy"
                               draggable={false}
+                              fallback={
+                                <span className="cal-event-thumb is-placeholder" aria-hidden="true" />
+                              }
                             />
                           ) : (
                             <span className="cal-event-thumb is-placeholder" aria-hidden />

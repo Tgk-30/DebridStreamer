@@ -608,7 +608,16 @@ export function App() {
             sidesteps the AnimatePresence exit-wait that stalls on these heavy,
             nested-motion screens. Suspense stays inside so a lazy screen shows the
             spinner within the frame. */}
-        <div key={route} className="route-frame">
+        <div
+          key={route}
+          className="route-frame"
+          ref={(element) => {
+            element?.toggleAttribute(
+              "inert",
+              detailItem != null || browseContext != null,
+            );
+          }}
+        >
           {/* Per-screen boundary: a single screen's render crash offers "Go
               home" instead of sinking the whole app. resetKey={route} clears it
               on navigation (the keyed frame also remounts). */}
@@ -627,17 +636,23 @@ export function App() {
             advanced filters), below the Detail overlay. Its own boundary: a
             crash here closes the overlay instead of sinking the app. */}
         {browseContext != null && (
-          <ErrorBoundary
-            label="browse"
-            resetKey={browseContext}
-            onGoHome={closeBrowse}
-            homeLabel="Close"
-            overlay
+          <div
+            ref={(element) => {
+              element?.toggleAttribute("inert", detailItem != null);
+            }}
           >
-            <Suspense fallback={<Spinner variant="overlay" />}>
-              <Browse />
-            </Suspense>
-          </ErrorBoundary>
+            <ErrorBoundary
+              label="browse"
+              resetKey={browseContext}
+              onGoHome={closeBrowse}
+              homeLabel="Close"
+              overlay
+            >
+              <Suspense fallback={<Spinner variant="overlay" />}>
+                <Browse />
+              </Suspense>
+            </ErrorBoundary>
+          </div>
         )}
 
         {/* Detail overlay - mounts over the current screen (and over Browse).

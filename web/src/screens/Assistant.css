@@ -59,8 +59,21 @@
   margin-top: var(--sp-sm);
 }
 .assistant-rec {
+  display: block;
+  width: 100%;
   padding: var(--sp-md);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
   border-radius: var(--r-md);
+}
+.assistant-rec:hover {
+  border-color: rgba(var(--accent-rgb), 0.42);
+}
+.assistant-rec:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
 }
 .assistant-rec-head {
   display: flex;

@@ -166,6 +166,18 @@ describe("Browse - header + results", () => {
     expect(closeBrowse).toHaveBeenCalledTimes(1);
   });
 
+  it("uses modal semantics and closes with Escape", async () => {
+    const user = userEvent.setup();
+    render(<Browse />);
+    expect(screen.getByRole("dialog", { name: "Popular movies" })).toHaveAttribute(
+      "aria-modal",
+      "true",
+    );
+
+    await user.keyboard("{Escape}");
+    expect(closeBrowse).toHaveBeenCalledTimes(1);
+  });
+
   it("does not show a count when totalResults is 0", () => {
     mockBrowseState = liveState({ totalResults: 0 });
     render(<Browse />);

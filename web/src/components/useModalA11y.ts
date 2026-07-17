@@ -9,6 +9,29 @@
 
 import { useEffect, useRef } from "react";
 
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'area[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'iframe',
+  'object',
+  'embed',
+  '[contenteditable="true"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+function focusableChildren(dialog: HTMLElement): HTMLElement[] {
+  return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (element) =>
+      element.tabIndex >= 0 &&
+      element.getAttribute("aria-hidden") !== "true" &&
+      !element.closest("[inert]"),
+  );
+}
+
 export function useModalA11y<T extends HTMLElement>(
   onClose: () => void,
   // `active` lets a persistently-mounted dialog (visibility toggled by a prop,
@@ -38,7 +61,34 @@ export function useModalA11y<T extends HTMLElement>(
       if (e.key === "Escape") {
         e.stopPropagation();
         onCloseRef.current();
+        return;
       }
+      if (e.key !== "Tab") return;
+
+      const dialog = ref.current;
+      if (dialog == null) return;
+      const focusable = focusableChildren(dialog);
+      if (focusable.length === 0) {
+        e.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const current = document.activeElement as HTMLElement | null;
+      const currentIsFocusable = current != null && focusable.includes(current);
+
+      if (e.shiftKey) {
+        if (currentIsFocusable && current !== first) return;
+        e.preventDefault();
+        last.focus();
+        return;
+      }
+
+      if (currentIsFocusable && current !== last) return;
+      e.preventDefault();
+      first.focus();
     };
     window.addEventListener("keydown", onKey);
     return () => {

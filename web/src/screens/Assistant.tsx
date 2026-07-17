@@ -10,10 +10,13 @@
 import { useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import type { AIMovieRecommendation } from "../services/ai/models";
+import type { MediaPreview } from "../models/media";
 import { isServerMode } from "../lib/serverMode";
-import { recommendServerAI } from "../lib/serverApi";
+import { recommendServerAI, searchServerMedia } from "../lib/serverApi";
 import { EmptyState } from "../components/EmptyState";
+import { ErrorNote } from "../components/ErrorNote";
 import { Icon } from "../components/Icon";
+import { resolveAIRecommendation } from "../data/aiRecommendations";
 import "./Assistant.css";
 
 const SUGGESTIONS = [
@@ -24,12 +27,15 @@ const SUGGESTIONS = [
 ];
 
 export function Assistant() {
-  const { services, navigate } = useAppStore();
+  const { services, navigate, openDetail } = useAppStore();
 
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<AIMovieRecommendation[] | null>(null);
+  const [results, setResults] = useState<Array<{
+    recommendation: AIMovieRecommendation;
+    item: MediaPreview;
+  }> | null>(null);
 
   const provider = services.ai;
   // In Server Mode the provider key lives on the server; the Assistant routes to
@@ -48,7 +54,25 @@ export function Assistant() {
       const result = serverMode
         ? await recommendServerAI({ prompt: q, count: 8 })
         : await provider!.recommend(q, [], 8);
-      setResults(result.recommendations);
+      const resolved = await Promise.all(
+        result.recommendations.map(async (recommendation) => {
+          const item = await resolveAIRecommendation(
+            recommendation,
+            serverMode
+              ? async (title, type) => (await searchServerMedia({ query: title, type })).items
+              : services.tmdb == null
+                ? null
+                : async (title, type) => (await services.tmdb!.search(title, type, 1)).items,
+          ).catch(() => null);
+          return item == null ? null : { recommendation, item };
+        }),
+      );
+      setResults(
+        resolved.filter(
+          (entry): entry is { recommendation: AIMovieRecommendation; item: MediaPreview } =>
+            entry != null,
+        ),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setResults(null);
@@ -126,31 +150,34 @@ export function Assistant() {
         ))}
       </div>
 
-      {error && <p className="assistant-error">{error}</p>}
+      {error && <ErrorNote className="assistant-error">{error}</ErrorNote>}
 
       {results != null && (
         <section className="assistant-results">
           {results.length === 0 ? (
             <p className="t-secondary">No recommendations came back. Try rephrasing.</p>
           ) : (
-            results.map((rec) => (
-              <div
-                key={`${rec.title}-${rec.year ?? 0}`}
+            results.map(({ recommendation, item }) => (
+              <button
+                key={`${recommendation.title}-${recommendation.year ?? 0}-${item.id}`}
+                type="button"
                 className="assistant-rec glass-rest glass-lit"
+                onClick={() => openDetail(item)}
+                aria-label={`Open ${recommendation.title}`}
               >
                 <div className="assistant-rec-head">
-                  <span className="assistant-rec-title">{rec.title}</span>
-                  {rec.year != null && (
+                  <span className="assistant-rec-title">{recommendation.title}</span>
+                  {recommendation.year != null && (
                     <span className="assistant-rec-year t-secondary">
-                      {rec.year}
+                      {recommendation.year}
                     </span>
                   )}
                   <span className="assistant-rec-score">
-                    {Math.round(rec.score * 100)}%
+                    {Math.round(recommendation.score * 100)}%
                   </span>
                 </div>
-                <p className="assistant-rec-reason t-secondary">{rec.reason}</p>
-              </div>
+                <p className="assistant-rec-reason t-secondary">{recommendation.reason}</p>
+              </button>
             ))
           )}
         </section>

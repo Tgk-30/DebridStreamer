@@ -28,6 +28,7 @@ import { MediaCard } from "../components/MediaCard";
 import { VirtualMediaGrid } from "../components/MediaGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { useModalA11y } from "../components/useModalA11y";
 import "./Browse.css";
 
 // The advanced filter panel is code-split out of the Browse chunk; it only
@@ -82,9 +83,14 @@ function BrowseInner({
   onClose,
   onSelect,
 }: BrowseInnerProps) {
-  const { services, settings } = useAppStore();
+  const { services, settings, detailItem } = useAppStore();
   const state = useBrowse(services.tmdb, ctx);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // The nested filter dialog owns keyboard focus and Escape while it is open.
+  // A Detail overlay can also stack over Browse (open a title from a "See all"
+  // grid); while it is up, Detail is the topmost modal and owns Escape/focus, so
+  // Browse yields to avoid Escape double-closing both back to the base screen.
+  const rootRef = useModalA11y<HTMLDivElement>(onClose, !filtersOpen && detailItem == null);
 
   // Only pull in the (code-split) FilterSlideover chunk once the user has opened
   // the panel at least once; keep it mounted thereafter so it animates closed.
@@ -133,7 +139,14 @@ function BrowseInner({
   const filtersActive = ctx.kind === "discover" && hasActiveFilters(ctx.filters);
 
   return (
-    <div className={`browse${filtersOpen ? " has-filters-open" : ""}`}>
+    <div
+      className={`browse${filtersOpen ? " has-filters-open" : ""}`}
+      ref={rootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="browse-title"
+      tabIndex={-1}
+    >
       <div className="browse-inner">
         <header className="browse-head">
           <button
@@ -149,7 +162,7 @@ function BrowseInner({
           </button>
 
           <div className="browse-title-row">
-            <h1 className="browse-h1">{title}</h1>
+            <h1 id="browse-title" className="browse-h1">{title}</h1>
             {state.totalResults > 0 && state.source === "live" && (
               <span className="browse-count t-secondary">
                 {state.totalResults.toLocaleString()} titles

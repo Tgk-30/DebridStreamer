@@ -13,6 +13,7 @@ import { loadDiscoverFixtures } from "../data/fixtures";
 import { MediaGrid } from "../components/MediaGrid";
 import { GenreCatalogGrid } from "../components/GenreCatalogGrid";
 import { EmptyState } from "../components/EmptyState";
+import { ErrorNote } from "../components/ErrorNote";
 import { Icon } from "../components/Icon";
 import { MoodStrip } from "../components/MoodStrip";
 import { Rail } from "../components/Rail";
@@ -20,8 +21,8 @@ import { searchServerMedia, curateServerAI } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 import { useAttentionParked } from "../lib/attention";
 import { emptyBrowseFilters, type BrowseFilters } from "../data/browse";
+import { resolveAIRecommendation } from "../data/aiRecommendations";
 import { SortOption } from "../services/metadata/types";
-import type { AIMovieRecommendation } from "../services/ai/models";
 import "./Search.css";
 
 type TypeFilter = "all" | "movie" | "series";
@@ -143,34 +144,6 @@ export function Search() {
   const starters = useMemo(() => fixtureStarters(), []);
   const serverMode = isServerMode();
 
-  async function resolveRecommendation(
-    rec: AIMovieRecommendation,
-  ): Promise<MediaPreview | null> {
-    const mediaType = rec.mediaType ?? null;
-    if (services.tmdb != null) {
-      const result = await services.tmdb.search(rec.title, mediaType, 1);
-      const normalizedTitle = rec.title.trim().toLowerCase();
-      const sorted = [...result.items].sort((a, b) => {
-        const aExact = a.title.trim().toLowerCase() === normalizedTitle ? 1 : 0;
-        const bExact = b.title.trim().toLowerCase() === normalizedTitle ? 1 : 0;
-        const aYear = rec.year != null && a.year === rec.year ? 1 : 0;
-        const bYear = rec.year != null && b.year === rec.year ? 1 : 0;
-        return bExact + bYear - (aExact + aYear);
-      });
-      return sorted[0] ?? null;
-    }
-    if (rec.mediaId != null && rec.mediaType != null) {
-      return {
-        id: rec.mediaId,
-        type: rec.mediaType,
-        title: rec.title,
-        year: rec.year,
-        posterPath: rec.posterPath,
-      };
-    }
-    return null;
-  }
-
   async function curateMood(vibe: string) {
     setMoodError(null);
     setMoodStatus(null);
@@ -208,7 +181,12 @@ export function Search() {
       const result = await services.ai.recommend(vibe, [], 8);
       const resolved = await Promise.all(
         result.recommendations.map((rec) =>
-          resolveRecommendation(rec).catch(() => null),
+          resolveAIRecommendation(
+            rec,
+            services.tmdb == null
+              ? null
+              : async (title, type) => (await services.tmdb!.search(title, type, 1)).items,
+          ).catch(() => null),
         ),
       );
       const seen = new Set<string>();
@@ -375,7 +353,7 @@ export function Search() {
         )}
       </div>
 
-      {error && <p className="search-status search-error">{error}</p>}
+      {error && <ErrorNote className="search-status search-error">{error}</ErrorNote>}
 
       {loading ? (
         <SearchSkeleton />

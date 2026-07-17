@@ -149,9 +149,23 @@ describe("NavRail render", () => {
     expect(more).toHaveAttribute("aria-expanded", "true");
     const close = screen.getByRole("button", { name: "Close more menu" });
     expect(close).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "More navigation" })).toHaveAttribute(
+      "aria-modal",
+      "true",
+    );
 
     await userEvent.click(close);
     expect(more).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes the More dialog with Escape", async () => {
+    const user = userEvent.setup();
+    renderRail({ selected: "discover", onSelect: () => {} });
+    await user.click(screen.getByRole("button", { name: "More navigation" }));
+    expect(screen.getByRole("dialog", { name: "More navigation" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "More navigation" })).toBeNull();
   });
 
   it("selecting a More-drawer action fires onSelect and closes the drawer", async () => {
