@@ -3,8 +3,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  ACCENTS,
   applyTheme,
   DEFAULT_THEME_ID,
+  accentById,
   isValidThemeId,
   resolveThemeId,
   THEMES,
@@ -71,6 +73,26 @@ describe("resolveThemeId / isValidThemeId", () => {
   it("themeById always returns a def", () => {
     expect(themeById("sunset").id).toBe("sunset");
     expect(themeById("bogus").id).toBe(DEFAULT_THEME_ID);
+  });
+
+  it("falls back to the first theme when lookup unexpectedly returns undefined", () => {
+    const originalFind = THEMES.find;
+    THEMES.find = (() => undefined) as typeof THEMES.find;
+    try {
+      expect(themeById("bogus")).toBe(THEMES[0]);
+    } finally {
+      THEMES.find = originalFind;
+    }
+  });
+});
+
+describe("accent helper", () => {
+  it("falls back to the theme accent when an unknown id is used", () => {
+    expect(accentById("not-a-real-accent")).toEqual(ACCENTS[0]);
+  });
+
+  it("returns the requested accent when known", () => {
+    expect(accentById("cyan").color).toBe("rgb(92, 189, 250)");
   });
 });
 

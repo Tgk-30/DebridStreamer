@@ -164,6 +164,32 @@ describe("sync/types decoders - failure branches", () => {
       },
     });
   });
+
+  it("decodeWatchlistPushResult preserves a null imdb id as null", () => {
+    const out = decodeWatchlistPushResult({
+      not_found: { movies: [{ ids: { imdb: null } }] },
+    });
+    expect(out).toEqual({
+      added: null,
+      existing: null,
+      notFound: {
+        movies: [{ ids: { imdb: null } }],
+      },
+    });
+  });
+
+  it("defaults not_found.movies to null when the server omits the array", () => {
+    const out = decodeWatchlistPushResult({
+      not_found: {},
+    });
+    expect(out).toEqual({
+      added: null,
+      existing: null,
+      notFound: {
+        movies: null,
+      },
+    });
+  });
 });
 
 describe("sync/models value types", () => {

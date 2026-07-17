@@ -107,6 +107,55 @@ describe("IMDbCSVSyncService.parseCSV", () => {
     const service = new IMDbCSVSyncService();
     expect(service.parseCSV("", "favorites")).toEqual([]);
   });
+
+  it("returns [] when the header has no title column", () => {
+    const service = new IMDbCSVSyncService();
+    const csv = ["Const,Year", "tt1,2026"].join("\n");
+
+    expect(service.parseCSV(csv, "watchlist")).toEqual([]);
+  });
+
+  it("treats an empty Const cell as a null imdbID", () => {
+    const service = new IMDbCSVSyncService();
+    const csv = ["Const,Title,Year", ",Movie Title,2026"].join("\n");
+    const [entry] = service.parseCSV(csv, "favorites");
+
+    expect(entry.imdbID).toBeNull();
+    expect(entry.year).toBe(2026);
+  });
+
+  it("parses year as null when the year value is non-numeric", () => {
+    const service = new IMDbCSVSyncService();
+    const csv = ["Const,Title,Year", "tt1,Movie Title,20x6"].join("\n");
+    const [entry] = service.parseCSV(csv, "favorites");
+
+    expect(entry.year).toBeNull();
+  });
+
+  it("parses year as null when the year field is missing in the row", () => {
+    const service = new IMDbCSVSyncService();
+    const csv = ["Const,Title,Year", "tt1,Movie Title"].join("\n");
+    const [entry] = service.parseCSV(csv, "favorites");
+
+    expect(entry.year).toBeNull();
+    expect(entry.imdbID).toBe("tt1");
+  });
+
+  it("skips whitespace-only trailing rows", () => {
+    const service = new IMDbCSVSyncService();
+    const csv = ["Const,Title,Year", "tt1,Movie Title,2021", "", "  "].join(
+      "\n",
+    );
+
+    expect(service.parseCSV(csv, "watchlist")).toEqual([
+      {
+        imdbID: "tt1",
+        title: "Movie Title",
+        year: 2021,
+        listType: "watchlist",
+      },
+    ]);
+  });
 });
 
 // MARK: - fallbackMediaID (the synthesized dedup key, fallbackMediaIDIsNormalized)

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useTheme } from "./useTheme";
 import { defaultSettings } from "../data/settings";
@@ -20,6 +20,20 @@ beforeEach(() => {
 });
 
 describe("useTheme", () => {
+  it("returns early when document is not available", () => {
+    const { rerender } = renderHook((props) => useTheme(props), {
+      initialProps: settings({ theme: "aurora" }),
+    });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("aurora");
+
+    vi.stubGlobal("document", undefined);
+    try {
+      expect(() => rerender(settings({ theme: "midnight" }))).not.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("reflects all appearance fields onto the document root dataset", () => {
     renderHook(() =>
       useTheme(
