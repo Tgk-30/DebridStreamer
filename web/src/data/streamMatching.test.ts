@@ -3,6 +3,7 @@ import {
   buildTitleQuery,
   filterResultsByTitle,
   combineStreamResults,
+  releaseYearDisagrees,
 } from "./streamMatching";
 import type { TorrentResult } from "../services/indexers/models";
 import { VideoQuality } from "../services/indexers/models";
@@ -102,5 +103,103 @@ describe("combineStreamResults", () => {
     const merged = combineStreamResults(byImdb, byTitle, "The Bear");
     // Paddington dropped; 4K leads on quality; hash A survives.
     expect(merged.map((r) => r.infoHash)).toEqual(["B", "A"]);
+  });
+});
+
+describe("releaseYearDisagrees - conservative wrong-year detection", () => {
+  it("is neutral (false) when the target year is unknown", () => {
+    expect(releaseYearDisagrees("The.Odyssey.1997.1080p", "The Odyssey", null)).toBe(false);
+  });
+
+  it("is neutral when the release name has no parseable year", () => {
+    expect(releaseYearDisagrees("The.Odyssey.1080p.WEB.H264-GRP", "The Odyssey", 2026)).toBe(false);
+  });
+
+  it("flags a clean wrong-year release", () => {
+    expect(releaseYearDisagrees("The.Odyssey.1997.1080p.BluRay.x264", "The Odyssey", 2026)).toBe(true);
+    expect(releaseYearDisagrees("The Odyssey (2016) 720p WEBRip", "The Odyssey", 2026)).toBe(true);
+  });
+
+  it("tolerates +/-1 (festival/encode-year drift off the canonical year)", () => {
+    expect(releaseYearDisagrees("The.Odyssey.2025.1080p.WEB-DL", "The Odyssey", 2026)).toBe(false);
+    expect(releaseYearDisagrees("The.Odyssey.2027.1080p.WEB-DL", "The Odyssey", 2026)).toBe(false);
+  });
+
+  it("lets ONE agreeing year outweigh remaster/encode-year noise", () => {
+    // Real-world shape: original year plus a later remaster/rip year.
+    const name = "The.Odyssey.1997.REMASTERED.2016.1080p.BluRay";
+    expect(releaseYearDisagrees(name, "The Odyssey", 1997)).toBe(false);
+    // ...but for the 2026 film NEITHER year is compatible.
+    expect(releaseYearDisagrees(name, "The Odyssey", 2026)).toBe(true);
+  });
+
+  it("treats a year-range pack as agreeing when the target falls inside it", () => {
+    const pack = "The.Odyssey.Collection.1997-2016.1080p.x265";
+    // 2005 matches NO single token - only the range covers it.
+    expect(releaseYearDisagrees(pack, "The Odyssey", 2005)).toBe(false);
+    expect(releaseYearDisagrees(pack, "The Odyssey", 2026)).toBe(true);
+  });
+
+  it("never reads a year-bearing TITLE as a release year", () => {
+    // "2012" (2009): the title token must not count as year evidence...
+    expect(releaseYearDisagrees("2012.1080p.BluRay.x264", "2012", 2009)).toBe(false);
+    // ...while a real release year next to it still does.
+    expect(releaseYearDisagrees("2012.2009.1080p.BluRay", "2012", 2009)).toBe(false);
+    expect(releaseYearDisagrees("Blade.Runner.2049.2017.2160p.REMUX", "Blade Runner 2049", 2017)).toBe(false);
+  });
+
+  it("never reads resolution/dimension digits as a year", () => {
+    expect(releaseYearDisagrees("The.Odyssey.2160p.HDR.DV", "The Odyssey", 2026)).toBe(false);
+    expect(releaseYearDisagrees("The Odyssey 1920x1080 WEBRip", "The Odyssey", 2026)).toBe(false);
+  });
+});
+
+describe("combineStreamResults - year-aware down-ranking (movies)", () => {
+  // The v0.9.3 CV QA case: The Odyssey (2026)'s Download menu led with the
+  // 1997/2016 adaptations. Wrong-year releases must sink below every
+  // compatible-or-unknown-year release - even better-quality, better-seeded
+  // ones - but must NOT be dropped (torrent names are messy).
+  const odyssey = {
+    byTitle: [
+      tr("y1997uhd", "The Odyssey 1997 2160p REMUX", 900, VideoQuality.uhd4k),
+      tr("y1997", "The.Odyssey.1997.1080p.BluRay.x264", 500),
+      tr("y2016", "The Odyssey (2016) 720p WEBRip", 300, VideoQuality.hd720p),
+      tr("noyear", "The.Odyssey.1080p.WEB.H264-GRP", 100),
+      tr("y2026", "The.Odyssey.2026.1080p.WEB-DL", 40),
+    ],
+  };
+
+  it("ranks the 2026 release above the 1997/2016 ones for The Odyssey (2026)", () => {
+    const merged = combineStreamResults([], odyssey.byTitle, "The Odyssey", 2026);
+    // Year-compatible + unknown-year first (their usual quality/seeder order),
+    // wrong-year last (also quality/seeder order) - and nothing dropped.
+    expect(merged.map((r) => r.infoHash)).toEqual([
+      "noyear",
+      "y2026",
+      "y1997uhd",
+      "y1997",
+      "y2016",
+    ]);
+  });
+
+  it("keeps the pre-existing order when no year is given (additive default)", () => {
+    const merged = combineStreamResults([], odyssey.byTitle, "The Odyssey");
+    // Plain quality-then-seeders: 4K first, the 1080p rows by seeders, 720p last.
+    expect(merged.map((r) => r.infoHash)).toEqual([
+      "y1997uhd",
+      "y1997",
+      "noyear",
+      "y2026",
+      "y2016",
+    ]);
+  });
+
+  it("down-ranks a wrong-year release from the imdb pass too (mislabel guard)", () => {
+    const byImdb = [
+      tr("wrong", "The.Odyssey.1997.2160p", 900, VideoQuality.uhd4k),
+      tr("right", "The.Odyssey.2026.720p", 10, VideoQuality.hd720p),
+    ];
+    const merged = combineStreamResults(byImdb, [], "The Odyssey", 2026);
+    expect(merged.map((r) => r.infoHash)).toEqual(["right", "wrong"]);
   });
 });

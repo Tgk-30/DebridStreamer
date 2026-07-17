@@ -84,6 +84,10 @@ export async function fetchServerStreams(input: {
    *  which an imdb id alone can't reach. Optional - older servers ignore the
    *  extra query param and fall back to the imdb-only search. */
   title?: string | null;
+  /** The item's release year - lets the server down-rank same-titled releases
+   *  from a different year (movies only). Optional - older servers ignore the
+   *  extra query param and keep the unranked-by-year order. */
+  year?: number | null;
 }): Promise<{
   rows: StreamRow[];
   hasIndexers: boolean;
@@ -95,6 +99,7 @@ export async function fetchServerStreams(input: {
   if (input.title != null && input.title.trim().length > 0) {
     params.set("title", input.title.trim());
   }
+  if (input.year != null) params.set("year", String(input.year));
   const response = await serverRequest<{
     rows: StreamRow[];
     hasIndexers: boolean;

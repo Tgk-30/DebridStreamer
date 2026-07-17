@@ -63,11 +63,14 @@ export interface TorrentResultLike {
 
 /** Fold an imdb-native pass and a title/name pass into one ranked, deduped set
  *  (the title pass validated against `title` when given). Shared with the client
- *  so Local + Server Mode combine the two passes identically. */
+ *  so Local + Server Mode combine the two passes identically. `movieYear` (the
+ *  requested MOVIE's release year - pass null for series) down-ranks, never
+ *  drops, releases whose name carries an incompatible year. */
 export function combineStreamResults(
   byImdb: TorrentResultLike[],
   byTitle: TorrentResultLike[],
   title: string | null,
+  movieYear?: number | null,
 ): TorrentResultLike[];
 
 export function searchServerStreams(
@@ -82,6 +85,10 @@ export function searchServerStreams(
     /** Human title for the name-matching indexer pass (APIBay etc.). Omitted /
      *  null → imdb-only (also how the route forces capped/kid profiles). */
     title?: string | null;
+    /** Release year of the requested item. Movies only: down-ranks (never
+     *  drops) releases whose name carries an incompatible year. Ignored for
+     *  series. */
+    year?: number | null;
   },
 ): Promise<ServerStreamsResult>;
 

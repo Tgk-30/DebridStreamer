@@ -319,6 +319,10 @@ const streamSearchQuerySchema = z.object({
   // treated as "no title pass" (searchServerStreams only runs the pass when the
   // trimmed title is non-empty) - rejecting it would 400 a direct/older client.
   title: z.string().trim().max(300).optional(),
+  // Release year for the wrong-year DOWN-RANK (movies only; a ranking hint, not
+  // a filter). `.catch(undefined)`: a malformed/blank `year=` must degrade to
+  // "no year hint", never 400 the whole stream search over ranking metadata.
+  year: z.coerce.number().int().min(1800).max(3000).optional().catch(undefined),
 });
 
 const mediaSearchQuerySchema = z.object({
@@ -3680,6 +3684,9 @@ function registerRoutes(
       season: query.season ?? null,
       episode: query.episode ?? null,
       title: capped ? null : query.title ?? null,
+      // The year passes through even for capped profiles: it only REORDERS the
+      // imdb-exact results (wrong-year noise sinks), it never widens the set.
+      year: query.year ?? null,
     });
   });
 
