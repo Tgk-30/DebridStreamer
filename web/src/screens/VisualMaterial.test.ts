@@ -11,6 +11,13 @@ describe("overlay material regressions", () => {
     expect(detailRule).not.toMatch(/^\s*(?:-webkit-)?backdrop-filter\s*:/m);
   });
 
+  it("keeps the episode streams overlay opaque without a full-viewport filter", () => {
+    const css = readFileSync("src/screens/Detail.css", "utf8");
+    const episodeStreamsRule = css.match(/\.episode-streams\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(episodeStreamsRule).toMatch(/background:\s*var\(--bg-1\);/);
+    expect(episodeStreamsRule).not.toMatch(/^\s*(?:-webkit-)?backdrop-filter\s*:/m);
+  });
+
   it("keeps Browse deep enough to conceal its covered screen while retaining blur", () => {
     const css = readFileSync("src/screens/Browse.css", "utf8");
     expect(css).toMatch(

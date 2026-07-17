@@ -490,12 +490,30 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     // Filter to resumable BEFORE slicing: zero-progress "viewed" rows (written
     // when a Detail opens) would otherwise fill the limit and crowd genuinely
     // resumable titles out of Continue Watching.
-    const rows = await this.watchHistory
+    // Preserve Array#slice's existing behavior for non-positive caller input.
+    // Normal callers use the positive default (20), which takes the early-stop
+    // cursor below.
+    if (limit <= 0) {
+      const rows = await this.watchHistory
+        .orderBy("lastWatched")
+        .reverse()
+        .filter((row) => hasResumePoint(row))
+        .toArray();
+      return rows.slice(0, limit);
+    }
+
+    const rows: WatchHistoryRecord[] = [];
+    await this.watchHistory
       .orderBy("lastWatched")
       .reverse()
-      .filter((r) => hasResumePoint(r))
-      .toArray();
-    return rows.slice(0, limit);
+      // `until` stops the reverse cursor as soon as the requested number of
+      // resumable rows has been collected, rather than deserializing every
+      // zero-progress Detail-open row in an unbounded history.
+      .until(() => rows.length >= limit)
+      .each((row) => {
+        if (hasResumePoint(row)) rows.push(row);
+      });
+    return rows;
   }
 
   // ---- Library + folders ----------------------------------------------------

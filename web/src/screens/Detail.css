@@ -187,9 +187,8 @@
   justify-content: center;
   padding: clamp(16px, 4vw, 48px) 16px;
   overflow-y: auto;
-  background: rgba(5, 6, 12, 0.72);
-  backdrop-filter: blur(20px) saturate(1.2);
-  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  /* Opaque base, no full-viewport filter. */
+  background: var(--bg-1);
   animation: episode-streams-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes episode-streams-in {

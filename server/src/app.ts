@@ -1776,7 +1776,10 @@ function adminHealthSummary(db: AppDatabase, config: ServerConfig) {
          AND used_count < max_uses`,
       now,
     ),
-    auditEvents: countScalar(db, "SELECT COUNT(*) AS count FROM audit_log"),
+    auditEvents: countScalar(
+      db,
+      "SELECT COUNT(*) AS count FROM (SELECT 1 FROM audit_log LIMIT 10000)",
+    ),
     recentStreamErrors: countScalar(
       db,
       `SELECT COUNT(*) AS count
@@ -3033,7 +3036,6 @@ function registerRoutes(
         body.streamQuality ?? null,
         serializePreview(body.preview),
       );
-    audit(db, auth, "history.upsert", "media", mediaId);
     return { ok: true };
   });
 

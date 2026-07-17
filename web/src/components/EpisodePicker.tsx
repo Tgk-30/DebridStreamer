@@ -18,6 +18,11 @@ import { isNetworkAllowed } from "../lib/networkPolicy";
 import "./EpisodePicker.css";
 
 const TMDB_STILL_BASE = "https://image.tmdb.org/t/p/w300";
+const DATE_FMT = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
 
 // Above this many seasons the chip row gets unwieldy (wraps into a big block),
 // so we switch to a compact "Season N" dropdown instead.
@@ -63,11 +68,7 @@ function airDateLabel(airDate: string | null | undefined): string | null {
   if (!airDate) return null;
   const d = new Date(`${airDate}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(d);
+  return DATE_FMT.format(d);
 }
 
 function metaLabel(ep: Episode): string {

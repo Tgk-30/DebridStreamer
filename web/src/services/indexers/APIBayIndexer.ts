@@ -57,6 +57,12 @@ export class APIBayIndexer implements TorrentIndexer {
     const items = await this.fetchItems(url);
     if (items == null) return [];
 
+    const seasonEpisodePattern =
+      type === "series" && season != null && episode != null
+        ? new RegExp(
+            `S${String(season).padStart(2, "0")}[ ._-]?E${String(episode).padStart(2, "0")}`,
+          )
+        : null;
     const results: TorrentResult[] = [];
     for (const item of items) {
       const hash = item.info_hash;
@@ -66,11 +72,9 @@ export class APIBayIndexer implements TorrentIndexer {
       // Requires a contiguous S<season><sep>E<episode> token (allowing common
       // separators like dot/space/dash) to avoid false positives from stray
       // non-contiguous matches such as "S01E05.x264-E01TUREL".
-      if (type === "series" && season != null && episode != null) {
+      if (seasonEpisodePattern != null) {
         const titleUpper = item.name.toUpperCase();
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const pattern = new RegExp(`S${pad(season)}[ ._-]?E${pad(episode)}`);
-        if (!pattern.test(titleUpper)) continue;
+        if (!seasonEpisodePattern.test(titleUpper)) continue;
       }
 
       const seeders = Number.parseInt(item.seeders, 10) || 0;

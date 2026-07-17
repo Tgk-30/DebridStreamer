@@ -45,9 +45,6 @@ import { ProfileMenu } from "./components/ProfileMenu";
 import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { InstallPrompt, isInstallPromptEligible } from "./components/InstallPrompt";
-// Eager: it's always mounted (self-contained) and owns the global ⌘K listener, so
-// code-splitting it would leave the shortcut dead until its chunk resolved.
-import { CommandPalette } from "./components/CommandPalette";
 // Eager (not lazy): the lock screen must paint in the SAME commit as the app
 // shell, or a code-split chunk load would flash a protected profile's content
 // behind a null Suspense fallback before the gate appears.
@@ -78,7 +75,6 @@ import { Search } from "./screens/Search";
 import { Library } from "./screens/Library";
 import { Watchlist } from "./screens/Watchlist";
 import { History } from "./screens/History";
-import { Assistant } from "./screens/Assistant";
 
 // Heavy / not-on-first-paint screens + overlays are code-split into their own
 // chunks (React.lazy), so the initial bundle doesn't carry them. The Detail
@@ -99,6 +95,9 @@ const Settings = lazy(() =>
 );
 const Browse = lazy(() =>
   import("./screens/Browse").then((m) => ({ default: m.Browse })),
+);
+const Assistant = lazy(() =>
+  import("./screens/Assistant").then((m) => ({ default: m.Assistant })),
 );
 const Detail = lazy(() =>
   import("./screens/Detail").then((m) => ({ default: m.Detail })),
@@ -133,6 +132,9 @@ const SetupNudge = lazy(() =>
 );
 const SpotlightTour = lazy(() =>
   import("./components/SpotlightTour").then((m) => ({ default: m.SpotlightTour })),
+);
+const CommandPalette = lazy(() =>
+  import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })),
 );
 
 /** Gates a genuine first-run behind the right wizard, then the app:
@@ -298,6 +300,22 @@ export function App() {
 
   // "Who's watching" picker visibility, server or Local Mode.
   const [profilePickerOpen, setProfilePickerOpen] = useState(false);
+  // Keep a tiny always-loaded shortcut shim so the first Cmd-K requests the
+  // lazy palette and opens it in its initial render.
+  const [commandPaletteRequested, setCommandPaletteRequested] = useState(false);
+  useEffect(() => {
+    const openCommandPalette = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        (event.key === "k" || event.key === "K")
+      ) {
+        event.preventDefault();
+        setCommandPaletteRequested(true);
+      }
+    };
+    window.addEventListener("keydown", openCommandPalette);
+    return () => window.removeEventListener("keydown", openCommandPalette);
+  }, []);
   // A password lock is independent of the "enable multiple profiles" toggle:
   // once a profile has a password it stays gated until unlocked, even if
   // multi-user is later switched off (otherwise the toggle silently voids it).
@@ -633,8 +651,12 @@ export function App() {
           <LocalProfilePicker mode="lock" onClose={() => {}} />
         )}
 
-        {/* ⌘K quick switcher - self-contained; hidden until invoked. */}
-        <CommandPalette />
+        {/* ⌘K quick switcher - fetched only after its first shortcut. */}
+        {commandPaletteRequested && (
+          <Suspense fallback={null}>
+            <CommandPalette initiallyOpen />
+          </Suspense>
+        )}
 
         {/* First-run feature tour (and re-openable from Settings / ⌘K). */}
         {welcomeGuideOpen && (

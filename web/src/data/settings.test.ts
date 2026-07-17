@@ -669,6 +669,34 @@ describe("loadSettingsFromStore - established store", () => {
     expect(s.omdbKey).toBe("plain-omdb");
   });
 
+  it("hydrates scalar and secret values from one bulk settings snapshot", async () => {
+    settingsMap.set("simple_mode", "true");
+    settingsMap.set("tmdb_api_key", "secret:tmdb_api_key");
+    secretMap.set("tmdb_api_key", "resolved-tmdb");
+
+    const fromSnapshot = await loadSettingsFromStore();
+
+    expect(fromSnapshot.simpleMode).toBe(true);
+    expect(fromSnapshot.tmdbKey).toBe("resolved-tmdb");
+    expect(fakeStore.allSettings).toHaveBeenCalledTimes(1);
+    expect(fakeStore.getSetting).not.toHaveBeenCalled();
+
+    // The fake can expose the identical records through individual reads too;
+    // its bulk adapter must produce the same fully-normalized AppSettings.
+    vi.clearAllMocks();
+    fakeStore.allSettings.mockImplementationOnce(async () =>
+      Object.fromEntries(
+        await Promise.all(
+          Array.from(settingsMap.keys()).map(async (key) => [
+            key,
+            await fakeStore.getSetting(key),
+          ]),
+        ),
+      ),
+    );
+    await expect(loadSettingsFromStore()).resolves.toEqual(fromSnapshot);
+  });
+
   it("keeps persisted Simple and Aurora values when the durable store hydrates", async () => {
     settingsMap.set("simple_mode", "true");
     settingsMap.set("ui_theme", "aurora");

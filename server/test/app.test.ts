@@ -2,11 +2,13 @@ import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { EventEmitter } from "node:events";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { buildApp } from "../src/app.js";
+import { AppDatabase } from "../src/db.js";
 import type { Transcoder } from "../src/transcode.js";
 
 // A fake ffmpeg surface so transcode tests run without a real binary: detect()
@@ -438,6 +440,78 @@ describe("DebridStreamer server", () => {
     );
     expect(ownerHist.items[0]).toMatchObject({ progressSeconds: 10, completed: false });
     expect(bobHist.items[0]).toMatchObject({ progressSeconds: 90, completed: true });
+  });
+
+  it("does not audit routine resume-position updates", async () => {
+    const owner = await setupOwner(app);
+    const before = json<{ events: Array<{ action: string }> }>(
+      await request(owner, { method: "GET", url: "/api/admin/audit-log" }),
+    ).events;
+
+    const response = await request(owner, {
+      method: "PUT",
+      url: "/api/history/tt-resume",
+      csrf: true,
+      payload: {
+        progressSeconds: 30,
+        durationSeconds: 120,
+        completed: false,
+        preview: { id: "tt-resume", title: "Resume title" },
+      },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const after = json<{ events: Array<{ action: string }> }>(
+      await request(owner, { method: "GET", url: "/api/admin/audit-log" }),
+    ).events;
+    expect(after).toEqual(before);
+    expect(after.some((event) => event.action === "history.upsert")).toBe(false);
+  });
+
+  it("caps the admin health audit-event count at 10,000", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "debridstreamer-health-test-"));
+    const databasePath = join(tempDir, "database.sqlite");
+    const healthApp = await buildApp({
+      config: {
+        databasePath,
+        dataDir: tempDir,
+        secretKey: randomBytes(32),
+        cookieSecure: false,
+        logger: false,
+        allowRawStreamUrls: true,
+      },
+    });
+    let database: AppDatabase | null = null;
+    try {
+      const owner = await setupOwner(healthApp);
+      database = new AppDatabase(databasePath);
+      database.sqlite.exec("DELETE FROM audit_log");
+      const insert = database.sqlite.prepare(
+        `INSERT INTO audit_log
+         (id, actor_user_id, actor_profile_id, action, target_type, target_id, metadata_json, created_at)
+         VALUES (?, NULL, NULL, 'test', NULL, NULL, NULL, ?)`,
+      );
+      const createdAt = new Date().toISOString();
+      database.transaction(() => {
+        for (let i = 0; i < 9_999; i += 1) insert.run(`audit-${i}`, createdAt);
+      });
+
+      const belowCap = json<{ counts: { auditEvents: number } }>(
+        await request(owner, { method: "GET", url: "/api/admin/health" }),
+      );
+      expect(belowCap.counts.auditEvents).toBe(9_999);
+
+      insert.run("audit-9999", createdAt);
+      insert.run("audit-10000", createdAt);
+      const atCap = json<{ counts: { auditEvents: number } }>(
+        await request(owner, { method: "GET", url: "/api/admin/health" }),
+      );
+      expect(atCap.counts.auditEvents).toBe(10_000);
+    } finally {
+      database?.close();
+      await healthApp.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("seeds system folders and supports folder + entry CRUD with DexieStore parity", async () => {

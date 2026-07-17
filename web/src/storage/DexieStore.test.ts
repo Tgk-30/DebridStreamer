@@ -332,6 +332,84 @@ describe("watch history", () => {
     expect(cw.map((r) => r.mediaId)).toEqual(["tt2", "tt1"]);
   });
 
+  it("continueWatching stops its reverse cursor after collecting the requested resumables", async () => {
+    const recordZeroProgress = async (id: string, lastWatched: string) => {
+      await db.recordHistory({
+        mediaId: id,
+        preview: preview(id),
+        progressSeconds: 0,
+        durationSeconds: null,
+        lastWatched,
+      });
+    };
+
+    // The trailing block is intentionally large: an unbounded filter would read
+    // all 242 rows, while the bounded cursor never reaches it.
+    for (let i = 0; i < 80; i += 1) {
+      await recordZeroProgress(
+        `new-zero-${i}`,
+        `2030-01-01T00:00:00.${String(i).padStart(3, "0")}Z`,
+      );
+    }
+    await db.recordHistory({
+      mediaId: "resumable-new",
+      preview: preview("resumable-new"),
+      progressSeconds: 100,
+      durationSeconds: 1_000,
+      lastWatched: "2025-01-01T00:00:00.000Z",
+    });
+    for (let i = 0; i < 80; i += 1) {
+      await recordZeroProgress(
+        `middle-zero-${i}`,
+        `2024-01-01T00:00:00.${String(i).padStart(3, "0")}Z`,
+      );
+    }
+    await db.recordHistory({
+      mediaId: "resumable-old",
+      preview: preview("resumable-old"),
+      progressSeconds: 200,
+      durationSeconds: 1_000,
+      lastWatched: "2023-01-01T00:00:00.000Z",
+    });
+    for (let i = 0; i < 80; i += 1) {
+      await recordZeroProgress(
+        `old-zero-${i}`,
+        `2022-01-01T00:00:00.${String(i).padStart(3, "0")}Z`,
+      );
+    }
+
+    let cursorVisits = 0;
+    const historyTable = Reflect.get(db, "watchHistory") as {
+      core: {
+        openCursor(
+          ...args: unknown[]
+        ): Promise<{
+          start(callback: () => void): unknown;
+        } | null>;
+      };
+    };
+    const originalOpenCursor = historyTable.core.openCursor.bind(historyTable.core);
+    historyTable.core.openCursor = async (...args) => {
+      const cursor = await originalOpenCursor(...args);
+      if (cursor == null) return null;
+      const originalStart = cursor.start.bind(cursor);
+      cursor.start = (callback) =>
+        originalStart(() => {
+          cursorVisits += 1;
+          callback();
+        });
+      return cursor;
+    };
+
+    const rows = await db.continueWatching(2);
+
+    expect(rows.map((row) => row.mediaId)).toEqual([
+      "resumable-new",
+      "resumable-old",
+    ]);
+    expect(cursorVisits).toBeLessThan(200);
+  });
+
   it("listHistory orders newest-first", async () => {
     await db.recordHistory({
       mediaId: "tt1",

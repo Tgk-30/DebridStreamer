@@ -673,9 +673,8 @@ function readRawLegacyBlob(): Partial<AppSettings> | null {
  * migration? ANY persisted KV key (other than the init flag) or ANY debrid/
  * indexer config row counts - so a partial Store of any shape isn't misread as
  * empty (which would let a redacted replay clear real data). */
-async function storeHasAnyData(): Promise<boolean> {
+async function storeHasAnyData(all: Record<string, string>): Promise<boolean> {
   const store = getStore();
-  const all = await store.allSettings();
   for (const key of Object.keys(all)) {
     if (key !== "storage_port_initialized") return true;
   }
@@ -717,11 +716,13 @@ export function redactSecrets(settings: AppSettings): AppSettings {
 
 // ---- Store-backed settings (the storage port) -------------------------------
 
-/** Read a setting value, transparently resolving the secret indirection: a
- * `secret:<key>` marker in the KV table means the real value is in SecretStore. */
-async function getStoredValue(key: string): Promise<string | null> {
-  const store = getStore();
-  const raw = await store.getSetting(key);
+/** Resolve a setting from a bulk KV snapshot, following the SecretStore marker
+ * when the real value is kept outside the settings table. */
+async function getStoredValue(
+  all: ReadonlyMap<string, string>,
+  key: string,
+): Promise<string | null> {
+  const raw = all.get(key);
   if (raw == null) return null;
   if (raw.startsWith(SECRET_MARKER)) {
     return getSecretStore().getSecret(raw.slice(SECRET_MARKER.length));
@@ -849,7 +850,11 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
   // One-time migration: if the Store has nothing yet but localStorage has a
   // legacy blob, seed the Store from it so the upgrade is seamless.
   const store = getStore();
-  const existingFlag = await store.getSetting("storage_port_initialized");
+  // One KV snapshot avoids serial IndexedDB reads for every scalar setting on
+  // the first-paint path. RemoteStore implements the same Store contract.
+  const all = await store.allSettings();
+  const settingsByKey = new Map(Object.entries(all));
+  const existingFlag = settingsByKey.get("storage_port_initialized") ?? null;
   // True when we took the migration SKIP branch (flag was unset but the Store
   // already held data). In that case the legacy cache may still hold un-migrated
   // plaintext, so the scrub at the end must NOT run this load (it would destroy
@@ -857,7 +862,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
   let skippedMigration = false;
   if (existingFlag == null) {
     const rawLegacy = readRawLegacyBlob();
-    const storeHasData = await storeHasAnyData();
+    const storeHasData = await storeHasAnyData(all);
 
     // Replay ONLY into a genuinely empty Store. Once the Store holds ANY data - 
     // an interrupted migration's own writes, OR the user's later changes - the
@@ -900,12 +905,12 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     aiApiKey,
     openSubtitlesApiKey,
   ] = await Promise.all([
-    getStoredValue(SettingsKeys.tmdbApiKey),
-    getStoredValue(SettingsKeys.traktClientId),
-    getStoredValue(SettingsKeys.traktClientSecret),
-    getStoredValue(SettingsKeys.omdbApiKey),
-    getStoredValue(SettingsKeys.aiApiKey),
-    getStoredValue(SettingsKeys.openSubtitlesApiKey),
+    getStoredValue(settingsByKey, SettingsKeys.tmdbApiKey),
+    getStoredValue(settingsByKey, SettingsKeys.traktClientId),
+    getStoredValue(settingsByKey, SettingsKeys.traktClientSecret),
+    getStoredValue(settingsByKey, SettingsKeys.omdbApiKey),
+    getStoredValue(settingsByKey, SettingsKeys.aiApiKey),
+    getStoredValue(settingsByKey, SettingsKeys.openSubtitlesApiKey),
   ]);
   const [
     aiProvider,
@@ -950,50 +955,50 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     userAvatar,
     builtInPlayer,
     networkMode,
-  ] = await Promise.all([
-    store.getSetting(SettingsKeys.aiProvider),
-    store.getSetting(SettingsKeys.aiModel),
-    store.getSetting(SettingsKeys.ollamaEndpoint),
-    store.getSetting(SettingsKeys.builtInIndexersEnabled),
-    store.getSetting(SettingsKeys.traktScrobbleEnabled),
-    store.getSetting(SettingsKeys.theme),
-    store.getSetting(SettingsKeys.appearanceAccent),
-    store.getSetting(SettingsKeys.appearanceDensity),
-    store.getSetting(SettingsKeys.appearanceTextSize),
-    store.getSetting(SettingsKeys.appearanceMotion),
-    store.getSetting(SettingsKeys.appearanceRadius),
-    store.getSetting(SettingsKeys.appearanceBlur),
-    store.getSetting(SettingsKeys.appearanceChrome),
-    store.getSetting(SettingsKeys.appearanceBackdrop),
-    store.getSetting(SettingsKeys.appearanceHeroScale),
-    store.getSetting(SettingsKeys.appearancePanelContrast),
-    store.getSetting(SettingsKeys.appearanceNavLabels),
-    store.getSetting(SettingsKeys.appearanceNavPosition),
-    store.getSetting(SettingsKeys.appearanceNavTint),
-    store.getSetting(SettingsKeys.appearancePosterSize),
-    store.getSetting(SettingsKeys.appearanceDefaultTab),
-    store.getSetting(SettingsKeys.appearanceNavOrder),
-    store.getSetting(SettingsKeys.appearanceNavHidden),
-    store.getSetting(SettingsKeys.subtitleFontScale),
-    store.getSetting(SettingsKeys.subtitleTextColor),
-    store.getSetting(SettingsKeys.subtitleBgOpacity),
-    store.getSetting(SettingsKeys.autoUpdateChecks),
-    store.getSetting(SettingsKeys.autoInstallUpdates),
-    store.getSetting(SettingsKeys.streamCachedOnly),
-    store.getSetting(SettingsKeys.streamMaxQuality),
-    store.getSetting(SettingsKeys.streamMaxSizeGB),
-    store.getSetting(SettingsKeys.dataSaver),
-    store.getSetting(SettingsKeys.autoAdvanceEpisodes),
-    store.getSetting(SettingsKeys.showWatchStats),
-    store.getSetting(SettingsKeys.transcode),
-    store.getSetting(SettingsKeys.simpleMode),
-    store.getSetting(SettingsKeys.ratingScale),
-    store.getSetting(SettingsKeys.preferredExternalPlayer),
-    store.getSetting(SettingsKeys.userName),
-    store.getSetting(SettingsKeys.userAvatar),
-    store.getSetting(SettingsKeys.builtInPlayer),
-    store.getSetting(SettingsKeys.networkMode),
-  ]);
+  ] = [
+    settingsByKey.get(SettingsKeys.aiProvider) ?? null,
+    settingsByKey.get(SettingsKeys.aiModel) ?? null,
+    settingsByKey.get(SettingsKeys.ollamaEndpoint) ?? null,
+    settingsByKey.get(SettingsKeys.builtInIndexersEnabled) ?? null,
+    settingsByKey.get(SettingsKeys.traktScrobbleEnabled) ?? null,
+    settingsByKey.get(SettingsKeys.theme) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceAccent) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceDensity) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceTextSize) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceMotion) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceRadius) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceBlur) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceChrome) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceBackdrop) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceHeroScale) ?? null,
+    settingsByKey.get(SettingsKeys.appearancePanelContrast) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceNavLabels) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceNavPosition) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceNavTint) ?? null,
+    settingsByKey.get(SettingsKeys.appearancePosterSize) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceDefaultTab) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceNavOrder) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceNavHidden) ?? null,
+    settingsByKey.get(SettingsKeys.subtitleFontScale) ?? null,
+    settingsByKey.get(SettingsKeys.subtitleTextColor) ?? null,
+    settingsByKey.get(SettingsKeys.subtitleBgOpacity) ?? null,
+    settingsByKey.get(SettingsKeys.autoUpdateChecks) ?? null,
+    settingsByKey.get(SettingsKeys.autoInstallUpdates) ?? null,
+    settingsByKey.get(SettingsKeys.streamCachedOnly) ?? null,
+    settingsByKey.get(SettingsKeys.streamMaxQuality) ?? null,
+    settingsByKey.get(SettingsKeys.streamMaxSizeGB) ?? null,
+    settingsByKey.get(SettingsKeys.dataSaver) ?? null,
+    settingsByKey.get(SettingsKeys.autoAdvanceEpisodes) ?? null,
+    settingsByKey.get(SettingsKeys.showWatchStats) ?? null,
+    settingsByKey.get(SettingsKeys.transcode) ?? null,
+    settingsByKey.get(SettingsKeys.simpleMode) ?? null,
+    settingsByKey.get(SettingsKeys.ratingScale) ?? null,
+    settingsByKey.get(SettingsKeys.preferredExternalPlayer) ?? null,
+    settingsByKey.get(SettingsKeys.userName) ?? null,
+    settingsByKey.get(SettingsKeys.userAvatar) ?? null,
+    settingsByKey.get(SettingsKeys.builtInPlayer) ?? null,
+    settingsByKey.get(SettingsKeys.networkMode) ?? null,
+  ];
 
   const debridConfigs = await store.listDebridConfigs();
   const indexerConfigs = await store.listIndexerConfigs();

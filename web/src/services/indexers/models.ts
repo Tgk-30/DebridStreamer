@@ -9,12 +9,24 @@
 
 // MARK: - Token boundary helper (mirrors `mediaTokenMatch`)
 
+const MEDIA_TOKEN_PATTERNS = new Map<string, RegExp>([
+  ["sd", /(?<![a-z0-9])sd(?![a-z0-9])/],
+  ["cam", /(?<![a-z0-9])cam(?![a-z0-9])/],
+  ["ts", /(?<![a-z0-9])ts(?![a-z0-9])/],
+]);
+
 /** Matches `token` only when delimited by non-alphanumeric boundaries (or
  * string ends), so ambiguous short tokens like "ts"/"sd"/"cam" don't match when
  * embedded inside words. Mirrors Swift `mediaTokenMatch`. */
 function mediaTokenMatch(haystack: string, token: string): boolean {
   // Swift uses `(?<![a-z0-9])token(?![a-z0-9])` on an already-lowercased string.
-  const re = new RegExp(`(?<![a-z0-9])${token}(?![a-z0-9])`);
+  let re = MEDIA_TOKEN_PATTERNS.get(token);
+  if (re == null) {
+    // Keep the helper's generic token semantics while caching any future token
+    // rather than compiling a new expression for every parse.
+    re = new RegExp(`(?<![a-z0-9])${token}(?![a-z0-9])`);
+    MEDIA_TOKEN_PATTERNS.set(token, re);
+  }
   return re.test(haystack);
 }
 

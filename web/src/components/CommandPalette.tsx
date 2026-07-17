@@ -29,9 +29,9 @@ const NAV_TARGETS: Array<{ id: ScreenId; label: string; icon: IconName }> = [
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 
-export function CommandPalette() {
+export function CommandPalette({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
   const { navigate, search, settings, updateSettings } = useAppStore();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);

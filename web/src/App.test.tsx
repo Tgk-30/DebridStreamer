@@ -181,7 +181,12 @@ vi.mock("./components/ProfilePicker", () => ({
 }));
 
 vi.mock("./components/CommandPalette", () => ({
-  CommandPalette: () => <div data-testid="command-palette" />,
+  CommandPalette: ({ initiallyOpen = false }: { initiallyOpen?: boolean }) => (
+    <div
+      data-testid="command-palette"
+      data-initially-open={String(initiallyOpen)}
+    />
+  ),
 }));
 
 vi.mock("./components/WelcomeGuide", () => ({
@@ -536,9 +541,14 @@ describe("ProfilePicker gating", () => {
 });
 
 describe("CommandPalette + UpdateBanner globals", () => {
-  it("always renders the CommandPalette", () => {
+  it("loads and opens the CommandPalette on the first Cmd-K", async () => {
     render(<App />);
-    expect(screen.getByTestId("command-palette")).toBeInTheDocument();
+    expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    expect(await screen.findByTestId("command-palette")).toHaveAttribute(
+      "data-initially-open",
+      "true",
+    );
   });
 
   it("forwards update settings to the UpdateBanner", () => {
