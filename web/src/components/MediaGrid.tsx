@@ -13,9 +13,17 @@ interface MediaGridProps {
   /** Optional resume-progress fractions (0..1) keyed by media id - renders a
    * "Continue Watching" bar on matching cards. Omit to show no bars. */
   progress?: Record<string, number>;
+  /** Appearance preference passed from the screen's store boundary. */
+  showPosterRatings?: boolean;
 }
 
-export function MediaGrid({ items, onSelect, empty, progress }: MediaGridProps) {
+export function MediaGrid({
+  items,
+  onSelect,
+  empty,
+  progress,
+  showPosterRatings = false,
+}: MediaGridProps) {
   if (items.length === 0) {
     return empty ? <>{empty}</> : null;
   }
@@ -27,6 +35,7 @@ export function MediaGrid({ items, onSelect, empty, progress }: MediaGridProps) 
           item={item}
           onSelect={onSelect}
           progress={progress?.[item.id]}
+          showPosterRatings={showPosterRatings}
         />
       )}
     />

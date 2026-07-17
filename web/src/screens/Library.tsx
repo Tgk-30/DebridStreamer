@@ -27,7 +27,7 @@ import "./LibraryScreens.css";
 const ALL = "__all__";
 
 export function Library() {
-  const { watchlist, openDetail, openBrowse, navigate } = useAppStore();
+  const { watchlist, openDetail, openBrowse, navigate, settings } = useAppStore();
   const [folders, setFolders] = useState<LibraryFolderRecord[]>([]);
   const [entries, setEntries] = useState<LibraryEntryRecord[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string>(ALL);
@@ -214,7 +214,12 @@ export function Library() {
         )}
       </div>
 
-      <Rail title="Requested by your household" items={requested} onSelect={openDetail} />
+      <Rail
+        title="Requested by your household"
+        items={requested}
+        onSelect={openDetail}
+        showPosterRatings={settings?.showPosterRatings ?? false}
+      />
 
       <div className="lib-folders">
         <button
@@ -456,6 +461,7 @@ export function Library() {
                 item={item}
                 onSelect={openDetail}
                 watched={watchedIds.has(item.id)}
+                showPosterRatings={settings?.showPosterRatings ?? false}
               />
             )}
           />

@@ -69,6 +69,7 @@ export function History() {
           progressById={resumableProgress}
           labelById={resumableLabels}
           onSelect={openDetail}
+          showPosterRatings={settings?.showPosterRatings ?? false}
         />
       )}
 
@@ -104,6 +105,7 @@ export function History() {
               onSelect={openDetail}
               progress={resumableProgress[item.id]}
               watched={watchedIds.has(item.id)}
+              showPosterRatings={settings?.showPosterRatings ?? false}
             />
           )}
         />

@@ -1,12 +1,10 @@
 // @vitest-environment jsdom
 //
-// Tests for the useCalendar React hook (calendar.ts) - the stateful piece the
-// pure calendar.extra.test.ts (collectSeries / groupEpisodes) doesn't reach:
-// the initial hasTMDB flag, the no-series + no-key empty states, the live
-// (TMDB) and Server Mode resolution paths, and the error fallback (Error +
-// non-Error). collectSeries is driven through a mocked store; episode
-// resolution through mocked lib/metadata + serverApi; localISODate stays real
-// so groupEpisodes buckets correctly.
+// Tests for the calendar React hooks (calendar.ts). App-wide useCalendar only
+// resolves bounded followed-series episodes; route-local movie releases load
+// through useMovieReleaseCalendar. collectSeries is driven through a mocked
+// store; resolution through mocked lib/metadata + serverApi; localISODate stays
+// real so groupEpisodes buckets correctly.
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
@@ -48,7 +46,7 @@ vi.mock("../lib/serverMode", () => ({
   isServerMode: () => isServerMode(),
 }));
 
-import { useCalendar } from "./calendar";
+import { useCalendar, useMovieReleaseCalendar } from "./calendar";
 
 const getMovieReleaseCalendar = vi.fn();
 
@@ -169,13 +167,11 @@ describe("useCalendar - server mode", () => {
     expect(fetchServerUpcomingEpisodes).toHaveBeenCalledWith([preview("s2")]);
     expect(getUpcomingEpisodesForSeries).not.toHaveBeenCalled();
     expect(getMovieReleaseCalendar).not.toHaveBeenCalled();
-    expect(fetchServerMovieReleases).toHaveBeenCalledTimes(1);
+    expect(fetchServerMovieReleases).not.toHaveBeenCalled();
   });
 
-  it("combines TMDB movie releases with watched-series episodes by date", async () => {
-    listWatchlist.mockResolvedValue([watchRecord(preview("s3"))]);
+  it("loads TMDB movie releases only when the Calendar-only hook mounts", async () => {
     const date = todayEp().airDate;
-    getUpcomingEpisodesForSeries.mockResolvedValue([todayEp(preview("s3"))]);
     getMovieReleaseCalendar.mockResolvedValue([
       {
         movie: preview("m1", "movie"),
@@ -184,12 +180,11 @@ describe("useCalendar - server mode", () => {
       },
     ]);
 
-    const { result } = renderHook(() => useCalendar(SVC));
+    const { result } = renderHook(() => useMovieReleaseCalendar(SVC));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.entries).toEqual([
-      expect.objectContaining({ kind: "movie", date, media: preview("m1", "movie") }),
-      expect.objectContaining({ kind: "episode", date, media: preview("s3") }),
+    expect(result.current.releases).toEqual([
+      expect.objectContaining({ releaseDate: date, movie: preview("m1", "movie") }),
     ]);
     expect(getMovieReleaseCalendar).toHaveBeenCalledTimes(1);
   });

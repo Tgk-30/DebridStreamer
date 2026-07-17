@@ -422,10 +422,19 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [serviceConfigKey],
   );
 
-  // Resolve calendar data once at the store boundary. Calendar and the NavRail
-  // consume this same bounded result, avoiding duplicate episode requests.
-  // The watchlist identity is an intentional refresh key when follows change.
-  const calendar = useCalendar(services.tmdb, watchlist);
+  // Resolve badge-relevant episode data once at the store boundary. Avoid using
+  // the raw watchlist identity as a refresh key: movies and reorder-only changes
+  // cannot affect a followed-series episode schedule.
+  const calendarSeriesSignature = useMemo(
+    () =>
+      watchlist
+        .filter((item) => item.type === "series")
+        .map((item) => item.id)
+        .sort()
+        .join(","),
+    [watchlist],
+  );
+  const calendar = useCalendar(services.tmdb, calendarSeriesSignature);
 
   const openBrowse = useCallback((ctx: BrowseContext) => {
     setBrowseContext(ctx);
