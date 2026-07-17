@@ -212,6 +212,7 @@ describe("defaultSettings", () => {
     expect(d.streamMaxSizeGB).toBe(0);
     expect(d.dataSaver).toBe(false);
     expect(d.transcode).toBe(false);
+    expect(d.traktScrobbleEnabled).toBe(false);
   });
 
   it("returns a fresh object each call (no shared array identity)", () => {
@@ -283,6 +284,18 @@ describe("loadSettings", () => {
     const s = loadSettings();
     expect(s.simpleMode).toBe(true);
     expect(s.theme).toBe("aurora");
+  });
+
+  it("normalizes the opt-in Trakt scrobble toggle", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ traktScrobbleEnabled: true }),
+    });
+    expect(loadSettings().traktScrobbleEnabled).toBe(true);
+
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ traktScrobbleEnabled: "true" }),
+    });
+    expect(loadSettings().traktScrobbleEnabled).toBe(false);
   });
 
   it("normalizes legacy / invalid stored values to safe defaults", () => {
@@ -673,6 +686,7 @@ describe("loadSettingsFromStore - established store", () => {
     settingsMap.set("stream_cached_only", "true");
     settingsMap.set("data_saver", "true");
     settingsMap.set("transcode", "true");
+    settingsMap.set("trakt_scrobble_enabled", "true");
     const s = await loadSettingsFromStore();
     expect(s.builtInIndexersEnabled).toBe(false);
     expect(s.simpleMode).toBe(false);
@@ -681,6 +695,7 @@ describe("loadSettingsFromStore - established store", () => {
     expect(s.streamCachedOnly).toBe(true);
     expect(s.dataSaver).toBe(true);
     expect(s.transcode).toBe(true);
+    expect(s.traktScrobbleEnabled).toBe(true);
   });
 
   it("keeps an existing saved cached-only choice", async () => {
@@ -803,6 +818,7 @@ describe("saveSettingsToStore", () => {
         simpleMode: false,
         autoUpdateChecks: false,
         transcode: true,
+        traktScrobbleEnabled: true,
         streamMaxSizeGB: 12.34,
         appearanceBlur: 999, // normalized on write
       }),
@@ -812,6 +828,7 @@ describe("saveSettingsToStore", () => {
     expect(settingsMap.get("simple_mode")).toBe("false");
     expect(settingsMap.get("auto_update_checks")).toBe("false");
     expect(settingsMap.get("transcode")).toBe("true");
+    expect(settingsMap.get("trakt_scrobble_enabled")).toBe("true");
     expect(settingsMap.get("stream_max_size_gb")).toBe("12.3");
     expect(settingsMap.get("appearance_blur")).toBe("28"); // clamped
   });
@@ -933,6 +950,7 @@ describe("saveSettingsToStore", () => {
       aiProvider: "openai",
       aiModel: "m1",
       simpleMode: false,
+      traktScrobbleEnabled: true,
       streamMaxQuality: "1080p",
       streamMaxSizeGB: 20,
       appearanceAccent: "rose",
@@ -947,6 +965,7 @@ describe("saveSettingsToStore", () => {
     expect(loaded.aiProvider).toBe("openai");
     expect(loaded.aiModel).toBe("m1");
     expect(loaded.simpleMode).toBe(false);
+    expect(loaded.traktScrobbleEnabled).toBe(true);
     expect(loaded.streamMaxQuality).toBe("1080p");
     expect(loaded.streamMaxSizeGB).toBe(20);
     expect(loaded.appearanceAccent).toBe("rose");

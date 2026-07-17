@@ -268,6 +268,24 @@ describe("Settings · API keys (catalog)", () => {
     await waitFor(() => expect(clearTraktConnection).toHaveBeenCalledTimes(1));
   });
 
+  it("enables opt-in Trakt scrobbling only after Trakt connects", async () => {
+    const user = userEvent.setup();
+    const first = renderAt("keys", { traktClientId: "client", traktClientSecret: "secret" });
+    const toggle = await screen.findByRole("checkbox", { name: /Scrobble to Trakt/ });
+    expect(toggle).toBeDisabled();
+    first.unmount();
+
+    isTraktConnected.mockResolvedValue(true);
+    loadTraktConnection.mockResolvedValue({ meta: { username: "alice" } });
+    renderAt("keys", { traktClientId: "client", traktClientSecret: "secret" });
+    const connectedToggle = await screen.findByRole("checkbox", {
+      name: /Scrobble to Trakt/,
+    });
+    expect(connectedToggle).toBeEnabled();
+    await user.click(connectedToggle);
+    expect(connectedToggle).toBeChecked();
+  });
+
   it("switches to the Assistant AI panel and shows the provider select", async () => {
     const user = userEvent.setup();
     renderAt("keys");

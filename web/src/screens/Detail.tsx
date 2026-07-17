@@ -71,6 +71,10 @@ import {
 import type { NowPlayingMetadata } from "../components/player/PlayerPauseOverlay";
 import { seriesIsWatched } from "../data/watchedState";
 import { useDetailWatchedState } from "../data/useWatchedIds";
+import {
+  configureTraktScrobble,
+  type TraktScrobbleContext,
+} from "../data/traktScrobble";
 import { rebuildTasteContext } from "../services/ai/TasteProfile";
 import "./Detail.css";
 
@@ -137,6 +141,8 @@ interface ActivePlayer {
   episodeId: string | null;
   season: number | null;
   episode: number | null;
+  /** Immutable TMDB identity for the item actually handed to the player. */
+  scrobbleContext: TraktScrobbleContext | null;
 }
 
 /** True when the resolved file is a container/codec the webview can't decode
@@ -234,6 +240,11 @@ export function Detail() {
     refreshContinueWatching,
     cachedResolutions,
   } = useAppStore();
+  configureTraktScrobble({
+    enabled: settings.traktScrobbleEnabled,
+    clientId: settings.traktClientId,
+    clientSecret: settings.traktClientSecret,
+  });
   const transcodeAvailable = useTranscodeAvailable();
 
   const detail = useDetail(detailItem, services.tmdb);
@@ -797,6 +808,20 @@ export function Detail() {
           ? `${metadataTitle} (${metadataYear})`
           : metadataTitle
         : sourceFileName || "Untitled stream";
+    const tmdbId = item?.tmdbId ?? detailItem?.tmdbId ?? null;
+    const scrobbleContext: TraktScrobbleContext | null =
+      tmdbId == null
+        ? null
+        : detailItem?.type === "series"
+          ? selected == null
+            ? null
+            : {
+                tmdbId,
+                type: "series",
+                season: selected.season,
+                episode: selected.episode,
+              }
+          : { tmdbId, type: "movie" };
     setPlayer({
       url,
       title,
@@ -819,6 +844,7 @@ export function Detail() {
         selected != null ? episodeIdFor(selected.season, selected.episode) : null,
       season: selected?.season ?? null,
       episode: selected?.episode ?? null,
+      scrobbleContext,
     });
   }
 
@@ -1605,6 +1631,7 @@ export function Detail() {
             useBuiltInPlayer={settings.builtInPlayer}
             startPositionSeconds={player.startPositionSeconds}
             savedPrefs={player.savedPrefs}
+            scrobbleContext={player.scrobbleContext}
             onClose={closePlayer}
             onProgress={(current, duration, prefs) => {
               // Persist a resume position against the title (movies) or the

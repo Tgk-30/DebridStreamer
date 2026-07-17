@@ -52,6 +52,12 @@ import {
   type NowPlayingMetadata,
 } from "./player/PlayerPauseOverlay";
 import { registerPlayerMount } from "../lib/attention";
+import {
+  scrobblePlaybackPause,
+  scrobblePlaybackStart,
+  scrobblePlaybackStop,
+  type TraktScrobbleContext,
+} from "../data/traktScrobble";
 import "./VideoPlayer.css";
 
 type Playability = "webview" | "external";
@@ -99,6 +105,8 @@ interface VideoPlayerProps {
   imdbId?: string | null;
   season?: number | null;
   episode?: number | null;
+  /** Immutable TMDB playback identity, snapshotted by Detail when Play opens. */
+  scrobbleContext?: TraktScrobbleContext | null;
   /** Next-episode context: when set, an "Up next" card appears at video end.
    *  Null/omitted (movies, finale, setting off) renders nothing. */
   upNext?: { label: string } | null;
@@ -184,6 +192,14 @@ function inferEngine(url: string, kind?: Playability): PlaybackEngine {
     : "webview-direct";
 }
 
+/** Return the Trakt percentage at a lifecycle event, never a progress-tick. */
+function playbackProgressPct(current: number, duration: number): number {
+  if (!Number.isFinite(current) || !Number.isFinite(duration) || duration <= 0) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, (current / duration) * 100));
+}
+
 interface WebviewScrubberHandle {
   setCurrentTime(time: number): void;
 }
@@ -243,6 +259,7 @@ export function VideoPlayer({
   imdbId,
   season,
   episode,
+  scrobbleContext = null,
   upNext = null,
   onPlayNext,
   autoCountdown = true,
@@ -462,6 +479,7 @@ export function VideoPlayer({
         onProgress={(current, duration, prefs) =>
           onProgress?.(current, duration, prefs)
         }
+        scrobbleContext={scrobbleContext}
         onPlayNext={upNext != null ? onPlayNext : undefined}
         nextLabel={upNext?.label ?? null}
         onClose={onClose}
@@ -558,6 +576,7 @@ export function VideoPlayer({
             imdbId={imdbId ?? null}
             season={season ?? null}
             episode={episode ?? null}
+            scrobbleContext={scrobbleContext}
             upNext={upNext}
             onPlayNext={onPlayNext}
             autoCountdown={autoCountdown}
@@ -602,6 +621,7 @@ function WebviewPlayer({
   imdbId,
   season,
   episode,
+  scrobbleContext,
   upNext = null,
   onPlayNext,
   autoCountdown = true,
@@ -628,6 +648,7 @@ function WebviewPlayer({
   imdbId: string | null;
   season: number | null;
   episode: number | null;
+  scrobbleContext: TraktScrobbleContext | null;
   upNext?: { label: string } | null;
   onPlayNext?: () => void;
   autoCountdown?: boolean;
@@ -733,14 +754,24 @@ function WebviewPlayer({
       if (Number.isFinite(video.duration)) setDuration(video.duration);
       applyResume();
     };
-    const onEnded = () => setEnded(true);
+    const progressPct = () => playbackProgressPct(video.currentTime, video.duration);
+    const onEnded = () => {
+      setEnded(true);
+      if (scrobbleContext != null) scrobblePlaybackStop(scrobbleContext, progressPct());
+    };
     const onPause = () => {
       setPaused(true);
       onPausedChange(true);
+      if (!video.ended && scrobbleContext != null) {
+        scrobblePlaybackPause(scrobbleContext, progressPct());
+      }
     };
     const onPlay = () => {
       setPaused(false);
       onPausedChange(false);
+      if (scrobbleContext != null) {
+        scrobblePlaybackStart({ ...scrobbleContext, progressPct: progressPct() });
+      }
     };
     setEnded(false); // a new URL is a new playback - clear any stale end state
     setPaused(false);
@@ -761,8 +792,9 @@ function WebviewPlayer({
       video.removeEventListener("pause", onPause);
       video.removeEventListener("play", onPlay);
       if (onProgressRef.current != null && video.currentTime > 0) report();
+      if (scrobbleContext != null) scrobblePlaybackStop(scrobbleContext, progressPct());
     };
-  }, [onPausedChange, url]);
+  }, [onPausedChange, scrobbleContext, url]);
 
   // Wire hls.js for HLS streams when the browser can't play them natively.
   useEffect(() => {

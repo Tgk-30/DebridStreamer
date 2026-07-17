@@ -2,7 +2,7 @@
 //
 // Shows the saved titles as a MediaCard grid that opens Detail; each card can be
 // removed from the watchlist. Persistence is the durable Store (works in browser
-// + Tauri webview); manual Trakt movie-watchlist pull and push are available
+// + Tauri webview); manual Trakt watchlist pull and push are available
 // in Local Mode when the user has connected Trakt in Settings.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,18 +17,16 @@ import type { WatchlistFolderRecord } from "../storage/models";
 import { getStore } from "../storage";
 import { isServerMode } from "../lib/serverMode";
 import { useWatchedIds } from "../data/useWatchedIds";
-import type { MediaItem, MediaPreview } from "../models/media";
-import { resolveEntry, type ImportEntry } from "../data/importWatchlist";
 import {
   collectTraktWatchlistPushCandidates,
+  resolveTraktWatchlistPull,
 } from "../data/traktWatchlist";
 import {
   getValidAccessToken,
   isTraktConnected,
 } from "../data/traktConnection";
 import { TraktSyncService } from "../services/sync/TraktSyncService";
-import type { SyncState, TraktWatchlistItem } from "../services/sync/models";
-import type { TMDBService } from "../services/metadata/TMDBService";
+import type { SyncState } from "../services/sync/models";
 import "./LibraryScreens.css";
 import "./Watchlist.css";
 
@@ -40,12 +38,14 @@ type TraktSummary =
       added: number;
       skipped: number;
       notFound: number;
+      movies: number;
+      series: number;
     }
   | {
       kind: "push";
-      pushed: number;
+      movies: number;
+      series: number;
       skipped: number;
-      seriesExcluded: number;
     };
 
 export function shouldShowTraktWatchlistSync(
@@ -53,40 +53,6 @@ export function shouldShowTraktWatchlistSync(
   serverMode: boolean,
 ): boolean {
   return connected && !serverMode;
-}
-
-function previewFromDetail(item: MediaItem): MediaPreview {
-  return {
-    id: item.id,
-    type: item.type,
-    title: item.title,
-    year: item.year,
-    posterPath: item.posterPath,
-    imdbRating: item.imdbRating,
-    tmdbId: item.tmdbId,
-    backdropPath: item.backdropPath,
-  };
-}
-
-async function resolveTraktWatchlistItem(
-  item: TraktWatchlistItem,
-  tmdb: TMDBService,
-): Promise<MediaPreview | null> {
-  try {
-    const tmdbId = await tmdb.findByImdbId(item.imdbID, "movie");
-    if (tmdbId != null) {
-      return previewFromDetail(await tmdb.getDetail(`tmdb-${tmdbId}`, "movie"));
-    }
-  } catch {
-    // Fall through to a title/year search if IMDb reconciliation was unavailable.
-  }
-
-  const entry: ImportEntry = {
-    title: item.title,
-    year: item.year,
-    type: "movie",
-  };
-  return resolveEntry(entry, async (query, type) => (await tmdb.search(query, type)).items);
 }
 
 export function Watchlist() {
@@ -225,7 +191,7 @@ export function Watchlist() {
   async function pullFromTrakt() {
     if (services.tmdb == null) {
       setTraktSyncState("failed");
-      setTraktError("Add a TMDB API key in Settings to match Trakt movies.");
+      setTraktError("Add a TMDB API key in Settings to match Trakt titles.");
       return;
     }
     setTraktSyncState("running");
@@ -235,26 +201,31 @@ export function Watchlist() {
     try {
       const token = await accessToken();
       if (token == null) return;
-      const remoteItems = await traktService.fetchWatchlist(
-        settings.traktClientId.trim(),
-        token,
+      const [remoteMovies, remoteShows] = await Promise.all([
+        traktService.fetchWatchlist(
+          settings.traktClientId.trim(),
+          token,
+        ),
+        traktService.fetchWatchlistShows(
+          settings.traktClientId.trim(),
+          token,
+        ),
+      ]);
+      const resolved = await resolveTraktWatchlistPull(
+        remoteMovies,
+        remoteShows,
+        services.tmdb,
+        (done, total) => setTraktProgress({ done, total }),
       );
-      const resolved: MediaPreview[] = [];
-      let notFound = 0;
-      setTraktProgress({ done: 0, total: remoteItems.length });
-      for (let index = 0; index < remoteItems.length; index += 1) {
-        let match: MediaPreview | null = null;
-        try {
-          match = await resolveTraktWatchlistItem(remoteItems[index]!, services.tmdb);
-        } catch {
-          match = null;
-        }
-        if (match != null) resolved.push(match);
-        else notFound += 1;
-        setTraktProgress({ done: index + 1, total: remoteItems.length });
-      }
-      const { added, skipped } = await importToWatchlist(resolved);
-      setTraktSummary({ kind: "pull", added, skipped, notFound });
+      const { added, skipped } = await importToWatchlist(resolved.previews);
+      setTraktSummary({
+        kind: "pull",
+        added,
+        skipped,
+        notFound: resolved.notFound,
+        movies: resolved.movies,
+        series: resolved.series,
+      });
       setTraktSyncState("success");
       void reloadOrganization().catch((organizationError) => {
         setOrganizationError(
@@ -274,7 +245,7 @@ export function Watchlist() {
   async function pushToTrakt() {
     if (services.tmdb == null) {
       setTraktSyncState("failed");
-      setTraktError("Add a TMDB API key in Settings to reconcile movie IDs.");
+      setTraktError("Add a TMDB API key in Settings to reconcile Trakt IDs.");
       return;
     }
     setTraktSyncState("running");
@@ -289,12 +260,13 @@ export function Watchlist() {
         settings.traktClientId.trim(),
         token,
         candidates.imdbIDs,
+        candidates.showTMDBIDs,
       );
       setTraktSummary({
         kind: "push",
-        pushed: candidates.imdbIDs.length,
+        movies: candidates.imdbIDs.length,
+        series: candidates.showTMDBIDs.length,
         skipped: candidates.skipped,
-        seriesExcluded: candidates.seriesExcluded,
       });
       setTraktSyncState("success");
     } catch (error) {
@@ -332,7 +304,7 @@ export function Watchlist() {
         </div>
         <div className="watchlist-head-actions">
           {shouldShowTraktWatchlistSync(traktConnected, serverMode) && (
-            <div className="watchlist-sync-actions" aria-label="Trakt movie watchlist sync">
+            <div className="watchlist-sync-actions" aria-label="Trakt watchlist sync">
               <button
                 type="button"
                 className="btn btn-sm"
@@ -370,14 +342,14 @@ export function Watchlist() {
 
       {shouldShowTraktWatchlistSync(traktConnected, serverMode) && (
         <p className="watchlist-sync-note t-secondary">
-          Trakt syncs the movie watchlist only. Series are excluded.
+          Pull and push movies and series in your Trakt watchlist.
         </p>
       )}
       {traktSummary != null && (
         <p className="watchlist-sync-status" aria-live="polite">
           {traktSummary.kind === "pull"
-            ? `Pulled from Trakt: added ${traktSummary.added}, skipped ${traktSummary.skipped} already saved${traktSummary.notFound > 0 ? `, ${traktSummary.notFound} could not be matched` : ""}.`
-            : `Pushed ${traktSummary.pushed}, skipped ${traktSummary.skipped} (no IMDb id), ${traktSummary.seriesExcluded} series excluded.`}
+            ? `Pulled ${traktSummary.movies} movie${traktSummary.movies === 1 ? "" : "s"}, ${traktSummary.series} series from Trakt: added ${traktSummary.added}, skipped ${traktSummary.skipped} already saved${traktSummary.notFound > 0 ? `, ${traktSummary.notFound} could not be matched` : ""}.`
+            : `Pushed ${traktSummary.movies} movie${traktSummary.movies === 1 ? "" : "s"}, ${traktSummary.series} series to Trakt${traktSummary.skipped > 0 ? `, skipped ${traktSummary.skipped} without a Trakt-compatible ID` : ""}.`}
         </p>
       )}
       {traktError != null && (

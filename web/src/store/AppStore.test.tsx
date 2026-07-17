@@ -173,6 +173,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     tmdbKey: "",
     traktClientId: "",
     traktClientSecret: "",
+    traktScrobbleEnabled: false,
     omdbKey: "",
     debridTokens: [],
     sources: [],

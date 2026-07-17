@@ -4859,8 +4859,24 @@ function TraktConnectionSection({ draft, patch }: TabProps) {
         )}
       </div>
 
+      <label className="settings-toggle-row">
+        <input
+          type="checkbox"
+          checked={draft.traktScrobbleEnabled}
+          disabled={!connection.connected || checking}
+          onChange={(event) => patch({ traktScrobbleEnabled: event.target.checked })}
+        />
+        <span>
+          <strong>Scrobble to Trakt</strong>
+          <span className="t-secondary">
+            {" "}- mark what you watch as watching/watched on your Trakt profile.
+          </span>
+        </span>
+      </label>
+
       <p className="settings-model-msg t-secondary">
-        Syncs the movie watchlist only. Series, history, ratings, and background sync are not included.
+        Syncs movies and series in the watchlist. Scrobbling is opt-in and only
+        reports real player activity.
       </p>
 
       {dialogOpen && (

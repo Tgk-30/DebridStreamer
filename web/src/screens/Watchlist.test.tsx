@@ -34,6 +34,7 @@ const importToWatchlist = vi.fn();
 const isTraktConnected = vi.hoisted(() => vi.fn());
 const getValidAccessToken = vi.hoisted(() => vi.fn());
 const fetchWatchlist = vi.hoisted(() => vi.fn());
+const fetchWatchlistShows = vi.hoisted(() => vi.fn());
 const pushWatchlist = vi.hoisted(() => vi.fn());
 const findByImdbId = vi.fn();
 const getDetail = vi.fn();
@@ -73,6 +74,9 @@ vi.mock("../services/sync/TraktSyncService", () => ({
   TraktSyncService: class {
     fetchWatchlist(...args: unknown[]) {
       return fetchWatchlist(...args);
+    }
+    fetchWatchlistShows(...args: unknown[]) {
+      return fetchWatchlistShows(...args);
     }
     pushWatchlist(...args: unknown[]) {
       return pushWatchlist(...args);
@@ -142,6 +146,7 @@ beforeEach(() => {
   isTraktConnected.mockResolvedValue(false);
   getValidAccessToken.mockResolvedValue("access-token");
   fetchWatchlist.mockResolvedValue([]);
+  fetchWatchlistShows.mockResolvedValue([]);
   pushWatchlist.mockResolvedValue({});
   findByImdbId.mockResolvedValue(null);
   getDetail.mockReset();
@@ -277,7 +282,62 @@ describe("Watchlist - Trakt pull", () => {
       ]),
     );
     expect(fetchWatchlist).toHaveBeenCalledWith("trakt-client", "access-token");
-    expect(screen.getByText(/Pulled from Trakt: added 1, skipped 2 already saved/i)).toBeInTheDocument();
+    expect(screen.getByText(/Pulled 1 movie, 0 series from Trakt: added 1, skipped 2 already saved/i)).toBeInTheDocument();
+  });
+
+  it("pulls TMDB-resolved shows into the same watchlist merge", async () => {
+    isTraktConnected.mockResolvedValue(true);
+    fetchWatchlistShows.mockResolvedValue([
+      {
+        traktID: 123,
+        imdbID: "tt0944947",
+        tmdbID: 1399,
+        title: "Game of Thrones",
+        year: 2011,
+      },
+    ]);
+    getDetail.mockResolvedValue({
+      id: "tmdb-1399",
+      type: "series",
+      title: "Game of Thrones",
+      year: 2011,
+      genres: [],
+      lastFetched: "2026-01-01T00:00:00.000Z",
+      tmdbId: 1399,
+    });
+    importToWatchlist.mockResolvedValue({ added: 1, skipped: 0 });
+
+    render(<Watchlist />);
+    await userEvent.click(await screen.findByRole("button", { name: "Pull from Trakt" }));
+
+    await waitFor(() =>
+      expect(importToWatchlist).toHaveBeenCalledWith([
+        expect.objectContaining({ id: "tmdb-1399", type: "series" }),
+      ]),
+    );
+    expect(fetchWatchlistShows).toHaveBeenCalledWith("trakt-client", "access-token");
+    expect(screen.getByText(/Pulled 0 movies, 1 series from Trakt/i)).toBeInTheDocument();
+  });
+
+  it("pushes mixed movie and series candidates in one Trakt request", async () => {
+    isTraktConnected.mockResolvedValue(true);
+    mockWatchlist = [
+      { ...preview("tt0133093", "The Matrix"), type: "movie" },
+      { id: "tmdb-1399", type: "series", title: "Game of Thrones", tmdbId: 1399 },
+    ];
+
+    render(<Watchlist />);
+    await userEvent.click(await screen.findByRole("button", { name: "Push to Trakt" }));
+
+    await waitFor(() =>
+      expect(pushWatchlist).toHaveBeenCalledWith(
+        "trakt-client",
+        "access-token",
+        ["tt0133093"],
+        [1399],
+      ),
+    );
+    expect(screen.getByText(/Pushed 1 movie, 1 series to Trakt/i)).toBeInTheDocument();
   });
 
   it("hides Trakt actions in Server Mode", () => {

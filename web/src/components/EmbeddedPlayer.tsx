@@ -43,6 +43,12 @@ import {
   PlayerPauseOverlay,
   type NowPlayingMetadata,
 } from "./player/PlayerPauseOverlay";
+import {
+  scrobblePlaybackPause,
+  scrobblePlaybackStart,
+  scrobblePlaybackStop,
+  type TraktScrobbleContext,
+} from "../data/traktScrobble";
 import "./EmbeddedPlayer.css";
 
 interface Props {
@@ -69,6 +75,8 @@ interface Props {
   /** Give the parent one chance to switch to a compatible webview source when
    * native initialization or loading fails. Returning true means it recovered. */
   onPlaybackError?: (error: Error) => boolean | Promise<boolean>;
+  /** Immutable TMDB playback identity, snapshotted by Detail when Play opens. */
+  scrobbleContext?: TraktScrobbleContext | null;
   onClose: () => void;
 }
 
@@ -150,6 +158,14 @@ function fmt(s: number): string {
   const sec = t % 60;
   const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
   return `${h > 0 ? h + ":" : ""}${mm}:${String(sec).padStart(2, "0")}`;
+}
+
+/** Return the Trakt percentage at a lifecycle event, never from a progress tick. */
+function playbackProgressPct(current: number, duration: number): number {
+  if (!Number.isFinite(current) || !Number.isFinite(duration) || duration <= 0) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, (current / duration) * 100));
 }
 
 /** Parse mpv's `track-list` node into our typed tracks. */
@@ -392,6 +408,7 @@ export function EmbeddedPlayer({
   nextLabel,
   engine = "native-mpv",
   onPlaybackError,
+  scrobbleContext = null,
   onClose,
 }: Props) {
   const [error, setError] = useState<string | null>(null);
@@ -443,6 +460,7 @@ export function EmbeddedPlayer({
   const scrubberRef = useRef<NativeScrubberHandle | null>(null);
   const activeChapterIndexRef = useRef(-1);
   const pausedRef = useRef(paused);
+  const endedRef = useRef(false);
   const lastAudibleVolume = useRef(100);
   const menuOpenRef = useRef(false);
   menuOpenRef.current = menu != null || detailsSection != null;
@@ -504,6 +522,7 @@ export function EmbeddedPlayer({
     // Armed after loadfile; fires if no first frame arrives in time.
     let watchdog: number | undefined;
     firstFrameRef.current = false; // new file: show the initial spinner again
+    endedRef.current = false;
     posRef.current = 0;
     durRef.current = 0;
     scrubberRef.current?.updatePlayback({ pos: 0, bufferedTo: 0 }, true);
@@ -552,6 +571,19 @@ export function EmbeddedPlayer({
             switch (ev.name) {
               case "pause":
                 setPaused(Boolean(ev.data));
+                if (scrobbleContext != null) {
+                  if (ev.data === true && !endedRef.current) {
+                    scrobblePlaybackPause(
+                      scrobbleContext,
+                      playbackProgressPct(posRef.current, durRef.current),
+                    );
+                  } else if (ev.data === false && startedRef.current) {
+                    scrobblePlaybackStart({
+                      ...scrobbleContext,
+                      progressPct: playbackProgressPct(posRef.current, durRef.current),
+                    });
+                  }
+                }
                 break;
               case "time-pos":
                 if (typeof ev.data === "number") {
@@ -575,6 +607,12 @@ export function EmbeddedPlayer({
                     firstFrameRef.current = true;
                     setBuffering(false);
                     window.clearTimeout(watchdog);
+                    if (scrobbleContext != null) {
+                      scrobblePlaybackStart({
+                        ...scrobbleContext,
+                        progressPct: playbackProgressPct(posRef.current, durRef.current),
+                      });
+                    }
                   }
                   const now = Date.now();
                   if (
@@ -632,7 +670,16 @@ export function EmbeddedPlayer({
                 setActiveSid(ev.data == null ? "no" : String(ev.data));
                 break;
               case "eof-reached":
-                if (ev.data === true) setEnded(true);
+                if (ev.data === true) {
+                  endedRef.current = true;
+                  setEnded(true);
+                  if (scrobbleContext != null) {
+                    scrobblePlaybackStop(
+                      scrobbleContext,
+                      playbackProgressPct(posRef.current, durRef.current),
+                    );
+                  }
+                }
                 break;
               // A genuine playback FAILURE reported by mpv AFTER loadfile
               // succeeded (corrupt data / an undecodable codec) - the case the
@@ -708,8 +755,14 @@ export function EmbeddedPlayer({
       window.clearTimeout(watchdog);
       unlisten?.();
       void destroy().catch(() => {});
+      if (scrobbleContext != null) {
+        scrobblePlaybackStop(
+          scrobbleContext,
+          playbackProgressPct(posRef.current, durRef.current),
+        );
+      }
     };
-  }, [url, startPositionSeconds, refreshTracks, refreshChapters]);
+  }, [url, startPositionSeconds, refreshTracks, refreshChapters, scrobbleContext]);
 
   // Keep the current player prefs in a ref so the throttled/unmount progress
   // writes can persist them without re-subscribing on every track/speed change.
@@ -757,6 +810,7 @@ export function EmbeddedPlayer({
   const togglePause = useCallback(() => {
     if (ended) {
       setEnded(false);
+      endedRef.current = false;
       void command("seek", [0, "absolute"]);
       void setProperty("pause", false);
       return;
@@ -776,12 +830,14 @@ export function EmbeddedPlayer({
       setActiveChapterIndex(nextChapterIndex);
     }
     setEnded(false);
+    endedRef.current = false;
     void command("seek", [next, "absolute"]);
   }, []);
 
   const relSeek = useCallback(
     (delta: number) => {
       setEnded(false);
+      endedRef.current = false;
       void command("seek", [delta, "relative"]);
       nudgeControls();
     },
@@ -942,8 +998,14 @@ export function EmbeddedPlayer({
     if (startedRef.current && durRef.current > 0) {
       onProgress?.(posRef.current, durRef.current, prefsRef.current);
     }
+    if (scrobbleContext != null) {
+      scrobblePlaybackStop(
+        scrobbleContext,
+        playbackProgressPct(posRef.current, durRef.current),
+      );
+    }
     onClose();
-  }, [onClose, onProgress, fullscreen]);
+  }, [onClose, onProgress, fullscreen, scrobbleContext]);
 
   // Keep the current window's real fullscreen state in sync (Esc, green button).
   useEffect(() => {

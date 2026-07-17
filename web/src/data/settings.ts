@@ -70,6 +70,7 @@ const SettingsKeys = {
   tmdbApiKey: "tmdb_api_key",
   traktClientId: "trakt_client_id",
   traktClientSecret: "trakt_client_secret",
+  traktScrobbleEnabled: "trakt_scrobble_enabled",
   omdbApiKey: "omdb_api_key",
   builtInIndexersEnabled: "built_in_indexers_enabled",
   aiProvider: "ai_provider",
@@ -192,6 +193,8 @@ export interface AppSettings {
    *  themselves live outside AppSettings in traktConnection.ts. */
   traktClientId: string;
   traktClientSecret: string;
+  /** Opt-in only: report actual player lifecycle events to Trakt. */
+  traktScrobbleEnabled: boolean;
   omdbKey: string;
   debridTokens: DebridTokenEntry[];
   sources: SourceEntry[];
@@ -468,6 +471,7 @@ export function defaultSettings(): AppSettings {
     tmdbKey: env("VITE_TMDB_KEY"),
     traktClientId: "",
     traktClientSecret: "",
+    traktScrobbleEnabled: false,
     omdbKey: env("VITE_OMDB_KEY"),
     debridTokens: [],
     sources: [],
@@ -534,6 +538,10 @@ export function loadSettings(): AppSettings {
       // Don't let a missing array clobber the [] default.
       debridTokens: parsed.debridTokens ?? base.debridTokens,
       sources: parsed.sources ?? base.sources,
+      traktScrobbleEnabled:
+        typeof parsed.traktScrobbleEnabled === "boolean"
+          ? parsed.traktScrobbleEnabled
+          : base.traktScrobbleEnabled,
       streamMaxQuality: normalizeStreamMaxQuality(parsed.streamMaxQuality),
       streamMaxSizeGB: normalizeStreamMaxSizeGB(parsed.streamMaxSizeGB),
       appearanceAccent: normalizeAppearanceAccent(parsed.appearanceAccent),
@@ -759,6 +767,10 @@ async function setStoredValue(
 function scalarSettingEntries(settings: AppSettings): Array<[string, string]> {
   return [
     [SettingsKeys.aiProvider, settings.aiProvider],
+    [
+      SettingsKeys.traktScrobbleEnabled,
+      settings.traktScrobbleEnabled ? "true" : "false",
+    ],
     [SettingsKeys.aiModel, settings.aiModel],
     [SettingsKeys.ollamaEndpoint, settings.ollamaEndpoint],
     [SettingsKeys.networkMode, settings.networkMode],
@@ -900,6 +912,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     aiModel,
     ollamaEndpoint,
     builtIn,
+    traktScrobbleEnabled,
     theme,
     appearanceAccent,
     appearanceDensity,
@@ -942,6 +955,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     store.getSetting(SettingsKeys.aiModel),
     store.getSetting(SettingsKeys.ollamaEndpoint),
     store.getSetting(SettingsKeys.builtInIndexersEnabled),
+    store.getSetting(SettingsKeys.traktScrobbleEnabled),
     store.getSetting(SettingsKeys.theme),
     store.getSetting(SettingsKeys.appearanceAccent),
     store.getSetting(SettingsKeys.appearanceDensity),
@@ -1009,6 +1023,10 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     tmdbKey: tmdbKey ?? base.tmdbKey,
     traktClientId: traktClientId ?? base.traktClientId,
     traktClientSecret: traktClientSecret ?? base.traktClientSecret,
+    traktScrobbleEnabled:
+      traktScrobbleEnabled == null
+        ? base.traktScrobbleEnabled
+        : traktScrobbleEnabled === "true",
     omdbKey: omdbKey ?? base.omdbKey,
     debridTokens,
     sources,
