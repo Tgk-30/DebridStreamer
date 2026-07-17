@@ -6,6 +6,8 @@
 //     leave a credential behind,
 //   - outside Tauri it is a no-op (no bridge, nothing to wipe).
 
+import { readFileSync } from "node:fs";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
@@ -17,18 +19,45 @@ vi.mock("../lib/tauri", () => ({ isTauri: () => isTauriMock() }));
 import { KEYCHAIN_SERVICE } from "./KeychainSecretStore";
 import { KEYCHAIN_WIPE_KEYS, wipeKeychainSecrets } from "./keychainWipe";
 
-// The exact Rust allowlist (ALLOWED_SETTING_KEYS + ALLOWED_DEBRID_KEYS in
-// src-tauri/src/keychain.rs). Duplicated here ON PURPOSE: if either side ever
-// drifts from the TS mirror, this test fails and points at the contract.
+// The Rust keychain allowlist is the SINGLE SOURCE OF TRUTH for which secrets
+// the app can store, and therefore for which secrets a factory reset must wipe.
+// We parse it straight out of src-tauri/src/keychain.rs rather than hand-copying
+// it: a future provider added on the Rust side but not mirrored into
+// KEYCHAIN_WIPE_KEYS then fails THIS test in CI, instead of silently surviving a
+// factory reset (a secret-remanence bug in a security-sensitive erase path).
+// keychain.rs exposes no enumeration command, so this static parse is the only
+// cross-check the TS side can make. Resolved from this test's own location so it
+// works regardless of the process CWD.
+const KEYCHAIN_RS_URL = new URL("../../src-tauri/src/keychain.rs", import.meta.url);
+
+/** Extract the string literals from a `const NAME: &[&str] = &[ ... ];` Rust
+ *  slice. Throws loudly if the constant is missing/renamed or parses to zero
+ *  keys, so a restructure of keychain.rs can never make this cross-check pass
+ *  vacuously (an empty allowlist would otherwise "match" an empty wipe list). */
+function extractRustKeyArray(source: string, constName: string): string[] {
+  const decl = new RegExp(
+    `const\\s+${constName}\\s*:\\s*&\\[&str\\]\\s*=\\s*&\\[([\\s\\S]*?)\\]\\s*;`,
+  ).exec(source);
+  if (!decl) {
+    throw new Error(
+      `keychain.rs parse failed: could not find \`const ${constName}: &[&str] = &[...]\`. ` +
+        `If it was renamed or restructured, update keychainWipe.ts AND this parser together.`,
+    );
+  }
+  const keys = [...decl[1].matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+  if (keys.length === 0) {
+    throw new Error(`keychain.rs parse failed: \`const ${constName}\` yielded zero keys.`);
+  }
+  return keys;
+}
+
+const rustSource = readFileSync(KEYCHAIN_RS_URL, "utf8");
+// Union in source order (setting keys first, then debrid keys) — the same order
+// KEYCHAIN_WIPE_KEYS is authored in, so the exact-equality checks below also
+// pin the ordering, keeping the mirror trivially readable against the source.
 const RUST_ALLOWLIST = [
-  "tmdb_api_key",
-  "omdb_api_key",
-  "ai_api_key",
-  "opensubtitles_api_key",
-  "debrid.debrid-real_debrid",
-  "debrid.debrid-all_debrid",
-  "debrid.debrid-premiumize",
-  "debrid.debrid-torbox",
+  ...extractRustKeyArray(rustSource, "ALLOWED_SETTING_KEYS"),
+  ...extractRustKeyArray(rustSource, "ALLOWED_DEBRID_KEYS"),
 ];
 
 beforeEach(() => {
@@ -42,8 +71,14 @@ afterEach(() => {
 });
 
 describe("keychainWipe", () => {
-  it("mirrors the Rust keychain allowlist exactly", () => {
+  it("is the exact union of the Rust allowlists parsed from keychain.rs (drift guard)", () => {
+    // Fails CI if keychain.rs gains/loses/reorders an allowlisted key without a
+    // matching edit to KEYCHAIN_WIPE_KEYS — the one thing that would let a
+    // credential survive factory reset. Order is pinned too (source order).
     expect([...KEYCHAIN_WIPE_KEYS]).toEqual(RUST_ALLOWLIST);
+    // Belt-and-suspenders: also assert as sets, so a genuine membership drift is
+    // reported plainly even if someone later loosens the ordering contract.
+    expect([...KEYCHAIN_WIPE_KEYS].sort()).toEqual([...RUST_ALLOWLIST].sort());
   });
 
   it("deletes every allowlisted key through keychain_delete", async () => {

@@ -9,15 +9,23 @@
 // first makes the reset stick.
 //
 // The key list mirrors the Rust allowlists in src-tauri/src/keychain.rs
-// (ALLOWED_SETTING_KEYS + ALLOWED_DEBRID_KEYS). `keychain_delete` rejects any
-// key outside that allowlist, so drift here fails loudly (a thrown error the
-// caller surfaces) rather than silently leaving a credential behind.
+// (ALLOWED_SETTING_KEYS + ALLOWED_DEBRID_KEYS). Two drift directions, two guards:
+//   - a key HERE that Rust no longer allows -> `keychain_delete` rejects it and
+//     wipeKeychainSecrets throws (surfaced to the user as "reset incomplete");
+//   - a key Rust allows that is MISSING here -> would silently survive the wipe,
+//     so keychainWipe.test.ts parses keychain.rs and fails CI unless this list is
+//     the exact union of the two Rust allowlists.
+// keychain.rs exposes only get/set/delete (no enumeration command), so the TS
+// side cannot discover keys it does not hardcode — that mirror, enforced by the
+// test, is the only thing keeping this erase path complete.
 
 import { isTauri } from "../lib/tauri";
 import { KEYCHAIN_SERVICE } from "./KeychainSecretStore";
 
 /** Every key the app has ever been allowed to store in the OS keychain. Mirrors
- *  ALLOWED_SETTING_KEYS + ALLOWED_DEBRID_KEYS in src-tauri/src/keychain.rs. */
+ *  ALLOWED_SETTING_KEYS + ALLOWED_DEBRID_KEYS in src-tauri/src/keychain.rs, in
+ *  source order; kept in exact sync by keychainWipe.test.ts (which parses that
+ *  file), so a new Rust-side provider cannot silently survive factory reset. */
 export const KEYCHAIN_WIPE_KEYS: readonly string[] = [
   // ALLOWED_SETTING_KEYS
   "tmdb_api_key",
