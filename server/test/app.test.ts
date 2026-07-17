@@ -2551,6 +2551,105 @@ describe("DebridStreamer server", () => {
     ).toBe(403);
   });
 
+  it("sets and clears rolling household bandwidth caps without blocking stream sessions", async () => {
+    const owner = await setupOwner(app);
+    const kidId = await createAccountProfile(owner, { displayName: "Kid" });
+
+    const set = await request(owner, {
+      method: "POST",
+      url: "/api/profiles/quota",
+      csrf: true,
+      payload: { profileId: kidId, capBytes: 1 },
+    });
+    expect(set.statusCode).toBe(200);
+    expect(
+      json<{
+        profiles: ProfileState;
+      }>(set).profiles.profiles.find((profile) => profile.id === kidId),
+    ).toMatchObject({
+      bandwidthCapBytes: 1,
+      bandwidthUsageBytes: 0,
+      bandwidthStatus: "ok",
+    });
+
+    upstream = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "video/mp4" });
+      res.end("over-cap playback still works");
+    });
+    await new Promise<void>((resolve) => upstream?.listen(0, "127.0.0.1", () => resolve()));
+    const address = upstream.address();
+    if (address == null || typeof address === "string") throw new Error("Test server did not bind");
+    const upstreamUrl = `http://127.0.0.1:${address.port}/video`;
+
+    // Warn-only is intentional: this playback makes the profile over cap, and
+    // a later stream is still proxied. Do not add a quota check to this path.
+    await switchProfile(owner, kidId);
+    const first = await request(owner, {
+      method: "POST",
+      url: "/api/streams/sessions/raw",
+      csrf: true,
+      payload: { upstreamUrl, contentType: "video/mp4" },
+    });
+    expect(first.statusCode).toBe(200);
+    const firstSession = json<{ session: { id: string; playbackUrl: string } }>(first).session;
+    expect((await request(owner, { method: "GET", url: firstSession.playbackUrl })).statusCode).toBe(200);
+
+    const usage = await request(owner, { method: "GET", url: "/api/admin/usage/streams" });
+    expect(usage.statusCode).toBe(200);
+    expect(
+      json<{
+        profiles: Array<{
+          profileId: string;
+          bandwidthCapBytes: number | null;
+          bandwidthStatus: string;
+        }>;
+      }>(
+        usage,
+      ).profiles.find((profile) => profile.profileId === kidId),
+    ).toMatchObject({ bandwidthCapBytes: 1, bandwidthStatus: "over" });
+
+    const second = await request(owner, {
+      method: "POST",
+      url: "/api/streams/sessions/raw",
+      csrf: true,
+      payload: { upstreamUrl, contentType: "video/mp4" },
+    });
+    expect(second.statusCode).toBe(200);
+    const secondSession = json<{ session: { playbackUrl: string } }>(second).session;
+    expect((await request(owner, { method: "GET", url: secondSession.playbackUrl })).statusCode).toBe(200);
+
+    const clear = await request(owner, {
+      method: "POST",
+      url: "/api/profiles/quota",
+      csrf: true,
+      payload: { profileId: kidId, capBytes: null },
+    });
+    expect(clear.statusCode).toBe(200);
+    expect(
+      json<{ profiles: ProfileState }>(clear).profiles.profiles.find((profile) => profile.id === kidId),
+    ).toMatchObject({ bandwidthCapBytes: null, bandwidthStatus: "ok" });
+  });
+
+  it("allows only owner/admin household managers to set bandwidth caps", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "member", "member-password");
+    const member = await login(app, "member", "member-password");
+    const memberProfile = json<ProfileState>(
+      await request(member, { method: "GET", url: "/api/account/profiles" }),
+    ).activeProfileId;
+
+    expect(
+      (
+        await request(member, {
+          method: "POST",
+          url: "/api/profiles/quota",
+          csrf: true,
+          payload: { profileId: memberProfile, capBytes: 1024 },
+        })
+      ).statusCode,
+    ).toBe(403);
+  });
+
   it("never leaks or lets the client overwrite the protected sub-profile password hash", async () => {
     const owner = await setupOwner(app);
     // A household sub-profile created WITH a password stores a write-only hash.
