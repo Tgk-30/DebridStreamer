@@ -2661,9 +2661,12 @@ describe("DebridStreamer server", () => {
         payload: { displayName: "Kid", password: "kid-pin-1234" },
       }),
     ).profile.id;
-    // Switch to it so /api/settings/profile reads that profile's settings.
+    // Switch to it so /api/settings/profile reads that profile's settings. The
+    // profile was created with a password, which is now an enforced switch PIN,
+    // so the switch must supply it (a profile with a PIN can no longer be
+    // entered credential-free - that is the household gate).
     expect(
-      (await request(owner, { method: "POST", url: "/api/profiles/switch", csrf: true, payload: { profileId: sub } })).statusCode,
+      (await request(owner, { method: "POST", url: "/api/profiles/switch", csrf: true, payload: { profileId: sub, password: "kid-pin-1234" } })).statusCode,
     ).toBe(200);
     const settings = json<{ settings: Record<string, string> }>(
       await request(owner, { method: "GET", url: "/api/settings/profile" }),
