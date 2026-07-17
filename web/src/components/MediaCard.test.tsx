@@ -10,7 +10,34 @@ import userEvent from "@testing-library/user-event";
 import { MediaCard } from "./MediaCard";
 import type { MediaPreview } from "../models/media";
 
+const appSettings = vi.hoisted(() => ({ showPosterRatings: true }));
+vi.mock("../store/AppStore", () => ({
+  useAppStore: () => ({ settings: appSettings }),
+}));
+
 const item: MediaPreview = { id: "tt1", type: "movie", title: "Inception" };
+
+function renderCard(overrides: Partial<MediaPreview> = {}) {
+  return render(<MediaCard item={{ ...item, ...overrides }} onSelect={() => {}} />);
+}
+
+describe("MediaCard poster rating badge", () => {
+  it("shows a rated card's persistent badge only while the preference is on", () => {
+    appSettings.showPosterRatings = true;
+    const { rerender } = renderCard({ imdbRating: 8.2 });
+    expect(screen.getByLabelText("Rating 8.2 out of 10")).toBeInTheDocument();
+
+    appSettings.showPosterRatings = false;
+    rerender(<MediaCard item={{ ...item, imdbRating: 8.2 }} onSelect={() => {}} />);
+    expect(screen.queryByLabelText("Rating 8.2 out of 10")).toBeNull();
+  });
+
+  it("never shows a persistent badge for a ratingless card", () => {
+    appSettings.showPosterRatings = true;
+    renderCard();
+    expect(screen.queryByLabelText(/Rating .* out of 10/)).toBeNull();
+  });
+});
 
 describe("MediaCard a11y", () => {
   it("exposes a single button with the title as its accessible name", () => {

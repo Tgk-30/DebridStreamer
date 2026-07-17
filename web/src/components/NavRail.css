@@ -114,6 +114,7 @@
 }
 
 .nav-rail-icon {
+  position: relative;
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
@@ -121,6 +122,29 @@
   height: 28px;
   border-radius: var(--r-sm);
   color: currentColor;
+}
+
+/* In-app followed-release count. Pinned to the icon so it stays unobtrusive in
+   the compact rail, the wide labeled rail, and the bottom bar. */
+.nav-rail-badge {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border: 1px solid color-mix(in srgb, var(--bg-1) 70%, transparent);
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.38);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
 }
 
 .nav-rail-btn:focus-visible {
@@ -524,6 +548,7 @@
   }
 
   .nav-rail-more-icon {
+    position: relative;
     display: inline-grid;
     place-items: center;
     flex: 0 0 auto;

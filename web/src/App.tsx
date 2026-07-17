@@ -6,9 +6,10 @@
 // overlay that mounts over the content area whenever a media item is selected.
 
 import "./theme/theme.css";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { NavRail, isScreenHidden, type ScreenId } from "./components/NavRail";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { episodesAiredSince } from "./data/calendar";
 import type { TourStep } from "./components/SpotlightTour";
 
 // The point-and-highlight tour shown once after the welcome guide. Each step
@@ -287,9 +288,32 @@ export function FirstRunHost() {
 }
 
 export function App() {
-  const { route, navigate, detailItem, browseContext, closeBrowse, openDetail, closeDetail, settings, simpleMode, services, activeProfile, multiUserEnabled = false, profiles = [], switchLocalProfile } =
-    useAppStore();
+  const {
+    route,
+    navigate,
+    detailItem,
+    browseContext,
+    closeBrowse,
+    openDetail,
+    closeDetail,
+    settings,
+    simpleMode,
+    services,
+    calendar,
+    calendarLastSeenAt,
+    activeProfile,
+    multiUserEnabled = false,
+    profiles = [],
+    switchLocalProfile,
+  } = useAppStore();
   const playerMounted = usePlayerMounted();
+  // Calendar data is resolved once in AppStore. Recompute this bounded selector
+  // only when that data, its watermark, or navigation changes - never on every
+  // shell render. A failed/unavailable Server Mode calendar simply has no badge.
+  const calendarBadgeCount = useMemo(() => {
+    if (calendar.loading || calendar.error != null || calendarLastSeenAt == null) return 0;
+    return episodesAiredSince(calendar.episodes, calendarLastSeenAt).length;
+  }, [calendar.episodes, calendar.error, calendar.loading, calendarLastSeenAt, route]);
 
   // A mounted player can play for hours without pointer or keyboard activity.
   // Keep the input-idle route parking from treating that as unattended, while
@@ -562,6 +586,7 @@ export function App() {
         localMultiUserEnabled={multiUserEnabled}
         navOrder={settings.appearanceNavOrder}
         navHidden={settings.appearanceNavHidden}
+        calendarBadgeCount={calendarBadgeCount}
       />
 
       <main className="app-content">

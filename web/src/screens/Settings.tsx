@@ -4479,6 +4479,19 @@ function AppearanceTab({
             </InfoTip>
           </span>
         </label>
+        <label className="settings-toggle-row">
+          <input
+            type="checkbox"
+            checked={draft.showPosterRatings}
+            onChange={(e) => applyAppearance({ showPosterRatings: e.target.checked })}
+          />
+          <span>
+            <strong>Show ratings on posters</strong>
+            <InfoTip label="About poster ratings">
+              Keeps the TMDB score visible in a poster corner while you browse.
+            </InfoTip>
+          </span>
+        </label>
         <button
           type="button"
           className="btn settings-replay-tour"

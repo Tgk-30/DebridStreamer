@@ -109,6 +109,7 @@ const SettingsKeys = {
   dataSaver: "data_saver",
   autoAdvanceEpisodes: "auto_advance_episodes",
   showWatchStats: "show_watch_stats",
+  showPosterRatings: "show_poster_ratings",
   transcode: "transcode",
   ratingScale: "rating_scale",
   preferredExternalPlayer: "preferred_external_player",
@@ -261,6 +262,8 @@ export interface AppSettings {
   /** Opt-in: show a personal watch-stats card on the History screen (off by
    *  default so the screen stays uncluttered for users who don't want it). */
   showWatchStats: boolean;
+  /** Keep the TMDB score visible on poster cards while browsing a catalog. */
+  showPosterRatings: boolean;
   /** Server-Mode only: request the server's transcoded 720p HLS variant for
    *  playback (lower bitrate, re-encoded). Only effective when the server
    *  advertises transcodeAvailable. */
@@ -516,6 +519,7 @@ export function defaultSettings(): AppSettings {
     dataSaver: false,
     autoAdvanceEpisodes: true,
     showWatchStats: true,
+    showPosterRatings: true,
     transcode: false,
     ratingScale: "ten",
     preferredExternalPlayer: "",
@@ -546,6 +550,10 @@ export function loadSettings(): AppSettings {
         typeof parsed.traktScrobbleEnabled === "boolean"
           ? parsed.traktScrobbleEnabled
           : base.traktScrobbleEnabled,
+      showPosterRatings:
+        typeof parsed.showPosterRatings === "boolean"
+          ? parsed.showPosterRatings
+          : base.showPosterRatings,
       streamMaxQuality: normalizeStreamMaxQuality(parsed.streamMaxQuality),
       streamMaxSizeGB: normalizeStreamMaxSizeGB(parsed.streamMaxSizeGB),
       appearanceAccent: normalizeAppearanceAccent(parsed.appearanceAccent),
@@ -809,6 +817,7 @@ function scalarSettingEntries(settings: AppSettings): Array<[string, string]> {
     [SettingsKeys.dataSaver, settings.dataSaver ? "true" : "false"],
     [SettingsKeys.autoAdvanceEpisodes, settings.autoAdvanceEpisodes ? "true" : "false"],
     [SettingsKeys.showWatchStats, settings.showWatchStats ? "true" : "false"],
+    [SettingsKeys.showPosterRatings, settings.showPosterRatings ? "true" : "false"],
     [SettingsKeys.transcode, settings.transcode ? "true" : "false"],
     [SettingsKeys.ratingScale, settings.ratingScale],
     [SettingsKeys.preferredExternalPlayer, settings.preferredExternalPlayer],
@@ -951,6 +960,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     dataSaver,
     autoAdvanceEpisodes,
     showWatchStats,
+    showPosterRatings,
     transcode,
     simpleMode,
     ratingScale,
@@ -994,6 +1004,7 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     settingsByKey.get(SettingsKeys.dataSaver) ?? null,
     settingsByKey.get(SettingsKeys.autoAdvanceEpisodes) ?? null,
     settingsByKey.get(SettingsKeys.showWatchStats) ?? null,
+    settingsByKey.get(SettingsKeys.showPosterRatings) ?? null,
     settingsByKey.get(SettingsKeys.transcode) ?? null,
     settingsByKey.get(SettingsKeys.simpleMode) ?? null,
     settingsByKey.get(SettingsKeys.ratingScale) ?? null,
@@ -1126,6 +1137,8 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
         : autoAdvanceEpisodes === "true",
     showWatchStats:
       showWatchStats == null ? base.showWatchStats : showWatchStats === "true",
+    showPosterRatings:
+      showPosterRatings == null ? base.showPosterRatings : showPosterRatings === "true",
     transcode: transcode == null ? base.transcode : transcode === "true",
     ratingScale: normalizeRatingScale(ratingScale),
     preferredExternalPlayer:

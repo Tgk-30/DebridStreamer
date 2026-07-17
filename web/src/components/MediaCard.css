@@ -308,6 +308,31 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
+/* Persistent score chip: bottom-right keeps it clear of Ready (top-left) and
+   the corner-label / watched treatments (top-right). It shares the existing
+   glass chip recipe so the score remains legible on both bright and dark art. */
+.media-card-poster-rating {
+  position: absolute;
+  right: 7px;
+  bottom: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px 2px 6px;
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-1) 62%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+}
+
 .media-card-placeholder {
   width: 100%;
   height: 100%;

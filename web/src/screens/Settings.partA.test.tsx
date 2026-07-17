@@ -662,6 +662,21 @@ describe("Settings · Appearance", () => {
     expect(toggle.checked).toBe(true);
   });
 
+  it("toggles the persistent poster-rating preference", async () => {
+    const user = userEvent.setup();
+    renderAt("appearance");
+    const toggle = screen
+      .getByText("Show ratings on posters")
+      .closest("label")!
+      .querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+
+    await user.click(toggle);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ showPosterRatings: false }),
+    );
+  });
+
   it("Replay welcome guide dispatches the ds:open-welcome-guide event", async () => {
     const user = userEvent.setup();
     const handler = vi.fn();

@@ -8,6 +8,7 @@
 import { memo, useCallback, useState } from "react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import type { MediaPreview } from "../models/media";
+import { useAppStore } from "../store/AppStore";
 import { Icon } from "./Icon";
 import "./MediaCard.css";
 
@@ -55,6 +56,10 @@ export const MediaCard = memo(function MediaCard({
   rank,
   watched = false,
 }: MediaCardProps) {
+  // Read the display preference at the card boundary rather than threading it
+  // through every Rail and Grid caller. The AppStore update re-renders cards
+  // immediately when Appearance changes.
+  const { settings } = useAppStore();
   const poster = MediaPreviewNS.posterURL(item);
   const rating = MediaPreviewNS.ratingString(item);
   const [loaded, setLoaded] = useState(false);
@@ -136,6 +141,16 @@ export const MediaCard = memo(function MediaCard({
         {watched && (
           <span className="media-card-watched" title="Watched" aria-label="Watched">
             <Icon name="check" size={11} />
+          </span>
+        )}
+
+        {settings.showPosterRatings && rating !== "" && rating !== "N/A" && (
+          <span
+            className="media-card-poster-rating"
+            aria-label={`Rating ${rating} out of 10`}
+          >
+            <Icon name="star" size={10} className="t-warning" />
+            {rating}
           </span>
         )}
 

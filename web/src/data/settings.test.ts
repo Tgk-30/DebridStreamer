@@ -213,6 +213,7 @@ describe("defaultSettings", () => {
     expect(d.dataSaver).toBe(false);
     expect(d.transcode).toBe(false);
     expect(d.traktScrobbleEnabled).toBe(false);
+    expect(d.showPosterRatings).toBe(true);
   });
 
   it("returns a fresh object each call (no shared array identity)", () => {
@@ -296,6 +297,14 @@ describe("loadSettings", () => {
       [KEY]: JSON.stringify({ traktScrobbleEnabled: "true" }),
     });
     expect(loadSettings().traktScrobbleEnabled).toBe(false);
+  });
+
+  it("normalizes the poster-rating display preference", () => {
+    stubLocalStorage({ [KEY]: JSON.stringify({ showPosterRatings: false }) });
+    expect(loadSettings().showPosterRatings).toBe(false);
+
+    stubLocalStorage({ [KEY]: JSON.stringify({ showPosterRatings: "false" }) });
+    expect(loadSettings().showPosterRatings).toBe(true);
   });
 
   it("normalizes legacy / invalid stored values to safe defaults", () => {
@@ -847,6 +856,7 @@ describe("saveSettingsToStore", () => {
         autoUpdateChecks: false,
         transcode: true,
         traktScrobbleEnabled: true,
+        showPosterRatings: false,
         streamMaxSizeGB: 12.34,
         appearanceBlur: 999, // normalized on write
       }),
@@ -857,6 +867,7 @@ describe("saveSettingsToStore", () => {
     expect(settingsMap.get("auto_update_checks")).toBe("false");
     expect(settingsMap.get("transcode")).toBe("true");
     expect(settingsMap.get("trakt_scrobble_enabled")).toBe("true");
+    expect(settingsMap.get("show_poster_ratings")).toBe("false");
     expect(settingsMap.get("stream_max_size_gb")).toBe("12.3");
     expect(settingsMap.get("appearance_blur")).toBe("28"); // clamped
   });
@@ -979,6 +990,7 @@ describe("saveSettingsToStore", () => {
       aiModel: "m1",
       simpleMode: false,
       traktScrobbleEnabled: true,
+      showPosterRatings: false,
       streamMaxQuality: "1080p",
       streamMaxSizeGB: 20,
       appearanceAccent: "rose",
@@ -994,6 +1006,7 @@ describe("saveSettingsToStore", () => {
     expect(loaded.aiModel).toBe("m1");
     expect(loaded.simpleMode).toBe(false);
     expect(loaded.traktScrobbleEnabled).toBe(true);
+    expect(loaded.showPosterRatings).toBe(false);
     expect(loaded.streamMaxQuality).toBe("1080p");
     expect(loaded.streamMaxSizeGB).toBe(20);
     expect(loaded.appearanceAccent).toBe("rose");

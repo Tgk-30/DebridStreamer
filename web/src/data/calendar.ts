@@ -48,6 +48,8 @@ export interface CalendarGroup {
 
 export interface CalendarState {
   entries: CalendarEntry[];
+  /** Raw followed-series episodes retained for the in-app new-release indicator. */
+  episodes: UpcomingEpisode[];
   /** Legacy compact agenda data, kept in sync with episode entries. */
   groups: CalendarGroup[];
   loading: boolean;
@@ -108,6 +110,35 @@ export function groupEpisodes(
   return groups;
 }
 
+/** Followed episodes that aired after a calendar visit and no later than now.
+ * Air dates are date-only in TMDB, so they are compared at the start of the
+ * user's local air-date. Invalid dates are ignored rather than rolling into a
+ * different month. Pure and bounded by the calendar's episode fetch. */
+export function episodesAiredSince(
+  episodes: readonly UpcomingEpisode[],
+  lastSeenAt: number,
+  now: number = Date.now(),
+): UpcomingEpisode[] {
+  if (!Number.isFinite(lastSeenAt) || !Number.isFinite(now) || now < lastSeenAt) {
+    return [];
+  }
+  return episodes.filter((episode) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(episode.airDate);
+    if (match == null) return false;
+    const [, year, month, day] = match;
+    const airDate = new Date(Number(year), Number(month) - 1, Number(day));
+    if (
+      airDate.getFullYear() !== Number(year) ||
+      airDate.getMonth() !== Number(month) - 1 ||
+      airDate.getDate() !== Number(day)
+    ) {
+      return false;
+    }
+    const airedAt = airDate.getTime();
+    return airedAt > lastSeenAt && airedAt <= now;
+  });
+}
+
 function episodeCode(episode: UpcomingEpisode): string {
   return `S${String(episode.seasonNumber).padStart(2, "0")}E${String(
     episode.episodeNumber,
@@ -151,10 +182,16 @@ export function calendarEntries(
 }
 
 /** Resolve the calendar for the user's saved series and TMDB movie releases. */
-export function useCalendar(tmdb: TMDBService | null): CalendarState {
+const EMPTY_WATCHLIST: readonly MediaPreview[] = [];
+
+export function useCalendar(
+  tmdb: TMDBService | null,
+  watchlistVersion: readonly MediaPreview[] = EMPTY_WATCHLIST,
+): CalendarState {
   const serverMode = isServerMode();
   const [state, setState] = useState<CalendarState>({
     entries: [],
+    episodes: [],
     groups: [],
     loading: true,
     error: null,
@@ -179,6 +216,7 @@ export function useCalendar(tmdb: TMDBService | null): CalendarState {
         if (tmdb == null && !serverMode) {
           setState({
             entries: [],
+            episodes: [],
             groups: [],
             loading: false,
             error: null,
@@ -206,6 +244,7 @@ export function useCalendar(tmdb: TMDBService | null): CalendarState {
         if (cancelled) return;
         setState({
           entries: calendarEntries(episodes, movies),
+          episodes,
           groups: groupEpisodes(episodes),
           loading: false,
           error: null,
@@ -216,6 +255,7 @@ export function useCalendar(tmdb: TMDBService | null): CalendarState {
         if (cancelled) return;
         setState({
           entries: [],
+          episodes: [],
           groups: [],
           loading: false,
           error: error instanceof Error ? error.message : String(error),
@@ -227,7 +267,7 @@ export function useCalendar(tmdb: TMDBService | null): CalendarState {
     return () => {
       cancelled = true;
     };
-  }, [tmdb, serverMode]);
+  }, [tmdb, serverMode, watchlistVersion]);
 
   return state;
 }

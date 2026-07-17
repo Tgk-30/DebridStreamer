@@ -214,6 +214,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     dataSaver: false,
     autoAdvanceEpisodes: true,
     showWatchStats: false,
+    showPosterRatings: true,
     transcode: false,
     ratingScale: "ten",
     preferredExternalPlayer: "",

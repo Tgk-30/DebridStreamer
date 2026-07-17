@@ -43,6 +43,8 @@ type StoreSlice = {
   };
   simpleMode: boolean;
   hydrated: boolean;
+  calendar: { episodes: unknown[]; loading: boolean; error: string | null };
+  calendarLastSeenAt: number | null;
   services: {
     debrid: { hasServices: boolean } | null;
     indexers: { activeIndexers: unknown[] } | null;
@@ -141,12 +143,14 @@ vi.mock("./components/NavRail", async () => {
       selected,
       onSelect,
       onSwitchProfile,
+      calendarBadgeCount = 0,
     }: {
       selected: string;
       onSelect: (s: string) => void;
       onSwitchProfile: () => void;
+      calendarBadgeCount?: number;
     }) => (
-      <nav data-testid="nav-rail" data-selected={selected}>
+      <nav data-testid="nav-rail" data-selected={selected} data-calendar-badge={calendarBadgeCount}>
         <button data-testid="nav-go-library" onClick={() => onSelect("library")}>
           go-library
         </button>
@@ -299,6 +303,8 @@ function makeStore(over: Partial<StoreSlice> = {}): StoreSlice {
     settings: { autoUpdateChecks: true, autoInstallUpdates: false, tmdbKey: "k", omdbKey: "" },
     simpleMode: false,
     hydrated: true,
+    calendar: { episodes: [], loading: false, error: null },
+    calendarLastSeenAt: null,
     // Configured by default so the "finish setup" nudge stays hidden here.
     services: {
       debrid: { hasServices: true },
@@ -559,6 +565,37 @@ describe("CommandPalette + UpdateBanner globals", () => {
     const banner = screen.getByTestId("update-banner");
     expect(banner).toHaveAttribute("data-auto-check", "false");
     expect(banner).toHaveAttribute("data-auto-install", "true");
+  });
+});
+
+describe("Calendar new-episode indicator", () => {
+  it("passes the followed-release count to navigation and clears it after the watermark advances", () => {
+    const airDate = new Date();
+    airDate.setDate(airDate.getDate() - 1);
+    const lastSeen = new Date();
+    lastSeen.setDate(lastSeen.getDate() - 2);
+    store = makeStore({
+      calendar: {
+        loading: false,
+        error: null,
+        episodes: [
+          {
+            series: { id: "show", type: "series", title: "Followed show" },
+            seasonNumber: 1,
+            episodeNumber: 2,
+            title: "New episode",
+            airDate: `${airDate.getFullYear()}-${String(airDate.getMonth() + 1).padStart(2, "0")}-${String(airDate.getDate()).padStart(2, "0")}`,
+          },
+        ],
+      },
+      calendarLastSeenAt: lastSeen.getTime(),
+    });
+    const { rerender } = render(<App />);
+    expect(screen.getByTestId("nav-rail")).toHaveAttribute("data-calendar-badge", "1");
+
+    store.calendarLastSeenAt = Date.now();
+    rerender(<App />);
+    expect(screen.getByTestId("nav-rail")).toHaveAttribute("data-calendar-badge", "0");
   });
 });
 

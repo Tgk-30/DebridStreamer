@@ -1,10 +1,10 @@
 // Release calendar - scheduled episodes from followed series plus TMDB movie
 // release dates, rendered as a navigable month cadence with a readable agenda.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
-import { useCalendar, type CalendarEntry } from "../data/calendar";
+import type { CalendarEntry } from "../data/calendar";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import { useAppStore } from "../store/AppStore";
 import "./LibraryScreens.css";
@@ -137,8 +137,12 @@ function ReleaseRow({
 }
 
 export function Calendar() {
-  const { services, openDetail } = useAppStore();
-  const state = useCalendar(services.tmdb);
+  const { calendar: state, openDetail, markCalendarSeen } = useAppStore();
+  // A Calendar visit consumes the in-app release indicator. This is deliberately
+  // not an OS/push notification acknowledgement or a notification center.
+  useEffect(() => {
+    markCalendarSeen();
+  }, [markCalendarSeen]);
   const [visibleMonth, setVisibleMonth] = useState(() => monthStart(new Date()));
   const days = useMemo(
     () => calendarMonthDays(visibleMonth, state.entries),

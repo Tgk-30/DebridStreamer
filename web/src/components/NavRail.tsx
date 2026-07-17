@@ -172,6 +172,8 @@ interface NavRailProps {
   navOrder?: readonly ScreenId[];
   /** Screen ids the user hid from the nav; "settings" is always kept. */
   navHidden?: readonly ScreenId[];
+  /** Followed episodes that aired since the user last visited Calendar. */
+  calendarBadgeCount?: number;
 }
 
 /** Shared empty default so an unset prop keeps a stable reference across renders. */
@@ -184,7 +186,17 @@ function initialOf(name: string): string {
 
 const NAV_COLLAPSED_KEY = "ds_nav_collapsed";
 
-export function NavRail({ selected, onSelect, onSwitchProfile, localProfile, localProfileCount = 0, localMultiUserEnabled = false, navOrder = EMPTY_NAV_IDS, navHidden = EMPTY_NAV_IDS }: NavRailProps) {
+export function NavRail({
+  selected,
+  onSelect,
+  onSwitchProfile,
+  localProfile,
+  localProfileCount = 0,
+  localMultiUserEnabled = false,
+  navOrder = EMPTY_NAV_IDS,
+  navHidden = EMPTY_NAV_IDS,
+  calendarBadgeCount = 0,
+}: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   // Collapsed (icons-only) side rail - an ephemeral UI preference persisted to
   // localStorage. Reflected on the root so the layout var + content inset track.
@@ -314,6 +326,7 @@ export function NavRail({ selected, onSelect, onSwitchProfile, localProfile, loc
               item={item}
               selected={selected === item.id}
               onSelect={selectScreen}
+              badgeCount={item.id === "calendar" ? calendarBadgeCount : 0}
             />
           ))}
         </div>
@@ -356,7 +369,7 @@ export function NavRail({ selected, onSelect, onSwitchProfile, localProfile, loc
               className={`nav-rail-more-action${selected === item.id ? " is-selected" : ""}`}
               data-screen={item.id}
               onClick={() => selectScreen(item.id)}
-              aria-label={item.label}
+              aria-label={navItemAriaLabel(item.label, item.id === "calendar" ? calendarBadgeCount : 0)}
             >
               <span className="nav-rail-more-icon">
                 <Icon
@@ -364,6 +377,15 @@ export function NavRail({ selected, onSelect, onSwitchProfile, localProfile, loc
                   size={18}
                   filled={selected === item.id}
                 />
+                {item.id === "calendar" && calendarBadgeCount > 0 && (
+                  <span
+                    className="nav-rail-badge"
+                    data-testid="calendar-new-episode-badge"
+                    aria-hidden="true"
+                  >
+                    {formatBadgeCount(calendarBadgeCount)}
+                  </span>
+                )}
               </span>
               <span>{item.label}</span>
             </button>
@@ -378,10 +400,12 @@ function NavRailButton({
   item,
   selected,
   onSelect,
+  badgeCount = 0,
 }: {
   item: RailItem;
   selected: boolean;
   onSelect: (id: ScreenId) => void;
+  badgeCount?: number;
 }) {
   return (
     <button
@@ -391,11 +415,20 @@ function NavRailButton({
       data-mobile={item.mobile ? "true" : "false"}
       onClick={() => onSelect(item.id)}
       title={item.label}
-      aria-label={item.label}
+      aria-label={navItemAriaLabel(item.label, badgeCount)}
       aria-current={selected ? "page" : undefined}
     >
       <span className="nav-rail-icon">
         <Icon name={item.icon} size={20} filled={selected} />
+        {badgeCount > 0 && (
+          <span
+            className="nav-rail-badge"
+            data-testid={item.id === "calendar" ? "calendar-new-episode-badge" : undefined}
+            aria-hidden="true"
+          >
+            {formatBadgeCount(badgeCount)}
+          </span>
+        )}
       </span>
       <span
         className="nav-rail-label"
@@ -405,4 +438,13 @@ function NavRailButton({
       </span>
     </button>
   );
+}
+
+function formatBadgeCount(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
+function navItemAriaLabel(label: string, badgeCount: number): string {
+  if (badgeCount <= 0) return label;
+  return `${label}, ${badgeCount} new episode${badgeCount === 1 ? "" : "s"}`;
 }

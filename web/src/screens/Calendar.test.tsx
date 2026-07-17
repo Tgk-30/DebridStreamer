@@ -11,15 +11,11 @@ import type { MediaPreview } from "../models/media";
 import type { CalendarEntry, CalendarState } from "../data/calendar";
 
 const openDetail = vi.fn();
-const fakeTmdb = { tag: "tmdb" } as const;
+const markCalendarSeen = vi.fn();
 let calendarState: CalendarState;
 
 vi.mock("../store/AppStore", () => ({
-  useAppStore: () => ({ services: { tmdb: fakeTmdb }, openDetail }),
-}));
-
-vi.mock("../data/calendar", () => ({
-  useCalendar: () => calendarState,
+  useAppStore: () => ({ calendar: calendarState, openDetail, markCalendarSeen }),
 }));
 
 import { Calendar } from "./Calendar";
@@ -60,6 +56,7 @@ function entry(
 function baseState(over: Partial<CalendarState> = {}): CalendarState {
   return {
     entries: [],
+    episodes: [],
     groups: [],
     loading: false,
     error: null,
@@ -71,6 +68,7 @@ function baseState(over: Partial<CalendarState> = {}): CalendarState {
 
 beforeEach(() => {
   openDetail.mockClear();
+  markCalendarSeen.mockClear();
   calendarState = baseState();
 });
 
@@ -79,6 +77,11 @@ afterEach(() => {
 });
 
 describe("Calendar states", () => {
+  it("consumes the in-app new-episode indicator when the screen is visited", () => {
+    render(<Calendar />);
+    expect(markCalendarSeen).toHaveBeenCalledTimes(1);
+  });
+
   it("renders a six-week loading calendar while data resolves", () => {
     calendarState = baseState({ loading: true });
     const { container } = render(<Calendar />);

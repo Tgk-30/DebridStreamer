@@ -36,6 +36,11 @@ import {
   markDesignRefreshApplied,
   saveSettingsToStore,
 } from "../data/settings";
+import { useCalendar, type CalendarState } from "../data/calendar";
+import {
+  loadOrInitializeCalendarLastSeenAt,
+  saveCalendarLastSeenAt,
+} from "../data/calendarNotifications";
 import {
   loadContinueWatching,
   loadHistory,
@@ -125,6 +130,13 @@ export interface AppStore {
   simpleMode: boolean;
   /** True once the durable Store has hydrated over the bootstrap defaults. */
   hydrated: boolean;
+
+  // Calendar releases and their per-profile in-app notification watermark.
+  // This is in-app only. OS/push notifications and a notification center are
+  // follow-up work that need a delivery service.
+  calendar: CalendarState;
+  calendarLastSeenAt: number | null;
+  markCalendarSeen: () => void;
 
   // Watchlist + History (storage-port backed)
   watchlist: MediaPreview[];
@@ -235,6 +247,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   // first-run wizard waits for this so its choice (e.g. Advanced → simpleMode
   // false) isn't racily clobbered by a late hydration setSettings().
   const [hydrated, setHydrated] = useState(false);
+  const [calendarLastSeenAt, setCalendarLastSeenAt] = useState<number | null>(null);
   const [activeProfile, setActiveProfile] = useState<LocalProfile | null>(null);
   const [profiles, setProfiles] = useState<LocalProfile[]>([]);
   const [multiUserEnabled, setMultiUserEnabledState] = useState(true);
@@ -278,12 +291,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           if (cancelled) return;
         }
       }
-      const [loadedSettings, wl, hist, cw, cached] = await Promise.all([
+      const [loadedSettings, wl, hist, cw, cached, lastSeenAt] = await Promise.all([
         loadSettingsFromStore().catch(() => loadSettings()),
         loadWatchlist().catch(() => []),
         loadHistory().catch(() => []),
         loadContinueWatching().catch(() => []),
         getStore().listCachedResolutions().catch(() => []),
+        loadOrInitializeCalendarLastSeenAt().catch(() => Date.now()),
       ]);
       if (cancelled) return;
       // One-time premium-redesign refresh: adopt the spacious appearance
@@ -313,6 +327,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       const map: Record<string, CachedResolutionRecord> = {};
       for (const r of cached) map[r.mediaId] = r;
       setCachedResolutions(map);
+      setCalendarLastSeenAt(lastSeenAt);
       setHydrated(true);
     })();
     return () => {
@@ -327,12 +342,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const reloadProfileData = useCallback(async () => {
     const store = getStore();
     if (store instanceof RemoteStore) store.resetProfileCache();
-    const [loadedSettings, wl, hist, cw, cached] = await Promise.all([
+    const [loadedSettings, wl, hist, cw, cached, lastSeenAt] = await Promise.all([
       loadSettingsFromStore(),
       loadWatchlist(),
       loadHistory(),
       loadContinueWatching(),
       store.listCachedResolutions(),
+      loadOrInitializeCalendarLastSeenAt().catch(() => Date.now()),
     ]);
     setNetworkMode(loadedSettings.networkMode);
     setSettings(loadedSettings);
@@ -342,6 +358,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const map: Record<string, CachedResolutionRecord> = {};
     for (const row of cached) map[row.mediaId] = row;
     setCachedResolutions(map);
+    setCalendarLastSeenAt(lastSeenAt);
     // Settings update changes serviceConfigKey, so useMemo rebuilds clients for
     // the newly selected Local Mode profile without a separate service reset.
   }, []);
@@ -404,6 +421,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     () => buildServices(settings),
     [serviceConfigKey],
   );
+
+  // Resolve calendar data once at the store boundary. Calendar and the NavRail
+  // consume this same bounded result, avoiding duplicate episode requests.
+  // The watchlist identity is an intentional refresh key when follows change.
+  const calendar = useCalendar(services.tmdb, watchlist);
 
   const openBrowse = useCallback((ctx: BrowseContext) => {
     setBrowseContext(ctx);
@@ -578,6 +600,15 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return { ok: false as const };
       },
     );
+  }, []);
+
+  const markCalendarSeen = useCallback(() => {
+    const seenAt = Date.now();
+    setCalendarLastSeenAt(seenAt);
+    void saveCalendarLastSeenAt(seenAt).catch(() => {
+      // Best effort: if persistence is unavailable, the current session still
+      // clears the in-app indicator and a later Calendar visit can retry.
+    });
   }, []);
 
   // Coalesce concurrent watchlist mutations of the SAME item: each
@@ -768,6 +799,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       updateSettings,
       simpleMode,
       hydrated,
+      calendar,
+      calendarLastSeenAt,
+      markCalendarSeen,
       watchlist,
       history,
       continueWatching,
@@ -805,6 +839,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       updateSettings,
       simpleMode,
       hydrated,
+      calendar,
+      calendarLastSeenAt,
+      markCalendarSeen,
       watchlist,
       history,
       continueWatching,
