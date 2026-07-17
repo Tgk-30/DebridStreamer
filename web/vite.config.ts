@@ -18,11 +18,24 @@ function obfuscateOmdbKey(plain: string): string {
   return Buffer.from(bytes).toString("base64");
 }
 
+// Same mechanism for the TMDB catalog key: `TMDB_EMBED_KEY` (NON-VITE env) is
+// obfuscated at build time so a limited-distribution build can ship a working
+// catalog with no user setup. Unset by default, so the bundle carries "".
+const TMDB_OBFUSCATION_PAD = "ds-tmdb-embed-v1";
+function obfuscateTmdbKey(plain: string): string {
+  if (!plain) return "";
+  const bytes = Array.from(plain).map((ch, i) =>
+    ch.charCodeAt(0) ^ TMDB_OBFUSCATION_PAD.charCodeAt(i % TMDB_OBFUSCATION_PAD.length),
+  );
+  return Buffer.from(bytes).toString("base64");
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   define: {
     __OMDB_EMBED__: JSON.stringify(obfuscateOmdbKey(process.env.OMDB_EMBED_KEY ?? "")),
+    __TMDB_EMBED__: JSON.stringify(obfuscateTmdbKey(process.env.TMDB_EMBED_KEY ?? "")),
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
   test: {

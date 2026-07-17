@@ -19,6 +19,7 @@
 import { TMDBService } from "../services/metadata/TMDBService";
 import { OMDBService } from "../services/metadata/OMDBService";
 import { embeddedOmdbKey } from "./embeddedOmdb";
+import { embeddedTmdbKey } from "./embeddedTmdb";
 import { DebridManager } from "../services/debrid/DebridManager";
 import type { DebridService } from "../services/debrid/types";
 import { DebridServiceType } from "../services/debrid/models";
@@ -1560,11 +1561,15 @@ export function buildServices(settings: AppSettings): AppServices {
   const tmdbKey = settings.tmdbKey.trim();
   const omdbKey = settings.omdbKey.trim();
 
-  // Prefer the user's saved TMDB key; fall back to a build-time VITE_TMDB_KEY.
+  // TMDB key precedence: the user's own key (BYOK) -> a build-time embedded key
+  // (the serverless limited-distribution path, so a fresh install shows a real
+  // catalog instead of fixtures) -> a VITE_TMDB_KEY dev/screenshot fallback.
   // Driving `services.tmdb` (used by Search/Browse AND now Discover) from this
   // single source means saving a key in Settings lights up every screen - not
-  // just Search/Browse - without a reload.
-  const effectiveTmdbKey = tmdbKey.length > 0 ? tmdbKey : readEnvTmdbKey();
+  // just Search/Browse - without a reload. Embedded is dormant by default (no
+  // key baked in), so this changes nothing until a build sets TMDB_EMBED_KEY.
+  const effectiveTmdbKey =
+    tmdbKey.length > 0 ? tmdbKey : embeddedTmdbKey() || readEnvTmdbKey();
   const tmdb = getOrBuildTmdb(effectiveTmdbKey);
   // OMDb key precedence: the user's own key (BYOK) → a build-time embedded key
   // (the serverless limited-distribution path, Mode 3). In Server Mode leave
