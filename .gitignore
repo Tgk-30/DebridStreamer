@@ -1,5 +1,6 @@
 .build/
 .swiftpm/
+node_modules/
 
 # local preview/launch config
 .claude/

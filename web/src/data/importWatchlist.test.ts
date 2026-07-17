@@ -168,7 +168,7 @@ describe("resolveEntry", () => {
   });
 });
 
-describe("parseImportEntries — edge coverage", () => {
+describe("parseImportEntries - edge coverage", () => {
   it("accepts IMDb rows with missing year/type columns and dedupes repeated titles", () => {
     const csv = [
       "Const,Title,Year,Title Type",

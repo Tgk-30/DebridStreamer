@@ -16,7 +16,7 @@
 //     so keychainWipe.test.ts parses keychain.rs and fails CI unless this list is
 //     the exact union of the two Rust allowlists.
 // keychain.rs exposes only get/set/delete (no enumeration command), so the TS
-// side cannot discover keys it does not hardcode — that mirror, enforced by the
+// side cannot discover keys it does not hardcode - that mirror, enforced by the
 // test, is the only thing keeping this erase path complete.
 
 import { isTauri } from "../lib/tauri";

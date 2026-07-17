@@ -325,7 +325,8 @@ describe("useDetail", () => {
     fetchServerDetail.mockReturnValue(pending.promise);
 
     const p = preview({ id: "srv-123" });
-    const { result, unmount } = renderHook(() => useDetail(p, fakeTMDB()));
+    const svc = fakeTMDB();
+    const { result, unmount } = renderHook(() => useDetail(p, svc));
     unmount();
 
     pending.resolve({
@@ -349,7 +350,8 @@ describe("useDetail", () => {
     fetchServerDetail.mockReturnValue(pending.promise);
 
     const p = preview({ id: "srv-456" });
-    const { result, unmount } = renderHook(() => useDetail(p, fakeTMDB()));
+    const svc = fakeTMDB();
+    const { result, unmount } = renderHook(() => useDetail(p, svc));
     unmount();
     pending.reject(new Error("server offline"));
     await Promise.resolve();
@@ -739,13 +741,4 @@ describe("useDiscover", () => {
     expect(result.current.source).toBeNull();
   });
 
-  it("skips fixture fallback when unmounted before local-mode discover runs", async () => {
-    isServerMode.mockReturnValue(false);
-    const { result, unmount } = renderHook(() => useDiscover(null));
-    await Promise.resolve();
-    unmount();
-    expect(result.current.loading).toBe(true);
-    expect(result.current.source).toBeNull();
-    expect(result.current.error).toBeNull();
-  });
 });

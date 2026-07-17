@@ -311,7 +311,7 @@ describe("DetailAnalysis", () => {
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("Strong yes");
     await waitFor(() => expect(addAIUsage).toHaveBeenCalledTimes(1));

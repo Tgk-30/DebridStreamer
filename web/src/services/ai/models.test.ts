@@ -17,7 +17,17 @@ describe("AIProviderKind", () => {
   });
 
   it("returns all provider kinds", () => {
-    expect(AIProviderKind.allCases()).toEqual(["openai", "anthropic", "ollama"]);
+    expect(AIProviderKind.allCases()).toEqual([
+      "anthropic",
+      "openai",
+      "gemini",
+      "openrouter",
+      "groq",
+      "mistral",
+      "deepseek",
+      "xai",
+      "ollama",
+    ]);
   });
 });
 

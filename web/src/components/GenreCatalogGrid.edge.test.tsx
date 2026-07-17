@@ -62,7 +62,7 @@ describe("GenreCatalogGrid edge behavior", () => {
     const onOpen = vi.fn();
     render(<GenreCatalogGrid type="movie" onOpen={onOpen} />);
 
-    await userEvent.click(screen.getByRole("listitem", { name: "Browse Ghost Genre" }));
+    await userEvent.click(screen.getByRole("button", { name: "Browse Ghost Genre" }));
     expect(onOpen).not.toHaveBeenCalled();
   });
 
@@ -72,7 +72,7 @@ describe("GenreCatalogGrid edge behavior", () => {
     render(<GenreCatalogGrid type="movie" onOpen={onOpen} />);
 
     await userEvent.click(
-      screen.getByRole("listitem", { name: "Browse Obscure" }),
+      screen.getByRole("button", { name: "Browse Obscure" }),
     );
     expect(onOpen).toHaveBeenCalledWith({
       kind: "genre",

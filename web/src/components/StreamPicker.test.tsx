@@ -305,7 +305,7 @@ describe("StreamPicker", () => {
     render(
       <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
     );
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
   });
 
   it("uses whole-number formatting when values are large enough", () => {
@@ -656,7 +656,7 @@ describe("StreamPicker", () => {
     );
     expect(
       screen.getByText(
-        "The configured sources have no match for S1E5 yet — try another episode or add another source.",
+        "The configured sources have no match for S1E5 yet - try another episode or add another source.",
       ),
     ).toBeInTheDocument();
   });

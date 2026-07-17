@@ -52,7 +52,7 @@ function extractRustKeyArray(source: string, constName: string): string[] {
 }
 
 const rustSource = readFileSync(KEYCHAIN_RS_URL, "utf8");
-// Union in source order (setting keys first, then debrid keys) — the same order
+// Union in source order (setting keys first, then debrid keys) - the same order
 // KEYCHAIN_WIPE_KEYS is authored in, so the exact-equality checks below also
 // pin the ordering, keeping the mirror trivially readable against the source.
 const RUST_ALLOWLIST = [
@@ -73,7 +73,7 @@ afterEach(() => {
 describe("keychainWipe", () => {
   it("is the exact union of the Rust allowlists parsed from keychain.rs (drift guard)", () => {
     // Fails CI if keychain.rs gains/loses/reorders an allowlisted key without a
-    // matching edit to KEYCHAIN_WIPE_KEYS — the one thing that would let a
+    // matching edit to KEYCHAIN_WIPE_KEYS - the one thing that would let a
     // credential survive factory reset. Order is pinned too (source order).
     expect([...KEYCHAIN_WIPE_KEYS]).toEqual(RUST_ALLOWLIST);
     // Belt-and-suspenders: also assert as sets, so a genuine membership drift is
