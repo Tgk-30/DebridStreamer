@@ -34,6 +34,24 @@ struct BuiltInIndexerTests {
         }
     }
 
+    @Test("APIBay searchByQuery avoids network call for whitespace input")
+    func apiBaySearchByQueryWhitespaceNoNetwork() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var didCall = false
+
+        MockURLProtocol.setHandler({ request in
+            didCall = true
+            return try self.response(for: request, statusCode: 200, body: "[]")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = APIBayIndexer(session: session)
+        let results = try await indexer.searchByQuery(query: "   ", type: .movie)
+        #expect(results.isEmpty)
+        #expect(didCall == false)
+    }
+
     @Test("APIBay returns [] for the no-results sentinel with HTTP 200")
     func apiBayEmptySentinelReturnsEmpty() async throws {
         let sessionID = UUID().uuidString
@@ -73,6 +91,46 @@ struct BuiltInIndexerTests {
 
         #expect(results.count == 1)
         #expect(results.first?.title == "Show.S01.E01.1080p.WEB")
+    }
+
+    @Test("APIBay search falls back from tt-prefixed IMDb IDs to numeric IDs")
+    func apiBaySearchFallsBackFromTTToNumeric() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var sawTT = false
+        var sawNumeric = false
+
+        MockURLProtocol.setHandler({ request in
+            guard let url = request.url,
+                  let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+                  let q = queryItems.first(where: { $0.name == "q" })?.value else {
+                return try self.response(for: request, statusCode: 500, body: "{}")
+            }
+
+            if q == "tt987" {
+                sawTT = true
+                let body = "[{\"id\":\"0\",\"name\":\"No results returned\",\"info_hash\":\"0000000000000000000000000000000000000000\",\"seeders\":\"0\",\"leechers\":\"0\",\"size\":\"0\",\"category\":\"0\",\"imdb\":\"\"}]"
+                return try self.response(for: request, statusCode: 200, body: body)
+            }
+
+            if q == "987" {
+                sawNumeric = true
+                let body = "[{\"id\":\"1\",\"name\":\"Fallback Movie\",\"info_hash\":\"ABCDEF1234567890ABCDEF1234567890ABCDEF12\",\"seeders\":\"9\",\"leechers\":\"0\",\"size\":\"0\"}]"
+                return try self.response(for: request, statusCode: 200, body: body)
+            }
+
+            let body = "[]"
+            return try self.response(for: request, statusCode: 200, body: body)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = APIBayIndexer(session: session)
+        let results = try await indexer.search(imdbId: "tt987", type: .movie, season: nil, episode: nil)
+
+        #expect(sawTT)
+        #expect(sawNumeric)
+        #expect(results.count == 1)
+        #expect(results.first?.infoHash == "abcdef1234567890abcdef1234567890abcdef12")
     }
 
     // MARK: - YTS

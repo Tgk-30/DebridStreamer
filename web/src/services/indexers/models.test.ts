@@ -32,6 +32,15 @@ describe("VideoQuality.parse", () => {
     expect(VideoQuality.parse("x264-dvdrip-web")).toBe(VideoQuality.sdOther);
     expect(VideoQuality.parse("hdtv sample")).toBe(VideoQuality.sdOther);
   });
+
+  it("sorts quality tiers by descending order", () => {
+    expect(VideoQuality.sortOrder(VideoQuality.uhd4k)).toBe(5);
+    expect(VideoQuality.sortOrder(VideoQuality.hd1080p)).toBe(4);
+    expect(VideoQuality.sortOrder(VideoQuality.hd720p)).toBe(3);
+    expect(VideoQuality.sortOrder(VideoQuality.sd480p)).toBe(2);
+    expect(VideoQuality.sortOrder(VideoQuality.sdOther)).toBe(1);
+    expect(VideoQuality.sortOrder(VideoQuality.unknown)).toBe(0);
+  });
 });
 
 describe("VideoCodec.parse", () => {

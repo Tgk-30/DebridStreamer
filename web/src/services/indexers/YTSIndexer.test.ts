@@ -41,6 +41,15 @@ describe("YTSIndexer", () => {
     expect(mock.hits()).toBe(0);
   });
 
+  it("does not query YTS when imdb id or query is whitespace", async () => {
+    const mock = makeMockFetch(() => ok('{"data":{"movies":null}}'));
+    const indexer = new YTSIndexer(mock.fetchImpl);
+
+    expect(await indexer.search("   ", "movie", null, null)).toEqual([]);
+    expect(await indexer.searchByQuery("   ", "movie")).toEqual([]);
+    expect(mock.hits()).toBe(0);
+  });
+
   it("queries YTS with the right endpoint for search and searchByQuery", async () => {
     const mock = makeMockFetch(() =>
       ok('{"data":{"movies":[{"title_long":"Film X","torrents":[]}]}}'),

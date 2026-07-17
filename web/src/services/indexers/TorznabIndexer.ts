@@ -36,8 +36,8 @@ export class TorznabIndexer implements TorrentIndexer {
 
   constructor(options: TorznabIndexerOptions) {
     this.name = options.name;
-    this.baseURL = options.baseURL;
-    this.endpointPath = options.endpointPath;
+    this.baseURL = options.baseURL.trim();
+    this.endpointPath = options.endpointPath.trim();
     this.apiKey = options.apiKey ?? null;
     this.categoryFilter = options.categoryFilter ?? null;
     this.sendAPIKeyAsHeader = options.sendAPIKeyAsHeader ?? false;
@@ -50,21 +50,97 @@ export class TorznabIndexer implements TorrentIndexer {
     season: number | null,
     episode: number | null,
   ): Promise<TorrentResult[]> {
-    const params: Record<string, string> = {
-      t: "search",
-      imdbid: imdbId,
-    };
-    if (season != null) params.season = String(season);
-    if (episode != null) params.ep = String(episode);
-    return this.execute(params);
+    return this.executeWithFallbacks(imdbId, season, episode);
   }
 
   async searchByQuery(query: string, _type: MediaType): Promise<TorrentResult[]> {
+    const trimmedQuery = query.trim();
+    if (trimmedQuery.length === 0) {
+      return [];
+    }
+
     const params: Record<string, string> = {
       t: "search",
-      q: query,
+      q: trimmedQuery,
     };
     return this.execute(params);
+  }
+
+  private async executeWithFallbacks(
+    imdbId: string,
+    season: number | null,
+    episode: number | null,
+  ): Promise<TorrentResult[]> {
+    const trimmedImdbId = imdbId.trim();
+    const normalizedIDs = this.buildFallbackIMDbIDs(trimmedImdbId);
+    const attempts: Array<Record<string, string>> = [];
+
+    if (trimmedImdbId.length > 0) {
+      for (const id of normalizedIDs) {
+        const withEpisode: Record<string, string> = {
+          t: "search",
+          imdbid: id,
+        };
+        const queryWithEpisode: Record<string, string> = {
+          t: "search",
+          q: id,
+        };
+
+        if (season != null) {
+          withEpisode.season = String(season);
+          queryWithEpisode.season = String(season);
+        }
+        if (episode != null) {
+          withEpisode.ep = String(episode);
+          queryWithEpisode.ep = String(episode);
+        }
+
+        attempts.push(withEpisode);
+        attempts.push(queryWithEpisode);
+      }
+
+      if (season != null || episode != null) {
+        for (const id of normalizedIDs) {
+          attempts.push({ t: "search", imdbid: id });
+          attempts.push({ t: "search", q: id });
+        }
+      }
+    }
+
+    let lastError: unknown = null;
+    let anyAttemptSucceeded = false;
+
+    for (const params of attempts) {
+      try {
+        const items = await this.execute(params);
+        anyAttemptSucceeded = true;
+        if (items.length > 0) {
+          return items;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (anyAttemptSucceeded) {
+      return [];
+    }
+    if (lastError != null) {
+      throw lastError;
+    }
+    return [];
+  }
+
+  private buildFallbackIMDbIDs(imdbId: string): string[] {
+    if (imdbId.length === 0) return [];
+
+    const ids = [imdbId];
+    const lower = imdbId.toLowerCase();
+    if (lower.startsWith("tt") && imdbId.length > 2) {
+      ids.push(imdbId.slice(2));
+    }
+
+    return [...new Set(ids)];
   }
 
   private async execute(
@@ -346,7 +422,7 @@ function tokenizeXML(
   while (i < n) {
     const lt = xml.indexOf("<", i);
     if (lt === -1) {
-      if (i < n) onText(decodeEntities(xml.slice(i)));
+      onText(decodeEntities(xml.slice(i)));
       break;
     }
     if (lt > i) {
@@ -412,12 +488,12 @@ function parseTag(raw: string): { name: string; attrs: Record<string, string> } 
   const name = nameMatch[1];
   const attrs: Record<string, string> = {};
 
-  const attrRe = /([^\s=/]+)\s*=\s*("([^"]*)"|'([^']*)')/g;
+  const attrRe = /([^\s=/]+)\s*=\s*("|')(.*?)\2/g;
   let m: RegExpExecArray | null;
   attrRe.lastIndex = nameMatch[0].length;
   while ((m = attrRe.exec(trimmed)) != null) {
     const key = m[1];
-    const value = m[3] != null ? m[3] : (m[4] ?? "");
+    const value = m[3];
     attrs[key] = decodeEntities(value);
   }
   return { name, attrs };

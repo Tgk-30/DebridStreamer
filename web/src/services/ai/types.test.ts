@@ -134,14 +134,14 @@ describe("AIAssistantJSONParser.estimatedTokenCount & promptEnvelope", () => {
   it("estimates token count from character length", () => {
     expect(AIAssistantJSONParser.estimatedTokenCount("" )).toBe(0);
     expect(AIAssistantJSONParser.estimatedTokenCount("abcd" )).toBe(1);
-    expect(AIAssistantJSONParser.estimatedTokenCount("hello world this is a test")).toBe(5);
+    expect(AIAssistantJSONParser.estimatedTokenCount("hello world this is a test")).toBe(6);
   });
 
   it("caps candidate list at 30 and formats prompt lines", () => {
     const candidates = Array.from({ length: 35 }, (_, i) => `Title ${i + 1}`);
     const prompt = AIAssistantJSONParser.promptEnvelope("short" , candidates, 5);
     expect(prompt).toContain("Recommend up to 5 items.");
-    expect(prompt).toContain("Preferred candidate context (optional): Title 1, Title 2, Title 30");
+    expect(prompt).toContain("Preferred candidate context (optional): Title 1, Title 2, Title 3");
     expect(prompt).not.toContain("Title 31");
   });
 });
@@ -271,7 +271,7 @@ describe("AIUsageCostEstimator", () => {
   it("uses known model rates", () => {
     const usd = AIUsageCostEstimator.estimateUSD("gpt-4o-mini", 1000, 3000, 5000);
     expect(usd).not.toBeNull();
-    expect(Math.round((usd ?? 0) * 1_000_000)).toBe(3300); // 0.15 + 1.8
+    expect(Math.round((usd ?? 0) * 1_000_000)).toBe(1950); // 0.15 + 1.8
   });
 
   it("falls back for mini/haiku/sonnet/opus by name", () => {

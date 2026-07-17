@@ -55,17 +55,20 @@ export class YTSIndexer implements TorrentIndexer {
     _episode: number | null,
   ): Promise<TorrentResult[]> {
     // YTS only has movies.
-    if (type !== "movie") return [];
+    const trimmedId = imdbId.trim();
+    if (type !== "movie" || trimmedId.length === 0) return [];
 
-    const url = `${this.baseURL}/list_movies.json?query_term=${imdbId}`;
+    const encodedQuery = encodeURIComponent(trimmedId);
+    const url = `${this.baseURL}/list_movies.json?query_term=${encodedQuery}`;
     const movies = await this.fetchMovies(url);
     return this.mapMovies(movies);
   }
 
   async searchByQuery(query: string, type: MediaType): Promise<TorrentResult[]> {
-    if (type !== "movie") return [];
+    const trimmedQuery = query.trim();
+    if (type !== "movie" || trimmedQuery.length === 0) return [];
 
-    const encodedQuery = encodeURIComponent(query);
+    const encodedQuery = encodeURIComponent(trimmedQuery);
     const url = `${this.baseURL}/list_movies.json?query_term=${encodedQuery}&limit=20`;
     const movies = await this.fetchMovies(url);
     return this.mapMovies(movies);

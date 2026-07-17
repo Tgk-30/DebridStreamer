@@ -10,7 +10,7 @@
 // headers and counts calls. Every assertion mirrors what the source ACTUALLY
 // does — read TorznabIndexer.ts carefully for the exact event ordering.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseTorznabFeed, TorznabIndexer } from "./TorznabIndexer";
 import type { FetchImpl } from "./types";
 
@@ -25,6 +25,7 @@ interface MockFetch {
   fetchImpl: FetchImpl;
   lastURL: () => URL | null;
   lastHeaders: () => Record<string, string> | undefined;
+  history: () => string[];
   hits: () => number;
 }
 
@@ -34,11 +35,13 @@ function makeMockFetch(
   let count = 0;
   let captured: URL | null = null;
   let capturedHeaders: Record<string, string> | undefined;
+  const capturedHistory: string[] = [];
   const fetchImpl: FetchImpl = async (url, init) => {
     count += 1;
     const parsed = new URL(url);
     captured = parsed;
     capturedHeaders = init?.headers;
+    capturedHistory.push(parsed.toString());
     const { status, body } = handler(parsed, count);
     return { status, text: async () => body };
   };
@@ -46,6 +49,7 @@ function makeMockFetch(
     fetchImpl,
     lastURL: () => captured,
     lastHeaders: () => capturedHeaders,
+    history: () => capturedHistory,
     hits: () => count,
   };
 }
@@ -195,6 +199,80 @@ describe("parseTorznabFeed: XML parsing", () => {
     expect(items[0]?.title).toBe("Mixed");
     expect(items[0]?.size).toBe(42);
   });
+
+  it("handles malformed tags by skipping empty names while still parsing valid items", () => {
+    const xml =
+      "<rss><channel>" +
+      "<item><title>A</title></item>" +
+      "<item><title>B</title><></item></item>" +
+      "<item><title>C</title></item>" +
+      "</channel></rss>";
+    const items = parseTorznabFeed(xml);
+    expect(items.map((item) => item.title)).toEqual(["A", "B", "C"]);
+  });
+
+  it("accepts a non-closed DOCTYPE declaration and still parses normal tags", () => {
+    const xml =
+      '<?xml version="1.0"?>' +
+      "<rss><channel>" +
+      "<item><title>One</title></item>" +
+      "<item><title>Two</title></item>" +
+      "</channel></rss><!DOCTYPE rss";
+    const items = parseTorznabFeed(xml);
+    expect(items).toHaveLength(2);
+    expect(items[0]?.title).toBe("One");
+    expect(items[1]?.title).toBe("Two");
+  });
+
+  it("ignores a processing instruction with no closing sequence", () => {
+    const xml =
+      "<rss><channel><item><title>One</title></item></channel></rss>" +
+      '<?xml version="1.0"';
+    const items = parseTorznabFeed(xml);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe("One");
+  });
+
+  it("ignores an unterminated comment block and still parses regular tags", () => {
+    const xml =
+      "<rss><channel>" +
+      "<item><title>One</title></item>" +
+      "<!-- missing close" +
+      "</channel></rss>";
+    const items = parseTorznabFeed(xml);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe("One");
+  });
+
+  it("accepts a non-closed CDATA section and keeps already-closed items", () => {
+    const xml =
+      "<rss><channel>" +
+      "<item><title>One</title></item>" +
+      "</channel></rss><![CDATA[unterminated";
+    const items = parseTorznabFeed(xml);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe("One");
+  });
+
+  it("ignores empty end tags like </> without throwing", () => {
+    const xml =
+      "<rss><channel>" +
+      "<item><title>One</title></item>" +
+      "</>" +
+      "<item><title>Two</title></item>" +
+      "</channel></rss>";
+    const items = parseTorznabFeed(xml);
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.title)).toEqual(["One", "Two"]);
+  });
+
+  it("continues through leading text before the first tag", () => {
+    const items = parseTorznabFeed(
+      "prefix text<rss><channel><item><title>D</title></item></channel></rss>",
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe("D");
+  });
 });
 
 // ============================================================================
@@ -251,6 +329,33 @@ describe("parseTorznabFeed: numeric parsing", () => {
     const item = parseTorznabFeed(xml)[0];
     expect(item?.seeders).toBe(5);
     expect(item?.size).toBe(0);
+  });
+
+  it("supports attr tuples with missing names/values and malformed numeric text", () => {
+    const xml =
+      '<rss xmlns:torznab="x"><channel><item><title>A</title>' +
+      '<torznab:attr value="777"/>' +
+      '<torznab:attr name="peers"/>' +
+      '<torznab:attr name="size" value="bad"/>' +
+      '<torznab:attr name=\'seeders\' value=\'11\'/>' +
+      "</item></channel></rss>";
+    const item = parseTorznabFeed(xml)[0];
+    expect(item?.peers).toBe(0);
+    expect(item?.size).toBe(0);
+    expect(item?.seeders).toBe(11);
+  });
+
+  it("parses torznab:attr values written with single-quoted values", () => {
+    const xml =
+      "<rss xmlns:torznab=\"x\"><channel><item><title>A</title>" +
+      "<torznab:attr name='size' value='777'/>" +
+      "<torznab:attr name='seeders' value='9'/>" +
+      "<torznab:attr name='peers' value='3'/>" +
+      "</item></channel></rss>";
+    const item = parseTorznabFeed(xml)[0];
+    expect(item?.size).toBe(777);
+    expect(item?.seeders).toBe(9);
+    expect(item?.peers).toBe(3);
   });
 });
 
@@ -456,7 +561,15 @@ describe("TorznabIndexer: request building", () => {
   });
 
   it("search sends t=search and imdbid, and includes season/ep only when provided", async () => {
-    const mock = makeMockFetch(() => ok("<rss><channel></channel></rss>"));
+    const mock = makeMockFetch(() =>
+      ok(
+        `<rss><channel><item>
+          <title>Any</title>
+          <guid>magnet:?xt=urn:btih:1111111111111111111111111111111111111111</guid>
+          <size>1</size>
+        </item></channel></rss>`,
+      ),
+    );
     const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
     await indexer.search("tt9999999", "series", 3, 7);
     const url = mock.lastURL()!;
@@ -467,7 +580,15 @@ describe("TorznabIndexer: request building", () => {
   });
 
   it("search omits season/ep params when null", async () => {
-    const mock = makeMockFetch(() => ok("<rss><channel></channel></rss>"));
+    const mock = makeMockFetch(() =>
+      ok(
+        `<rss><channel><item>
+          <title>Any</title>
+          <guid>magnet:?xt=urn:btih:1111111111111111111111111111111111111111</guid>
+          <size>1</size>
+        </item></channel></rss>`,
+      ),
+    );
     const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
     await indexer.search("tt1234567", "movie", null, null);
     const url = mock.lastURL()!;
@@ -477,7 +598,15 @@ describe("TorznabIndexer: request building", () => {
   });
 
   it("season 0 / episode 0 ARE included (null check, not falsy)", async () => {
-    const mock = makeMockFetch(() => ok("<rss><channel></channel></rss>"));
+    const mock = makeMockFetch(() =>
+      ok(
+        `<rss><channel><item>
+          <title>Any</title>
+          <guid>magnet:?xt=urn:btih:1111111111111111111111111111111111111111</guid>
+          <size>1</size>
+        </item></channel></rss>`,
+      ),
+    );
     const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
     await indexer.search("tt1", "series", 0, 0);
     const url = mock.lastURL()!;
@@ -508,6 +637,25 @@ describe("TorznabIndexer: request building", () => {
     expect(mock.lastURL()!.pathname).toBe("/");
   });
 
+  it("treats endpointPath='/' as an empty append and keeps the base path", async () => {
+    const mock = makeMockFetch(() => ok("<rss><channel></channel></rss>"));
+    const indexer = makeIndexer({
+      fetchImpl: mock.fetchImpl,
+      baseURL: "http://localhost:9117/base",
+      endpointPath: "/",
+    });
+    await indexer.searchByQuery("x", "movie");
+    expect(mock.lastURL()!.pathname).toBe("/base");
+  });
+
+  it("returns [] for whitespace-only query in searchByQuery", async () => {
+    const mock = makeMockFetch(() => ok("<rss><channel></channel></rss>"));
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+    const results = await indexer.searchByQuery("   ", "movie");
+    expect(results).toEqual([]);
+    expect(mock.hits()).toBe(0);
+  });
+
   it("throws badURL for an unparseable base URL", async () => {
     const mock = makeMockFetch(() => ok("<rss></rss>"));
     const indexer = makeIndexer({
@@ -518,6 +666,213 @@ describe("TorznabIndexer: request building", () => {
       kind: "badURL",
     });
     expect(mock.hits()).toBe(0);
+  });
+
+  it("falls back from imdbid+season+ep to q+season+ep when first path is empty", async () => {
+    const fallbackItem = `<rss><channel><item>
+      <title>Fallback.2026.1080p.WEB-DL</title>
+      <guid>magnet:?xt=urn:btih:FEDCBA9876543210FEDCBA9876543210FEDCBA98</guid>
+      <size>200</size>
+    </item></channel></rss>`;
+    const mock = makeMockFetch((_, hit) => {
+      if (hit === 1) return ok("<rss><channel></channel></rss>");
+      return ok(fallbackItem);
+    });
+
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+    const results = await indexer.search("tt1234567", "series", 2, 5);
+
+    expect(results).toHaveLength(1);
+    expect(mock.hits()).toBe(2);
+    const calls = mock.history().map((value) => new URL(value));
+    expect(calls[0].searchParams.get("imdbid")).toBe("tt1234567");
+    expect(calls[0].searchParams.get("season")).toBe("2");
+    expect(calls[0].searchParams.get("ep")).toBe("5");
+    expect(calls[1].searchParams.get("q")).toBe("tt1234567");
+    expect(calls[1].searchParams.get("season")).toBe("2");
+    expect(calls[1].searchParams.get("ep")).toBe("5");
+  });
+
+  it("falls back from uppercase TT-prefixed imdbid to numeric id", async () => {
+    const fallbackItem = `<rss><channel><item>
+      <title>Uppercase.TT.Fallback.1080p.WEB-DL</title>
+      <guid>magnet:?xt=urn:btih:1111111111111111111111111111111111111111</guid>
+      <size>220</size>
+      <torznab:attr name="seeders" value="11"/>
+    </item></channel></rss>`;
+
+    const mock = makeMockFetch((url) => {
+      const u = new URL(url);
+      const isTT = u.searchParams.get("imdbid") === "TT1234567" || u.searchParams.get("q") === "TT1234567";
+      const isNumeric = u.searchParams.get("imdbid") === "1234567" || u.searchParams.get("q") === "1234567";
+
+      if (isTT && !isNumeric) {
+        return ok("<rss><channel></channel></rss>");
+      }
+      if (isNumeric) {
+        return ok(fallbackItem);
+      }
+      return ok("<rss><channel></channel></rss>");
+    });
+
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+    const results = await indexer.search("TT1234567", "movie", null, null);
+
+    expect(results).toHaveLength(1);
+    expect(mock.hits()).toBe(3);
+    expect(results[0]?.infoHash).toBe(
+      "1111111111111111111111111111111111111111",
+    );
+  });
+
+  it("does not fallback when the imdb ID is already numeric", async () => {
+    const mock = makeMockFetch(() =>
+      ok(
+        `<rss><channel><item>
+          <title>Numeric.Fallback.Found</title>
+          <guid>magnet:?xt=urn:btih:1111111111111111111111111111111111111111</guid>
+          <size>210</size>
+        </item></channel></rss>`,
+      ),
+    );
+
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+    const results = await indexer.search("1234", "movie", null, null);
+
+    const calls = mock.history().map((value) => new URL(value));
+    expect(results).toHaveLength(1);
+    expect(mock.hits()).toBe(1);
+    expect(calls[0].searchParams.get("imdbid")).toBe("1234");
+    expect(calls[0].searchParams.has("q")).toBe(false);
+  });
+
+  it("does not create a numeric fallback for bare 'tt' IMDb IDs", async () => {
+    const mock = makeMockFetch(() => ok("<rss><channel></channel></rss>"));
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+
+    const results = await indexer.search("tt", "movie", null, null);
+
+    expect(results).toEqual([]);
+    expect(mock.hits()).toBe(2);
+    const calls = mock.history().map((value) => new URL(value));
+    expect(calls.map((u) => u.searchParams.get("imdbid") ?? u.searchParams.get("q"))).toEqual(["tt", "tt"]);
+  });
+
+  it("falls back to numeric imdb IDs when tt-prefixed IDs return empty", async () => {
+    const numericBody = `<rss><channel><item>
+      <title>Numeric.Fallback.Movie</title>
+      <guid>magnet:?xt=urn:btih:1111111111111111111111111111111111111111</guid>
+      <size>140</size>
+    </item></channel></rss>`;
+
+    const mock = makeMockFetch((url) => {
+      const u = new URL(url);
+      const isTT = u.searchParams.get("imdbid") === "tt1234567" || u.searchParams.get("q") === "tt1234567";
+      const isNumeric = u.searchParams.get("imdbid") === "1234567" || u.searchParams.get("q") === "1234567";
+
+      if (isTT && !isNumeric) {
+        return ok("<rss><channel></channel></rss>");
+      }
+      if (isNumeric) {
+        return ok(numericBody);
+      }
+
+      return ok("<rss><channel></channel></rss>");
+    });
+
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+    const results = await indexer.search("tt1234567", "movie", null, null);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.infoHash).toBe("1111111111111111111111111111111111111111");
+    expect(mock.hits()).toBe(3);
+  });
+
+  it("falls back to imdbid-only and q-only paths for movie searches when needed", async () => {
+    const fallbackItem = `<rss><channel><item>
+      <title>Movie.Fallback.1080p.WEB-DL</title>
+      <guid>magnet:?xt=urn:btih:1111111111111111111111111111111111111111</guid>
+      <size>300</size>
+    </item></channel></rss>`;
+    const mock = makeMockFetch((_, hit) => {
+      if (hit === 1) return ok("<rss><channel></channel></rss>");
+      return ok(fallbackItem);
+    });
+
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+    const results = await indexer.search("tt9876543", "movie", null, null);
+
+    expect(results).toHaveLength(1);
+    expect(mock.hits()).toBe(2);
+    const calls = mock.history().map((value) => new URL(value));
+    expect(calls[0].searchParams.get("imdbid")).toBe("tt9876543");
+    expect(calls[0].searchParams.has("q")).toBe(false);
+    expect(calls[1].searchParams.get("q")).toBe("tt9876543");
+    expect(calls[1].searchParams.has("imdbid")).toBe(false);
+  });
+
+  it("continues through fallback attempts when the first search request errors", async () => {
+    const fallbackItem = `<rss><channel><item>
+      <title>Recovered.Fallback</title>
+      <guid>magnet:?xt=urn:btih:2222222222222222222222222222222222222222</guid>
+      <size>400</size>
+    </item></channel></rss>`;
+    const mock = makeMockFetch((_, hit) => {
+      if (hit === 1) return { status: 502, body: "broken" };
+      return ok(fallbackItem);
+    });
+
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+    const results = await indexer.search("tt500", "movie", null, null);
+
+    expect(results).toHaveLength(1);
+    expect(mock.hits()).toBe(2);
+  });
+
+  it("uses default fetch when not provided", async () => {
+    const localFetch = vi.fn(async () => ({
+      status: 200,
+      text: async () => "<rss><channel></channel></rss>",
+    }));
+    vi.stubGlobal("fetch", localFetch);
+    const indexer = new TorznabIndexer({
+      name: "Jackett",
+      baseURL: "http://localhost:9117",
+      endpointPath: "/api",
+    });
+    await indexer.searchByQuery("test", "movie");
+    expect(localFetch).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("returns [] without touching the network when imdb id is blank", async () => {
+    const mock = makeMockFetch(() => ok("<rss><channel></channel></rss>"));
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+
+    const results = await indexer.search("   ", "movie", null, null);
+
+    expect(results).toEqual([]);
+    expect(mock.hits()).toBe(0);
+  });
+
+  it("returns [] when all fallback attempts are successful but empty", async () => {
+    const mock = makeMockFetch(() => ok("<rss><channel></channel></rss>"));
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+
+    const results = await indexer.search("ttNoResults", "movie", null, null);
+
+    expect(results).toEqual([]);
+    expect(mock.hits()).toBe(4);
+  });
+
+  it("throws when all fallback attempts fail", async () => {
+    const mock = makeMockFetch(() => ({ status: 500, body: "server down" }));
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+
+    await expect(indexer.search("ttFail", "movie", null, null)).rejects.toMatchObject(
+      { kind: "badServerResponse" },
+    );
+    expect(mock.hits()).toBe(4);
   });
 });
 
@@ -706,6 +1061,40 @@ describe("TorznabIndexer: response handling", () => {
     const xml =
       "<rss><channel><item><title>EmptyHash</title>" +
       '<torznab:attr name="infohash" value=""/></item></channel></rss>';
+    const mock = makeMockFetch(() => ok(xml));
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+    const results = await indexer.searchByQuery("x", "movie");
+    expect(results).toEqual([]);
+  });
+
+  it("drops a malformed torznab:attr magnet URL that cannot be parsed", async () => {
+    const xml =
+      "<rss xmlns:torznab=\"x\"><channel><item>" +
+      "<title>Malformed Magnet</title>" +
+      '<torznab:attr name="magneturl" value="not a url"/>' +
+      "</item></channel></rss>";
+    const mock = makeMockFetch(() => ok(xml));
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+    const results = await indexer.searchByQuery("x", "movie");
+    expect(results).toEqual([]);
+  });
+
+  it("drops a valid magnet URL without btih as hash seed", async () => {
+    const xml =
+      "<rss><channel><item><title>NoBtih</title>" +
+      "<link>magnet:?dn=movie-only-name</link>" +
+      "</item></channel></rss>";
+    const mock = makeMockFetch(() => ok(xml));
+    const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
+    const results = await indexer.searchByQuery("x", "movie");
+    expect(results).toEqual([]);
+  });
+
+  it("drops a valid magnet URL with an unsupported hash scheme", async () => {
+    const xml =
+      "<rss><channel><item><title>SHA1Only</title>" +
+      "<link>magnet:?xt=urn:sha1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</link>" +
+      "</item></channel></rss>";
     const mock = makeMockFetch(() => ok(xml));
     const indexer = makeIndexer({ fetchImpl: mock.fetchImpl });
     const results = await indexer.searchByQuery("x", "movie");

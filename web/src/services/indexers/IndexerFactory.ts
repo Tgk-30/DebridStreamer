@@ -60,6 +60,9 @@ export const IndexerFactory = {
       // Built-in indexers have no user-configured endpoint to validate.
       return true;
     }
+    if (config.type === "stremio_addon") {
+      return testStremioAddonConnection(config, fetchImpl);
+    }
 
     const probe = makeTorznabProbeRequest(config);
     if (probe == null) return false;
@@ -79,21 +82,63 @@ export const IndexerFactory = {
   },
 } as const;
 
+/** Validates a Stremio addon by fetching and parsing `manifest.json`. A valid
+ * addon is 2xx with valid JSON containing either an `id` or `resources`
+ * field, matching the Swift `testStremioAddon` behavior. */
+async function testStremioAddonConnection(
+  config: IndexerConfig,
+  fetchImpl: FetchImpl,
+): Promise<boolean> {
+  const trimmedBase = config.baseURL.trim();
+  if (trimmedBase.length === 0) return false;
+
+  let manifestBase = trimmedBase.replace(/\/+$/, "");
+  if (/\/manifest\.json$/i.test(manifestBase)) {
+    manifestBase = manifestBase.replace(/\/manifest\.json$/i, "");
+  }
+  const target = `${manifestBase}/manifest.json`;
+
+  try {
+    const response = await fetchImpl(target);
+    if (!(response.status >= 200 && response.status <= 299)) {
+      return false;
+    }
+
+    const parsed = JSON.parse(await response.text());
+    if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return false;
+    }
+
+    return (
+      Object.hasOwn(parsed as Record<string, unknown>, "id") ||
+      Object.hasOwn(parsed as Record<string, unknown>, "resources")
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Builds a minimal Torznab search probe (url + optional headers).
  * Mirrors `makeTorznabProbeRequest`. */
 function makeTorznabProbeRequest(
   config: IndexerConfig,
 ): { url: string; headers: Record<string, string> | null } | null {
+  const trimmedBase = config.baseURL.trim();
+  if (trimmedBase.length === 0) {
+    return null;
+  }
+  const trimmedEndpointPath = config.endpointPath.trim();
+
   let url: URL;
   try {
-    url = new URL(config.baseURL);
+    url = new URL(trimmedBase);
   } catch {
     return null;
   }
 
-  if (config.endpointPath.length > 0) {
+  if (trimmedEndpointPath.length > 0) {
     const current = trimSlashes(url.pathname);
-    const append = trimSlashes(config.endpointPath);
+    const append = trimSlashes(trimmedEndpointPath);
     if (current.length === 0) {
       url.pathname = `/${append}`;
     } else if (append.length === 0) {
@@ -148,22 +193,29 @@ function makeExternalIndexer(
   config: IndexerConfig,
   fetchImpl: FetchImpl,
 ): TorrentIndexer | null {
+  if (config.type === "built_in") {
+    return null;
+  }
+
   switch (config.type) {
     case "jackett":
     case "prowlarr":
     case "torznab":
     case "zilean": {
+      const trimmedBase = config.baseURL.trim();
+      if (trimmedBase.length === 0) return null;
       const displayName = config.displayName?.trim();
       const name =
         displayName != null && displayName.length > 0
           ? displayName
           : indexerTypeDisplayName(config.type);
+      const trimmedEndpointPath = config.endpointPath.trim();
       const sendAPIKeyAsHeader =
         config.providerSubtype === ProviderSubtype.prowlarr;
       return new TorznabIndexer({
         name,
-        baseURL: config.baseURL,
-        endpointPath: config.endpointPath,
+        baseURL: trimmedBase,
+        endpointPath: trimmedEndpointPath,
         apiKey: config.apiKey,
         categoryFilter: config.categoryFilter,
         sendAPIKeyAsHeader,
@@ -187,12 +239,15 @@ function makeExternalIndexer(
           : indexerTypeDisplayName(config.type);
       return new StremioAddonIndexer(name, baseURL, fetchImpl);
     }
-    case "built_in":
+    default:
+      // Keep unknown types resilient and observably labeled even if a new backend
+      // value slips through before a proper case exists.
+      indexerTypeDisplayName(config.type);
       return null;
   }
 }
 
-function indexerTypeDisplayName(type: IndexerConfig["type"]): string {
+function indexerTypeDisplayName(type: string): string {
   switch (type) {
     case "jackett":
       return "Jackett";
@@ -204,9 +259,8 @@ function indexerTypeDisplayName(type: IndexerConfig["type"]): string {
       return "Zilean";
     case "stremio_addon":
       return "Stremio Addon";
-    case "built_in":
-      return "Built-in Scrapers";
   }
+  return `Unknown (${type})`;
 }
 
 function trimSlashes(s: string): string {

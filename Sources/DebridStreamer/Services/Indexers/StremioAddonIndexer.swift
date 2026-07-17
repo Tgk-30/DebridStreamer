@@ -69,11 +69,19 @@ actor StremioAddonIndexer: TorrentIndexer {
     }
 
     /// Builds `{baseURL}/stream/{type}/{id}.json`, normalizing slashes so a base
-    /// URL with or without a trailing slash both resolve correctly.
+    /// URL with or without a trailing slash both resolve correctly. If users pass
+    /// a `manifest.json` URL, strip that suffix before appending `stream/...`
+    /// so we don't generate `.../manifest.json/stream/...`.
     private func makeStreamRequest(type: String, id: String) throws -> URLRequest {
         var trimmedBase = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmedBase.hasSuffix("/") {
             trimmedBase.removeLast()
+        }
+        if trimmedBase.lowercased().hasSuffix("/manifest.json") {
+            trimmedBase.removeLast("/manifest.json".count)
+            while trimmedBase.hasSuffix("/") {
+                trimmedBase.removeLast()
+            }
         }
         // Stremio stream ids can contain ':' (series) which must be percent-encoded.
         let encodedId = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: ":"))) ?? id

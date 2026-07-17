@@ -38,6 +38,46 @@ function body(items: unknown): MockResponse {
 }
 
 describe("APIBayIndexer.search", () => {
+  it("returns [] without fetching when imdbId is whitespace-only", async () => {
+    const mock = makeMockFetch(() =>
+      body([
+        {
+          id: "1",
+          name: "Should never fetch",
+          info_hash: "a".repeat(40),
+          seeders: "10",
+          leechers: "1",
+          size: "1",
+        },
+      ]),
+    );
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+    const results = await indexer.search("   ", "movie", null, null);
+
+    expect(results).toEqual([]);
+    expect(mock.hits()).toBe(0);
+  });
+
+  it("returns [] without fetching when searchByQuery is whitespace-only", async () => {
+    const mock = makeMockFetch(() =>
+      body([
+        {
+          id: "1",
+          name: "Should never fetch",
+          info_hash: "a".repeat(40),
+          seeders: "10",
+          leechers: "1",
+          size: "1",
+        },
+      ]),
+    );
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+
+    const results = await indexer.searchByQuery("   ", "movie");
+    expect(results).toEqual([]);
+    expect(mock.hits()).toBe(0);
+  });
+
   it("drops a result with an empty hash", async () => {
     const mock = makeMockFetch(() =>
       body([
@@ -55,11 +95,11 @@ describe("APIBayIndexer.search", () => {
     const results = await indexer.search("tt000", "movie", null, null);
 
     expect(results).toEqual([]);
-    expect(mock.hits()).toBe(1);
+    expect(mock.hits()).toBe(6);
   });
 
   it("drops zero/empty hashes and dead torrents, and parses sizes", async () => {
-    const mock = makeMockFetch((url) =>
+    const mock = makeMockFetch((_url) =>
       body([
         {
           id: "1",
@@ -144,7 +184,208 @@ describe("APIBayIndexer.search", () => {
 
     const results = await indexer.search("tt0", "movie", null, null);
     expect(results).toEqual([]);
+    expect(mock.hits()).toBe(6);
+  });
+
+  it("falls back from tt-prefixed imdb to numeric id", async () => {
+    const seen: string[] = [];
+    const mock = makeMockFetch((url) => {
+      const params = new URL(url).searchParams;
+      seen.push(params.get("q") ?? "");
+      if ((params.get("q") ?? "") === "tt987") {
+        return body([{ name: "No results returned", id: "0", info_hash: "", seeders: "0", leechers: "0", size: "0" }]);
+      }
+
+      return body([
+        {
+          id: "1",
+          name: "Fallback Movie",
+          info_hash: "a".repeat(40),
+          seeders: "9",
+          leechers: "1",
+          size: "10",
+        },
+      ]);
+    });
+
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+    const results = await indexer.search("tt987", "movie", null, null);
+
+    expect(results).toHaveLength(1);
+    expect(seen).toContain("tt987");
+    expect(seen).toContain("987");
+    expect(results[0]?.infoHash).toBe("a".repeat(40));
+  });
+
+  it("falls back from uppercase TT-prefixed imdb IDs", async () => {
+    const seen: string[] = [];
+    const mock = makeMockFetch((url) => {
+      const params = new URL(url).searchParams;
+      const query = params.get("q") ?? "";
+      seen.push(query);
+
+      if (query === "TT987") {
+        return body([{ name: "No results returned", id: "0", info_hash: "", seeders: "0", leechers: "0", size: "0" }]);
+      }
+
+      if (query === "987") {
+        return body([
+          {
+            id: "1",
+            name: "Fallback Movie",
+            info_hash: "b".repeat(40),
+            seeders: "12",
+            leechers: "0",
+            size: "1",
+          },
+        ]);
+      }
+
+      return body([{
+        id: "2",
+        name: "Ignored",
+        info_hash: "c".repeat(40),
+        seeders: "99",
+        leechers: "0",
+        size: "1",
+      }]);
+    });
+
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+    const results = await indexer.search("TT987", "movie", null, null);
+
+    expect(results).toHaveLength(1);
+    expect(seen).toContain("TT987");
+    expect(seen).toContain("987");
+    expect(results[0]?.infoHash).toBe("b".repeat(40));
+  });
+
+  it("does not fallback when the imdb ID is already numeric", async () => {
+    const seen: string[] = [];
+    const mock = makeMockFetch((url) => {
+      const params = new URL(url).searchParams;
+      const query = params.get("q") ?? "";
+      seen.push(query);
+
+      if (query === "1234") {
+        return body([
+          {
+            id: "1",
+            name: "Numeric ID Movie",
+            info_hash: "f".repeat(40),
+            seeders: "6",
+            leechers: "0",
+            size: "50",
+          },
+        ]);
+      }
+
+      return body([{ name: "No results returned", id: "0", info_hash: "", seeders: "0", leechers: "0", size: "0" }]);
+    });
+
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+    const results = await indexer.search("1234", "movie", null, null);
+
+    expect(results).toHaveLength(1);
+    expect(seen).toEqual(["1234"]);
+    expect(results[0]?.infoHash).toBe("f".repeat(40));
+  });
+
+  it("does not create a numeric fallback for bare 'tt' IDs", async () => {
+    const mock = makeMockFetch(() =>
+      body([
+        {
+          id: "0",
+          name: "No results returned",
+          info_hash: "",
+          seeders: "0",
+          leechers: "0",
+          size: "0",
+        },
+      ]),
+    );
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+
+    const results = await indexer.search("tt", "movie", null, null);
+
+    expect(results).toEqual([]);
+    expect(mock.hits()).toBe(3);
+  });
+
+  it("falls back to broader categories if the preferred HD category has no hit list", async () => {
+    const mock = makeMockFetch((url) => {
+      const params = new URL(url).searchParams;
+      if (params.get("cat") === "207") {
+        return body([{ name: "No results returned", id: "0", info_hash: "", seeders: "0", leechers: "0", size: "0" }]);
+      }
+
+      if (params.get("cat") === "201") {
+        return body([
+          {
+            id: "1",
+            name: "Fallback Movie",
+            info_hash: "f".repeat(40),
+            seeders: "12",
+            leechers: "0",
+            size: "1",
+          },
+        ]);
+      }
+
+      return body([{
+        id: "2",
+        name: "Should not run on failure mode",
+        info_hash: "e".repeat(40),
+        seeders: "99",
+        leechers: "0",
+        size: "1",
+      }]);
+    });
+
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+
+    const results = await indexer.search("tt0", "movie", null, null);
+    expect(mock.hits()).toBe(3);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.infoHash).toBe("f".repeat(40));
+  });
+
+  it("deduplicates duplicate hashes while searching by IMDB ID", async () => {
+    const mock = makeMockFetch(() =>
+      body([
+        {
+          id: "1",
+          name: "First Copy",
+          info_hash: "A".repeat(40),
+          seeders: "10",
+          leechers: "1",
+          size: "11",
+        },
+        {
+          id: "2",
+          name: "Second Copy",
+          info_hash: "a".repeat(40),
+          seeders: "12",
+          leechers: "0",
+          size: "12",
+        },
+        {
+          id: "3",
+          name: "Fallback Duplicate",
+          info_hash: "A".repeat(40),
+          seeders: "20",
+          leechers: "1",
+          size: "13",
+        },
+      ]),
+    );
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+
+    const results = await indexer.search("tt123", "movie", null, null);
+
     expect(mock.hits()).toBe(1);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.seeders).toBe(10);
   });
 
   it("throws badServerResponse for non-2xx", async () => {
@@ -155,6 +396,83 @@ describe("APIBayIndexer.search", () => {
       kind: "badServerResponse",
       statusCode: 500,
     });
+  });
+
+  it("matches common one-digit and x-formatted season/episode patterns", async () => {
+    const mock = makeMockFetch((url) => {
+      const params = new URL(url).searchParams;
+      if (params.get("cat") !== "208") return body([]);
+      return body([
+        {
+          id: "1",
+          name: "Show.S1E1.REPACK",
+          info_hash: "c".repeat(40),
+          seeders: "10",
+          leechers: "1",
+          size: "10",
+        },
+        {
+          id: "2",
+          name: "Show 1x01",
+          info_hash: "d".repeat(40),
+          seeders: "10",
+          leechers: "1",
+          size: "10",
+        },
+        {
+          id: "3",
+          name: "Show S01-01",
+          info_hash: "e".repeat(40),
+          seeders: "10",
+          leechers: "1",
+          size: "10",
+        },
+      ]);
+    });
+
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+    const results = await indexer.search("tt9999", "series", 1, 1);
+
+    expect(results).toHaveLength(2);
+    expect(results.map((r) => r.infoHash)).toEqual([
+      "c".repeat(40),
+      "d".repeat(40),
+    ]);
+  });
+
+  it("falls back to broader series categories when the HD TV category is empty", async () => {
+    const mock = makeMockFetch((url) => {
+      const params = new URL(url).searchParams;
+      if (params.get("cat") === "208") {
+        return body([{ name: "No results returned", id: "0", info_hash: "", seeders: "0", leechers: "0", size: "0" }]);
+      }
+      if (params.get("cat") === "205") {
+        return body([
+          {
+            id: "1",
+            name: "Fallback.Series",
+            info_hash: "f".repeat(40),
+            seeders: "11",
+            leechers: "0",
+            size: "1",
+          },
+        ]);
+      }
+      return body([{
+        id: "2",
+        name: "Ignored broad fallback",
+        info_hash: "e".repeat(40),
+        seeders: "12",
+        leechers: "0",
+        size: "1",
+      }]);
+    });
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+    const results = await indexer.search("tt0", "series", null, null);
+
+    expect(mock.hits()).toBe(3);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.infoHash).toBe("f".repeat(40));
   });
 });
 
@@ -171,13 +489,77 @@ describe("APIBayIndexer.searchByQuery", () => {
     const [firstCall, secondCall] = mock.urls().map((u) => new URL(u));
     expect(firstCall.pathname).toBe("/q.php");
     expect(firstCall.searchParams.get("q")).toBe("My Movie");
-    expect(firstCall.searchParams.get("cat")).toBe("201");
-    expect(secondCall.searchParams.get("cat")).toBe("205");
+    expect(firstCall.searchParams.get("cat")).toBe("207");
+    expect(secondCall.searchParams.get("cat")).toBe("208");
     expect(movie).toHaveLength(1);
     expect(series[0]?.infoHash).toBe("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
     expect(series).toHaveLength(1);
     expect(series[0]?.title).toBe("A");
+  });
+
+  it("deduplicates duplicate hashes in query search", async () => {
+    const mock = makeMockFetch(() =>
+      body([
+        {
+          id: "1",
+          name: "First Copy",
+          info_hash: "B".repeat(40),
+          seeders: "10",
+          leechers: "1",
+          size: "11",
+        },
+        {
+          id: "2",
+          name: "Second Duplicate",
+          info_hash: "b".repeat(40),
+          seeders: "9",
+          leechers: "2",
+          size: "12",
+        },
+        {
+          id: "3",
+          name: "Duplicate Skipped",
+          info_hash: "B".repeat(40),
+          seeders: "20",
+          leechers: "3",
+          size: "13",
+        },
+      ]),
+    );
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+    const results = await indexer.searchByQuery("My Query", "movie");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.infoHash).toBe("b".repeat(40));
+  });
+
+  it("falls back to broader categories in query search when the first category has no hits", async () => {
+    const mock = makeMockFetch((url) => {
+      const params = new URL(url).searchParams;
+      if (params.get("cat") === "207") {
+        return body([{ name: "No results returned", id: "0", info_hash: "", seeders: "0", leechers: "0", size: "0" }]);
+      }
+      if (params.get("cat") === "201") {
+        return body([
+          {
+            id: "1",
+            name: "Fallback Movie",
+            info_hash: "c".repeat(40),
+            seeders: "8",
+            leechers: "0",
+            size: "1",
+          },
+        ]);
+      }
+      return body([]);
+    });
+    const indexer = new APIBayIndexer(mock.fetchImpl);
+    const results = await indexer.searchByQuery("my movie", "movie");
+
+    expect(mock.hits()).toBe(2);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.infoHash).toBe("c".repeat(40));
   });
 
   it("defaults malformed seeders/leechers/size values to 0", async () => {

@@ -141,7 +141,12 @@ export const AudioFormat = {
       return AudioFormat.atmos;
     } else if (lower.includes("dts-hd") || lower.includes("dts.hd")) {
       return AudioFormat.dtsHDMA;
-    } else if (lower.includes("dts-x") || lower.includes("dts:x")) {
+    } else if (
+      lower.includes("dts-x") ||
+      lower.includes("dts.x") ||
+      lower.includes("dts:x") ||
+      /(?:^|[^a-z0-9])dtsx(?:[^a-z0-9]|$)/.test(lower)
+    ) {
       return AudioFormat.dtsX;
     } else if (lower.includes("truehd") || lower.includes("true-hd")) {
       return AudioFormat.trueHD;

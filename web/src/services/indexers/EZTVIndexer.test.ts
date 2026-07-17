@@ -78,6 +78,15 @@ describe("EZTVIndexer.search (series-only gate)", () => {
     expect(mock.hits()).toBe(0);
   });
 
+  it("trims and rejects whitespace IMDB IDs in the series search", async () => {
+    const mock = makeMockFetch(() => ok("{}"));
+    const indexer = new EZTVIndexer(mock.fetchImpl);
+
+    const results = await indexer.search("   ", "series", null, null);
+    expect(results).toEqual([]);
+    expect(mock.hits()).toBe(0);
+  });
+
   it("returns [] when the IMDB id is only the 'tt' prefix (empty numeric id)", async () => {
     const mock = makeMockFetch(() => ok(makePage(1)));
     const indexer = new EZTVIndexer(mock.fetchImpl);
@@ -98,12 +107,11 @@ describe("EZTVIndexer.search (series-only gate)", () => {
     expect(url.searchParams.get("limit")).toBe("100");
   });
 
-  it("removes every 'tt' occurrence in the id (replaceAll semantics)", async () => {
-    // replaceAll("tt", "") strips ALL "tt" substrings, not just a leading one.
+  it("strips only the leading 'tt' prefix and preserves embedded tt", async () => {
     const mock = makeMockFetch(() => ok(JSON.stringify({ torrents: [] })));
     const indexer = new EZTVIndexer(mock.fetchImpl);
-    await indexer.search("tt12tt34", "series", null, null);
-    expect(mock.lastURL()!.searchParams.get("imdb_id")).toBe("1234");
+    await indexer.search("TT12tt34", "series", null, null);
+    expect(mock.lastURL()!.searchParams.get("imdb_id")).toBe("12tt34");
   });
 });
 
@@ -495,6 +503,15 @@ describe("EZTVIndexer.searchByQuery", () => {
     expect(mock.hits()).toBe(0);
   });
 
+  it("ignores whitespace-only query input", async () => {
+    const mock = makeMockFetch(() => ok("{}"));
+    const indexer = new EZTVIndexer(mock.fetchImpl);
+
+    const results = await indexer.searchByQuery("   ", "series");
+    expect(results).toEqual([]);
+    expect(mock.hits()).toBe(0);
+  });
+
   it("encodes the query and uses a single page (no pagination, no imdb_id)", async () => {
     const mock = makeMockFetch(() => ok(JSON.stringify({ torrents: [] })));
     const indexer = new EZTVIndexer(mock.fetchImpl);
@@ -623,6 +640,25 @@ describe("EZTVIndexer.searchByQuery", () => {
     expect(unknown?.title).toBe("Unknown");
     expect(unknown?.magnetURI).toBeNull();
     expect(unknown?.sizeBytes).toBe(0);
+  });
+
+  it("defaults seeders/leechers to 0 when searchByQuery torrent seeds/peers are absent", async () => {
+    const body = JSON.stringify({
+      torrents: [
+        {
+          id: 1,
+          hash: "1111111111111111111111111111111111111111",
+          title: "no peers",
+        },
+      ],
+    });
+    const mock = makeMockFetch(() => ok(body));
+    const indexer = new EZTVIndexer(mock.fetchImpl);
+
+    const results = await indexer.searchByQuery("mystery show", "series");
+    expect(results).toHaveLength(1);
+    expect(results[0]?.seeders).toBe(0);
+    expect(results[0]?.leechers).toBe(0);
   });
 });
 

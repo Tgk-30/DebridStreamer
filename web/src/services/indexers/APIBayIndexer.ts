@@ -36,6 +36,55 @@ interface RawAPIBayItem {
 
 const ALL_ZERO_HASH = "0000000000000000000000000000000000000000";
 
+type APIBayCategory =
+  | "200" // All Video
+  | "201" // Movies
+  | "205" // TV Shows
+  | "207" // HD Movies
+  | "208"; // HD TV Shows
+
+function buildSearchCategories(type: MediaType): APIBayCategory[] {
+  return type === "movie"
+    ? [Category.hdMovies, Category.movies, "200"]
+    : [Category.hdTV, Category.tvShows, "200"];
+}
+
+function buildSeasonEpisodeRegex(season: number, episode: number): RegExp[] {
+  const seasonPattern = String(season);
+  const episodePattern = String(episode);
+  const season2 = seasonPattern.padStart(2, "0");
+  const episode2 = episodePattern.padStart(2, "0");
+  return [
+    new RegExp(`\\bS\\s*${seasonPattern}\\s*[._\\-]?\\s*E\\s*${episodePattern}`, "i"),
+    new RegExp(`\\bS\\s*${seasonPattern}\\s*[._\\-]?\\s*EP\\s*${episodePattern}`, "i"),
+    new RegExp(`\\bS\\s*${season2}\\s*[._\\-]?\\s*E\\s*${episode2}`, "i"),
+    new RegExp(`\\bS\\s*${season2}\\s*[._\\-]?\\s*[xX]\\s*${episode2}`, "i"),
+    new RegExp(`\\b0?${seasonPattern}\\s*[xX]\\s*0?${episodePattern}(?!\\d)`, "i"),
+  ];
+}
+
+function buildFallbackIMDbIDs(imdbId: string): string[] {
+  const trimmed = imdbId.trim();
+  if (trimmed.length === 0) return [];
+
+  const ids = [trimmed];
+  if (trimmed.toLowerCase().startsWith("tt") && trimmed.length > 2) {
+    ids.push(trimmed.slice(2));
+  }
+
+  return [...new Set(ids)];
+}
+
+function titleMatchesSeasonEpisode(
+  title: string,
+  season: number,
+  episode: number,
+): boolean {
+  return buildSeasonEpisodeRegex(season, episode).some((regex) =>
+    regex.test(title),
+  );
+}
+
 export class APIBayIndexer implements TorrentIndexer {
   readonly name = "APIBay";
   private readonly baseURL = "https://apibay.org";
@@ -51,79 +100,108 @@ export class APIBayIndexer implements TorrentIndexer {
     season: number | null,
     episode: number | null,
   ): Promise<TorrentResult[]> {
-    const cat = type === "movie" ? Category.hdMovies : Category.hdTV;
-    const url = `${this.baseURL}/q.php?q=${imdbId}&cat=${cat}`;
-
-    const items = await this.fetchItems(url);
-    if (items == null) return [];
-
+    const queries = buildFallbackIMDbIDs(imdbId);
+    if (queries.length === 0) {
+      return [];
+    }
+    const categories = buildSearchCategories(type);
+    const seen = new Set<string>();
     const results: TorrentResult[] = [];
-    for (const item of items) {
-      const hash = item.info_hash;
-      if (hash.length === 0 || hash === ALL_ZERO_HASH) continue;
 
-      // Filter by season/episode for TV shows using an anchored SxxEyy regex.
-      // Requires a contiguous S<season><sep>E<episode> token (allowing common
-      // separators like dot/space/dash) to avoid false positives from stray
-      // non-contiguous matches such as "S01E05.x264-E01TUREL".
-      if (type === "series" && season != null && episode != null) {
-        const titleUpper = item.name.toUpperCase();
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const pattern = new RegExp(`S${pad(season)}[ ._-]?E${pad(episode)}`);
-        if (!pattern.test(titleUpper)) continue;
+    for (const category of categories) {
+      for (const query of queries) {
+        const url = `${this.baseURL}/q.php?q=${encodeURIComponent(query)}&cat=${category}`;
+        const items = await this.fetchItems(url);
+        if (items == null) continue;
+
+        for (const item of items) {
+          const hash = item.info_hash;
+          if (hash.length === 0 || hash === ALL_ZERO_HASH) continue;
+
+          if (
+            type === "series" &&
+            season != null &&
+            episode != null &&
+            !titleMatchesSeasonEpisode(item.name, season, episode)
+          ) {
+            continue;
+          }
+
+          const seeders = Number.parseInt(item.seeders, 10) || 0;
+          const leechers = Number.parseInt(item.leechers, 10) || 0;
+          const sizeBytes = Number.parseInt(item.size, 10) || 0;
+
+          // Skip dead torrents.
+          if (seeders <= 0) continue;
+
+          const normalizedHash = hash.toLowerCase();
+          if (seen.has(normalizedHash)) continue;
+          seen.add(normalizedHash);
+
+          results.push(
+            TorrentResult.fromSearch({
+              infoHash: hash,
+              title: item.name,
+              sizeBytes,
+              seeders,
+              leechers,
+              indexerName: this.name,
+            }),
+          );
+        }
+
+        if (results.length > 0) {
+          return results;
+        }
       }
-
-      const seeders = Number.parseInt(item.seeders, 10) || 0;
-      const leechers = Number.parseInt(item.leechers, 10) || 0;
-      const sizeBytes = Number.parseInt(item.size, 10) || 0;
-
-      // Skip dead torrents.
-      if (seeders <= 0) continue;
-
-      results.push(
-        TorrentResult.fromSearch({
-          infoHash: hash,
-          title: item.name,
-          sizeBytes,
-          seeders,
-          leechers,
-          indexerName: this.name,
-        }),
-      );
     }
 
     return results;
   }
 
   async searchByQuery(query: string, type: MediaType): Promise<TorrentResult[]> {
-    const encodedQuery = encodeURIComponent(query);
-    const cat = type === "movie" ? Category.movies : Category.tvShows;
-    const url = `${this.baseURL}/q.php?q=${encodedQuery}&cat=${cat}`;
+    const trimmedQuery = query.trim();
+    if (trimmedQuery.length === 0) {
+      return [];
+    }
 
-    const items = await this.fetchItems(url);
-    if (items == null) return [];
+    const encodedQuery = encodeURIComponent(trimmedQuery);
+    const categories = buildSearchCategories(type);
+    const seen = new Set<string>();
 
     const results: TorrentResult[] = [];
-    for (const item of items) {
-      const hash = item.info_hash;
-      if (hash.length === 0 || hash === ALL_ZERO_HASH) continue;
+    for (const category of categories) {
+      const url = `${this.baseURL}/q.php?q=${encodedQuery}&cat=${category}`;
+      const items = await this.fetchItems(url);
+      if (items == null) continue;
 
-      const seeders = Number.parseInt(item.seeders, 10) || 0;
-      const leechers = Number.parseInt(item.leechers, 10) || 0;
-      const sizeBytes = Number.parseInt(item.size, 10) || 0;
+      for (const item of items) {
+        const hash = item.info_hash;
+        if (hash.length === 0 || hash === ALL_ZERO_HASH) continue;
 
-      if (seeders <= 0) continue;
+        const seeders = Number.parseInt(item.seeders, 10) || 0;
+        const leechers = Number.parseInt(item.leechers, 10) || 0;
+        const sizeBytes = Number.parseInt(item.size, 10) || 0;
 
-      results.push(
-        TorrentResult.fromSearch({
-          infoHash: hash,
-          title: item.name,
-          sizeBytes,
-          seeders,
-          leechers,
-          indexerName: this.name,
-        }),
-      );
+        if (seeders <= 0) continue;
+
+        const normalizedHash = hash.toLowerCase();
+        if (seen.has(normalizedHash)) continue;
+        seen.add(normalizedHash);
+
+        results.push(
+          TorrentResult.fromSearch({
+            infoHash: hash,
+            title: item.name,
+            sizeBytes,
+            seeders,
+            leechers,
+            indexerName: this.name,
+          }),
+        );
+      }
+
+      if (results.length > 0) return results;
     }
 
     return results;

@@ -19,8 +19,8 @@ actor TorznabIndexer: TorrentIndexer {
         session: URLSession = AppHTTP.api
     ) {
         self.name = name
-        self.baseURL = baseURL
-        self.endpointPath = endpointPath
+        self.baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.endpointPath = endpointPath.trimmingCharacters(in: .whitespacesAndNewlines)
         self.apiKey = apiKey
         self.categoryFilter = categoryFilter
         self.sendAPIKeyAsHeader = sendAPIKeyAsHeader
@@ -28,25 +28,100 @@ actor TorznabIndexer: TorrentIndexer {
     }
 
     func search(imdbId: String, type: MediaType, season: Int?, episode: Int?) async throws -> [TorrentResult] {
-        var params: [String: String] = [
-            "t": "search",
-            "imdbid": imdbId
-        ]
-        if let season {
-            params["season"] = String(season)
-        }
-        if let episode {
-            params["ep"] = String(episode)
-        }
-        return try await execute(params: params)
+        return try await executeWithFallbacks(imdbId: imdbId, season: season, episode: episode)
     }
 
     func searchByQuery(query: String, type: MediaType) async throws -> [TorrentResult] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedQuery.isEmpty { return [] }
+
         let params: [String: String] = [
             "t": "search",
-            "q": query
+            "q": trimmedQuery,
         ]
         return try await execute(params: params)
+    }
+
+    private func executeWithFallbacks(
+        imdbId: String,
+        season: Int?,
+        episode: Int?
+    ) async throws -> [TorrentResult] {
+        let trimmedImdbId = imdbId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedIDs = buildFallbackIMDbIDs(trimmedImdbId)
+
+        var attempts: [[String: String]] = []
+        if !trimmedImdbId.isEmpty {
+            for imdb in normalizedIDs {
+                var withEpisode: [String: String] = ["t": "search", "imdbid": imdb]
+                if let season {
+                    withEpisode["season"] = String(season)
+                }
+                if let episode {
+                    withEpisode["ep"] = String(episode)
+                }
+
+                var withQuery: [String: String] = ["t": "search", "q": imdb]
+                if let season {
+                    withQuery["season"] = String(season)
+                }
+                if let episode {
+                    withQuery["ep"] = String(episode)
+                }
+
+                attempts.append(withEpisode)
+                attempts.append(withQuery)
+            }
+
+            if season != nil || episode != nil {
+                for imdb in normalizedIDs {
+                    attempts.append(["t": "search", "imdbid": imdb])
+                    attempts.append(["t": "search", "q": imdb])
+                }
+            }
+        }
+
+        var lastError: Error?
+        var anyAttemptSucceeded = false
+
+        for params in attempts {
+            do {
+                let items = try await execute(params: params)
+                anyAttemptSucceeded = true
+                if !items.isEmpty {
+                    return items
+                }
+            } catch {
+                lastError = error
+            }
+        }
+
+        if anyAttemptSucceeded {
+            return []
+        }
+        if let lastError {
+            throw lastError
+        }
+
+        return []
+    }
+
+    private func buildFallbackIMDbIDs(_ imdbId: String) -> [String] {
+        guard !imdbId.isEmpty else { return [] }
+
+        var ids: [String] = [imdbId]
+        let hasTTPrefix = imdbId.lowercased().hasPrefix("tt")
+        if hasTTPrefix, imdbId.count > 2 {
+            let numeric = String(imdbId.dropFirst(2))
+            ids.append(numeric)
+        }
+
+        var seen = Set<String>()
+        return ids.filter { id in
+            guard !seen.contains(id) else { return false }
+            seen.insert(id)
+            return true
+        }
     }
 
     private func execute(params: [String: String]) async throws -> [TorrentResult] {

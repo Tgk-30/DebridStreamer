@@ -19,9 +19,11 @@ actor YTSIndexer: TorrentIndexer {
 
     func search(imdbId: String, type: MediaType, season: Int?, episode: Int?) async throws -> [TorrentResult] {
         // YTS only has movies
-        guard type == .movie else { return [] }
+        let trimmedId = imdbId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard type == .movie, trimmedId.isEmpty == false else { return [] }
 
-        let url = URL(string: "\(baseURL)/list_movies.json?query_term=\(imdbId)")!
+        let encodedQuery = trimmedId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmedId
+        let url = URL(string: "\(baseURL)/list_movies.json?query_term=\(encodedQuery)")!
         var request = URLRequest(url: url)
         request.timeoutInterval = 20
         let (data, response) = try await session.data(for: request)
@@ -62,9 +64,10 @@ actor YTSIndexer: TorrentIndexer {
     }
 
     func searchByQuery(query: String, type: MediaType) async throws -> [TorrentResult] {
-        guard type == .movie else { return [] }
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard type == .movie, trimmedQuery.isEmpty == false else { return [] }
 
-        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let encodedQuery = trimmedQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmedQuery
         let url = URL(string: "\(baseURL)/list_movies.json?query_term=\(encodedQuery)&limit=20")!
         var request = URLRequest(url: url)
         request.timeoutInterval = 20

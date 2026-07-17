@@ -58,8 +58,11 @@ enum IndexerFactory {
     private static func testStremioAddon(config: IndexerConfig, session: URLSession) async -> Bool {
         var base = config.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         while base.hasSuffix("/") { base.removeLast() }
-        // Accept either a bare base URL or a full `.../manifest.json`.
-        let manifestURLString = base.hasSuffix("manifest.json") ? base : "\(base)/manifest.json"
+        // Accept either a bare base URL or a full `.../manifest.json` (case-insensitive).
+        if base.lowercased().hasSuffix("/manifest.json") {
+            base.removeLast("/manifest.json".count)
+        }
+        let manifestURLString = base.hasSuffix("/") ? "\(base)manifest.json" : "\(base)/manifest.json"
         guard let url = URL(string: manifestURLString) else { return false }
 
         var request = URLRequest(url: url)
@@ -81,10 +84,14 @@ enum IndexerFactory {
 
     /// Builds a minimal Torznab search probe request for `testConnection`.
     private static func makeTorznabProbeRequest(from config: IndexerConfig) -> URLRequest? {
-        guard var components = URLComponents(string: config.baseURL) else { return nil }
-        if !config.endpointPath.isEmpty {
+        let trimmedBase = config.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedBase.isEmpty { return nil }
+        let trimmedEndpointPath = config.endpointPath.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard var components = URLComponents(string: trimmedBase) else { return nil }
+        if !trimmedEndpointPath.isEmpty {
             let current = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            let append = config.endpointPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let append = trimmedEndpointPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             if current.isEmpty {
                 components.path = "/\(append)"
             } else if append.isEmpty {
@@ -132,13 +139,18 @@ enum IndexerFactory {
     private static func makeExternalIndexer(from config: IndexerConfig, session: URLSession = .shared) -> (any TorrentIndexer)? {
         switch config.type {
         case .jackett, .prowlarr, .torznab, .zilean:
+            let trimmedBase = config.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedBase.isEmpty else { return nil }
             let displayName = config.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
             let name = (displayName?.isEmpty == false) ? displayName! : config.type.displayName
+            let normalizedEndpointPath = config.endpointPath.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
             let sendAPIKeyAsHeader = config.providerSubtype == .prowlarr
             return TorznabIndexer(
                 name: name,
-                baseURL: config.baseURL,
-                endpointPath: config.endpointPath,
+                baseURL: trimmedBase,
+                endpointPath: normalizedEndpointPath,
                 apiKey: config.apiKey,
                 categoryFilter: config.categoryFilter,
                 sendAPIKeyAsHeader: sendAPIKeyAsHeader,

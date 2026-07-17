@@ -146,8 +146,9 @@ describe("APIBayIndexer", () => {
     await indexer.search("tt1234567", "movie", null, null);
     const url = mock.lastURL()!;
     expect(url.pathname).toBe("/q.php");
-    expect(url.searchParams.get("q")).toBe("tt1234567");
-    expect(url.searchParams.get("cat")).toBe("207"); // hdMovies
+    expect(["tt1234567", "1234567"]).toContain(url.searchParams.get("q"));
+    expect(url.searchParams.get("cat")).toBe("200"); // final fallback category
+    expect(mock.hits()).toBe(6);
   });
 
   it("lowercases the infoHash and skips dead torrents (0 seeders)", async () => {
@@ -455,7 +456,15 @@ describe("TorznabIndexer", () => {
   });
 
   it("passes season/ep params through on an IMDB search", async () => {
-    const mock = makeMockFetch(() => ok("<rss><channel></channel></rss>"));
+    const mock = makeMockFetch(() =>
+      ok(
+        `<rss xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel><item>` +
+          `<title>Any</title>` +
+          `<size>1</size>` +
+          `<guid>magnet:?xt=urn:btih:1111111111111111111111111111111111111111</guid>` +
+          `</item></channel></rss>`,
+      ),
+    );
     const indexer = new TorznabIndexer({
       name: "Jackett",
       baseURL: "http://localhost:9117",

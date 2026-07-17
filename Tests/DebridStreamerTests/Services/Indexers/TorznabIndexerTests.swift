@@ -74,6 +74,32 @@ struct TorznabIndexerTests {
         #expect(seenHeader == "header-token")
     }
 
+    @Test("Trims whitespace from endpointPath before building torznab URLs")
+    func trimEndpointPathForSearchByQuery() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var requestPath: String?
+
+        MockURLProtocol.setHandler({ request in
+            requestPath = request.url?.path
+            return try makeResponse(for: request, statusCode: 200, body: "<rss><channel></channel></rss>")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = TorznabIndexer(
+            name: "Jackett",
+            baseURL: "http://localhost:9117/base",
+            endpointPath: " /api/v2.0/indexers/all/results/torznab/api ",
+            apiKey: nil,
+            categoryFilter: nil,
+            sendAPIKeyAsHeader: false,
+            session: session
+        )
+
+        _ = try await indexer.searchByQuery(query: "test", type: .movie)
+        #expect(requestPath == "/base/api/v2.0/indexers/all/results/torznab/api")
+    }
+
     @Test("searchByQuery throws on non-2xx HTTP status")
     func searchByQueryThrowsOnHTTPError() async throws {
         let sessionID = UUID().uuidString
@@ -162,6 +188,85 @@ struct TorznabIndexerTests {
 
         let ok = await IndexerFactory.testConnection(config: config, session: session)
         #expect(ok == true)
+    }
+
+    @Test("testConnection handles stremio addon manifest URL suffix case-insensitively")
+    func testConnectionAcceptsManifestSuffixCaseInsensitive() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            let manifest = #"{"id":"addon","resources":["streaming"]}"#
+            return try TorznabIndexerTests.makeResponseStatic(for: request, statusCode: 200, body: manifest)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let config = IndexerConfig(
+            id: "m",
+            type: .stremioAddon,
+            baseURL: "https://addon.example.com/stream/MANIFEST.JSON/"
+        )
+
+        let ok = await IndexerFactory.testConnection(config: config, session: session)
+        #expect(ok == true)
+    }
+
+    @Test("search falls back from tt-prefixed imdbid to numeric id")
+    func searchFallsBackFromTTPrefixToNumericIMDb() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var requestIndex = 0
+
+        MockURLProtocol.setHandler({ request in
+            requestIndex += 1
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            let imdb = components?.queryItems?.first(where: { $0.name == "imdbid" })?.value ?? ""
+            let q = components?.queryItems?.first(where: { $0.name == "q" })?.value ?? ""
+
+            let ttRequest = imdb == "tt1234567" || q == "tt1234567"
+            let numericRequest = imdb == "1234567" || q == "1234567"
+
+            if ttRequest && !numericRequest {
+                let empty = "<rss><channel></channel></rss>"
+                return try makeResponse(for: request, statusCode: 200, body: empty)
+            }
+
+            let xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+              <channel>
+                <item>
+                  <title>Numeric.Fallback.Movie</title>
+                  <guid isPermaLink="true">magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12</guid>
+                  <size>140</size>
+                  <torznab:attr name="seeders" value="8"/>
+                </item>
+              </channel>
+            </rss>
+            """
+
+            if numericRequest {
+                return try makeResponse(for: request, statusCode: 200, body: xml)
+            }
+
+            return try makeResponse(for: request, statusCode: 200, body: "<rss><channel></channel></rss>")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = TorznabIndexer(
+            name: "Jackett",
+            baseURL: "http://localhost:9117",
+            endpointPath: "/api/v2.0/indexers/all/results/torznab/api",
+            apiKey: nil,
+            categoryFilter: nil,
+            sendAPIKeyAsHeader: false,
+            session: session
+        )
+
+        let results = try await indexer.search(imdbId: "tt1234567", type: .movie, season: nil, episode: nil)
+        #expect(results.count == 1)
+        #expect(results.first?.infoHash == "abcdef1234567890abcdef1234567890abcdef12")
+        #expect(requestIndex == 3)
     }
 
     @Test("testConnection returns true for built-in indexers without probing")

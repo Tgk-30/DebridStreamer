@@ -52,7 +52,10 @@ export class EZTVIndexer implements TorrentIndexer {
     if (type !== "series") return [];
 
     // EZTV uses the IMDB numeric ID without the "tt" prefix.
-    const numericId = imdbId.replaceAll("tt", "");
+    const trimmedId = imdbId.trim();
+    const numericId = trimmedId.toLowerCase().startsWith("tt")
+      ? trimmedId.slice(2)
+      : trimmedId;
     if (numericId.length === 0) return [];
 
     const results: TorrentResult[] = [];
@@ -106,7 +109,9 @@ export class EZTVIndexer implements TorrentIndexer {
   async searchByQuery(query: string, type: MediaType): Promise<TorrentResult[]> {
     if (type !== "series") return [];
 
-    const encodedQuery = encodeURIComponent(query);
+    const trimmedQuery = query.trim();
+    if (trimmedQuery.length === 0) return [];
+    const encodedQuery = encodeURIComponent(trimmedQuery);
     const url = `${this.baseURL}/get-torrents?search=${encodedQuery}&limit=${PAGE_LIMIT}`;
     const torrents = await this.fetchTorrents(url);
     if (torrents == null || torrents.length === 0) return [];

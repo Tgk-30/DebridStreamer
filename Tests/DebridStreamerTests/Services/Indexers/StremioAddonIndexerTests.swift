@@ -77,6 +77,28 @@ struct StremioAddonIndexerTests {
         #expect(requestedPath == "/stream/series/tt9999999:2:5.json")
     }
 
+    @Test("Manifest URL base is normalized before stream lookup")
+    func manifestBaseIsNormalized() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var requestedPath: String?
+
+        MockURLProtocol.setHandler({ request in
+            requestedPath = request.url?.path
+            return try makeResponse(for: request, statusCode: 200, body: #"{"streams": []}"#)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = StremioAddonIndexer(
+            name: "Torrentio",
+            baseURL: "https://torrentio.strem.fun/manifest.json",
+            session: session
+        )
+
+        _ = try await indexer.search(imdbId: "tt9876543", type: .movie, season: nil, episode: nil)
+        #expect(requestedPath == "/stream/movie/tt9876543.json")
+    }
+
     @Test("Non-IMDb media ids resolve to no streams without a network call")
     func nonImdbIdReturnsEmpty() async throws {
         let sessionID = UUID().uuidString

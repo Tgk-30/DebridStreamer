@@ -4,8 +4,9 @@
 //    sendAPIKeyAsHeader resolution (prowlarr subtype), skipping
 //    unknown/empty/unparseable stremio_addon configs, and built_in -> null.
 //  - testConnection: built-in short-circuit, endpoint-path joining, apikey in
-//    query vs X-Api-Key header (prowlarr subtype), category filter, unparseable
-//    base URL, non-2xx, Torznab <error> envelope, and positive-feed detection.
+//    query vs X-Api-Key header (prowlarr subtype), category filter, stremio
+//    manifest validation, unparseable base URL, non-2xx, Torznab <error>
+//    envelope, and positive-feed detection.
 //
 // The network is stubbed via an injected `FetchImpl` (same pattern as
 // indexers.test.ts / StremioAddonIndexer.test.ts): it captures the last URL +
@@ -138,6 +139,18 @@ describe("IndexerFactory.buildIndexers external indexer types", () => {
     expect(indexers[0]).toBeInstanceOf(StremioAddonIndexer);
   });
 
+  it("uses a trimmed displayName for stremio_addon", () => {
+    const indexers = buildSingleExternal(
+      makeIndexerConfig({
+        id: "s",
+        type: "stremio_addon",
+        baseURL: "https://torrentio.strem.fun",
+        displayName: "  My Stremio Addon  ",
+      }),
+    );
+    expect(indexers[0]?.name).toBe("My Stremio Addon");
+  });
+
   it("names torznab-family indexers from the type default when no displayName", () => {
     const cases: Array<[Parameters<typeof makeIndexerConfig>[0]["type"], string]> = [
       ["jackett", "Jackett"],
@@ -196,14 +209,54 @@ describe("IndexerFactory.buildIndexers external indexer types", () => {
     expect(indexers).toHaveLength(0);
   });
 
-  it("does NOT skip a torznab config with an empty base URL (constructed lazily)", () => {
-    // makeExternalIndexer only validates the URL for stremio_addon; torznab-family
-    // indexers are constructed unconditionally and only fail at request time.
+  it("skips a torznab config with an empty base URL", () => {
     const indexers = buildSingleExternal(
       makeIndexerConfig({ id: "t", type: "torznab", baseURL: "" }),
     );
-    expect(indexers).toHaveLength(1);
-    expect(indexers[0]).toBeInstanceOf(TorznabIndexer);
+    expect(indexers).toHaveLength(0);
+  });
+
+  it("drops an unexpected built_in payload that reaches the external-construction path", () => {
+    const mutable = {
+      ...makeIndexerConfig({ id: "weird", type: "jackett", baseURL: "http://host" }),
+      isActive: true,
+    } as { type: string };
+    let reads = 0;
+    Object.defineProperty(mutable, "type", {
+      configurable: true,
+      get: () => {
+        reads += 1;
+        return reads <= 2 ? "jackett" : "built_in";
+      },
+      set: () => {
+        // no-op: this config keeps its staged behavior via the getter only.
+      },
+    });
+
+    const indexers = IndexerFactory.buildIndexers([mutable as any]);
+    expect(reads).toBe(3);
+    expect(indexers).toHaveLength(3);
+    expect(indexers.map((indexer) => indexer.name)).toEqual([
+      "APIBay",
+      "YTS",
+      "EZTV",
+    ]);
+  });
+
+  it("ignores unknown external indexer types by returning null from makeExternalIndexer", () => {
+    const mutable = {
+      ...makeIndexerConfig({ id: "mystery", type: "jackett", baseURL: "http://host" }),
+      type: "mystery" as never,
+      isActive: true,
+    };
+
+    const indexers = IndexerFactory.buildIndexers([mutable as any]);
+    expect(indexers).toHaveLength(3);
+    expect(indexers.map((indexer) => indexer.name)).toEqual([
+      "APIBay",
+      "YTS",
+      "EZTV",
+    ]);
   });
 });
 
@@ -322,6 +375,25 @@ describe("IndexerFactory.buildIndexers constructed wiring", () => {
     expect(mock.lastHeaders()).toBeUndefined();
   });
 
+  it("normalizes whitespace around endpointPath before wiring torznab requests", async () => {
+    const mock = makeMockFetch(() => ok(validFeed));
+    const indexers = IndexerFactory.buildIndexers(
+      [
+        makeIndexerConfig({ id: "b", type: "built_in", baseURL: "", isActive: false }),
+        makeIndexerConfig({
+          id: "j",
+          type: "jackett",
+          baseURL: "http://localhost:9117/base",
+          endpointPath: " /api/torznab/ ",
+        }),
+      ],
+      mock.fetchImpl,
+    );
+
+    await indexers[0].searchByQuery("test", "movie");
+    expect(mock.lastURL()!.pathname).toBe("/base/api/torznab");
+  });
+
   it("sends the API key as the X-Api-Key header for a prowlarr-subtype config", async () => {
     const mock = makeMockFetch(() => ok(validFeed));
     const indexers = IndexerFactory.buildIndexers(
@@ -423,6 +495,17 @@ describe("IndexerFactory.testConnection", () => {
     expect(mock.hits()).toBe(0);
   });
 
+  it("returns false (no fetch) when the base URL is only whitespace", async () => {
+    const mock = makeMockFetch(() => ok(validFeed));
+    const config = makeIndexerConfig({
+      id: "j",
+      type: "jackett",
+      baseURL: "   ",
+    });
+    expect(await IndexerFactory.testConnection(config, mock.fetchImpl)).toBe(false);
+    expect(mock.hits()).toBe(0);
+  });
+
   it("returns true on a valid empty Torznab feed (2xx)", async () => {
     const mock = makeMockFetch(() => ok(validFeed));
     const config = makeIndexerConfig({
@@ -505,6 +588,34 @@ describe("IndexerFactory.testConnection", () => {
     expect(url.searchParams.get("q")).toBe("test");
   });
 
+  it("probes the root base path when endpointPath is configured", async () => {
+    const mock = makeMockFetch(() => ok(validFeed));
+    const config = makeIndexerConfig({
+      id: "j",
+      type: "jackett",
+      baseURL: "http://localhost:9117",
+      endpointPath: "/api/torznab",
+    });
+
+    await IndexerFactory.testConnection(config, mock.fetchImpl);
+    expect(mock.lastURL()!.pathname).toBe("/api/torznab");
+    expect(mock.lastURL()!.searchParams.get("t")).toBe("search");
+    expect(mock.lastURL()!.searchParams.get("q")).toBe("test");
+  });
+
+  it("trims whitespace in endpointPath when probing for connection", async () => {
+    const mock = makeMockFetch(() => ok(validFeed));
+    const config = makeIndexerConfig({
+      id: "j",
+      type: "jackett",
+      baseURL: "http://localhost:9117/base",
+      endpointPath: " /api/torznab/ ",
+    });
+
+    await IndexerFactory.testConnection(config, mock.fetchImpl);
+    expect(mock.lastURL()!.pathname).toBe("/base/api/torznab");
+  });
+
   it("sends apikey in the query for a non-prowlarr subtype", async () => {
     const mock = makeMockFetch(() => ok(validFeed));
     const config = makeIndexerConfig({
@@ -556,6 +667,124 @@ describe("IndexerFactory.testConnection", () => {
     expect(mock.lastHeaders()).toBeUndefined();
   });
 
+  it("validates stremio addons by reading manifest.json", async () => {
+    const manifest = { id: "addon", resources: ["streaming"] };
+    const mock = makeMockFetch((url) => {
+      if (url.pathname === "/stream/manifest.json") {
+        return ok(JSON.stringify(manifest));
+      }
+      return ok("{}");
+    });
+
+    const config = makeIndexerConfig({
+      id: "s",
+      type: "stremio_addon",
+      baseURL: "http://h/stream",
+    });
+    const connected = await IndexerFactory.testConnection(config, mock.fetchImpl);
+    expect(connected).toBe(true);
+    expect(mock.lastURL()!.pathname).toBe("/stream/manifest.json");
+    expect(mock.hits()).toBe(1);
+  });
+
+  it("returns false for stremio addons with a whitespace-only base URL", async () => {
+    const mock = makeMockFetch(() => ok("{}"));
+    const config = makeIndexerConfig({
+      id: "s",
+      type: "stremio_addon",
+      baseURL: "   ",
+    });
+    const connected = await IndexerFactory.testConnection(config, mock.fetchImpl);
+    expect(connected).toBe(false);
+    expect(mock.hits()).toBe(0);
+  });
+
+  it("accepts a base URL that already points at manifest.json", async () => {
+    const manifest = { resources: ["streaming"] };
+    const mock = makeMockFetch((url) => {
+      expect(url.pathname).toBe("/stream/manifest.json");
+      return ok(JSON.stringify(manifest));
+    });
+    const config = makeIndexerConfig({
+      id: "s",
+      type: "stremio_addon",
+      baseURL: "http://h/stream/manifest.json",
+    });
+
+    const connected = await IndexerFactory.testConnection(config, mock.fetchImpl);
+    expect(connected).toBe(true);
+  });
+
+  it("accepts a base URL that points to MANIFEST.JSON with different case", async () => {
+    const manifest = { id: "addon" };
+    const mock = makeMockFetch((url) => {
+      expect(url.pathname).toBe("/stream/manifest.json");
+      return ok(JSON.stringify(manifest));
+    });
+    const config = makeIndexerConfig({
+      id: "s",
+      type: "stremio_addon",
+      baseURL: "http://h/stream/MANIFEST.JSON",
+    });
+
+    const connected = await IndexerFactory.testConnection(config, mock.fetchImpl);
+    expect(connected).toBe(true);
+  });
+
+  it("accepts a manifest URL with a trailing slash", async () => {
+    const manifest = { id: "addon" };
+    const mock = makeMockFetch((url) => {
+      expect(url.pathname).toBe("/stream/manifest.json");
+      return ok(JSON.stringify(manifest));
+    });
+    const config = makeIndexerConfig({
+      id: "s",
+      type: "stremio_addon",
+      baseURL: "http://h/stream/manifest.json/",
+    });
+    expect(await IndexerFactory.testConnection(config, mock.fetchImpl)).toBe(true);
+  });
+
+  it("rejects stremio addons that return an invalid manifest", async () => {
+    const mock = makeMockFetch(() => ok("not json"));
+    const config = makeIndexerConfig({
+      id: "s",
+      type: "stremio_addon",
+      baseURL: "http://h/stream",
+    });
+    await expect(IndexerFactory.testConnection(config, mock.fetchImpl)).resolves.toBe(false);
+  });
+
+  it("rejects stremio addons that return non-2xx from manifest.json", async () => {
+    const mock = makeMockFetch(() => ({ status: 500, body: JSON.stringify({ id: "addon" }) }));
+    const config = makeIndexerConfig({
+      id: "s",
+      type: "stremio_addon",
+      baseURL: "http://h/stream",
+    });
+    await expect(IndexerFactory.testConnection(config, mock.fetchImpl)).resolves.toBe(false);
+  });
+
+  it("rejects stremio addons that are missing manifest keys", async () => {
+    const mock = makeMockFetch(() => ok("{}"));
+    const config = makeIndexerConfig({
+      id: "s",
+      type: "stremio_addon",
+      baseURL: "http://h/stream",
+    });
+    await expect(IndexerFactory.testConnection(config, mock.fetchImpl)).resolves.toBe(false);
+  });
+
+  it("rejects stremio addons that return an array manifest", async () => {
+    const mock = makeMockFetch(() => ok("[]"));
+    const config = makeIndexerConfig({
+      id: "s",
+      type: "stremio_addon",
+      baseURL: "http://h/stream",
+    });
+    await expect(IndexerFactory.testConnection(config, mock.fetchImpl)).resolves.toBe(false);
+  });
+
   it("leaves the base path untouched when the endpoint path is empty", async () => {
     const mock = makeMockFetch(() => ok(validFeed));
     const config = makeIndexerConfig({
@@ -566,5 +795,19 @@ describe("IndexerFactory.testConnection", () => {
     });
     await IndexerFactory.testConnection(config, mock.fetchImpl);
     expect(mock.lastURL()!.pathname).toBe("/existing");
+  });
+
+  it("treats a slash-only endpointPath as an empty path while still probing", async () => {
+    const mock = makeMockFetch(() => ok(validFeed));
+    const config = makeIndexerConfig({
+      id: "t",
+      type: "jackett",
+      baseURL: "http://h/existing",
+      endpointPath: "/",
+    });
+    await IndexerFactory.testConnection(config, mock.fetchImpl);
+    expect(mock.lastURL()!.pathname).toBe("/existing");
+    expect(mock.lastURL()!.searchParams.get("t")).toBe("search");
+    expect(mock.lastURL()!.searchParams.get("q")).toBe("test");
   });
 });

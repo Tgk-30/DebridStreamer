@@ -21,8 +21,11 @@ actor EZTVIndexer: TorrentIndexer {
         // EZTV only has TV shows
         guard type == .series else { return [] }
 
-        // EZTV uses IMDB numeric ID without "tt" prefix
-        let numericId = imdbId.replacingOccurrences(of: "tt", with: "")
+        // EZTV uses IMDB numeric ID without the "tt" prefix.
+        let trimmedId = imdbId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let numericId = trimmedId.lowercased().hasPrefix("tt")
+            ? String(trimmedId.dropFirst(2))
+            : trimmedId
         guard !numericId.isEmpty else { return [] }
 
         var results: [TorrentResult] = []
@@ -83,7 +86,10 @@ actor EZTVIndexer: TorrentIndexer {
     func searchByQuery(query: String, type: MediaType) async throws -> [TorrentResult] {
         guard type == .series else { return [] }
 
-        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.isEmpty == false else { return [] }
+
+        let encodedQuery = trimmedQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmedQuery
         let url = URL(string: "\(baseURL)/get-torrents?search=\(encodedQuery)&limit=100")!
 
         var request = URLRequest(url: url)

@@ -22,11 +22,70 @@ actor APIBayIndexer: TorrentIndexer {
         case hdTV = "208"        // HD TV Shows
     }
 
-    func search(imdbId: String, type: MediaType, season: Int?, episode: Int?) async throws -> [TorrentResult] {
-        // APIBay search endpoint — use IMDB ID as query
-        let cat = type == .movie ? Category.hdMovies.rawValue : Category.hdTV.rawValue
-        let url = URL(string: "\(baseURL)/q.php?q=\(imdbId)&cat=\(cat)")!
+    private func buildSearchCategories(for type: MediaType) -> [Category] {
+        type == .movie
+            ? [.hdMovies, .movies, .video]
+            : [.hdTV, .tvShows, .video]
+    }
 
+    private func buildFallbackIMDbIDs(_ imdbId: String) -> [String] {
+        let trimmed = imdbId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        var ids = [trimmed]
+        if trimmed.lowercased().hasPrefix("tt") && trimmed.count > 2 {
+            let numeric = String(trimmed.dropFirst(2))
+            ids.append(numeric)
+        }
+
+        var seen = Set<String>()
+        return ids.filter {
+            guard !seen.contains($0) else { return false }
+            seen.insert($0)
+            return true
+        }
+    }
+
+    private func buildSeasonEpisodeRegexes(season: Int, episode: Int) -> [String] {
+        let seasonPattern = String(season)
+        let episodePattern = String(episode)
+        let season2 = String(format: "%02d", season)
+        let episode2 = String(format: "%02d", episode)
+
+        return [
+            "\\bS\\s*" + seasonPattern + "\\s*[._\\-]?\\s*E\\s*" + episodePattern,
+            "\\bS\\s*" + seasonPattern + "\\s*[._\\-]?\\s*EP\\s*" + episodePattern,
+            "\\bS\\s*" + season2 + "\\s*[._\\-]?\\s*E\\s*" + episode2,
+            "\\bS\\s*" + season2 + "\\s*[._\\-]?\\s*[xX]\\s*" + episode2,
+            "\\b0?" + seasonPattern + "\\s*[xX]\\s*0?" + episodePattern + "(?!\\d)",
+        ]
+    }
+
+    private func titleMatchesSeasonEpisode(
+        title: String,
+        season: Int,
+        episode: Int,
+    ) -> Bool {
+        let regexes = buildSeasonEpisodeRegexes(season: season, episode: episode)
+        return regexes.contains { pattern in
+            title.range(
+                of: pattern,
+                options: [.regularExpression, .caseInsensitive],
+            ) != nil
+        }
+    }
+
+    private func buildSearchURL(_ query: String, category: Category) -> URL {
+        // Keep search tolerant of trailing whitespace in callers.
+        let encodedQuery =
+            query.trimmingCharacters(in: .whitespacesAndNewlines)
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+            ?? query
+
+        return URL(string: "\(baseURL)/q.php?q=\(encodedQuery)&cat=\(category.rawValue)")!
+    }
+
+    private func fetchItems(url: URL) async throws -> [APIBayItem]? {
         var request = URLRequest(url: url)
         request.timeoutInterval = 20
         let (data, response) = try await session.data(for: request)
@@ -37,88 +96,117 @@ actor APIBayIndexer: TorrentIndexer {
         }
 
         let items = try decoder.decode([APIBayItem].self, from: data)
+        if items.isEmpty || items.first?.name == "No results returned" {
+            return nil
+        }
 
-        // Filter out the "no results" placeholder
-        guard !items.isEmpty, items.first?.name != "No results returned" else {
+        return items
+    }
+
+    func search(imdbId: String, type: MediaType, season: Int?, episode: Int?) async throws -> [TorrentResult] {
+        let queries = buildFallbackIMDbIDs(imdbId)
+        if queries.isEmpty {
             return []
         }
 
-        var results: [TorrentResult] = []
-        for item in items {
-            let hash = item.infoHash
-            guard !hash.isEmpty, hash != "0000000000000000000000000000000000000000" else { continue }
+        var seen = Set<String>()
 
-            // Filter by season/episode for TV shows using an anchored SxxEyy regex.
-            // Requires a contiguous S<season><sep>E<episode> token (allowing common
-            // separators like dot/space/dash) to avoid false positives from stray
-            // non-contiguous matches such as "S01E05.x264-E01TUREL".
-            if type == .series, let season = season, let episode = episode {
-                let titleUpper = item.name.uppercased()
-                let pattern = "S\(String(format: "%02d", season))[ ._-]?E\(String(format: "%02d", episode))"
-                if titleUpper.range(of: pattern, options: .regularExpression) == nil {
-                    continue
+        for category in buildSearchCategories(for: type) {
+            var results: [TorrentResult] = []
+            for query in queries {
+                let url = buildSearchURL(query, category: category)
+                let items = try await fetchItems(url: url)
+                guard let items else { continue }
+
+                for item in items {
+                    let hash = item.infoHash
+                    if hash.isEmpty || hash == "0000000000000000000000000000000000000000" {
+                        continue
+                    }
+
+                    if type == .series, let season, let episode,
+                       !titleMatchesSeasonEpisode(title: item.name, season: season, episode: episode) {
+                        continue
+                    }
+
+                    let seeders = Int(item.seeders) ?? 0
+                    let leechers = Int(item.leechers) ?? 0
+                    let sizeBytes = Int64(item.size) ?? 0
+
+                    guard seeders > 0 else { continue }
+
+                    let normalizedHash = hash.lowercased()
+                    if seen.contains(normalizedHash) {
+                        continue
+                    }
+                    seen.insert(normalizedHash)
+
+                    results.append(
+                        TorrentResult.fromSearch(
+                            infoHash: hash,
+                            title: item.name,
+                            sizeBytes: sizeBytes,
+                            seeders: seeders,
+                            leechers: leechers,
+                            indexerName: name,
+                        )
+                    )
+                }
+
+                if !results.isEmpty {
+                    return results
                 }
             }
-
-            let seeders = Int(item.seeders) ?? 0
-            let leechers = Int(item.leechers) ?? 0
-            let sizeBytes = Int64(item.size) ?? 0
-
-            // Skip dead torrents
-            guard seeders > 0 else { continue }
-
-            results.append(TorrentResult.fromSearch(
-                infoHash: hash,
-                title: item.name,
-                sizeBytes: sizeBytes,
-                seeders: seeders,
-                leechers: leechers,
-                indexerName: name
-            ))
         }
 
-        return results
+        return []
     }
 
     func searchByQuery(query: String, type: MediaType) async throws -> [TorrentResult] {
-        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        let cat = type == .movie ? Category.movies.rawValue : Category.tvShows.rawValue
-        let url = URL(string: "\(baseURL)/q.php?q=\(encodedQuery)&cat=\(cat)")!
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedQuery.isEmpty { return [] }
 
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 20
-        let (data, response) = try await session.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
-
-        let items = try decoder.decode([APIBayItem].self, from: data)
-
-        guard !items.isEmpty, items.first?.name != "No results returned" else {
-            return []
-        }
-
+        var seen = Set<String>()
         var results: [TorrentResult] = []
-        for item in items {
-            let hash = item.infoHash
-            guard !hash.isEmpty, hash != "0000000000000000000000000000000000000000" else { continue }
 
-            let seeders = Int(item.seeders) ?? 0
-            let leechers = Int(item.leechers) ?? 0
-            let sizeBytes = Int64(item.size) ?? 0
+        for category in buildSearchCategories(for: type) {
+            let url = buildSearchURL(trimmedQuery, category: category)
+            let items = try await fetchItems(url: url)
+            guard let items else { continue }
 
-            guard seeders > 0 else { continue }
+            for item in items {
+                let hash = item.infoHash
+                if hash.isEmpty || hash == "0000000000000000000000000000000000000000" {
+                    continue
+                }
 
-            results.append(TorrentResult.fromSearch(
-                infoHash: hash,
-                title: item.name,
-                sizeBytes: sizeBytes,
-                seeders: seeders,
-                leechers: leechers,
-                indexerName: name
-            ))
+                let seeders = Int(item.seeders) ?? 0
+                let leechers = Int(item.leechers) ?? 0
+                let sizeBytes = Int64(item.size) ?? 0
+
+                guard seeders > 0 else { continue }
+
+                let normalizedHash = hash.lowercased()
+                if seen.contains(normalizedHash) {
+                    continue
+                }
+                seen.insert(normalizedHash)
+
+                results.append(
+                    TorrentResult.fromSearch(
+                        infoHash: hash,
+                        title: item.name,
+                        sizeBytes: sizeBytes,
+                        seeders: seeders,
+                        leechers: leechers,
+                        indexerName: name,
+                    )
+                )
+            }
+
+            if !results.isEmpty {
+                return results
+            }
         }
 
         return results
