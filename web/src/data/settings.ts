@@ -269,9 +269,12 @@ export interface AppSettings {
   ratingScale: RatingScale;
   /** Chosen external player name (from list_external_players); "" = auto. */
   preferredExternalPlayer: string;
-  /** Desktop only, EXPERIMENTAL: play MKV/HEVC in the built-in libmpv window
-   *  instead of handing off to an external player (VLC/mpv/IINA). Off by
-   *  default until native bundling is verified - see EMBEDDED_PLAYER.md. */
+  /** Desktop: play MKV/HEVC/AV1 in the built-in libmpv window instead of
+   *  handing off to an external player (VLC/mpv/IINA). The default in-window
+   *  path on macOS, Windows, and Linux (X11); libmpv is bundled per-platform
+   *  in web-release.yml. If the native surface can't init (e.g. Wayland, or a
+   *  missing lib) playback falls back automatically to the webview transcode
+   *  with the resume position preserved, then to an external player. */
   builtInPlayer: boolean;
   /** Local profile display name shown on the top-right avatar; "" = "You". */
   userName: string;

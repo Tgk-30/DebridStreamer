@@ -36,10 +36,15 @@ in-window on macOS.
 
 ---
 
-Status: **foundation complete + tested; native distributable packaging NOT yet
-verified.** The in-window player is gated behind an experimental Settings toggle
-that is **off by default** (`builtInPlayer`). Turning it on today only works in a
-dev environment where libmpv is already on the system (e.g. `brew install mpv`).
+Status: **SHIPPED and default-on** (`builtInPlayer` defaults to `true`). libmpv
+is bundled per-platform in `web-release.yml`: macOS via `scripts/bundle-mpv-deps.sh`
+(Homebrew libmpv + deps relocated to @rpath), Linux via the `.deb` dependency and
+a self-contained `libmpv.so.2` in the AppImage, Windows via the "Provision libmpv"
+step (import lib + runtime DLL, delay-loaded by `build.rs` and `LoadLibrary`'d from
+`resources/lib` at startup by `preload_bundled_libmpv`). If the native surface
+can't init (Wayland, or a missing lib) playback falls back automatically to the
+webview HLS transcode (resume preserved), then to an external player. The
+graduation checklist below is DONE; it is kept for the bundling reference.
 
 ## Architecture
 
@@ -135,7 +140,7 @@ into `web/src-tauri/lib/` before the `tauri-action` step.
 
 Pin versions + verify downloads (size/sha) like the Node runtime script does.
 
-## To turn it on after verification
+## Graduation checklist (DONE - kept for reference)
 
 1. Bundle the dylibs (above) and confirm a **clean-machine** build renders video.
 2. Flip `builtInPlayer` default to `true` in `web/src/data/settings.ts` and the
