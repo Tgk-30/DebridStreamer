@@ -1569,6 +1569,7 @@ export function Detail() {
         title="More like this"
         items={detail.data.related}
         onSelect={openDetail}
+        showPosterRatings={settings?.showPosterRatings ?? false}
       />
       </div>
 

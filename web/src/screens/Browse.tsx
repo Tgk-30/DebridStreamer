@@ -82,7 +82,7 @@ function BrowseInner({
   onClose,
   onSelect,
 }: BrowseInnerProps) {
-  const { services } = useAppStore();
+  const { services, settings } = useAppStore();
   const state = useBrowse(services.tmdb, ctx);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -116,7 +116,7 @@ function BrowseInner({
     );
     io.observe(node);
     return () => io.disconnect();
-  }, [state.canLoadMore, state.loadMore, state.items.length]);
+  }, [state.canLoadMore, state.loadMore]);
 
   function applyFilters(type: MediaType, filters: BrowseFilters) {
     setFiltersOpen(false);
@@ -221,7 +221,13 @@ function BrowseInner({
             <VirtualMediaGrid
               items={state.items}
               className="browse-grid"
-              renderItem={(item) => <MediaCard item={item} onSelect={onSelect} />}
+              renderItem={(item) => (
+                <MediaCard
+                  item={item}
+                  onSelect={onSelect}
+                  showPosterRatings={settings?.showPosterRatings ?? false}
+                />
+              )}
             />
 
             {/* Infinite-scroll sentinel + an explicit fallback button. */}

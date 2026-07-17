@@ -107,6 +107,7 @@ export function Search() {
     openBrowse,
     browseContext,
     detailItem,
+    settings,
   } = useAppStore();
   const attentionParked = useAttentionParked();
 
@@ -388,6 +389,7 @@ export function Search() {
               onSeeAll={() =>
                 openBrowse({ kind: "search", type: null, query: moodQuery })
               }
+              showPosterRatings={settings?.showPosterRatings ?? false}
             />
           )}
           <h2 className="search-section-title">Browse categories</h2>
@@ -400,7 +402,11 @@ export function Search() {
           <h2 className="search-section-title search-section-title-spaced">
             Trending now
           </h2>
-          <MediaGrid items={starters} onSelect={openDetail} />
+          <MediaGrid
+            items={starters}
+            onSelect={openDetail}
+            showPosterRatings={settings?.showPosterRatings ?? false}
+          />
         </section>
       ) : (
         <>
@@ -443,6 +449,7 @@ export function Search() {
           <MediaGrid
             items={sortedResults ?? results}
             onSelect={openDetail}
+            showPosterRatings={settings?.showPosterRatings ?? false}
             empty={
               !loading ? (
                 <EmptyState

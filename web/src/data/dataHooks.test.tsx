@@ -268,7 +268,7 @@ describe("useCalendar", () => {
     expect(result.current.hasSeries).toBe(true);
     expect(result.current.groups.map((g) => g.bucket)).toEqual(["later"]);
     expect(fetchServerUpcomingEpisodes).toHaveBeenCalledTimes(1);
-    expect(fetchServerMovieReleases).toHaveBeenCalledTimes(1);
+    expect(fetchServerMovieReleases).not.toHaveBeenCalled();
     expect(getUpcomingEpisodesForSeries).not.toHaveBeenCalled();
   });
 

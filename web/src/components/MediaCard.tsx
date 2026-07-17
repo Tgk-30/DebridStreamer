@@ -8,7 +8,6 @@
 import { memo, useCallback, useState } from "react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import type { MediaPreview } from "../models/media";
-import { useAppStore } from "../store/AppStore";
 import { Icon } from "./Icon";
 import "./MediaCard.css";
 
@@ -32,6 +31,8 @@ interface MediaCardProps {
    * Mutually exclusive with the in-progress bar in practice (a watched title has
    * no resume point). Omit (or false) to hide it. */
   watched?: boolean;
+  /** Whether the persistent poster rating chip is enabled in Appearance. */
+  showPosterRatings: boolean;
 }
 
 /** A stable hue (0-359) derived from the title so a poster-less card gets a
@@ -55,11 +56,8 @@ export const MediaCard = memo(function MediaCard({
   cornerLabel,
   rank,
   watched = false,
+  showPosterRatings,
 }: MediaCardProps) {
-  // Read the display preference at the card boundary rather than threading it
-  // through every Rail and Grid caller. The AppStore update re-renders cards
-  // immediately when Appearance changes.
-  const { settings } = useAppStore();
   const poster = MediaPreviewNS.posterURL(item);
   const rating = MediaPreviewNS.ratingString(item);
   const [loaded, setLoaded] = useState(false);
@@ -144,7 +142,7 @@ export const MediaCard = memo(function MediaCard({
           </span>
         )}
 
-        {settings.showPosterRatings && rating !== "" && rating !== "N/A" && (
+        {showPosterRatings && rating !== "" && rating !== "N/A" && (
           <span
             className="media-card-poster-rating"
             aria-label={`Rating ${rating} out of 10`}

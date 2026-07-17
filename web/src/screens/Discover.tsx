@@ -29,6 +29,7 @@ export function Discover({ onSelect }: DiscoverProps) {
     continueWatching,
     detailItem,
     browseContext,
+    settings,
   } = useAppStore();
   const attentionParked = useAttentionParked();
   const { data, loading, railsLoading } = useDiscover(services.tmdb);
@@ -59,7 +60,13 @@ export function Discover({ onSelect }: DiscoverProps) {
     const rows = withoutHero(items);
     if (rows.length > 0) {
       return (
-        <Rail title={title} items={rows} onSelect={onSelect} onSeeAll={seeAll(ctx)} />
+        <Rail
+          title={title}
+          items={rows}
+          onSelect={onSelect}
+          onSeeAll={seeAll(ctx)}
+          showPosterRatings={settings?.showPosterRatings ?? false}
+        />
       );
     }
     return railsLoading ? <RailSkeleton title={title} /> : null;
@@ -107,6 +114,7 @@ export function Discover({ onSelect }: DiscoverProps) {
         ranked
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "movie", category: "trending" })}
+        showPosterRatings={settings?.showPosterRatings ?? false}
       />
       <Rail
         title="Top 10 TV Shows"
@@ -114,6 +122,7 @@ export function Discover({ onSelect }: DiscoverProps) {
         ranked
         onSelect={onSelect}
         onSeeAll={seeAll({ kind: "category", type: "series", category: "trending" })}
+        showPosterRatings={settings?.showPosterRatings ?? false}
       />
       {categoryRail("Popular Movies", data.popularMovies, {
         kind: "category",
