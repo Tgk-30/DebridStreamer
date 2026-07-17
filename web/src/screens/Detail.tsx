@@ -240,6 +240,12 @@ export function Detail() {
     continueWatching,
     refreshContinueWatching,
     cachedResolutions,
+    trailerOpen,
+    openTrailer,
+    closeTrailer,
+    detailPlayerOpen,
+    openDetailPlayer,
+    closeDetailPlayer,
   } = useAppStore();
   configureTraktScrobble({
     enabled: settings.traktScrobbleEnabled,
@@ -406,7 +412,6 @@ export function Detail() {
 
   // The title's YouTube trailer (null while loading / when TMDB has none). Kept
   // above the early return so hook order stays stable.
-  const [trailerOpen, setTrailerOpen] = useState(false);
   const trailer = useTrailer(
     // Prefer the fresh navigation target's id; detail.data.item can lag a title
     // change by a fetch. Falls back to the enriched id when the preview lacks one.
@@ -843,9 +848,10 @@ export function Detail() {
       episode: selected?.episode ?? null,
       scrobbleContext,
     });
+    openDetailPlayer();
   }
 
-  function closePlayer(): void {
+  function finishClosingPlayer(): void {
     setPlayer(null);
     // WebviewPlayer emits its final progress report from unmount cleanup. Run
     // the one-per-session slice refresh on the next task so that write is
@@ -854,6 +860,20 @@ export function Detail() {
       void refreshContinueWatching();
     }, 0);
   }
+
+  function closePlayer(): void {
+    if (detailPlayerOpen) {
+      closeDetailPlayer();
+    }
+    finishClosingPlayer();
+  }
+
+  // Browser Back resets the store's live player flag from the popstate
+  // descriptor. Let that state transition unmount the existing player and run
+  // its final progress cleanup without pushing a replacement history entry.
+  useEffect(() => {
+    if (!detailPlayerOpen && player != null) finishClosingPlayer();
+  }, [detailPlayerOpen, player, refreshContinueWatching]);
 
   /** Record (or toggle off) a like/dislike taste signal for the current title.
    * The event carries the title + genre names in metadata so the taste-profile
@@ -1454,7 +1474,6 @@ export function Detail() {
             type="button"
             className="detail-nokey-link"
             onClick={() => {
-              closeDetail();
               navigate("settings");
             }}
           >
@@ -1469,7 +1488,7 @@ export function Detail() {
         <button
           type="button"
           className="btn detail-trailer-btn"
-          onClick={() => setTrailerOpen(true)}
+          onClick={openTrailer}
         >
           <Icon name="play" size={14} />
           Watch trailer
@@ -1513,7 +1532,6 @@ export function Detail() {
               type="button"
               className="detail-ai-hint-link"
               onClick={() => {
-                closeDetail();
                 navigate("settings");
               }}
             >
@@ -1560,7 +1578,6 @@ export function Detail() {
             episodeLabel={null}
             episodeContext={null}
             onOpenSettings={() => {
-              closeDetail();
               navigate("settings");
             }}
           />
@@ -1609,7 +1626,6 @@ export function Detail() {
                 episodeLabel={episodeLabel(selected.season, selected.episode)}
                 episodeContext={selected}
                 onOpenSettings={() => {
-                  closeDetail();
                   navigate("settings");
                 }}
               />
@@ -1668,7 +1684,7 @@ export function Detail() {
         <TrailerModal
           videoKey={trailer.key}
           title={detailItem.title}
-          onClose={() => setTrailerOpen(false)}
+          onClose={closeTrailer}
         />
       )}
     </div>

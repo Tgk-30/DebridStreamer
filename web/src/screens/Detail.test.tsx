@@ -39,6 +39,10 @@ const navigate = vi.fn();
 const toggleWatchlist = vi.fn();
 const recordResume = vi.fn();
 const refreshContinueWatching = vi.fn(async () => {});
+const openDetailPlayer = vi.fn();
+const closeDetailPlayer = vi.fn();
+const openTrailer = vi.fn();
+const closeTrailer = vi.fn();
 
 let mockServices: any = {
   tmdb: null,
@@ -63,6 +67,12 @@ vi.mock("../store/AppStore", () => ({
     recordResume,
     continueWatching: mockContinueWatching,
     refreshContinueWatching,
+    detailPlayerOpen: true,
+    openDetailPlayer,
+    closeDetailPlayer,
+    trailerOpen: false,
+    openTrailer,
+    closeTrailer,
     cachedResolutions: mockCached
       ? { [mockDetailItem?.id ?? "x"]: mockCached }
       : {},
@@ -608,10 +618,9 @@ describe("Detail actions", () => {
     );
   });
 
-  it("opens settings from the stream picker (closes detail + navigates)", async () => {
+  it("opens settings from the stream picker", async () => {
     render(<Detail />);
     await userEvent.click(screen.getByText("open-settings"));
-    expect(closeDetail).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledWith("settings");
   });
 

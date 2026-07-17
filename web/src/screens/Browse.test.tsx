@@ -22,6 +22,9 @@ import { SortOption } from "../services/metadata/types";
 let mockBrowseContext: BrowseContext | null = null;
 const closeBrowse = vi.fn();
 const openDetail = vi.fn();
+const openBrowseFilters = vi.fn();
+const closeBrowseFilters = vi.fn();
+const updateBrowseContext = vi.fn();
 const mockServices = { tmdb: {} as never };
 
 vi.mock("../store/AppStore", () => ({
@@ -29,6 +32,10 @@ vi.mock("../store/AppStore", () => ({
     browseContext: mockBrowseContext,
     closeBrowse,
     openDetail,
+    browseFiltersOpen: false,
+    openBrowseFilters,
+    closeBrowseFilters,
+    updateBrowseContext,
     services: mockServices,
   }),
 }));
@@ -287,8 +294,7 @@ describe("Browse - filters button + slideover", () => {
     // Not mounted before opening.
     expect(screen.queryByTestId("filter-slideover")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    const sv = await screen.findByTestId("filter-slideover");
-    expect(sv).toHaveAttribute("data-open", "true");
+    expect(openBrowseFilters).toHaveBeenCalledTimes(1);
   });
 });
 

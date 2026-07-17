@@ -41,16 +41,22 @@ const FilterSlideover = lazy(() =>
 );
 
 export function Browse() {
-  const { browseContext, closeBrowse, openDetail } = useAppStore();
+  const {
+    browseContext,
+    closeBrowse,
+    openDetail,
+    browseFiltersOpen,
+    openBrowseFilters,
+    closeBrowseFilters,
+    updateBrowseContext,
+  } = useAppStore();
   // A local working copy so the slideover can refine the context without round-
   // tripping through the store (the store just holds the initial target).
   const [ctx, setCtx] = useState<BrowseContext | null>(browseContext);
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Re-seed when the store hands us a new target (a different "See all").
   useEffect(() => {
     setCtx(browseContext);
-    setFiltersOpen(false);
   }, [browseContext]);
 
   if (ctx == null) return null;
@@ -58,8 +64,10 @@ export function Browse() {
     <BrowseInner
       ctx={ctx}
       setCtx={setCtx}
-      filtersOpen={filtersOpen}
-      setFiltersOpen={setFiltersOpen}
+      filtersOpen={browseFiltersOpen}
+      onOpenFilters={openBrowseFilters}
+      onCloseFilters={closeBrowseFilters}
+      onUpdateContext={updateBrowseContext}
       onClose={closeBrowse}
       onSelect={openDetail}
     />
@@ -70,7 +78,9 @@ interface BrowseInnerProps {
   ctx: BrowseContext;
   setCtx: (ctx: BrowseContext) => void;
   filtersOpen: boolean;
-  setFiltersOpen: (open: boolean) => void;
+  onOpenFilters: () => void;
+  onCloseFilters: () => void;
+  onUpdateContext: (ctx: BrowseContext) => void;
   onClose: () => void;
   onSelect: (item: import("../models/media").MediaPreview) => void;
 }
@@ -79,7 +89,9 @@ function BrowseInner({
   ctx,
   setCtx,
   filtersOpen,
-  setFiltersOpen,
+  onOpenFilters,
+  onCloseFilters,
+  onUpdateContext,
   onClose,
   onSelect,
 }: BrowseInnerProps) {
@@ -125,13 +137,14 @@ function BrowseInner({
   }, [state.canLoadMore, state.loadMore]);
 
   function applyFilters(type: MediaType, filters: BrowseFilters) {
-    setFiltersOpen(false);
-    if (hasActiveFilters(filters)) {
-      setCtx({ kind: "discover", type, filters });
-    } else {
+    const next = hasActiveFilters(filters)
+      ? { kind: "discover" as const, type, filters }
       // Cleared everything → fall back to a plain "popular" category browse.
-      setCtx({ kind: "category", type, category: "popular" });
-    }
+      : { kind: "category" as const, type, category: "popular" as const };
+    setCtx(next);
+    // Applying filters changes the Browse target, so replace the filter entry
+    // instead of walking Back to its stale pre-filter target.
+    onUpdateContext(next);
   }
 
   const title = browseTitle(ctx);
@@ -173,7 +186,7 @@ function BrowseInner({
           <button
             type="button"
             className={`btn browse-filter-btn${filtersActive ? " browse-filter-on" : ""}`}
-            onClick={() => setFiltersOpen(true)}
+            onClick={onOpenFilters}
           >
             <Icon name="sliders" size={15} />
             Filters
@@ -194,14 +207,16 @@ function BrowseInner({
                 key={chip.key}
                 type="button"
                 className="chip browse-chip"
-                onClick={() =>
-                  ctx.kind === "discover" &&
-                  setCtx({
-                    kind: "discover",
+                onClick={() => {
+                  if (ctx.kind !== "discover") return;
+                  const next = {
+                    kind: "discover" as const,
                     type: ctx.type,
                     filters: chip.remove(ctx.filters),
-                  })
-                }
+                  };
+                  setCtx(next);
+                  onUpdateContext(next);
+                }}
                 title={`Remove ${chip.label}`}
               >
                 {chip.label}
@@ -211,10 +226,16 @@ function BrowseInner({
             <button
               type="button"
               className="browse-chip-clear t-secondary"
-              onClick={() =>
-                ctx.kind === "discover" &&
-                setCtx({ kind: "category", type: ctx.type, category: "popular" })
-              }
+              onClick={() => {
+                if (ctx.kind !== "discover") return;
+                const next = {
+                  kind: "category" as const,
+                  type: ctx.type,
+                  category: "popular" as const,
+                };
+                setCtx(next);
+                onUpdateContext(next);
+              }}
             >
               Clear all
             </button>
@@ -270,7 +291,7 @@ function BrowseInner({
             open={filtersOpen}
             type={draftType}
             filters={draftFilters}
-            onClose={() => setFiltersOpen(false)}
+            onClose={onCloseFilters}
             onApply={applyFilters}
           />
         </Suspense>

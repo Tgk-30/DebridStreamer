@@ -633,14 +633,18 @@ describe("hidden-screen redirect effect", () => {
   it("redirects to discover when on a Simple-mode-hidden screen", async () => {
     store = makeStore({ route: "assistant", simpleMode: true });
     render(<App />);
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("discover"));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("discover", { replace: true }),
+    );
   });
 
   it("redirects to discover when on a Server-mode-hidden screen (debrid)", async () => {
     serverModeValue = true;
     store = makeStore({ route: "debrid", simpleMode: false });
     render(<App />);
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("discover"));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("discover", { replace: true }),
+    );
   });
 
   it("does not redirect when the current screen is visible", () => {

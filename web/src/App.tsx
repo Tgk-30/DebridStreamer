@@ -555,7 +555,9 @@ export function App() {
   // Discover so they're never stranded on a now-unreachable screen.
   useEffect(() => {
     if (isScreenHidden(route, { serverMode: isServerMode(), simpleMode })) {
-      navigate("discover");
+      // Replace (not push): this is a forced correction, so pressing Back must
+      // not restore the hidden route and bounce here again in a loop.
+      navigate("discover", { replace: true });
     }
   }, [route, simpleMode, navigate]);
 
