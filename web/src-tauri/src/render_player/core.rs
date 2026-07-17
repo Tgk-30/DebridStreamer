@@ -133,6 +133,28 @@ fn spawn_event_thread<R: Runtime>(
                         "event thread: END_FILE reason={} error={}",
                         ef.reason, ef.error
                     ));
+                    // mpv_end_file_reason (stable public ABI): EOF=0, STOP=2,
+                    // QUIT=3, ERROR=4, REDIRECT=5. Only ERROR is a genuine playback
+                    // FAILURE - a file `loadfile` ACCEPTED but that then failed to
+                    // demux/decode (corrupt data, or a codec this build can't
+                    // handle). `loadfile` returns success in that case and the
+                    // decode error surfaces only here, asynchronously, so this is
+                    // the sole signal the webview gets to fall back to the HLS
+                    // transcode. EOF/stop/quit/redirect are normal and are never
+                    // forwarded (a forwarded EOF would tear down the end card).
+                    // Widen to i64 before comparing: `reason` is a bindgen enum
+                    // alias whose primitive type (c_int vs c_uint) we don't pin
+                    // here, and i64 fits either without a lint-flagged narrowing.
+                    const MPV_END_FILE_REASON_ERROR: i64 = 4;
+                    if ef.reason as i64 == MPV_END_FILE_REASON_ERROR {
+                        let _ = app.emit(
+                            "player-event",
+                            json!({
+                                "name": "end-file",
+                                "data": { "error": true, "code": ef.error as i64 }
+                            }),
+                        );
+                    }
                 }
                 libmpv2_sys::mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
                     let prop = unsafe { &*(ev.data as *mut libmpv2_sys::mpv_event_property) };

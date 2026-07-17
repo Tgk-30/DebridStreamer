@@ -111,6 +111,14 @@ const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3] as const;
  *  bar overlays it on a gradient scrim (like every modern streaming player). */
 const VIDEO_MARGIN_BOTTOM = 0;
 
+/** A file mpv ACCEPTS (loadfile succeeds) can still never decode a frame - no
+ *  time-pos ever arrives - when the data is corrupt or the codec is one this
+ *  build can't handle. The initial spinner would then spin forever with no error
+ *  and no fallback. If we're still pre-first-frame this long after loadfile, we
+ *  treat it as a native failure and hand off to the webview HLS transcode. This
+ *  is the backstop; an mpv end-file ERROR event closes the common case faster. */
+const FIRST_FRAME_WATCHDOG_MS = 10_000;
+
 function fmt(s: number): string {
   if (!Number.isFinite(s) || s < 0) return "0:00";
   const t = Math.floor(s);
@@ -270,12 +278,39 @@ export function EmbeddedPlayer({
   // ── libmpv lifecycle: init → observe → load; destroy on unmount ────────────
   useEffect(() => {
     let cancelled = false;
+    // A single gate so the three native-failure signals - an init/loadfile throw,
+    // an mpv end-file ERROR event, and the first-frame watchdog - can each request
+    // the webview fallback, but only the FIRST one does (later ones no-op).
+    let fallbackTried = false;
+    // Armed after loadfile; fires if no first frame arrives in time.
+    let watchdog: number | undefined;
     firstFrameRef.current = false; // new file: show the initial spinner again
     setSourceW(0);
     setSourceH(0);
     setVideoW(0);
     setVideoH(0);
     let unlisten: (() => void) | undefined;
+
+    // Route every native-failure signal through one place: ask the parent to
+    // switch to a compatible webview source (the HLS transcode, which is handed
+    // the SAME startPositionSeconds, so resume is preserved across the swap), and
+    // only when it can't recover fall through to the built-in error card. Runs at
+    // most once per file - a decode error and the watchdog can't double-fire it.
+    const triggerNativeFallback = async (err: Error): Promise<void> => {
+      if (cancelled || fallbackTried) return;
+      fallbackTried = true;
+      window.clearTimeout(watchdog); // a concrete signal supersedes the watchdog
+      let recovered = false;
+      if (onPlaybackErrorRef.current != null) {
+        try {
+          recovered = (await onPlaybackErrorRef.current(err)) === true;
+        } catch {
+          // The native error card remains the terminal fallback.
+        }
+      }
+      if (!cancelled && !recovered) setError(err.message);
+    };
+
     void (async () => {
       try {
         await init(MPV_CONFIG);
@@ -298,10 +333,11 @@ export function EmbeddedPlayer({
                 if (typeof ev.data === "number") {
                   setPos(ev.data);
                   // First position report ≈ first frame shown → drop the
-                  // initial-load spinner.
+                  // initial-load spinner and stand the watchdog down.
                   if (!firstFrameRef.current) {
                     firstFrameRef.current = true;
                     setBuffering(false);
+                    window.clearTimeout(watchdog);
                   }
                 }
                 break;
@@ -331,6 +367,23 @@ export function EmbeddedPlayer({
               case "eof-reached":
                 if (ev.data === true) setEnded(true);
                 break;
+              // A genuine playback FAILURE reported by mpv AFTER loadfile
+              // succeeded (corrupt data / an undecodable codec) - the case the
+              // init try/catch can't see, because loadfile returns success and the
+              // decode error only surfaces here. Only reason=ERROR reaches us (the
+              // Rust core never forwards a normal EOF/stop/quit/redirect), so any
+              // end-file event is a hand-off to the webview transcode.
+              case "end-file": {
+                const d = ev.data as { error?: boolean; code?: number } | null;
+                if (d?.error) {
+                  void triggerNativeFallback(
+                    new Error(
+                      `Native playback failed (mpv error ${d.code ?? "unknown"})`,
+                    ),
+                  );
+                }
+                break;
+              }
               case "video-params/w":
                 if (typeof ev.data === "number") setSourceW(ev.data);
                 break;
@@ -354,6 +407,15 @@ export function EmbeddedPlayer({
         await command("loadfile", opts ? [url, "replace", opts] : [url]);
         await setProperty("pause", false);
         startedRef.current = true;
+        // Arm the first-frame watchdog. loadfile has been accepted, but mpv can
+        // still stall forever without ever decoding a frame; if we're still
+        // pre-first-frame after the window, hand off to the webview transcode.
+        watchdog = window.setTimeout(() => {
+          if (cancelled || firstFrameRef.current) return;
+          void triggerNativeFallback(
+            new Error("Native playback produced no frame in time"),
+          );
+        }, FIRST_FRAME_WATCHDOG_MS);
         // Tracks/chapters populate a beat after the file loads.
         window.setTimeout(() => {
           if (!cancelled) {
@@ -363,19 +425,12 @@ export function EmbeddedPlayer({
         }, 700);
       } catch (e) {
         const playbackError = e instanceof Error ? e : new Error(String(e));
-        let recovered = false;
-        if (onPlaybackErrorRef.current != null) {
-          try {
-            recovered = (await onPlaybackErrorRef.current(playbackError)) === true;
-          } catch {
-            // The normal native error card remains the terminal fallback.
-          }
-        }
-        if (!cancelled && !recovered) setError(playbackError.message);
+        await triggerNativeFallback(playbackError);
       }
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
       unlisten?.();
       void destroy().catch(() => {});
     };
