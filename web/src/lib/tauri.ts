@@ -62,6 +62,36 @@ export async function listExternalPlayers(): Promise<string[]> {
   }
 }
 
+export interface TunnelToolInfo {
+  installed: boolean;
+  version: string | null;
+  detail: string | null;
+}
+
+export interface TunnelTools {
+  cloudflared: TunnelToolInfo;
+  tailscale: TunnelToolInfo;
+}
+
+function noTunnelTools(): TunnelTools {
+  return {
+    cloudflared: { installed: false, version: null, detail: null },
+    tailscale: { installed: false, version: null, detail: null },
+  };
+}
+
+/** Detect locally-installed Cloudflare Tunnel and Tailscale clients. This is
+ * desktop-host-only: a browser cannot inspect the machine hosting the server. */
+export async function detectTunnelTools(): Promise<TunnelTools> {
+  if (!isTauri()) return noTunnelTools();
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<TunnelTools>("detect_tunnel_tools");
+  } catch {
+    return noTunnelTools();
+  }
+}
+
 // DLNA casting bridge. The TV fetches the public debrid stream directly; the
 // desktop app only discovers renderers and sends UPnP control messages.
 

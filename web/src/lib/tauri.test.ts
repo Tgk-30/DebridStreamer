@@ -36,6 +36,7 @@ import {
   mpvGetPosition,
   mpvStop,
   desktopServerStatus,
+  detectTunnelTools,
   startDesktopServer,
   stopDesktopServer,
   openExternalURL,
@@ -86,6 +87,28 @@ describe("isTauri", () => {
   it("is true when the legacy __TAURI__ flag is present", () => {
     vi.stubGlobal("window", { __TAURI__: {} });
     expect(isTauri()).toBe(true);
+  });
+});
+
+describe("detectTunnelTools", () => {
+  it("returns an absent-tools result in a browser without invoking Tauri", async () => {
+    await expect(detectTunnelTools()).resolves.toEqual({
+      cloudflared: { installed: false, version: null, detail: null },
+      tailscale: { installed: false, version: null, detail: null },
+    });
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("invokes the native detector in Tauri", async () => {
+    enterTauri();
+    const tools = {
+      cloudflared: { installed: true, version: "cloudflared 2026.1.0", detail: null },
+      tailscale: { installed: true, version: "1.82.0", detail: "connected" },
+    };
+    invokeMock.mockResolvedValue(tools);
+
+    await expect(detectTunnelTools()).resolves.toEqual(tools);
+    expect(invokeMock).toHaveBeenCalledWith("detect_tunnel_tools");
   });
 });
 

@@ -8,7 +8,10 @@
 
 #[cfg(target_os = "linux")]
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
+
+use serde::Serialize;
 
 // Bundled-mpv player (Phase 3 P1): spawns the mpv sidecar and drives it over
 // JSON IPC. See player.rs for the `--wid` in-window-embedding caveat (macOS).
@@ -88,6 +91,176 @@ async fn list_external_players() -> Vec<String> {
     tokio::task::spawn_blocking(list_external_players_blocking)
         .await
         .unwrap_or_default()
+}
+
+/// The locally-installed tunnel clients. Detection is deliberately advisory:
+/// authentication and tunnel creation remain interactive user-controlled flows.
+#[derive(Clone, Debug, Serialize)]
+struct ToolInfo {
+    installed: bool,
+    version: Option<String>,
+    detail: Option<String>,
+}
+
+impl ToolInfo {
+    fn absent() -> Self {
+        Self {
+            installed: false,
+            version: None,
+            detail: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct TunnelTools {
+    cloudflared: ToolInfo,
+    tailscale: ToolInfo,
+}
+
+const TUNNEL_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Run a small local CLI probe without allowing an unhealthy executable to
+/// stall the Tauri command indefinitely. A missing executable is normal.
+fn probe_command(command: &str, args: &[&str]) -> Option<Output> {
+    let mut child = Command::new(command)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let deadline = Instant::now() + TUNNEL_PROBE_TIMEOUT;
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return child.wait_with_output().ok(),
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+}
+
+fn first_version_line(output: &Output) -> Option<String> {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    first_non_empty_line(&stdout, &stderr)
+}
+
+fn first_non_empty_line(stdout: &str, stderr: &str) -> Option<String> {
+    stdout
+        .lines()
+        .chain(stderr.lines())
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+/// `Some(None)` means the executable ran successfully but did not print a
+/// parseable version line, which is still an installed tool.
+fn probe_version(command: &str, args: &[&str]) -> Option<Option<String>> {
+    let output = probe_command(command, args)?;
+    if output.status.success() {
+        Some(first_version_line(&output))
+    } else {
+        None
+    }
+}
+
+fn tailscale_detail_from_status_json(output: &Output) -> Option<String> {
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    tailscale_detail_from_status_json_text(&stdout)
+}
+
+fn tailscale_detail_from_status_json_text(status_json: &str) -> Option<String> {
+    let status: serde_json::Value = serde_json::from_str(status_json).ok()?;
+    let state = status.get("BackendState")?.as_str()?;
+    Some(tailscale_detail_from_backend_state(state))
+}
+
+fn tailscale_detail_from_backend_state(state: &str) -> String {
+    if state.eq_ignore_ascii_case("running") {
+        "connected".to_string()
+    } else {
+        "installed, not logged in".to_string()
+    }
+}
+
+fn tailscale_detail(command: &str) -> String {
+    if let Some(output) = probe_command(command, &["status", "--json"]) {
+        if let Some(detail) = tailscale_detail_from_status_json(&output) {
+            return detail;
+        }
+    }
+    if let Some(output) = probe_command(command, &["ip", "-4"]) {
+        if output.status.success()
+            && String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .any(|line| !line.trim().is_empty())
+        {
+            return "connected".to_string();
+        }
+    }
+    "installed, not logged in".to_string()
+}
+
+fn detect_tunnel_tools_blocking() -> TunnelTools {
+    let cloudflared = match probe_version("cloudflared", &["--version"]) {
+        Some(version) => ToolInfo {
+            installed: true,
+            version,
+            detail: None,
+        },
+        None => ToolInfo::absent(),
+    };
+
+    let tailscale_probe = if let Some(version) = probe_version("tailscale", &["version"]) {
+        Some(("tailscale", version))
+    } else {
+        #[cfg(target_os = "macos")]
+        {
+            let app_cli = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
+            probe_version(app_cli, &["version"]).map(|version| (app_cli, version))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            None
+        }
+    };
+    let tailscale = match tailscale_probe {
+        Some((command, version)) => ToolInfo {
+            installed: true,
+            version,
+            detail: Some(tailscale_detail(command)),
+        },
+        None => ToolInfo::absent(),
+    };
+
+    TunnelTools {
+        cloudflared,
+        tailscale,
+    }
+}
+
+/// Detect the locally-installed tunnel clients. This detects and guides only;
+/// `cloudflared tunnel login` and `tailscale up` intentionally stay interactive.
+#[tauri::command]
+async fn detect_tunnel_tools() -> TunnelTools {
+    match tokio::task::spawn_blocking(detect_tunnel_tools_blocking).await {
+        Ok(tools) => tools,
+        Err(_) => TunnelTools {
+            cloudflared: ToolInfo::absent(),
+            tailscale: ToolInfo::absent(),
+        },
+    }
 }
 
 /// Hand `url` to an external player. `preferred` (a value from
@@ -330,6 +503,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_in_external_player,
             list_external_players,
+            detect_tunnel_tools,
             reveal_in_file_manager,
             player::mpv_play,
             player::mpv_pause,
@@ -368,4 +542,46 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tunnel_tool_tests {
+    use super::{
+        first_non_empty_line, tailscale_detail_from_backend_state,
+        tailscale_detail_from_status_json_text,
+    };
+
+    #[test]
+    fn version_line_prefers_stdout_and_trims_whitespace() {
+        assert_eq!(
+            first_non_empty_line("\n cloudflared version 2026.1.0 \n", "fallback"),
+            Some("cloudflared version 2026.1.0".to_string())
+        );
+    }
+
+    #[test]
+    fn version_line_uses_stderr_when_stdout_is_empty() {
+        assert_eq!(
+            first_non_empty_line("", "\n1.82.0\n"),
+            Some("1.82.0".to_string())
+        );
+    }
+
+    #[test]
+    fn tailscale_backend_state_is_human_readable() {
+        assert_eq!(tailscale_detail_from_backend_state("Running"), "connected");
+        assert_eq!(
+            tailscale_detail_from_backend_state("NeedsLogin"),
+            "installed, not logged in"
+        );
+    }
+
+    #[test]
+    fn tailscale_status_json_is_interpreted_without_panicking() {
+        assert_eq!(
+            tailscale_detail_from_status_json_text(r#"{"BackendState":"Running"}"#),
+            Some("connected".to_string())
+        );
+        assert_eq!(tailscale_detail_from_status_json_text("not json"), None);
+    }
 }

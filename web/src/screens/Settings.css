@@ -2025,6 +2025,25 @@
 .settings-remote-step-body strong {
   font-size: 13.5px;
 }
+.settings-remote-step-body code {
+  width: fit-content;
+  margin-top: 3px;
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  user-select: text;
+}
+.settings-remote-tool-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--sp-sm);
+  margin: var(--sp-sm) 0 0;
+}
+.settings-remote-tool-statuses .settings-hint {
+  margin: 0;
+}
 
 /* ---- Profiles tab ---------------------------------------------------------
    A card per profile with a real avatar preview (never the raw data URL that

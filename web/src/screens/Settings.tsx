@@ -99,12 +99,14 @@ import {
 } from "../lib/serverMode";
 import {
   desktopServerStatus,
+  detectTunnelTools,
   isTauri,
   listExternalPlayers,
   openExternalURL,
   startDesktopServer,
   stopDesktopServer,
   type DesktopServerStatus,
+  type TunnelTools,
 } from "../lib/tauri";
 import { getDownloadsBridge } from "../lib/downloadsBridge";
 import { getAppVersion } from "../lib/appVersion";
@@ -2037,70 +2039,155 @@ function ServerConnectionPanel() {
   );
 }
 
-// Static guided setup for exposing a self-hosted server off the local network.
-// Two tabbed tracks (Tailscale / Cloudflare Tunnel) with official links and the
-// where-to-paste-the-URL note. No live integration - this is documentation that
-// ships with the app so the owner doesn't have to leave to find it. The persona
-// + server-setup wizards point here ("Settings → Server → Remote access").
+// Guided setup for exposing a self-hosted server off the local network. Desktop
+// builds detect the local clients, then guide the matching track. This detects
+// and guides only: account login (`cloudflared tunnel login`, `tailscale up`)
+// remains an intentional interactive/browser-auth flow. The persona +
+// server-setup wizards point here ("Settings → Server → Remote access").
 
 interface RemoteAccessStep {
   title: string;
   detail: string;
+  command?: string;
 }
 
-const TAILSCALE_STEPS: RemoteAccessStep[] = [
-  {
-    title: "Install Tailscale on the server",
-    detail:
-      "Sign up free, then install Tailscale on the machine running DebridStreamer and run tailscale up. It joins your private mesh (a tailnet).",
-  },
-  {
-    title: "Install Tailscale on your devices",
-    detail:
-      "Add the same Tailscale account on each phone, tablet, or laptop. They can now reach the server by its tailnet IP or MagicDNS name on any network.",
-  },
-  {
-    title: "Optional: expose a public HTTPS URL with Funnel",
-    detail:
-      "Run tailscale funnel <port> (e.g. the server port shown above) to get a public https://<name>.ts.net URL for people not on your tailnet.",
-  },
-  {
-    title: "Use the URL here",
-    detail:
-      "Paste the tailnet or Funnel URL into Connect to a server above (or set DEBRIDSTREAMER_DESKTOP_SHARE_URL when launching the desktop host). That URL is what you share in invites.",
-  },
-];
+const TAILSCALE_INSTALL_URL = "https://tailscale.com/kb/1017/install";
+const CLOUDFLARED_INSTALL_URL =
+  "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/";
 
-const CLOUDFLARE_STEPS: RemoteAccessStep[] = [
-  {
-    title: "Create a Cloudflare Tunnel",
-    detail:
-      "In the Cloudflare Zero Trust dashboard, create a tunnel and install cloudflared on the server (or run it via Docker alongside DebridStreamer).",
-  },
-  {
-    title: "Route a hostname to the server",
-    detail:
-      "Add a public hostname (e.g. stream.yourdomain.com) and point it at http://localhost:<port> - the local DebridStreamer server port shown above.",
-  },
-  {
-    title: "Run the connector",
-    detail:
-      "Start cloudflared with your tunnel token. Cloudflare now serves your hostname over HTTPS and forwards traffic to the server through the tunnel.",
-  },
-  {
-    title: "Use the URL here",
-    detail:
-      "Paste https://stream.yourdomain.com into Connect to a server above (or set DEBRIDSTREAMER_DESKTOP_SHARE_URL for the desktop host). That URL is what you share in invites.",
-  },
-];
+function recommendedTunnelTrack(tools: TunnelTools): "tailscale" | "cloudflare" {
+  const tailscaleReady =
+    tools.tailscale.installed && tools.tailscale.detail === "connected";
+  const cloudflareReady = tools.cloudflared.installed;
+  if (tailscaleReady !== cloudflareReady) {
+    return tailscaleReady ? "tailscale" : "cloudflare";
+  }
+  if (tools.tailscale.installed !== tools.cloudflared.installed) {
+    return tools.tailscale.installed ? "tailscale" : "cloudflare";
+  }
+  return "tailscale";
+}
+
+function remoteAccessSteps(
+  track: "tailscale" | "cloudflare",
+  installed: boolean,
+  localTarget: string,
+  hasKnownLocalTarget: boolean,
+): RemoteAccessStep[] {
+  const targetNote = hasKnownLocalTarget
+    ? `The desktop host currently reports ${localTarget}.`
+    : `Replace ${localTarget} with the desktop host's actual local bind URL after it starts.`;
+
+  if (track === "tailscale") {
+    return [
+      ...(installed
+        ? []
+        : [
+            {
+              title: "Install Tailscale on the server",
+              detail:
+                "Install it on the machine running DebridStreamer, then return here to re-check it.",
+            },
+          ]),
+      {
+        title: "Sign in and join your tailnet",
+        detail:
+          "Run this on the server and finish the browser-auth flow. Tailscale then gives it a tailnet IP and optional MagicDNS name.",
+        command: "tailscale up",
+      },
+      {
+        title: "Install Tailscale on your devices",
+        detail:
+          "Add the same Tailscale account on each phone, tablet, or laptop. They can reach the server over your encrypted tailnet.",
+      },
+      {
+        title: "Open the server through Tailscale",
+        detail: `${targetNote} Keep that port and use the server's tailnet IP or MagicDNS name from your other devices.`,
+      },
+      {
+        title: "Use the URL here",
+        detail:
+          "Paste the tailnet URL into Connect to a server above (or set DEBRIDSTREAMER_DESKTOP_SHARE_URL when launching the desktop host).",
+      },
+    ];
+  }
+
+  return [
+    ...(installed
+      ? []
+      : [
+          {
+            title: "Install cloudflared on the server",
+            detail:
+              "Install it on the machine running DebridStreamer, then return here to re-check it.",
+          },
+        ]),
+    {
+      title: "Create and authenticate a Cloudflare Tunnel",
+      detail:
+        "In the Cloudflare Zero Trust dashboard, create a tunnel. Login and token setup are interactive browser-auth flows.",
+      command: "cloudflared tunnel login",
+    },
+    {
+      title: "Route a hostname to the server",
+      detail: `Add a public hostname (for example stream.yourdomain.com) and route the tunnel to ${localTarget}. ${targetNote}`,
+    },
+    {
+      title: "Run the connector",
+      detail:
+        "Start cloudflared with your tunnel token. Cloudflare serves your hostname over HTTPS and forwards traffic through the tunnel.",
+    },
+    {
+      title: "Use the URL here",
+      detail:
+        "Paste https://stream.yourdomain.com into Connect to a server above (or set DEBRIDSTREAMER_DESKTOP_SHARE_URL for the desktop host).",
+    },
+  ];
+}
 
 function RemoteAccessPanel() {
   const [track, setTrack] = useState<"tailscale" | "cloudflare">("tailscale");
-  const steps = track === "tailscale" ? TAILSCALE_STEPS : CLOUDFLARE_STEPS;
+  const [tools, setTools] = useState<TunnelTools | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [hostStatus, setHostStatus] = useState<DesktopServerStatus | null>(null);
+  const manualTrack = useRef(false);
+  const desktop = isTauri();
+  const localTarget = hostStatus?.url ?? "http://localhost:<server-port>";
+  const steps = remoteAccessSteps(
+    track,
+    track === "tailscale" ? tools?.tailscale.installed === true : tools?.cloudflared.installed === true,
+    localTarget,
+    hostStatus?.url != null,
+  );
   const guideURL =
     track === "tailscale"
       ? "https://tailscale.com/kb/1223/funnel"
       : "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/";
+
+  const checkTools = useCallback(async () => {
+    if (!desktop) return;
+    setChecking(true);
+    const next = await detectTunnelTools();
+    setTools(next);
+    if (!manualTrack.current) setTrack(recommendedTunnelTrack(next));
+    setChecking(false);
+  }, [desktop]);
+
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    void desktopServerStatus()
+      .then((next) => {
+        if (!cancelled) setHostStatus(next);
+      })
+      .catch(() => {
+        // The explicit local-target placeholder makes this failure actionable.
+      });
+    void checkTools();
+    return () => {
+      cancelled = true;
+    };
+  }, [checkTools, desktop]);
 
   return (
     <div className="settings-source glass-rest settings-remote-access">
@@ -2121,9 +2208,56 @@ function RemoteAccessPanel() {
             { value: "tailscale", label: "Tailscale" },
             { value: "cloudflare", label: "Cloudflare Tunnel" },
           ]}
-          onChange={(value) => setTrack(value as "tailscale" | "cloudflare")}
+          onChange={(value) => {
+            manualTrack.current = true;
+            setTrack(value as "tailscale" | "cloudflare");
+          }}
         />
       </div>
+
+      {desktop && tools != null && (
+        <div className="settings-remote-tool-statuses" aria-live="polite">
+          <p className="settings-hint t-secondary">
+            {tools.tailscale.installed ? (
+              <>
+                <strong>Tailscale detected</strong>
+                {tools.tailscale.version != null ? ` (${tools.tailscale.version})` : ""}
+                {` - ${tools.tailscale.detail === "connected" ? "connected" : "not logged in"}`}
+              </>
+            ) : (
+              <>
+                <strong>Tailscale: Not installed.</strong>{" "}
+                <a href={TAILSCALE_INSTALL_URL} target="_blank" rel="noreferrer">
+                  Install Tailscale
+                </a>
+              </>
+            )}
+          </p>
+          <p className="settings-hint t-secondary">
+            {tools.cloudflared.installed ? (
+              <>
+                <strong>cloudflared detected</strong>
+                {tools.cloudflared.version != null ? ` (${tools.cloudflared.version})` : ""}
+              </>
+            ) : (
+              <>
+                <strong>cloudflared: Not installed.</strong>{" "}
+                <a href={CLOUDFLARED_INSTALL_URL} target="_blank" rel="noreferrer">
+                  Install cloudflared
+                </a>
+              </>
+            )}
+          </p>
+          <button
+            type="button"
+            className="chip"
+            onClick={() => void checkTools()}
+            disabled={checking}
+          >
+            {checking ? "Checking..." : "Re-check"}
+          </button>
+        </div>
+      )}
 
       <ol className="settings-remote-steps">
         {steps.map((step, index) => (
@@ -2132,6 +2266,7 @@ function RemoteAccessPanel() {
             <span className="settings-remote-step-body">
               <strong>{step.title}</strong>
               <span className="t-secondary">{step.detail}</span>
+              {step.command != null && <code>{step.command}</code>}
             </span>
           </li>
         ))}

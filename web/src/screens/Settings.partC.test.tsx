@@ -37,10 +37,11 @@ vi.mock("../store/AppStore", () => ({
 
 let mockServerURL: string | null = null;
 let mockServerURLSource: string | null = null;
+let mockServerMode = false;
 const saveServerURL = vi.fn();
 
 vi.mock("../lib/serverMode", () => ({
-  isServerMode: () => false,
+  isServerMode: () => mockServerMode,
   configuredServerURL: () => mockServerURL,
   configuredServerURLSource: () => mockServerURLSource,
   saveServerURL: (v: string | null) => saveServerURL(v),
@@ -53,6 +54,7 @@ const desktopServerStatus = vi.fn();
 const startDesktopServer = vi.fn();
 const stopDesktopServer = vi.fn();
 const openExternalURL = vi.fn();
+const detectTunnelTools = vi.fn();
 
 vi.mock("../lib/tauri", () => ({
   isTauri: () => mockIsTauri,
@@ -60,6 +62,7 @@ vi.mock("../lib/tauri", () => ({
   startDesktopServer: () => startDesktopServer(),
   stopDesktopServer: () => stopDesktopServer(),
   openExternalURL: (url: string) => openExternalURL(url),
+  detectTunnelTools: () => detectTunnelTools(),
 }));
 
 vi.mock("../lib/ServerSessionContext", () => ({
@@ -123,16 +126,80 @@ beforeEach(() => {
   mockIsTauri = true;
   mockServerURL = null;
   mockServerURLSource = null;
+  mockServerMode = false;
   updateSettings.mockClear();
   saveServerURL.mockClear();
   desktopServerStatus.mockReset();
   startDesktopServer.mockReset();
   stopDesktopServer.mockReset();
   openExternalURL.mockReset();
+  detectTunnelTools.mockReset();
   toDataURL.mockClear();
   toDataURL.mockResolvedValue("data:image/png;base64,QR");
   // Default: status resolves to a not-running, no-URL state.
   desktopServerStatus.mockResolvedValue({ ...statusBase });
+  detectTunnelTools.mockResolvedValue({
+    cloudflared: { installed: false, version: null, detail: null },
+    tailscale: { installed: false, version: null, detail: null },
+  });
+});
+
+describe("Settings · Remote access tunnel detection", () => {
+  function renderRemoteAccess() {
+    mockServerMode = true;
+    return renderAt("server");
+  }
+
+  it("shows install guidance for both tools when neither is installed", async () => {
+    renderRemoteAccess();
+
+    expect(await screen.findByText("Tailscale: Not installed.")).toBeInTheDocument();
+    expect(screen.getByText("cloudflared: Not installed.")).toBeInTheDocument();
+    expect(screen.getByText("Install Tailscale on the server")).toBeInTheDocument();
+  });
+
+  it("selects Cloudflare Tunnel and skips its install step when only cloudflared is installed", async () => {
+    detectTunnelTools.mockResolvedValue({
+      cloudflared: { installed: true, version: "cloudflared 2026.1.0", detail: null },
+      tailscale: { installed: false, version: null, detail: null },
+    });
+    renderRemoteAccess();
+
+    expect(await screen.findByText(/cloudflared detected/)).toBeInTheDocument();
+    expect(screen.getByText("Create and authenticate a Cloudflare Tunnel")).toBeInTheDocument();
+    expect(screen.queryByText("Install cloudflared on the server")).not.toBeInTheDocument();
+  });
+
+  it("selects Tailscale and skips its install step when it is connected", async () => {
+    detectTunnelTools.mockResolvedValue({
+      cloudflared: { installed: false, version: null, detail: null },
+      tailscale: { installed: true, version: "1.82.0", detail: "connected" },
+    });
+    renderRemoteAccess();
+
+    expect(
+      await screen.findByText((_, element) =>
+        element?.tagName === "P" && element.textContent?.includes("Tailscale detected") === true,
+      ),
+    ).toHaveTextContent("connected");
+    expect(screen.getByText("Sign in and join your tailnet")).toBeInTheDocument();
+    expect(screen.queryByText("Install Tailscale on the server")).not.toBeInTheDocument();
+  });
+
+  it("keeps the Tailscale default when both are detected and preserves a manual choice on re-check", async () => {
+    detectTunnelTools.mockResolvedValue({
+      cloudflared: { installed: true, version: "cloudflared 2026.1.0", detail: null },
+      tailscale: { installed: true, version: "1.82.0", detail: "connected" },
+    });
+    renderRemoteAccess();
+
+    expect(await screen.findByText("Sign in and join your tailnet")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "Cloudflare Tunnel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Re-check" }));
+
+    expect(await screen.findByText("Create and authenticate a Cloudflare Tunnel")).toBeInTheDocument();
+    expect(screen.queryByText("Install cloudflared on the server")).not.toBeInTheDocument();
+  });
 });
 
 afterEach(() => {
