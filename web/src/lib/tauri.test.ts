@@ -40,6 +40,7 @@ import {
   startDesktopServer,
   stopDesktopServer,
   openExternalURL,
+  getAppInstallInfo,
   downloadStart,
   downloadCancel,
   downloadForceStop,
@@ -109,6 +110,22 @@ describe("detectTunnelTools", () => {
 
     await expect(detectTunnelTools()).resolves.toEqual(tools);
     expect(invokeMock).toHaveBeenCalledWith("detect_tunnel_tools");
+  });
+});
+
+describe("getAppInstallInfo", () => {
+  it("returns native installation details in Tauri", async () => {
+    enterTauri();
+    const info = {
+      os: "linux" as const,
+      format: "linux-deb" as const,
+      appBundlePath: null,
+      appimagePath: null,
+    };
+    invokeMock.mockResolvedValue(info);
+
+    await expect(getAppInstallInfo()).resolves.toEqual(info);
+    expect(invokeMock).toHaveBeenCalledWith("app_install_info");
   });
 });
 

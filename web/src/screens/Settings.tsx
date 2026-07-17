@@ -100,9 +100,11 @@ import {
 import {
   desktopServerStatus,
   detectTunnelTools,
+  getAppInstallInfo,
   isTauri,
   listExternalPlayers,
   openExternalURL,
+  revealInFileManager,
   startDesktopServer,
   stopDesktopServer,
   type DesktopServerStatus,
@@ -120,6 +122,8 @@ import {
   loadTraktConnection,
 } from "../data/traktConnection";
 import { TraktConnectDialog } from "../components/TraktConnectDialog";
+import { useModalA11y } from "../components/useModalA11y";
+import { factoryReset } from "../data/factoryReset";
 import "./Settings.css";
 
 /** The selectable external-source types. */
@@ -885,10 +889,180 @@ export function Settings() {
         />
       </div>
 
+      <ResetAndUninstall />
+
       <p className="settings-version t-secondary">
         DebridStreamer v{appVersion ?? "…"}
       </p>
     </div>
+  );
+}
+
+// The Debian control file's Package field is the kebab-cased productName
+// ("DebridStreamer" -> "debrid-streamer"). The .deb FILENAME uses the product
+// name verbatim (DebridStreamer_x.y.z_amd64.deb), but apt operates on the
+// Package field, so this must stay kebab-cased or the command fails.
+const DEB_REMOVE_COMMAND = "sudo apt remove debrid-streamer";
+
+function ResetAndUninstall() {
+  const desktop = isTauri();
+  const serverMode = configuredServerURL() != null;
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [installInfo, setInstallInfo] = useState<Awaited<ReturnType<typeof getAppInstallInfo>> | null>(null);
+  const [uninstallError, setUninstallError] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  // Escape must go through closeConfirm, not a bare setConfirmOpen(false):
+  // closing has to clear the typed ERASE and any stale failure state, or the
+  // dialog reopens with the destructive button pre-armed.
+  const dialogRef = useModalA11y<HTMLDivElement>(closeConfirm);
+
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    void getAppInstallInfo()
+      .then((info) => {
+        if (!cancelled) setInstallInfo(info);
+      })
+      .catch((error) => {
+        if (!cancelled) setUninstallError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [desktop]);
+
+  function closeConfirm() {
+    if (resetting) return;
+    setConfirmOpen(false);
+    setConfirmation("");
+    setResetError(null);
+  }
+
+  async function erase() {
+    if (confirmation !== "ERASE") return;
+    setResetting(true);
+    setResetError(null);
+    try {
+      await factoryReset();
+    } catch (error) {
+      setResetError(error instanceof Error ? error.message : String(error));
+      setResetting(false);
+    }
+  }
+
+  async function copyDebCommand() {
+    // Clear first so a repeat copy is a fresh content change the aria-live
+    // region announces (an identical string re-set would be silent).
+    setCopyStatus(null);
+    try {
+      await navigator.clipboard.writeText(DEB_REMOVE_COMMAND);
+      setCopyStatus("Command copied.");
+    } catch {
+      setCopyStatus("Copy is unavailable. Select the command and copy it manually.");
+    }
+  }
+
+  return (
+    <section className="settings-reset-card glass-raised glass-lit" aria-labelledby="settings-reset-title">
+      <div className="settings-reset-heading">
+        <div>
+          <h2 id="settings-reset-title">Reset &amp; uninstall</h2>
+          <p className="settings-hint t-secondary">Remove this device&apos;s data or get help uninstalling the app.</p>
+        </div>
+        <button type="button" className="btn settings-reset-erase" onClick={() => setConfirmOpen(true)}>
+          Erase all data on this device
+        </button>
+      </div>
+
+      {!desktop ? (
+        <p className="settings-hint t-secondary">
+          Installed as a browser app? Remove it from your browser&apos;s app menu. Use Erase all data above to clear what it stored.
+        </p>
+      ) : (
+        <div className="settings-reset-uninstall">
+          <p className="settings-hint t-secondary">
+            Uninstalling does not remove your data. Use Erase all data first if you want a clean removal.
+          </p>
+          {installInfo?.format === "windows" && (
+            <>
+              <p className="settings-hint t-secondary">Find DebridStreamer in the list and choose Uninstall.</p>
+              <button type="button" className="btn" onClick={() => void openExternalURL("ms-settings:appsfeatures")}>
+                Open Windows app settings
+              </button>
+            </>
+          )}
+          {installInfo?.format === "macos-app" && (
+            <>
+              <p className="settings-hint t-secondary">Quit the app, then drag it to the Trash.</p>
+              {installInfo.appBundlePath != null && (
+                <button type="button" className="btn" onClick={() => void revealInFileManager(installInfo.appBundlePath!)}>
+                  Reveal DebridStreamer in Finder
+                </button>
+              )}
+            </>
+          )}
+          {installInfo?.format === "linux-appimage" && (
+            <>
+              <p className="settings-hint t-secondary">Delete the file to uninstall.</p>
+              {installInfo.appimagePath != null && (
+                <button type="button" className="btn" onClick={() => void revealInFileManager(installInfo.appimagePath!)}>
+                  Reveal AppImage
+                </button>
+              )}
+            </>
+          )}
+          {installInfo?.format === "linux-deb" && (
+            <>
+              <p className="settings-hint t-secondary">Remove the Debian package with this command.</p>
+              <div className="settings-reset-command">
+                <code>{DEB_REMOVE_COMMAND}</code>
+                <button type="button" className="chip" onClick={() => void copyDebCommand()}>Copy command</button>
+              </div>
+              {/* Always mounted: a live region only announces content CHANGES,
+                  so mounting it together with its first message drops it. */}
+              <p className="settings-status" aria-live="polite">{copyStatus ?? ""}</p>
+            </>
+          )}
+          {installInfo?.format === "unknown" && (
+            <p className="settings-hint t-secondary">Remove DebridStreamer using this desktop&apos;s normal app management tools.</p>
+          )}
+          {uninstallError != null && <p className="settings-status is-error">{uninstallError}</p>}
+        </div>
+      )}
+
+      {confirmOpen && (
+        <div className="settings-reset-backdrop" role="presentation" onMouseDown={closeConfirm}>
+          <div
+            ref={dialogRef}
+            className="settings-reset-dialog glass-hero glass-lit"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Erase all data on this device"
+            tabIndex={-1}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h2>{resetError == null ? "Erase all data on this device?" : "Reset incomplete"}</h2>
+            <p>Erases everything DebridStreamer stores on this device: settings, library, watch history, API keys, and sign-in. The app restarts in first-run setup.</p>
+            {serverMode && <p>Your household&apos;s data on the server is not touched.</p>}
+            <p>Downloaded video files in your downloads folder are NOT deleted.</p>
+            {resetError != null && <p className="settings-status is-error" role="alert">{resetError}</p>}
+            <label className="settings-field">
+              <span className="settings-label">Type ERASE to confirm</span>
+              <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} disabled={resetting} autoComplete="off" />
+            </label>
+            <div className="settings-reset-actions">
+              <button type="button" className="chip" onClick={closeConfirm} disabled={resetting}>Cancel</button>
+              <button type="button" className="btn settings-reset-erase" onClick={() => void erase()} disabled={confirmation !== "ERASE" || resetting}>
+                {resetting ? "Erasing" : resetError == null ? "Erase all data" : "Retry"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

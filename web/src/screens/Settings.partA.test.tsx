@@ -28,6 +28,7 @@ const setSmartPreloadEnabled = vi.fn();
 const isTraktConnected = vi.hoisted(() => vi.fn());
 const loadTraktConnection = vi.hoisted(() => vi.fn());
 const clearTraktConnection = vi.hoisted(() => vi.fn());
+const factoryReset = vi.hoisted(() => vi.fn());
 let smartPreloadOn = false;
 
 vi.mock("../store/AppStore", () => ({
@@ -50,12 +51,16 @@ vi.mock("../lib/appVersion", () => ({ getAppVersion }));
 
 vi.mock("../lib/tauri", () => ({
   isTauri: () => false,
+  getAppInstallInfo: vi.fn(),
+  revealInFileManager: vi.fn(),
   listExternalPlayers: vi.fn(async () => []),
   desktopServerStatus: vi.fn(async () => null),
   startDesktopServer: vi.fn(),
   stopDesktopServer: vi.fn(),
   openExternalURL: vi.fn(),
 }));
+
+vi.mock("../data/factoryReset", () => ({ factoryReset }));
 
 vi.mock("../lib/ServerSessionContext", () => ({
   useServerSession: () => null,
@@ -116,6 +121,8 @@ beforeEach(() => {
   isTraktConnected.mockReset();
   loadTraktConnection.mockReset();
   clearTraktConnection.mockReset();
+  factoryReset.mockReset();
+  factoryReset.mockResolvedValue(undefined);
   isTraktConnected.mockResolvedValue(false);
   loadTraktConnection.mockResolvedValue(null);
   clearTraktConnection.mockResolvedValue(undefined);
@@ -729,5 +736,45 @@ describe("Settings · Playback (local caps)", () => {
     expect(screen.getByText("Maximum quality")).toBeInTheDocument();
     // 25 GB is not in the preset list → the custom number input is shown.
     expect(screen.getByLabelText("Custom maximum file size in GB")).toHaveValue(25);
+  });
+});
+
+describe("Settings · Reset & uninstall", () => {
+  it("keeps the reset card available in Simple mode with browser uninstall guidance", () => {
+    mockSimpleMode = true;
+    renderAt();
+
+    expect(screen.getByRole("heading", { name: "Reset & uninstall" })).toBeInTheDocument();
+    expect(screen.getByText(/Installed as a browser app/)).toBeInTheDocument();
+  });
+
+  it("requires ERASE before starting the factory reset", async () => {
+    const user = userEvent.setup();
+    renderAt();
+    await user.click(screen.getByRole("button", { name: "Erase all data on this device" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Erase all data on this device" });
+    const erase = within(dialog).getByRole("button", { name: "Erase all data" });
+    expect(erase).toBeDisabled();
+    expect(dialog).toHaveTextContent("Downloaded video files in your downloads folder are NOT deleted.");
+
+    await user.type(within(dialog).getByLabelText("Type ERASE to confirm"), "ERASE");
+    await user.click(erase);
+    expect(factoryReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a reset failure with Retry and Cancel", async () => {
+    const user = userEvent.setup();
+    factoryReset.mockRejectedValueOnce(new Error("keychain locked"));
+    renderAt();
+    await user.click(screen.getByRole("button", { name: "Erase all data on this device" }));
+    const dialog = screen.getByRole("dialog", { name: "Erase all data on this device" });
+    await user.type(within(dialog).getByLabelText("Type ERASE to confirm"), "ERASE");
+    await user.click(within(dialog).getByRole("button", { name: "Erase all data" }));
+
+    expect(await within(dialog).findByRole("heading", { name: "Reset incomplete" })).toBeInTheDocument();
+    expect(within(dialog).getByText("keychain locked")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 });

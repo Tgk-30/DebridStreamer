@@ -144,3 +144,8 @@ export async function __resetProfileRegistryForTesting(): Promise<void> {
   await registry.delete();
   await registry.open();
 }
+
+/** Close the registry before deleting every local DebridStreamer database. */
+export function closeProfileRegistry(): void {
+  registry.close();
+}

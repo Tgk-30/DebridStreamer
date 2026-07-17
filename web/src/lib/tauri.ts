@@ -49,6 +49,22 @@ export async function revealInFileManager(path: string): Promise<void> {
   await invoke("reveal_in_file_manager", { path });
 }
 
+export interface AppInstallInfo {
+  os: "macos" | "windows" | "linux";
+  format: "macos-app" | "windows" | "linux-appimage" | "linux-deb" | "unknown";
+  appBundlePath: string | null;
+  appimagePath: string | null;
+}
+
+/** Desktop-only install metadata for accurate uninstall instructions. */
+export async function getAppInstallInfo(): Promise<AppInstallInfo> {
+  if (!isTauri()) {
+    throw new Error("Not running under Tauri - no desktop installation information is available.");
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<AppInstallInfo>("app_install_info");
+}
+
 /** The external media players actually installed on this machine (from the Rust
  * detector). Empty outside Tauri. Drives the Settings picker so it only offers
  * real choices. */

@@ -16,7 +16,7 @@
 // Tauri is mocked TRUE so DesktopHostPanel renders (partA mocks it false).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { defaultSettings, type AppSettings } from "../data/settings";
 
@@ -55,6 +55,8 @@ const startDesktopServer = vi.fn();
 const stopDesktopServer = vi.fn();
 const openExternalURL = vi.fn();
 const detectTunnelTools = vi.fn();
+const getAppInstallInfo = vi.fn();
+const revealInFileManager = vi.fn();
 
 vi.mock("../lib/tauri", () => ({
   isTauri: () => mockIsTauri,
@@ -63,6 +65,8 @@ vi.mock("../lib/tauri", () => ({
   stopDesktopServer: () => stopDesktopServer(),
   openExternalURL: (url: string) => openExternalURL(url),
   detectTunnelTools: () => detectTunnelTools(),
+  getAppInstallInfo: () => getAppInstallInfo(),
+  revealInFileManager: (path: string) => revealInFileManager(path),
 }));
 
 vi.mock("../lib/ServerSessionContext", () => ({
@@ -134,6 +138,8 @@ beforeEach(() => {
   stopDesktopServer.mockReset();
   openExternalURL.mockReset();
   detectTunnelTools.mockReset();
+  getAppInstallInfo.mockReset();
+  revealInFileManager.mockReset();
   toDataURL.mockClear();
   toDataURL.mockResolvedValue("data:image/png;base64,QR");
   // Default: status resolves to a not-running, no-URL state.
@@ -141,6 +147,99 @@ beforeEach(() => {
   detectTunnelTools.mockResolvedValue({
     cloudflared: { installed: false, version: null, detail: null },
     tailscale: { installed: false, version: null, detail: null },
+  });
+  getAppInstallInfo.mockResolvedValue({
+    os: "windows",
+    format: "windows",
+    appBundlePath: null,
+    appimagePath: null,
+  });
+});
+
+describe("Settings · Desktop uninstall guidance", () => {
+  it("renders Windows uninstall guidance and opens the Windows app settings URI", async () => {
+    const user = userEvent.setup();
+    renderAt();
+
+    expect(await screen.findByText("Find DebridStreamer in the list and choose Uninstall.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open Windows app settings" }));
+    expect(openExternalURL).toHaveBeenCalledWith("ms-settings:appsfeatures");
+  });
+
+  it("renders macOS and AppImage reveal controls for their native formats", async () => {
+    getAppInstallInfo.mockResolvedValueOnce({
+      os: "macos",
+      format: "macos-app",
+      appBundlePath: "/Applications/DebridStreamer.app",
+      appimagePath: null,
+    });
+    const mac = renderAt();
+    expect(await screen.findByRole("button", { name: "Reveal DebridStreamer in Finder" })).toBeInTheDocument();
+    mac.unmount();
+
+    getAppInstallInfo.mockResolvedValueOnce({
+      os: "linux",
+      format: "linux-appimage",
+      appBundlePath: null,
+      appimagePath: "/tmp/DebridStreamer.AppImage",
+    });
+    renderAt();
+    expect(await screen.findByRole("button", { name: "Reveal AppImage" })).toBeInTheDocument();
+  });
+
+  it("renders the Debian package command", async () => {
+    getAppInstallInfo.mockResolvedValueOnce({
+      os: "linux",
+      format: "linux-deb",
+      appBundlePath: null,
+      appimagePath: null,
+    });
+    renderAt();
+    // Kebab-cased: apt operates on the deb control file's Package field
+    // (kebab-cased productName), not the verbatim-name .deb FILENAME.
+    expect(await screen.findByText("sudo apt remove debrid-streamer")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy command" })).toBeInTheDocument();
+  });
+});
+
+describe("Settings · Factory reset dialog", () => {
+  it("shows the server-untouched line only in Server Mode", async () => {
+    const user = userEvent.setup();
+    mockServerURL = "https://server.example.com";
+    const serverRender = renderAt();
+    await user.click(screen.getByRole("button", { name: "Erase all data on this device" }));
+    const dialog = screen.getByRole("dialog", { name: "Erase all data on this device" });
+    expect(
+      within(dialog).getByText("Your household's data on the server is not touched."),
+    ).toBeInTheDocument();
+    serverRender.unmount();
+
+    mockServerURL = null;
+    renderAt();
+    await user.click(screen.getByRole("button", { name: "Erase all data on this device" }));
+    const localDialog = screen.getByRole("dialog", { name: "Erase all data on this device" });
+    expect(
+      within(localDialog).queryByText("Your household's data on the server is not touched."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears the typed ERASE and any stale state when closed with Escape", async () => {
+    const user = userEvent.setup();
+    renderAt();
+    await user.click(screen.getByRole("button", { name: "Erase all data on this device" }));
+    const dialog = screen.getByRole("dialog", { name: "Erase all data on this device" });
+    await user.type(within(dialog).getByLabelText("Type ERASE to confirm"), "ERASE");
+
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("dialog", { name: "Erase all data on this device" }),
+    ).not.toBeInTheDocument();
+
+    // Reopening must not come back with the destructive button pre-armed.
+    await user.click(screen.getByRole("button", { name: "Erase all data on this device" }));
+    const reopened = screen.getByRole("dialog", { name: "Erase all data on this device" });
+    expect(within(reopened).getByLabelText("Type ERASE to confirm")).toHaveValue("");
+    expect(within(reopened).getByRole("button", { name: "Erase all data" })).toBeDisabled();
   });
 });
 

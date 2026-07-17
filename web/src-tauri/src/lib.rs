@@ -6,7 +6,6 @@
 // This command is the desktop direct-play seam: hand a Real-Debrid direct link to a
 // native player. On macOS we try VLC, then mpv/IINA as fallbacks.
 
-#[cfg(target_os = "linux")]
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
@@ -116,6 +115,94 @@ impl ToolInfo {
 struct TunnelTools {
     cloudflared: ToolInfo,
     tailscale: ToolInfo,
+}
+
+/// Installation details used only to give the desktop Settings screen accurate
+/// uninstall guidance. These helpers inspect paths only and never modify them.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct AppInstallInfo {
+    os: &'static str,
+    format: &'static str,
+    app_bundle_path: Option<String>,
+    appimage_path: Option<String>,
+}
+
+fn nearest_app_bundle_ancestor(executable: &Path) -> Option<String> {
+    executable
+        .ancestors()
+        .find(|ancestor| {
+            ancestor
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".app"))
+        })
+        .map(|ancestor| ancestor.to_string_lossy().into_owned())
+}
+
+fn classify_install_format(
+    os: &str,
+    executable: Option<&Path>,
+    appimage_path: Option<&str>,
+    app_bundle_path: Option<&str>,
+) -> &'static str {
+    match os {
+        "macos" if app_bundle_path.is_some() => "macos-app",
+        "windows" => "windows",
+        "linux" if appimage_path.is_some_and(|path| !path.is_empty()) => "linux-appimage",
+        "linux" if executable.is_some_and(|path| path.starts_with("/usr/")) => "linux-deb",
+        _ => "unknown",
+    }
+}
+
+fn current_os() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "macos"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "windows"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "linux"
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        "linux"
+    }
+}
+
+fn detect_app_install_info(
+    os: &'static str,
+    executable: Option<&Path>,
+    appimage_path: Option<String>,
+) -> AppInstallInfo {
+    let app_bundle_path = if os == "macos" {
+        executable.and_then(nearest_app_bundle_ancestor)
+    } else {
+        None
+    };
+    let format = classify_install_format(
+        os,
+        executable,
+        appimage_path.as_deref(),
+        app_bundle_path.as_deref(),
+    );
+    AppInstallInfo {
+        os,
+        format,
+        app_bundle_path,
+        appimage_path: if os == "linux" { appimage_path } else { None },
+    }
+}
+
+#[tauri::command]
+fn app_install_info() -> AppInstallInfo {
+    let executable = std::env::current_exe().ok();
+    let appimage_path = std::env::var("APPIMAGE").ok();
+    detect_app_install_info(current_os(), executable.as_deref(), appimage_path)
 }
 
 const TUNNEL_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -505,6 +592,7 @@ pub fn run() {
             list_external_players,
             detect_tunnel_tools,
             reveal_in_file_manager,
+            app_install_info,
             player::mpv_play,
             player::mpv_pause,
             player::mpv_resume,
@@ -542,6 +630,60 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_install_format, detect_app_install_info, nearest_app_bundle_ancestor};
+    use std::path::Path;
+
+    #[test]
+    fn finds_the_nearest_macos_app_bundle_ancestor() {
+        let executable = Path::new("/Applications/DebridStreamer.app/Contents/MacOS/DebridStreamer");
+        assert_eq!(
+            nearest_app_bundle_ancestor(executable).as_deref(),
+            Some("/Applications/DebridStreamer.app")
+        );
+        assert_eq!(nearest_app_bundle_ancestor(Path::new("/usr/local/bin/debridstreamer")), None);
+    }
+
+    #[test]
+    fn classifies_install_formats_from_paths_and_appimage() {
+        assert_eq!(
+            classify_install_format(
+                "macos",
+                Some(Path::new("/Applications/DebridStreamer.app/Contents/MacOS/DebridStreamer")),
+                None,
+                Some("/Applications/DebridStreamer.app"),
+            ),
+            "macos-app"
+        );
+        assert_eq!(classify_install_format("windows", None, None, None), "windows");
+        assert_eq!(
+            classify_install_format("linux", Some(Path::new("/tmp/DebridStreamer")), Some("/tmp/DebridStreamer.AppImage"), None),
+            "linux-appimage"
+        );
+        assert_eq!(
+            classify_install_format("linux", Some(Path::new("/usr/bin/debridstreamer")), None, None),
+            "linux-deb"
+        );
+        assert_eq!(
+            classify_install_format("linux", Some(Path::new("/opt/debridstreamer")), None, None),
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn reports_only_platform_relevant_paths() {
+        let info = detect_app_install_info(
+            "linux",
+            Some(Path::new("/usr/bin/debridstreamer")),
+            Some("/tmp/DebridStreamer.AppImage".to_string()),
+        );
+        assert_eq!(info.format, "linux-appimage");
+        assert_eq!(info.app_bundle_path, None);
+        assert_eq!(info.appimage_path.as_deref(), Some("/tmp/DebridStreamer.AppImage"));
+    }
 }
 
 #[cfg(test)]

@@ -101,6 +101,14 @@ export function currentDexieDbName(): string | null {
   return dexieInstance?.name ?? null;
 }
 
+/** Close the active Local Mode database before a complete local-data removal. */
+export async function closeActiveLocalStore(): Promise<void> {
+  if (dexieInstance != null) await dexieInstance.close();
+  dexieInstance = null;
+  if (instance instanceof DexieStore) instance = null;
+  secretInstance = null;
+}
+
 /** Swap the process-wide Local Mode Store to a profile-specific database. */
 export async function swapLocalProfileStore(dbName: string): Promise<void> {
   if (configuredServerURL() != null) {

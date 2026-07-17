@@ -1137,6 +1137,91 @@
   text-align: center;
 }
 
+.settings-reset-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding: clamp(var(--sp-md), 2.4vw, var(--sp-xl));
+  border-radius: var(--r-lg);
+}
+
+.settings-reset-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+
+.settings-reset-heading h2,
+.settings-reset-dialog h2,
+.settings-reset-dialog p {
+  margin: 0;
+}
+
+.settings-reset-heading h2 {
+  font-size: 18px;
+}
+
+.settings-reset-erase {
+  border-color: rgba(224, 91, 91, 0.7);
+  background: rgba(178, 53, 53, 0.24);
+}
+
+.settings-reset-uninstall {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-sm);
+}
+
+.settings-reset-command {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: var(--glass-tint-control);
+}
+
+.settings-reset-command code {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.settings-reset-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-xl);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.settings-reset-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  gap: var(--sp-md);
+  padding: var(--sp-xl);
+  border-radius: var(--r-lg);
+}
+
+.settings-reset-dialog p {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.settings-reset-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-sm);
+}
+
 .settings-profile-list {
   display: flex;
   flex-direction: column;
