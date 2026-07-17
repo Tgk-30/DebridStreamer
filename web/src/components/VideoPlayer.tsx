@@ -37,6 +37,7 @@ import type { SubtitleClient } from "../services/subtitles/OpenSubtitlesClient";
 import type { Translator } from "../services/subtitles/SubtitleTranslator";
 import { useSubtitleTracks } from "./player/useSubtitleTracks";
 import { useScrubThumbnails } from "./player/useScrubThumbnails";
+import { useWakeLock } from "./player/useWakeLock";
 import { ScrubBar } from "./player/ScrubBar";
 import { CaptionsMenu } from "./player/CaptionsMenu";
 import { EmbeddedPlayer } from "./EmbeddedPlayer";
@@ -126,15 +127,82 @@ interface VideoPlayerProps {
   useBuiltInPlayer?: boolean;
 }
 
-/** Toggle fullscreen on an element, defensively (the APIs are absent in jsdom
- * and on some webviews - the optional calls then no-op rather than throw). */
-function toggleFullscreen(el: HTMLElement): void {
-  const d = document as Document & { webkitFullscreenElement?: Element | null };
+interface WebKitVideoElement extends HTMLVideoElement {
+  webkitEnterFullscreen?: () => void;
+  webkitSupportsFullscreen?: boolean;
+  webkitSetPresentationMode?: (
+    mode: "inline" | "picture-in-picture" | "fullscreen",
+  ) => void;
+  webkitPresentationMode?: "inline" | "picture-in-picture" | "fullscreen";
+  webkitShowPlaybackTargetPicker?: () => void;
+}
+
+interface WebKitDocument extends Document {
+  webkitFullscreenElement?: Element | null;
+}
+
+interface WebKitPlaybackTargetAvailabilityEvent extends Event {
+  availability?: "available" | "not-available";
+}
+
+interface LockableScreenOrientation extends ScreenOrientation {
+  lock?: (orientation: "landscape") => Promise<void>;
+}
+
+function lockLandscapeOrientation(): void {
+  const kind = deviceKind();
+  if (kind !== "ios" && kind !== "android") return;
+  const orientation = screen.orientation as LockableScreenOrientation | undefined;
+  if (typeof orientation?.lock === "function") {
+    try {
+      void orientation.lock("landscape").catch(() => {});
+    } catch {
+      // Orientation locking is optional and commonly permission-gated.
+    }
+  }
+}
+
+function unlockOrientation(): void {
+  const orientation = screen.orientation as LockableScreenOrientation | undefined;
+  if (typeof orientation?.unlock === "function") {
+    try {
+      orientation.unlock();
+    } catch {
+      // Best-effort cleanup for engines with a partial orientation API.
+    }
+  }
+}
+
+/** Toggle fullscreen on the player stage. iPhone Safari exposes its video-only
+ * WebKit API instead of the standard container fullscreen API. */
+function toggleFullscreen(el: HTMLElement, video?: HTMLVideoElement): void {
+  const d = document as WebKitDocument;
   const active = document.fullscreenElement ?? d.webkitFullscreenElement ?? null;
   if (active != null) {
-    void document.exitFullscreen?.();
-  } else {
-    void el.requestFullscreen?.();
+    const exit = document.exitFullscreen?.();
+    if (exit != null) void exit.catch(() => {});
+    return;
+  }
+  if (typeof el.requestFullscreen === "function") {
+    try {
+      void el.requestFullscreen().then(lockLandscapeOrientation).catch(() => {});
+    } catch {
+      // Browser rejected the gesture or exposes a partial fullscreen API.
+    }
+    return;
+  }
+  const webkitVideo = video as WebKitVideoElement | undefined;
+  if (
+    webkitVideo?.webkitSupportsFullscreen === true &&
+    typeof webkitVideo.webkitEnterFullscreen === "function"
+  ) {
+    // Must remain in this gesture-triggered path: iPhone rejects delayed calls.
+    try {
+      webkitVideo.webkitEnterFullscreen();
+      lockLandscapeOrientation();
+    } catch {
+      // WebKit can reject this when the media is not ready for native fullscreen.
+    }
   }
 }
 
@@ -530,15 +598,17 @@ export function VideoPlayer({
             {subtitle && <span className="player-subtitle">{subtitle}</span>}
           </div>
           <div className="player-bar-actions">
-            <CastControls
-              media={{
-                url: effectiveUrl,
-                title,
-                subtitleUrl: activeSubtitleUrl,
-              }}
-              buttonClassName="player-info-button"
-              onLocalPlaybackChange={setCastSuspended}
-            />
+            {mode !== "webview" && (
+              <CastControls
+                media={{
+                  url: effectiveUrl,
+                  title,
+                  subtitleUrl: activeSubtitleUrl,
+                }}
+                buttonClassName="player-info-button"
+                onLocalPlaybackChange={setCastSuspended}
+              />
+            )}
             <button
               type="button"
               className="player-info-button"
@@ -582,6 +652,7 @@ export function VideoPlayer({
           <WebviewPlayer
             url={effectiveUrl}
             title={title}
+            subtitle={subtitle}
             nowPlaying={nowPlaying}
             detailsOpen={detailsSection != null}
             chromeVisible={webChromeShown}
@@ -592,6 +663,7 @@ export function VideoPlayer({
             onActivity={nudgeChrome}
             onPausedChange={setWebviewPaused}
             onCaptionsOpenChange={setCaptionsOpen}
+            onCastLocalPlaybackChange={setCastSuspended}
             suspended={castSuspended}
             onActiveSubtitleUrlChange={setActiveSubtitleUrl}
             onOpenShortcuts={() => setDetailsSection("shortcuts")}
@@ -631,6 +703,7 @@ export function VideoPlayer({
 function WebviewPlayer({
   url,
   title,
+  subtitle,
   nowPlaying,
   detailsOpen,
   chromeVisible,
@@ -641,6 +714,7 @@ function WebviewPlayer({
   onActivity,
   onPausedChange,
   onCaptionsOpenChange,
+  onCastLocalPlaybackChange,
   suspended,
   onActiveSubtitleUrlChange,
   onOpenShortcuts,
@@ -660,6 +734,7 @@ function WebviewPlayer({
 }: {
   url: string;
   title: string;
+  subtitle?: string | null;
   nowPlaying?: NowPlayingMetadata | null;
   detailsOpen: boolean;
   chromeVisible: boolean;
@@ -670,6 +745,7 @@ function WebviewPlayer({
   onActivity: () => void;
   onPausedChange: (paused: boolean) => void;
   onCaptionsOpenChange: (open: boolean) => void;
+  onCastLocalPlaybackChange: (suspended: boolean) => void;
   suspended: boolean;
   onActiveSubtitleUrlChange: (url: string | null) => void;
   onOpenShortcuts: () => void;
@@ -695,9 +771,23 @@ function WebviewPlayer({
   const [duration, setDuration] = useState(0);
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   // Set when the video reaches its natural end - drives the Up-next card.
   const [ended, setEnded] = useState(false);
+  const [fullscreenSupported, setFullscreenSupported] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pictureInPictureSupported, setPictureInPictureSupported] = useState(false);
+  const [isPictureInPicture, setIsPictureInPicture] = useState(false);
+  const [airPlayAvailable, setAirPlayAvailable] = useState(false);
+  const [remotePlaybackAvailable, setRemotePlaybackAvailable] = useState(false);
+  const underTauri = isTauri();
+  const mediaArtist = nowPlaying?.episodeLabel ?? subtitle ?? "";
+  const mediaArtworkUrl = nowPlaying?.posterUrl ?? "";
+
+  // A wake lock is acquired only after the media element emits play, rather
+  // than merely while the player is open or autoplay is being attempted.
+  useWakeLock(playing && !suspended);
 
   useEffect(() => {
     onCaptionsOpenChange(captionsOpen);
@@ -734,6 +824,247 @@ function WebviewPlayer({
   // reliably, so gate them to non-HLS in-webview sources.
   const isHls = url.split("?")[0].toLowerCase().endsWith(".m3u8");
   const thumbs = useScrubThumbnails(url, !isHls);
+
+  // Lock-screen / hardware-media controls. A browser can expose Media Session
+  // while supporting only a subset of actions, so every handler registration
+  // is isolated behind a try/catch.
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    const video = videoRef.current;
+    if (video == null) return;
+
+    const mediaSession = navigator.mediaSession;
+    let lastPositionUpdate = 0;
+    const setMetadata = () => {
+      if (typeof MediaMetadata !== "function") return;
+      try {
+        mediaSession.metadata = new MediaMetadata({
+          title,
+          artist: mediaArtist,
+          album: "DebridStreamer",
+          artwork: mediaArtworkUrl
+            ? [{ src: mediaArtworkUrl, sizes: "512x512", type: "image/png" }]
+            : [],
+        });
+      } catch {
+        // A partial Media Session implementation must not affect playback.
+      }
+    };
+    const setPlaybackState = () => {
+      try {
+        mediaSession.playbackState = video.paused ? "paused" : "playing";
+      } catch {
+        // See partial-implementation note above.
+      }
+    };
+    const setPositionState = (force = false) => {
+      const now = Date.now();
+      if (!force && now - lastPositionUpdate < 1000) return;
+      const mediaDuration = video.duration;
+      const currentTime = video.currentTime;
+      if (
+        !Number.isFinite(mediaDuration) ||
+        mediaDuration <= 0 ||
+        !Number.isFinite(currentTime)
+      ) {
+        return;
+      }
+      lastPositionUpdate = now;
+      try {
+        mediaSession.setPositionState({
+          duration: mediaDuration,
+          position: Math.min(Math.max(currentTime, 0), mediaDuration),
+          playbackRate:
+            Number.isFinite(video.playbackRate) && video.playbackRate > 0
+              ? video.playbackRate
+              : 1,
+        });
+      } catch {
+        // Some engines expose Media Session but reject position state for live
+        // streams or an as-yet-unseekable source.
+      }
+    };
+    const seek = (time: number) => {
+      if (!Number.isFinite(time)) return;
+      const mediaDuration = video.duration;
+      video.currentTime = Number.isFinite(mediaDuration) && mediaDuration > 0
+        ? Math.min(Math.max(time, 0), mediaDuration)
+        : Math.max(time, 0);
+    };
+    const setActionHandler = (
+      action: MediaSessionAction,
+      handler: MediaSessionActionHandler,
+    ) => {
+      try {
+        mediaSession.setActionHandler(action, handler);
+      } catch {
+        // The action is not implemented by this browser's Media Session API.
+      }
+    };
+    const onLoadedMetadata = () => setPositionState(true);
+    const onTimeUpdate = () => setPositionState();
+
+    setMetadata();
+    setPlaybackState();
+    setPositionState(true);
+    setActionHandler("play", () => {
+      void video.play().catch(() => {});
+    });
+    setActionHandler("pause", () => video.pause());
+    setActionHandler("seekbackward", () => seek(video.currentTime - 10));
+    setActionHandler("seekforward", () => seek(video.currentTime + 10));
+    setActionHandler("seekto", (details) => {
+      if (details.seekTime != null) seek(details.seekTime);
+    });
+    setActionHandler("stop", () => {
+      video.pause();
+      seek(0);
+    });
+
+    video.addEventListener("loadedmetadata", setMetadata);
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("play", setPlaybackState);
+    video.addEventListener("pause", setPlaybackState);
+    return () => {
+      video.removeEventListener("loadedmetadata", setMetadata);
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("timeupdate", onTimeUpdate);
+      video.removeEventListener("play", setPlaybackState);
+      video.removeEventListener("pause", setPlaybackState);
+      (["play", "pause", "seekbackward", "seekforward", "seekto", "stop"] as MediaSessionAction[])
+        .forEach((action) => {
+          try {
+            mediaSession.setActionHandler(action, null);
+          } catch {
+            // See the subset-support note above.
+          }
+        });
+      try {
+        mediaSession.playbackState = "none";
+        mediaSession.metadata = null;
+      } catch {
+        // The session can already be invalidated during a browser teardown.
+      }
+    };
+  }, [mediaArtist, mediaArtworkUrl, title, url]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const stage = video?.closest(".player-stage");
+    if (video == null || !(stage instanceof HTMLElement)) return;
+    const webkitVideo = video as WebKitVideoElement;
+    const supportsContainerFullscreen = typeof stage.requestFullscreen === "function";
+    const supportsWebKitFullscreen =
+      webkitVideo.webkitSupportsFullscreen === true &&
+      typeof webkitVideo.webkitEnterFullscreen === "function";
+    setFullscreenSupported(supportsContainerFullscreen || supportsWebKitFullscreen);
+
+    const setFullscreenState = (next: boolean) => {
+      setIsFullscreen(next);
+      if (next) lockLandscapeOrientation();
+      else unlockOrientation();
+    };
+    const syncFullscreenState = () => {
+      const doc = document as WebKitDocument;
+      const fullscreenElement = document.fullscreenElement ?? doc.webkitFullscreenElement;
+      setFullscreenState(fullscreenElement === stage || fullscreenElement === video);
+    };
+    const onWebKitBeginFullscreen = () => setFullscreenState(true);
+    const onWebKitEndFullscreen = () => setFullscreenState(false);
+
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    document.addEventListener("webkitfullscreenchange", syncFullscreenState);
+    video.addEventListener("webkitbeginfullscreen", onWebKitBeginFullscreen);
+    video.addEventListener("webkitendfullscreen", onWebKitEndFullscreen);
+    syncFullscreenState();
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreenState);
+      document.removeEventListener("webkitfullscreenchange", syncFullscreenState);
+      video.removeEventListener("webkitbeginfullscreen", onWebKitBeginFullscreen);
+      video.removeEventListener("webkitendfullscreen", onWebKitEndFullscreen);
+      unlockOrientation();
+    };
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video == null) return;
+    const webkitVideo = video as WebKitVideoElement;
+    const supportsStandardPiP = document.pictureInPictureEnabled === true;
+    const supportsWebKitPiP = typeof webkitVideo.webkitSetPresentationMode === "function";
+    setPictureInPictureSupported(supportsStandardPiP || supportsWebKitPiP);
+
+    const syncPictureInPicture = () => {
+      setIsPictureInPicture(
+        document.pictureInPictureElement === video ||
+          webkitVideo.webkitPresentationMode === "picture-in-picture",
+      );
+    };
+    const leavePictureInPicture = () => setIsPictureInPicture(false);
+
+    video.addEventListener("enterpictureinpicture", syncPictureInPicture);
+    video.addEventListener("leavepictureinpicture", leavePictureInPicture);
+    video.addEventListener("webkitpresentationmodechanged", syncPictureInPicture);
+    syncPictureInPicture();
+    return () => {
+      video.removeEventListener("enterpictureinpicture", syncPictureInPicture);
+      video.removeEventListener("leavepictureinpicture", leavePictureInPicture);
+      video.removeEventListener("webkitpresentationmodechanged", syncPictureInPicture);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (underTauri) return;
+    const video = videoRef.current;
+    if (video == null) return;
+    const webkitVideo = video as WebKitVideoElement;
+    const supportsAirPlay =
+      typeof webkitVideo.webkitShowPlaybackTargetPicker === "function";
+    const onAirPlayAvailability = (event: Event) => {
+      setAirPlayAvailable(
+        (event as WebKitPlaybackTargetAvailabilityEvent).availability === "available",
+      );
+    };
+    if (supportsAirPlay) {
+      video.addEventListener(
+        "webkitplaybacktargetavailabilitychanged",
+        onAirPlayAvailability,
+      );
+    }
+
+    const supportsRemotePlayback = "remote" in HTMLMediaElement.prototype;
+    let availabilityWatchId: number | null = null;
+    let cancelled = false;
+    if (supportsRemotePlayback && typeof video.remote?.watchAvailability === "function") {
+      try {
+        void video.remote.watchAvailability((available) => {
+          if (!cancelled) setRemotePlaybackAvailable(available);
+        }).then((id) => {
+          if (cancelled) {
+            void video.remote.cancelWatchAvailability(id).catch(() => {});
+          } else {
+            availabilityWatchId = id;
+          }
+        }).catch(() => {});
+      } catch {
+        // The remote route watcher is optional (and can reject during teardown).
+      }
+    }
+
+    return () => {
+      cancelled = true;
+      if (supportsAirPlay) {
+        video.removeEventListener(
+          "webkitplaybacktargetavailabilitychanged",
+          onAirPlayAvailability,
+        );
+      }
+      if (availabilityWatchId != null) {
+        void video.remote.cancelWatchAvailability(availabilityWatchId).catch(() => {});
+      }
+    };
+  }, [underTauri]);
 
   // Report playback progress (throttled to ~once / 5s) + keep currentTime/
   // duration in sync for the custom scrub bar.
@@ -819,10 +1150,12 @@ function WebviewPlayer({
     const progressPct = () => playbackProgressPct(video.currentTime, video.duration);
     const onEnded = () => {
       setEnded(true);
+      setPlaying(false);
       if (scrobbleContext != null) scrobblePlaybackStop(scrobbleContext, progressPct());
     };
     const onPause = () => {
       setPaused(true);
+      setPlaying(false);
       onPausedChange(true);
       if (!video.ended && scrobbleContext != null) {
         scrobblePlaybackPause(scrobbleContext, progressPct());
@@ -834,6 +1167,7 @@ function WebviewPlayer({
         return;
       }
       setPaused(false);
+      setPlaying(true);
       onPausedChange(false);
       if (scrobbleContext != null) {
         scrobblePlaybackStart({ ...scrobbleContext, progressPct: progressPct() });
@@ -841,6 +1175,7 @@ function WebviewPlayer({
     };
     setEnded(false); // a new URL is a new playback - clear any stale end state
     setPaused(false);
+    setPlaying(false);
     onPausedChange(false);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMeta);
@@ -934,6 +1269,83 @@ function WebviewPlayer({
     }
   };
 
+  const togglePlayerFullscreen = () => {
+    const video = videoRef.current;
+    if (video == null) return;
+    const stage = video.closest(".player-stage");
+    toggleFullscreen(stage instanceof HTMLElement ? stage : video, video);
+  };
+
+  const togglePictureInPicture = () => {
+    const video = videoRef.current;
+    if (video == null) return;
+    const webkitVideo = video as WebKitVideoElement;
+    if (
+      document.pictureInPictureEnabled === true &&
+      typeof video.requestPictureInPicture === "function"
+    ) {
+      try {
+        if (document.pictureInPictureElement != null) {
+          const exit = document.exitPictureInPicture?.();
+          if (exit != null) void exit.catch(() => {});
+        } else {
+          void video.requestPictureInPicture().catch(() => {});
+        }
+      } catch {
+        // A just-removed source can reject PiP before returning a promise.
+      }
+      return;
+    }
+    if (typeof webkitVideo.webkitSetPresentationMode === "function") {
+      try {
+        webkitVideo.webkitSetPresentationMode(
+          webkitVideo.webkitPresentationMode === "picture-in-picture"
+            ? "inline"
+            : "picture-in-picture",
+        );
+      } catch {
+        // The iOS presentation mode can be unavailable for a given stream.
+      }
+    }
+  };
+
+  const showBrowserCastPicker = () => {
+    const video = videoRef.current;
+    if (video == null) return;
+    const webkitVideo = video as WebKitVideoElement;
+    if (
+      airPlayAvailable &&
+      typeof webkitVideo.webkitShowPlaybackTargetPicker === "function"
+    ) {
+      try {
+        webkitVideo.webkitShowPlaybackTargetPicker();
+      } catch {
+        // The route can disappear between availability and this click.
+      }
+      return;
+    }
+    if (
+      remotePlaybackAvailable &&
+      "remote" in HTMLMediaElement.prototype &&
+      typeof video.remote?.prompt === "function"
+    ) {
+      try {
+        void video.remote.prompt().catch(() => {});
+      } catch {
+        // The route can disappear just before the prompt opens.
+      }
+    }
+  };
+
+  const activeSubtitle = subs.tracks.find(
+    (track) => track.id === subs.activeTrackId,
+  );
+  const castSubtitleUrl =
+    activeSubtitle != null && /^https?:\/\//i.test(activeSubtitle.vttUrl)
+      ? activeSubtitle.vttUrl
+      : null;
+  const browserCastAvailable = airPlayAvailable || remotePlaybackAvailable;
+
   // Keyboard shortcuts (invisible power-user nicety). Active only while this
   // in-app player is mounted. Ignored when typing in a field (the CaptionsMenu
   // search, the ⌘K palette) or when a modifier is held (so ⌘K still toggles the
@@ -995,7 +1407,7 @@ function WebviewPlayer({
         case "F": {
           e.preventDefault();
           const stage = video.closest(".player-stage");
-          toggleFullscreen(stage instanceof HTMLElement ? stage : video);
+          toggleFullscreen(stage instanceof HTMLElement ? stage : video, video);
           break;
         }
         case "Home":
@@ -1038,6 +1450,7 @@ function WebviewPlayer({
           controls
           autoPlay
           playsInline
+          x-webkit-airplay="allow"
         >
           {subs.tracks.map((t) => (
             <track
@@ -1104,6 +1517,50 @@ function WebviewPlayer({
               <span className="captions-active-dot" />
             )}
           </button>
+          {underTauri ? (
+            <CastControls
+              media={{ url, title, subtitleUrl: castSubtitleUrl }}
+              buttonClassName="chip player-osd-icon-button"
+              onLocalPlaybackChange={onCastLocalPlaybackChange}
+            />
+          ) : browserCastAvailable ? (
+            <button
+              type="button"
+              className="chip player-osd-icon-button"
+              onClick={showBrowserCastPicker}
+              aria-label="Cast to a device"
+              title={airPlayAvailable ? "AirPlay" : "Cast to a device"}
+              tabIndex={chromeVisible ? undefined : -1}
+            >
+              <Icon name="cast" size={17} />
+            </button>
+          ) : null}
+          {pictureInPictureSupported && (
+            <button
+              type="button"
+              className={`chip player-osd-icon-button${isPictureInPicture ? " is-active" : ""}`}
+              onClick={togglePictureInPicture}
+              aria-label={isPictureInPicture ? "Exit picture in picture" : "Picture in picture"}
+              aria-pressed={isPictureInPicture}
+              title={isPictureInPicture ? "Exit picture in picture" : "Picture in picture"}
+              tabIndex={chromeVisible ? undefined : -1}
+            >
+              <Icon name="picture-in-picture" size={17} />
+            </button>
+          )}
+          {fullscreenSupported && (
+            <button
+              type="button"
+              className={`chip player-osd-icon-button${isFullscreen ? " is-active" : ""}`}
+              onClick={togglePlayerFullscreen}
+              aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              aria-pressed={isFullscreen}
+              title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              tabIndex={chromeVisible ? undefined : -1}
+            >
+              <Icon name={isFullscreen ? "fullscreen-exit" : "fullscreen"} size={17} />
+            </button>
+          )}
         </div>
       </div>
 

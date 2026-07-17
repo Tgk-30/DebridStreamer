@@ -35,7 +35,11 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-md);
-  padding: 18px 24px 52px;
+  padding:
+    max(18px, env(safe-area-inset-top))
+    max(24px, env(safe-area-inset-right))
+    52px
+    max(24px, env(safe-area-inset-left));
   border: 0;
   background:
     linear-gradient(to bottom, rgba(2, 3, 8, 0.82) 0%, rgba(3, 4, 10, 0.54) 48%, transparent 100%),
@@ -202,12 +206,16 @@
 
 .player-osd {
   position: absolute;
-  inset: auto 0 54px;
+  inset: auto 0 calc(54px + env(safe-area-inset-bottom));
   z-index: 10;
   display: flex;
   flex-direction: column;
   gap: var(--sp-xs);
-  padding: 46px 24px 12px;
+  padding:
+    46px
+    max(24px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(24px, env(safe-area-inset-left));
   background:
     linear-gradient(to top, rgba(2, 3, 8, 0.82) 0%, rgba(3, 4, 10, 0.52) 48%, transparent 100%),
     linear-gradient(90deg, rgba(6, 8, 17, 0.22), transparent 64%);
@@ -250,6 +258,14 @@
   border-color: rgba(var(--accent-rgb), 0.55);
   background: linear-gradient(145deg, rgba(var(--accent-rgb), 0.38), rgba(var(--accent-rgb), 0.18));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), 0 0 18px rgba(var(--accent-rgb), 0.2);
+}
+.player-osd .player-osd-icon-button {
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
 }
 .captions-active-dot {
   width: 6px;
