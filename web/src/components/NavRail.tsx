@@ -3,10 +3,12 @@
 // Breakpoint-aware primary navigation: compact rail on tablets, labeled rail on
 // wide desktop, and a five-item bottom bar on phones with a More drawer.
 
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { Icon, type IconName } from "./Icon";
 import { isServerMode } from "../lib/serverMode";
 import { useSimpleMode } from "../store/AppStore";
+import type { LocalProfile } from "../storage/ProfileRegistry";
+import { isImageAvatar } from "../data/profileAvatars";
 import {
   useServerProfiles,
   useServerSession,
@@ -14,11 +16,11 @@ import {
 import "./NavRail.css";
 
 // Screens with no working backend in Server Mode (Debrid Library is Tauri-only).
-// The AI Assistant DOES work in Server Mode — it routes to /api/ai/recommend,
-// which uses the server's stored provider key — so it is no longer hidden here.
-const SERVER_MODE_HIDDEN: ReadonlySet<string> = new Set(["debrid"]);
+// The AI Assistant DOES work in Server Mode - it routes to /api/ai/recommend,
+// which uses the server's stored provider key - so it is no longer hidden here.
+const SERVER_MODE_HIDDEN: ReadonlySet<string> = new Set(["debrid", "downloads"]);
 // Power-user destinations hidden in Simple mode (progressive disclosure). The
-// essentials — discover/search/library/watchlist/history/settings — always show;
+// essentials - discover/search/library/watchlist/history/settings - always show;
 // Settings must never hide (it hosts the Simple/Advanced toggle).
 const SIMPLE_MODE_HIDDEN: ReadonlySet<string> = new Set([
   "assistant",
@@ -36,16 +38,14 @@ export function isScreenHidden(
   return false;
 }
 
-/** Whether to show the "who's watching" switcher entry. Pure + testable: only
- *  in Server Mode, only with a handler wired, and only when the account has more
- *  than one profile (a single-profile account has nothing to switch to, so there
- *  is no forced picker). */
+/** Whether to show the "who's watching" switcher entry. */
 export function shouldShowProfileSwitch(opts: {
   serverMode: boolean;
   hasHandler: boolean;
   profileCount: number;
+  multiUserEnabled?: boolean;
 }): boolean {
-  return opts.serverMode && opts.hasHandler && opts.profileCount > 1;
+  return opts.hasHandler && opts.profileCount > 1 && (opts.serverMode || opts.multiUserEnabled === true);
 }
 
 /** Pure, testable nav filter for the current modes. */
@@ -54,6 +54,49 @@ export function visibleNavItems(
   opts: { serverMode: boolean; simpleMode: boolean },
 ): RailItem[] {
   return items.filter((item) => !isScreenHidden(item.id, opts));
+}
+
+/** Apply the user's nav customization (from Settings -> Appearance -> Navigation):
+ * remove hidden items and reorder the rest. Reorder is scoped WITHIN each nav
+ * group so the grouped rail keeps its structure - moving an item changes its
+ * position among its group-mates, never its group. Items the user hasn't
+ * explicitly ranked keep their default order after the ranked ones (stable), and
+ * "settings" can never be hidden (it hosts the Simple/Advanced toggle). This runs
+ * before the mode filter, so a mode-gated screen still can't appear. Pure. */
+export function applyNavCustomization(
+  items: readonly RailItem[],
+  opts: { order: readonly ScreenId[]; hidden: readonly ScreenId[] },
+): RailItem[] {
+  const hidden = new Set<ScreenId>(opts.hidden.filter((id) => id !== "settings"));
+  const visible = items.filter((item) => !hidden.has(item.id));
+  if (opts.order.length === 0) return visible;
+
+  const rank = new Map<ScreenId, number>();
+  opts.order.forEach((id, i) => rank.set(id, i));
+
+  // Bucket by group, sort each bucket by (user rank, then original index) so the
+  // comparator is a proper total order, then re-emit groups in their original
+  // first-appearance order. Never sorts across groups.
+  const buckets = new Map<string, RailItem[]>();
+  for (const item of visible) {
+    const bucket = buckets.get(item.group);
+    if (bucket) bucket.push(item);
+    else buckets.set(item.group, [item]);
+  }
+  for (const bucket of buckets.values()) {
+    bucket
+      .map((item, i) => ({ item, i, r: rank.get(item.id) ?? Infinity }))
+      .sort((a, b) => a.r - b.r || a.i - b.i)
+      .forEach((entry, i) => (bucket[i] = entry.item));
+  }
+  const result: RailItem[] = [];
+  const emitted = new Set<string>();
+  for (const item of visible) {
+    if (emitted.has(item.group)) continue;
+    emitted.add(item.group);
+    result.push(...buckets.get(item.group)!);
+  }
+  return result;
 }
 
 export type ScreenId =
@@ -65,14 +108,17 @@ export type ScreenId =
   | "history"
   | "assistant"
   | "debrid"
+  | "downloads"
   | "settings";
 
-interface RailItem {
+export type NavGroup = "Primary" | "Library" | "Tools" | "Account";
+
+export interface RailItem {
   id: ScreenId;
   icon: IconName;
   label: string;
   mobileLabel?: string;
-  group: "Primary" | "Library" | "Tools" | "Account";
+  group: NavGroup;
   mobile?: boolean;
 }
 
@@ -97,6 +143,7 @@ const NAV_ITEMS: RailItem[] = [
   },
   { id: "calendar", icon: "calendar", label: "Calendar", group: "Library" },
   { id: "history", icon: "history", label: "History", group: "Library" },
+  { id: "downloads", icon: "debrid", label: "Downloads", group: "Library" },
   { id: "assistant", icon: "assistant", label: "Assistant", group: "Tools" },
   { id: "debrid", icon: "debrid", label: "Debrid", group: "Tools" },
   { id: "settings", icon: "settings", label: "Settings", group: "Account" },
@@ -105,12 +152,28 @@ const NAV_ITEMS: RailItem[] = [
 const MOBILE_MORE_ITEMS = NAV_ITEMS.filter((item) => !item.mobile || item.id === "settings");
 const GROUPS = ["Primary", "Library", "Tools", "Account"] as const;
 
+/** The full nav item set + group order, exported so Settings can render the
+ * reorder/hide customizer without duplicating this metadata. */
+export const NAV_RAIL_ITEMS: readonly RailItem[] = NAV_ITEMS;
+export const NAV_RAIL_GROUPS: readonly NavGroup[] = GROUPS;
+
 interface NavRailProps {
   selected: ScreenId;
   onSelect: (id: ScreenId) => void;
   /** Opens the "who's watching" picker (Server Mode only). When absent or when
    *  the account has a single profile, the switch entry is not shown. */
   onSwitchProfile?: () => void;
+  /** Local profile state is supplied by App, keeping this navigation component
+   * independently testable and leaving server context behavior unchanged. */
+  localProfile?: LocalProfile | null;
+  localProfileCount?: number;
+  localMultiUserEnabled?: boolean;
+  /** User's per-item nav order (by screen id); [] means default order. */
+  navOrder?: readonly ScreenId[];
+  /** Screen ids the user hid from the nav; "settings" is always kept. */
+  navHidden?: readonly ScreenId[];
+  /** Followed episodes that aired since the user last visited Calendar. */
+  calendarBadgeCount?: number;
 }
 
 export function shouldRenderNavGroup(
@@ -128,32 +191,79 @@ export function shouldRenderNavGroup(
   return navItems.some((item) => item.group === group) || (group === "Account" && showProfileSwitch);
 }
 
+/** Shared empty default so an unset prop keeps a stable reference across renders. */
+const EMPTY_NAV_IDS: readonly ScreenId[] = [];
+
 function initialOf(name: string): string {
   const trimmed = name.trim();
   return trimmed.length > 0 ? trimmed[0]!.toUpperCase() : "?";
 }
 
-export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
+const NAV_COLLAPSED_KEY = "ds_nav_collapsed";
+
+export function NavRail({
+  selected,
+  onSelect,
+  onSwitchProfile,
+  localProfile,
+  localProfileCount = 0,
+  localMultiUserEnabled = false,
+  navOrder = EMPTY_NAV_IDS,
+  navHidden = EMPTY_NAV_IDS,
+  calendarBadgeCount = 0,
+}: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  // Collapsed (icons-only) side rail - an ephemeral UI preference persisted to
+  // localStorage. Reflected on the root so the layout var + content inset track.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return globalThis.localStorage?.getItem(NAV_COLLAPSED_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  useLayoutEffect(() => {
+    document.documentElement.dataset.navCollapsed = collapsed ? "true" : "false";
+  }, [collapsed]);
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        globalThis.localStorage?.setItem(NAV_COLLAPSED_KEY, next ? "true" : "false");
+      } catch {
+        /* non-persistent is fine */
+      }
+      return next;
+    });
+  };
   const serverMode = isServerMode();
   const simpleMode = useSimpleMode();
   const session = useServerSession();
   const profiles = useServerProfiles();
-  const navItems = visibleNavItems(NAV_ITEMS, { serverMode, simpleMode });
-  const moreItems = visibleNavItems(MOBILE_MORE_ITEMS, { serverMode, simpleMode });
+  const navCustom = { order: navOrder, hidden: navHidden };
+  const navItems = visibleNavItems(
+    applyNavCustomization(NAV_ITEMS, navCustom),
+    { serverMode, simpleMode },
+  );
+  const moreItems = visibleNavItems(
+    applyNavCustomization(MOBILE_MORE_ITEMS, navCustom),
+    { serverMode, simpleMode },
+  );
   const moreSelected = moreItems.some((item) => item.id === selected);
   // Show the switcher only in Server Mode with a handler AND more than one
-  // profile — a single-profile account has no one to switch to (no forced
+  // profile - a single-profile account has no one to switch to (no forced
   // picker, per the spec).
   const showProfileSwitch = shouldShowProfileSwitch({
     serverMode,
     hasHandler: onSwitchProfile != null,
-    profileCount: profiles.length,
+    profileCount: serverMode ? profiles.length : (localMultiUserEnabled ? localProfileCount : 0),
+    multiUserEnabled: localMultiUserEnabled,
   });
-  const activeProfile =
+  const serverActiveProfile =
     session != null
       ? profiles.find((p) => p.id === session.profileId) ?? null
       : null;
+  const activeName = serverMode ? session?.displayName ?? "profile" : localProfile?.name ?? "profile";
 
   function selectScreen(id: ScreenId) {
     setMoreOpen(false);
@@ -162,6 +272,20 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
 
   return (
     <nav className="nav-rail" aria-label="Primary">
+      <button
+        type="button"
+        className="nav-rail-collapse"
+        data-mobile="false"
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+        aria-pressed={collapsed}
+        title={collapsed ? "Expand" : "Collapse"}
+      >
+        <span className="nav-rail-collapse-glyph" aria-hidden>
+          {collapsed ? "»" : "«"}
+        </span>
+      </button>
+
       {moreOpen && (
         <button
           type="button"
@@ -172,7 +296,7 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
       )}
 
       {/* Skip groups with nothing to show (e.g. Tools when every tool is
-          gated off) — an orphaned section label reads as a broken menu. The
+          gated off) - an orphaned section label reads as a broken menu. The
           Account group also hosts the profile switcher, which isn't a navItem. */}
       {GROUPS.filter((group) => shouldRenderNavGroup(group, navItems, showProfileSwitch)).map(
         (group) => (
@@ -188,15 +312,21 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
                 onSwitchProfile?.();
               }}
               title="Switch profile"
-              aria-label={`Switch profile (current: ${session?.displayName ?? "profile"})`}
+              aria-label={`Switch profile (current: ${activeName})`}
             >
               <span className="nav-rail-icon">
                 <span
                   className="nav-rail-profile-avatar"
-                  style={{ background: activeProfile?.avatarColor ?? "#475569" }}
+                  style={{ background: serverMode ? serverActiveProfile?.avatarColor ?? "#475569" : localProfile?.color ?? "#475569" }}
                   aria-hidden
                 >
-                  {initialOf(session?.displayName ?? "?")}
+                  {serverMode ? (
+                    initialOf(session?.displayName ?? "?")
+                  ) : isImageAvatar(localProfile?.avatar) ? (
+                    <img src={localProfile.avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} />
+                  ) : (
+                    localProfile?.avatar || initialOf(activeName)
+                  )}
                 </span>
               </span>
               <span className="nav-rail-label">Switch</span>
@@ -208,6 +338,7 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
               item={item}
               selected={selected === item.id}
               onSelect={selectScreen}
+              badgeCount={item.id === "calendar" ? calendarBadgeCount : 0}
             />
           ))}
         </div>
@@ -250,7 +381,7 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
               className={`nav-rail-more-action${selected === item.id ? " is-selected" : ""}`}
               data-screen={item.id}
               onClick={() => selectScreen(item.id)}
-              aria-label={item.label}
+              aria-label={navItemAriaLabel(item.label, item.id === "calendar" ? calendarBadgeCount : 0)}
             >
               <span className="nav-rail-more-icon">
                 <Icon
@@ -258,6 +389,15 @@ export function NavRail({ selected, onSelect, onSwitchProfile }: NavRailProps) {
                   size={18}
                   filled={selected === item.id}
                 />
+                {item.id === "calendar" && calendarBadgeCount > 0 && (
+                  <span
+                    className="nav-rail-badge"
+                    data-testid="calendar-new-episode-badge"
+                    aria-hidden="true"
+                  >
+                    {formatBadgeCount(calendarBadgeCount)}
+                  </span>
+                )}
               </span>
               <span>{item.label}</span>
             </button>
@@ -272,10 +412,12 @@ function NavRailButton({
   item,
   selected,
   onSelect,
+  badgeCount = 0,
 }: {
   item: RailItem;
   selected: boolean;
   onSelect: (id: ScreenId) => void;
+  badgeCount?: number;
 }) {
   return (
     <button
@@ -285,11 +427,20 @@ function NavRailButton({
       data-mobile={item.mobile ? "true" : "false"}
       onClick={() => onSelect(item.id)}
       title={item.label}
-      aria-label={item.label}
+      aria-label={navItemAriaLabel(item.label, badgeCount)}
       aria-current={selected ? "page" : undefined}
     >
       <span className="nav-rail-icon">
         <Icon name={item.icon} size={20} filled={selected} />
+        {badgeCount > 0 && (
+          <span
+            className="nav-rail-badge"
+            data-testid={item.id === "calendar" ? "calendar-new-episode-badge" : undefined}
+            aria-hidden="true"
+          >
+            {formatBadgeCount(badgeCount)}
+          </span>
+        )}
       </span>
       <span
         className="nav-rail-label"
@@ -299,4 +450,13 @@ function NavRailButton({
       </span>
     </button>
   );
+}
+
+function formatBadgeCount(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
+function navItemAriaLabel(label: string, badgeCount: number): string {
+  if (badgeCount <= 0) return label;
+  return `${label}, ${badgeCount} new episode${badgeCount === 1 ? "" : "s"}`;
 }

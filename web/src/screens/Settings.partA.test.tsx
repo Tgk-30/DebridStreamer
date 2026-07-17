@@ -14,7 +14,7 @@
 // debrid/ai model modules drive the provider/option lists (no mock needed).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { defaultSettings, type AppSettings } from "../data/settings";
 
@@ -23,7 +23,12 @@ import { defaultSettings, type AppSettings } from "../data/settings";
 let mockSettings: AppSettings = defaultSettings();
 let mockSimpleMode = false;
 const updateSettings = vi.fn();
+const getAppVersion = vi.hoisted(() => vi.fn(async () => "test-version"));
 const setSmartPreloadEnabled = vi.fn();
+const isTraktConnected = vi.hoisted(() => vi.fn());
+const loadTraktConnection = vi.hoisted(() => vi.fn());
+const clearTraktConnection = vi.hoisted(() => vi.fn());
+const factoryReset = vi.hoisted(() => vi.fn());
 let smartPreloadOn = false;
 
 vi.mock("../store/AppStore", () => ({
@@ -42,13 +47,20 @@ vi.mock("../lib/serverMode", () => ({
   saveServerURL: vi.fn(),
 }));
 
+vi.mock("../lib/appVersion", () => ({ getAppVersion }));
+
 vi.mock("../lib/tauri", () => ({
   isTauri: () => false,
+  getAppInstallInfo: vi.fn(),
+  revealInFileManager: vi.fn(),
+  listExternalPlayers: vi.fn(async () => []),
   desktopServerStatus: vi.fn(async () => null),
   startDesktopServer: vi.fn(),
   stopDesktopServer: vi.fn(),
   openExternalURL: vi.fn(),
 }));
+
+vi.mock("../data/factoryReset", () => ({ factoryReset }));
 
 vi.mock("../lib/ServerSessionContext", () => ({
   useServerSession: () => null,
@@ -72,6 +84,12 @@ vi.mock("../lib/smartPreload", () => ({
     smartPreloadOn = v;
     setSmartPreloadEnabled(v);
   },
+}));
+
+vi.mock("../data/traktConnection", () => ({
+  isTraktConnected,
+  loadTraktConnection,
+  clearTraktConnection,
 }));
 
 // QRCode is only used in desktop-host (mocked tauri = not desktop), but import
@@ -98,7 +116,16 @@ beforeEach(() => {
   mockSimpleMode = false;
   smartPreloadOn = false;
   updateSettings.mockClear();
+  getAppVersion.mockClear();
   setSmartPreloadEnabled.mockClear();
+  isTraktConnected.mockReset();
+  loadTraktConnection.mockReset();
+  clearTraktConnection.mockReset();
+  factoryReset.mockReset();
+  factoryReset.mockResolvedValue(undefined);
+  isTraktConnected.mockResolvedValue(false);
+  loadTraktConnection.mockResolvedValue(null);
+  clearTraktConnection.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -110,6 +137,20 @@ afterEach(() => {
 // ============================================================================
 
 describe("Settings shell", () => {
+  it("puts settings search first and removes the Control center kicker", () => {
+    renderAt();
+    const search = screen.getByLabelText("Search settings");
+    const experience = screen.getByRole("radiogroup", { name: "Experience tier" });
+
+    expect(search.compareDocumentPosition(experience) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText("Control center")).toBeNull();
+  });
+
+  it("shows the app version on the landing shell", async () => {
+    renderAt();
+    expect(await screen.findByText("DebridStreamer vtest-version")).toBeInTheDocument();
+  });
+
   it("hides the Server tab in Local Mode", () => {
     renderAt();
     const tabs = screen.getByText("Settings").closest(".settings-screen")!;
@@ -127,7 +168,7 @@ describe("Settings shell", () => {
       debridTokens: [{ service: "real_debrid", apiToken: "tok" }],
     };
     renderAt();
-    // Appearance is the default tab — its quick-profile card renders.
+    // Appearance is the default tab - its quick-profile card renders.
     expect(screen.getByText("Quick profile")).toBeInTheDocument();
     // Sources tab chip is present in advanced mode.
     expect(document.querySelector('button[data-tab="sources"]')).not.toBeNull();
@@ -168,7 +209,16 @@ describe("Settings shell", () => {
   it("Experience segmented control flips Local Mode simpleMode through updateSettings", async () => {
     const user = userEvent.setup();
     renderAt();
-    // Currently advanced — click "Simple".
+    expect(screen.getByRole("radio", { name: "Advanced" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "About Experience tier" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Calendar, Assistant, and Debrid",
+    );
+
+    // Currently advanced. Click "Simple".
     const simpleBtn = screen.getByRole("radio", { name: "Simple" });
     await user.click(simpleBtn);
     expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ simpleMode: true }));
@@ -176,7 +226,7 @@ describe("Settings shell", () => {
 });
 
 // ============================================================================
-// Keys tab — catalog + assistant credentials
+// Keys tab - catalog + assistant credentials
 // ============================================================================
 
 describe("Settings · API keys (catalog)", () => {
@@ -206,6 +256,43 @@ describe("Settings · API keys (catalog)", () => {
     expect(screen.getByPlaceholderText("OpenSubtitles key")).toHaveValue("os-key-123");
   });
 
+  it("keeps Connect disabled until both Trakt credentials are present", async () => {
+    renderAt("keys");
+    const connect = await screen.findByRole("button", { name: "Connect" });
+    expect(connect).toBeDisabled();
+  });
+
+  it("disconnects an existing Trakt connection", async () => {
+    const user = userEvent.setup();
+    isTraktConnected.mockResolvedValue(true);
+    loadTraktConnection.mockResolvedValue({
+      meta: { username: "alice" },
+    });
+    renderAt("keys", { traktClientId: "client", traktClientSecret: "secret" });
+
+    expect(await screen.findByText("Connected as alice")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Disconnect" }));
+    await waitFor(() => expect(clearTraktConnection).toHaveBeenCalledTimes(1));
+  });
+
+  it("enables opt-in Trakt scrobbling only after Trakt connects", async () => {
+    const user = userEvent.setup();
+    const first = renderAt("keys", { traktClientId: "client", traktClientSecret: "secret" });
+    const toggle = await screen.findByRole("checkbox", { name: /Scrobble to Trakt/ });
+    expect(toggle).toBeDisabled();
+    first.unmount();
+
+    isTraktConnected.mockResolvedValue(true);
+    loadTraktConnection.mockResolvedValue({ meta: { username: "alice" } });
+    renderAt("keys", { traktClientId: "client", traktClientSecret: "secret" });
+    const connectedToggle = await screen.findByRole("checkbox", {
+      name: /Scrobble to Trakt/,
+    });
+    expect(connectedToggle).toBeEnabled();
+    await user.click(connectedToggle);
+    expect(connectedToggle).toBeChecked();
+  });
+
   it("switches to the Assistant AI panel and shows the provider select", async () => {
     const user = userEvent.setup();
     renderAt("keys");
@@ -225,7 +312,7 @@ describe("Settings · API keys (catalog)", () => {
 });
 
 // ============================================================================
-// SecretInput behaviour (reveal / copy) — used across Keys/Debrid/Sources
+// SecretInput behaviour (reveal / copy) - used across Keys/Debrid/Sources
 // ============================================================================
 
 describe("Settings · SecretInput", () => {
@@ -270,7 +357,7 @@ describe("Settings · SecretInput", () => {
 });
 
 // ============================================================================
-// Debrid (Providers) tab — token add / edit / clear, priority list
+// Debrid (Providers) tab - token add / edit / clear, priority list
 // ============================================================================
 
 describe("Settings · Providers (debrid)", () => {
@@ -278,9 +365,10 @@ describe("Settings · Providers (debrid)", () => {
     const user = userEvent.setup();
     const { container } = renderAt("debrid");
     const token = screen.getByPlaceholderText("API token");
-    await user.type(token, "rd-token");
-    // The priority chip list now lists Real-Debrid as #1.
-    expect(within(container).getByRole("button", { name: /1\. Real-Debrid/ })).toBeInTheDocument();
+    await user.type(token, "tb-token");
+    // The default selected service is TorBox (first in the canonical order),
+    // so the priority chip list now lists TorBox as #1.
+    expect(within(container).getByRole("button", { name: /1\. TorBox/ })).toBeInTheDocument();
   });
 
   it("renders existing tokens in priority order as chips", () => {
@@ -297,13 +385,13 @@ describe("Settings · Providers (debrid)", () => {
 
   it("clearing a token removes that service's entry", () => {
     renderAt("debrid", {
-      debridTokens: [{ service: "real_debrid", apiToken: "x" }],
+      debridTokens: [{ service: "torbox", apiToken: "x" }],
     });
     const token = screen.getByPlaceholderText("API token") as HTMLInputElement;
     expect(token.value).toBe("x");
-    // Real-Debrid is the default selected service; clearing the field drops it.
+    // TorBox is the default selected service; clearing the field drops it.
     fireEvent.change(token, { target: { value: "" } });
-    expect(screen.queryByRole("button", { name: /1\. Real-Debrid/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /1\. TorBox/ })).toBeNull();
   });
 
   it("clicking a priority chip selects that service and loads its token", async () => {
@@ -315,10 +403,10 @@ describe("Settings · Providers (debrid)", () => {
       ],
     });
     const token = screen.getByPlaceholderText("API token") as HTMLInputElement;
-    // Default selected = first option (real_debrid) → shows "rd".
-    expect(token.value).toBe("rd");
-    await user.click(screen.getByRole("button", { name: /2\. TorBox/ }));
-    expect((screen.getByPlaceholderText("API token") as HTMLInputElement).value).toBe("tb");
+    // Default selected = first canonical option (torbox) → shows "tb".
+    expect(token.value).toBe("tb");
+    await user.click(screen.getByRole("button", { name: /1\. Real-Debrid/ }));
+    expect((screen.getByPlaceholderText("API token") as HTMLInputElement).value).toBe("rd");
   });
 
   it("editing an existing token preserves its priority position (in-place update)", () => {
@@ -337,7 +425,7 @@ describe("Settings · Providers (debrid)", () => {
 });
 
 // ============================================================================
-// Sources tab — built-in toggle + external indexer CRUD
+// Sources tab - built-in toggle + external indexer CRUD
 // ============================================================================
 
 describe("Settings · Sources", () => {
@@ -476,7 +564,7 @@ describe("Settings · Sources", () => {
 });
 
 // ============================================================================
-// Appearance tab — instant-apply controls call applyAppearance/updateSettings
+// Appearance tab - instant-apply controls call applyAppearance/updateSettings
 // ============================================================================
 
 describe("Settings · Appearance", () => {
@@ -534,6 +622,40 @@ describe("Settings · Appearance", () => {
     expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ appearanceBlur: 10 }));
   });
 
+  it("selecting a subtitle swatch applies subtitleTextColor", async () => {
+    const user = userEvent.setup();
+    renderAt("appearance");
+    await user.click(screen.getByRole("radio", { name: "Subtitle color #ffe066" }));
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ subtitleTextColor: "#ffe066" }),
+    );
+  });
+
+  it("the subtitle font-scale range applies subtitleFontScale", () => {
+    renderAt("appearance");
+    const range = screen.getByRole("slider", { name: "Subtitle font scale" }) as HTMLInputElement;
+    fireEvent.change(range, { target: { value: "1.4" } });
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ subtitleFontScale: 1.4 }),
+    );
+  });
+
+  it("the subtitle background range applies subtitleBgOpacity", () => {
+    renderAt("appearance");
+    const range = screen.getByRole("slider", { name: "Subtitle background opacity" }) as HTMLInputElement;
+    fireEvent.change(range, { target: { value: "0.3" } });
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ subtitleBgOpacity: 0.3 }),
+    );
+  });
+
+  it("marks the saved subtitle color swatch active", () => {
+    renderAt("appearance", { subtitleTextColor: "#9be7ff" });
+    const swatch = screen.getByRole("radio", { name: "Subtitle color #9be7ff" });
+    expect(swatch).toHaveAttribute("aria-checked", "true");
+    expect(swatch).toHaveClass("is-active");
+  });
+
   it("toggling Smart preloading writes the per-device preference", async () => {
     const user = userEvent.setup();
     renderAt("appearance");
@@ -547,6 +669,21 @@ describe("Settings · Appearance", () => {
     expect(toggle.checked).toBe(true);
   });
 
+  it("toggles the persistent poster-rating preference", async () => {
+    const user = userEvent.setup();
+    renderAt("appearance");
+    const toggle = screen
+      .getByText("Show ratings on posters")
+      .closest("label")!
+      .querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+
+    await user.click(toggle);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ showPosterRatings: false }),
+    );
+  });
+
   it("Replay welcome guide dispatches the ds:open-welcome-guide event", async () => {
     const user = userEvent.setup();
     const handler = vi.fn();
@@ -557,25 +694,27 @@ describe("Settings · Appearance", () => {
     window.removeEventListener("ds:open-welcome-guide", handler);
   });
 
-  it("shows the matched quick-profile label in the hero insight when the draft matches a preset", () => {
-    // The default settings match the 'Cinema room' (default-cinema) profile.
-    renderAt();
-    expect(screen.getAllByText("Cinema room").length).toBeGreaterThan(0);
-  });
 });
 
 // ============================================================================
-// Playback tab — non-server caps (advanced-gated) + data saver toggle
+// Playback tab - non-server caps (advanced-gated) + data saver toggle
 // ============================================================================
 
 describe("Settings · Playback (local caps)", () => {
+  it("defaults cached-only on for new settings", () => {
+    renderAt("playback");
+    const cachedOnly = screen
+      .getByText("Show cached streams only")
+      .closest("label")!
+      .querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(cachedOnly.checked).toBe(true);
+  });
+
   it("toggles Data Saver through patch", async () => {
     const user = userEvent.setup();
     renderAt("playback");
-    // "Data Saver" appears in both the intro hint and the toggle label; scope to
-    // the toggle row via its unique helper copy.
     const ds = screen
-      .getByText(/prefer smaller, lower-resolution streams/)
+      .getByText("Data Saver")
       .closest("label")!
       .querySelector('input[type="checkbox"]') as HTMLInputElement;
     expect(ds.checked).toBe(false);
@@ -597,5 +736,45 @@ describe("Settings · Playback (local caps)", () => {
     expect(screen.getByText("Maximum quality")).toBeInTheDocument();
     // 25 GB is not in the preset list → the custom number input is shown.
     expect(screen.getByLabelText("Custom maximum file size in GB")).toHaveValue(25);
+  });
+});
+
+describe("Settings · Reset & uninstall", () => {
+  it("keeps the reset card available in Simple mode with browser uninstall guidance", () => {
+    mockSimpleMode = true;
+    renderAt();
+
+    expect(screen.getByRole("heading", { name: "Reset & uninstall" })).toBeInTheDocument();
+    expect(screen.getByText(/Installed as a browser app/)).toBeInTheDocument();
+  });
+
+  it("requires ERASE before starting the factory reset", async () => {
+    const user = userEvent.setup();
+    renderAt();
+    await user.click(screen.getByRole("button", { name: "Erase all data on this device" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Erase all data on this device" });
+    const erase = within(dialog).getByRole("button", { name: "Erase all data" });
+    expect(erase).toBeDisabled();
+    expect(dialog).toHaveTextContent("Downloaded video files in your downloads folder are NOT deleted.");
+
+    await user.type(within(dialog).getByLabelText("Type ERASE to confirm"), "ERASE");
+    await user.click(erase);
+    expect(factoryReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a reset failure with Retry and Cancel", async () => {
+    const user = userEvent.setup();
+    factoryReset.mockRejectedValueOnce(new Error("keychain locked"));
+    renderAt();
+    await user.click(screen.getByRole("button", { name: "Erase all data on this device" }));
+    const dialog = screen.getByRole("dialog", { name: "Erase all data on this device" });
+    await user.type(within(dialog).getByLabelText("Type ERASE to confirm"), "ERASE");
+    await user.click(within(dialog).getByRole("button", { name: "Erase all data" }));
+
+    expect(await within(dialog).findByRole("heading", { name: "Reset incomplete" })).toBeInTheDocument();
+    expect(within(dialog).getByText("keychain locked")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 });

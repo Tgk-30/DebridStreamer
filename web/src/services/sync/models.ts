@@ -67,6 +67,16 @@ export interface TraktWatchlistItem {
   year: number | null;
 }
 
+/** A single watchlist show returned by `GET /sync/watchlist/shows`.
+ * Trakt provides the show title/year plus its Trakt, IMDb, and TMDB ids. */
+export interface TraktWatchlistShowItem {
+  traktID: number | null;
+  imdbID: string | null;
+  tmdbID: number | null;
+  title: string;
+  year: number | null;
+}
+
 /**
  * Typed summary of a `POST /sync/watchlist` response. Trakt returns counts of
  * items that were `added`, were already `existing`, and could `not_found` be
@@ -80,19 +90,41 @@ export interface TraktWatchlistPushResult {
 
 export interface TraktPushCounts {
   movies?: number | null;
+  shows?: number | null;
 }
 
-export interface TraktPushNotFoundIDs {
+interface TraktPushNotFoundIDs {
   imdb?: string | null;
+  tmdb?: number | null;
 }
 
-export interface TraktPushNotFoundMovie {
+interface TraktPushNotFoundMovie {
+  ids?: TraktPushNotFoundIDs | null;
+}
+
+interface TraktPushNotFoundShow {
   ids?: TraktPushNotFoundIDs | null;
 }
 
 export interface TraktPushNotFound {
   movies?: TraktPushNotFoundMovie[] | null;
+  shows?: TraktPushNotFoundShow[] | null;
 }
+
+/** One locally-observed playback event sent to Trakt's scrobble API. */
+export type TraktScrobbleItem =
+  | {
+      type: "movie";
+      tmdbID: number;
+      progress: number;
+    }
+  | {
+      type: "episode";
+      tmdbID: number;
+      season: number;
+      episode: number;
+      progress: number;
+    };
 
 // MARK: - IMDb CSV value types
 
@@ -102,10 +134,4 @@ export interface IMDbCSVEntry {
   title: string;
   year: number | null;
   listType: ListType;
-}
-
-/** Result of an import run. Mirrors Swift `IMDbImportResult`. */
-export interface IMDbImportResult {
-  added: number;
-  skippedDuplicates: number;
 }

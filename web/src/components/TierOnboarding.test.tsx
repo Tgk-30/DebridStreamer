@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // TierOnboarding: tier-aware welcome flow. These tests cover the three build
-// profiles (family / friends / public) — their eyebrow label and step content —
+// profiles (family / friends / public) - their eyebrow label and step content - 
 // plus step navigation (Next/Back, dot active state, ambient loop per step) and
 // the Skip / final "Get started" → onDone wiring.
 
@@ -33,7 +33,7 @@ function ambientName(container: HTMLElement): string | null {
   return container.querySelector("[data-testid='ambient']")?.getAttribute("data-name") ?? null;
 }
 
-describe("TierOnboarding — public profile", () => {
+describe("TierOnboarding - public profile", () => {
   it("renders the dialog with the 'Get started' eyebrow and first step", () => {
     buildProfile.mockReturnValue("public");
     const { container } = render(<TierOnboarding onDone={() => {}} />);
@@ -62,7 +62,7 @@ describe("TierOnboarding — public profile", () => {
   });
 });
 
-describe("TierOnboarding — family profile", () => {
+describe("TierOnboarding - family profile", () => {
   it("renders the 'Family' eyebrow and the two-step family flow", () => {
     buildProfile.mockReturnValue("family");
     const { container } = render(<TierOnboarding onDone={() => {}} />);
@@ -72,7 +72,7 @@ describe("TierOnboarding — family profile", () => {
   });
 });
 
-describe("TierOnboarding — friends profile", () => {
+describe("TierOnboarding - friends profile", () => {
   it("renders the 'Your server' eyebrow and the three-step friends flow", () => {
     buildProfile.mockReturnValue("friends");
     const { container } = render(<TierOnboarding onDone={() => {}} />);

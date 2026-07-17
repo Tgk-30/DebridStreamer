@@ -3,6 +3,7 @@ import {
   dedupeEntries,
   parseCsvLine,
   parseImportEntries,
+  parseWatchlistImport,
   pickBestMatch,
   resolveEntry,
   type ImportEntry,
@@ -26,7 +27,7 @@ describe("parseCsvLine", () => {
   });
 });
 
-describe("parseImportEntries — IMDb CSV", () => {
+describe("parseImportEntries - IMDb CSV", () => {
   it("maps Title / Year / Title Type columns and normalises the type", () => {
     const csv = [
       "Const,Title,Year,Title Type",
@@ -38,9 +39,34 @@ describe("parseImportEntries — IMDb CSV", () => {
       { title: "Breaking Bad", year: 2008, type: "series" },
     ]);
   });
+
+  it("uses an IMDb file name as the folder name and skips malformed rows", () => {
+    const parsed = parseWatchlistImport([
+      "Const,Title,Title Type,Your Rating,Date Added,Year",
+      "tt0133093,The Matrix,movie,10,2024-01-01,1999",
+      ",,movie,8,2024-01-02,2000",
+      "tt-bad,\"Unclosed,movie,7,2024-01-03,2001",
+    ].join("\n"), "My IMDb Picks.csv");
+    expect(parsed.entries).toEqual([
+      { title: "The Matrix", year: 1999, type: "movie" },
+    ]);
+    expect(parsed.folderName).toBe("My IMDb Picks");
+    expect(parsed.skippedRows).toBe(2);
+  });
 });
 
-describe("parseImportEntries — Letterboxd CSV", () => {
+describe("parseImportEntries - common catalog CSV", () => {
+  it("accepts title, release year, and media type columns", () => {
+    const parsed = parseWatchlistImport([
+      "Title,Release Year,Media Type,List Name",
+      "Dune,2021,movie,Sci-Fi weekend",
+    ].join("\n"));
+    expect(parsed.entries).toEqual([{ title: "Dune", year: 2021, type: "movie" }]);
+    expect(parsed.folderName).toBe("Sci-Fi weekend");
+  });
+});
+
+describe("parseImportEntries - Letterboxd CSV", () => {
   it("maps Name / Year and leaves the type unset", () => {
     const csv = [
       "Date,Name,Year,Letterboxd URI",
@@ -52,7 +78,7 @@ describe("parseImportEntries — Letterboxd CSV", () => {
   });
 });
 
-describe("parseImportEntries — plain list", () => {
+describe("parseImportEntries - plain list", () => {
   it("parses '(year)', ', year', and bare titles, de-duplicating", () => {
     const text = ["The Matrix (1999)", "Dune", "Parasite, 2019", "Dune"].join("\n");
     expect(parseImportEntries(text)).toEqual([

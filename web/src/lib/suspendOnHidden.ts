@@ -1,4 +1,4 @@
-// Freeze all CSS keyframe animations while the app window is hidden —
+// Freeze all CSS keyframe animations while the app window is hidden - 
 // minimized, on another Space, or fully covered (WKWebView propagates NSWindow
 // occlusion into `document.hidden`, and browsers do the equivalent for tabs).
 // theme.css keys off `:root[data-suspended]` with `animation-play-state: paused`.

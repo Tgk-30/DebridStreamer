@@ -1,63 +1,109 @@
 // Premium poster card: a 2:3 poster that lifts + scales on hover (spring) and
 // reveals a cinematic info layer (title, year·rating, quick Play/Info) sliding up
-// from a gradient scrim — the "expand-on-hover" feel of Netflix/Apple TV+, done
+// from a gradient scrim - the "expand-on-hover" feel of Netflix/Apple TV+, done
 // in place (no neighbor-overlap clipping). Poster fades in on load with a shimmer
-// placeholder. Motion via `motion`.
+// placeholder. Hover and reveal effects are CSS-only so large grids do not
+// instantiate animation controllers per card.
 
-import { useState } from "react";
-import { motion } from "motion/react";
+import { memo, useCallback, useState } from "react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import type { MediaPreview } from "../models/media";
+import { useAppStore } from "../store/AppStore";
 import { Icon } from "./Icon";
 import "./MediaCard.css";
 
 interface MediaCardProps {
   item: MediaPreview;
   onSelect?: (item: MediaPreview) => void;
-  /** Quick-play affordance (optional) — falls back to onSelect. */
+  /** Quick-play affordance (optional) - falls back to onSelect. */
   onPlay?: (item: MediaPreview) => void;
   /** Green "Ready to play" badge (a cached resolution exists). */
   ready?: boolean;
-  /** Resume progress as a fraction 0..1 — renders a bottom "Continue Watching"
+  /** Resume progress as a fraction 0..1 - renders a bottom "Continue Watching"
    * progress bar on the poster. Omit (or 0) to hide it. */
   progress?: number;
   /** Small glass chip in the poster corner (e.g. "S2 E5" on a series' Continue
    * Watching card). Rendered only when present. */
   cornerLabel?: string;
+  /** 1-based rank - renders a large ghosted numeral to the left of the poster
+   * (the Apple TV "Top 10" treatment). Omit for an ordinary card. */
+  rank?: number;
+  /** Finished-watching indicator - renders a small check badge on the poster.
+   * Mutually exclusive with the in-progress bar in practice (a watched title has
+   * no resume point). Omit (or false) to hide it. */
+  watched?: boolean;
 }
 
-const SPRING = { type: "spring", stiffness: 380, damping: 30, mass: 0.7 } as const;
+/** A stable hue (0-359) derived from the title so a poster-less card gets a
+ *  consistent, distinct fallback color instead of a flat grey box. */
+function hueFor(title: string): number {
+  let hash = 0;
+  for (let i = 0; i < title.length; i += 1) {
+    hash = (hash * 31 + title.charCodeAt(i)) % 360;
+  }
+  return hash;
+}
 
-export function MediaCard({
+// memo: a grid re-render (filter/scroll/parent state) shouldn't re-run 100+ cards
+// whose props are unchanged.
+export const MediaCard = memo(function MediaCard({
   item,
   onSelect,
   onPlay,
   ready = false,
   progress,
   cornerLabel,
+  rank,
+  watched = false,
 }: MediaCardProps) {
+  // Read the display preference at the card boundary rather than threading it
+  // through every Rail and Grid caller. The AppStore update re-renders cards
+  // immediately when Appearance changes.
+  const { settings } = useAppStore();
   const poster = MediaPreviewNS.posterURL(item);
   const rating = MediaPreviewNS.ratingString(item);
   const [loaded, setLoaded] = useState(false);
+  // A poster URL can still 404 or fail to decode. Track that so we swap in the
+  // designed fallback tile instead of leaving the browser's broken-image glyph.
+  const [failed, setFailed] = useState(false);
+  const showFallback = poster == null || failed;
+  const initial = item.title.trim().charAt(0).toUpperCase() || "?";
+
+  // Stable handlers so the memo above isn't defeated by a fresh closure each render.
+  const handleSelect = useCallback(() => onSelect?.(item), [onSelect, item]);
+  const handlePlay = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      (onPlay ?? onSelect)?.(item);
+    },
+    [onPlay, onSelect, item],
+  );
 
   return (
-    <motion.button
+    <button
       type="button"
-      className="media-card"
-      onClick={() => onSelect?.(item)}
+      className={rank != null ? "media-card is-ranked" : "media-card"}
+      onClick={handleSelect}
       title={item.title}
-      aria-label={item.title}
-      initial={false}
-      whileHover="hover"
-      whileFocus="hover"
-      whileTap={{ scale: 0.98 }}
-      animate="rest"
-      variants={{ rest: { y: 0, scale: 1 }, hover: { y: -10, scale: 1.05 } }}
-      transition={SPRING}
+      aria-label={rank != null ? `#${rank}: ${item.title}` : item.title}
     >
+      {rank != null && (
+        <span className="media-card-rank" aria-hidden="true">
+          {rank}
+        </span>
+      )}
       <div className="media-card-poster">
-        {poster ? (
-          <motion.img
+        {showFallback ? (
+          <div
+            className="media-card-fallback"
+            style={{ "--fallback-hue": String(hueFor(item.title)) } as React.CSSProperties}
+            aria-hidden="true"
+          >
+            <span className="media-card-fallback-initial">{initial}</span>
+            <Icon name="discover" size={20} className="media-card-fallback-icon" />
+          </div>
+        ) : (
+          <img
             ref={(el) => {
               // Already-cached posters can be `complete` before React attaches
               // onLoad (which it never replays for a cached image), leaving the
@@ -68,19 +114,18 @@ export function MediaCard({
             src={poster}
             alt={item.title}
             loading="lazy"
+            decoding="async"
             draggable={false}
-            initial={{ opacity: 0, scale: 1.04 }}
-            animate={loaded ? { opacity: 1, scale: 1 } : { opacity: 0 }}
-            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            className={loaded ? "is-loaded" : ""}
             onLoad={() => setLoaded(true)}
-            onError={() => setLoaded(true)}
+            onError={() => {
+              // Swap to the designed fallback rather than the broken-image glyph.
+              setFailed(true);
+              setLoaded(true);
+            }}
           />
-        ) : (
-          <div className="media-card-placeholder">
-            <Icon name="discover" size={28} />
-          </div>
         )}
-        {!loaded && poster && <div className="media-card-shimmer" aria-hidden />}
+        {!loaded && !showFallback && <div className="media-card-shimmer" aria-hidden />}
 
         {ready && (
           <span className="media-card-ready" title="Ready to play">
@@ -93,17 +138,25 @@ export function MediaCard({
           <span className="media-card-corner-label">{cornerLabel}</span>
         )}
 
-        {/* Cinematic reveal layer — fades/slides in on hover. */}
-        <motion.div
-          className="media-card-reveal"
-          variants={{ rest: { opacity: 0 }, hover: { opacity: 1 } }}
-          transition={{ duration: 0.25, ease: "easeOut" }}
-        >
-          <motion.div
-            className="media-card-reveal-inner"
-            variants={{ rest: { y: 10, opacity: 0 }, hover: { y: 0, opacity: 1 } }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        {watched && (
+          <span className="media-card-watched" title="Watched" aria-label="Watched">
+            <Icon name="check" size={11} />
+          </span>
+        )}
+
+        {settings.showPosterRatings && rating !== "" && rating !== "N/A" && (
+          <span
+            className="media-card-poster-rating"
+            aria-label={`Rating ${rating} out of 10`}
           >
+            <Icon name="star" size={10} className="t-warning" />
+            {rating}
+          </span>
+        )}
+
+        {/* Cinematic reveal layer - fades/slides in on hover. */}
+        <div className="media-card-reveal">
+          <div className="media-card-reveal-inner">
             <div className="media-card-reveal-title">{item.title}</div>
             <div className="media-card-reveal-meta">
               {item.year != null && <span>{item.year}</span>}
@@ -119,21 +172,15 @@ export function MediaCard({
                 action visually for mouse users, so they're aria-hidden rather
                 than exposed as separate (and un-nestable) interactive controls. */}
             <div className="media-card-reveal-actions" aria-hidden="true">
-              <span
-                className="media-card-play"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  (onPlay ?? onSelect)?.(item);
-                }}
-              >
+              <span className="media-card-play" onClick={handlePlay}>
                 <Icon name="play" size={13} />
               </span>
               <span className="media-card-more">
                 <Icon name="info" size={13} />
               </span>
             </div>
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
 
         {progress != null && progress > 0 && (
           <div className="media-card-progress" aria-hidden>
@@ -155,6 +202,6 @@ export function MediaCard({
           </span>
         )}
       </div>
-    </motion.button>
+    </button>
   );
-}
+});

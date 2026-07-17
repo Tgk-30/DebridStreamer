@@ -1,4 +1,4 @@
-// useTheme — applies the persisted theme id to the document root.
+// useTheme - applies the persisted theme id to the document root.
 //
 // The chosen theme lives in the settings Store (loaded into AppStore). This hook
 // reflects it onto `<html data-theme="…">` whenever it changes, so the
@@ -26,6 +26,7 @@ export function useTheme(settings: AppSettings): void {
     root.dataset.heroScale = settings.appearanceHeroScale;
     root.dataset.panelContrast = settings.appearancePanelContrast;
     root.dataset.navLabels = settings.appearanceNavLabels;
+    root.dataset.navPosition = settings.appearanceNavPosition;
     root.dataset.navTint = settings.appearanceNavTint;
     root.dataset.posterSize = settings.appearancePosterSize;
 

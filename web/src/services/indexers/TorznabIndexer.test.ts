@@ -8,7 +8,7 @@
 // The network is stubbed via an injected `FetchImpl` (same pattern as
 // indexers.test.ts / StremioAddonIndexer.test.ts): it captures the last URL +
 // headers and counts calls. Every assertion mirrors what the source ACTUALLY
-// does — read TorznabIndexer.ts carefully for the exact event ordering.
+// does - read TorznabIndexer.ts carefully for the exact event ordering.
 
 import { describe, expect, it, vi } from "vitest";
 import { parseTorznabFeed, TorznabIndexer } from "./TorznabIndexer";
@@ -77,7 +77,7 @@ function makeIndexer(opts: {
 }
 
 // ============================================================================
-// parseTorznabFeed — XML parsing & event semantics
+// parseTorznabFeed - XML parsing & event semantics
 // ============================================================================
 
 describe("parseTorznabFeed: XML parsing", () => {
@@ -546,7 +546,7 @@ describe("parseTorznabFeed: malformed & empty feeds", () => {
 });
 
 // ============================================================================
-// TorznabIndexer.search / searchByQuery — request building & result mapping
+// TorznabIndexer.search / searchByQuery - request building & result mapping
 // ============================================================================
 
 describe("TorznabIndexer: request building", () => {

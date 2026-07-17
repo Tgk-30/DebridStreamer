@@ -106,7 +106,7 @@ const ollamaBody = JSON.stringify({
   },
 });
 
-// MARK: - AIAssistantJSONParser (pure, no network) — mirrors AIAssistantJSONParserTests
+// MARK: - AIAssistantJSONParser (pure, no network) - mirrors AIAssistantJSONParserTests
 
 describe("AIAssistantJSONParser", () => {
   it("parses a clean JSON object", () => {
@@ -214,7 +214,7 @@ describe("AIAssistantJSONParser", () => {
   });
 
   it("skips a nested array inside a top-level array (no silent drop)", () => {
-    // typeof [] === "object" — a nested-array element must be filtered, not
+    // typeof [] === "object" - a nested-array element must be filtered, not
     // passed through as a title-less recommendation.
     const text = '[[{"title":"Nested"}],{"title":"Real","year":2001}]';
     const recs = AIAssistantJSONParser.parseRecommendations(text, 5);
@@ -246,7 +246,7 @@ describe("AIAssistantJSONParser", () => {
   });
 });
 
-// MARK: - AnthropicProvider — mirrors AnthropicProviderTests.parsesRecommendations
+// MARK: - AnthropicProvider - mirrors AnthropicProviderTests.parsesRecommendations
 
 describe("AnthropicProvider", () => {
   it("parses a text block response into recommendations with usage and model", async () => {
@@ -284,7 +284,7 @@ describe("AnthropicProvider", () => {
   });
 });
 
-// MARK: - OpenAIProvider — mirrors OpenAIProviderTests
+// MARK: - OpenAIProvider - mirrors OpenAIProviderTests
 
 describe("OpenAIProvider", () => {
   it("parses JSON recommendations from a chat completion response", async () => {
@@ -312,7 +312,7 @@ describe("OpenAIProvider", () => {
   });
 });
 
-// MARK: - OllamaProvider — mirrors OllamaProviderTests.parsesResponse
+// MARK: - OllamaProvider - mirrors OllamaProviderTests.parsesResponse
 
 describe("OllamaProvider", () => {
   it("parses an Ollama chat response and fills heuristic usage", async () => {
@@ -342,7 +342,7 @@ describe("OllamaProvider", () => {
   });
 });
 
-// MARK: - AIUsageCostEstimator — mirrors AIUsageCostEstimatorTests
+// MARK: - AIUsageCostEstimator - mirrors AIUsageCostEstimatorTests
 
 describe("AIUsageCostEstimator", () => {
   it("known model pricing produces a non-zero estimate", () => {

@@ -1,7 +1,15 @@
-/* App shell layout — slim nav rail + flexible content area. */
+/* App shell layout - slim nav rail + flexible content area. */
 
 .app {
   --nav-rail-width: 96px;
+  /* Floating glass nav (Apple TV-style): the rail detaches from the edges and
+     content bleeds full-width behind it. --nav-gap is the outer inset from the
+     window edges, --nav-content-gap the breathing room between rail and content,
+     and --nav-safe-left the total horizontal space the floating rail reserves so
+     text/interactive content never hides under it. 0 on mobile (bottom bar). */
+  --nav-gap: 14px;
+  --nav-content-gap: 22px;
+  --nav-safe-left: 0px;
   --mobile-nav-height: clamp(72px, 15.5vw, 78px);
   --mobile-nav-bottom: max(12px, env(safe-area-inset-bottom));
   --mobile-nav-reserve: calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + 30px);
@@ -17,21 +25,24 @@
   min-width: 0;
   height: 100vh;
   overflow-y: auto;
+  /* Reserve the floating rail's footprint; full-bleed media (the hero) escapes
+     this with a 100vw breakout so it can reflect through the glass rail. */
+  padding-left: var(--nav-safe-left);
 }
 
 /* Room for the fixed SetupNudge card so the last row stays reachable while it
-   shows (App.tsx sets data-setup-nudge only while the card is mounted — zero
+   shows (App.tsx sets data-setup-nudge only while the card is mounted - zero
    cost once dismissed or configured). */
 .app[data-setup-nudge] .app-content {
   padding-bottom: calc(96px + var(--sp-lg));
   scroll-padding-bottom: calc(96px + var(--sp-lg));
 }
 
-/* Route transition — a brief lift + fade on each screen mount. The keyed
+/* Route transition - a brief lift + fade on each screen mount. The keyed
    .route-frame in App.tsx remounts per navigation, restarting this animation.
    Fill-mode `backwards` (not `both`) is deliberate: the frame's RESTING state is
    the element's own styles (fully visible), so the screen can never be stranded
-   invisible if the animation is skipped or its clock is paused — the animation is
+   invisible if the animation is skipped or its clock is paused - the animation is
    a pure enhancement that settles back to opacity 1 / no transform. */
 .route-frame {
   animation: routeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards;
@@ -94,7 +105,34 @@
 }
 
 @media (min-width: 700px) {
+  .app {
+    --nav-safe-left: calc(
+      var(--nav-gap) + var(--nav-rail-width) + var(--nav-content-gap)
+    );
+  }
+
   :root[data-nav-labels="icons"] .app {
     --nav-rail-width: 96px;
+  }
+}
+
+/* Desktop "bottom bar" nav position: no left gutter, reserve room at the bottom
+   for the floating bar (the rail's own layout lives in NavRail.css). */
+@media (min-width: 700px) {
+  :root[data-nav-position="bottom"] .app {
+    --nav-safe-left: 0px;
+  }
+  :root[data-nav-position="bottom"] .app-content {
+    padding-bottom: calc(58px + var(--nav-gap, 14px) + var(--sp-lg));
+    scroll-padding-bottom: calc(58px + var(--nav-gap, 14px) + var(--sp-lg));
+  }
+}
+
+/* Collapsed side rail: narrow the width var so the rail + content inset shrink.
+   Higher specificity than the per-breakpoint width rules, so it wins. Bottom-bar
+   mode zeroes --nav-safe-left separately, so a collapsed+bottom combo is inert. */
+@media (min-width: 700px) {
+  :root[data-nav-collapsed="true"] .app {
+    --nav-rail-width: 76px;
   }
 }

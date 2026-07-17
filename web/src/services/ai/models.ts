@@ -9,31 +9,99 @@
 // lines up across the two implementations.
 
 import type { MediaType } from "../../models/media";
+import { isNetworkAllowed } from "../../lib/networkPolicy";
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 
-/** The AI provider backends. Mirrors Swift `AIProviderKind` (raw values). */
-export type AIProviderKind = "openai" | "anthropic" | "ollama";
+/** The AI provider backends. The original three (Swift `AIProviderKind` raw
+ * values) plus OpenAI-compatible hosts that share the Chat Completions API. */
+export type AIProviderKind =
+  | "openai"
+  | "anthropic"
+  | "ollama"
+  | "gemini"
+  | "openrouter"
+  | "groq"
+  | "mistral"
+  | "deepseek"
+  | "xai";
+
+/** OpenAI-compatible hosts: they all speak `POST {baseURL}/chat/completions`
+ * with Bearer auth and expose `GET {baseURL}/models`, so one provider class +
+ * one model-list path serves them all. Anthropic and Ollama are handled apart. */
+export const OPENAI_COMPATIBLE: Record<
+  string,
+  { baseURL: string; defaultModel: string }
+> = {
+  openai: { baseURL: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini" },
+  gemini: {
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+    defaultModel: "gemini-2.5-flash",
+  },
+  openrouter: {
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultModel: "openai/gpt-4o-mini",
+  },
+  groq: {
+    baseURL: "https://api.groq.com/openai/v1",
+    defaultModel: "llama-3.3-70b-versatile",
+  },
+  mistral: {
+    baseURL: "https://api.mistral.ai/v1",
+    defaultModel: "mistral-small-latest",
+  },
+  deepseek: {
+    baseURL: "https://api.deepseek.com/v1",
+    defaultModel: "deepseek-chat",
+  },
+  xai: { baseURL: "https://api.x.ai/v1", defaultModel: "grok-2-latest" },
+};
+
+const PROVIDER_LABELS: Record<AIProviderKind, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  ollama: "Ollama",
+  gemini: "Google Gemini",
+  openrouter: "OpenRouter",
+  groq: "Groq",
+  mistral: "Mistral",
+  deepseek: "DeepSeek",
+  xai: "xAI (Grok)",
+};
 
 export const AIProviderKind = {
   openAI: "openai" as AIProviderKind,
   anthropic: "anthropic" as AIProviderKind,
   ollama: "ollama" as AIProviderKind,
+  gemini: "gemini" as AIProviderKind,
+  openrouter: "openrouter" as AIProviderKind,
+  groq: "groq" as AIProviderKind,
+  mistral: "mistral" as AIProviderKind,
+  deepseek: "deepseek" as AIProviderKind,
+  xai: "xai" as AIProviderKind,
 
-  /** Human-facing label. Mirrors `AIProviderKind.displayName`. */
+  /** Human-facing label. */
   displayName(kind: AIProviderKind): string {
-    switch (kind) {
-      case "openai":
-        return "OpenAI";
-      case "anthropic":
-        return "Anthropic";
-      case "ollama":
-        return "Ollama";
-    }
+    return PROVIDER_LABELS[kind] ?? kind;
   },
 
   allCases(): AIProviderKind[] {
-    return ["openai", "anthropic", "ollama"];
+    return [
+      "anthropic",
+      "openai",
+      "gemini",
+      "openrouter",
+      "groq",
+      "mistral",
+      "deepseek",
+      "xai",
+      "ollama",
+    ];
+  },
+
+  /** True when the kind speaks the OpenAI Chat Completions API. */
+  isOpenAICompatible(kind: AIProviderKind): boolean {
+    return kind in OPENAI_COMPATIBLE;
   },
 } as const;
 
@@ -79,7 +147,7 @@ export const AIMovieRecommendation = {
 
   /** w342 poster URL or null. Mirrors `AIMovieRecommendation.posterURL`. */
   posterURL(rec: AIMovieRecommendation): string | null {
-    return rec.posterPath
+    return rec.posterPath && isNetworkAllowed("images")
       ? `${TMDB_IMAGE_BASE}/w342${rec.posterPath}`
       : null;
   },

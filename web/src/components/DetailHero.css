@@ -1,11 +1,11 @@
-/* DetailHero — cinematic backdrop + poster + meta + actions. */
+/* DetailHero - cinematic backdrop + poster + meta + actions. */
 
 .detail-hero {
   position: relative;
-  min-height: clamp(460px, 56vh, 600px);
+  min-height: clamp(500px, 62vh, 660px);
   border-radius: var(--r-lg);
   overflow: hidden;
-  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6),
+  box-shadow: 0 40px 80px -24px rgba(0, 0, 0, 0.68),
     inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   isolation: isolate;
 }
@@ -14,6 +14,15 @@
   position: absolute;
   inset: 0;
   will-change: transform;
+  animation: detailHeroKenBurns 18s ease-out both;
+}
+@keyframes detailHeroKenBurns {
+  from {
+    transform: scale(1.12);
+  }
+  to {
+    transform: scale(1.04);
+  }
 }
 .detail-hero-backdrop {
   position: absolute;
@@ -68,14 +77,25 @@
   inset: auto 0 0 0;
   display: flex;
   align-items: flex-end;
-  gap: clamp(var(--sp-lg), 2.5vw, 36px);
-  padding: clamp(var(--sp-xl), 3.5vw, 52px);
+  gap: clamp(var(--sp-lg), 2.8vw, 40px);
+  padding: clamp(var(--sp-xl), 4vw, 60px);
   will-change: transform, opacity;
+  animation: detailHeroContentIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+@keyframes detailHeroContentIn {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .detail-hero-poster {
   flex: 0 0 auto;
-  width: clamp(140px, 13vw, 188px);
+  width: clamp(150px, 13.5vw, 204px);
   aspect-ratio: 2 / 3;
   border-radius: var(--r-md);
   object-fit: cover;
@@ -91,7 +111,10 @@
     rgba(255, 255, 255, 0.04) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  /* Bounded, not infinite - the loaded image covers this element, but an
+     animated background keeps repainting it every frame anyway. Matches the
+     MediaCard shimmer bound. */
+  animation: shimmer 1.4s ease-in-out 12;
 }
 
 .detail-hero-info {
@@ -105,19 +128,49 @@
 
 .detail-hero-title {
   margin: 0;
-  font-size: clamp(32px, 4vw, 52px);
+  font-size: clamp(38px, 4.6vw, 66px);
   font-weight: 800;
-  line-height: 1.02;
-  letter-spacing: 0;
+  line-height: 0.99;
+  letter-spacing: -0.022em;
   color: #fff;
-  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+}
+.detail-hero-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.detail-hero-completion {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid rgba(126, 234, 171, 0.5);
+  border-radius: var(--r-pill);
+  background: rgba(52, 199, 120, 0.2);
+  color: rgb(174, 245, 199);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+  box-shadow: 0 5px 18px -8px rgba(52, 199, 120, 0.7);
 }
 
+.detail-hero-ratings,
 .detail-hero-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+.detail-hero-ratings {
+  min-height: 0;
+}
+.detail-hero-ratings:empty {
+  display: none;
+}
+.detail-hero-meta {
   font-size: 14px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.84);
@@ -135,6 +188,26 @@
 }
 .detail-hero-dot {
   color: rgba(255, 255, 255, 0.4);
+}
+
+/* OMDb loads asynchronously, so this compact row is allowed to start with only
+   the TMDB score and gain the external scores without shifting the hero's
+   content hierarchy. */
+.detail-hero-ratings .omdb-ratings {
+  gap: 6px;
+  margin: 0;
+}
+.detail-hero-ratings .omdb-rating {
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(8, 9, 18, 0.32);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.detail-hero-ratings .omdb-rating-value {
+  font-size: 12px;
+}
+.detail-hero-ratings .omdb-rating-label {
+  font-size: 9.5px;
 }
 
 .detail-hero-genres {
@@ -172,24 +245,27 @@
   margin-top: var(--sp-xs);
 }
 .detail-play {
-  padding: 12px 28px;
-  font-size: 15px;
+  padding: 15px 34px;
+  font-size: 16px;
   font-weight: 700;
 }
 .detail-watch,
-.detail-request {
-  padding: 12px 22px;
-  font-size: 15px;
+.detail-request,
+.detail-watched {
+  padding: 15px 26px;
+  font-size: 16px;
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
 }
 .detail-watch:hover,
-.detail-request:not(:disabled):hover {
+.detail-request:not(:disabled):hover,
+.detail-watched:hover {
   background: rgba(255, 255, 255, 0.2);
 }
 .detail-watch.is-on,
-.detail-request.is-on {
+.detail-request.is-on,
+.detail-watched.is-on {
   border-color: rgba(var(--accent-rgb), 0.6);
   color: var(--accent);
   background: rgba(var(--accent-rgb), 0.14);
@@ -198,7 +274,7 @@
   cursor: default;
 }
 
-/* Thumbs up / down — a subtle segmented glass control feeding the taste profile. */
+/* Thumbs up / down - a subtle segmented glass control feeding the taste profile. */
 .detail-taste {
   display: inline-flex;
   align-items: stretch;

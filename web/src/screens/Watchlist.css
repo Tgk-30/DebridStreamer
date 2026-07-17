@@ -1,0 +1,176 @@
+/* Watchlist-specific organization controls and poster spacing. Shared grids and
+ * MediaCards remain unchanged for Library, Browse, and History. */
+
+.watchlist-folder-bar,
+.watchlist-tools,
+.watchlist-delete-confirm,
+.watchlist-head-actions,
+.watchlist-sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.watchlist-folder-bar {
+  margin-top: calc(var(--sp-sm) * -1);
+  gap: 6px;
+}
+/* A compact, quiet folder selector: smaller pills that read as a filter row,
+   not chunky buttons. Scoped to the watchlist so the Library folders are
+   unaffected. */
+.watchlist-folder-bar .lib-folder-chip {
+  min-height: 27px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 550;
+  border-radius: var(--r-pill);
+  color: var(--text-secondary);
+  transition: color 0.14s, background 0.14s, border-color 0.14s;
+}
+.watchlist-folder-bar .lib-folder-chip:hover {
+  color: var(--text-primary);
+}
+.watchlist-folder-bar .lib-folder-chip.is-active {
+  color: var(--on-accent, #fff);
+  background: rgb(var(--accent-rgb));
+  border-color: transparent;
+}
+/* "+ New folder" reads as a subtle add affordance, not a peer of the folders. */
+.watchlist-folder-bar .lib-folder-add {
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px dashed var(--glass-border);
+}
+.watchlist-folder-bar .lib-folder-add:hover {
+  color: var(--text-secondary);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+
+.watchlist-tools {
+  justify-content: space-between;
+}
+
+.watchlist-head-actions,
+.watchlist-sync-actions {
+  justify-content: flex-end;
+}
+
+.watchlist-sync-note,
+.watchlist-sync-status,
+.watchlist-sync-error {
+  margin: 0;
+  font-size: 13px;
+}
+
+.watchlist-sync-status {
+  color: var(--text-secondary);
+}
+
+.watchlist-sync-error {
+  color: var(--danger);
+}
+
+.watchlist-search {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: var(--sp-sm);
+  max-width: 390px;
+  min-height: 36px;
+  padding: 0 var(--sp-sm);
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: var(--glass-tint-control);
+}
+
+.watchlist-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  font: inherit;
+  background: transparent;
+}
+
+.watchlist-delete-confirm {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.watchlist-organization-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.watchlist-filter-empty {
+  margin: var(--sp-lg) 0;
+}
+
+/* The base card is 168px plus 16px horizontal padding, so a 174px grid track
+ * was narrower than the card. This local override supplies a real gutter and
+ * keeps each year/rating row inside its own grid cell. */
+.watchlist-grid-wrap {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  column-gap: var(--sp-xl);
+  row-gap: var(--sp-xl);
+  padding: var(--sp-sm);
+}
+
+.watchlist-grid-wrap .media-grid-item,
+.watchlist-grid-wrap .watchlist-removable {
+  width: calc(var(--poster-card-width, 168px) + var(--sp-sm) * 2);
+  min-width: 0;
+}
+
+.watchlist-removable {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.watchlist-removable .media-card {
+  width: 100%;
+}
+
+.watchlist-card-folder {
+  display: block;
+  width: calc(var(--poster-card-width, 168px) + var(--sp-sm) * 2);
+  padding: 0 var(--sp-sm);
+}
+
+.watchlist-card-folder select {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  background: var(--glass-tint-control);
+}
+
+@media (max-width: 699px) {
+  .watchlist-grid-wrap {
+    grid-template-columns: repeat(auto-fill, minmax(192px, 1fr));
+    column-gap: var(--sp-md);
+    row-gap: var(--sp-lg);
+    padding: 0;
+  }
+
+  .watchlist-tools {
+    align-items: stretch;
+  }
+
+  .watchlist-head-actions {
+    align-items: flex-end;
+  }
+
+  .watchlist-search {
+    max-width: none;
+  }
+}

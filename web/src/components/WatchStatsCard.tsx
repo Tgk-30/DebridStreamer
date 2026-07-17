@@ -1,7 +1,7 @@
 // Opt-in "Your watching" insights card for the History screen. Renders a small
 // row of headline tiles (time watched, titles, completion, streak) plus a
 // hand-rolled favourite-genres bar chart (no charting dependency). Purely
-// presentational — all aggregation lives in data/watchStats.ts.
+// presentational - all aggregation lives in data/watchStats.ts.
 
 import { formatWatchTime, type WatchStats } from "../data/watchStats";
 import { Icon } from "./Icon";
@@ -33,7 +33,7 @@ export function WatchStatsCard({ stats }: { stats: WatchStats }) {
           value={
             stats.streakDays > 0
               ? `${stats.streakDays} ${stats.streakDays === 1 ? "day" : "days"}`
-              : "—"
+              : "-"
           }
           accent={stats.streakOngoing && stats.streakDays > 0}
         />

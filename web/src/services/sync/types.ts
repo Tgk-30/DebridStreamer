@@ -7,8 +7,10 @@
 
 import type {
   TraktDeviceCodeResponse,
+  TraktScrobbleItem,
   TraktTokenResponse,
   TraktWatchlistItem,
+  TraktWatchlistShowItem,
   TraktWatchlistPushResult,
 } from "./models";
 
@@ -18,7 +20,7 @@ import type {
  * Error kinds returned by the Trakt sync service. Mirrors Swift
  * `TraktSyncError`, carrying the same human-facing descriptions via `message`.
  */
-export type TraktSyncErrorKind =
+type TraktSyncErrorKind =
   | "invalidURL"
   | "invalidResponse"
   | "decodingFailed"
@@ -72,7 +74,7 @@ export class TraktSyncError extends Error {
 // The Swift code relies on JSONDecoder + CodingKeys. In TS we decode the raw
 // snake_case JSON explicitly, keeping the mapping in one place.
 
-export interface RawTraktDeviceCodeResponse {
+interface RawTraktDeviceCodeResponse {
   device_code: string;
   user_code: string;
   verification_url: string;
@@ -80,7 +82,7 @@ export interface RawTraktDeviceCodeResponse {
   interval: number;
 }
 
-export interface RawTraktTokenResponse {
+interface RawTraktTokenResponse {
   access_token: string;
   refresh_token: string;
   expires_in: number;
@@ -90,8 +92,17 @@ export interface RawTraktTokenResponse {
 }
 
 /** One element of `GET /sync/watchlist/movies`. */
-export interface RawTraktWatchlistResponseItem {
+interface RawTraktWatchlistResponseItem {
   movie?: RawTraktWatchlistMovie | null;
+}
+
+/** One element of `GET /sync/watchlist/shows`.
+ *
+ * The Trakt response shape is
+ * `{ show: { title, year, ids: { trakt, imdb, tmdb } } }`.
+ */
+interface RawTraktWatchlistShowResponseItem {
+  show?: RawTraktWatchlistShow | null;
 }
 
 export interface RawTraktWatchlistMovie {
@@ -104,6 +115,18 @@ export interface RawTraktWatchlistMovieIDs {
   imdb?: string | null;
 }
 
+export interface RawTraktWatchlistShow {
+  title: string;
+  year?: number | null;
+  ids: RawTraktWatchlistShowIDs;
+}
+
+export interface RawTraktWatchlistShowIDs {
+  trakt?: number | null;
+  imdb?: string | null;
+  tmdb?: number | null;
+}
+
 /** Body of `POST /sync/watchlist`. */
 export interface RawTraktWatchlistPushResult {
   added?: RawTraktPushCounts | null;
@@ -113,10 +136,12 @@ export interface RawTraktWatchlistPushResult {
 
 export interface RawTraktPushCounts {
   movies?: number | null;
+  shows?: number | null;
 }
 
 export interface RawTraktPushNotFound {
   movies?: RawTraktPushNotFoundMovie[] | null;
+  shows?: RawTraktPushNotFoundShow[] | null;
 }
 
 export interface RawTraktPushNotFoundMovie {
@@ -125,6 +150,11 @@ export interface RawTraktPushNotFoundMovie {
 
 export interface RawTraktPushNotFoundIDs {
   imdb?: string | null;
+  tmdb?: number | null;
+}
+
+export interface RawTraktPushNotFoundShow {
+  ids?: RawTraktPushNotFoundIDs | null;
 }
 
 // MARK: - Decoders (raw snake_case JSON -> domain models)
@@ -132,7 +162,7 @@ export interface RawTraktPushNotFoundIDs {
 // Each mirrors a Swift `Decodable` conformance: it asserts the *required* keys
 // (the non-optional Swift properties) are present and of the right type, then
 // maps. A missing/mismatched required key throws `TraktSyncError.decodingFailed`
-// — the TS analogue of JSONDecoder throwing — so a 200 body of the wrong shape
+// - the TS analogue of JSONDecoder throwing - so a 200 body of the wrong shape
 // surfaces `decodingFailed`, never `invalidResponse`.
 
 function asObject(raw: unknown, what: string): Record<string, unknown> {
@@ -219,6 +249,32 @@ export function decodeWatchlistItems(raw: unknown): TraktWatchlistItem[] {
   return items;
 }
 
+/** Mirrors `decodeWatchlistItems` for Trakt shows. A show must retain at least
+ * one cross-service identity (TMDB or IMDb) so the local catalog can resolve
+ * it. The Trakt id itself is preserved for diagnostics but cannot be used for a
+ * TMDB lookup. */
+export function decodeWatchlistShowItems(raw: unknown): TraktWatchlistShowItem[] {
+  if (!Array.isArray(raw)) {
+    throw TraktSyncError.decodingFailed("Expected array for show watchlist");
+  }
+  const items: TraktWatchlistShowItem[] = [];
+  for (const element of raw as RawTraktWatchlistShowResponseItem[]) {
+    const show = element?.show;
+    if (show == null) continue;
+    const tmdb = show.ids?.tmdb;
+    const imdb = show.ids?.imdb;
+    if (typeof tmdb !== "number" && typeof imdb !== "string") continue;
+    items.push({
+      traktID: optionalNumber(show.ids?.trakt),
+      imdbID: typeof imdb === "string" ? imdb : null,
+      tmdbID: optionalNumber(tmdb),
+      title: show.title,
+      year: show.year ?? null,
+    });
+  }
+  return items;
+}
+
 /** All fields of `TraktWatchlistPushResult` are optional in Swift, so any object
  * decodes (counts default to null when absent). */
 export function decodeWatchlistPushResult(
@@ -226,15 +282,64 @@ export function decodeWatchlistPushResult(
 ): TraktWatchlistPushResult {
   const r = asObject(raw, "TraktWatchlistPushResult") as RawTraktWatchlistPushResult;
   return {
-    added: r.added ? { movies: optionalNumber(r.added.movies) } : null,
-    existing: r.existing ? { movies: optionalNumber(r.existing.movies) } : null,
-    notFound: r.not_found
-      ? {
-          movies:
-            r.not_found.movies?.map((m) => ({
-              ids: m.ids ? { imdb: m.ids.imdb ?? null } : null,
-            })) ?? null,
-        }
-      : null,
+    added: r.added ? decodePushCounts(r.added) : null,
+    existing: r.existing ? decodePushCounts(r.existing) : null,
+    notFound: r.not_found ? decodePushNotFound(r.not_found) : null,
+  };
+}
+
+function decodePushCounts(raw: RawTraktPushCounts): {
+  movies?: number | null;
+  shows?: number | null;
+} {
+  const counts: { movies?: number | null; shows?: number | null } = {
+    movies: optionalNumber(raw.movies),
+  };
+  if ("shows" in raw) counts.shows = optionalNumber(raw.shows);
+  return counts;
+}
+
+function decodePushNotFound(raw: RawTraktPushNotFound): {
+  movies?: { ids?: { imdb?: string | null } | null }[] | null;
+  shows?: { ids?: { tmdb?: number | null } | null }[] | null;
+} {
+  const notFound: {
+    movies?: { ids?: { imdb?: string | null } | null }[] | null;
+    shows?: { ids?: { tmdb?: number | null } | null }[] | null;
+  } = {
+    movies:
+      raw.movies?.map((movie) => ({
+        ids: movie.ids ? { imdb: movie.ids.imdb ?? null } : null,
+      })) ?? null,
+  };
+  if ("shows" in raw) {
+    notFound.shows =
+      raw.shows?.map((show) => ({
+        ids: show.ids ? { tmdb: optionalNumber(show.ids.tmdb) } : null,
+      })) ?? null;
+  }
+  return notFound;
+}
+
+/** Trakt's scrobble endpoints return a JSON object whose fields are not used by
+ * the playback path. Validate the response is JSON-object shaped so HTTP and
+ * decoding errors continue to use the service's standard error semantics. */
+export function decodeScrobbleResult(raw: unknown): void {
+  asObject(raw, "TraktScrobbleResult");
+}
+
+/** Convert the domain scrobble item into Trakt's endpoint body. Kept beside the
+ * wire decoders so the request shape remains explicit and testable. */
+export function encodeScrobbleItem(item: TraktScrobbleItem): Record<string, unknown> {
+  if (item.type === "movie") {
+    return {
+      movie: { ids: { tmdb: item.tmdbID } },
+      progress: item.progress,
+    };
+  }
+  return {
+    show: { ids: { tmdb: item.tmdbID } },
+    episode: { season: item.season, number: item.episode },
+    progress: item.progress,
   };
 }

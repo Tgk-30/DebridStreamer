@@ -204,7 +204,7 @@ function tmdbService(db, config, profileId) {
 // Base /discover/movie params for a maturity-capped (kid) profile: US cert
 // ceiling + adult off. TMDB only supports server-side certification filtering on
 // /discover/movie (NOT trending/category/tv), so every kid-facing catalog call
-// routes through discover-movie with these params — that's why kid browse is
+// routes through discover-movie with these params - that's why kid browse is
 // movie-only. `extra` adds sort_by / genres / page.
 function capMovieParams(maturityMax, extra = {}) {
   const params = {
@@ -214,7 +214,7 @@ function capMovieParams(maturityMax, extra = {}) {
   };
   // Only emit the certification filter when there is an actual cap. A kid with no
   // cap (defended against at the schema layer, but handled here too) still gets
-  // movie-only/adult-off curation, just without a cert ceiling — never the full
+  // movie-only/adult-off curation, just without a cert ceiling - never the full
   // adult catalog.
   if (typeof maturityMax === "string" && maturityMax.length > 0) {
     params.certification_country = "US";
@@ -224,7 +224,7 @@ function capMovieParams(maturityMax, extra = {}) {
 }
 
 // True when this audience must see only curated (movie-only, cert-capped)
-// content. Triggers for ANY kid profile OR any profile carrying a cap — so an
+// content. Triggers for ANY kid profile OR any profile carrying a cap - so an
 // is_kid profile is never served the full adult/TV catalog even if its cap is
 // somehow null. The cert filter itself is applied only when a cap exists.
 function isCapped(audience) {
@@ -396,9 +396,17 @@ export async function getServerUpcomingEpisodes(db, config, profileId, input) {
   };
 }
 
+/** Release-dated movie rows for Server Mode's calendar. The TMDB service uses
+ * the server's encrypted credential and cached fetch broker, so callers never
+ * need direct access to that essential-service key. */
+export async function getServerMovieReleaseCalendar(db, config, profileId) {
+  const service = tmdbService(db, config, profileId);
+  return { releases: await service.getMovieReleaseCalendar() };
+}
+
 // The US maturity certification for a title, used by the kid play-block + the
 // detail/source-search cert gates. mediaId may be a TMDB id ("tmdb-NNN"/numeric)
-// OR an IMDB id ("tt…", the form /api/streams/:imdbId carries) — the latter is
+// OR an IMDB id ("tt…", the form /api/streams/:imdbId carries) - the latter is
 // resolved to a TMDB id via /find first. Returns null when no TMDB id can be
 // derived (caller fail-closes → blocks); the call is wrapped in a catch upstream
 // so a missing TMDB key / TMDB error also degrades to a block rather than a leak.

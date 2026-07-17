@@ -26,6 +26,7 @@ import {
   getServerDiscoverHome,
   getServerEpisodes,
   getServerGenres,
+  getServerMovieReleaseCalendar,
   getServerSeasons,
   getServerUpcomingEpisodes,
   searchServerMedia,
@@ -52,6 +53,7 @@ import {
 import { assertSafeUpstream, fetchUpstreamSafely } from "./ssrf.js";
 import { fetchOmdbRatings, fetchOmdbViaBroker, type OMDBRatings } from "./omdb.js";
 import { embeddedSecret } from "./embeddedSecrets.js";
+import { bandwidthCapStatus, type BandwidthCapStatus } from "./bandwidth.js";
 import { readFile } from "node:fs/promises";
 import { realTranscoder } from "./transcode.js";
 import { MANIFEST_NAME, TranscodeRegistry } from "./transcodeSession.js";
@@ -133,9 +135,14 @@ const patchProfileSchema = z.object({
   disabled: z.boolean().optional(),
 });
 
+// Change an account's role (promote/demote). Kept as a dedicated action rather
+// than folding into patchProfileSchema so the admin/owner guards and audit entry
+// stay explicit and hard to bypass.
+const setRoleSchema = z.object({ role: roleSchema });
+
 // Household sub-profile ("who's watching") schemas. Distinct from the account
 // schemas above: a sub-profile is a viewer within ONE account, not a separate
-// login — so no username, and the password is OPTIONAL (kid/guest profiles).
+// login - so no username, and the password is OPTIONAL (kid/guest profiles).
 // avatarColor is a short style token (hex or keyword) the picker renders as a
 // tint behind the display-name initial.
 const avatarColorSchema = z.string().trim().min(1).max(32);
@@ -163,8 +170,27 @@ const patchAccountProfileSchema = z
 const switchProfileSchema = z.object({
   profileId: z.string().trim().min(1).max(128),
   // Parental unlock: required only when LEAVING a kid profile (verified against
-  // the account password). Optional/ignored for all other switches.
+  // the account password). Also carries the per-profile PIN when ENTERING a
+  // PIN-protected profile. Optional/ignored for all other switches.
   password: z.string().min(1).max(512).optional(),
+});
+
+// Set or clear a profile's household PIN. A 4-6 digit numeric PIN; null clears
+// it. The owner/admin may set any owned profile's PIN; a member may set their
+// own. It gates SWITCHING into the profile - a household gate, not encryption.
+const setProfilePinSchema = z.object({
+  profileId: z.string().trim().min(1).max(128),
+  pin: z
+    .string()
+    .regex(/^\d{4,6}$/, "PIN must be 4 to 6 digits.")
+    .nullable(),
+});
+
+// Household bandwidth is warn-only. The cap is represented as an exact byte
+// count so the server, API, and clients all agree on the 80% warning boundary.
+const setProfileBandwidthQuotaSchema = z.object({
+  profileId: z.string().trim().min(1).max(128),
+  capBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
 });
 
 const accountProfileIdParamSchema = z.string().trim().min(1).max(128);
@@ -267,7 +293,7 @@ const subtitleSearchBodySchema = z
 
 const subtitleFetchBodySchema = z.object({
   fileId: z.string().trim().min(1).max(64),
-  // The title being watched — required for a kid so the maturity cap can be
+  // The title being watched - required for a kid so the maturity cap can be
   // enforced on the fetched dialogue (search is gated the same way).
   imdbId: z.string().trim().max(32).nullish(),
 });
@@ -307,6 +333,12 @@ const streamSearchQuerySchema = z.object({
   type: mediaTypeSchema.default("movie"),
   season: z.coerce.number().int().min(0).max(10_000).optional(),
   episode: z.coerce.number().int().min(0).max(10_000).optional(),
+  // Human title for the name-matching indexer pass (APIBay etc.). Optional so an
+  // older client that omits it still works (imdb-only). Bounded to the same 300
+  // chars as a media title. NO `.min(1)`: a blank `title=` must be accepted and
+  // treated as "no title pass" (searchServerStreams only runs the pass when the
+  // trimmed title is non-empty) - rejecting it would 400 a direct/older client.
+  title: z.string().trim().max(300).optional(),
 });
 
 const mediaSearchQuerySchema = z.object({
@@ -350,7 +382,7 @@ const mediaSeasonsQuerySchema = z.object({
 
 const mediaEpisodesQuerySchema = z.object({
   tmdbId: z.coerce.number().int().min(1),
-  // Realistic ceiling — the longest-running shows are well under 100 seasons;
+  // Realistic ceiling - the longest-running shows are well under 100 seasons;
   // anything bigger is abuse probing and is rejected before TMDB is contacted.
   season: z.coerce.number().int().min(0).max(200),
 });
@@ -388,10 +420,10 @@ const resolveStreamSchema = z.object({
   // Media identity, carried so a maturity-capped (kid) profile can be checked
   // against the title's certification before the stream is resolved. Optional
   // for back-compat + raw sessions; their absence on a capped profile is itself
-  // a block (fail-closed) — see the resolve route.
+  // a block (fail-closed) - see the resolve route.
   mediaId: z.string().trim().min(1).max(256).optional(),
   mediaType: z.enum(["movie", "series"]).optional(),
-  // Episode context (series only) — steers multi-file season-pack torrents to
+  // Episode context (series only) - steers multi-file season-pack torrents to
   // the exact episode's file. Optional for back-compat; omitted → the default
   // largest-file pick, exactly today's behavior.
   season: z.number().int().min(1).max(200).nullable().optional(),
@@ -405,10 +437,11 @@ const profileSettingSchema = z.object({
 
 // Profile-settings keys written server-side that must never be read back by, or
 // be writable from, the generic /api/settings/profile surface (it round-trips
-// arbitrary client key/values). Currently the optional sub-profile password hash
-// is the only such key — it's write-only by design (reserved for a future PIN).
+// arbitrary client key/values). PIN hashes are write-only and bandwidth caps
+// have their own owner/admin endpoint, so neither can be clobbered by settings.
 const PROTECTED_PROFILE_SETTING_KEYS: ReadonlySet<string> = new Set([
   "profile_password_hash",
+  "bandwidth_cap_bytes",
 ]);
 
 function httpError(statusCode: number, message: string): Error & { statusCode: number } {
@@ -430,7 +463,7 @@ function createRateLimiter() {
   ): void => {
     const now = Date.now();
     // Opportunistically evict expired buckets (at most once a minute, driven by
-    // request activity — no dangling timer). Without this the map grows
+    // request activity - no dangling timer). Without this the map grows
     // unbounded from high-cardinality pre-auth keys (per-username login,
     // per-invite-token, per-IP), since entries were only ever inserted.
     if (now - lastSweep > 60_000) {
@@ -476,6 +509,9 @@ function stringQueryParams(
 function isAdmin(role: UserRole): boolean {
   return role === "owner" || role === "admin";
 }
+
+const BANDWIDTH_CAP_SETTING = "bandwidth_cap_bytes";
+const BANDWIDTH_PERIOD_DAYS = 30;
 
 // Maturity ladder (kid gating). The owner-set cap (`maturity_max`) is always a US
 // movie certification; a title's certification can be a US movie cert OR a US TV
@@ -1001,7 +1037,7 @@ function readAuth(db: AppDatabase, request: FastifyRequest): AuthContext | null 
         isKid: number;
       })
     | undefined;
-  // simple_mode / is_kid are INTEGER columns — map to real booleans (a raw cast
+  // simple_mode / is_kid are INTEGER columns - map to real booleans (a raw cast
   // would leak a number, defeating `=== true` / `?? true` checks downstream).
   if (row == null) return null;
   return { ...row, simpleMode: row.simpleMode === 1, isKid: row.isKid === 1 };
@@ -1163,9 +1199,35 @@ interface AccountProfileRow {
   is_default: number;
   is_kid: number;
   maturity_max: string | null;
+  has_pin: number;
+  bandwidth_cap_bytes: string | null;
+  bandwidth_usage_bytes: number;
+}
+
+function parseBandwidthCap(raw: string | null): number | null {
+  if (raw == null) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function bandwidthProfileState(
+  capBytes: number | null,
+  usageBytes: number,
+): {
+  bandwidthCapBytes: number | null;
+  bandwidthUsageBytes: number;
+  bandwidthStatus: BandwidthCapStatus;
+} {
+  const safeUsage = Number.isFinite(usageBytes) ? Math.max(0, usageBytes) : 0;
+  return {
+    bandwidthCapBytes: capBytes,
+    bandwidthUsageBytes: safeUsage,
+    bandwidthStatus: bandwidthCapStatus(safeUsage, capBytes),
+  };
 }
 
 function mapAccountProfile(row: AccountProfileRow) {
+  const capBytes = parseBandwidthCap(row.bandwidth_cap_bytes);
   return {
     id: row.id,
     displayName: row.display_name,
@@ -1174,6 +1236,13 @@ function mapAccountProfile(row: AccountProfileRow) {
     isDefault: row.is_default === 1,
     isKid: row.is_kid === 1,
     maturityMax: row.maturity_max,
+    // Whether a per-profile PIN is set (the switch gate below). The hash itself
+    // stays server-side and write-only; the client only learns that a PIN
+    // exists, so it can prompt on switch and show the lock affordance.
+    hasPin: row.has_pin === 1,
+    // A rolling 30-day household signal only. This is intentionally advisory:
+    // no streaming route reads this status or uses it to cut playback off.
+    ...bandwidthProfileState(capBytes, row.bandwidth_usage_bytes),
   };
 }
 
@@ -1181,15 +1250,30 @@ function mapAccountProfile(row: AccountProfileRow) {
  *  Drives the picker. Account-scoped, so it can never surface another user's
  *  profiles. */
 function listAccountProfiles(db: AppDatabase, userId: string) {
+  const since = usageSinceISO(BANDWIDTH_PERIOD_DAYS);
   const rows = db.sqlite
     .prepare(
       `SELECT id, display_name, avatar_color, simple_mode, is_default,
-              is_kid, maturity_max
+              is_kid, maturity_max,
+              EXISTS(
+                SELECT 1 FROM profile_settings ps
+                WHERE ps.profile_id = profiles.id
+                  AND ps.key = 'profile_password_hash'
+              ) AS has_pin,
+              (
+                SELECT value FROM profile_settings ps
+                WHERE ps.profile_id = profiles.id
+                  AND ps.key = 'bandwidth_cap_bytes'
+              ) AS bandwidth_cap_bytes,
+              COALESCE((
+                SELECT SUM(ss.bytes_served) FROM stream_sessions ss
+                WHERE ss.profile_id = profiles.id AND ss.created_at >= ?
+              ), 0) AS bandwidth_usage_bytes
        FROM profiles
        WHERE user_id = ? AND disabled_at IS NULL
        ORDER BY is_default DESC, created_at ASC`,
     )
-    .all(userId) as unknown as AccountProfileRow[];
+    .all(since, userId) as unknown as AccountProfileRow[];
   return rows.map(mapAccountProfile);
 }
 
@@ -1269,7 +1353,7 @@ function resolveOmdbKey(
   return embeddedSecret("omdb");
 }
 
-/** The broker/server's OWN OMDb key — a SERVER-scoped credential → env →
+/** The broker/server's OWN OMDb key - a SERVER-scoped credential → env →
  *  embedded build key. Never a profile credential, so the broker can never use a
  *  consumer's personal key (no sentinel-profileId convention needed). */
 function resolveServerOmdbKey(db: AppDatabase, config: ServerConfig): string | null {
@@ -1293,7 +1377,7 @@ function resolveServerOmdbKey(db: AppDatabase, config: ServerConfig): string | n
   return embeddedSecret("omdb");
 }
 
-/** Broker mode is active only when BOTH a URL and a non-empty token are set — so
+/** Broker mode is active only when BOTH a URL and a non-empty token are set - so
  *  a half-configured broker falls through to local key resolution instead of
  *  silently returning nothing. */
 function brokerConfigured(config: ServerConfig): boolean {
@@ -1304,7 +1388,7 @@ function brokerConfigured(config: ServerConfig): boolean {
   );
 }
 
-/** A profile's OWN OMDb key (scope='profile' only), decrypted — used so a user's
+/** A profile's OWN OMDb key (scope='profile' only), decrypted - used so a user's
  *  personal key (BYOK) takes precedence over a broker or shared key. Null when
  *  the profile has none. */
 function profileScopedOmdbKey(
@@ -1329,7 +1413,7 @@ function profileScopedOmdbKey(
 }
 
 /** Whether the server can provide OMDb ratings for a profile (drives the client
- *  capability flag, without revealing the key) — a resolvable key OR a broker. */
+ *  capability flag, without revealing the key) - a resolvable key OR a broker. */
 function omdbAvailableFor(db: AppDatabase, config: ServerConfig, profileId: string): boolean {
   return brokerConfigured(config) || resolveOmdbKey(db, config, profileId) != null;
 }
@@ -1344,7 +1428,7 @@ function isValidBrokerToken(config: ServerConfig, presented: string | null): boo
   let ok = false;
   for (const token of config.brokerTokens) {
     const b = createHash("sha256").update(token).digest();
-    if (timingSafeEqual(a, b)) ok = true; // no early return — keep it constant-time
+    if (timingSafeEqual(a, b)) ok = true; // no early return - keep it constant-time
   }
   return ok;
 }
@@ -1592,6 +1676,27 @@ function streamUsageSummary(db: AppDatabase, profileId: string, days: number) {
     completed_at: string | null;
     last_status: number | null;
   }>;
+  // The quota period remains a rolling 30 days even if an operator requests a
+  // differently sized usage history. It is informational only; no playback
+  // or stream-session route consults this value.
+  const quota = db.sqlite
+    .prepare(
+      `SELECT (
+                SELECT value FROM profile_settings
+                WHERE profile_id = ? AND key = 'bandwidth_cap_bytes'
+              ) AS bandwidth_cap_bytes,
+              COALESCE(SUM(bytes_served), 0) AS bandwidth_usage_bytes
+       FROM stream_sessions
+       WHERE profile_id = ? AND created_at >= ?`,
+    )
+    .get(profileId, profileId, usageSinceISO(BANDWIDTH_PERIOD_DAYS)) as {
+    bandwidth_cap_bytes: string | null;
+    bandwidth_usage_bytes: number;
+  };
+  const bandwidth = bandwidthProfileState(
+    parseBandwidthCap(quota.bandwidth_cap_bytes),
+    quota.bandwidth_usage_bytes,
+  );
   return {
     days,
     totalBytes: summary.total_bytes,
@@ -1607,22 +1712,33 @@ function streamUsageSummary(db: AppDatabase, profileId: string, days: number) {
       completedAt: row.completed_at,
       lastStatus: row.last_status,
     })),
+    ...bandwidth,
   };
 }
 
 function adminStreamUsageSummary(db: AppDatabase, days: number) {
   const since = usageSinceISO(days);
+  const bandwidthSince = usageSinceISO(BANDWIDTH_PERIOD_DAYS);
+  // Include just the oldest period either summary needs, then conditionally
+  // aggregate each period. This keeps the admin payload's normal `days` data
+  // intact while the cap always uses the rolling monthly period.
+  const earliestSince = days > BANDWIDTH_PERIOD_DAYS ? bandwidthSince : since;
   const rows = db.sqlite
     .prepare(
       `SELECT profiles.id AS profile_id,
               users.username,
               profiles.display_name,
               users.role,
-              COUNT(stream_sessions.id) AS stream_count,
-              COALESCE(SUM(stream_sessions.bytes_served), 0) AS total_bytes,
-              MAX(stream_sessions.last_accessed_at) AS last_accessed_at
+              COUNT(CASE WHEN stream_sessions.created_at >= ? THEN stream_sessions.id END) AS stream_count,
+              COALESCE(SUM(CASE WHEN stream_sessions.created_at >= ? THEN stream_sessions.bytes_served ELSE 0 END), 0) AS total_bytes,
+              MAX(CASE WHEN stream_sessions.created_at >= ? THEN stream_sessions.last_accessed_at END) AS last_accessed_at,
+              settings.value AS bandwidth_cap_bytes,
+              COALESCE(SUM(CASE WHEN stream_sessions.created_at >= ? THEN stream_sessions.bytes_served ELSE 0 END), 0) AS bandwidth_usage_bytes
        FROM profiles
        JOIN users ON users.id = profiles.user_id
+       LEFT JOIN profile_settings settings
+         ON settings.profile_id = profiles.id
+        AND settings.key = 'bandwidth_cap_bytes'
        LEFT JOIN stream_sessions
          ON stream_sessions.profile_id = profiles.id
         AND stream_sessions.created_at >= ?
@@ -1630,7 +1746,7 @@ function adminStreamUsageSummary(db: AppDatabase, days: number) {
        GROUP BY profiles.id
        ORDER BY total_bytes DESC, stream_count DESC, profiles.display_name ASC`,
     )
-    .all(since) as Array<{
+    .all(since, since, since, bandwidthSince, earliestSince) as Array<{
     profile_id: string;
     username: string;
     display_name: string;
@@ -1638,6 +1754,8 @@ function adminStreamUsageSummary(db: AppDatabase, days: number) {
     stream_count: number;
     total_bytes: number;
     last_accessed_at: string | null;
+    bandwidth_cap_bytes: string | null;
+    bandwidth_usage_bytes: number;
   }>;
   const totalBytes = rows.reduce((sum, row) => sum + row.total_bytes, 0);
   const streamCount = rows.reduce((sum, row) => sum + row.stream_count, 0);
@@ -1660,6 +1778,10 @@ function adminStreamUsageSummary(db: AppDatabase, days: number) {
       totalBytes: row.total_bytes,
       streamCount: row.stream_count,
       lastAccessedAt: row.last_accessed_at,
+      ...bandwidthProfileState(
+        parseBandwidthCap(row.bandwidth_cap_bytes),
+        row.bandwidth_usage_bytes,
+      ),
     })),
   };
 }
@@ -1764,7 +1886,10 @@ function adminHealthSummary(db: AppDatabase, config: ServerConfig) {
          AND used_count < max_uses`,
       now,
     ),
-    auditEvents: countScalar(db, "SELECT COUNT(*) AS count FROM audit_log"),
+    auditEvents: countScalar(
+      db,
+      "SELECT COUNT(*) AS count FROM (SELECT 1 FROM audit_log LIMIT 10000)",
+    ),
     recentStreamErrors: countScalar(
       db,
       `SELECT COUNT(*) AS count
@@ -1855,10 +1980,10 @@ function registerRoutes(
       // ffmpeg present at boot), so the client only offers it when it'll work.
       transcodeAvailable: transcode.ready,
       // Whether the server can supply OMDb ratings for this profile (a profile,
-      // server, or env OMDb key is configured). The key itself is never sent —
+      // server, or env OMDb key is configured). The key itself is never sent - 
       // the client only learns that the /api/omdb proxy will return ratings.
       omdbProxy: auth != null && omdbAvailableFor(db, config, auth.profileId),
-      // Distribution tier — drives which onboarding flow the client shows.
+      // Distribution tier - drives which onboarding flow the client shows.
       buildProfile: config.buildProfile,
     };
   });
@@ -1940,7 +2065,7 @@ function registerRoutes(
 
     if (row == null) {
       // Run a dummy verify so an unknown username takes the same time as a known
-      // one — otherwise response timing reveals which usernames exist.
+      // one - otherwise response timing reveals which usernames exist.
       await verifyDummyPassword(body.password);
       throw httpError(401, "Invalid username or password.");
     }
@@ -2321,6 +2446,56 @@ function registerRoutes(
     return { ok: true };
   });
 
+  // Promote or demote an account's role. This is the one management action that
+  // was previously fixed at create/invite time. Guards: admin-only; only the
+  // owner may grant or revoke the owner/admin tier (mirrors profile creation);
+  // you cannot change your own role; and the household's last owner cannot be
+  // demoted (which would strand everyone with no one able to manage admins).
+  app.post("/api/profiles/:id/role", async (request) => {
+    const auth = requireAuth(db, request);
+    requireAdmin(auth);
+    requireCsrf(request);
+    const id = (request.params as { id: string }).id;
+    const body = parseBody(setRoleSchema, request.body);
+
+    const existing = db.sqlite
+      .prepare(
+        `SELECT profiles.id, profiles.user_id, users.role
+         FROM profiles JOIN users ON users.id = profiles.user_id
+         WHERE profiles.id = ?`,
+      )
+      .get(id) as { id: string; user_id: string; role: UserRole } | undefined;
+    if (existing == null) throw httpError(404, "Profile not found.");
+
+    // Only the owner may touch the privileged tier, on either side of the change
+    // (you cannot demote an admin, nor mint one, unless you are the owner).
+    const touchesAdminTier = (r: UserRole) => r === "owner" || r === "admin";
+    if (auth.role !== "owner" && (touchesAdminTier(existing.role) || touchesAdminTier(body.role))) {
+      throw httpError(403, "Only the owner can change owner or admin roles.");
+    }
+    // Never let an account change its own role (self-lockout / self-promotion).
+    // Compared by user id: one account can own several household profiles.
+    if (existing.user_id === auth.userId) {
+      throw httpError(400, "You cannot change your own role.");
+    }
+    // Keep at least one active owner, always.
+    if (existing.role === "owner" && body.role !== "owner") {
+      const owners = countScalar(
+        db,
+        "SELECT COUNT(*) AS count FROM users WHERE role = 'owner' AND disabled_at IS NULL",
+      );
+      if (owners <= 1) throw httpError(400, "The last owner cannot be demoted.");
+    }
+
+    if (existing.role === body.role) return { ok: true, role: body.role };
+    db.sqlite.prepare("UPDATE users SET role = ? WHERE id = ?").run(body.role, existing.user_id);
+    audit(db, auth, "profile.role.update", "profile", id, {
+      from: existing.role,
+      to: body.role,
+    });
+    return { ok: true, role: body.role };
+  });
+
   app.delete("/api/profiles/:id", async (request) => {
     const auth = requireAuth(db, request);
     requireAdmin(auth);
@@ -2380,7 +2555,7 @@ function registerRoutes(
     // A household viewer profile is NOT a login: it has no username and its
     // password is optional (kid/guest profiles switch without one). When a
     // password is supplied we hash it for parity with accounts, but it is not
-    // used as a credential yet — switching is gated by account ownership, not a
+    // used as a credential yet - switching is gated by account ownership, not a
     // per-profile password. Profile data is isolated by profile_id as usual.
     const password = (request.body as { password?: unknown })?.password;
     if (password != null) passwordSchema.parse(password);
@@ -2448,7 +2623,7 @@ function registerRoutes(
     requireNotRestricted(auth);
     const id = accountProfileIdParamSchema.parse((request.params as { id: string }).id);
     const body = parseBody(patchAccountProfileSchema, request.body);
-    // Ownership check makes rename/recolor IDOR-safe — another account's id 404s.
+    // Ownership check makes rename/recolor IDOR-safe - another account's id 404s.
     if (ownedLiveProfile(auth.userId, id) == null) {
       throw httpError(404, "Profile not found.");
     }
@@ -2472,7 +2647,7 @@ function registerRoutes(
     return { ok: true, profiles: listAccountProfiles(db, auth.userId) };
   });
 
-  // Kid/maturity gating is set HERE, behind requireAdmin — deliberately NOT on
+  // Kid/maturity gating is set HERE, behind requireAdmin - deliberately NOT on
   // the PATCH route above (which is requireNotRestricted), so a kid can never
   // lift their own cap by editing their profile. Household-scoped via
   // ownedLiveProfile. Setting both fields together keeps the play-block
@@ -2520,13 +2695,13 @@ function registerRoutes(
     db.transaction(() => {
       // Audit BEFORE the delete: the actor's active profile may BE the one being
       // removed (you can delete the profile you're currently watching as), and
-      // audit_log.actor_profile_id FKs profiles(id) — inserting after the delete
+      // audit_log.actor_profile_id FKs profiles(id) - inserting after the delete
       // would violate it. The target id is still captured in the row.
       audit(db, auth, "account.profile.delete", "profile", id);
       // Explicitly clear any session pointing at this profile. The
       // sessions.active_profile_id FK is declared ON DELETE SET NULL, but it was
       // added via ALTER TABLE ADD COLUMN and SQLite does not enforce that action
-      // for ALTER-added columns — so without this the FK would BLOCK the delete.
+      // for ALTER-added columns - so without this the FK would BLOCK the delete.
       // Nulling here is correct regardless: those sessions transparently fall
       // back to the default profile on their next readAuth.
       db.sqlite
@@ -2572,6 +2747,29 @@ function registerRoutes(
         throw httpError(403, "The account password is required to leave a kid profile.");
       }
     }
+    // Per-profile PIN: a household gate, NOT encryption. ENTERING a profile that
+    // has a PIN requires it (a no-op re-select of the currently-active profile is
+    // free - you already passed it, and re-locking yourself out mid-session helps
+    // no one). Only FAILED attempts are rate-limited, to slow brute force. The
+    // hash never leaves the server; the client learns only that a PIN exists.
+    if (body.profileId !== auth.profileId) {
+      const pinRow = db.sqlite
+        .prepare(
+          `SELECT value FROM profile_settings
+           WHERE profile_id = ? AND key = 'profile_password_hash'`,
+        )
+        .get(body.profileId) as { value: string } | undefined;
+      if (pinRow != null) {
+        const ok =
+          body.password != null &&
+          (await verifyPassword(pinRow.value, body.password));
+        if (!ok) {
+          rateLimit(request, `profile:pin:${body.profileId}`, 10, 60 * 1000);
+          audit(db, auth, "account.profile.switch.locked", "profile", body.profileId);
+          throw httpError(403, "This profile is protected by a PIN.");
+        }
+      }
+    }
     db.sqlite
       .prepare("UPDATE sessions SET active_profile_id = ? WHERE id = ?")
       .run(body.profileId, auth.sessionId);
@@ -2583,6 +2781,85 @@ function registerRoutes(
       session: next,
       profiles: next != null ? accountProfileState(db, next) : null,
     };
+  });
+
+  // Set or clear a profile's household PIN. Owner/admin sets any owned profile's
+  // PIN; a member sets only their own. The PIN gates switching INTO the profile
+  // (see /api/profiles/switch). It is a household gate, not encryption - local
+  // data is not encrypted at rest and the copy must not over-promise.
+  app.post("/api/profiles/pin", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(setProfilePinSchema, request.body);
+    // Ownership IDOR gate, same as switch: a profile that isn't this account's
+    // (or is disabled) 404s.
+    if (ownedLiveProfile(auth.userId, body.profileId) == null) {
+      throw httpError(404, "Profile not found.");
+    }
+    // A member may only manage their OWN profile's PIN; owner/admin may manage
+    // any profile in the account (so a parent can set/reset a member's PIN).
+    const isSelf = body.profileId === auth.profileId;
+    const isManager = auth.role === "owner" || auth.role === "admin";
+    if (!isSelf && !isManager) {
+      throw httpError(403, "You can only change your own profile PIN.");
+    }
+    if (body.pin == null) {
+      db.sqlite
+        .prepare(
+          `DELETE FROM profile_settings
+           WHERE profile_id = ? AND key = 'profile_password_hash'`,
+        )
+        .run(body.profileId);
+      audit(db, auth, "account.profile.pin.clear", "profile", body.profileId);
+    } else {
+      const pinHash = await hashPassword(body.pin);
+      db.sqlite
+        .prepare(
+          `INSERT INTO profile_settings (profile_id, key, value)
+           VALUES (?, 'profile_password_hash', ?)
+           ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
+        )
+        .run(body.profileId, pinHash);
+      audit(db, auth, "account.profile.pin.set", "profile", body.profileId);
+    }
+    // Echo the refreshed picker so the client updates the lock affordance.
+    return { profiles: accountProfileState(db, auth) };
+  });
+
+  // Set or clear a household viewer's rolling-month bandwidth advisory. This
+  // is warn-only by design: do not add enforcement to stream creation or the
+  // /api/stream proxy path. Playback must continue when a profile is over cap.
+  app.post("/api/profiles/quota", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(setProfileBandwidthQuotaSchema, request.body);
+    // Match the account-scoped ownership gate used by the PIN endpoint before
+    // the role check, so another household's profile is never discoverable.
+    if (ownedLiveProfile(auth.userId, body.profileId) == null) {
+      throw httpError(404, "Profile not found.");
+    }
+    requireAdmin(auth);
+    if (body.capBytes == null) {
+      db.sqlite
+        .prepare(
+          `DELETE FROM profile_settings
+           WHERE profile_id = ? AND key = ?`,
+        )
+        .run(body.profileId, BANDWIDTH_CAP_SETTING);
+      audit(db, auth, "account.profile.quota.clear", "profile", body.profileId);
+    } else {
+      db.sqlite
+        .prepare(
+          `INSERT INTO profile_settings (profile_id, key, value)
+           VALUES (?, ?, ?)
+           ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
+        )
+        .run(body.profileId, BANDWIDTH_CAP_SETTING, String(body.capBytes));
+      audit(db, auth, "account.profile.quota.set", "profile", body.profileId, {
+        capBytes: body.capBytes,
+      });
+    }
+    return { profiles: accountProfileState(db, auth) };
   });
 
   app.get("/api/admin/invites", async (request) => {
@@ -2767,7 +3044,7 @@ function registerRoutes(
     return { request: mapRequestRow(row) };
   });
 
-  // The caller's OWN requests (any status), newest first — IDOR-safe by profile.
+  // The caller's OWN requests (any status), newest first - IDOR-safe by profile.
   app.get("/api/library/requests", async (request) => {
     const auth = requireAuth(db, request);
     const query = parseBody(requestStatusQuerySchema, request.query);
@@ -2891,9 +3168,28 @@ function registerRoutes(
     return { items: rows.map(mapWatchHistoryRow) };
   });
 
+  // Complete per-title history for Detail watched rollups. This is scoped by
+  // media id and intentionally has no global recency window.
+  app.get("/api/history/:mediaId/entries", async (request) => {
+    const auth = requireAuth(db, request);
+    const mediaId = mediaIdParamSchema.parse(
+      (request.params as { mediaId: string }).mediaId,
+    );
+    const rows = db.sqlite
+      .prepare(
+        `SELECT media_id, episode_id, progress_seconds, duration_seconds,
+                completed, last_watched, stream_quality, preview_json
+         FROM watch_history
+         WHERE profile_id = ? AND media_id = ?
+         ORDER BY last_watched DESC`,
+      )
+      .all(auth.profileId, mediaId) as Parameters<typeof mapWatchHistoryRow>[0][];
+    return { items: rows.map(mapWatchHistoryRow) };
+  });
+
   // Exact-key resume lookup. The list endpoint is windowed (≤500), so a client
   // merge that reads the existing resume position must not depend on scanning it
-  // — otherwise an older title (beyond the window) would read back as absent and
+  // - otherwise an older title (beyond the window) would read back as absent and
   // a viewed-only write would zero its progress. This is an O(1) keyed lookup.
   app.get("/api/history/:mediaId", async (request) => {
     const auth = requireAuth(db, request);
@@ -2952,7 +3248,26 @@ function registerRoutes(
         body.streamQuality ?? null,
         serializePreview(body.preview),
       );
-    audit(db, auth, "history.upsert", "media", mediaId);
+    return { ok: true };
+  });
+
+  app.delete("/api/history/:mediaId", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const mediaId = mediaIdParamSchema.parse(
+      (request.params as { mediaId: string }).mediaId,
+    );
+    const { episodeId } = request.query as { episodeId?: string };
+    const episodeKey = episodeId ?? "";
+    db.sqlite
+      .prepare(
+        `DELETE FROM watch_history
+         WHERE profile_id = ? AND media_id = ? AND episode_key = ?`,
+      )
+      .run(auth.profileId, mediaId, episodeKey);
+    audit(db, auth, "history.delete", "media", mediaId, {
+      episodeId: episodeId ?? null,
+    });
     return { ok: true };
   });
 
@@ -3068,7 +3383,7 @@ function registerRoutes(
       throw httpError(404, "Folder not found.");
     }
     if (existing.is_system === 1) throw httpError(400, "System folders cannot be edited.");
-    // A re-parent must point at one of THIS profile's folders — else the raw FK
+    // A re-parent must point at one of THIS profile's folders - else the raw FK
     // would 500 on a dangling id, or (worse) accept another profile's folder id
     // (the FK checks existence, not ownership). Mirrors the createFolder guard.
     if (body.parentId != null && !folderExistsForProfile(db, auth.profileId, body.parentId)) {
@@ -3225,7 +3540,7 @@ function registerRoutes(
 
   app.get("/api/search", async (request) => {
     const auth = requireAuth(db, request);
-    // Kid profiles have no free-text search — only the curated, cert-capped
+    // Kid profiles have no free-text search - only the curated, cert-capped
     // browse surfaces. Blocking here keeps a kid from typing past the cap.
     if (auth.isKid) throw httpError(403, "Search is disabled on this profile.");
     const query = parseBody(mediaSearchQuerySchema, request.query);
@@ -3287,13 +3602,21 @@ function registerRoutes(
     });
   });
 
+  app.get("/api/calendar/movies", async (request) => {
+    const auth = requireAuth(db, request);
+    // TMDB category endpoints cannot be certification-capped. Preserve kid
+    // profile safety instead of proxying an uncapped movie catalog.
+    if (auth.isKid) return { releases: [] };
+    return getServerMovieReleaseCalendar(db, config, auth.profileId);
+  });
+
   // AI recommendations (Assistant). Uses the server's stored AI provider key for
   // this profile; raw recommendations, no catalog resolution.
   app.post("/api/ai/recommend", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
     // AI discovery is a free-text recommendation surface that can name over-cap
-    // titles — the same class as /api/search. Kids get curated browse only.
+    // titles - the same class as /api/search. Kids get curated browse only.
     if (auth.isKid) throw httpError(403, "AI discovery is not available on this profile.");
     const body = parseBody(aiRecommendBodySchema, request.body);
     const result = await recommendServerAI(db, config, auth.profileId, body);
@@ -3328,7 +3651,7 @@ function registerRoutes(
     rateLimit(request, `subtitles:search:${auth.profileId}`, 60, 60 * 1000);
     const body = parseBody(subtitleSearchBodySchema, request.body);
     // Subtitle search is a discovery surface (free text + imdbId). For a kid it is
-    // limited to a cert-gated lookup of their own within-cap MOVIE titles — no
+    // limited to a cert-gated lookup of their own within-cap MOVIE titles - no
     // free-text, no over-cap title (which would leak the film's full dialogue).
     if (auth.isKid) {
       if (body.imdbId == null || body.imdbId.length === 0) {
@@ -3338,9 +3661,9 @@ function registerRoutes(
     }
     const results = await searchServerSubtitles(db, config, auth.profileId, body);
     audit(db, auth, "subtitles.search", "subtitle", undefined, {
-      imdbId: body.imdbId ?? null, // media id — safe to log
-      languages: body.languages ?? ["en"], // lang codes — safe
-      freeText: (body.query?.length ?? 0) > 0, // boolean only — NOT the query text
+      imdbId: body.imdbId ?? null, // media id - safe to log
+      languages: body.languages ?? ["en"], // lang codes - safe
+      freeText: (body.query?.length ?? 0) > 0, // boolean only - NOT the query text
       results: results.length,
     });
     return { results };
@@ -3393,7 +3716,7 @@ function registerRoutes(
     type: "movie" | "series",
   ): Promise<void> {
     if (!auth.isKid && auth.maturityMax == null) return;
-    // A kid's world is movie-only — TV ratings ride a different ladder and series
+    // A kid's world is movie-only - TV ratings ride a different ladder and series
     // are never curated to them, so refuse non-movie lookups outright rather than
     // try to rank a TV rating against a movie cap.
     if (auth.isKid && type !== "movie") {
@@ -3420,7 +3743,7 @@ function registerRoutes(
   });
 
   // Episode-picker metadata (series only). Kid browse is movie-only, so a kid
-  // has no business enumerating arbitrary series seasons/episodes — block
+  // has no business enumerating arbitrary series seasons/episodes - block
   // outright (mirrors /api/calendar/upcoming); the client degrades to its
   // stepper fallback. Rate-limited per profile (mirrors /api/omdb) so an
   // authed user can't hammer TMDB through these proxies, and TMDB failures
@@ -3458,7 +3781,7 @@ function registerRoutes(
     }
   });
 
-  // OMDb ratings proxy — the "hidden key" path. The key is resolved server-side
+  // OMDb ratings proxy - the "hidden key" path. The key is resolved server-side
   // (profile credential → server credential → env → embedded build key) and used
   // to call OMDb here; the client receives only parsed ratings, never the key and
   // never the OMDb request. { ratings: null } when no key is configured.
@@ -3516,7 +3839,7 @@ function registerRoutes(
     return { ratings };
   });
 
-  // Broker endpoint — answers OMDb lookups for friend ("consumer") servers that
+  // Broker endpoint - answers OMDb lookups for friend ("consumer") servers that
   // present a valid broker token. The broker holds the real key (its own
   // server/env/embedded key) and returns ONLY ratings; the consumer never
   // receives the key, so the key is never on the friend's machine and the token
@@ -3537,7 +3860,7 @@ function registerRoutes(
       .regex(/^tt\d+$/)
       .parse((request.params as { imdbId: string }).imdbId);
     // The broker uses its OWN key only (server-scoped credential / env / embedded
-    // — never a consumer's profile credential).
+    // - never a consumer's profile credential).
     const key = resolveServerOmdbKey(db, config);
     if (key == null) {
       reply.code(503);
@@ -3555,14 +3878,22 @@ function registerRoutes(
       .max(64)
       .parse((request.params as { imdbId: string }).imdbId);
     const query = parseBody(streamSearchQuerySchema, request.query);
-    // Over-cap source enumeration is blocked for kids — both an info leak and the
+    // Over-cap source enumeration is blocked for kids - both an info leak and the
     // supply of infoHashes the resolve path would otherwise have to defend alone.
     await requireTitleWithinCap(auth, imdbId, query.type);
+    // The name-matching title pass is deliberately SUPPRESSED for kid/capped
+    // profiles: it can surface loosely-name-matched (e.g. APIBay) sources that
+    // the fail-closed play-block (titleHasInfoHash, imdb-EXACT) would then refuse
+    // to bind - a legit stream a kid couldn't play - and widening that gate to
+    // accept name-matched hashes would weaken the child-safety guarantee. So kids
+    // stay imdb-exact end-to-end; only normal profiles get the extra pass.
+    const capped = auth.isKid || auth.maturityMax != null;
     return searchServerStreams(db, config, auth.profileId, {
       imdbId,
       type: query.type,
       season: query.season ?? null,
       episode: query.episode ?? null,
+      title: capped ? null : query.title ?? null,
     });
   });
 
@@ -3571,7 +3902,7 @@ function registerRoutes(
     requireCsrf(request);
     rateLimit(request, `streams:resolve:${auth.profileId}`, 120, 60 * 1000);
     const body = parseBody(resolveStreamSchema, request.body);
-    // Kid play-block — the authoritative content gate, FAIL-CLOSED. A capped/kid
+    // Kid play-block - the authoritative content gate, FAIL-CLOSED. A capped/kid
     // profile may resolve a title only when (a) it declares its media identity,
     // (b) the title is a MOVIE within the cap, and (c) the infoHash is genuinely a
     // source of that title. (c) is the crucial binding: the cert is checked
@@ -3651,7 +3982,7 @@ function registerRoutes(
     const auth = requireAuth(db, request);
     requireCsrf(request);
     rateLimit(request, `streams:raw:${auth.profileId}`, 120, 60 * 1000);
-    // A raw session plays an arbitrary upstream URL — there is no media identity
+    // A raw session plays an arbitrary upstream URL - there is no media identity
     // to certify, so it can never be made cap-safe. Refuse it outright for any
     // kid/capped profile (this is checked BEFORE the allowRawStreamUrls/admin
     // gate, which keys off the account role and would otherwise let a kid under
@@ -3804,7 +4135,7 @@ function registerRoutes(
 
   // --- Server-side transcoding (Phase 3b, opt-in) ----------------------------
   // When transcoding isn't available (flag off OR ffmpeg absent), both routes
-  // 404 — indistinguishable from "not found" — and nothing above changes.
+  // 404 - indistinguishable from "not found" - and nothing above changes.
 
   /** Load + ownership-validate a stream session (same scoping as the proxy). */
   const loadTranscodeSession = (
@@ -3837,7 +4168,7 @@ function registerRoutes(
     // addresses blocked unless the operator opted into raw URLs). Residual,
     // accepted for now (consistent with the DNS-rebinding note in ssrf.ts): ffmpeg
     // follows its OWN HTTP redirects, which are not re-validated per hop like the
-    // proxy's fetchUpstreamSafely does. Low risk in practice — the only upstreams
+    // proxy's fetchUpstreamSafely does. Low risk in practice - the only upstreams
     // are trusted debrid CDNs and admin-only raw sessions; a pre-resolve of the
     // terminal URL is deferred because it would re-fetch (and could consume)
     // single-use debrid links. Hardening follow-up: resolve+pin the final hop.

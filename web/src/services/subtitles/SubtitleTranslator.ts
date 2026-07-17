@@ -18,7 +18,7 @@
 
 import type { FetchImpl } from "../../lib/http";
 import { resolveFetch } from "../ai/types";
-import type { AIProviderKind } from "../ai/models";
+import { type AIProviderKind, OPENAI_COMPATIBLE } from "../ai/models";
 import {
   applyTranslations,
   batchCuesForTranslation,
@@ -74,27 +74,6 @@ export function buildChatCall(
   const key = config.apiKey.trim();
   const model = config.model.trim();
   switch (config.provider) {
-    case "openai": {
-      if (key.length === 0) return null;
-      return {
-        url: "https://api.openai.com/v1/chat/completions",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          model: model || "gpt-4o-mini",
-          messages: [
-            { role: "system", content: "You are a precise subtitle translator." },
-            { role: "user", content: prompt },
-          ],
-          temperature: 0.2,
-        }),
-        extract: (json) =>
-          (json as { choices?: { message?: { content?: string } }[] })
-            ?.choices?.[0]?.message?.content ?? null,
-      };
-    }
     case "anthropic": {
       if (key.length === 0) return null;
       return {
@@ -131,6 +110,31 @@ export function buildChatCall(
         }),
         extract: (json) =>
           (json as { message?: { content?: string } })?.message?.content ?? null,
+      };
+    }
+    default: {
+      // OpenAI + every OpenAI-compatible host (Gemini, Groq, OpenRouter,
+      // Mistral, DeepSeek, xAI): identical Chat Completions shape, different
+      // base URL + default model.
+      const compat = OPENAI_COMPATIBLE[config.provider];
+      if (compat == null || key.length === 0) return null;
+      return {
+        url: `${compat.baseURL}/chat/completions`,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: model || compat.defaultModel,
+          messages: [
+            { role: "system", content: "You are a precise subtitle translator." },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.2,
+        }),
+        extract: (json) =>
+          (json as { choices?: { message?: { content?: string } }[] })
+            ?.choices?.[0]?.message?.content ?? null,
       };
     }
   }

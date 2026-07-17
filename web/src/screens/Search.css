@@ -73,7 +73,7 @@
   color: var(--danger);
 }
 
-/* Active-search skeleton — mirrors the .media-grid results layout (same
+/* Active-search skeleton - mirrors the .media-grid results layout (same
    columns + gap) so real posters swap in with no layout shift. */
 .search-skel-grid {
   display: grid;
@@ -91,7 +91,7 @@
     rgba(255, 255, 255, 0.02) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.4s ease-in-out 12;
   border-radius: var(--r-md);
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
 }
@@ -133,7 +133,7 @@
   display: none;
 }
 
-/* Results header — title + "See all" → deepen into Browse. */
+/* Results header - title + "See all" → deepen into Browse. */
 .search-results-head {
   display: flex;
   align-items: baseline;
@@ -203,4 +203,33 @@
   .search-filters .chip {
     flex: 0 0 auto;
   }
+}
+
+/* Result sort control in the results header. */
+.search-sort {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.search-sort-chip {
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: color 0.14s, background 0.14s, border-color 0.14s;
+}
+.search-sort-chip:hover {
+  color: var(--text-primary);
+}
+.search-sort-chip.is-active {
+  color: var(--on-accent, #fff);
+  background: rgb(var(--accent-rgb));
+  border-color: transparent;
 }

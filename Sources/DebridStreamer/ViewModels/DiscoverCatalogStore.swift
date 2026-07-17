@@ -79,19 +79,19 @@ final class DiscoverCatalogStore {
     /// keyword ids; studio/network rows use company/network ids. Kept small and
     /// fault-tolerant so they enrich the page without bloating first paint.
     private static let curatedRailSpecs: [CuratedRailSpec] = [
-        // Mood / keyword rows (movies) — known TMDB keyword ids.
+        // Mood / keyword rows (movies) - known TMDB keyword ids.
         CuratedRailSpec(id: "mood-feelgood", name: "Feel-good",
                         kind: .keywords([9713, 5615])),       // feel good / friendship
         CuratedRailSpec(id: "mood-mindbending", name: "Mind-bending",
                         kind: .keywords([4565, 156205])),     // dystopia / mind bending
         CuratedRailSpec(id: "mood-cozy", name: "Cozy",
                         kind: .keywords([10683, 12565])),     // coming of age / small town
-        // Studio rows (movies) — company ids.
+        // Studio rows (movies) - company ids.
         CuratedRailSpec(id: "studio-pixar", name: "From Pixar",
                         kind: .company(3)),                   // Pixar
         CuratedRailSpec(id: "studio-a24", name: "From A24",
                         kind: .company(41077)),               // A24
-        // Network row (series) — network id.
+        // Network row (series) - network id.
         CuratedRailSpec(id: "network-hbo", name: "On HBO",
                         kind: .network(49))                   // HBO
     ]
@@ -146,7 +146,7 @@ final class DiscoverCatalogStore {
             return
         }
 
-        // Core category rails — each is independently fault-tolerant so one
+        // Core category rails - each is independently fault-tolerant so one
         // failing request only empties its own rail, never the whole page.
         async let trendingMoviesResponse = provider.getTrending(type: .movie, timeWindow: .week, page: 1)
         async let trendingShowsResponse = provider.getTrending(type: .series, timeWindow: .week, page: 1)

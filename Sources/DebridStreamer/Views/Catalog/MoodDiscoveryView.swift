@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// AI mood/keyword discovery — the differentiator. The user types a free-text
+/// AI mood/keyword discovery - the differentiator. The user types a free-text
 /// vibe ("cozy fall mysteries", "mind-bending sci-fi from the 2010s"); the AI
 /// assistant translates it into TMDB /discover params (genres, keywords, year
 /// range, sort) which render as a result grid via the existing `discover()` path.

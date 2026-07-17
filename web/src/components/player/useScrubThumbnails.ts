@@ -7,7 +7,7 @@
 // bucket (so re-hovering nearby is instant) and generation is throttled so a
 // fast scrub doesn't queue dozens of seeks.
 //
-// This is gated to the in-webview `<video>` path by the caller — there is no
+// This is gated to the in-webview `<video>` path by the caller - there is no
 // frame source for the external mpv/VLC hand-off, so the tooltip is hidden
 // there. Cross-origin debrid streams may taint the canvas (a SecurityError on
 // export); we catch that and simply show the time label without an image.
@@ -25,8 +25,10 @@ export interface ScrubPreview {
 const THUMB_WIDTH = 168; // capped canvas width for performance
 const BUCKET_SECONDS = 5; // quantize hovered time into 5s buckets for caching
 const THROTTLE_MS = 120; // min gap between seek-driven captures
+const SEEK_TIMEOUT_MS = 3000; // give up on a seek that never reports 'seeked'
+const MAX_CACHED_THUMBNAILS = 120;
 
-export interface UseScrubThumbnails {
+interface UseScrubThumbnails {
   /** The currently-previewed frame, or null when not hovering. */
   preview: ScrubPreview | null;
   /** Call on pointer move over the scrub bar with the hovered time (seconds). */
@@ -39,7 +41,7 @@ export interface UseScrubThumbnails {
 
 /**
  * @param sourceUrl The video src to capture from (same as the main player).
- * @param enabled   Gate — pass false for the external player path so no hidden
+ * @param enabled   Gate - pass false for the external player path so no hidden
  *                  video is created and `available` is false.
  */
 export function useScrubThumbnails(
@@ -51,10 +53,20 @@ export function useScrubThumbnails(
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Two hours of scrubbing otherwise creates about 1,440 base64 JPEG buckets.
   const cacheRef = useRef<Map<number, string | null>>(new Map());
   const lastCaptureRef = useRef(0);
   const pendingTimeRef = useRef<number | null>(null);
   const seekingRef = useRef(false);
+  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Cancel the in-flight seek watchdog, if any. */
+  const clearSeekTimer = useCallback(() => {
+    if (seekTimerRef.current != null) {
+      clearTimeout(seekTimerRef.current);
+      seekTimerRef.current = null;
+    }
+  }, []);
 
   // Build the hidden capture video + canvas once (browser only, when enabled).
   useEffect(() => {
@@ -75,6 +87,7 @@ export function useScrubThumbnails(
 
     const onMeta = () => setReady(Number.isFinite(video.duration));
     const onSeeked = () => {
+      clearSeekTimer();
       seekingRef.current = false;
       captureCurrentFrame();
       // If the user moved on while we were seeking, chase the latest time.
@@ -84,17 +97,29 @@ export function useScrubThumbnails(
         void requestCapture(next);
       }
     };
+    // A media error means no 'seeked' will ever arrive for the in-flight seek.
+    // Drop the in-flight flag so later hovers are not coalesced forever.
+    const onError = () => {
+      clearSeekTimer();
+      seekingRef.current = false;
+      pendingTimeRef.current = null;
+    };
     video.addEventListener("loadedmetadata", onMeta);
     video.addEventListener("seeked", onSeeked);
+    video.addEventListener("error", onError);
 
     return () => {
+      clearSeekTimer();
       video.removeEventListener("loadedmetadata", onMeta);
       video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("error", onError);
       video.removeAttribute("src");
       video.load();
       videoRef.current = null;
       canvasRef.current = null;
       cacheRef.current.clear();
+      seekingRef.current = false;
+      pendingTimeRef.current = null;
       setReady(false);
       setPreview(null);
     };
@@ -121,11 +146,15 @@ export function useScrubThumbnails(
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       image = canvas.toDataURL("image/jpeg", 0.6);
     } catch {
-      // Cross-origin taint — show the time label without an image.
+      // Cross-origin taint - show the time label without an image.
       image = null;
     }
     const bucket = Math.round(video.currentTime / BUCKET_SECONDS);
     cacheRef.current.set(bucket, image);
+    if (cacheRef.current.size > MAX_CACHED_THUMBNAILS) {
+      const oldestBucket = cacheRef.current.keys().next().value;
+      if (oldestBucket != null) cacheRef.current.delete(oldestBucket);
+    }
     setPreview({ image, time: video.currentTime });
   }, []);
 
@@ -139,16 +168,24 @@ export function useScrubThumbnails(
         pendingTimeRef.current = t; // coalesce while a seek is in flight
         return;
       }
-      // If we're already at this frame, no 'seeked' event would fire — capture
+      // If we're already at this frame, no 'seeked' event would fire - capture
       // directly so the preview doesn't stall on a no-op seek.
       if (Math.abs(t - video.currentTime) < 0.05) {
         captureCurrentFrame();
         return;
       }
       seekingRef.current = true;
+      clearSeekTimer();
+      seekTimerRef.current = setTimeout(() => {
+        // The seek never reported back (stalled or dropped stream). Drop the
+        // in-flight flag so the next hover can drive a fresh capture.
+        seekTimerRef.current = null;
+        seekingRef.current = false;
+        pendingTimeRef.current = null;
+      }, SEEK_TIMEOUT_MS);
       video.currentTime = t;
     },
-    [captureCurrentFrame],
+    [captureCurrentFrame, clearSeekTimer],
   );
 
   const onHover = useCallback(

@@ -4,3 +4,5 @@
 // actual bundling; this just gives TypeScript an ambient module so tsc doesn't
 // error on the import. Mirrors the standard Vite React + TS setup.
 declare module "*.css";
+
+declare const __APP_VERSION__: string;

@@ -1,4 +1,4 @@
-// Pure theme-list + apply/persist logic tests (no DOM — applyTheme takes a stub
+// Pure theme-list + apply/persist logic tests (no DOM - applyTheme takes a stub
 // root so the attribute/style side effects are observable without a browser).
 
 import { describe, expect, it } from "vitest";
@@ -27,6 +27,10 @@ function makeStubRoot() {
 }
 
 describe("theme list", () => {
+  it("uses Midnight as the default preset", () => {
+    expect(DEFAULT_THEME_ID).toBe("midnight");
+  });
+
   it("ships at least 4 distinct themes including the default", () => {
     expect(THEMES.length).toBeGreaterThanOrEqual(4);
     const ids = THEMES.map((t) => t.id);
@@ -118,10 +122,10 @@ describe("applyTheme", () => {
     expect(root.attr("data-theme")).toBeNull();
   });
 
-  it("sets data-theme for non-default dark themes", () => {
+  it("sets data-theme for a persisted non-default dark theme", () => {
     const root = makeStubRoot();
-    applyTheme("midnight", root);
-    expect(root.attr("data-theme")).toBe("midnight");
+    applyTheme("aurora", root);
+    expect(root.attr("data-theme")).toBe("aurora");
     expect(root.prop("color-scheme")).toBe("dark");
   });
 });

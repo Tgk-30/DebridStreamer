@@ -4,7 +4,7 @@ import SwiftUI
 /// system `List` sidebar. Primary destinations sit at the top, Settings is
 /// pinned at the bottom, and selection is a soft accent-ring glass capsule
 /// (never the loud system highlight). Search lives in the top-right global
-/// field, not here — the "icons in different places" hybrid layout.
+/// field, not here - the "icons in different places" hybrid layout.
 struct NavRail: View {
     @Environment(AppState.self) private var appState
 

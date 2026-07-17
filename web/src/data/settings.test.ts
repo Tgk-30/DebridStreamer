@@ -89,6 +89,9 @@ vi.mock("../storage", () => ({
 import {
   normalizeStreamMaxQuality,
   normalizeStreamMaxSizeGB,
+  normalizeRatingScale,
+  normalizeAppearanceNavOrder,
+  normalizeAppearanceNavHidden,
   defaultSettings,
   loadSettings,
   saveSettings,
@@ -164,32 +167,53 @@ describe("normalizeStreamMaxSizeGB", () => {
   });
 });
 
+describe("normalizeRatingScale", () => {
+  it("passes through the three legal scales", () => {
+    expect(normalizeRatingScale("ten")).toBe("ten");
+    expect(normalizeRatingScale("hundred")).toBe("hundred");
+    expect(normalizeRatingScale("thumbs")).toBe("thumbs");
+  });
+
+  it("falls back to the 1–10 default for anything else", () => {
+    expect(normalizeRatingScale(undefined)).toBe("ten");
+    expect(normalizeRatingScale(null)).toBe("ten");
+    expect(normalizeRatingScale("five")).toBe("ten");
+    expect(normalizeRatingScale(10)).toBe("ten");
+    expect(normalizeRatingScale({})).toBe("ten");
+  });
+});
+
 // =============================================================================
 // defaultSettings
 // =============================================================================
 
 describe("defaultSettings", () => {
-  it("returns sane defaults with empty arrays and the default theme", () => {
+  it('defaults networkMode to "standard"', () => {
+    expect(defaultSettings().networkMode).toBe("standard");
+  });
+  it("defaults new profiles to Advanced and Midnight", () => {
     const d = defaultSettings();
     expect(d.debridTokens).toEqual([]);
     expect(d.sources).toEqual([]);
     expect(d.builtInIndexersEnabled).toBe(true);
     expect(d.aiProvider).toBe("anthropic");
     expect(d.ollamaEndpoint).toBe("http://localhost:11434");
-    expect(d.theme).toBe(DEFAULT_THEME_ID);
+    expect(d.theme).toBe("midnight");
     expect(d.appearanceAccent).toBe("theme");
     expect(d.appearanceBlur).toBe(18);
     expect(d.subtitleFontScale).toBe(1);
     expect(d.subtitleTextColor).toBe("#ffffff");
     expect(d.subtitleBgOpacity).toBe(0.55);
-    expect(d.simpleMode).toBe(true);
+    expect(d.simpleMode).toBe(false);
     expect(d.autoUpdateChecks).toBe(true);
     expect(d.autoInstallUpdates).toBe(false);
-    expect(d.streamCachedOnly).toBe(false);
+    expect(d.streamCachedOnly).toBe(true);
     expect(d.streamMaxQuality).toBe("any");
     expect(d.streamMaxSizeGB).toBe(0);
     expect(d.dataSaver).toBe(false);
     expect(d.transcode).toBe(false);
+    expect(d.traktScrobbleEnabled).toBe(false);
+    expect(d.showPosterRatings).toBe(true);
   });
 
   it("returns a fresh object each call (no shared array identity)", () => {
@@ -253,6 +277,36 @@ describe("loadSettings", () => {
     expect(s.aiProvider).toBe("anthropic");
   });
 
+  it("keeps a persisted Simple and Aurora selection over the new defaults", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ simpleMode: true, theme: "aurora" }),
+    });
+
+    const s = loadSettings();
+    expect(s.simpleMode).toBe(true);
+    expect(s.theme).toBe("aurora");
+  });
+
+  it("normalizes the opt-in Trakt scrobble toggle", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ traktScrobbleEnabled: true }),
+    });
+    expect(loadSettings().traktScrobbleEnabled).toBe(true);
+
+    stubLocalStorage({
+      [KEY]: JSON.stringify({ traktScrobbleEnabled: "true" }),
+    });
+    expect(loadSettings().traktScrobbleEnabled).toBe(false);
+  });
+
+  it("normalizes the poster-rating display preference", () => {
+    stubLocalStorage({ [KEY]: JSON.stringify({ showPosterRatings: false }) });
+    expect(loadSettings().showPosterRatings).toBe(false);
+
+    stubLocalStorage({ [KEY]: JSON.stringify({ showPosterRatings: "false" }) });
+    expect(loadSettings().showPosterRatings).toBe(true);
+  });
+
   it("normalizes legacy / invalid stored values to safe defaults", () => {
     stubLocalStorage({
       [KEY]: JSON.stringify({
@@ -274,6 +328,7 @@ describe("loadSettings", () => {
         subtitleFontScale: 99,
         subtitleTextColor: "red",
         subtitleBgOpacity: 5,
+        ratingScale: "eleven",
       }),
     });
     const s = loadSettings();
@@ -283,6 +338,8 @@ describe("loadSettings", () => {
     expect(s.appearanceDensity).toBe("comfortable");
     expect(s.appearanceTextSize).toBe("m");
     expect(s.appearanceMotion).toBe("system");
+    // These three normalize to their neutral fallbacks (not the new-user
+    // premium defaults, which only apply to a fresh install with no stored blob).
     expect(s.appearanceRadius).toBe("default");
     expect(s.appearanceBlur).toBe(28); // clamped to max
     expect(s.appearanceChrome).toBe("balanced");
@@ -295,6 +352,7 @@ describe("loadSettings", () => {
     expect(s.subtitleFontScale).toBe(1.8); // clamped to max
     expect(s.subtitleTextColor).toBe("#ffffff");
     expect(s.subtitleBgOpacity).toBe(0.95); // clamped to max
+    expect(s.ratingScale).toBe("ten"); // poisoned scale → 1–10 default
   });
 
   it("keeps valid appearance / subtitle values verbatim (lowercasing hex)", () => {
@@ -408,7 +466,7 @@ describe("redactSecrets", () => {
   });
 });
 
-describe("saveSettingsToStore — no plaintext secrets in the localStorage cache", () => {
+describe("saveSettingsToStore - no plaintext secrets in the localStorage cache", () => {
   it("redacts every credential before writing the bootstrap blob", async () => {
     const { map } = stubLocalStorage();
     await saveSettingsToStore({
@@ -440,7 +498,14 @@ describe("saveSettingsToStore — no plaintext secrets in the localStorage cache
 // loadSettingsFromStore (Store-backed)
 // =============================================================================
 
-describe("loadSettingsFromStore — first-run migration", () => {
+describe("loadSettingsFromStore - first-run migration", () => {
+  it("persists and hydrates networkMode", async () => {
+    settingsMap.set("storage_port_initialized", "true");
+    await saveSettingsToStore({ ...defaultSettings(), networkMode: "offline" });
+    expect(settingsMap.get("network_mode")).toBe("offline");
+    await expect(loadSettingsFromStore()).resolves.toMatchObject({ networkMode: "offline" });
+  });
+
   it("seeds the Store from the legacy localStorage blob on first run", async () => {
     // No storage_port_initialized flag -> migration path.
     stubLocalStorage({
@@ -503,7 +568,7 @@ describe("loadSettingsFromStore — first-run migration", () => {
   it("does NOT replay over a populated Store, and preserves the legacy cache for recovery", async () => {
     // Interrupted migration: the legacy still holds a secret, but the Store
     // already has data (a partial signal). Replaying could overwrite newer Store
-    // values, so we SKIP — and must NOT scrub the legacy cache (it holds the
+    // values, so we SKIP - and must NOT scrub the legacy cache (it holds the
     // still-unmigrated secret, recoverable on the next steady-state load).
     const { map } = stubLocalStorage({
       [KEY]: JSON.stringify({ tmdbKey: "REAL_FROM_LEGACY", simpleMode: false }),
@@ -574,7 +639,7 @@ describe("loadSettingsFromStore — first-run migration", () => {
   it("never replays (so can't wipe) when there is no legacy blob but the Store has data", async () => {
     // No legacy blob at all + a Store that already holds a secret. Even if the
     // build has env-default keys, the absence of a RAW legacy blob means no
-    // replay — so the real Store secret can't be wiped.
+    // replay - so the real Store secret can't be wiped.
     vi.stubGlobal("localStorage", undefined);
     settingsMap.set("omdb_api_key", "secret:omdb_api_key");
     secretMap.set("omdb_api_key", "REAL_OMDB");
@@ -585,7 +650,7 @@ describe("loadSettingsFromStore — first-run migration", () => {
   });
 });
 
-describe("loadSettingsFromStore — established store", () => {
+describe("loadSettingsFromStore - established store", () => {
   beforeEach(() => {
     // Mark initialized so we take the normal (non-migration) read path.
     settingsMap.set("storage_port_initialized", "true");
@@ -596,8 +661,9 @@ describe("loadSettingsFromStore — established store", () => {
     const s = await loadSettingsFromStore();
     expect(s.tmdbKey).toBe("");
     expect(s.builtInIndexersEnabled).toBe(true); // null -> base default
-    expect(s.simpleMode).toBe(true);
+    expect(s.simpleMode).toBe(false);
     expect(s.theme).toBe(DEFAULT_THEME_ID);
+    expect(s.streamCachedOnly).toBe(true);
     expect(s.streamMaxQuality).toBe("any");
     expect(s.debridTokens).toEqual([]);
     expect(s.sources).toEqual([]);
@@ -612,6 +678,43 @@ describe("loadSettingsFromStore — established store", () => {
     expect(s.omdbKey).toBe("plain-omdb");
   });
 
+  it("hydrates scalar and secret values from one bulk settings snapshot", async () => {
+    settingsMap.set("simple_mode", "true");
+    settingsMap.set("tmdb_api_key", "secret:tmdb_api_key");
+    secretMap.set("tmdb_api_key", "resolved-tmdb");
+
+    const fromSnapshot = await loadSettingsFromStore();
+
+    expect(fromSnapshot.simpleMode).toBe(true);
+    expect(fromSnapshot.tmdbKey).toBe("resolved-tmdb");
+    expect(fakeStore.allSettings).toHaveBeenCalledTimes(1);
+    expect(fakeStore.getSetting).not.toHaveBeenCalled();
+
+    // The fake can expose the identical records through individual reads too;
+    // its bulk adapter must produce the same fully-normalized AppSettings.
+    vi.clearAllMocks();
+    fakeStore.allSettings.mockImplementationOnce(async () =>
+      Object.fromEntries(
+        await Promise.all(
+          Array.from(settingsMap.keys()).map(async (key) => [
+            key,
+            await fakeStore.getSetting(key),
+          ]),
+        ),
+      ),
+    );
+    await expect(loadSettingsFromStore()).resolves.toEqual(fromSnapshot);
+  });
+
+  it("keeps persisted Simple and Aurora values when the durable store hydrates", async () => {
+    settingsMap.set("simple_mode", "true");
+    settingsMap.set("ui_theme", "aurora");
+
+    const s = await loadSettingsFromStore();
+    expect(s.simpleMode).toBe(true);
+    expect(s.theme).toBe("aurora");
+  });
+
   it("parses boolean string flags correctly", async () => {
     settingsMap.set("built_in_indexers_enabled", "false");
     settingsMap.set("simple_mode", "false");
@@ -620,6 +723,7 @@ describe("loadSettingsFromStore — established store", () => {
     settingsMap.set("stream_cached_only", "true");
     settingsMap.set("data_saver", "true");
     settingsMap.set("transcode", "true");
+    settingsMap.set("trakt_scrobble_enabled", "true");
     const s = await loadSettingsFromStore();
     expect(s.builtInIndexersEnabled).toBe(false);
     expect(s.simpleMode).toBe(false);
@@ -628,6 +732,13 @@ describe("loadSettingsFromStore — established store", () => {
     expect(s.streamCachedOnly).toBe(true);
     expect(s.dataSaver).toBe(true);
     expect(s.transcode).toBe(true);
+    expect(s.traktScrobbleEnabled).toBe(true);
+  });
+
+  it("keeps an existing saved cached-only choice", async () => {
+    settingsMap.set("stream_cached_only", "false");
+    const s = await loadSettingsFromStore();
+    expect(s.streamCachedOnly).toBe(false);
   });
 
   it("treats any non-'true' boolean string as false", async () => {
@@ -744,6 +855,8 @@ describe("saveSettingsToStore", () => {
         simpleMode: false,
         autoUpdateChecks: false,
         transcode: true,
+        traktScrobbleEnabled: true,
+        showPosterRatings: false,
         streamMaxSizeGB: 12.34,
         appearanceBlur: 999, // normalized on write
       }),
@@ -753,8 +866,33 @@ describe("saveSettingsToStore", () => {
     expect(settingsMap.get("simple_mode")).toBe("false");
     expect(settingsMap.get("auto_update_checks")).toBe("false");
     expect(settingsMap.get("transcode")).toBe("true");
+    expect(settingsMap.get("trakt_scrobble_enabled")).toBe("true");
+    expect(settingsMap.get("show_poster_ratings")).toBe("false");
     expect(settingsMap.get("stream_max_size_gb")).toBe("12.3");
     expect(settingsMap.get("appearance_blur")).toBe("28"); // clamped
+  });
+
+  it("writes only a changed scalar when the caller supplies the prior settings", async () => {
+    const previous = settingsWith({ simpleMode: true });
+    const next = { ...previous, simpleMode: false };
+
+    await saveSettingsToStore(next, { previous });
+
+    const scalarWrites = fakeStore.setSetting.mock.calls.filter(
+      ([key]) => !["tmdb_api_key", "trakt_client_id", "trakt_client_secret", "omdb_api_key", "ai_api_key", "opensubtitles_api_key"].includes(key),
+    );
+    expect(scalarWrites).toEqual([["simple_mode", "false"]]);
+  });
+
+  it("writes zero scalars when the next settings equal the supplied prior settings", async () => {
+    const current = settingsWith({ theme: "aurora" });
+
+    await saveSettingsToStore(current, { previous: current });
+
+    const scalarWrites = fakeStore.setSetting.mock.calls.filter(
+      ([key]) => !["tmdb_api_key", "trakt_client_id", "trakt_client_secret", "omdb_api_key", "ai_api_key", "opensubtitles_api_key"].includes(key),
+    );
+    expect(scalarWrites).toEqual([]);
   });
 
   it("writes debrid tokens to SecretStore + a marker'd config row, skipping blank tokens", async () => {
@@ -773,7 +911,7 @@ describe("saveSettingsToStore", () => {
     expect(secretMap.get("debrid.debrid-real_debrid")).toBe("rd");
   });
 
-  it("reconciles debrid configs — removes stale entries no longer in settings", async () => {
+  it("reconciles debrid configs - removes stale entries no longer in settings", async () => {
     // Pre-existing stale config.
     debridConfigs = [
       { id: "debrid-premiumize", service: "premiumize", apiToken: "secret:debrid.debrid-premiumize", isActive: true, priority: 0 },
@@ -851,6 +989,8 @@ describe("saveSettingsToStore", () => {
       aiProvider: "openai",
       aiModel: "m1",
       simpleMode: false,
+      traktScrobbleEnabled: true,
+      showPosterRatings: false,
       streamMaxQuality: "1080p",
       streamMaxSizeGB: 20,
       appearanceAccent: "rose",
@@ -865,6 +1005,8 @@ describe("saveSettingsToStore", () => {
     expect(loaded.aiProvider).toBe("openai");
     expect(loaded.aiModel).toBe("m1");
     expect(loaded.simpleMode).toBe(false);
+    expect(loaded.traktScrobbleEnabled).toBe(true);
+    expect(loaded.showPosterRatings).toBe(false);
     expect(loaded.streamMaxQuality).toBe("1080p");
     expect(loaded.streamMaxSizeGB).toBe(20);
     expect(loaded.appearanceAccent).toBe("rose");
@@ -937,7 +1079,7 @@ describe("saveSettingsToStore", () => {
       fakeSecrets.deleteSecret.mockRejectedValueOnce(new Error("keychain locked"));
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-      // Removal (no tokens) must NOT throw — the purge is best-effort.
+      // Removal (no tokens) must NOT throw - the purge is best-effort.
       await expect(
         saveSettingsToStore(
           settingsWith({
@@ -1030,5 +1172,84 @@ describe("saveSettingsToStore", () => {
       expect(idxIds).toContain("fresh-idx");
       expect(idxIds).not.toContain("stale-idx");
     });
+  });
+});
+
+// =============================================================================
+// Nav customization: normalizers + full persistence round-trip (both paths)
+// =============================================================================
+
+describe("normalizeAppearanceNavOrder / normalizeAppearanceNavHidden", () => {
+  it("defaults to an empty array for missing / non-array values", () => {
+    expect(normalizeAppearanceNavOrder(undefined)).toEqual([]);
+    expect(normalizeAppearanceNavOrder(null)).toEqual([]);
+    expect(normalizeAppearanceNavOrder(42)).toEqual([]);
+    expect(normalizeAppearanceNavHidden(undefined)).toEqual([]);
+  });
+
+  it("accepts a real array and keeps only known screen ids, de-duplicated", () => {
+    expect(
+      normalizeAppearanceNavOrder([
+        "history",
+        "bogus",
+        "history",
+        "library",
+        7,
+      ]),
+    ).toEqual(["history", "library"]);
+  });
+
+  it("parses a JSON-string payload (the KV-store encoding)", () => {
+    expect(normalizeAppearanceNavOrder('["search","discover"]')).toEqual([
+      "search",
+      "discover",
+    ]);
+    expect(normalizeAppearanceNavOrder("not json")).toEqual([]);
+  });
+
+  it("never lets 'settings' into the hidden list", () => {
+    expect(
+      normalizeAppearanceNavHidden(["calendar", "settings", "history"]),
+    ).toEqual(["calendar", "history"]);
+  });
+});
+
+describe("nav customization persistence round-trip", () => {
+  it("round-trips order + hidden through the localStorage blob", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({
+        appearanceNavOrder: ["history", "library", "settings", "bogus"],
+        appearanceNavHidden: ["calendar", "settings"],
+      }),
+    });
+    const s = loadSettings();
+    expect(s.appearanceNavOrder).toEqual(["history", "library", "settings"]);
+    expect(s.appearanceNavHidden).toEqual(["calendar"]); // settings stripped
+  });
+
+  it("defaults to empty arrays when the blob omits them", () => {
+    stubLocalStorage({ [KEY]: JSON.stringify({ tmdbKey: "x" }) });
+    const s = loadSettings();
+    expect(s.appearanceNavOrder).toEqual([]);
+    expect(s.appearanceNavHidden).toEqual([]);
+  });
+
+  it("round-trips order + hidden through the Store (JSON-encoded KV values)", async () => {
+    settingsMap.set("storage_port_initialized", "true");
+    await saveSettingsToStore({
+      ...defaultSettings(),
+      appearanceNavOrder: ["history", "library"],
+      appearanceNavHidden: ["calendar"],
+    });
+    // Stored as JSON strings under the KV keys.
+    expect(settingsMap.get("appearance_nav_order")).toBe(
+      JSON.stringify(["history", "library"]),
+    );
+    expect(settingsMap.get("appearance_nav_hidden")).toBe(
+      JSON.stringify(["calendar"]),
+    );
+    const loaded = await loadSettingsFromStore();
+    expect(loaded.appearanceNavOrder).toEqual(["history", "library"]);
+    expect(loaded.appearanceNavHidden).toEqual(["calendar"]);
   });
 });

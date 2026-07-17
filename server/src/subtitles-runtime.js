@@ -1,7 +1,7 @@
 // Server-side subtitles so OpenSubtitles search/download + AI translate work in
 // Server Mode (the OpenSubtitles + AI keys live on the server; the browser can't
 // read them back). Reuses the browser subtitle client, the pure cue parser
-// (subsrt-ts), and the AI translator verbatim through the esbuild/tsx shim — so
+// (subsrt-ts), and the AI translator verbatim through the esbuild/tsx shim - so
 // behavior matches the local app exactly.
 //
 // The /fetch route normalizes the downloaded subtitle to a WebVTT STRING
@@ -26,7 +26,7 @@ const SUBTITLE_TIMEOUT_MS = 20_000;
  *  covers the full read; undici transparently decompresses gzip before text().
  *
  *  SSRF: the file-download GET targets a CDN URL the OpenSubtitles API returns in
- *  its response body (not a fixed constant), so — like the debrid stream proxy —
+ *  its response body (not a fixed constant), so - like the debrid stream proxy - 
  *  it's routed through fetchUpstreamSafely, which refuses private/reserved
  *  addresses and re-validates every redirect hop. `allowPrivate` mirrors the
  *  operator's raw-URLs switch so loopback/LAN dev setups still work. The POST to
@@ -67,7 +67,7 @@ function osClient(db, config, profileId) {
 
 /** Map an OpenSubtitles failure to a clean HTTP error. A rejected key surfaces
  *  as 400 (actionable); anything else is a generic 502 (no upstream-detail leak,
- *  and never the client's raw status — which can be 0 for "missing key"). */
+ *  and never the client's raw status - which can be 0 for "missing key"). */
 function mapOsError(err, fallbackMessage) {
   if (err instanceof OpenSubtitlesError && err.status === 401) {
     return Object.assign(new Error("The OpenSubtitles API key was rejected."), { statusCode: 400 });

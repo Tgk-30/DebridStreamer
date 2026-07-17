@@ -63,6 +63,13 @@ describe("ScrubBar keyboard seeking", () => {
     expect(slider).toHaveAttribute("aria-valuetext", "2:05");
   });
 
+  it("uses a compositor-friendly scale transform for progress", () => {
+    const { slider } = setup(150, 600);
+    const fill = slider.querySelector(".scrubbar-fill") as HTMLElement;
+    expect(fill.style.transform).toBe("scaleX(0.25)");
+    expect(fill.style.width).toBe("");
+  });
+
   it("ignores keys with no live duration", () => {
     const { slider, onSeek } = setup(0, 0);
     key(slider, "ArrowRight");

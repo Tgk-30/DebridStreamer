@@ -1,14 +1,13 @@
-// WelcomeGuide — a short, beautiful feature tour shown once to new users (after
+// WelcomeGuide - a short, beautiful feature tour shown once to new users (after
 // the setup onboarding) and re-openable from Settings / ⌘K. It introduces the
 // signature features as a sequence of focused "boxes" rather than dumping
-// everything at once — progressive disclosure, fully skippable, keyboard-driven.
+// everything at once - progressive disclosure, fully skippable, keyboard-driven.
 //
 // Design principles applied: one idea per step, a clear icon→title→one-line copy
 // hierarchy, an always-visible Skip, a visible progress indicator, motion that
 // the global reduced-motion rule damps, and tokens so it themes everywhere.
 
 import { useCallback, useEffect, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import { Icon, type IconName } from "./Icon";
 import "./WelcomeGuide.css";
 
@@ -24,22 +23,22 @@ const STEPS: Step[] = [
   {
     icon: "sparkles",
     title: "Welcome to DebridStreamer",
-    body: "Your movies and shows, from every source, in one beautiful place. Here's the 60-second tour — including how to get your first stream playing.",
+    body: "Your movies and shows, from every source, in one beautiful place. Here's the 60-second tour - including how to get your first stream playing.",
   },
   {
     icon: "play",
     title: "How it works",
-    body: "Open any title and pick a stream marked green “Instant”. It plays in seconds — streamed straight from your debrid service, with no downloading or seeding.",
+    body: "Open any title and pick a stream marked green “Instant”. It plays in seconds - streamed straight from your debrid service, with no downloading or seeding.",
   },
   {
     icon: "settings",
     title: "A one-time setup",
-    body: "To find those streams you'll add a debrid service (Real-Debrid, TorBox…) and a source in Settings — or just sign in to a server someone already set up. It takes about two minutes.",
+    body: "To find those streams you'll add a debrid service (Real-Debrid, TorBox…) and a source in Settings - or just sign in to a server someone already set up. It takes about two minutes.",
   },
   {
     icon: "wand-search",
     title: "Find something to watch",
-    body: "Browse the Discover spotlight, search any title, or describe a vibe — “cozy fall mysteries” — and let the AI build a lineup for the moment.",
+    body: "Browse the Discover spotlight, search any title, or describe a vibe - “cozy fall mysteries” - and let the AI build a lineup for the moment.",
   },
   {
     icon: "sliders",
@@ -55,7 +54,7 @@ const STEPS: Step[] = [
   {
     icon: "check",
     title: "You're all set",
-    body: "Dive in from Discover — anything here is one click (or ⌘K) away. If a title shows “No sources yet”, finish setup in Settings.",
+    body: "Dive in from Discover - anything here is one click (or ⌘K) away. If a title shows “No sources yet”, finish setup in Settings.",
   },
 ];
 
@@ -120,15 +119,9 @@ export function WelcomeGuide({
         </button>
 
         <div className="welcome-stage">
-          <AnimatePresence mode="wait" custom={dir}>
-            <motion.div
+            <div
               key={step}
-              className="welcome-step"
-              custom={dir}
-              initial={{ opacity: 0, x: dir * 26 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: dir * -26 }}
-              transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
+              className={`welcome-step ${dir > 0 ? "welcome-step-forward" : "welcome-step-backward"}`}
             >
               <div className="welcome-halo">
                 <Icon name={current.icon} size={30} />
@@ -155,8 +148,7 @@ export function WelcomeGuide({
                   Set up streaming in Settings
                 </button>
               )}
-            </motion.div>
-          </AnimatePresence>
+            </div>
         </div>
 
         <div className="welcome-dots" aria-hidden>

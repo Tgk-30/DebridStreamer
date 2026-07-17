@@ -10,7 +10,11 @@
 // the URL up for playback.
 
 import { useEffect, useMemo, useState } from "react";
-import { DebridServiceType, type StreamInfo } from "../services/debrid/models";
+import {
+  DebridServiceType,
+  fileMatchesEpisode,
+  type StreamInfo,
+} from "../services/debrid/models";
 import {
   TorrentResult,
   VideoCodec,
@@ -22,9 +26,47 @@ import {
   type StreamRow,
   type StreamsState,
 } from "../data/streams";
+import { formatSize } from "../data/debridLibrary";
 import { useAppStore } from "../store/AppStore";
 import { Icon } from "./Icon";
 import "./StreamPicker.css";
+
+/** A cached debrid source should return quickly. Bound the UI wait so a stalled
+ * provider request cannot leave a stream row permanently in Resolving state. */
+export const STREAM_RESOLVE_TIMEOUT_MS = 15_000;
+
+type ResolutionStatus = "resolving" | "failed";
+
+function resolveWithinTimeout<T>(operation: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      reject(new Error("This stream took too long to resolve. Try again or pick another source."));
+    }, STREAM_RESOLVE_TIMEOUT_MS);
+    // Wrap the call so a non-conforming resolver that throws synchronously also
+    // follows the ordinary failure path and clears the pending timer.
+    Promise.resolve()
+      .then(operation)
+      .then(resolve, reject)
+      .finally(() => globalThis.clearTimeout(timer));
+  });
+}
+
+function assertPackEpisodeMatch(
+  row: StreamRow,
+  stream: StreamInfo,
+  episodeContext: { season: number; episode: number } | null,
+): void {
+  if (
+    episodeContext == null ||
+    classifyRowForEpisode(row, episodeContext.season, episodeContext.episode) !== "pack" ||
+    fileMatchesEpisode(stream.fileName, episodeContext)
+  ) {
+    return;
+  }
+  const season = String(episodeContext.season).padStart(2, "0");
+  const episode = String(episodeContext.episode).padStart(2, "0");
+  throw new Error(`Couldn't find S${season}E${episode} in this season pack. Try another source.`);
+}
 
 interface StreamPickerProps {
   state: StreamsState;
@@ -32,24 +74,11 @@ interface StreamPickerProps {
   /** Called with the resolved stream + the torrent (for codec/container info). */
   onPlay: (stream: StreamInfo, source: TorrentResult) => void;
   onOpenSettings?: () => void;
-  /** "S2 E5" when a series episode is selected — shown in the header so the
+  /** "S2 E5" when a series episode is selected - shown in the header so the
    *  user can see WHY the list is episode-scoped. Null for movies. */
   episodeLabel?: string | null;
   /** The selected episode, for tagging season-pack releases. Null for movies. */
   episodeContext?: { season: number; episode: number } | null;
-}
-
-/** Bytes → "1.4 GB" style. */
-function formatSize(bytes: number): string {
-  if (bytes <= 0) return "—";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(value >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
 export function StreamPicker({
@@ -60,26 +89,32 @@ export function StreamPicker({
   episodeLabel = null,
   episodeContext = null,
 }: StreamPickerProps) {
-  const [cachedOnly, setCachedOnly] = useState(false);
+  const { settings } = useAppStore();
+  // Settings supplies the initial preference for each picker. The local state
+  // remains session-scoped so switching this checkbox does not rewrite a
+  // person's saved default.
+  const [cachedOnly, setCachedOnly] = useState(() => settings.streamCachedOnly);
   const [resFilter, setResFilter] = useState<VideoQuality | null>(null);
   const [codecFilter, setCodecFilter] = useState<VideoCodec | null>(null);
-  const [resolvingHash, setResolvingHash] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(10);
+  const [resolutionStates, setResolutionStates] = useState<Record<string, ResolutionStatus>>({});
   const [resolveError, setResolveError] = useState<string | null>(null);
-  const { settings } = useAppStore();
 
   // Clear the resolution/codec chips whenever the underlying results change
   // (a new title is opened). A stale value is already ignored if it no longer
   // appears, but if the next title HAPPENS to share that resolution/codec the
-  // old chip would silently pre-filter it — surprising the user. Resetting on
+  // old chip would silently pre-filter it - surprising the user. Resetting on
   // the rows identity keeps the picker unfiltered for each newly opened title.
   useEffect(() => {
     setResFilter(null);
     setCodecFilter(null);
+    setVisibleCount(10);
+    setResolutionStates({});
   }, [state.rows]);
 
   // The data-saver-eligible rows are the basis for both the chips and the list.
   const baseRows = useMemo(
-    () => filterStreamRows(state.rows, settings),
+    () => filterStreamRows(state.rows, { ...settings, streamCachedOnly: false }),
     [state.rows, settings],
   );
 
@@ -121,22 +156,48 @@ export function StreamPicker({
     });
   }, [baseRows, cachedOnly, effRes, effCodec]);
 
+  // A filter change is a fresh result set, so the next view starts at the fast
+  // initial mount size rather than retaining a previous "show more" expansion.
+  useEffect(() => {
+    setVisibleCount(10);
+  }, [cachedOnly, effRes, effCodec]);
+
+  const visibleRows = useMemo(
+    () => rows.slice(0, visibleCount),
+    [rows, visibleCount],
+  );
+
   async function select(row: StreamRow) {
     if (!state.hasDebrid) {
       setResolveError(
-        "Add a debrid service in Settings to play — it turns a match into an instant stream.",
+        "Add a debrid service in Settings to play - it turns a match into an instant stream.",
       );
       return;
     }
+    const hash = row.result.infoHash;
+    if (resolutionStates[hash] === "resolving") return;
     setResolveError(null);
-    setResolvingHash(row.result.infoHash);
+    setResolutionStates((current) => ({ ...current, [hash]: "resolving" }));
     try {
-      const stream = await resolveStream(row);
+      const stream = await resolveWithinTimeout(() => resolveStream(row));
+      // DebridFileSelector normally chooses the hinted file within a pack. A
+      // provider can still return an untagged/default file, so never start the
+      // wrong episode when a season-pack row lacks the requested episode.
+      assertPackEpisodeMatch(row, stream, episodeContext);
       onPlay(stream, row.result);
     } catch (err) {
       setResolveError(err instanceof Error ? err.message : String(err));
+      setResolutionStates((current) => ({ ...current, [hash]: "failed" }));
     } finally {
-      setResolvingHash(null);
+      // A failed resolve stays visibly terminal and retryable. A successful
+      // resolve drops back to its normal Instant/Will cache badge while play
+      // starts; a late completion after the timeout cannot call onPlay.
+      setResolutionStates((current) => {
+        if (current[hash] !== "resolving") return current;
+        const next = { ...current };
+        delete next[hash];
+        return next;
+      });
     }
   }
 
@@ -158,7 +219,7 @@ export function StreamPicker({
           <div className="streams-controls">
             <span className="streams-count t-secondary">
               {cachedCount} instant · {state.rows.length} total
-              {rows.length < state.rows.length ? ` · ${rows.length} shown` : ""}
+              {visibleRows.length < rows.length ? ` · ${visibleRows.length} shown` : ""}
             </span>
             <label className="streams-toggle">
               <input
@@ -206,16 +267,18 @@ export function StreamPicker({
       <StreamBody
         state={state}
         rows={rows}
+        visibleRows={visibleRows}
         cachedOnly={cachedOnly}
         filteredCount={filteredCount}
         chipFiltersActive={effRes != null || effCodec != null}
-        resolvingHash={resolvingHash}
+        resolutionStates={resolutionStates}
         onSelect={select}
         onShowAll={() => setCachedOnly(false)}
         onClearChips={() => {
           setResFilter(null);
           setCodecFilter(null);
         }}
+        onShowMore={() => setVisibleCount((count) => count + 20)}
         onOpenSettings={onOpenSettings}
         episodeLabel={episodeLabel}
         episodeContext={episodeContext}
@@ -227,26 +290,30 @@ export function StreamPicker({
 function StreamBody({
   state,
   rows,
+  visibleRows,
   cachedOnly,
   filteredCount,
   chipFiltersActive,
-  resolvingHash,
+  resolutionStates,
   onSelect,
   onShowAll,
   onClearChips,
+  onShowMore,
   onOpenSettings,
   episodeLabel = null,
   episodeContext = null,
 }: {
   state: StreamsState;
   rows: StreamRow[];
+  visibleRows: StreamRow[];
   cachedOnly: boolean;
   filteredCount: number;
   chipFiltersActive: boolean;
-  resolvingHash: string | null;
+  resolutionStates: Record<string, ResolutionStatus>;
   onSelect: (row: StreamRow) => void;
   onShowAll: () => void;
   onClearChips: () => void;
+  onShowMore: () => void;
   onOpenSettings?: () => void;
   episodeLabel?: string | null;
   episodeContext?: { season: number; episode: number } | null;
@@ -256,7 +323,7 @@ function StreamBody({
       <ul className="streams-list streams-skeleton" aria-busy="true" aria-label="Searching sources">
         {Array.from({ length: 4 }).map((_, i) => (
           <li key={i}>
-            <div className="stream-row stream-row-skel glass-rest" aria-hidden="true">
+            <div className="stream-row stream-row-skel" aria-hidden="true">
               <span className="stream-quality-skel skel" />
               <div className="stream-main">
                 <span className="skel-line skel-name skel" />
@@ -277,7 +344,7 @@ function StreamBody({
         <p className="streams-empty-title">No sources yet</p>
         <p className="t-secondary streams-empty-sub">
           A source is where the app looks for releases. Turn on the built-in
-          scrapers, or add one (Torrentio, Jackett, Prowlarr…), in Settings —
+          scrapers, or add one (Torrentio, Jackett, Prowlarr…), in Settings - 
           then pair it with a debrid service to stream instantly.
         </p>
         {onOpenSettings && (
@@ -305,13 +372,38 @@ function StreamBody({
     );
   }
 
+  if (state.missingImdbId) {
+    // No IMDb id ⇒ NO search ever ran. Never render "No streams found" here - 
+    // that reads as an exhaustive search that came up empty, when in truth
+    // zero requests were made (the silent "streams are not being found" P0).
+    return (
+      <div className="streams-empty glass-rest">
+        <Icon name="info" size={22} className="t-warning" />
+        <p className="streams-empty-title">Can't search for this title yet</p>
+        <p className="t-secondary streams-empty-sub">
+          Sources are searched by IMDb id, and this title doesn't have one yet - 
+          usually because the catalog lookup is incomplete or the TMDB key is
+          missing. Check Settings → Sources, then reopen this title.
+        </p>
+        {onOpenSettings && (
+          <div className="streams-empty-actions">
+            <button type="button" className="btn" onClick={onOpenSettings}>
+              <Icon name="settings" size={15} />
+              Open settings
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (rows.length === 0) {
     // Quality/codec chips combined to nothing (each chip alone always matches,
     // but a resolution+codec combination can be empty).
     const chipsEmpty = chipFiltersActive && filteredCount > 0;
     const cachedOnlyEmpty = !chipsEmpty && cachedOnly && filteredCount > 0;
     const filtersEmpty = !chipsEmpty && state.rows.length > 0 && filteredCount === 0;
-    // With no debrid service there IS no playback path — saying "sources did
+    // With no debrid service there IS no playback path - saying "sources did
     // not return a match" would be false (nothing was searched for playback).
     // Tell the truth and route to the guided setup.
     const noDebrid = !state.hasDebrid;
@@ -320,7 +412,7 @@ function StreamBody({
       <div className="streams-empty glass-rest">
         <p className="streams-empty-title">
           {noDebrid
-            ? "Almost there — add a debrid service"
+            ? "Almost there - add a debrid service"
             : chipsEmpty
               ? "No streams match those filters"
               : cachedOnlyEmpty
@@ -339,9 +431,19 @@ function StreamBody({
                 : filtersEmpty
                   ? "Your quality or file-size limits removed the available results for this title."
                   : episodeLabel != null
-                    ? `The configured sources have no match for ${episodeLabel} yet — try another episode or add another source.`
+                    ? `The configured sources have no match for ${episodeLabel} yet - try another episode or add another source.`
                     : "The configured sources did not return a match for this title yet. Add another source or try a different release."}
         </p>
+        {/* Empty ≠ exhaustive when some sources failed: name them so the user
+            knows this result may be incomplete (network/mirror issues). */}
+        {!noDebrid && state.sourceErrors.length > 0 && (
+          <p className="t-secondary streams-empty-sub streams-source-errors">
+            {state.sourceErrors.length === 1 ? "One source" : `${state.sourceErrors.length} sources`}{" "}
+            couldn't be reached:{" "}
+            {state.sourceErrors.map((e) => e.indexer).join(", ")} - results may
+            be incomplete.
+          </p>
+        )}
         <div className="streams-empty-actions">
           {noDebrid && (
             <button
@@ -379,38 +481,49 @@ function StreamBody({
   }
 
   return (
-    <ul className="streams-list">
-      {rows.map((row) => (
-        <StreamRowItem
-          key={row.result.infoHash}
-          row={row}
-          resolving={resolvingHash === row.result.infoHash}
-          onSelect={() => onSelect(row)}
-          pack={
-            episodeContext != null &&
-            classifyRowForEpisode(row, episodeContext.season, episodeContext.episode) ===
-              "pack"
-          }
-        />
-      ))}
-    </ul>
+    <>
+      <ul className="streams-list">
+        {visibleRows.map((row) => (
+          <StreamRowItem
+            key={row.result.infoHash}
+            row={row}
+            resolutionStatus={resolutionStates[row.result.infoHash] ?? null}
+            onSelect={() => onSelect(row)}
+            pack={
+              episodeContext != null &&
+              classifyRowForEpisode(row, episodeContext.season, episodeContext.episode) ===
+                "pack"
+            }
+          />
+        ))}
+      </ul>
+      {visibleRows.length < rows.length && (
+        <div className="streams-pagination">
+          <button type="button" className="btn" onClick={onShowMore}>
+            Show 20 more
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
 function StreamRowItem({
   row,
-  resolving,
+  resolutionStatus,
   onSelect,
   pack = false,
 }: {
   row: StreamRow;
-  resolving: boolean;
+  resolutionStatus: ResolutionStatus | null;
   onSelect: () => void;
   /** The release is a whole-season pack (not an exact episode file). */
   pack?: boolean;
 }) {
   const { result, cachedOn } = row;
   const cached = cachedOn != null;
+  const resolving = resolutionStatus === "resolving";
+  const failed = resolutionStatus === "failed";
 
   return (
     <li>
@@ -444,6 +557,8 @@ function StreamRowItem({
             <span className="stream-spin" aria-hidden="true" />
             Resolving…
           </span>
+        ) : failed ? (
+          <span className="stream-badge is-failed">Failed · Retry</span>
         ) : (
           <span className={`stream-badge ${cached ? "is-cached" : "is-cache"}`}>
             {cached ? (

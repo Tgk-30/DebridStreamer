@@ -15,6 +15,8 @@ import {
   createAccountProfile,
   deleteAccountProfile,
   fetchAccountProfiles,
+  setProfileBandwidthQuota,
+  setProfilePin,
   switchAccountProfile,
   updateAccountProfile,
   type AccountProfile,
@@ -61,6 +63,26 @@ function Avatar({ profile, size = 96 }: { profile: ServerProfileSummary; size?: 
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function bandwidthSummary(profile: ServerProfileSummary): string {
+  const usage = formatBytes(profile.bandwidthUsageBytes ?? 0);
+  if (profile.bandwidthCapBytes == null) return `${usage} this month · No cap`;
+  const status = profile.bandwidthStatus ?? "ok";
+  const label = status === "over" ? "Over cap" : status === "approaching" ? "Approaching cap" : "Within cap";
+  return `${usage} of ${formatBytes(profile.bandwidthCapBytes)} · ${label}`;
+}
+
 export function ProfilePicker({ onClose }: { onClose: () => void }) {
   const session = useServerSession();
   const profiles = useServerProfiles();
@@ -79,6 +101,11 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
   // When set, the parental-lock prompt is open for this target profile: leaving
   // a kid profile requires the account password before the switch is allowed.
   const [unlocking, setUnlocking] = useState<ServerProfileSummary | null>(null);
+  // PIN entry is distinct from the existing parental account-password prompt:
+  // this is the PIN on the profile the viewer is ENTERING.
+  const [pinUnlocking, setPinUnlocking] = useState<ServerProfileSummary | null>(null);
+  const [pinFor, setPinFor] = useState<ServerProfileSummary | null>(null);
+  const [quotaFor, setQuotaFor] = useState<ServerProfileSummary | null>(null);
 
   const activeId = session?.profileId ?? null;
   // Is the CURRENTLY ACTIVE profile a kid? Leaving it (switching to a different
@@ -87,6 +114,11 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
     () => profiles.some((p) => p.id === activeId && p.isKid),
     [profiles, activeId],
   );
+  const isHouseholdManager = session?.role === "owner" || session?.role === "admin";
+
+  function canManagePin(profile: ServerProfileSummary): boolean {
+    return isHouseholdManager || profile.id === activeId;
+  }
 
   /** Permanently delete a profile (after the inline two-step confirm). */
   function performDelete(profileId: string) {
@@ -155,6 +187,13 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
       onClose();
       return;
     }
+    // A PIN on the TARGET profile is a household gate for entering it. Prompt
+    // before switching so a 403 can be retried without closing the picker.
+    if (profile.hasPin === true) {
+      setError(null);
+      setPinUnlocking(profile);
+      return;
+    }
     // Parental lock: leaving a kid profile for a DIFFERENT one needs the account
     // password. Prompt for it instead of switching straight away.
     if (activeIsKid) {
@@ -181,7 +220,7 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
       const result = await switchAccountProfile(profile.id, password);
       // Load the new profile's data BEFORE flipping the UI session. If the
       // refetch fails we stay on the old profile (the catch re-throws), instead
-      // of leaving the new — possibly kid — session over the old profile's
+      // of leaving the new - possibly kid - session over the old profile's
       // already-rendered (possibly over-cap) rails. The server has already
       // switched the session cookie, so these loaders return the new profile's data.
       await reloadProfileData();
@@ -225,6 +264,10 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
               simpleMode: res.profile.simpleMode,
               isDefault: res.profile.isDefault,
               isKid: res.profile.isKid,
+              hasPin: false,
+              bandwidthCapBytes: null,
+              bandwidthUsageBytes: 0,
+              bandwidthStatus: "ok",
             },
           ]);
           setAdding(false);
@@ -263,6 +306,45 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
     );
   }
 
+  if (pinUnlocking != null) {
+    return (
+      <PinUnlockPrompt
+        target={pinUnlocking}
+        onCancel={() => setPinUnlocking(null)}
+        onSubmit={(pin) => runSwitch(pinUnlocking, pin)}
+      />
+    );
+  }
+
+  if (pinFor != null) {
+    return (
+      <PinSettingsForm
+        target={pinFor}
+        changing={pinFor.hasPin === true}
+        onCancel={() => setPinFor(null)}
+        onSubmit={async (pin) => {
+          const result = await setProfilePin(pinFor.id, pin);
+          await refreshAfterMutation(result.profiles.profiles);
+          setPinFor(null);
+        }}
+      />
+    );
+  }
+
+  if (quotaFor != null) {
+    return (
+      <QuotaSettingsForm
+        target={quotaFor}
+        onCancel={() => setQuotaFor(null)}
+        onSubmit={async (capBytes) => {
+          const result = await setProfileBandwidthQuota(quotaFor.id, capBytes);
+          await refreshAfterMutation(result.profiles.profiles);
+          setQuotaFor(null);
+        }}
+      />
+    );
+  }
+
   return (
     <div
       ref={pickerRef}
@@ -286,7 +368,14 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
                 aria-current={profile.id === activeId ? "true" : undefined}
               >
                 <Avatar profile={profile} />
-                <span className="profile-tile-name">{profile.displayName}</span>
+                <span className="profile-tile-name">
+                  {profile.displayName}
+                  {profile.hasPin === true && (
+                    <span className="profile-lock-glyph" aria-label="PIN protected" role="img">
+                      {" \u{1F512}"}
+                    </span>
+                  )}
+                </span>
                 {profile.isKid && <span className="profile-kids-badge">Kids</span>}
                 {busyId === profile.id && <span className="profile-tile-busy">Switching…</span>}
               </button>
@@ -299,6 +388,75 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
                   >
                     Edit
                   </button>
+                  {canManagePin(profile) && (
+                    <>
+                      <button
+                        type="button"
+                        className="profile-mini-btn"
+                        onClick={() => setPinFor(profile)}
+                        disabled={busyId != null}
+                        aria-label={`${profile.hasPin ? "Change" : "Set"} PIN for ${profile.displayName}`}
+                      >
+                        {profile.hasPin ? "Change PIN" : "Set PIN"}
+                      </button>
+                      {profile.hasPin === true && (
+                        <button
+                          type="button"
+                          className="profile-mini-btn"
+                          disabled={busyId != null}
+                          aria-label={`Remove PIN for ${profile.displayName}`}
+                          onClick={() => {
+                            setError(null);
+                            setBusyId(profile.id);
+                            void setProfilePin(profile.id, null)
+                              .then((result) => refreshAfterMutation(result.profiles.profiles))
+                              .catch((err) =>
+                                setError(err instanceof Error ? err.message : "Could not remove PIN."),
+                              )
+                              .finally(() => setBusyId(null));
+                          }}
+                        >
+                          Remove PIN
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {isHouseholdManager && (
+                    <>
+                      <button
+                        type="button"
+                        className="profile-mini-btn"
+                        onClick={() => setQuotaFor(profile)}
+                        disabled={busyId != null}
+                        aria-label={`${profile.bandwidthCapBytes != null ? "Change" : "Set"} monthly cap for ${profile.displayName}`}
+                      >
+                        {profile.bandwidthCapBytes != null ? "Change cap" : "Set cap"}
+                      </button>
+                      {profile.bandwidthCapBytes != null && (
+                        <button
+                          type="button"
+                          className="profile-mini-btn"
+                          disabled={busyId != null}
+                          aria-label={`Clear monthly cap for ${profile.displayName}`}
+                          onClick={() => {
+                            setError(null);
+                            setBusyId(profile.id);
+                            void setProfileBandwidthQuota(profile.id, null)
+                              .then((result) => refreshAfterMutation(result.profiles.profiles))
+                              .catch((err) =>
+                                setError(err instanceof Error ? err.message : "Could not clear monthly cap."),
+                              )
+                              .finally(() => setBusyId(null));
+                          }}
+                        >
+                          Clear cap
+                        </button>
+                      )}
+                      <span className={`profile-bandwidth-status is-${profile.bandwidthStatus ?? "ok"}`}>
+                        {bandwidthSummary(profile)}
+                      </span>
+                    </>
+                  )}
                   {!profile.isDefault &&
                     (confirmDeleteId === profile.id ? (
                       <span className="profile-confirm-delete" role="group" aria-label={`Delete ${profile.displayName}?`}>
@@ -385,11 +543,255 @@ function profileToAccount(p: ServerProfileSummary): AccountProfile {
     // The picker summary doesn't carry the cap (only the kid flag); the rename
     // form this feeds doesn't touch maturity, so null is a safe placeholder.
     maturityMax: null,
+    hasPin: p.hasPin,
+    bandwidthCapBytes: p.bandwidthCapBytes,
+    bandwidthUsageBytes: p.bandwidthUsageBytes,
+    bandwidthStatus: p.bandwidthStatus,
   };
 }
 
+/** Target-profile PIN prompt. A 403 from the existing server switch contract is
+ * intentionally rendered as a retryable PIN error rather than closing the picker. */
+function PinUnlockPrompt({
+  target,
+  onCancel,
+  onSubmit,
+}: {
+  target: ServerProfileSummary;
+  onCancel: () => void;
+  onSubmit: (pin: string) => Promise<void>;
+}) {
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const promptRef = useModalA11y<HTMLDivElement>(onCancel);
+  const canSubmit = /^\d{4,6}$/.test(pin) && !busy;
+
+  function submit() {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    void onSubmit(pin).catch((err) => {
+      const status = (err as { status?: number }).status;
+      setError(
+        status === 403
+          ? "Incorrect PIN"
+          : err instanceof Error
+            ? err.message
+            : "Could not switch profile.",
+      );
+      setBusy(false);
+    });
+  }
+
+  return (
+    <div
+      ref={promptRef}
+      className="profile-picker"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Enter profile PIN"
+      tabIndex={-1}
+    >
+      <div className="profile-picker-inner profile-form">
+        <h1 className="profile-picker-title">Enter PIN</h1>
+        <p className="profile-unlock-copy">
+          Enter the PIN to switch to <strong>{target.displayName}</strong>.
+        </p>
+        <label className="profile-field">
+          PIN
+          <input
+            type="password"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            autoComplete="one-time-code"
+            value={pin}
+            onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit();
+            }}
+            autoFocus
+          />
+        </label>
+        {error != null && <p className="profile-picker-error" role="alert">{error}</p>}
+        <div className="profile-picker-foot">
+          <button type="button" className="profile-text-btn" onClick={onCancel} disabled={busy}>
+            Back
+          </button>
+          <button type="button" className="profile-solid-btn" onClick={submit} disabled={!canSubmit}>
+            {busy ? "Please wait" : "Unlock"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PinSettingsForm({
+  target,
+  changing,
+  onCancel,
+  onSubmit,
+}: {
+  target: ServerProfileSummary;
+  changing: boolean;
+  onCancel: () => void;
+  onSubmit: (pin: string) => Promise<void>;
+}) {
+  const [pin, setPin] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const formRef = useModalA11y<HTMLDivElement>(onCancel);
+  const validPin = /^\d{4,6}$/.test(pin);
+  const canSubmit = validPin && pin === confirm && !busy;
+
+  function submit() {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    void onSubmit(pin)
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not save PIN."))
+      .finally(() => setBusy(false));
+  }
+
+  const updatePin = (value: string, setter: (next: string) => void) =>
+    setter(value.replace(/\D/g, "").slice(0, 6));
+
+  return (
+    <div
+      ref={formRef}
+      className="profile-picker"
+      role="dialog"
+      aria-modal="true"
+      aria-label={changing ? `Change PIN for ${target.displayName}` : `Set PIN for ${target.displayName}`}
+      tabIndex={-1}
+    >
+      <div className="profile-picker-inner profile-form">
+        <h1 className="profile-picker-title">{changing ? "Change PIN" : "Set PIN"}</h1>
+        <p className="profile-unlock-copy">
+          A household gate - it asks for a PIN to switch into this profile. It is not encryption and does not protect your data files.
+        </p>
+        <label className="profile-field">
+          New PIN (4-6 digits)
+          <input
+            type="password"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            autoComplete="new-password"
+            value={pin}
+            onChange={(event) => updatePin(event.target.value, setPin)}
+            autoFocus
+          />
+        </label>
+        <label className="profile-field">
+          Confirm PIN
+          <input
+            type="password"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(event) => updatePin(event.target.value, setConfirm)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit();
+            }}
+          />
+        </label>
+        {confirm.length > 0 && confirm !== pin && (
+          <p className="profile-picker-error">PINs do not match.</p>
+        )}
+        {error != null && <p className="profile-picker-error">{error}</p>}
+        <div className="profile-picker-foot">
+          <button type="button" className="profile-text-btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" className="profile-solid-btn" onClick={submit} disabled={!canSubmit}>
+            {busy ? "Please wait" : changing ? "Change PIN" : "Set PIN"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuotaSettingsForm({
+  target,
+  onCancel,
+  onSubmit,
+}: {
+  target: ServerProfileSummary;
+  onCancel: () => void;
+  onSubmit: (capBytes: number) => Promise<void>;
+}) {
+  const initialGiB =
+    target.bandwidthCapBytes != null
+      ? String(target.bandwidthCapBytes / 1024 ** 3)
+      : "";
+  const [gigabytes, setGigabytes] = useState(initialGiB);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const formRef = useModalA11y<HTMLDivElement>(onCancel);
+  const bytes = Math.round(Number(gigabytes) * 1024 ** 3);
+  const canSubmit = Number.isSafeInteger(bytes) && bytes > 0 && !busy;
+
+  function submit() {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    void onSubmit(bytes)
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not save monthly cap."))
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <div
+      ref={formRef}
+      className="profile-picker"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Monthly cap for ${target.displayName}`}
+      tabIndex={-1}
+    >
+      <div className="profile-picker-inner profile-form">
+        <h1 className="profile-picker-title">Monthly bandwidth cap</h1>
+        <p className="profile-unlock-copy">
+          Warn-only household guidance. Reaching or exceeding this cap never cuts off playback.
+        </p>
+        <label className="profile-field">
+          Monthly cap (GB)
+          <input
+            type="number"
+            min="0.01"
+            step="0.01"
+            inputMode="decimal"
+            value={gigabytes}
+            onChange={(event) => setGigabytes(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit();
+            }}
+            autoFocus
+          />
+        </label>
+        {error != null && <p className="profile-picker-error">{error}</p>}
+        <div className="profile-picker-foot">
+          <button type="button" className="profile-text-btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" className="profile-solid-btn" onClick={submit} disabled={!canSubmit}>
+            {busy ? "Please wait" : "Save cap"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Parental-lock prompt shown when leaving a kid profile: the account password
- *  is required before the switch. A 403 means a wrong/missing password — we show
+ *  is required before the switch. A 403 means a wrong/missing password - we show
  *  "Incorrect password" and let the user retry without closing. */
 function UnlockPrompt({
   target,

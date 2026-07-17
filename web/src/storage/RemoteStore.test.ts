@@ -1,4 +1,4 @@
-// RemoteStore (Server-Mode storage backend) tests — fetch-mocked. Focus on the
+// RemoteStore (Server-Mode storage backend) tests - fetch-mocked. Focus on the
 // resume/continue-watching path hardened in the bug-hunt + core history calls.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +36,7 @@ describe("RemoteStore", () => {
   afterEach(() => vi.unstubAllGlobals());
   const store = () => new RemoteStore("http://srv");
 
-  describe("getResume — exact-key lookup", () => {
+  describe("getResume - exact-key lookup", () => {
     it("GETs /api/history/:mediaId and maps the item", async () => {
       fetchMock.mockResolvedValue(
         jsonResponse({ item: histItem({ progressSeconds: 300, durationSeconds: 600 }) }),
@@ -69,7 +69,7 @@ describe("RemoteStore", () => {
     });
   });
 
-  describe("continueWatching — resumable-only, filtered before the slice", () => {
+  describe("continueWatching - resumable-only, filtered before the slice", () => {
     it("keeps only resumable rows (drops viewed-only + completed), preserving order", async () => {
       fetchMock.mockResolvedValue(
         jsonResponse({
@@ -141,7 +141,7 @@ describe("RemoteStore", () => {
         mediaId: "tt5",
         preview: { id: "tt5", type: "movie", title: "M" },
       });
-      // Exactly one network call — the PUT — and no GET read-back.
+      // Exactly one network call - the PUT - and no GET read-back.
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(rec.id).toBe("tt5:");
       expect(rec.episodeId).toBeNull();
@@ -172,6 +172,16 @@ describe("RemoteStore", () => {
       expect(rec.lastWatched).toBe("2020-05-05T00:00:00.000Z");
       expect(rec.completed).toBe(true);
       expect(rec.streamQuality).toBe("1080p");
+    });
+
+    it("deleteHistory DELETEs only the requested episode row", async () => {
+      vi.stubGlobal("document", { cookie: "ds_csrf=tok123" });
+      fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+      await store().deleteHistory("show/1", "s2e3");
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe("http://srv/api/history/show%2F1?episodeId=s2e3");
+      expect(init.method).toBe("DELETE");
+      expect(init.headers["x-csrf-token"]).toBe("tok123");
     });
 
     it("listHistory passes the requested limit through", async () => {
@@ -369,7 +379,7 @@ describe("RemoteStore", () => {
     });
   });
 
-  describe("secrets — provider credential bridge", () => {
+  describe("secrets - provider credential bridge", () => {
     it("setSecret PUTs a provider credential when the key maps to a provider", async () => {
       fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
       await store().setSecret("tmdb_api_key", "abc123");
@@ -581,7 +591,7 @@ describe("RemoteStore", () => {
     });
   });
 
-  describe("indexer configs — stored in profile settings JSON", () => {
+  describe("indexer configs - stored in profile settings JSON", () => {
     function cfg(id: string, priority: number) {
       return {
         id,
@@ -674,7 +684,7 @@ describe("RemoteStore", () => {
     });
   });
 
-  describe("saveDebridConfig — credential bridge", () => {
+  describe("saveDebridConfig - credential bridge", () => {
     function debridConfig(over: Record<string, unknown> = {}) {
       return {
         id: "rd-1",
@@ -765,7 +775,7 @@ describe("RemoteStore", () => {
     });
 
     it("accepts an empty (zero-length) 200 body without parsing", async () => {
-      // A 204-style empty body must not throw — request() skips JSON.parse when
+      // A 204-style empty body must not throw - request() skips JSON.parse when
       // the text is empty and resolves to {}.
       fetchMock.mockResolvedValue({
         ok: true,

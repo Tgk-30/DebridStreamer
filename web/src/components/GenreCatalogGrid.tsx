@@ -2,22 +2,109 @@
 //
 // A deterministic, fast genre entry point: tap a tile to open a Browse pre-set
 // to that genre (the `kind:"genre"` browse context) or, for the two special
-// tiles, a category Browse (New Releases / Coming Soon). Pure presentational —
+// tiles, a category Browse (New Releases / Coming Soon). Pure presentational - 
 // the caller passes the active media type and the store's `openBrowse`.
 
+import { useEffect, useState } from "react";
 import type { BrowseContext } from "../data/browse";
 import { catalogTilesFor, tileGenreId, type GenreCatalogTile } from "../data/genreCatalog";
+import { useGenreArtwork } from "../data/genreArtwork";
 import { fallbackGenres } from "../data/genres";
+import { prefersReducedMotion } from "../lib/reducedMotion";
+import { isNetworkAllowed } from "../lib/networkPolicy";
 import type { MediaType } from "../models/media";
+import type { MetadataProvider } from "../services/metadata/types";
 import "./GenreCatalogGrid.css";
 
 interface Props {
   type: MediaType;
   onOpen: (ctx: BrowseContext) => void;
+  /** Metadata source for live tile artwork; gradient-only when null. */
+  tmdb?: MetadataProvider | null;
+  /** Pause artwork rotation while a full-screen overlay covers Search. */
+  suspended?: boolean;
 }
 
-export function GenreCatalogGrid({ type, onOpen }: Props) {
+// A tile cycles through its representative backdrops on this cadence, cross-
+// fading between them so the "Browse categories" cards refresh over a session.
+const ROTATE_MS = 9000;
+
+/** Two-layer cross-fade over a tile's backdrops. Only two <img>s are ever in the
+ * DOM (current + incoming), so a 15-tile grid loads ~30 images, not ~90. The
+ * rotation is staggered per tile and suppressed under reduced-motion. */
+function GenreTileArt({
+  urls,
+  index,
+  suspended,
+}: {
+  urls: string[];
+  index: number;
+  suspended: boolean;
+}) {
+  const showImages = isNetworkAllowed("images");
+  // Two ping-pong layers; `top` says which one is currently visible.
+  const [layers, setLayers] = useState<{ a: string; b: string; top: "a" | "b" }>(
+    () => ({ a: urls[0], b: urls[0], top: "a" }),
+  );
+
+  // Reset when the backdrop set changes (e.g. movie↔series switch or refetch).
+  useEffect(() => {
+    setLayers({ a: urls[0], b: urls[0], top: "a" });
+  }, [urls]);
+
+  useEffect(() => {
+    if (suspended || urls.length < 2 || prefersReducedMotion()) return;
+    let frame = 0;
+    let tick: number | undefined;
+    // Stagger the first flip so the tiles don't all change at the same instant.
+    const kickoff = window.setTimeout(function advance() {
+      frame = (frame + 1) % urls.length;
+      const next = urls[frame];
+      setLayers((L) =>
+        L.top === "a" ? { a: L.a, b: next, top: "b" } : { a: next, b: L.b, top: "a" },
+      );
+      tick = window.setTimeout(advance, ROTATE_MS);
+    }, ROTATE_MS + (index % 5) * 1300);
+    return () => {
+      window.clearTimeout(kickoff);
+      window.clearTimeout(tick);
+    };
+  }, [urls, index, suspended]);
+
+  if (!showImages) return null;
+
+  return (
+    <span className="genre-tile-arts" aria-hidden>
+      <img
+        className={"genre-tile-art" + (layers.top === "a" ? " is-current" : "")}
+        src={layers.a}
+        alt=""
+        aria-hidden
+        decoding="async"
+        loading="lazy"
+      />
+      <img
+        className={"genre-tile-art" + (layers.top === "b" ? " is-current" : "")}
+        src={layers.b}
+        alt=""
+        aria-hidden
+        decoding="async"
+        loading="lazy"
+      />
+    </span>
+  );
+}
+
+export function GenreCatalogGrid({ type, onOpen, tmdb = null, suspended = false }: Props) {
   const tiles = catalogTilesFor(type);
+  const artwork = useGenreArtwork(type, tmdb);
+  const [hidden, setHidden] = useState(() => document.hidden);
+
+  useEffect(() => {
+    const onVisibilityChange = () => setHidden(document.hidden);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
 
   const genreName = (tile: GenreCatalogTile): string => {
     const gid = tileGenreId(tile, type);
@@ -36,28 +123,32 @@ export function GenreCatalogGrid({ type, onOpen }: Props) {
   };
 
   return (
-    <div className="genre-catalog" role="list">
-      {tiles.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          role="listitem"
-          className="genre-tile"
-          style={
-            {
-              "--tile-a": t.accent[0],
-              "--tile-b": t.accent[1],
-            } as React.CSSProperties
-          }
-          onClick={() => open(t)}
-          aria-label={`Browse ${t.category != null ? t.label : genreName(t)}`}
-        >
-          <span className="genre-tile-glyph" aria-hidden>
-            {t.glyph}
-          </span>
-          <span className="genre-tile-label">{t.label}</span>
-        </button>
-      ))}
+    <div className="genre-catalog">
+      {tiles.map((t, i) => {
+        const art = artwork.get(t.id);
+        const hasArt = art != null && art.length > 0;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            className={"genre-tile" + (hasArt ? " has-art" : "")}
+            style={
+              {
+                "--tile-a": t.accent[0],
+                "--tile-b": t.accent[1],
+              } as React.CSSProperties
+            }
+            onClick={() => open(t)}
+            aria-label={`Browse ${t.category != null ? t.label : genreName(t)}`}
+          >
+            {hasArt && <GenreTileArt urls={art} index={i} suspended={suspended || hidden} />}
+            <span className="genre-tile-glyph" aria-hidden>
+              {t.glyph}
+            </span>
+            <span className="genre-tile-label">{t.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

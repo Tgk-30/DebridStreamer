@@ -6,10 +6,10 @@
 // decode/error-mapping (httpStatus vs decodingFailed). The `fetch`
 // implementation is injectable so tests can stub the network (the Swift code
 // injects a URLSession instead). There is no caching in the Swift service, so
-// — unlike the TMDB template — there is no TTL cache here.
+// - unlike the TMDB template - there is no TTL cache here.
 //
 // Note on decodingFailed: Swift's JSONDecoder throws when a *structurally*
-// invalid body (valid JSON, wrong shape — e.g. `{"unexpected":true}`) is fed to
+// invalid body (valid JSON, wrong shape - e.g. `{"unexpected":true}`) is fed to
 // a Decodable with required keys. `JSON.parse` does NOT throw for that, so each
 // strongly-typed decode runs an explicit shape `decode` callback; any throw
 // inside it (parse failure OR missing required field) is mapped to
@@ -17,15 +17,20 @@
 
 import {
   type TraktDeviceCodeResponse,
+  type TraktScrobbleItem,
   type TraktTokenResponse,
   type TraktWatchlistItem,
+  type TraktWatchlistShowItem,
   type TraktWatchlistPushResult,
 } from "./models";
 import {
   decodeDeviceCodeResponse,
+  decodeScrobbleResult,
   decodeTokenResponse,
   decodeWatchlistItems,
+  decodeWatchlistShowItems,
   decodeWatchlistPushResult,
+  encodeScrobbleItem,
   TraktSyncError,
 } from "./types";
 
@@ -136,13 +141,28 @@ export class TraktSyncService {
     });
   }
 
+  async fetchWatchlistShows(
+    clientID: string,
+    accessToken: string,
+  ): Promise<TraktWatchlistShowItem[]> {
+    return this.request({
+      path: "/sync/watchlist/shows",
+      method: "GET",
+      traktClientID: clientID,
+      accessToken,
+      decode: decodeWatchlistShowItems,
+    });
+  }
+
   async pushWatchlist(
     clientID: string,
     accessToken: string,
     imdbIDs: string[],
+    showTMDBIDs: number[] = [],
   ): Promise<TraktWatchlistPushResult> {
     const payload = {
       movies: imdbIDs.map((imdb) => ({ ids: { imdb } })),
+      shows: showTMDBIDs.map((tmdb) => ({ ids: { tmdb } })),
     };
     return this.request({
       path: "/sync/watchlist",
@@ -151,6 +171,46 @@ export class TraktSyncService {
       accessToken,
       body: payload,
       decode: decodeWatchlistPushResult,
+    });
+  }
+
+  async scrobbleStart(
+    clientID: string,
+    accessToken: string,
+    item: TraktScrobbleItem,
+  ): Promise<void> {
+    return this.scrobble("start", clientID, accessToken, item);
+  }
+
+  async scrobblePause(
+    clientID: string,
+    accessToken: string,
+    item: TraktScrobbleItem,
+  ): Promise<void> {
+    return this.scrobble("pause", clientID, accessToken, item);
+  }
+
+  async scrobbleStop(
+    clientID: string,
+    accessToken: string,
+    item: TraktScrobbleItem,
+  ): Promise<void> {
+    return this.scrobble("stop", clientID, accessToken, item);
+  }
+
+  private async scrobble(
+    action: "start" | "pause" | "stop",
+    clientID: string,
+    accessToken: string,
+    item: TraktScrobbleItem,
+  ): Promise<void> {
+    await this.request({
+      path: `/scrobble/${action}`,
+      method: "POST",
+      traktClientID: clientID,
+      accessToken,
+      body: encodeScrobbleItem(item),
+      decode: decodeScrobbleResult,
     });
   }
 

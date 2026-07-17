@@ -9,12 +9,24 @@
 
 // MARK: - Token boundary helper (mirrors `mediaTokenMatch`)
 
+const MEDIA_TOKEN_PATTERNS = new Map<string, RegExp>([
+  ["sd", /(?<![a-z0-9])sd(?![a-z0-9])/],
+  ["cam", /(?<![a-z0-9])cam(?![a-z0-9])/],
+  ["ts", /(?<![a-z0-9])ts(?![a-z0-9])/],
+]);
+
 /** Matches `token` only when delimited by non-alphanumeric boundaries (or
  * string ends), so ambiguous short tokens like "ts"/"sd"/"cam" don't match when
  * embedded inside words. Mirrors Swift `mediaTokenMatch`. */
-export function mediaTokenMatch(haystack: string, token: string): boolean {
+function mediaTokenMatch(haystack: string, token: string): boolean {
   // Swift uses `(?<![a-z0-9])token(?![a-z0-9])` on an already-lowercased string.
-  const re = new RegExp(`(?<![a-z0-9])${token}(?![a-z0-9])`);
+  let re = MEDIA_TOKEN_PATTERNS.get(token);
+  if (re == null) {
+    // Keep the helper's generic token semantics while caching any future token
+    // rather than compiling a new expression for every parse.
+    re = new RegExp(`(?<![a-z0-9])${token}(?![a-z0-9])`);
+    MEDIA_TOKEN_PATTERNS.set(token, re);
+  }
   return re.test(haystack);
 }
 
@@ -230,7 +242,7 @@ export const SourceType = {
  * (the Swift type is `Int64`; torrent sizes fit comfortably in a double).
  */
 export interface TorrentResult {
-  /** Equals `infoHash` — mirrors the Swift `id` computed property. */
+  /** Equals `infoHash` - mirrors the Swift `id` computed property. */
   readonly id: string;
   infoHash: string;
   title: string;
@@ -253,7 +265,7 @@ export interface TorrentResult {
 export const TorrentResult = {
   /**
    * Build a TorrentResult, parsing quality/codec/audio/source from the title.
-   * Mirrors `TorrentResult.fromSearch` — note infoHash is lowercased here.
+   * Mirrors `TorrentResult.fromSearch` - note infoHash is lowercased here.
    */
   fromSearch(args: {
     infoHash: string;

@@ -1,4 +1,4 @@
-// WatchlistImportDialog — bulk-import titles into the watchlist from an IMDb /
+// WatchlistImportDialog - bulk-import titles into the watchlist from an IMDb /
 // Letterboxd CSV export or a pasted title list. Each parsed entry is resolved to
 // a real title via TMDB search (Local Mode) or the server (Server Mode), skipped
 // if already on the watchlist, then added. Shows live progress and an
@@ -11,18 +11,23 @@ import { useModalA11y } from "./useModalA11y";
 import { Icon } from "./Icon";
 import type { MediaPreview, MediaType } from "../models/media";
 import {
-  parseImportEntries,
+  parseWatchlistImport,
   resolveEntry,
   type ImportEntry,
 } from "../data/importWatchlist";
 import { searchServerMedia } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
+import { getStore } from "../storage";
+import { IMDbCSVSyncService } from "../services/sync/IMDbCSVSyncService";
 import "./WatchlistImportDialog.css";
 
 interface Summary {
   added: number;
   skipped: number; // already on the watchlist
   notFound: number; // no TMDB match
+  skippedRows: number; // malformed, empty, or duplicate CSV rows
+  folderName: string | null;
+  folderWarning: string | null;
 }
 
 // Bound the paste so the per-keystroke parse can't be handed a huge blob, and so
@@ -30,12 +35,21 @@ interface Summary {
 const MAX_TEXT = 512 * 1024;
 const MAX_ENTRIES = 500;
 
-export function WatchlistImportDialog({ onClose }: { onClose: () => void }) {
+export function WatchlistImportDialog({
+  onClose,
+  onImported,
+  watchlist,
+}: {
+  onClose: () => void;
+  onImported?: () => void;
+  watchlist: MediaPreview[];
+}) {
   const { services, importToWatchlist } = useAppStore();
   const dialogRef = useModalA11y<HTMLDivElement>(onClose);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [text, setText] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
@@ -44,7 +58,37 @@ export function WatchlistImportDialog({ onClose }: { onClose: () => void }) {
 
   const serverMode = isServerMode();
   const canResolve = serverMode || services.tmdb != null;
-  const entries = parseImportEntries(text).slice(0, MAX_ENTRIES);
+  const parsed = parseWatchlistImport(text, fileName);
+  const entries = parsed.entries.slice(0, MAX_ENTRIES);
+  const missingIMDbCount = watchlist.filter((item) => item.id.startsWith("tmdb-")).length;
+
+  function exportWatchlist() {
+    const csv = new IMDbCSVSyncService().exportCSV(watchlist);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "debridstreamer-watchlist.csv";
+      anchor.click();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  const exportAction = watchlist.length > 0 ? (
+    <button type="button" className="btn" onClick={exportWatchlist}>
+      Export for IMDb
+    </button>
+  ) : null;
+
+  const exportNote = watchlist.length > 0 ? (
+    <p className="wli-note t-secondary">
+      Download a CSV to upload to imdb.com yourself - IMDb has no automatic sync.
+      {missingIMDbCount > 0 &&
+        ` ${missingIMDbCount} of ${watchlist.length} title${watchlist.length === 1 ? "" : "s"} ${missingIMDbCount === 1 ? "has" : "have"} no IMDb id (exported by title only).`}
+    </p>
+  ) : null;
 
   function search(query: string, type: MediaType | null): Promise<MediaPreview[]> {
     if (serverMode) {
@@ -59,14 +103,15 @@ export function WatchlistImportDialog({ onClose }: { onClose: () => void }) {
   async function readFile(file: File) {
     try {
       // Read at most MAX_TEXT bytes so a hostile multi-GB file can't be pulled
-      // into memory — slice the Blob BEFORE reading rather than after.
+      // into memory - slice the Blob BEFORE reading rather than after.
       const oversize = file.size > MAX_TEXT;
       const content = await (oversize ? file.slice(0, MAX_TEXT) : file).text();
       setText(content);
+      setFileName(file.name);
       setSummary(null);
       setError(
         oversize
-          ? "That file was large — only the first part was imported."
+          ? "That file was large - only the first part was imported."
           : null,
       );
     } catch {
@@ -94,8 +139,43 @@ export function WatchlistImportDialog({ onClose }: { onClose: () => void }) {
         else notFound += 1;
         setProgress({ done: i + 1, total: entries.length });
       }
+      let folderName: string | null = null;
+      let folderWarning: string | null = null;
+      const store = getStore();
+      let folderId: string | null = null;
+      if (parsed.folderName != null && resolved.length > 0) {
+        try {
+          const folder = await store.createWatchlistFolder(parsed.folderName);
+          folderName = folder.name;
+          folderId = folder.id;
+        } catch (err) {
+          // Server Mode does not yet persist this local Dexie-only organization
+          // model. Preserve the existing import behavior and say so plainly.
+          folderWarning = err instanceof Error ? err.message : String(err);
+        }
+      }
       const { added, skipped } = await importToWatchlist(resolved);
-      setSummary({ added, skipped, notFound });
+      if (folderId != null) {
+        try {
+          // File existing titles too, so a catalog import truly results in one
+          // folder containing every matched title rather than only new saves.
+          await Promise.all(
+            resolved.map((preview) => store.assignWatchlistFolder(preview.id, folderId)),
+          );
+        } catch (err) {
+          folderWarning = err instanceof Error ? err.message : String(err);
+          folderName = null;
+        }
+      }
+      setSummary({
+        added,
+        skipped,
+        notFound,
+        skippedRows: parsed.skippedRows,
+        folderName,
+        folderWarning,
+      });
+      onImported?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -111,11 +191,11 @@ export function WatchlistImportDialog({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Import watchlist"
+        aria-label="Import and export watchlist"
         tabIndex={-1}
       >
         <div className="wli-head">
-          <h2 className="wli-title">Import to watchlist</h2>
+          <h2 className="wli-title">Import and export</h2>
           <button
             type="button"
             className="wli-close"
@@ -146,6 +226,7 @@ export function WatchlistImportDialog({ onClose }: { onClose: () => void }) {
                 value={text}
                 onChange={(e) => {
                   setText(e.target.value.slice(0, MAX_TEXT));
+                  setFileName(null);
                   setSummary(null);
                 }}
                 rows={7}
@@ -191,10 +272,19 @@ export function WatchlistImportDialog({ onClose }: { onClose: () => void }) {
                       ? `Importing ${progress.done}/${progress.total}…`
                       : "Import"}
                   </button>
+                  {exportAction}
                 </div>
               </div>
 
+              {exportNote}
+
               {error && <p className="wli-error">{error}</p>}
+
+              {parsed.skippedRows > 0 && !summary && (
+                <p className="wli-error">
+                  {parsed.skippedRows} malformed, empty, or duplicate CSV row{parsed.skippedRows === 1 ? " was" : "s were"} skipped.
+                </p>
+              )}
 
               {summary && (
                 <div className="wli-summary glass-rest">
@@ -203,16 +293,37 @@ export function WatchlistImportDialog({ onClose }: { onClose: () => void }) {
                     {summary.added} title{summary.added === 1 ? "" : "s"} to your
                     watchlist.
                   </p>
-                  {(summary.skipped > 0 || summary.notFound > 0) && (
+                  {(summary.skipped > 0 || summary.notFound > 0 || summary.skippedRows > 0) && (
                     <p className="t-secondary wli-summary-sub">
                       {summary.skipped > 0 &&
                         `${summary.skipped} already saved. `}
                       {summary.notFound > 0 &&
                         `${summary.notFound} couldn't be matched.`}
+                      {summary.skippedRows > 0 &&
+                        ` ${summary.skippedRows} malformed, empty, or duplicate CSV row${summary.skippedRows === 1 ? " was" : "s were"} skipped.`}
                     </p>
+                  )}
+                  {summary.folderName != null && (
+                    <p className="t-secondary wli-summary-sub">
+                      Organized in the {summary.folderName} folder.
+                    </p>
+                  )}
+                  {summary.folderWarning != null && (
+                    <p className="wli-error">Imported without a folder: {summary.folderWarning}</p>
                   )}
                 </div>
               )}
+            </>
+          )}
+          {!canResolve && exportAction != null && (
+            <>
+              <div className="wli-row">
+                <span className="t-secondary wli-count">
+                  {watchlist.length} title{watchlist.length === 1 ? "" : "s"} ready to export
+                </span>
+                <div className="wli-actions">{exportAction}</div>
+              </div>
+              {exportNote}
             </>
           )}
         </div>

@@ -5,16 +5,7 @@ import {
   SourceType,
   TorrentResult,
   VideoQuality,
-  mediaTokenMatch,
 } from "./models";
-
-describe("mediaTokenMatch", () => {
-  it("matches a token at token boundaries", () => {
-    expect(mediaTokenMatch("this is a cam file", "cam")).toBe(true);
-    expect(mediaTokenMatch("camera", "cam")).toBe(false); // token boundary rejects embedded
-    expect(mediaTokenMatch("ts scene", "ts")).toBe(true);
-  });
-});
 
 describe("VideoQuality.parse", () => {
   it("parses UHD and 4K variants", () => {
@@ -129,6 +120,7 @@ describe("TorrentResult.fromSearch and qualityLabel", () => {
         seeders: 0,
         leechers: 0,
         indexerName: "idx",
+        isCached: false,
       }),
     ).toBe("720p · H.265 · WEBRip");
 
@@ -145,6 +137,7 @@ describe("TorrentResult.fromSearch and qualityLabel", () => {
         seeders: 0,
         leechers: 0,
         indexerName: "idx",
+        isCached: false,
       }),
     ).toBe("Unknown");
   });

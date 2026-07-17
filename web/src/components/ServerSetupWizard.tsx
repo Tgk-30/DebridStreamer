@@ -12,7 +12,7 @@
 // resolves true. Styling reuses the persona wizard's .first-run* classes plus a
 // few server-setup additions in FirstRunWizard.css.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import {
   saveServerSharedCredential,
@@ -149,7 +149,7 @@ function WelcomeStep({ onContinue }: { onContinue: () => void }) {
     <>
       <h1 className="first-run-title">Your server is live</h1>
       <p className="first-run-sub">
-        Nice — the owner account is set up. A few quick steps and your household
+        Nice - the owner account is set up. A few quick steps and your household
         can sign in from any device. You can skip and do all of this later in
         Settings → Server.
       </p>
@@ -169,7 +169,7 @@ function WelcomeStep({ onContinue }: { onContinue: () => void }) {
 
 /** API-keys step. Saves each non-empty field through the SHARED credential PUT
  *  (the same path the Server tab uses), so they apply server-wide. Empty fields
- *  are skipped. Failures are surfaced but never block continuing — the owner can
+ *  are skipped. Failures are surfaced but never block continuing - the owner can
  *  finish a key later in Settings. */
 function KeysStep({
   onBack,
@@ -200,7 +200,7 @@ function KeysStep({
     });
 
     if (pending.length === 0) {
-      // Nothing entered — let the owner move on and add keys later.
+      // Nothing entered - let the owner move on and add keys later.
       onContinue();
       return;
     }
@@ -235,7 +235,7 @@ function KeysStep({
       <h1 className="first-run-title">Add your API keys</h1>
       <p className="first-run-sub">
         These are stored as shared server credentials, so every profile uses
-        them. Add what you have now — TMDB and one debrid provider are the
+        them. Add what you have now - TMDB and one debrid provider are the
         essentials.
       </p>
       <div className="server-setup-fields">
@@ -335,7 +335,7 @@ function AccessStep({
         {baseURL != null ? <code>{baseURL}</code> : "your local network"}.{" "}
         <strong>Only watching on your home Wi-Fi? You can skip this.</strong> To
         also use it from phones and tablets <em>away</em> from home, expose it
-        with a tunnel — no ports to open, traffic stays encrypted.
+        with a tunnel - no ports to open, traffic stays encrypted.
       </p>
       <div className="server-setup-access">
         <a
@@ -398,6 +398,20 @@ function InviteStep({
   const [qrDataURL, setQrDataURL] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const invitePreset = serverSetupInvitePreset(invitePresetId);
+  // Guards the async invite/QR setState calls: the user can click Back/Skip (or
+  // the wizard can close) while createServerInvite / QRCode.toDataURL are still
+  // in flight, and updating state after unmount warns under StrictMode and can
+  // crash the walkthrough.
+  const mounted = useRef(true);
+  useEffect(() => {
+    // Set true in the SETUP body (not just false in cleanup): StrictMode runs
+    // mount → cleanup → mount again, so a cleanup-only ref would be stuck false
+    // after the dev double-invoke and freeze the step on "Creating…".
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   async function create() {
     setBusy(true);
@@ -415,19 +429,27 @@ function InviteStep({
       const url = new URL(base);
       url.searchParams.set("invite", result.token);
       const built = url.toString();
+      if (!mounted.current) return;
       setInviteURL(built);
-      // Render a QR a phone can scan to open the invite link directly.
+      // Render a QR a phone can scan to open the invite link directly. The
+      // promise can resolve after the step unmounts, so guard the setState.
       QRCode.toDataURL(built, {
         width: 168,
         margin: 1,
         color: { dark: "#111827", light: "#ffffff" },
       })
-        .then(setQrDataURL)
-        .catch(() => setQrDataURL(null));
+        .then((data) => {
+          if (mounted.current) setQrDataURL(data);
+        })
+        .catch(() => {
+          if (mounted.current) setQrDataURL(null);
+        });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't create the invite.");
+      if (mounted.current) {
+        setError(err instanceof Error ? err.message : "Couldn't create the invite.");
+      }
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -435,9 +457,9 @@ function InviteStep({
     if (inviteURL == null) return;
     try {
       await navigator.clipboard.writeText(inviteURL);
-      setCopied(true);
+      if (mounted.current) setCopied(true);
     } catch {
-      setError("Clipboard is unavailable in this session.");
+      if (mounted.current) setError("Clipboard is unavailable in this session.");
     }
   }
 
@@ -522,7 +544,7 @@ function InviteStep({
           className="server-setup-skip-inline"
           onClick={onContinue}
         >
-          Skip — I'll invite people later
+          Skip - I'll invite people later
         </button>
       )}
     </>

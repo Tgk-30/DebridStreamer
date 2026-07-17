@@ -1,0 +1,165 @@
+/* Your-rating control on Detail (1–10 pips or a 0–100 slider). */
+.rating-control {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+.rating-control-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rating-control-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
+}
+.rating-clear {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-tertiary, rgba(255, 255, 255, 0.6));
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.rating-clear:hover {
+  color: var(--text-primary, #fff);
+  text-decoration: underline;
+}
+
+/* ── 1–10 stars ────────────────────────────────────────────────────────── */
+/* Stars (not numbered pills) so this reads unmistakably as a RATING and never
+   as an episode picker. Warm gold fill is the universal rating cue and sets it
+   apart from the app's violet chips. */
+.rating-stars {
+  --rating-gold: #f5b301;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+}
+.rating-star {
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--glass-border, rgba(255, 255, 255, 0.2)); /* empty star */
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1), color 0.12s;
+}
+.rating-star svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 0.75;
+}
+.rating-star:hover {
+  transform: scale(1.18);
+}
+.rating-star.is-on {
+  color: var(--rating-gold);
+  filter: drop-shadow(0 1px 4px rgba(245, 179, 1, 0.4));
+}
+/* The stars from 1..hovered read a touch lighter so the hover preview is
+   distinguishable from a committed rating. */
+.rating-star.is-preview:not(.is-on) {
+  color: var(--rating-gold);
+}
+.rating-star.is-preview {
+  opacity: 0.9;
+}
+.rating-star:focus-visible {
+  outline: none;
+  border-radius: 6px;
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(140, 133, 250, 0.5));
+}
+.rating-readout {
+  margin-left: 8px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 3ch;
+}
+.rating-stars .rating-readout {
+  color: var(--rating-gold);
+}
+
+/* ── 0–100 slider ──────────────────────────────────────────────────────── */
+.rating-hundred {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.rating-hundred input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 420px;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--accent) var(--fill, 0%),
+    var(--glass-tint-control, rgba(255, 255, 255, 0.1)) var(--fill, 0%)
+  );
+  cursor: pointer;
+}
+.rating-hundred input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.rating-hundred input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+}
+.rating-hundred input[type="range"]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(140, 133, 250, 0.5));
+}
+.rating-readout-lg {
+  font-size: 15px;
+  min-width: 5ch;
+  text-align: right;
+}
+/* Mid-drag: the value isn't saved until release, so the readout reads as a
+   draft and a "release to save" hint appears. */
+.rating-hundred.is-dragging .rating-readout-lg {
+  color: var(--text-secondary);
+}
+.rating-hundred-hint {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: rgb(var(--accent-rgb));
+  opacity: 0;
+  transition: opacity 0.14s ease;
+  white-space: nowrap;
+}
+.rating-hundred.is-dragging .rating-hundred-hint {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rating-hundred-hint {
+    transition: none;
+  }
+}

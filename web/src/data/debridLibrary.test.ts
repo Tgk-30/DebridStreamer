@@ -65,7 +65,7 @@ describe("markDuplicates", () => {
 
 describe("formatSize", () => {
   it("formats common sizes", () => {
-    expect(formatSize(0)).toBe("—");
+    expect(formatSize(0)).toBe(" - ");
     expect(formatSize(512)).toBe("512 B");
     expect(formatSize(1024 * 1024 * 1024 * 4.2)).toBe("4.2 GB");
   });

@@ -50,7 +50,7 @@ function makeMockFetch(status: number, body: string): MockFetch {
   };
 }
 
-/** A fetch stub whose text() rejects — exercises the `.catch(() => "")` path on
+/** A fetch stub whose text() rejects - exercises the `.catch(() => "")` path on
  * the error branch (a body read failure must degrade to the fallback message,
  * not throw the read error). */
 function makeFetchTextThrows(status: number): MockFetch {

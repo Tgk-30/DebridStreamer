@@ -1,11 +1,39 @@
-/* DetailAnalysis — the AI "Would I Like This?" card + states. */
+/* DetailAnalysis - the AI "Would I Like This?" card + states. */
 
 .detail-analysis {
   display: flex;
   flex-direction: column;
 }
 
-/* CTA — a subtle accent-tinted pill (reuses .chip; nudged toward the accent). */
+@keyframes detailAnalysisIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes detailAnalysisFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.detail-analysis-in {
+  animation: detailAnalysisIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.detail-analysis-fade-in {
+  animation: detailAnalysisFadeIn 0.32s ease both;
+}
+
+/* CTA - a subtle accent-tinted pill (reuses .chip; nudged toward the accent). */
 .detail-analysis-cta {
   align-self: flex-start;
   gap: var(--sp-sm);
@@ -57,7 +85,7 @@
   }
 }
 
-/* Result card — verdict-tinted glass. The tone classes recolor the score ring,
+/* Result card - verdict-tinted glass. The tone classes recolor the score ring,
  * verdict text, and a left accent edge per verdict. */
 .detail-analysis-card {
   position: relative;

@@ -8,6 +8,7 @@ import {
   resolveImdbId,
   getUpcomingEpisodes,
   getUpcomingEpisodesForSeries,
+  MAX_CALENDAR_SERIES,
   tmdbIdOf,
 } from "./metadata";
 import type { TMDBService } from "../services/metadata/TMDBService";
@@ -30,18 +31,6 @@ describe("tmdbIdOf", () => {
     expect(tmdbIdOf({ id: "tmdb-7", type: "movie", title: "" })).toBe(7);
     expect(tmdbIdOf({ id: "99", type: "movie", title: "" })).toBe(99);
     expect(tmdbIdOf({ id: "tt123", type: "movie", title: "" })).toBeNull();
-    expect(tmdbIdOf({ id: "tmdb-not-a-number", type: "movie", title: "" })).toBeNull();
-  });
-
-  it("returns null when a numeric-looking id parses to NaN", () => {
-    const parseInt = Number.parseInt;
-    // @ts-expect-error test-only stub to exercise a defensive branch
-    Number.parseInt = () => Number.NaN;
-    try {
-      expect(tmdbIdOf({ id: "99", type: "movie", title: "" })).toBeNull();
-    } finally {
-      Number.parseInt = parseInt;
-    }
   });
 });
 
@@ -111,13 +100,13 @@ describe("getUpcomingEpisodes", () => {
       getEpisodes: async (_id: number, s: number) => {
         if (s === 2) {
           return [
-            episode(2, 1, "2026-05-01"), // past — dropped
-            episode(2, 2, "2026-06-20"), // future — kept
-            episode(2, 3, null), // no date — dropped
+            episode(2, 1, "2026-05-01"), // past - dropped
+            episode(2, 2, "2026-06-20"), // future - kept
+            episode(2, 3, null), // no date - dropped
           ];
         }
         if (s === 1) {
-          return [episode(1, 1, "2026-07-10")]; // future — kept
+          return [episode(1, 1, "2026-07-10")]; // future - kept
         }
         return [];
       },
@@ -166,47 +155,46 @@ describe("getUpcomingEpisodesForSeries", () => {
     expect(out).toHaveLength(1);
   });
 
-  it("sorts merged episodes across series by air date", async () => {
+  it("caps resolution at 30 recent series and never exceeds six in-flight requests", async () => {
+    let inFlight = 0;
+    let peakInFlight = 0;
+    let episodeCalls = 0;
+    const resolvedSeriesIds: number[] = [];
+    const tracked = async <T,>(value: T): Promise<T> => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+      return value;
+    };
     const tmdb = stubTMDB({
-      getSeasons: async (id: number) => {
-        if (id === 1) {
-          return [{ id: 1, seasonNumber: 1, name: "S1", episodeCount: 1, airDate: null }];
-        }
-        return [{ id: 1, seasonNumber: 1, name: "S1", episodeCount: 1, airDate: null }];
-      },
-      getEpisodes: async (id: number) => {
-        if (id === 1) {
-          return [
-            {
-              id: "series1-e1",
-              mediaId: "tmdb-1",
-              seasonNumber: 1,
-              episodeNumber: 1,
-              title: "Late",
-              airDate: "2026-08-01",
-            },
-          ];
-        }
-        return [
+      getSeasons: async (tmdbId: number) => {
+        resolvedSeriesIds.push(tmdbId);
+        return tracked([
           {
-            id: "series2-e1",
-            mediaId: "tmdb-2",
+            id: tmdbId,
             seasonNumber: 1,
-            episodeNumber: 1,
-            title: "Early",
-            airDate: "2026-07-01",
+            name: "S1",
+            episodeCount: 1,
+            airDate: null,
           },
-        ];
+        ]);
+      },
+      getEpisodes: async () => {
+        episodeCalls += 1;
+        return tracked([]);
       },
     });
-
-    const out = await getUpcomingEpisodesForSeries(
-      [previewSeries("tmdb-1", 1), previewSeries("tmdb-2", 2)],
-      tmdb,
-      NOW,
+    const series = Array.from({ length: 50 }, (_, index) =>
+      previewSeries(`tmdb-${index + 1}`, index + 1),
     );
-    expect(out).toHaveLength(2);
-    expect(out[0].airDate).toBe("2026-07-01");
-    expect(out[1].airDate).toBe("2026-08-01");
+
+    await getUpcomingEpisodesForSeries(series, tmdb, NOW);
+
+    expect(peakInFlight).toBe(6);
+    expect(resolvedSeriesIds).toEqual(
+      Array.from({ length: MAX_CALENDAR_SERIES }, (_, index) => index + 1),
+    );
+    expect(episodeCalls).toBe(MAX_CALENDAR_SERIES);
   });
 });

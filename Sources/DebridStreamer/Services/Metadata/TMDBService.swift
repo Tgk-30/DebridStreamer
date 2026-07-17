@@ -21,7 +21,7 @@ actor TMDBService: MetadataProvider {
     // `path + sorted query params`. Because `TMDBService` is an actor the cache
     // is race-free, and because it stores the typed model directly (not raw Data
     // across the generic `request<T>`) it stays type-safe. Only successful reads
-    // are cached — errors are never stored, so a failure is always retried. A
+    // are cached - errors are never stored, so a failure is always retried. A
     // cache hit can only return a value that was itself a valid network response
     // within the TTL window, so behavior is identical, just faster. This also
     // dedups the getDetail+getSeasons `/tv/{id}` double-fetch within the TTL.
@@ -121,7 +121,7 @@ actor TMDBService: MetadataProvider {
         } else if id.allSatisfy(\.isNumber) {
             tmdbId = id
         } else {
-            // This is an IMDB ID — we need to find the TMDB ID first
+            // This is an IMDB ID - we need to find the TMDB ID first
             let findResult = try await findByImdbId(id, type: type)
             guard let foundId = findResult else {
                 throw TMDBError.notFound(id)
@@ -131,7 +131,7 @@ actor TMDBService: MetadataProvider {
 
         let path = "/\(type.tmdbPath)/\(tmdbId)"
         // `credits` are fetched separately by getCast, so only request external_ids
-        // here — the credits payload would otherwise be downloaded and discarded.
+        // here - the credits payload would otherwise be downloaded and discarded.
         let params = [
             "append_to_response": "external_ids",
             "language": "en-US"
@@ -641,7 +641,7 @@ struct TMDBPersonResponse: Decodable {
     let placeOfBirth: String?
 }
 
-/// `/person/{id}/combined_credits` — cast + crew filmography across movies + TV.
+/// `/person/{id}/combined_credits` - cast + crew filmography across movies + TV.
 struct TMDBCombinedCreditsResponse: Decodable {
     let cast: [TMDBPersonCredit]
     let crew: [TMDBPersonCredit]

@@ -497,7 +497,7 @@ describe("parseTorznabFeed", () => {
   it("does not discard the whole feed on an out-of-range numeric entity (regression)", () => {
     const xml =
       "<rss><channel><item>" +
-      "<title>Bad &#1114112; Title</title>" + // > 0x10FFFF — must not throw
+      "<title>Bad &#1114112; Title</title>" + // > 0x10FFFF - must not throw
       "<size>500</size>" +
       "</item></channel></rss>";
     let items: ReturnType<typeof parseTorznabFeed> = [];
@@ -591,9 +591,9 @@ describe("IndexerFactory.testConnection", () => {
 // MARK: - IndexerFactory.buildIndexers
 
 describe("IndexerFactory.buildIndexers", () => {
-  it("defaults to the three built-in scrapers when no configs are given", () => {
+  it("defaults to the built-in scrapers (Torrentio-first) when no configs are given", () => {
     const indexers = IndexerFactory.buildIndexers([]);
-    expect(indexers.map((i) => i.name)).toEqual(["APIBay", "YTS", "EZTV"]);
+    expect(indexers.map((i) => i.name)).toEqual(["Torrentio", "APIBay", "YTS", "EZTV"]);
   });
 
   it("omits built-ins when a built_in config is inactive and adds external indexers by priority", () => {

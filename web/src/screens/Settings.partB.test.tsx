@@ -60,7 +60,7 @@ vi.mock("../lib/serverApi", () => ({
   setProfileMaturity: (id: string, body: unknown) => setProfileMaturity(id, body),
 }));
 
-// AppStore — only the slice Settings reads.
+// AppStore - only the slice Settings reads.
 let mockSettings: AppSettings;
 const updateSettings = vi.fn();
 let mockSimpleMode = false;
@@ -71,6 +71,7 @@ vi.mock("../store/AppStore", () => ({
     updateSettings,
     simpleMode: mockSimpleMode,
   }),
+  useSimpleMode: () => mockSimpleMode,
 }));
 
 // qrcode is pulled in by DesktopHostPanel (which short-circuits when !isTauri),
@@ -241,6 +242,12 @@ describe("Settings tab gating (Server Mode)", () => {
     renderSettings(null);
     expect(await screen.findByRole("button", { name: "Appearance" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Server" })).not.toBeInTheDocument();
+  });
+
+  it("hides the personal Trakt connection section in Server Mode", async () => {
+    renderSettings();
+    await userEvent.click(await screen.findByRole("button", { name: "API keys" }));
+    expect(screen.queryByLabelText("Trakt connection")).not.toBeInTheDocument();
   });
 });
 
@@ -434,8 +441,16 @@ describe("PasswordPanel changePassword", () => {
       expect(call!.body).toEqual({ currentPassword: "old", newPassword: "newpass1" });
     });
     expect(await screen.findByText("Password changed. Other sessions were signed out.")).toBeInTheDocument();
-    expect(current.value).toBe("");
-    expect(next.value).toBe("");
+    // Re-query rather than reuse the references above: a successful change now
+    // refreshes the signed-in-devices list (the server just revoked the other
+    // sessions), which re-renders the panel and detaches the original inputs.
+    await waitFor(() => {
+      const fresh = (screen.getByText("Password")).closest(".settings-source")! as HTMLElement;
+      const currentNow = fresh.querySelector('input[placeholder="Current password"]') as HTMLInputElement;
+      const nextNow = fresh.querySelector('input[placeholder="New password"]') as HTMLInputElement;
+      expect(currentNow.value).toBe("");
+      expect(nextNow.value).toBe("");
+    });
   });
 
   it("surfaces a server error from changePassword", async () => {

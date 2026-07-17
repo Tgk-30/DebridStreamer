@@ -191,13 +191,17 @@ export interface MetadataProvider {
   getCast(tmdbId: number, type: MediaType): Promise<CastMember[]>;
 
   getRecommendations(tmdbId: number, type: MediaType): Promise<MediaPreview[]>;
+
+  /** The YouTube key of the title's best trailer, or null. Optional - callers
+   * gate on its presence (Server-Mode metadata providers may omit it). */
+  getTrailer?(tmdbId: number, type: MediaType): Promise<string | null>;
 }
 
 /**
  * Error kinds returned by the TMDB service. Mirrors Swift `TMDBError`,
  * carrying the same human-facing descriptions via `message`.
  */
-export type TMDBErrorKind =
+type TMDBErrorKind =
   | "invalidURL"
   | "invalidResponse"
   | "unauthorized"

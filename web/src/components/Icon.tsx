@@ -1,9 +1,12 @@
 import {
   BotMessageSquare,
   Bookmark,
+  AudioLines,
   CalendarDays,
   Captions,
+  Cast,
   Check,
+  CircleHelp,
   Compass,
   Copy,
   Clock3,
@@ -11,13 +14,21 @@ import {
   Eye,
   EyeOff,
   Film,
+  FolderOpen,
+  Gauge,
   HardDriveDownload,
   Info,
+  Maximize,
+  Minimize,
+  Pause,
   Play,
   RefreshCw,
+  RotateCcw,
+  RotateCw,
   Save,
   Search,
   Share2,
+  SkipForward,
   SlidersHorizontal,
   Sparkles,
   Star,
@@ -25,6 +36,8 @@ import {
   ThumbsUp,
   Trash2,
   Upload,
+  Volume2,
+  VolumeX,
   WandSparkles,
   X,
   type LucideIcon,
@@ -33,12 +46,14 @@ import {
 export type IconName =
   | "discover"
   | "library"
+  | "folder"
   | "watchlist"
   | "history"
   | "assistant"
   | "settings"
   | "search"
   | "play"
+  | "pause"
   | "star"
   | "sparkles"
   | "sliders"
@@ -52,6 +67,8 @@ export type IconName =
   | "refresh"
   | "share"
   | "captions"
+  | "cast"
+  | "audio"
   | "check"
   | "copy"
   | "eye"
@@ -59,7 +76,16 @@ export type IconName =
   | "save"
   | "more"
   | "thumbs-up"
-  | "thumbs-down";
+  | "thumbs-down"
+  | "volume"
+  | "volume-muted"
+  | "rewind"
+  | "forward"
+  | "speed"
+  | "fullscreen"
+  | "fullscreen-exit"
+  | "skip-next"
+  | "help";
 
 interface IconProps {
   name: IconName;
@@ -72,12 +98,14 @@ interface IconProps {
 const ICONS: Record<IconName, LucideIcon> = {
   discover: Compass,
   library: Film,
+  folder: FolderOpen,
   watchlist: Bookmark,
   history: Clock3,
   assistant: BotMessageSquare,
   settings: SlidersHorizontal,
   search: Search,
   play: Play,
+  pause: Pause,
   star: Star,
   sparkles: Sparkles,
   sliders: SlidersHorizontal,
@@ -91,12 +119,23 @@ const ICONS: Record<IconName, LucideIcon> = {
   refresh: RefreshCw,
   share: Share2,
   captions: Captions,
+  cast: Cast,
+  audio: AudioLines,
   check: Check,
+  help: CircleHelp,
   copy: Copy,
   eye: Eye,
   "eye-off": EyeOff,
   save: Save,
   more: Ellipsis,
+  volume: Volume2,
+  "volume-muted": VolumeX,
+  rewind: RotateCcw,
+  forward: RotateCw,
+  speed: Gauge,
+  fullscreen: Maximize,
+  "fullscreen-exit": Minimize,
+  "skip-next": SkipForward,
   "thumbs-up": ThumbsUp,
   "thumbs-down": ThumbsDown,
 };

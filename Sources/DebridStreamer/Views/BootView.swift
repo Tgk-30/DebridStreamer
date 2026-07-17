@@ -2,7 +2,7 @@ import SwiftUI
 import AVFoundation
 import AppKit
 
-/// Full-bleed AVPlayer surface with no transport controls — used for the launch animation.
+/// Full-bleed AVPlayer surface with no transport controls - used for the launch animation.
 private final class BootPlayerNSView: NSView {
     let playerLayer = AVPlayerLayer()
 

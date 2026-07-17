@@ -31,9 +31,11 @@ vi.mock("../lib/serverMode", () => ({
 
 const fetchServerGenres = vi.fn();
 const fetchServerUpcomingEpisodes = vi.fn();
+const fetchServerMovieReleases = vi.fn();
 vi.mock("../lib/serverApi", () => ({
   fetchServerGenres: (...a: unknown[]) => fetchServerGenres(...a),
   fetchServerUpcomingEpisodes: (...a: unknown[]) => fetchServerUpcomingEpisodes(...a),
+  fetchServerMovieReleases: () => fetchServerMovieReleases(),
 }));
 
 const getUpcomingEpisodesForSeries = vi.fn();
@@ -92,6 +94,7 @@ beforeEach(() => {
   isServerMode.mockReset().mockReturnValue(false);
   fetchServerGenres.mockReset();
   fetchServerUpcomingEpisodes.mockReset();
+  fetchServerMovieReleases.mockReset().mockResolvedValue([]);
   getUpcomingEpisodesForSeries.mockReset();
 });
 
@@ -265,6 +268,7 @@ describe("useCalendar", () => {
     expect(result.current.hasSeries).toBe(true);
     expect(result.current.groups.map((g) => g.bucket)).toEqual(["later"]);
     expect(fetchServerUpcomingEpisodes).toHaveBeenCalledTimes(1);
+    expect(fetchServerMovieReleases).toHaveBeenCalledTimes(1);
     expect(getUpcomingEpisodesForSeries).not.toHaveBeenCalled();
   });
 

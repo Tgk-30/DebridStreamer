@@ -1,7 +1,7 @@
 // Server-side AI recommendations so the Assistant + Discover mood-curate work in
 // Server Mode (the AI provider key is stored server-side and the browser can't
-// read it back). Reuses the browser AI providers verbatim — esbuild bundles the
-// .ts at build time, tsx transpiles them in dev — so the prompt envelope, JSON
+// read it back). Reuses the browser AI providers verbatim - esbuild bundles the
+// .ts at build time, tsx transpiles them in dev - so the prompt envelope, JSON
 // parsing, and provider request shapes match the local app exactly.
 //
 // Provider/key selection mirrors every other server credential: profile-scoped
@@ -35,8 +35,8 @@ function missingKeyError() {
  * A FetchImpl (per web/src/services/ai/types.ts) backed by global fetch with a
  * hard timeout so a hung provider can't pin a Fastify worker. The body is
  * buffered here so the timeout covers the full read; the providers call text()
- * exactly once (success XOR error path). When `guard` is set — the user-supplied
- * Ollama endpoint — each URL is SSRF-checked first.
+ * exactly once (success XOR error path). When `guard` is set - the user-supplied
+ * Ollama endpoint - each URL is SSRF-checked first.
  */
 export function makeAIFetch(guard) {
   return async (url, init) => {
@@ -57,7 +57,7 @@ export function makeAIFetch(guard) {
  * Resolves the AI provider for this profile: the first provider (in
  * PROVIDER_ORDER) with a configured, non-empty credential. OpenAI/Anthropic call
  * fixed public hostnames (no SSRF guard, consistent with TMDB/debrid); the
- * Ollama endpoint is user-supplied, so it's guarded — allowing private/loopback
+ * Ollama endpoint is user-supplied, so it's guarded - allowing private/loopback
  * addresses only when the operator has opted into raw URLs (the same switch the
  * stream proxy uses), so a localhost Ollama works in that mode but a locked-down
  * deployment can't be used to probe the internal network. Returns null when no
@@ -83,7 +83,7 @@ function selectProvider(db, config, profileId) {
   if (sel.kind === "anthropic") {
     return { kind: sel.kind, provider: new AnthropicProvider(sel.value, undefined, makeAIFetch(null)) };
   }
-  // ollama: the credential value is the endpoint URL, not an API key — SSRF-guarded.
+  // ollama: the credential value is the endpoint URL, not an API key - SSRF-guarded.
   return {
     kind: sel.kind,
     provider: new OllamaProvider(
@@ -120,7 +120,7 @@ export async function recommendServerAI(db, config, profileId, body) {
   };
 }
 
-/** Best catalog match for an AI title — mirrors Discover.resolveRecommendation
+/** Best catalog match for an AI title - mirrors Discover.resolveRecommendation
  *  (exact-title + matching-year boost), but resolved server-side since the
  *  client has no TMDB key in Server Mode. Returns null when nothing matches. */
 async function resolveTitle(db, config, profileId, rec) {

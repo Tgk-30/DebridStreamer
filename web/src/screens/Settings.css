@@ -1,4 +1,4 @@
-/* Settings screen — tabbed config. */
+/* Settings screen - tabbed config. */
 
 .settings-screen {
   display: flex;
@@ -32,22 +32,6 @@
   min-width: 0;
 }
 
-.settings-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  padding: 0 9px;
-  border: 1px solid rgba(var(--accent-rgb), 0.34);
-  border-radius: var(--r-pill);
-  background: rgba(var(--accent-rgb), 0.1);
-  color: var(--text-primary);
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
 .settings-h1 {
   margin: 0;
   font-size: clamp(28px, 3vw, 34px);
@@ -63,51 +47,6 @@
   margin: 0;
   font-size: 14px;
   line-height: 1.45;
-}
-
-.settings-insight-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
-  gap: var(--sp-sm);
-  width: 100%;
-  margin-top: var(--sp-xs);
-}
-
-.settings-insight {
-  display: flex;
-  min-width: 0;
-  min-height: 72px;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  padding: var(--sp-sm);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r-md);
-  background: var(--glass-tint-control);
-  color: var(--text-primary);
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-}
-
-.settings-insight:hover {
-  border-color: rgba(var(--accent-rgb), 0.42);
-  background: rgba(var(--accent-rgb), 0.09);
-}
-
-.settings-insight span {
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.settings-insight strong {
-  min-width: 0;
-  font-size: 13px;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
 }
 
 .settings-tabs {
@@ -141,7 +80,6 @@
 
 .settings-tabs .chip:focus-visible,
 .settings-segmented button:focus-visible,
-.settings-insight:focus-visible,
 .settings-option-card:focus-visible,
 .settings-install-choice:focus-visible,
 .settings-install-picker select:focus-visible,
@@ -185,6 +123,16 @@
   letter-spacing: 0;
   text-transform: uppercase;
 }
+.settings-label-line,
+.settings-info-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+}
+.settings-info-row {
+  align-self: flex-start;
+}
 .settings-field-hint,
 .settings-hint {
   font-size: 13px;
@@ -196,7 +144,8 @@
 }
 /* "Where do I get this?" external link under a key Field. */
 .settings-field-help {
-  margin-top: 6px;
+  /* No margin-top: .settings-field is a flex column with gap: 6px, so a margin
+     here stacked on the gap and doubled the space under the input. */
   font-size: 12.5px;
   color: var(--accent);
   text-decoration: none;
@@ -368,7 +317,9 @@
 
 .settings-option-strip {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Wrap to one column when the panel is narrow instead of crushing the two
+     cards side by side. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--sp-sm);
 }
 
@@ -433,11 +384,52 @@
   gap: var(--sp-md);
 }
 
+/* Live model picker: the select flexes, the Refresh button sits alongside. */
+.settings-model-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-sm);
+}
+.settings-model-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.settings-model-refresh {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.settings-model-refresh[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+.settings-model-refresh[aria-busy="true"] svg {
+  animation: settings-model-spin 0.8s linear infinite;
+}
+@keyframes settings-model-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-model-refresh[aria-busy="true"] svg {
+    animation: none;
+  }
+}
+.settings-model-msg {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
 .settings-divider {
   height: 1px;
   background: var(--glass-border);
   margin: var(--sp-xs) 0;
 }
+
+/* Groups the many appearance dials into scannable sections. */
 
 .settings-toggle-row {
   position: relative;
@@ -838,6 +830,8 @@
   padding: var(--sp-md);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-md);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 170px;
 }
 .settings-source-row {
   display: flex;
@@ -934,6 +928,8 @@
   padding: var(--sp-sm);
   background: var(--glass-tint-control);
   font-size: 13px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
 }
 .settings-usage-row > span {
   min-width: 0;
@@ -953,7 +949,7 @@
     rgba(255, 255, 255, 0.02) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.4s ease-in-out 12;
   border-radius: var(--r-sm);
 }
 .settings-skel-label {
@@ -1107,6 +1103,17 @@
   min-width: 0;
 }
 
+/* A clean profile is informational, not an inactive action. Keep its pill
+   distinct from the bright save action while overriding the global disabled
+   treatment that otherwise makes the status look unavailable. */
+.settings-footer.is-clean .btn.btn-prominent:disabled {
+  opacity: 1;
+  color: var(--text-primary);
+  border: 1px solid rgba(var(--accent-rgb), 0.46);
+  background: rgba(var(--accent-rgb), 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
 .settings-note {
   flex: 1 1 240px;
   color: var(--text-secondary);
@@ -1122,6 +1129,97 @@
 }
 .settings-status.is-error {
   color: var(--danger);
+}
+
+.settings-version {
+  margin: var(--sp-sm) 0 0;
+  font-size: 11px;
+  text-align: center;
+}
+
+.settings-reset-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding: clamp(var(--sp-md), 2.4vw, var(--sp-xl));
+  border-radius: var(--r-lg);
+}
+
+.settings-reset-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+
+.settings-reset-heading h2,
+.settings-reset-dialog h2,
+.settings-reset-dialog p {
+  margin: 0;
+}
+
+.settings-reset-heading h2 {
+  font-size: 18px;
+}
+
+.settings-reset-erase {
+  border-color: rgba(224, 91, 91, 0.7);
+  background: rgba(178, 53, 53, 0.24);
+}
+
+.settings-reset-uninstall {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-sm);
+}
+
+.settings-reset-command {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: var(--glass-tint-control);
+}
+
+.settings-reset-command code {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.settings-reset-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-xl);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.settings-reset-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  gap: var(--sp-md);
+  padding: var(--sp-xl);
+  border-radius: var(--r-lg);
+}
+
+.settings-reset-dialog p {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.settings-reset-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-sm);
 }
 
 .settings-profile-list {
@@ -1259,10 +1357,6 @@
     width: 100%;
   }
 
-  .settings-insight-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .settings-hero .settings-footer {
     align-self: stretch;
     flex: 0 0 auto;
@@ -1354,10 +1448,6 @@
 
   .settings-title-block {
     width: 100%;
-  }
-
-  .settings-insight-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .settings-hero .settings-footer {
@@ -1483,15 +1573,6 @@
   .settings-subtitle {
     font-size: 13px;
     line-height: 1.35;
-  }
-
-  .settings-insight-grid {
-    gap: 7px;
-  }
-
-  .settings-insight {
-    min-height: 54px;
-    padding: 8px;
   }
 
   .settings-panel {
@@ -1732,27 +1813,8 @@
 }
 
 @media (max-width: 380px) {
-  .settings-subtitle,
-  .settings-experience-hint {
+  .settings-subtitle {
     display: none;
-  }
-
-  .settings-insight-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  .settings-insight {
-    min-height: 50px;
-    padding: 7px;
-  }
-
-  .settings-insight span {
-    font-size: 10px;
-  }
-
-  .settings-insight strong {
-    font-size: 11.5px;
   }
 
   .settings-control-grid {
@@ -1795,11 +1857,6 @@
   .settings-experience {
     margin-bottom: 10px;
   }
-
-  .settings-experience-hint {
-    margin-top: 5px;
-    line-height: 1.35;
-  }
 }
 
 @media (min-width: 1100px) {
@@ -1808,7 +1865,10 @@
     grid-template-columns: 210px minmax(0, 900px);
     grid-template-areas:
       "header header"
-      "tabs panel";
+      "search search"
+      "experience experience"
+      "tabs panel"
+      "version version";
     align-items: start;
     column-gap: var(--sp-xl);
     width: min(100%, 1180px);
@@ -1816,6 +1876,14 @@
 
   .settings-header {
     grid-area: header;
+  }
+
+  .settings-search {
+    grid-area: search;
+  }
+
+  .settings-experience {
+    grid-area: experience;
   }
 
   .settings-tabs {
@@ -1847,10 +1915,14 @@
   .settings-panel {
     grid-area: panel;
   }
+
+  .settings-version {
+    grid-area: version;
+  }
 }
 
 /* ---------------------------------------------------------------------------
- * Appearance tab — theme picker (a grid of preview swatch cards). The active
+ * Appearance tab - theme picker (a grid of preview swatch cards). The active
  * card uses the accent (accent-for-active-only), matching the glass design.
  * ------------------------------------------------------------------------- */
 .theme-grid {
@@ -1975,13 +2047,28 @@
 }
 
 /* Simple/Advanced experience toggle (above the tab navigation). */
+/* Small, unobtrusive control tucked at the bottom-left below the panel (it is
+   a rarely-touched preference, not a headline). */
 .settings-experience {
-  margin: 0 0 var(--sp-md);
+  width: fit-content;
+  max-width: 100%;
+  margin: var(--sp-lg) 0 0;
 }
-.settings-experience-hint {
-  margin: 6px 0 0;
-  font-size: 12.5px;
-  line-height: 1.45;
+.settings-experience .settings-segment-block {
+  gap: 6px;
+}
+.settings-experience .settings-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.settings-experience .settings-segmented {
+  min-height: 34px;
+}
+.settings-experience .settings-segmented button {
+  padding: 0 16px;
+  font-size: 12px;
 }
 
 /* Remote-access (Tailscale / Cloudflare Tunnel) guided steps in the Server tab. */
@@ -2022,4 +2109,356 @@
 }
 .settings-remote-step-body strong {
   font-size: 13.5px;
+}
+.settings-remote-step-body code {
+  width: fit-content;
+  margin-top: 3px;
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  user-select: text;
+}
+.settings-remote-tool-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--sp-sm);
+  margin: var(--sp-sm) 0 0;
+}
+.settings-remote-tool-statuses .settings-hint {
+  margin: 0;
+}
+
+/* ---- Profiles tab ---------------------------------------------------------
+   A card per profile with a real avatar preview (never the raw data URL that
+   the old plain text input exposed), a compact emoji + color picker, and a
+   quiet inline password/delete treatment. */
+.settings-profiles .settings-toggle-row {
+  justify-content: flex-start;
+}
+
+.settings-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.settings-profile-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding: var(--sp-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  background: var(--glass-tint-control);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 250px;
+}
+.settings-profile-card.is-current {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.22);
+}
+
+.settings-profile-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.settings-profile-avatar {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  border-radius: 13px;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.settings-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.settings-profile-identity {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.settings-profile-name-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+.settings-profile-name-line strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-profile-you,
+.settings-profile-admin {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.settings-profile-you {
+  color: var(--on-accent, #fff);
+  background: rgb(var(--accent-rgb));
+}
+.settings-profile-admin {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
+}
+.settings-profile-sub {
+  font-size: 12px;
+}
+
+.settings-profile-remove {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.14s, background 0.14s, border-color 0.14s;
+}
+.settings-profile-remove:hover {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.32);
+}
+
+.settings-profile-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding-top: var(--sp-md);
+  border-top: 1px solid var(--glass-border);
+}
+
+.settings-profile-look {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-profile-avatars {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.settings-profile-emoji {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--glass-border);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 19px;
+  cursor: pointer;
+  transition: border-color 0.14s, background 0.14s, transform 0.12s;
+}
+.settings-profile-emoji:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.08);
+}
+.settings-profile-emoji.is-selected {
+  border-color: rgb(var(--accent-rgb));
+  background: rgba(var(--accent-rgb), 0.16);
+}
+.settings-profile-color {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  border-radius: 11px;
+  cursor: pointer;
+}
+.settings-profile-color input[type="color"] {
+  width: 150%;
+  height: 150%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-profile-password {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.settings-profile-password input {
+  flex: 1 1 200px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  font: inherit;
+}
+.settings-profile-clearpw {
+  color: var(--text-secondary);
+}
+
+.settings-profile-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-xs);
+}
+.settings-profile-add input {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  font: inherit;
+}
+
+/* Navigation customizer (Appearance -> Navigation -> Menu items): reorder items
+   within a group and show/hide them. Mirrors the glass source-card treatment. */
+.settings-navcustom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  padding: var(--sp-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--glass-tint-control);
+}
+.settings-navcustom-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+}
+.settings-navcustom-reset {
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--r-pill);
+  padding: 4px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+.settings-navcustom-reset:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+.settings-navcustom-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.settings-navcustom-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-navcustom-group-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: var(--sp-sm) 0 2px;
+}
+.settings-navcustom-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: 7px var(--sp-sm);
+  border-radius: var(--r-sm);
+  background: var(--glass-tint-control);
+  border: 1px solid transparent;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.settings-navcustom-row:hover {
+  background: var(--glass-tint-control-hover);
+}
+.settings-navcustom-row.is-hidden {
+  opacity: 0.5;
+}
+.settings-navcustom-icon {
+  display: inline-flex;
+  color: var(--text-secondary);
+}
+.settings-navcustom-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-navcustom-lock {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.settings-navcustom-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.settings-navcustom-move,
+.settings-navcustom-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease,
+    opacity 0.12s ease;
+}
+.settings-navcustom-move:hover:not(:disabled),
+.settings-navcustom-toggle:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: rgba(var(--accent-rgb), 0.6);
+  background: var(--glass-tint-control-hover);
+}
+.settings-navcustom-move:disabled,
+.settings-navcustom-toggle:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.settings-navcustom-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.5);
 }

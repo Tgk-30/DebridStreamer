@@ -19,7 +19,7 @@ import { markOnboardingComplete } from "./firstRun";
 const SERVER_SETUP_KEY = "onboarding_completed";
 
 /** The minimum shape of the admin health counts the gate inspects. */
-export interface ServerSetupSignals {
+interface ServerSetupSignals {
   /** Effective experience role of the signed-in profile. */
   role: "owner" | "admin" | "member" | "restricted";
   /** Number of stored server credentials (TMDB/debrid/AI/etc.). */

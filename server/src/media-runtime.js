@@ -8,6 +8,14 @@ import { IndexerManager } from "../../web/src/services/indexers/IndexerManager.t
 import { IndexerType, makeIndexerConfig } from "../../web/src/services/indexers/types.ts";
 import { decryptSecret } from "./crypto.js";
 import { getServerDetail } from "./metadata-runtime.js";
+import {
+  buildTitleQuery,
+  combineStreamResults,
+} from "../../web/src/data/streamMatching.ts";
+
+// Re-exported so the (pure-function) server tests can exercise the shared
+// imdb+title merge exactly as searchServerStreams uses it.
+export { combineStreamResults };
 
 const BUILT_IN_INDEXERS_ENABLED_KEY = "built_in_indexers_enabled";
 export const SERVER_INDEXER_CONFIGS_KEY = "server_indexer_configs";
@@ -272,12 +280,37 @@ export async function searchServerStreams(db, config, profileId, input) {
     };
   }
 
-  const results = await indexers.searchAll(
-    input.imdbId,
-    input.type,
-    input.season ?? null,
-    input.episode ?? null,
-  );
+  // Two complementary passes, merged identically to Local Mode via the shared
+  // combineStreamResults: the imdb-native search (YTS/EZTV accept an imdb id) AND
+  // a title/name query - APIBay-style indexers match torrent TITLES, so a bare
+  // imdb id returns nothing there and without this they never contribute (one
+  // dead imdb indexer would then empty every series). The title pass is
+  // best-effort: a failure there must NOT empty the imdb results, and it is only
+  // present for non-capped profiles (the route drops `title` for kids so the
+  // fail-closed play-block, which is imdb-exact, can still bind every source).
+  const titleQuery =
+    typeof input.title === "string" && input.title.trim().length > 0
+      ? buildTitleQuery(input.title, input.season ?? null, input.episode ?? null)
+      : null;
+  // The title pass runs on its OWN IndexerManager. Both passes call the manager's
+  // collect(), which OVERWRITES lastSearchErrors; sharing one manager across the
+  // concurrent Promise.all would let whichever pass finished last clobber the
+  // imdb pass's errors - and indexerErrors below reads exactly those. Isolating
+  // the title pass keeps indexerErrors deterministic (= the imdb pass), and the
+  // title pass's own failures stay swallowed (best-effort, mirroring Local Mode).
+  const titleIndexers = titleQuery != null ? buildIndexerManager(db, profileId) : null;
+  const [byImdb, byTitle] = await Promise.all([
+    indexers.searchAll(
+      input.imdbId,
+      input.type,
+      input.season ?? null,
+      input.episode ?? null,
+    ),
+    titleIndexers != null
+      ? titleIndexers.searchByQuery(titleQuery, input.type).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+  const results = combineStreamResults(byImdb, byTitle, input.title ?? null);
 
   let cacheByHash = {};
   if (debrid != null) {
@@ -296,7 +329,10 @@ export async function searchServerStreams(db, config, profileId, input) {
   const filters = profileStreamFilters(db, profileId);
   const allRows = results.map((result) => ({
     result,
-    cachedOn: cacheByHash[result.infoHash] ?? null,
+    // checkCacheAll canonicalizes to lowercase; match it so a case difference
+    // between the indexer hash and the provider's echo can't make a cached
+    // torrent read as uncached (mirrors Local Mode's data/streams.ts).
+    cachedOn: cacheByHash[result.infoHash.toLowerCase()] ?? null,
   }));
   const rows = allRows.filter((row) => rowMatchesStreamFilters(row, filters));
 
@@ -333,7 +369,7 @@ export async function resolveServerStream(db, config, profileId, input) {
 // It deliberately bypasses searchServerStreams' profileStreamFilters (cachedOnly
 // / maxQuality / maxSizeGB) and the debrid cache lookup: membership is about
 // whether the hash is a real SOURCE of the title, not whether it passes the
-// profile's quality/cache preferences — filtering there would falsely block a
+// profile's quality/cache preferences - filtering there would falsely block a
 // legitimate in-cap movie. Fail-closed (false) on no imdbId / no indexers / no
 // matching source.
 export async function titleHasInfoHash(db, config, profileId, mediaId, mediaType, infoHash) {

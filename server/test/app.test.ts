@@ -2,11 +2,13 @@ import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { EventEmitter } from "node:events";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { buildApp } from "../src/app.js";
+import { AppDatabase } from "../src/db.js";
 import type { Transcoder } from "../src/transcode.js";
 
 // A fake ffmpeg surface so transcode tests run without a real binary: detect()
@@ -440,6 +442,78 @@ describe("DebridStreamer server", () => {
     expect(bobHist.items[0]).toMatchObject({ progressSeconds: 90, completed: true });
   });
 
+  it("does not audit routine resume-position updates", async () => {
+    const owner = await setupOwner(app);
+    const before = json<{ events: Array<{ action: string }> }>(
+      await request(owner, { method: "GET", url: "/api/admin/audit-log" }),
+    ).events;
+
+    const response = await request(owner, {
+      method: "PUT",
+      url: "/api/history/tt-resume",
+      csrf: true,
+      payload: {
+        progressSeconds: 30,
+        durationSeconds: 120,
+        completed: false,
+        preview: { id: "tt-resume", title: "Resume title" },
+      },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const after = json<{ events: Array<{ action: string }> }>(
+      await request(owner, { method: "GET", url: "/api/admin/audit-log" }),
+    ).events;
+    expect(after).toEqual(before);
+    expect(after.some((event) => event.action === "history.upsert")).toBe(false);
+  });
+
+  it("caps the admin health audit-event count at 10,000", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "debridstreamer-health-test-"));
+    const databasePath = join(tempDir, "database.sqlite");
+    const healthApp = await buildApp({
+      config: {
+        databasePath,
+        dataDir: tempDir,
+        secretKey: randomBytes(32),
+        cookieSecure: false,
+        logger: false,
+        allowRawStreamUrls: true,
+      },
+    });
+    let database: AppDatabase | null = null;
+    try {
+      const owner = await setupOwner(healthApp);
+      database = new AppDatabase(databasePath);
+      database.sqlite.exec("DELETE FROM audit_log");
+      const insert = database.sqlite.prepare(
+        `INSERT INTO audit_log
+         (id, actor_user_id, actor_profile_id, action, target_type, target_id, metadata_json, created_at)
+         VALUES (?, NULL, NULL, 'test', NULL, NULL, NULL, ?)`,
+      );
+      const createdAt = new Date().toISOString();
+      database.transaction(() => {
+        for (let i = 0; i < 9_999; i += 1) insert.run(`audit-${i}`, createdAt);
+      });
+
+      const belowCap = json<{ counts: { auditEvents: number } }>(
+        await request(owner, { method: "GET", url: "/api/admin/health" }),
+      );
+      expect(belowCap.counts.auditEvents).toBe(9_999);
+
+      insert.run("audit-9999", createdAt);
+      insert.run("audit-10000", createdAt);
+      const atCap = json<{ counts: { auditEvents: number } }>(
+        await request(owner, { method: "GET", url: "/api/admin/health" }),
+      );
+      expect(atCap.counts.auditEvents).toBe(10_000);
+    } finally {
+      database?.close();
+      await healthApp.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("seeds system folders and supports folder + entry CRUD with DexieStore parity", async () => {
     const owner = await setupOwner(app);
 
@@ -840,6 +914,50 @@ describe("DebridStreamer server", () => {
     }
   });
 
+  it("server calendar: returns cached TMDB movie release dates", async () => {
+    const owner = await setupOwner(app);
+    await request(owner, {
+      method: "PUT",
+      url: "/api/admin/credentials",
+      csrf: true,
+      payload: { provider: "tmdb", value: "tmdb-key", label: "TMDB" },
+    });
+
+    const originalFetch = globalThis.fetch;
+    let tmdbCalls = 0;
+    globalThis.fetch = (async (url, init) => {
+      const parsed = new URL(String(url));
+      if (parsed.hostname === "api.themoviedb.org") {
+        tmdbCalls += 1;
+        const upcoming = parsed.pathname.endsWith("/upcoming");
+        return new Response(JSON.stringify({
+          page: 1,
+          total_pages: 1,
+          total_results: 1,
+          results: [{
+            id: upcoming ? 2 : 1,
+            title: upcoming ? "Future Movie" : "Recent Movie",
+            release_date: upcoming ? "2026-07-04" : "2026-06-10",
+          }],
+        }), { status: 200 });
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+
+    try {
+      const first = await request(owner, { method: "GET", url: "/api/calendar/movies" });
+      expect(first.statusCode).toBe(200);
+      expect(json<{ releases: Array<{ releaseDate: string }> }>(first).releases).toHaveLength(2);
+      expect(tmdbCalls).toBe(2);
+
+      const second = await request(owner, { method: "GET", url: "/api/calendar/movies" });
+      expect(second.statusCode).toBe(200);
+      expect(tmdbCalls).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("server AI recommend: enforces the count bounds (1..20)", async () => {
     const owner = await setupOwner(app);
     await request(owner, {
@@ -1002,7 +1120,7 @@ describe("DebridStreamer server", () => {
       payload: { provider: "opensubtitles", value: "os-key", label: "OS" },
     });
 
-    // A real local server serving a GZIPPED SRT — proves undici auto-decompresses
+    // A real local server serving a GZIPPED SRT - proves undici auto-decompresses
     // before .text(), then subsrt-ts parses and cuesToVTT runs under Node.
     const srt = "1\n00:00:01,000 --> 00:00:02,000\nHello world\n";
     upstream = createServer((_req, res) => {
@@ -1054,7 +1172,7 @@ describe("DebridStreamer server", () => {
         return new Response(JSON.stringify({ link: "https://dl.opensubtitles.example/garbage" }), { status: 200 });
       }
       if (u.startsWith("https://dl.opensubtitles.example/")) {
-        return new Response("not a subtitle file — no timestamps here", { status: 200 });
+        return new Response("not a subtitle file - no timestamps here", { status: 200 });
       }
       return originalFetch(url, init);
     }) as typeof fetch;
@@ -1290,7 +1408,7 @@ describe("DebridStreamer server", () => {
     ).toBe(true);
   });
 
-  it("kids maturity: hardened lockdown — admin-only, parental switch lock, fail-closed bound play-block, gated browse", async () => {
+  it("kids maturity: hardened lockdown - admin-only, parental switch lock, fail-closed bound play-block, gated browse", async () => {
     const BOUND_HASH = "c".repeat(40); // the within-cap title's one indexer source
     const owner = await setupOwner(app);
     await request(owner, {
@@ -1309,7 +1427,7 @@ describe("DebridStreamer server", () => {
       await request(owner, { method: "POST", url: "/api/account/profiles", csrf: true, payload: { displayName: "Kiddo" } }),
     ).profile.id;
 
-    // FixF: is_kid and the cap are strictly coupled — neither half-state persists.
+    // FixF: is_kid and the cap are strictly coupled - neither half-state persists.
     expect(
       (await request(owner, { method: "POST", url: `/api/account/profiles/${kid}/maturity`, csrf: true, payload: { isKid: true, maturityMax: null } })).statusCode,
     ).toBe(400);
@@ -1415,7 +1533,7 @@ describe("DebridStreamer server", () => {
       // series (kid browse is movie-only)
       expect((await resolve({ infoHash: BOUND_HASH, mediaId: "tmdb-600", mediaType: "series" })).statusCode).toBe(403);
       // FixC: a within-cap mediaId paired with an UNBOUND (over-cap) infoHash is
-      // refused — the infoHash must be a real source of the certified title.
+      // refused - the infoHash must be a real source of the certified title.
       expect((await resolve({ infoHash: "a".repeat(40), mediaId: "tmdb-600", mediaType: "movie" })).statusCode).toBe(403);
       // Legitimate within-cap play: cert G ✓ AND infoHash is the title's source ✓,
       // so it clears the gate and reaches the debrid check (400, no debrid here).
@@ -1438,6 +1556,9 @@ describe("DebridStreamer server", () => {
       expect(
         (await request(owner, { method: "POST", url: "/api/calendar/upcoming", csrf: true, payload: { series: [] } })).statusCode,
       ).toBe(403);
+      expect(
+        json<{ releases: unknown[] }>(await request(owner, { method: "GET", url: "/api/calendar/movies" })).releases,
+      ).toEqual([]);
 
       // The series-only episode-guide routes are closed for kids too (the
       // client degrades to its stepper fallback).
@@ -1480,7 +1601,7 @@ describe("DebridStreamer server", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
-  });
+  }, 20000); // heavy multi-request integration test; 5s default is tight on loaded CI
 
   it("uses server credentials by default and profile credentials as overrides", async () => {
     const owner = await setupOwner(app);
@@ -2042,6 +2163,119 @@ describe("DebridStreamer server", () => {
     expect(ownerCred.statusCode).toBe(200);
   });
 
+  // ---- Account role management (promote / demote) --------------------------
+
+  it("owner promotes and demotes account roles; the change takes effect on the target", async () => {
+    const owner = await setupOwner(app);
+    const bobId = await createProfile(owner, "bob", "bob-password", "member");
+
+    const promote = await request(owner, {
+      method: "POST",
+      url: `/api/profiles/${bobId}/role`,
+      csrf: true,
+      payload: { role: "admin" },
+    });
+    expect(promote.statusCode).toBe(200);
+    const bobAsAdmin = await login(app, "bob", "bob-password");
+    expect(
+      json<{ session: { role: string } }>(
+        await request(bobAsAdmin, { method: "GET", url: "/api/auth/session" }),
+      ).session.role,
+    ).toBe("admin");
+
+    const demote = await request(owner, {
+      method: "POST",
+      url: `/api/profiles/${bobId}/role`,
+      csrf: true,
+      payload: { role: "member" },
+    });
+    expect(demote.statusCode).toBe(200);
+    const bobAsMember = await login(app, "bob", "bob-password");
+    expect(
+      json<{ session: { role: string } }>(
+        await request(bobAsMember, { method: "GET", url: "/api/auth/session" }),
+      ).session.role,
+    ).toBe("member");
+  });
+
+  it("a non-owner admin cannot grant the admin tier but can move member <-> restricted", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "alice", "alice-password", "admin");
+    const memberId = await createProfile(owner, "bob", "bob-password", "member");
+    const admin = await login(app, "alice", "alice-password");
+
+    const grant = await request(admin, {
+      method: "POST",
+      url: `/api/profiles/${memberId}/role`,
+      csrf: true,
+      payload: { role: "admin" },
+    });
+    expect(grant.statusCode).toBe(403);
+
+    const restrict = await request(admin, {
+      method: "POST",
+      url: `/api/profiles/${memberId}/role`,
+      csrf: true,
+      payload: { role: "restricted" },
+    });
+    expect(restrict.statusCode).toBe(200);
+  });
+
+  it("no account can change its own role", async () => {
+    const owner = await setupOwner(app);
+    const list = await request(owner, { method: "GET", url: "/api/profiles" });
+    const ownerAccount = json<{ profiles: Array<{ id: string; username: string }> }>(list).profiles.find(
+      (p) => p.username === "owner",
+    );
+    expect(ownerAccount).toBeTruthy();
+    const selfChange = await request(owner, {
+      method: "POST",
+      url: `/api/profiles/${ownerAccount?.id ?? "missing"}/role`,
+      csrf: true,
+      payload: { role: "member" },
+    });
+    expect(selfChange.statusCode).toBe(400);
+  });
+
+  it("the role route is admin-only, CSRF-guarded, and 404s an unknown profile", async () => {
+    const owner = await setupOwner(app);
+    const bobId = await createProfile(owner, "bob", "bob-password", "member");
+    const member = await login(app, "bob", "bob-password");
+
+    // A non-admin member is rejected before anything else (requireAdmin).
+    expect(
+      (
+        await request(member, {
+          method: "POST",
+          url: `/api/profiles/${bobId}/role`,
+          csrf: true,
+          payload: { role: "restricted" },
+        })
+      ).statusCode,
+    ).toBe(403);
+    // Missing CSRF token is rejected for the owner.
+    expect(
+      (
+        await request(owner, {
+          method: "POST",
+          url: `/api/profiles/${bobId}/role`,
+          payload: { role: "admin" },
+        })
+      ).statusCode,
+    ).toBe(403);
+    // Unknown profile id.
+    expect(
+      (
+        await request(owner, {
+          method: "POST",
+          url: "/api/profiles/does-not-exist/role",
+          csrf: true,
+          payload: { role: "member" },
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
+
   // ---- Household sub-profiles ("who's watching") ---------------------------
 
   interface AccountProfile {
@@ -2132,7 +2366,7 @@ describe("DebridStreamer server", () => {
       payload: { preview: { id: "tt-default", title: "Default pick" } },
     });
 
-    // Switch to the kid profile — session + active scope follow it.
+    // Switch to the kid profile - session + active scope follow it.
     const switched = json<{ session: { profileId: string }; profiles: ProfileState }>(
       await switchProfile(owner, kidId),
     );
@@ -2156,7 +2390,7 @@ describe("DebridStreamer server", () => {
     );
     expect(kidAfter.items.map((i) => i.mediaId)).toEqual(["tt-kid"]);
 
-    // Switch back to the default — its original item is intact, the kid's is not.
+    // Switch back to the default - its original item is intact, the kid's is not.
     await switchProfile(owner, defaultId);
     const defaultAfter = json<{ items: Array<{ mediaId: string }> }>(
       await request(owner, { method: "GET", url: "/api/library/watchlist" }),
@@ -2317,6 +2551,105 @@ describe("DebridStreamer server", () => {
     ).toBe(403);
   });
 
+  it("sets and clears rolling household bandwidth caps without blocking stream sessions", async () => {
+    const owner = await setupOwner(app);
+    const kidId = await createAccountProfile(owner, { displayName: "Kid" });
+
+    const set = await request(owner, {
+      method: "POST",
+      url: "/api/profiles/quota",
+      csrf: true,
+      payload: { profileId: kidId, capBytes: 1 },
+    });
+    expect(set.statusCode).toBe(200);
+    expect(
+      json<{
+        profiles: ProfileState;
+      }>(set).profiles.profiles.find((profile) => profile.id === kidId),
+    ).toMatchObject({
+      bandwidthCapBytes: 1,
+      bandwidthUsageBytes: 0,
+      bandwidthStatus: "ok",
+    });
+
+    upstream = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "video/mp4" });
+      res.end("over-cap playback still works");
+    });
+    await new Promise<void>((resolve) => upstream?.listen(0, "127.0.0.1", () => resolve()));
+    const address = upstream.address();
+    if (address == null || typeof address === "string") throw new Error("Test server did not bind");
+    const upstreamUrl = `http://127.0.0.1:${address.port}/video`;
+
+    // Warn-only is intentional: this playback makes the profile over cap, and
+    // a later stream is still proxied. Do not add a quota check to this path.
+    await switchProfile(owner, kidId);
+    const first = await request(owner, {
+      method: "POST",
+      url: "/api/streams/sessions/raw",
+      csrf: true,
+      payload: { upstreamUrl, contentType: "video/mp4" },
+    });
+    expect(first.statusCode).toBe(200);
+    const firstSession = json<{ session: { id: string; playbackUrl: string } }>(first).session;
+    expect((await request(owner, { method: "GET", url: firstSession.playbackUrl })).statusCode).toBe(200);
+
+    const usage = await request(owner, { method: "GET", url: "/api/admin/usage/streams" });
+    expect(usage.statusCode).toBe(200);
+    expect(
+      json<{
+        profiles: Array<{
+          profileId: string;
+          bandwidthCapBytes: number | null;
+          bandwidthStatus: string;
+        }>;
+      }>(
+        usage,
+      ).profiles.find((profile) => profile.profileId === kidId),
+    ).toMatchObject({ bandwidthCapBytes: 1, bandwidthStatus: "over" });
+
+    const second = await request(owner, {
+      method: "POST",
+      url: "/api/streams/sessions/raw",
+      csrf: true,
+      payload: { upstreamUrl, contentType: "video/mp4" },
+    });
+    expect(second.statusCode).toBe(200);
+    const secondSession = json<{ session: { playbackUrl: string } }>(second).session;
+    expect((await request(owner, { method: "GET", url: secondSession.playbackUrl })).statusCode).toBe(200);
+
+    const clear = await request(owner, {
+      method: "POST",
+      url: "/api/profiles/quota",
+      csrf: true,
+      payload: { profileId: kidId, capBytes: null },
+    });
+    expect(clear.statusCode).toBe(200);
+    expect(
+      json<{ profiles: ProfileState }>(clear).profiles.profiles.find((profile) => profile.id === kidId),
+    ).toMatchObject({ bandwidthCapBytes: null, bandwidthStatus: "ok" });
+  });
+
+  it("allows only owner/admin household managers to set bandwidth caps", async () => {
+    const owner = await setupOwner(app);
+    await createProfile(owner, "member", "member-password");
+    const member = await login(app, "member", "member-password");
+    const memberProfile = json<ProfileState>(
+      await request(member, { method: "GET", url: "/api/account/profiles" }),
+    ).activeProfileId;
+
+    expect(
+      (
+        await request(member, {
+          method: "POST",
+          url: "/api/profiles/quota",
+          csrf: true,
+          payload: { profileId: memberProfile, capBytes: 1024 },
+        })
+      ).statusCode,
+    ).toBe(403);
+  });
+
   it("never leaks or lets the client overwrite the protected sub-profile password hash", async () => {
     const owner = await setupOwner(app);
     // A household sub-profile created WITH a password stores a write-only hash.
@@ -2328,9 +2661,12 @@ describe("DebridStreamer server", () => {
         payload: { displayName: "Kid", password: "kid-pin-1234" },
       }),
     ).profile.id;
-    // Switch to it so /api/settings/profile reads that profile's settings.
+    // Switch to it so /api/settings/profile reads that profile's settings. The
+    // profile was created with a password, which is now an enforced switch PIN,
+    // so the switch must supply it (a profile with a PIN can no longer be
+    // entered credential-free - that is the household gate).
     expect(
-      (await request(owner, { method: "POST", url: "/api/profiles/switch", csrf: true, payload: { profileId: sub } })).statusCode,
+      (await request(owner, { method: "POST", url: "/api/profiles/switch", csrf: true, payload: { profileId: sub, password: "kid-pin-1234" } })).statusCode,
     ).toBe(200);
     const settings = json<{ settings: Record<string, string> }>(
       await request(owner, { method: "GET", url: "/api/settings/profile" }),

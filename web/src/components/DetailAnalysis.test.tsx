@@ -14,33 +14,6 @@ import type {
   AIProviderAnalysisResult,
 } from "../services/ai/types";
 
-// motion/react: render the animated elements as their plain DOM tags so the
-// component tree is assertable and AnimatePresence doesn't defer mounts.
-vi.mock("motion/react", () => {
-  const passthrough = (Tag: string) => (props: Record<string, unknown>) => {
-    // Drop motion-only props that React would warn about on a DOM node.
-    const {
-      initial: _i,
-      animate: _a,
-      exit: _e,
-      transition: _t,
-      ...rest
-    } = props;
-    return <Tag {...rest} />;
-  };
-  return {
-    AnimatePresence: ({ children }: { children: React.ReactNode }) => (
-      <>{children}</>
-    ),
-    motion: new Proxy(
-      {},
-      {
-        get: (_target, tag: string) => passthrough(tag),
-      },
-    ),
-  };
-});
-
 vi.mock("./Icon", () => ({
   Icon: ({ name }: { name: string }) => <span data-icon={name} />,
 }));
@@ -124,7 +97,7 @@ describe("DetailAnalysis", () => {
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
 
-    const cta = screen.getByRole("button", { name: /Would I like this\?/ });
+    const cta = screen.getByRole("button", { name: /Will I like this\?/ });
     expect(cta).toBeInTheDocument();
 
     await user.click(cta);
@@ -158,7 +131,7 @@ describe("DetailAnalysis", () => {
       <DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />,
     );
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("Probably not");
     expect(container.querySelector(".detail-analysis-card.tone-no")).not.toBeNull();
@@ -172,7 +145,7 @@ describe("DetailAnalysis", () => {
       <DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />,
     );
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("Maybe");
     expect(
@@ -188,7 +161,7 @@ describe("DetailAnalysis", () => {
       <DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />,
     );
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("Strong yes");
     expect(container.querySelector(".detail-analysis-blurb")).toBeNull();
@@ -199,14 +172,14 @@ describe("DetailAnalysis", () => {
     const analyzeTitle = vi.fn().mockResolvedValue(result());
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("Strong yes");
     await user.click(screen.getByRole("button", { name: "Dismiss analysis" }));
 
     // Back to the CTA; the result card is gone.
     expect(
-      screen.getByRole("button", { name: /Would I like this\?/ }),
+      screen.getByRole("button", { name: /Will I like this\?/ }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Strong yes")).toBeNull();
   });
@@ -218,7 +191,7 @@ describe("DetailAnalysis", () => {
     );
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("Analyzing based on your taste profile…");
     // Resolve and confirm we land on the result.
@@ -232,7 +205,7 @@ describe("DetailAnalysis", () => {
       .mockRejectedValue(new Error("provider down"));
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("provider down");
     expect(document.querySelector('[data-icon="info"]')).not.toBeNull();
@@ -248,7 +221,7 @@ describe("DetailAnalysis", () => {
       .mockResolvedValueOnce(result());
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("transient");
     await user.click(screen.getByRole("button", { name: "Try again" }));
@@ -261,7 +234,7 @@ describe("DetailAnalysis", () => {
     const analyzeTitle = vi.fn().mockRejectedValue("string failure");
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("string failure");
   });
@@ -270,7 +243,7 @@ describe("DetailAnalysis", () => {
     const analyzeTitle = vi.fn().mockResolvedValue(result());
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("Strong yes");
     await waitFor(() => expect(addAIUsage).toHaveBeenCalledTimes(1));
@@ -294,7 +267,7 @@ describe("DetailAnalysis", () => {
     const analyzeTitle = vi.fn().mockResolvedValue(result({}, null));
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("Strong yes");
     await waitFor(() => expect(addAIUsage).toHaveBeenCalledTimes(1));
@@ -310,7 +283,7 @@ describe("DetailAnalysis", () => {
     const analyzeTitle = vi.fn().mockResolvedValue(result());
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     await screen.findByText("Strong yes");
     expect(analyzeTitle).toHaveBeenCalledWith(
@@ -323,7 +296,7 @@ describe("DetailAnalysis", () => {
     const analyzeTitle = vi.fn().mockResolvedValue(result());
     render(<DetailAnalysis item={item} provider={makeProvider(analyzeTitle)} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Would I like this\?/ }));
+    await user.click(screen.getByRole("button", { name: /Will I like this\?/ }));
 
     // The best-effort write rejection is swallowed; the card stays.
     await screen.findByText("Strong yes");

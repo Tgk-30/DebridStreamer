@@ -40,7 +40,7 @@ struct DetailView: View {
     @State private var affinityError: String?
     @State private var showAffinityUnavailable = false
 
-    // L23 — cast / related / technical details
+    // L23 - cast / related / technical details
     @State private var cast: [CastMember] = []
     @State private var related: [MediaPreview] = []
     // Tapping a "More Like This" poster opens that title in a nested detail sheet.
@@ -217,7 +217,7 @@ struct DetailView: View {
                     }
                 }
 
-                // Overview — constrain the measure for comfortable reading (L22).
+                // Overview - constrain the measure for comfortable reading (L22).
                 if let overview = detail.overview, !overview.isEmpty {
                     Text(overview)
                         .font(.body)
@@ -240,7 +240,7 @@ struct DetailView: View {
                 // Stream search section
                 streamSection(detail)
 
-                // L23 — fill the lower half: cast, related titles, technical details.
+                // L23 - fill the lower half: cast, related titles, technical details.
                 if !cast.isEmpty {
                     Divider()
                     castSection
@@ -496,7 +496,7 @@ struct DetailView: View {
             HStack(spacing: 16) {
                 Picker("Season", selection: $selectedSeason) {
                     // Drive the picker from real TMDB season numbers (excluding
-                    // season 0 "Specials"), not array indices — otherwise the tag
+                    // season 0 "Specials"), not array indices - otherwise the tag
                     // doesn't match the seasonNumber used for episode/stream lookup.
                     let realSeasons = seasons.filter { $0.seasonNumber > 0 }
                     if realSeasons.isEmpty {
@@ -758,9 +758,9 @@ struct DetailView: View {
             if let detail = mediaDetail {
                 await refreshLibraryFlags(for: detail)
                 await loadAvailableFolders()
-                // L23 — cast + related, fetched in parallel and fault-tolerant.
+                // L23 - cast + related, fetched in parallel and fault-tolerant.
                 await loadCastAndRelated(detail, service: service)
-                // B1 — IMDb/RT ratings via OMDB (only for real tt-ids).
+                // B1 - IMDb/RT ratings via OMDB (only for real tt-ids).
                 await loadOMDBRatings(detail)
             }
         } catch {
@@ -769,7 +769,7 @@ struct DetailView: View {
     }
 
     /// Fetch the cast row and "more like this" row in parallel. Either failing
-    /// just leaves its row empty — it never blocks the modal or surfaces an error.
+    /// just leaves its row empty - it never blocks the modal or surfaces an error.
     private func loadCastAndRelated(_ detail: MediaItem, service: TMDBService) async {
         guard let tmdbId = resolvedTMDBId(detail) else { return }
         async let castResult = try? service.getCast(tmdbId: tmdbId, type: detail.type)
@@ -780,7 +780,7 @@ struct DetailView: View {
     }
 
     /// Enrich with IMDb/Rotten-Tomatoes ratings from OMDB. Guarded so we only
-    /// call OMDB when the detail's id is a real IMDb id (`tt…`) — for tmdb-only
+    /// call OMDB when the detail's id is a real IMDb id (`tt…`) - for tmdb-only
     /// titles there is no OMDB join key, so we skip silently. Also skips when no
     /// OMDB key is configured (`omdbService == nil`) or on any failure.
     private func loadOMDBRatings(_ detail: MediaItem) async {
@@ -830,7 +830,7 @@ struct DetailView: View {
                 }
             }
         } catch {
-            // Non-fatal — just won't have accurate episode counts
+            // Non-fatal - just won't have accurate episode counts
         }
     }
 

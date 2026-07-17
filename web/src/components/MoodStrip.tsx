@@ -1,5 +1,5 @@
 // Port of Sources/DebridStreamer/Views/Catalog/MoodDiscoveryView.swift (the
-// "Describe a vibe" AI mood strip — the app's differentiator).
+// "Describe a vibe" AI mood strip - the app's differentiator).
 //
 // Header (wand glyph + "Describe a vibe" + subtitle), a prompt field with a
 // Curate button, and starter suggestion chips. The parent decides whether the
@@ -25,9 +25,11 @@ interface MoodStripProps {
   error?: string | null;
   /** Whether real AI curation is available (an AI provider is configured, or
    *  Server Mode curates server-side). When false the strip is honest up
-   *  front — vibes open a filtered browse — instead of promising AI and
+   *  front - vibes open a filtered browse - instead of promising AI and
    *  quietly doing something else. */
   aiAvailable?: boolean;
+  /** Search uses the same controls in a compact inline treatment. */
+  variant?: "default" | "search";
 }
 
 export function MoodStrip({
@@ -36,6 +38,7 @@ export function MoodStrip({
   status = null,
   error = null,
   aiAvailable = true,
+  variant = "default",
 }: MoodStripProps) {
   const [vibe, setVibe] = useState("");
 
@@ -48,7 +51,7 @@ export function MoodStrip({
   }
 
   return (
-    <section className="mood">
+    <section className={`mood${variant === "search" ? " mood-search" : ""}`}>
       <div className="mood-header">
         <Icon name="sparkles" size={19} className="t-accent" />
         <div className="mood-heading">
@@ -56,7 +59,7 @@ export function MoodStrip({
           <div className="mood-subtitle t-secondary">
             {aiAvailable
               ? "AI turns your mood into a curated lineup"
-              : "Opens a filtered browse — add an AI key in Settings for real AI picks"}
+              : "Try a natural-language browse. Add an AI key in Settings for curated picks."}
           </div>
         </div>
       </div>

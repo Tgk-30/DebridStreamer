@@ -1,4 +1,4 @@
-// CommandPalette — a ⌘K / Ctrl+K quick switcher. It is hidden until invoked, so
+// CommandPalette - a ⌘K / Ctrl+K quick switcher. It is hidden until invoked, so
 // it adds power-user navigation speed across this feature-rich app (9 screens +
 // settings + themes) without adding any always-on UI. Composes existing store
 // actions only (navigate / search / theme), so there is no new state to maintain.
@@ -29,9 +29,9 @@ const NAV_TARGETS: Array<{ id: ScreenId; label: string; icon: IconName }> = [
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 
-export function CommandPalette() {
+export function CommandPalette({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
   const { navigate, search, settings, updateSettings } = useAppStore();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -103,6 +103,16 @@ export function CommandPalette() {
       keywords: "tour guide welcome help onboarding intro getting started",
       run: () => {
         window.dispatchEvent(new CustomEvent("ds:open-welcome-guide"));
+        close();
+      },
+    });
+    list.push({
+      id: "app-tour",
+      label: "Take the app tour",
+      icon: "sparkles",
+      keywords: "tour walkthrough highlight spotlight guide onboarding where is",
+      run: () => {
+        window.dispatchEvent(new CustomEvent("ds:open-tour"));
         close();
       },
     });

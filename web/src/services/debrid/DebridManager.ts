@@ -65,7 +65,13 @@ export class DebridManager {
       { index: number; service: DebridServiceType; status: CacheStatus }
     > = {};
     for (const entry of collected.sort((a, b) => a.index - b.index)) {
-      for (const [hash, status] of Object.entries(entry.cache)) {
+      for (const [rawHash, status] of Object.entries(entry.cache)) {
+        // Torrent infoHashes are case-insensitive hex, but providers echo them
+        // in different cases (Real-Debrid tends uppercase, others lowercase).
+        // Canonicalize to lowercase so (a) the caller's lookup can't miss on a
+        // case mismatch - which made cached streams read as uncached - and
+        // (b) the same torrent from two providers merges instead of splitting.
+        const hash = rawHash.toLowerCase();
         const existing = results[hash];
         if (existing) {
           const beatsCacheState =

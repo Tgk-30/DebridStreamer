@@ -17,9 +17,9 @@ struct DiscoverFilters: Sendable {
     var genreIds: [Int]
     /// TMDB keyword ids (`with_keywords`). Powers mood/keyword discovery rows.
     var keywordIds: [Int]
-    /// Production company ids (`with_companies`) — Studio rails (movies).
+    /// Production company ids (`with_companies`) - Studio rails (movies).
     var companyIds: [Int]
-    /// TV network ids (`with_networks`) — Network rails (series).
+    /// TV network ids (`with_networks`) - Network rails (series).
     var networkIds: [Int]
     /// Inclusive release-year range for "from the 2010s" style queries.
     var yearGTE: Int?
@@ -109,10 +109,10 @@ protocol MetadataProvider: Sendable {
     /// Get external IDs (IMDB ID) for a TMDB item.
     func getExternalIds(tmdbId: Int, type: MediaType) async throws -> ExternalIds
 
-    /// Get the top-billed cast for a TMDB item (L23 — Detail cast row).
+    /// Get the top-billed cast for a TMDB item (L23 - Detail cast row).
     func getCast(tmdbId: Int, type: MediaType) async throws -> [CastMember]
 
-    /// Get "more like this" recommendations for a TMDB item (L23 — related row).
+    /// Get "more like this" recommendations for a TMDB item (L23 - related row).
     func getRecommendations(tmdbId: Int, type: MediaType) async throws -> [MediaPreview]
 
     /// Get a person's profile (name, biography, profile path, known-for dept).

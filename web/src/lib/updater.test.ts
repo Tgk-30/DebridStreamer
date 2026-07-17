@@ -2,7 +2,7 @@
 //
 // `checkForUpdates()` must be a safe no-op outside the desktop Tauri shell (no
 // import of the updater runtime, never throws, resolves to null). The vitest
-// env is "node" (no window) so isTauri() is false by default — the browser/SSR
+// env is "node" (no window) so isTauri() is false by default - the browser/SSR
 // case. We flip into the Tauri path by stubbing a window with the
 // __TAURI_INTERNALS__ flag and mocking the dynamically-imported plugin modules.
 
@@ -21,6 +21,7 @@ vi.mock("@tauri-apps/plugin-process", () => ({
 }));
 
 import { checkForUpdates } from "./updater";
+import { setNetworkMode } from "./networkPolicy";
 
 /** Put a fake Tauri window in place so isTauri() returns true. */
 function enterTauri(): void {
@@ -32,11 +33,13 @@ beforeEach(() => {
   relaunchMock.mockReset();
   vi.spyOn(console, "info").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
+  setNetworkMode("standard");
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  setNetworkMode("standard");
 });
 
 describe("checkForUpdates (no Tauri runtime)", () => {
@@ -55,6 +58,14 @@ describe("checkForUpdates (no Tauri runtime)", () => {
 });
 
 describe("checkForUpdates (under Tauri)", () => {
+  it("does not invoke the updater plugin when updates are blocked", async () => {
+    enterTauri();
+    setNetworkMode("offline");
+
+    await expect(checkForUpdates()).resolves.toBeNull();
+    expect(checkMock).not.toHaveBeenCalled();
+  });
+
   it("returns null when the updater reports no update available", async () => {
     enterTauri();
     checkMock.mockResolvedValue(null);
@@ -97,7 +108,7 @@ describe("checkForUpdates (under Tauri)", () => {
   });
 });
 
-describe("PendingUpdate.install — progress translation + relaunch", () => {
+describe("PendingUpdate.install - progress translation + relaunch", () => {
   it("reports a 0..1 fraction when a content length is known, then relaunches", async () => {
     enterTauri();
     // downloadAndInstall drives a sequence of progress events through the

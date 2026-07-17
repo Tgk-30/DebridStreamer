@@ -15,7 +15,7 @@ import type { MediaType } from "../../models/media";
 import { TorrentResult } from "./models";
 import { defaultFetchImpl, type FetchImpl, IndexerError, type TorrentIndexer } from "./types";
 
-export interface TorznabIndexerOptions {
+interface TorznabIndexerOptions {
   name: string;
   baseURL: string;
   endpointPath: string;
@@ -406,7 +406,7 @@ export function parseTorznabFeed(xml: string): TorznabFeedItem[] {
  * A tiny SAX-style scanner: emits start-element (with parsed attributes),
  * end-element, and character events in document order. Handles self-closing
  * tags (emitting start then end), skips the XML declaration / comments / CDATA
- * boundaries, and decodes the common XML entities. This is deliberately small —
+ * boundaries, and decodes the common XML entities. This is deliberately small - 
  * just enough to drive `parseTorznabFeed` the way Foundation's XMLParser drives
  * the Swift delegate.
  */
@@ -443,7 +443,7 @@ function tokenizeXML(
     if (xml.startsWith("<![CDATA[", lt)) {
       const close = xml.indexOf("]]>", lt);
       const inner = xml.slice(lt + 9, close === -1 ? n : close);
-      onText(inner); // CDATA is literal — no entity decoding.
+      onText(inner); // CDATA is literal - no entity decoding.
       i = close === -1 ? n : close + 3;
       continue;
     }
@@ -500,7 +500,7 @@ function parseTag(raw: string): { name: string; attrs: Record<string, string> } 
 }
 
 /** A valid Unicode scalar value (in range, not a surrogate). String.fromCodePoint
- *  throws a RangeError otherwise — and one bad numeric entity must NOT abort the
+ *  throws a RangeError otherwise - and one bad numeric entity must NOT abort the
  *  whole feed parse, so out-of-range references are left as literal text. */
 function fromCodePointOr(cp: number, literal: string): string {
   if (

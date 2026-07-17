@@ -231,6 +231,36 @@ describe("useScrubThumbnails", () => {
     });
   });
 
+  it("evicts the first thumbnail when the 121st bucket is inserted", () => {
+    const created = installDom();
+    const { result } = renderHook(() => useScrubThumbnails(SRC, true));
+    const v = created.video!;
+    const c = created.canvas!;
+    v.duration = 1_000;
+    let now = 0;
+    let captures = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    c.toDataURL.mockImplementation(() => `data:image/jpeg;base64,${++captures}`);
+    act(() => v.__fire("loadedmetadata"));
+
+    for (let bucket = 0; bucket <= 120; bucket += 1) {
+      now += 121;
+      act(() => result.current.onHover(bucket * 5));
+      if (bucket > 0) act(() => v.__fire("seeked"));
+    }
+    expect(captures).toBe(121);
+
+    // Bucket 0 has been evicted, so its hover keeps the most recent image until
+    // the new seek completes rather than serving the original cached data URL.
+    now += 121;
+    act(() => result.current.onHover(0));
+    expect(result.current.preview).toEqual({
+      image: "data:image/jpeg;base64,121",
+      time: 0,
+    });
+    act(() => v.__fire("seeked"));
+  });
+
   it("throttles rapid hovers: the second within the window stores a pending time and does not seek again", () => {
     const created = installDom();
     const { result } = renderHook(() => useScrubThumbnails(SRC, true));
@@ -278,7 +308,7 @@ describe("useScrubThumbnails", () => {
         act(() => v.__fire("seeked"));
         expect(v.__currentTimeSets).toEqual([100, 300]);
         resolve();
-      }, 250); // > THROTTLE_MS (120) with margin — de-flake under load
+      }, 250); // > THROTTLE_MS (120) with margin - de-flake under load
     });
   });
 
@@ -308,6 +338,57 @@ describe("useScrubThumbnails", () => {
     act(() => result.current.onHover(40));
     act(() => v.__fire("seeked"));
     expect(result.current.preview).toEqual({ image: null, time: 40 });
+  });
+
+  it("recovers from a media error during a seek so later hovers still capture", async () => {
+    const created = installDom();
+    const { result } = renderHook(() => useScrubThumbnails(SRC, true));
+    const v = created.video!;
+    v.duration = 600;
+    act(() => v.__fire("loadedmetadata"));
+    act(() => result.current.onHover(100));
+    expect(v.__currentTimeSets).toEqual([100]);
+    // The stream errors: no 'seeked' will ever arrive for that seek.
+    act(() => v.__fire("error"));
+    await new Promise((r) => setTimeout(r, 250)); // clear the throttle window
+    act(() => result.current.onHover(300));
+    expect(v.__currentTimeSets).toEqual([100, 300]);
+  });
+
+  it("recovers via the seek watchdog when 'seeked' never fires", () => {
+    vi.useFakeTimers();
+    const created = installDom();
+    const { result } = renderHook(() => useScrubThumbnails(SRC, true));
+    const v = created.video!;
+    v.duration = 600;
+    act(() => v.__fire("loadedmetadata"));
+    act(() => result.current.onHover(100));
+    expect(v.__currentTimeSets).toEqual([100]);
+    // No 'seeked' ever arrives. After SEEK_TIMEOUT_MS the flag must drop.
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    act(() => result.current.onHover(300));
+    expect(v.__currentTimeSets).toEqual([100, 300]);
+  });
+
+  it("resets in-flight seek state when the source url changes", async () => {
+    const created = installDom();
+    const { result, rerender } = renderHook(
+      ({ url }: { url: string }) => useScrubThumbnails(url, true),
+      { initialProps: { url: SRC } },
+    );
+    const first = created.video!;
+    first.duration = 600;
+    act(() => first.__fire("loadedmetadata"));
+    act(() => result.current.onHover(100)); // seek in flight, never completes
+    rerender({ url: "https://debrid.example/other.mkv" });
+    const second = created.video!;
+    second.duration = 600;
+    act(() => second.__fire("loadedmetadata"));
+    await new Promise((r) => setTimeout(r, 250)); // lastCaptureRef survives the rebuild
+    act(() => result.current.onHover(200));
+    expect(second.__currentTimeSets).toEqual([200]);
   });
 
   it("bails out of capture when getContext returns null", () => {

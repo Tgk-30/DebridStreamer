@@ -12,6 +12,9 @@ import {
   MIGRATION_008,
 } from "./schema.js";
 
+const AUDIT_LOG_RETENTION_DAYS = 90;
+const AUDIT_LOG_MINIMUM_ROWS = 50_000;
+
 export class AppDatabase {
   readonly sqlite: DatabaseSync;
 
@@ -22,7 +25,10 @@ export class AppDatabase {
     this.sqlite = new DatabaseSync(path);
     this.sqlite.exec("PRAGMA foreign_keys = ON;");
     this.sqlite.exec("PRAGMA journal_mode = WAL;");
+    // Standard WAL durability: only OS or power loss can lose the last resume tick.
+    this.sqlite.exec("PRAGMA synchronous = NORMAL;");
     this.migrate();
+    this.pruneAuditLog();
   }
 
   close(): void {
@@ -39,6 +45,26 @@ export class AppDatabase {
       this.sqlite.exec("ROLLBACK;");
       throw error;
     }
+  }
+
+  /** Retain recent security events and at least the newest 50,000 audit records. */
+  pruneAuditLog(now = new Date()): void {
+    const cutoff = new Date(
+      now.getTime() - AUDIT_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    this.sqlite
+      .prepare(
+        `DELETE FROM audit_log
+         WHERE created_at < ?
+           AND created_at < COALESCE(
+             (SELECT created_at
+              FROM audit_log
+              ORDER BY created_at DESC
+              LIMIT 1 OFFSET ?),
+             ?
+           )`,
+      )
+      .run(cutoff, AUDIT_LOG_MINIMUM_ROWS - 1, cutoff);
   }
 
   private migrate(): void {

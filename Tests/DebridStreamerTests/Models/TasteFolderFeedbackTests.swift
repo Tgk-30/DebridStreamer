@@ -210,7 +210,7 @@ struct TasteEventTests {
         let data = try encoder.encode(original)
         let decoded = try decoder.decode(TasteEvent.self, from: data)
 
-        // Note: don't compare `== original` — the timestamp loses sub-second
+        // Note: don't compare `== original` - the timestamp loses sub-second
         // precision through .iso8601, so equate the stable fields instead.
         #expect(decoded.id == original.id)
         #expect(decoded.eventType == original.eventType)

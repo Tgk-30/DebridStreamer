@@ -12,11 +12,24 @@ import type { MediaType } from "../models/media";
 import type { DebridManager } from "../services/debrid/DebridManager";
 import type { DebridServiceType } from "../services/debrid/models";
 import { CacheStatus, matchEpisodeTag } from "../services/debrid/models";
-import type { IndexerManager } from "../services/indexers/IndexerManager";
+import type {
+  IndexerManager,
+  IndexerSearchError,
+} from "../services/indexers/IndexerManager";
 import { VideoQuality, type TorrentResult } from "../services/indexers/models";
 import type { AppSettings, StreamMaxQuality } from "./settings";
 import { fetchServerStreams } from "../lib/serverApi";
 import { configuredServerURL } from "../lib/serverMode";
+import {
+  buildTitleQuery,
+  combineStreamResults,
+  filterResultsByTitle,
+} from "./streamMatching";
+
+// buildTitleQuery + filterResultsByTitle historically lived in this module and
+// now back BOTH modes via ./streamMatching; re-export so any importer reaching
+// them through ../data/streams keeps working.
+export { buildTitleQuery, filterResultsByTitle };
 
 /** A torrent result plus its resolved cache state. */
 export interface StreamRow {
@@ -33,6 +46,13 @@ export interface StreamsState {
   hasIndexers: boolean;
   /** Whether any debrid service is configured (drives the cache badges). */
   hasDebrid: boolean;
+  /** True when the title has NO imdb id, so no search could run at all. The UI
+   * must say so - rendering the generic "No streams found" here was the silent
+   * P0 ("streams are not being found"): zero requests were ever made. */
+  missingImdbId: boolean;
+  /** Per-source failures from the last search. Empty ⇒ every source answered.
+   * Lets the empty state distinguish "nothing matched" from "sources down". */
+  sourceErrors: IndexerSearchError[];
 }
 
 const EMPTY: StreamsState = {
@@ -41,6 +61,8 @@ const EMPTY: StreamsState = {
   error: null,
   hasIndexers: false,
   hasDebrid: false,
+  missingImdbId: false,
+  sourceErrors: [],
 };
 
 function maxQualityOrder(maxQuality: StreamMaxQuality): number | null {
@@ -53,7 +75,7 @@ export const DATA_SAVER_MAX_SIZE_GB = 5;
 
 /** Effective stream caps for a profile, applying the master Data Saver clamp.
  *
- * Data Saver only ever TIGHTENS (a `min` over quality + size) — it never loosens
+ * Data Saver only ever TIGHTENS (a `min` over quality + size) - it never loosens
  * a stricter explicit cap, so a user who already set 480p / 2 GB keeps those. The
  * cached-only constraint is left to its own explicit toggle. Off → the raw three
  * fields, so existing behavior is unchanged when Data Saver is off. */
@@ -106,8 +128,8 @@ export function filterStreamRows(rows: StreamRow[], settings: AppSettings): Stre
 
 /** Collapse cross-indexer duplicates: the SAME torrent (infoHash) is often
  * returned by several indexers, swamping the stream list with identical entries.
- * Keep one row per infoHash — the most useful variant (prefer a cached copy,
- * then more seeders) — preserving each release's first-seen slot. Pure +
+ * Keep one row per infoHash - the most useful variant (prefer a cached copy,
+ * then more seeders) - preserving each release's first-seen slot. Pure +
  * automatic (no information is lost: it's the same torrent). */
 export function dedupeStreamRows(rows: StreamRow[]): StreamRow[] {
   const byHash = new Map<string, StreamRow>();
@@ -137,7 +159,7 @@ function betterDuplicate(a: StreamRow, b: StreamRow): StreamRow {
 // MARK: - Episode matching
 
 /** How a release title relates to a specific requested episode. */
-export type EpisodeMatch = "exact" | "pack" | "unknown" | "mismatch";
+type EpisodeMatch = "exact" | "pack" | "unknown" | "mismatch";
 
 /** Classify a release title against a requested season/episode.
  *
@@ -146,7 +168,7 @@ export type EpisodeMatch = "exact" | "pack" | "unknown" | "mismatch";
  *   otherwise mismatch.
  * - Season-only tags (`S02`, `SEASON 2`) → a season pack: right season keeps
  *   it as "pack", wrong season is a mismatch. A bare `COMPLETE` is a pack too.
- * - No recognizable tag → "unknown" (kept — some indexers strip tags).
+ * - No recognizable tag → "unknown" (kept - some indexers strip tags).
  */
 export function classifyRowForEpisode(
   row: StreamRow,
@@ -193,10 +215,44 @@ async function resolveStreams(
   type: MediaType,
   season: number | null,
   episode: number | null,
+  title: string | null,
   indexers: IndexerManager,
   debrid: DebridManager | null,
+  signal?: AbortSignal,
 ): Promise<StreamRow[]> {
-  const results = await indexers.searchAll(imdbId, type, season, episode);
+  // Two complementary passes, merged: the imdb-based search (YTS/EZTV are
+  // imdb-native) AND a title-based query - APIBay and other name-matching
+  // indexers return nothing for a bare imdb id, so without this they never
+  // contribute and a single dead imdb indexer (e.g. EZTV) empties every series.
+  const query =
+    title != null && title.trim().length > 0
+      ? buildTitleQuery(title, season, episode)
+      : null;
+  const [byImdb, byTitle] = await Promise.all([
+    // searchAll errors still surface (state.error); IndexerManager already
+    // absorbs per-indexer failures internally, so a throw here is catastrophic.
+    (indexers.searchAll as unknown as (
+      imdbId: string,
+      type: MediaType,
+      season: number | null,
+      episode: number | null,
+      signal?: AbortSignal,
+    ) => Promise<TorrentResult[]>)(imdbId, type, season, episode, signal),
+    // The title pass is best-effort - a failure there must NOT empty the imdb
+    // results, so it degrades to an empty set.
+    query != null
+      ? (indexers.searchByQuery as unknown as (
+          query: string,
+          type: MediaType,
+          signal?: AbortSignal,
+        ) => Promise<TorrentResult[]>)(query, type, signal).catch(() => [] as TorrentResult[])
+      : Promise.resolve([] as TorrentResult[]),
+  ]);
+  if (signal?.aborted) return [];
+  // Fold the imdb-exact + loose title passes into one ranked, deduped set. The
+  // combiner (shared with Server Mode) validates the title pass against the
+  // requested title so the two modes can never diverge.
+  const results = combineStreamResults(byImdb, byTitle, title);
   if (results.length === 0) return [];
 
   // Check cache across all configured debrid services for every infoHash.
@@ -204,7 +260,10 @@ async function resolveStreams(
   if (debrid != null && debrid.hasServices) {
     const hashes = results.map((r) => r.infoHash);
     try {
-      const merged = await debrid.checkCacheAll(hashes);
+      const merged = await (debrid.checkCacheAll as unknown as (
+        hashes: string[],
+        signal?: AbortSignal,
+      ) => ReturnType<DebridManager["checkCacheAll"]>)(hashes, signal);
       cacheByHash = Object.fromEntries(
         Object.entries(merged)
           .filter(([, entry]) => CacheStatus.isCached(entry.status))
@@ -219,7 +278,10 @@ async function resolveStreams(
     dedupeStreamRows(
       results.map((result) => ({
         result,
-        cachedOn: cacheByHash[result.infoHash] ?? null,
+        // checkCacheAll canonicalizes to lowercase; match it so a case
+        // difference between the indexer hash and the provider's echo can't
+        // make a cached torrent read as uncached.
+        cachedOn: cacheByHash[result.infoHash.toLowerCase()] ?? null,
       })),
     ),
     season,
@@ -236,6 +298,7 @@ export function useStreams(
   type: MediaType,
   season: number | null,
   episode: number | null,
+  title: string | null,
   indexers: IndexerManager,
   debrid: DebridManager | null,
 ): StreamsState {
@@ -252,16 +315,38 @@ export function useStreams(
   });
 
   const run = useCallback(
-    async (signal: { cancelled: boolean }) => {
+    async (signal: AbortSignal) => {
       if (imdbId == null || !hasIndexers) {
-        setState({ ...EMPTY, hasIndexers, hasDebrid, loading: false });
+        // HONEST idle: a null imdb id means NO search ever ran - say so instead
+        // of letting the UI render the generic "No streams found".
+        setState({
+          ...EMPTY,
+          hasIndexers,
+          hasDebrid,
+          missingImdbId: imdbId == null,
+          loading: false,
+        });
         return;
       }
       setState((s) => ({ ...s, loading: true, error: null, hasIndexers, hasDebrid }));
       try {
         if (serverMode) {
-          const remote = await fetchServerStreams({ imdbId, type, season, episode });
-          if (!signal.cancelled) {
+          const remote = await (fetchServerStreams as unknown as (input: {
+            imdbId: string;
+            type: MediaType;
+            season: number | null;
+            episode: number | null;
+            title: string | null;
+            signal: AbortSignal;
+          }) => ReturnType<typeof fetchServerStreams>)({
+            imdbId,
+            type,
+            season,
+            episode,
+            title,
+            signal,
+          });
+          if (!signal.aborted) {
             setState({
               rows: filterAndRankForEpisode(
                 dedupeStreamRows(remote.rows),
@@ -272,29 +357,72 @@ export function useStreams(
               error: null,
               hasIndexers: remote.hasIndexers,
               hasDebrid: remote.hasDebrid,
+              missingImdbId: false,
+              sourceErrors: [],
             });
           }
           return;
         }
-        const rows = await resolveStreams(imdbId, type, season, episode, indexers, debrid);
-        if (!signal.cancelled) {
-          setState({ rows, loading: false, error: null, hasIndexers, hasDebrid });
+        const rows = await resolveStreams(
+          imdbId,
+          type,
+          season,
+          episode,
+          title,
+          indexers,
+          debrid,
+          signal,
+        );
+        // Per-source failures from the passes that just ran (both passes error
+        // on every source when the network path is down, so whichever pass
+        // recorded last still names them all).
+        const sourceErrors = indexers.lastSearchErrors;
+        if (
+          rows.length === 0 &&
+          indexers.activeIndexers.length > 0 &&
+          sourceErrors.length >= indexers.activeIndexers.length
+        ) {
+          // EVERY source failed - that's an outage, not "no results". Surface a
+          // real error instead of the misleading empty state (silent P0).
+          const detail = sourceErrors
+            .map((e) => `${e.indexer}: ${e.error}`)
+            .join(" · ");
+          throw new Error(`Couldn't reach any source - ${detail}`);
+        }
+        if (!signal.aborted) {
+          setState({
+            rows,
+            loading: false,
+            error: null,
+            hasIndexers,
+            hasDebrid,
+            missingImdbId: false,
+            sourceErrors,
+          });
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (!signal.cancelled) {
-          setState({ rows: [], loading: false, error: message, hasIndexers, hasDebrid });
+        if (!signal.aborted) {
+          setState({
+            rows: [],
+            loading: false,
+            error: message,
+            hasIndexers,
+            hasDebrid,
+            missingImdbId: false,
+            sourceErrors: indexers.lastSearchErrors,
+          });
         }
       }
     },
-    [imdbId, type, season, episode, indexers, debrid, hasIndexers, hasDebrid, serverMode],
+    [imdbId, type, season, episode, title, indexers, debrid, hasIndexers, hasDebrid, serverMode],
   );
 
   useEffect(() => {
-    const signal = { cancelled: false };
-    void run(signal);
+    const controller = new AbortController();
+    void run(controller.signal);
     return () => {
-      signal.cancelled = true;
+      controller.abort();
     };
   }, [run]);
 

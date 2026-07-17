@@ -46,7 +46,6 @@ check(
 const releaseWorkflow = read(".github/workflows/web-release.yml");
 const dockerWorkflow = read(".github/workflows/docker-image.yml");
 const ciWorkflow = read(".github/workflows/ci.yml");
-const siteWorkflow = read(".github/workflows/site.yml");
 const cloudflareSiteWorkflow = read(".github/workflows/cloudflare-site.yml");
 const dockerIgnore = read(".dockerignore");
 const publicRepoPreflight = read("scripts/public_repo_preflight.mjs");
@@ -66,19 +65,22 @@ check(
 );
 check(
   "Release workflow builds macOS, Linux, and Windows",
-  // A pinned stable macOS (macos-15/14/13) is REQUIRED — `macos-latest` moved to
+  // A pinned stable macOS (macos-15/14/13) is REQUIRED - `macos-latest` moved to
   // the macOS 26 beta, whose SDK/codesign makes bundles "damaged" on older macOS.
   /platform:\s*macos-\d+/.test(releaseWorkflow) &&
-    /platform:\s*ubuntu-22\.04/.test(releaseWorkflow) &&
+    /platform:\s*ubuntu-\d+\.\d+/.test(releaseWorkflow) &&
     /platform:\s*windows-latest/.test(releaseWorkflow) &&
     /runs-on:\s*\$\{\{\s*matrix\.platform\s*\}\}/.test(releaseWorkflow),
   ".github/workflows/web-release.yml must run the desktop release job on macOS, Linux, and Windows",
 );
 check(
-  "Release workflow builds universal macOS target",
-  /args:\s*"--target universal-apple-darwin"/.test(releaseWorkflow) &&
+  "Release workflow builds per-arch macOS targets",
+  // macOS ships PER-ARCH now (native runners, each bundling its own libmpv) - 
+  // no universal/lipo build. Verify both arch targets flow through matrix.args.
+  /--target aarch64-apple-darwin/.test(releaseWorkflow) &&
+    /--target x86_64-apple-darwin/.test(releaseWorkflow) &&
     /args:\s*\$\{\{\s*matrix\.args\s*\}\}/.test(releaseWorkflow),
-  ".github/workflows/web-release.yml must pass the universal-apple-darwin target into tauri-action for macOS",
+  ".github/workflows/web-release.yml must build per-arch macOS (aarch64 + x86_64) targets via matrix.args",
 );
 check(
   "Release workflow packages desktop server",
@@ -144,8 +146,12 @@ check(
 );
 check(
   "Release workflow bundles macOS Node runtimes",
-  /download_tauri_node_runtime\.mjs\s+darwin-arm64\s+darwin-x64/.test(releaseWorkflow),
-  ".github/workflows/web-release.yml must bundle both darwin-arm64 and darwin-x64 for the universal mac app",
+  // Per-arch: each mac job downloads only its own runtime via matrix.node_runtime,
+  // and both arches are present across the matrix.
+  /node_runtime:\s*darwin-arm64/.test(releaseWorkflow) &&
+    /node_runtime:\s*darwin-x64/.test(releaseWorkflow) &&
+    /download_tauri_node_runtime\.mjs \$\{\{ matrix\.node_runtime \}\}/.test(releaseWorkflow),
+  ".github/workflows/web-release.yml must bundle darwin-arm64 and darwin-x64 Node runtimes across the per-arch mac matrix",
 );
 check(
   "Release workflow bundles Linux Node runtime",
@@ -156,6 +162,24 @@ check(
   "Release workflow bundles Windows Node runtime",
   /download_tauri_node_runtime\.mjs\s+win-x64/.test(releaseWorkflow),
   ".github/workflows/web-release.yml must bundle a win-x64 Node runtime for the Windows desktop app",
+);
+check(
+  "Release workflow bundles ffmpeg binaries",
+  // The optimize/remux engine shells out to bundled ffmpeg/ffprobe, so every
+  // desktop target must fetch them exactly like the Node runtime above: macOS
+  // per-arch via matrix.node_runtime, Linux and Windows literally.
+  /download_ffmpeg\.mjs \$\{\{ matrix\.node_runtime \}\}/.test(releaseWorkflow) &&
+    /download_ffmpeg\.mjs\s+linux-x64/.test(releaseWorkflow) &&
+    /download_ffmpeg\.mjs\s+win-x64/.test(releaseWorkflow),
+  ".github/workflows/web-release.yml must fetch ffmpeg/ffprobe for macOS (per-arch), Linux, and Windows before packaging",
+);
+check(
+  "Tauri bundles ffmpeg resources",
+  // Fetching the binaries is not enough - tauri.conf.json must ship them so
+  // they are present in the packaged app next to the Node runtime.
+  Array.isArray(tauri.bundle?.resources) &&
+    tauri.bundle.resources.includes("resources/ffmpeg/**/*"),
+  "web/src-tauri/tauri.conf.json must recursively include resources/ffmpeg so bundled ffmpeg/ffprobe binaries ship with the app",
 );
 check(
   "Local package script bundles current-platform Node",
@@ -249,36 +273,12 @@ check(
     /public_repo_preflight\.mjs/.test(cloudflareDeployHelper),
   "scripts/deploy_website_cloudflare.mjs must run download, static, mounted-path, and public-repo checks before mutating Cloudflare",
 );
+// GitHub Pages (site.yml) was removed 2026-07 - Pages was never enabled and
+// Cloudflare (cloudflare-site.yml, checked below) is the deploy that counts.
 check(
-  "GitHub Pages workflow exists",
-  existsSync(join(root, ".github/workflows/site.yml")),
-  ".github/workflows/site.yml must publish the downloader site",
-);
-check(
-  "GitHub Pages workflow validates website",
-  /check_website_download_logic\.mjs/.test(siteWorkflow) &&
-    /check_website_static\.mjs/.test(siteWorkflow) &&
-    /check_website_path_mount\.mjs/.test(siteWorkflow) &&
-    /public_repo_preflight\.mjs/.test(siteWorkflow),
-  ".github/workflows/site.yml must run public repo preflight, website download logic, static site QA, and mounted-path QA before deploy",
-);
-check(
-  "GitHub Pages workflow public preflight uses full Git history",
-  workflowHasFullHistoryCheckout(siteWorkflow),
-  ".github/workflows/site.yml must checkout with fetch-depth: 0 before running public repo preflight",
-);
-check(
-  "GitHub Pages workflow watches site dependencies",
-  [
-    "website/**",
-    "web/public/icons/**",
-    "scripts/check_website_download_logic.mjs",
-    "scripts/check_website_static.mjs",
-    "scripts/check_website_path_mount.mjs",
-    "scripts/deploy_website_cloudflare.mjs",
-    "scripts/public_repo_preflight.mjs",
-  ].every((path) => siteWorkflow.includes(path)),
-  ".github/workflows/site.yml paths must include website assets, copied icons, and site validation scripts",
+  "Legacy GitHub Pages workflow stays deleted",
+  !existsSync(join(root, ".github/workflows/site.yml")),
+  ".github/workflows/site.yml is dead legacy - the Cloudflare workflow owns the site deploy",
 );
 check(
   "Cloudflare site workflow exists",

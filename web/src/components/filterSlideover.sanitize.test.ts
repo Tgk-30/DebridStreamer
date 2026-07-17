@@ -1,7 +1,7 @@
 // Regression: the year-range inputs are permissive (typeable), so a draft can
 // hold a partial/implausible year mid-edit. sanitizeFilters must clamp those to
 // null when the draft is committed, so the live filters never carry a year that
-// buildDiscoverParams would silently drop — which would show a "From 20" chip
+// buildDiscoverParams would silently drop - which would show a "From 20" chip
 // that doesn't actually filter.
 
 import { describe, expect, it } from "vitest";

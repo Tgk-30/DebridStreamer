@@ -1,7 +1,7 @@
-// DebridStreamer — Tauri player POC.
+// DebridStreamer - Tauri player POC.
 //
 // Proves the two-backend player plan from COMPETITION_AND_ARCHITECTURE.md:
-//   1. In-webview playback (hls.js / native <video>) for HLS/MP4 — the browser path.
+//   1. In-webview playback (hls.js / native <video>) for HLS/MP4 - the browser path.
 //   2. Desktop hand-off to a native player (VLC/mpv) for MKV/HEVC the webview can't decode.
 // This command is the desktop direct-play seam: hand a Real-Debrid direct link to a
 // native player. On macOS we try VLC, then mpv/IINA as fallbacks.

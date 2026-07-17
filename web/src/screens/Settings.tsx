@@ -1,10 +1,10 @@
-// Settings screen — on-brand tabbed config, persisted through the app store.
+// Settings screen - on-brand tabbed config, persisted through the app store.
 //
 // Three tabs:
-//   • API keys — TMDB / OMDB metadata keys + the AI provider (kind, key, model).
-//   • Debrid — per-service tokens (Real-Debrid / AllDebrid / Premiumize / TorBox),
+//   • API keys - TMDB / OMDB metadata keys + the AI provider (kind, key, model).
+//   • Debrid - per-service tokens (Real-Debrid / AllDebrid / Premiumize / TorBox),
 //     in priority order.
-//   • Sources — the built-in scrapers toggle + a list of external indexers
+//   • Sources - the built-in scrapers toggle + a list of external indexers
 //     (Torznab / Jackett / Prowlarr / Zilean / Stremio add-ons).
 //
 // Saving writes through the store (updateSettings → saveSettings), which rebuilds
@@ -16,6 +16,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
   type CSSProperties,
@@ -42,20 +43,53 @@ import type {
   AppearanceHeroScale,
   AppearanceMotion,
   AppearanceNavLabels,
+  AppearanceNavPosition,
   AppearanceNavTint,
   AppearancePanelContrast,
   AppearancePosterSize,
   AppearanceRadius,
   AppearanceTextSize,
+  RatingScale,
   SourceEntry,
   StreamMaxQuality,
 } from "../data/settings";
 import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
+import { fetchAvailableModels } from "../services/ai/ModelCatalog";
+import { readModelCache, writeModelCache } from "../services/ai/ModelCache";
+import { appFetch } from "../lib/http";
+import { getStore } from "../storage";
+import {
+  createProfileRecord,
+  deleteProfileRecord,
+  setMultiUserEnabled,
+  getAutoEnterProfileId,
+  setAutoEnterProfileId,
+  updateProfileRecord,
+  type LocalProfile,
+} from "../storage/ProfileRegistry";
+import { hashPassword } from "../lib/passwordHash";
 import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
+import { AvatarPicker } from "../components/AvatarPicker";
+import { SUBTITLE_COLORS } from "../components/player/CaptionsMenu";
+import { isImageAvatar } from "../data/profileAvatars";
+import { InfoTip } from "../components/InfoTip";
 import { AdvancedOnly } from "../components/AdvancedOnly";
+import { SettingsSearch } from "../components/SettingsSearch";
+import {
+  NAV_RAIL_ITEMS,
+  NAV_RAIL_GROUPS,
+  isScreenHidden,
+  applyNavCustomization,
+} from "../components/NavRail";
+import type { ScreenId } from "../components/NavRail";
 import { CONCEPTS, signupUrl } from "../data/onboardingHelp";
+import {
+  type BeforeInstallPromptEvent,
+  deviceKind,
+  isStandaloneDisplay,
+} from "../lib/platform";
 import { ACCENTS, THEMES } from "../theme/themes";
 import {
   configuredServerURL,
@@ -65,12 +99,31 @@ import {
 } from "../lib/serverMode";
 import {
   desktopServerStatus,
+  detectTunnelTools,
+  getAppInstallInfo,
   isTauri,
+  listExternalPlayers,
   openExternalURL,
+  revealInFileManager,
   startDesktopServer,
   stopDesktopServer,
   type DesktopServerStatus,
+  type TunnelTools,
 } from "../lib/tauri";
+import { getDownloadsBridge } from "../lib/downloadsBridge";
+import { getAppVersion } from "../lib/appVersion";
+import {
+  DOWNLOADS_DIRECTORY_SETTING,
+  downloadsDirectory,
+} from "../services/downloads";
+import {
+  clearTraktConnection,
+  isTraktConnected,
+  loadTraktConnection,
+} from "../data/traktConnection";
+import { TraktConnectDialog } from "../components/TraktConnectDialog";
+import { useModalA11y } from "../components/useModalA11y";
+import { factoryReset } from "../data/factoryReset";
 import "./Settings.css";
 
 /** The selectable external-source types. */
@@ -165,22 +218,22 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
   {
     id: "default-cinema",
     label: "Cinema room",
-    description: "Dark Aurora panels, comfortable spacing, system motion.",
+    description: "Dark Aurora panels, cinematic hero, generous posters.",
     settings: {
       theme: "aurora",
       appearanceAccent: "theme",
       appearanceDensity: "comfortable",
       appearanceTextSize: "m",
       appearanceMotion: "system",
-      appearanceRadius: "default",
+      appearanceRadius: "round",
       appearanceBlur: 18,
       appearanceChrome: "balanced",
       appearanceBackdrop: "ambient",
-      appearanceHeroScale: "standard",
+      appearanceHeroScale: "cinematic",
       appearancePanelContrast: "standard",
       appearanceNavLabels: "auto",
       appearanceNavTint: "balanced",
-      appearancePosterSize: "default",
+      appearancePosterSize: "large",
     },
   },
   {
@@ -313,14 +366,18 @@ type Tab =
   | "sources"
   | "appearance"
   | "playback"
+  | "privacy"
   | "updates"
   | "install"
-  | "server";
+  | "server"
+  | "profiles";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "playback", label: "Playback" },
+  { id: "privacy", label: "Privacy" },
   { id: "install", label: "Install & setup" },
+  { id: "profiles", label: "Profiles" },
   { id: "updates", label: "Updates" },
   { id: "server", label: "Server" },
   { id: "keys", label: "API keys" },
@@ -333,9 +390,11 @@ const TABS: { id: Tab; label: string }[] = [
 const SIMPLE_TABS = new Set<Tab>([
   "appearance",
   "playback",
+  "privacy",
   "install",
   "keys",
   "debrid",
+  "profiles",
 ]);
 
 /** Pure, testable tab filter for the current modes. */
@@ -345,6 +404,7 @@ export function visibleTabs(opts: {
 }): { id: Tab; label: string }[] {
   return TABS.filter((t) => {
     if (!opts.serverMode && t.id === "server") return false;
+    if (opts.serverMode && t.id === "profiles") return false;
     if (opts.simpleMode && !SIMPLE_TABS.has(t.id)) return false;
     return true;
   });
@@ -380,6 +440,9 @@ interface ServerUsageProfile {
   totalBytes: number;
   streamCount: number;
   lastAccessedAt: string | null;
+  bandwidthCapBytes?: number | null;
+  bandwidthUsageBytes?: number;
+  bandwidthStatus?: "ok" | "approaching" | "over";
 }
 
 interface ServerUsage {
@@ -389,6 +452,9 @@ interface ServerUsage {
   lastAccessedAt?: string | null;
   sessions?: ServerUsageSession[];
   profiles?: ServerUsageProfile[];
+  bandwidthCapBytes?: number | null;
+  bandwidthUsageBytes?: number;
+  bandwidthStatus?: "ok" | "approaching" | "over";
 }
 
 interface ServerHealth {
@@ -492,40 +558,12 @@ interface EffectiveCredential {
   updatedAt?: string;
 }
 
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-}
-
 interface HealthResponse {
   ok: boolean;
   setupRequired?: boolean;
 }
 
-type DeviceKind = "ios" | "android" | "mac" | "windows" | "linux" | "desktop" | "unknown";
 type InstallPath = "device" | "connect" | "downloads" | "deploy";
-
-function deviceKind(): DeviceKind {
-  const ua = navigator.userAgent.toLowerCase();
-  const platform = navigator.platform.toLowerCase();
-  const touchPoints = navigator.maxTouchPoints ?? 0;
-  if (/iphone|ipad|ipod/.test(ua)) return "ios";
-  if (platform.includes("mac") && touchPoints > 1) return "ios";
-  if (ua.includes("android")) return "android";
-  if (platform.includes("mac") || ua.includes("mac os")) return "mac";
-  if (platform.includes("win") || ua.includes("windows")) return "windows";
-  if (platform.includes("linux") || ua.includes("x11")) return "linux";
-  if (/desktop|cros/.test(ua)) return "desktop";
-  return "unknown";
-}
-
-function isStandaloneDisplay(): boolean {
-  const nav = navigator as Navigator & { standalone?: boolean };
-  return (
-    nav.standalone === true ||
-    window.matchMedia?.("(display-mode: standalone)").matches === true
-  );
-}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -579,7 +617,7 @@ async function serverRequest<T>(
   if (body !== undefined) headers["content-type"] = "application/json";
   if (method !== "GET" && method !== "HEAD") {
     // Canonical CSRF source: prefers the in-memory token captured at bootstrap
-    // and only falls back to document.cookie same-origin — a cross-origin
+    // and only falls back to document.cookie same-origin - a cross-origin
     // (pasted remote URL) client can't read the server origin's ds_csrf cookie.
     const csrf = readCsrfToken();
     if (csrf != null) headers["x-csrf-token"] = csrf;
@@ -596,7 +634,7 @@ async function serverRequest<T>(
     try {
       parsed = JSON.parse(text) as Record<string, unknown>;
     } catch {
-      // Non-JSON body (e.g. a reverse-proxy 5xx) — fall through to a status error.
+      // Non-JSON body (e.g. a reverse-proxy 5xx) - fall through to a status error.
     }
   }
   if (!response.ok) {
@@ -611,11 +649,11 @@ async function serverRequest<T>(
 }
 
 export function Settings() {
-  const { settings, updateSettings, simpleMode } = useAppStore();
+  const { settings, updateSettings, simpleMode, activeProfile, profiles, multiUserEnabled, refreshProfiles } = useAppStore();
   const serverSession = useServerSession();
   const setServerSession = useSetServerSession();
   // Land where the user's next step is: an unconfigured profile (no debrid
-  // token yet) opens on Install & setup — the critical path — instead of the
+  // token yet) opens on Install & setup - the critical path - instead of the
   // Appearance dial-park. Configured profiles keep the familiar default.
   const [tab, setTab] = useState<Tab>(() =>
     settings.debridTokens.some((t) => t.apiToken.trim().length > 0)
@@ -625,21 +663,57 @@ export function Settings() {
   // Edit a local draft; "Save" commits it through the store.
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  // Switching profiles swaps the settings under us. The draft was seeded once at
+  // mount, so without this it would still hold the PREVIOUS profile's values and
+  // Save would write them into the profile just switched to. Keyed on the
+  // profile id (not `settings`) so ordinary edits are never clobbered.
+  const draftProfileId = useRef<string | null>(activeProfile?.id ?? null);
+  useEffect(() => {
+    const id = activeProfile?.id ?? null;
+    if (draftProfileId.current === id) return;
+    draftProfileId.current = id;
+    setDraft(settings);
+    setSaved(false);
+    setSaveError(null);
+  }, [activeProfile?.id, settings]);
+
+  useEffect(() => {
+    let mounted = true;
+    void getAppVersion().then((version) => {
+      if (mounted) setAppVersion(version);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   function patch(next: Partial<AppSettings>) {
     setDraft((d) => ({ ...d, ...next }));
     setSaved(false);
   }
 
-  function save() {
-    updateSettings(draft);
-    setSaved(true);
+  async function save() {
+    setSaveError(null);
+    const result = await updateSettings(draft);
+    if (result.ok) {
+      setSaved(true);
+      return;
+    }
+    // Don't claim a save that didn't happen (e.g. a keychain write failing
+    // closed on desktop). The in-memory value still applies for this session.
+    setSaved(false);
+    setSaveError(
+      "Could not save to this device. Your changes apply for now, but will be lost when the app restarts.",
+    );
   }
 
   function applyAppearance(next: Partial<AppSettings>) {
     // Appearance controls are instant-apply. Reflect the change in the preview
     // draft, but PERSIST only the appearance change layered on the last-SAVED
-    // settings — NOT the whole draft. Persisting the draft would silently commit
+    // settings - NOT the whole draft. Persisting the draft would silently commit
     // unsaved edits from other tabs (e.g. a half-typed API key or debrid token)
     // and wrongly clear the "unsaved changes" indicator on a mere theme nudge.
     setDraft((d) => ({ ...d, ...next }));
@@ -667,6 +741,13 @@ export function Settings() {
         const profileId = serverSession?.profileId;
         if (base == null || profileId == null) return;
         const csrf = readCsrfToken();
+        // Optimistic, then RECONCILED. The PATCH used to be fired with its
+        // rejection swallowed and its status never read, so a failed write still
+        // flipped the whole UI and the tier quietly reverted on the next launch.
+        const previous = serverSession;
+        if (serverSession != null) {
+          setServerSession({ ...serverSession, simpleMode: simple });
+        }
         void fetch(`${base}/api/profiles/${encodeURIComponent(profileId)}`, {
           method: "PATCH",
           credentials: "include",
@@ -675,10 +756,15 @@ export function Settings() {
             ...(csrf != null ? { "x-csrf-token": csrf } : {}),
           },
           body: JSON.stringify({ simpleMode: simple }),
-        }).catch(() => {});
-        if (serverSession != null) {
-          setServerSession({ ...serverSession, simpleMode: simple });
-        }
+        })
+          .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          })
+          .catch(() => {
+            // Put the control back where the server still has it.
+            if (previous != null) setServerSession(previous);
+            setSaveError("Could not change the experience tier on the server.");
+          });
       } else {
         updateSettings({ ...settings, simpleMode: simple });
       }
@@ -687,82 +773,26 @@ export function Settings() {
   );
 
   const selectedTab = tabs.find((t) => t.id === tab) ?? tabs[0];
-  const selectedProfile =
-    APPEARANCE_PROFILES.find((profile) => appearanceProfileMatches(draft, profile)) ??
-    null;
-  const configuredDebridCount = draft.debridTokens.filter(
-    (entry) => entry.apiToken.trim().length > 0,
-  ).length;
-  const activeSourceCount =
-    draft.sources.filter((source) => source.isActive).length +
-    (draft.builtInIndexersEnabled ? 1 : 0);
-  const metadataState =
-    draft.tmdbKey.trim().length > 0 ? "Live catalog" : "Built-in catalog";
   const hasUnsavedChanges = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(settings),
     [draft, settings],
   );
   const saveLabel = hasUnsavedChanges ? "Save changes" : saved ? "Saved" : "Up to date";
-  const saveNote = hasUnsavedChanges
-    ? "Unsaved changes are local until you save this profile."
-    : "Profile saved · credentials protected";
+  // A failed durable write must not read as "Profile saved".
+  const saveNote = saveError
+    ? saveError
+    : hasUnsavedChanges
+      ? "Unsaved changes are local until you save this profile."
+      : "Profile saved · credentials protected";
 
   return (
     <div className="settings-screen">
       <header className="settings-header settings-hero glass-raised glass-lit">
         <div className="settings-title-block">
-          <div className="settings-kicker">
-            <Icon name="settings" size={15} />
-            <span>Control center</span>
-          </div>
           <h1 className="settings-h1">Settings</h1>
           <p className="settings-subtitle t-secondary">
             {selectedTab.label} controls for this profile, device, and server session.
           </p>
-          <div className="settings-insight-grid" aria-label="Settings summary">
-            <button
-              type="button"
-              className="settings-insight"
-              onClick={() => setTab("appearance")}
-              title="Open Appearance settings"
-            >
-              <span>Appearance</span>
-              <strong>{selectedProfile?.label ?? "Custom current"}</strong>
-            </button>
-            <button
-              type="button"
-              className="settings-insight"
-              onClick={() => setTab("keys")}
-              title="Open API keys settings"
-            >
-              <span>Catalog</span>
-              <strong>{metadataState}</strong>
-            </button>
-            <button
-              type="button"
-              className="settings-insight"
-              onClick={() => setTab("debrid")}
-              title="Open Providers settings"
-            >
-              <span>Providers</span>
-              <strong>
-                {configuredDebridCount === 0
-                  ? "No stream provider"
-                  : `${configuredDebridCount} provider${configuredDebridCount === 1 ? "" : "s"}`}
-              </strong>
-            </button>
-            <button
-              type="button"
-              className="settings-insight"
-              onClick={() => setTab("sources")}
-              title="Open Sources settings"
-            >
-              <span>Sources</span>
-              <strong>
-                {activeSourceCount} source{activeSourceCount === 1 ? "" : "s"}
-              </strong>
-            </button>
-          </div>
         </div>
 
         {tab !== "install" && (
@@ -789,22 +819,10 @@ export function Settings() {
         )}
       </header>
 
-      <div className="settings-experience">
-        <SegmentedControl
-          label="Experience"
-          value={simpleMode ? "simple" : "advanced"}
-          options={[
-            { value: "simple", label: "Simple" },
-            { value: "advanced", label: "Advanced" },
-          ]}
-          onChange={(v) => setExperience(v === "simple")}
-        />
-        <p className="settings-experience-hint t-secondary">
-          {simpleMode
-            ? "Simple shows the essentials. Switch to Advanced for sources, updates, and every dial."
-            : "Advanced reveals all tabs and controls."}
-        </p>
-      </div>
+      <SettingsSearch
+        onJump={(id) => setTab(id as Tab)}
+        visibleTabs={new Set(tabs.map((t) => t.id))}
+      />
 
       <label className="settings-tab-select">
         <span className="settings-label">Settings category</span>
@@ -840,23 +858,416 @@ export function Settings() {
         )}
         {tab === "install" && <InstallTab />}
         {tab === "playback" && <PlaybackTab draft={draft} patch={patch} />}
+        {tab === "privacy" && <PrivacyTab draft={draft} patch={patch} />}
         {tab === "updates" && <UpdatesTab draft={draft} patch={patch} />}
         {tab === "server" && <ServerTab />}
         {tab === "keys" && <KeysTab draft={draft} patch={patch} />}
         {tab === "debrid" && <DebridTab draft={draft} patch={patch} />}
         {tab === "sources" && <SourcesTab draft={draft} patch={patch} />}
+        {tab === "profiles" && !serverMode && (
+          <ProfilesTab
+            activeProfile={activeProfile}
+            profiles={profiles}
+            multiUserEnabled={multiUserEnabled}
+            refreshProfiles={refreshProfiles}
+            settings={settings}
+            updateSettings={updateSettings}
+          />
+        )}
       </div>
+
+      <div className="settings-experience">
+        <SegmentedControl
+          label="Experience tier"
+          value={simpleMode ? "simple" : "advanced"}
+          options={[
+            { value: "simple", label: "Simple" },
+            { value: "advanced", label: "Advanced" },
+          ]}
+          onChange={(v) => setExperience(v === "simple")}
+          infoTip="Advanced is the default. Simple hides Calendar, Assistant, and Debrid while keeping the essential screens and settings."
+        />
+      </div>
+
+      <ResetAndUninstall />
+
+      <p className="settings-version t-secondary">
+        DebridStreamer v{appVersion ?? "…"}
+      </p>
     </div>
   );
+}
+
+// The Debian control file's Package field is the kebab-cased productName
+// ("DebridStreamer" -> "debrid-streamer"). The .deb FILENAME uses the product
+// name verbatim (DebridStreamer_x.y.z_amd64.deb), but apt operates on the
+// Package field, so this must stay kebab-cased or the command fails.
+const DEB_REMOVE_COMMAND = "sudo apt remove debrid-streamer";
+
+function ResetAndUninstall() {
+  const desktop = isTauri();
+  const serverMode = configuredServerURL() != null;
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [installInfo, setInstallInfo] = useState<Awaited<ReturnType<typeof getAppInstallInfo>> | null>(null);
+  const [uninstallError, setUninstallError] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  // Escape must go through closeConfirm, not a bare setConfirmOpen(false):
+  // closing has to clear the typed ERASE and any stale failure state, or the
+  // dialog reopens with the destructive button pre-armed.
+  const dialogRef = useModalA11y<HTMLDivElement>(closeConfirm);
+
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    void getAppInstallInfo()
+      .then((info) => {
+        if (!cancelled) setInstallInfo(info);
+      })
+      .catch((error) => {
+        if (!cancelled) setUninstallError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [desktop]);
+
+  function closeConfirm() {
+    if (resetting) return;
+    setConfirmOpen(false);
+    setConfirmation("");
+    setResetError(null);
+  }
+
+  async function erase() {
+    if (confirmation !== "ERASE") return;
+    setResetting(true);
+    setResetError(null);
+    try {
+      await factoryReset();
+    } catch (error) {
+      setResetError(error instanceof Error ? error.message : String(error));
+      setResetting(false);
+    }
+  }
+
+  async function copyDebCommand() {
+    // Clear first so a repeat copy is a fresh content change the aria-live
+    // region announces (an identical string re-set would be silent).
+    setCopyStatus(null);
+    try {
+      await navigator.clipboard.writeText(DEB_REMOVE_COMMAND);
+      setCopyStatus("Command copied.");
+    } catch {
+      setCopyStatus("Copy is unavailable. Select the command and copy it manually.");
+    }
+  }
+
+  return (
+    <section className="settings-reset-card glass-raised glass-lit" aria-labelledby="settings-reset-title">
+      <div className="settings-reset-heading">
+        <div>
+          <h2 id="settings-reset-title">Reset &amp; uninstall</h2>
+          <p className="settings-hint t-secondary">Remove this device&apos;s data or get help uninstalling the app.</p>
+        </div>
+        <button type="button" className="btn settings-reset-erase" onClick={() => setConfirmOpen(true)}>
+          Erase all data on this device
+        </button>
+      </div>
+
+      {!desktop ? (
+        <p className="settings-hint t-secondary">
+          Installed as a browser app? Remove it from your browser&apos;s app menu. Use Erase all data above to clear what it stored.
+        </p>
+      ) : (
+        <div className="settings-reset-uninstall">
+          <p className="settings-hint t-secondary">
+            Uninstalling does not remove your data. Use Erase all data first if you want a clean removal.
+          </p>
+          {installInfo?.format === "windows" && (
+            <>
+              <p className="settings-hint t-secondary">Find DebridStreamer in the list and choose Uninstall.</p>
+              <button type="button" className="btn" onClick={() => void openExternalURL("ms-settings:appsfeatures")}>
+                Open Windows app settings
+              </button>
+            </>
+          )}
+          {installInfo?.format === "macos-app" && (
+            <>
+              <p className="settings-hint t-secondary">Quit the app, then drag it to the Trash.</p>
+              {installInfo.appBundlePath != null && (
+                <button type="button" className="btn" onClick={() => void revealInFileManager(installInfo.appBundlePath!)}>
+                  Reveal DebridStreamer in Finder
+                </button>
+              )}
+            </>
+          )}
+          {installInfo?.format === "linux-appimage" && (
+            <>
+              <p className="settings-hint t-secondary">Delete the file to uninstall.</p>
+              {installInfo.appimagePath != null && (
+                <button type="button" className="btn" onClick={() => void revealInFileManager(installInfo.appimagePath!)}>
+                  Reveal AppImage
+                </button>
+              )}
+            </>
+          )}
+          {installInfo?.format === "linux-deb" && (
+            <>
+              <p className="settings-hint t-secondary">Remove the Debian package with this command.</p>
+              <div className="settings-reset-command">
+                <code>{DEB_REMOVE_COMMAND}</code>
+                <button type="button" className="chip" onClick={() => void copyDebCommand()}>Copy command</button>
+              </div>
+              {/* Always mounted: a live region only announces content CHANGES,
+                  so mounting it together with its first message drops it. */}
+              <p className="settings-status" aria-live="polite">{copyStatus ?? ""}</p>
+            </>
+          )}
+          {installInfo?.format === "unknown" && (
+            <p className="settings-hint t-secondary">Remove DebridStreamer using this desktop&apos;s normal app management tools.</p>
+          )}
+          {uninstallError != null && <p className="settings-status is-error">{uninstallError}</p>}
+        </div>
+      )}
+
+      {confirmOpen && (
+        <div className="settings-reset-backdrop" role="presentation" onMouseDown={closeConfirm}>
+          <div
+            ref={dialogRef}
+            className="settings-reset-dialog glass-hero glass-lit"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Erase all data on this device"
+            tabIndex={-1}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h2>{resetError == null ? "Erase all data on this device?" : "Reset incomplete"}</h2>
+            <p>Erases everything DebridStreamer stores on this device: settings, library, watch history, API keys, and sign-in. The app restarts in first-run setup.</p>
+            {serverMode && <p>Your household&apos;s data on the server is not touched.</p>}
+            <p>Downloaded video files in your downloads folder are NOT deleted.</p>
+            {resetError != null && <p className="settings-status is-error" role="alert">{resetError}</p>}
+            <label className="settings-field">
+              <span className="settings-label">Type ERASE to confirm</span>
+              <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} disabled={resetting} autoComplete="off" />
+            </label>
+            <div className="settings-reset-actions">
+              <button type="button" className="chip" onClick={closeConfirm} disabled={resetting}>Cancel</button>
+              <button type="button" className="btn settings-reset-erase" onClick={() => void erase()} disabled={confirmation !== "ERASE" || resetting}>
+                {resetting ? "Erasing" : resetError == null ? "Erase all data" : "Retry"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function localProfileId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function ProfilesTab({
+  activeProfile,
+  profiles,
+  multiUserEnabled,
+  refreshProfiles,
+  settings,
+  updateSettings,
+}: {
+  activeProfile: LocalProfile | null;
+  profiles: LocalProfile[];
+  multiUserEnabled: boolean;
+  refreshProfiles: () => Promise<void>;
+  settings: AppSettings;
+  updateSettings: (next: AppSettings) => Promise<{ ok: boolean }>;
+}) {
+  const [newName, setNewName] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [passwords, setPasswords] = useState<Record<string, string>>({});
+  const canManage = activeProfile?.isAdmin ?? false;
+
+  async function refresh(message?: string) {
+    await refreshProfiles();
+    setMessage(message ?? null);
+  }
+
+  // Editing the ACTIVE profile's identity here must also update the shared
+  // settings.userName/userAvatar the ProfileMenu reads, or the top-right menu
+  // shows a stale name/avatar after a reload (ProfileMenu syncs the other way).
+  function editProfile(profile: LocalProfile, patch: { name?: string; avatar?: string; color?: string }) {
+    void updateProfileRecord(profile.id, patch).then(() => refreshProfiles());
+    if (profile.id === activeProfile?.id) {
+      if (patch.name !== undefined) updateSettings({ ...settings, userName: patch.name });
+      if (patch.avatar !== undefined) updateSettings({ ...settings, userAvatar: patch.avatar });
+    }
+  }
+
+  async function addProfile() {
+    const name = newName.trim();
+    if (!name) return setMessage("Enter a name for the new profile.");
+    await createProfileRecord({
+      id: localProfileId(),
+      name,
+      avatar: "😀",
+      color: "#6366f1",
+      isDefault: false,
+      isAdmin: false,
+      createdAt: Date.now(),
+    });
+    setNewName("");
+    await refresh("Profile added.");
+  }
+
+  async function savePassword(profile: LocalProfile) {
+    const plain = passwords[profile.id] ?? "";
+    if (!plain) return setMessage("Enter a password before saving it.");
+    const passwordHash = await hashPassword(plain);
+    await updateProfileRecord(profile.id, { passwordHash });
+    setPasswords((previous) => ({ ...previous, [profile.id]: "" }));
+    await refresh("Password saved.");
+  }
+
+  // The launch preference lives in the profile registry (it decides WHICH
+  // profile to load, so it cannot live in a profile's own settings).
+  const [autoEnterId, setAutoEnterId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void getAutoEnterProfileId().then((id) => {
+      if (!cancelled) setAutoEnterId(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function deleteProfile(profile: LocalProfile) {
+    if (profiles.length <= 1) return setMessage("You need at least one profile.");
+    if (profile.id === activeProfile?.id) return setMessage("Switch to another profile before deleting this one.");
+    await deleteProfileRecord(profile.id);
+    await refresh("Profile deleted. Its data remains in its local database.");
+  }
+
+  return (
+    <div className="settings-fields settings-profiles">
+      {/* Checkbox first, and WITHOUT settings-field: every other toggle row in
+          Settings is ordered this way, and settings-field is flex-direction:
+          column, which fights settings-toggle-row's row layout. */}
+      <label className="settings-toggle-row">
+        <input type="checkbox" checked={multiUserEnabled} onChange={(event) => void setMultiUserEnabled(event.target.checked).then(() => refreshProfiles())} />
+        <span className="settings-label-line"><span className="settings-label">Enable multiple profiles</span><InfoTip label="Multiple profiles">Everyone on this device gets their own library, history, and watchlist. Turning this off keeps only the current profile active; it never deletes other profiles or their data.</InfoTip></span>
+      </label>
+
+      {profiles.length > 1 && (
+        <label className="settings-field">
+          <span className="settings-label-line">
+            <span className="settings-label">Start as</span>
+            <InfoTip label="Start as">
+              Skip the &quot;Who&apos;s watching?&quot; screen and open straight into one
+              profile. A profile with a password still asks for it.
+            </InfoTip>
+          </span>
+          <select
+            value={autoEnterId ?? ""}
+            onChange={(event) => {
+              const next = event.target.value === "" ? null : event.target.value;
+              setAutoEnterId(next);
+              void setAutoEnterProfileId(next);
+            }}
+          >
+            <option value="">Ask every time</option>
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.name || "Profile"}
+                {profile.passwordHash != null ? " (asks for password)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <div className="settings-profile-list">
+        {profiles.map((profile) => {
+          const isCurrent = profile.id === activeProfile?.id;
+          const photo = isImageAvatar(profile.avatar);
+          return (
+            <div className={`settings-profile-card${isCurrent ? " is-current" : ""}`} key={profile.id}>
+              <div className="settings-profile-head">
+                <span className="settings-profile-avatar" style={{ background: profile.color ?? "#475569" }}>
+                  {photo ? <img src={profile.avatar} alt="" /> : profileGlyph(profile)}
+                </span>
+                <div className="settings-profile-identity">
+                  <span className="settings-profile-name-line">
+                    <strong>{profile.name || "Profile"}</strong>
+                    {isCurrent && <span className="settings-profile-you">You</span>}
+                    {profile.isAdmin && <span className="settings-profile-admin">Admin</span>}
+                  </span>
+                  <span className="settings-profile-sub t-secondary">
+                    {profile.passwordHash ? "Password protected" : "No password"}
+                  </span>
+                </div>
+                {canManage && !profile.isDefault && (
+                  <button type="button" className="settings-profile-remove" onClick={() => void deleteProfile(profile)} title="Delete profile" aria-label={`Delete ${profile.name}`}>
+                    <Icon name="trash" size={15} />
+                  </button>
+                )}
+              </div>
+
+              {canManage && (
+                <div className="settings-profile-edit">
+                  <Field label="Name"><input value={profile.name} maxLength={40} onChange={(event) => editProfile(profile, { name: event.target.value })} /></Field>
+                  <div className="settings-profile-look">
+                    <span className="settings-label">Avatar &amp; color</span>
+                    <div className="settings-profile-avatars">
+                      <AvatarPicker
+                        value={photo ? "" : (profile.avatar ?? "")}
+                        onChange={(emoji) => editProfile(profile, { avatar: emoji })}
+                        idPrefix={`profile-${profile.id}`}
+                      />
+                      <label className="settings-profile-color" title="Profile color">
+                        <input type="color" value={profile.color ?? "#475569"} onChange={(event) => editProfile(profile, { color: event.target.value })} />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="settings-profile-password">
+                    <input type="password" value={passwords[profile.id] ?? ""} placeholder={profile.passwordHash ? "New password" : "Set a password"} onChange={(event) => setPasswords((previous) => ({ ...previous, [profile.id]: event.target.value }))} />
+                    <button type="button" className="btn" onClick={() => void savePassword(profile)}>{profile.passwordHash ? "Change" : "Set"}</button>
+                    {profile.passwordHash && <button type="button" className="btn settings-profile-clearpw" onClick={() => void updateProfileRecord(profile.id, { passwordHash: undefined }).then(() => refresh("Password cleared."))}>Clear</button>}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {canManage && (
+        <div className="settings-profile-add">
+          <input value={newName} maxLength={40} placeholder="New profile name" onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void addProfile(); }} />
+          <button type="button" className="btn btn-prominent" onClick={() => void addProfile()}>Add profile</button>
+        </div>
+      )}
+      {message && <p className="settings-note" role="status">{message}</p>}
+    </div>
+  );
+}
+
+function profileGlyph(profile: LocalProfile): string {
+  if (profile.avatar && !isImageAvatar(profile.avatar)) return profile.avatar;
+  return profile.name.trim().charAt(0).toUpperCase() || "?";
 }
 
 function UpdatesTab({ draft, patch }: TabProps) {
   return (
     <div className="settings-fields">
-      <p className="settings-hint t-secondary">
+      <SettingsInfo label="About desktop updates">
         Desktop builds use signed release metadata from GitHub Releases. Browser
         and PWA installs update through the web server instead.
-      </p>
+      </SettingsInfo>
 
       <label className="settings-toggle-row">
         <input
@@ -872,8 +1283,11 @@ function UpdatesTab({ draft, patch }: TabProps) {
           }
         />
         <span>
-          <strong>Check for desktop updates on launch</strong>
-          <span className="t-secondary"> — shows a signed update prompt.</span>
+          <strong>Check for desktop updates automatically</strong>
+          <span className="t-secondary">
+            {" "}
+            - on launch and weekly; shows a signed update prompt.
+          </span>
         </span>
       </label>
 
@@ -886,7 +1300,7 @@ function UpdatesTab({ draft, patch }: TabProps) {
         />
         <span>
           <strong>Install signed desktop updates automatically</strong>
-          <span className="t-secondary"> — downloads, applies, and relaunches.</span>
+          <span className="t-secondary"> - downloads, applies, and relaunches.</span>
         </span>
       </label>
     </div>
@@ -896,6 +1310,74 @@ function UpdatesTab({ draft, patch }: TabProps) {
 interface TabProps {
   draft: AppSettings;
   patch: (next: Partial<AppSettings>) => void;
+}
+
+function PrivacyTab({ draft, patch }: TabProps) {
+  const modes: Array<{
+    value: AppSettings["networkMode"];
+    label: string;
+    description: string;
+    info: string;
+  }> = [
+    {
+      value: "standard",
+      label: "Standard",
+      description: "All app connections are available.",
+      info: "Allows metadata, images, ratings, debrid, indexers, subtitles, updates, trailers, and external AI.",
+    },
+    {
+      value: "fullLocal",
+      label: "Full Local",
+      description: "Keep the media essentials, turn off extras.",
+      info: "Allows only TMDB, ratings, debrid, indexers, and subtitles, plus local AI and your server. It blocks app updates, external AI, trailers, telemetry, and other external connections.",
+    },
+    {
+      value: "offline",
+      label: "Offline",
+      description: "Use cached titles and downloaded files.",
+      info: "Nothing leaves this device. Browse cached titles and play downloads. Local AI and your own local server remain available.",
+    },
+  ];
+
+  return (
+    <div className="settings-fields">
+      <SettingsInfo label="Privacy mode">
+        Choose how this profile connects to services. The setting applies immediately when you save it.
+      </SettingsInfo>
+      <div className="settings-option-strip" role="radiogroup" aria-label="Privacy mode">
+        {modes.map((mode) => (
+          <div className="settings-field" key={mode.value}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={draft.networkMode === mode.value}
+              className={`settings-option-card${draft.networkMode === mode.value ? " is-active" : ""}`}
+              onClick={() => patch({ networkMode: mode.value })}
+            >
+              <span>{mode.label}</span>
+              <small>{mode.description}</small>
+            </button>
+            <InfoTip label={`About ${mode.label}`}>{mode.info}</InfoTip>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsInfo({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="settings-info-row">
+      <span className="settings-label">{label}</span>
+      <InfoTip label={label}>{children}</InfoTip>
+    </div>
+  );
 }
 
 const STREAM_QUALITY_OPTIONS: { value: StreamMaxQuality; label: string }[] = [
@@ -919,6 +1401,19 @@ const STREAM_SIZE_CAP_OPTIONS = [
 const CUSTOM_STREAM_SIZE_CAP = "custom";
 
 function PlaybackTab({ draft, patch }: TabProps) {
+  // Populate the external-player picker with the players actually installed
+  // (detected natively; empty in a plain browser, so the picker hides there).
+  const [players, setPlayers] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void listExternalPlayers().then((p) => {
+      if (alive) setPlayers(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const sizeCapOption =
     STREAM_SIZE_CAP_OPTIONS.find((option) => option.value === draft.streamMaxSizeGB) ??
     null;
@@ -930,12 +1425,58 @@ function PlaybackTab({ draft, patch }: TabProps) {
 
   return (
     <div className="settings-fields">
-      <p className="settings-hint t-secondary">
+      <SettingsInfo label="About playback filters">
         These profile controls hide stream results that are likely to use more
         bandwidth. <strong>Data Saver</strong> adds a ≤720p / ≤5&nbsp;GB ceiling on
         top and also governs automatic (watchlist) playback. Server Mode applies
         them before sending stream rows to this device.
-      </p>
+      </SettingsInfo>
+
+      {isTauri() && (
+        <label className="settings-toggle-row">
+          <input
+            type="checkbox"
+            checked={draft.builtInPlayer}
+            onChange={(event) => patch({ builtInPlayer: event.target.checked })}
+          />
+          <span>
+            <strong>Built-in player</strong>
+            <InfoTip label="About the built-in player">
+              Play MKV and HEVC right inside the window with native libmpv. Turn
+              it off to open your chosen external player instead. It works on
+              macOS, Windows, and Linux with X11.
+            </InfoTip>
+          </span>
+        </label>
+      )}
+
+      {players.length > 0 && (
+        <label className="settings-field">
+          <span className="settings-field-label">
+            <strong>External player</strong>
+            <span className="t-secondary">
+              {" "}
+              - which app opens MKV / 4K&nbsp;HEVC streams when the built-in
+              player is off (or as a fallback). Detected on this machine.
+            </span>
+          </span>
+          <select
+            value={draft.preferredExternalPlayer}
+            onChange={(event) =>
+              patch({ preferredExternalPlayer: event.target.value })
+            }
+          >
+            <option value="">Automatic (best available)</option>
+            {players.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <DownloadsFolderSetting />
 
       <label className="settings-toggle-row">
         <input
@@ -943,10 +1484,14 @@ function PlaybackTab({ draft, patch }: TabProps) {
           checked={draft.dataSaver}
           onChange={(event) => patch({ dataSaver: event.target.checked })}
         />
-        <span>
-          <strong>Data Saver</strong>
-          <span className="t-secondary"> — prefer smaller, lower-resolution streams (≤720p, ≤5&nbsp;GB) to use less bandwidth, including for instant/watchlist playback. No re-encoding.</span>
-        </span>
+          <span>
+            <strong>Data Saver</strong>
+            <InfoTip label="About Data Saver">
+              Prefer smaller, lower-resolution streams up to 720p and 5 GB to use
+              less bandwidth, including instant and watchlist playback. It does
+              not re-encode video.
+            </InfoTip>
+          </span>
       </label>
 
       {canTranscode && (
@@ -958,7 +1503,11 @@ function PlaybackTab({ draft, patch }: TabProps) {
           />
           <span>
             <strong>Reduce playback bitrate (server transcode)</strong>
-            <span className="t-secondary"> — the server re-encodes playback to a 720p stream to use less bandwidth (uses more server CPU). Complements Data Saver, which only caps the source file picked.</span>
+            <InfoTip label="About server transcode">
+              The server re-encodes playback to a 720p stream to use less
+              bandwidth and more server CPU. It complements Data Saver, which
+              only caps the source file selected.
+            </InfoTip>
           </span>
         </label>
       )}
@@ -969,10 +1518,12 @@ function PlaybackTab({ draft, patch }: TabProps) {
           checked={draft.streamCachedOnly}
           onChange={(event) => patch({ streamCachedOnly: event.target.checked })}
         />
-        <span>
-          <strong>Show cached streams only</strong>
-          <span className="t-secondary"> — avoids streams that need to be cached first.</span>
-        </span>
+          <span>
+            <strong>Show cached streams only</strong>
+            <InfoTip label="About cached streams only">
+              Avoid streams that need to be cached before playback.
+            </InfoTip>
+          </span>
       </label>
 
       <label className="settings-toggle-row">
@@ -981,13 +1532,30 @@ function PlaybackTab({ draft, patch }: TabProps) {
           checked={draft.autoAdvanceEpisodes}
           onChange={(event) => patch({ autoAdvanceEpisodes: event.target.checked })}
         />
-        <span>
-          <strong>Auto-play next episode</strong>
-          <span className="t-secondary"> — when a series episode ends, play the next one automatically if an instant (cached) stream is available. Otherwise you're taken to the stream list.</span>
-        </span>
+          <span>
+            <strong>Auto-play next episode</strong>
+            <InfoTip label="About auto-play next episode">
+              When a series episode ends, play the next one automatically if an
+              instant cached stream is available. Otherwise, return to the stream
+              list.
+            </InfoTip>
+          </span>
       </label>
 
-      {/* Quality + size caps are power-user filters — hidden in Simple mode,
+      <div className="settings-control-grid">
+        <SegmentedControl
+          label="Rating scale"
+          value={draft.ratingScale}
+          options={[
+            { value: "ten", label: "1–10" },
+            { value: "hundred", label: "0–100" },
+            { value: "thumbs", label: "Thumbs" },
+          ]}
+          onChange={(value) => patch({ ratingScale: value as RatingScale })}
+        />
+      </div>
+
+      {/* Quality + size caps are power-user filters - hidden in Simple mode,
           which keeps "cached only" as the one safe, essential toggle. */}
       <AdvancedOnly>
         <Field
@@ -1054,6 +1622,63 @@ function PlaybackTab({ draft, patch }: TabProps) {
       </Field>
       </AdvancedOnly>
     </div>
+  );
+}
+
+/** Native downloads intentionally keep their folder independent from the
+ * settings draft: changing it should not rebuild every streaming service. */
+function DownloadsFolderSetting() {
+  const tauri = isTauri();
+  const [folder, setFolder] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tauri) return;
+    let alive = true;
+    void downloadsDirectory(getStore(), getDownloadsBridge())
+      .then((path) => {
+        if (alive) setFolder(path);
+      })
+      .catch(() => {
+        if (alive) setError("Could not read the desktop downloads folder.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [tauri]);
+
+  if (!tauri) return null;
+  return (
+    <label className="settings-field">
+      <span className="settings-field-label">
+        <strong>Downloads folder</strong>
+        <span className="t-secondary">
+          {" "}
+          - full-size and optimized downloads are organized here on this desktop.
+        </span>
+      </span>
+      <input
+        type="text"
+        value={folder}
+        placeholder="Loading default folder…"
+        onChange={(event) => {
+          setFolder(event.target.value);
+          setError(null);
+        }}
+        onBlur={() => {
+          const next = folder.trim();
+          if (next.length === 0) {
+            setError("Enter a folder path for downloads.");
+            return;
+          }
+          void getStore()
+            .setSetting(DOWNLOADS_DIRECTORY_SETTING, next)
+            .catch(() => setError("Could not save the downloads folder."));
+        }}
+        aria-label="Downloads folder"
+      />
+      {error != null && <span className="settings-field-hint dl-error">{error}</span>}
+    </label>
   );
 }
 
@@ -1594,70 +2219,155 @@ function ServerConnectionPanel() {
   );
 }
 
-// Static guided setup for exposing a self-hosted server off the local network.
-// Two tabbed tracks (Tailscale / Cloudflare Tunnel) with official links and the
-// where-to-paste-the-URL note. No live integration — this is documentation that
-// ships with the app so the owner doesn't have to leave to find it. The persona
-// + server-setup wizards point here ("Settings → Server → Remote access").
+// Guided setup for exposing a self-hosted server off the local network. Desktop
+// builds detect the local clients, then guide the matching track. This detects
+// and guides only: account login (`cloudflared tunnel login`, `tailscale up`)
+// remains an intentional interactive/browser-auth flow. The persona +
+// server-setup wizards point here ("Settings → Server → Remote access").
 
 interface RemoteAccessStep {
   title: string;
   detail: string;
+  command?: string;
 }
 
-const TAILSCALE_STEPS: RemoteAccessStep[] = [
-  {
-    title: "Install Tailscale on the server",
-    detail:
-      "Sign up free, then install Tailscale on the machine running DebridStreamer and run tailscale up. It joins your private mesh (a tailnet).",
-  },
-  {
-    title: "Install Tailscale on your devices",
-    detail:
-      "Add the same Tailscale account on each phone, tablet, or laptop. They can now reach the server by its tailnet IP or MagicDNS name on any network.",
-  },
-  {
-    title: "Optional: expose a public HTTPS URL with Funnel",
-    detail:
-      "Run tailscale funnel <port> (e.g. the server port shown above) to get a public https://<name>.ts.net URL for people not on your tailnet.",
-  },
-  {
-    title: "Use the URL here",
-    detail:
-      "Paste the tailnet or Funnel URL into Connect to a server above (or set DEBRIDSTREAMER_DESKTOP_SHARE_URL when launching the desktop host). That URL is what you share in invites.",
-  },
-];
+const TAILSCALE_INSTALL_URL = "https://tailscale.com/kb/1017/install";
+const CLOUDFLARED_INSTALL_URL =
+  "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/";
 
-const CLOUDFLARE_STEPS: RemoteAccessStep[] = [
-  {
-    title: "Create a Cloudflare Tunnel",
-    detail:
-      "In the Cloudflare Zero Trust dashboard, create a tunnel and install cloudflared on the server (or run it via Docker alongside DebridStreamer).",
-  },
-  {
-    title: "Route a hostname to the server",
-    detail:
-      "Add a public hostname (e.g. stream.yourdomain.com) and point it at http://localhost:<port> — the local DebridStreamer server port shown above.",
-  },
-  {
-    title: "Run the connector",
-    detail:
-      "Start cloudflared with your tunnel token. Cloudflare now serves your hostname over HTTPS and forwards traffic to the server through the tunnel.",
-  },
-  {
-    title: "Use the URL here",
-    detail:
-      "Paste https://stream.yourdomain.com into Connect to a server above (or set DEBRIDSTREAMER_DESKTOP_SHARE_URL for the desktop host). That URL is what you share in invites.",
-  },
-];
+function recommendedTunnelTrack(tools: TunnelTools): "tailscale" | "cloudflare" {
+  const tailscaleReady =
+    tools.tailscale.installed && tools.tailscale.detail === "connected";
+  const cloudflareReady = tools.cloudflared.installed;
+  if (tailscaleReady !== cloudflareReady) {
+    return tailscaleReady ? "tailscale" : "cloudflare";
+  }
+  if (tools.tailscale.installed !== tools.cloudflared.installed) {
+    return tools.tailscale.installed ? "tailscale" : "cloudflare";
+  }
+  return "tailscale";
+}
+
+function remoteAccessSteps(
+  track: "tailscale" | "cloudflare",
+  installed: boolean,
+  localTarget: string,
+  hasKnownLocalTarget: boolean,
+): RemoteAccessStep[] {
+  const targetNote = hasKnownLocalTarget
+    ? `The desktop host currently reports ${localTarget}.`
+    : `Replace ${localTarget} with the desktop host's actual local bind URL after it starts.`;
+
+  if (track === "tailscale") {
+    return [
+      ...(installed
+        ? []
+        : [
+            {
+              title: "Install Tailscale on the server",
+              detail:
+                "Install it on the machine running DebridStreamer, then return here to re-check it.",
+            },
+          ]),
+      {
+        title: "Sign in and join your tailnet",
+        detail:
+          "Run this on the server and finish the browser-auth flow. Tailscale then gives it a tailnet IP and optional MagicDNS name.",
+        command: "tailscale up",
+      },
+      {
+        title: "Install Tailscale on your devices",
+        detail:
+          "Add the same Tailscale account on each phone, tablet, or laptop. They can reach the server over your encrypted tailnet.",
+      },
+      {
+        title: "Open the server through Tailscale",
+        detail: `${targetNote} Keep that port and use the server's tailnet IP or MagicDNS name from your other devices.`,
+      },
+      {
+        title: "Use the URL here",
+        detail:
+          "Paste the tailnet URL into Connect to a server above (or set DEBRIDSTREAMER_DESKTOP_SHARE_URL when launching the desktop host).",
+      },
+    ];
+  }
+
+  return [
+    ...(installed
+      ? []
+      : [
+          {
+            title: "Install cloudflared on the server",
+            detail:
+              "Install it on the machine running DebridStreamer, then return here to re-check it.",
+          },
+        ]),
+    {
+      title: "Create and authenticate a Cloudflare Tunnel",
+      detail:
+        "In the Cloudflare Zero Trust dashboard, create a tunnel. Login and token setup are interactive browser-auth flows.",
+      command: "cloudflared tunnel login",
+    },
+    {
+      title: "Route a hostname to the server",
+      detail: `Add a public hostname (for example stream.yourdomain.com) and route the tunnel to ${localTarget}. ${targetNote}`,
+    },
+    {
+      title: "Run the connector",
+      detail:
+        "Start cloudflared with your tunnel token. Cloudflare serves your hostname over HTTPS and forwards traffic through the tunnel.",
+    },
+    {
+      title: "Use the URL here",
+      detail:
+        "Paste https://stream.yourdomain.com into Connect to a server above (or set DEBRIDSTREAMER_DESKTOP_SHARE_URL for the desktop host).",
+    },
+  ];
+}
 
 function RemoteAccessPanel() {
   const [track, setTrack] = useState<"tailscale" | "cloudflare">("tailscale");
-  const steps = track === "tailscale" ? TAILSCALE_STEPS : CLOUDFLARE_STEPS;
+  const [tools, setTools] = useState<TunnelTools | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [hostStatus, setHostStatus] = useState<DesktopServerStatus | null>(null);
+  const manualTrack = useRef(false);
+  const desktop = isTauri();
+  const localTarget = hostStatus?.url ?? "http://localhost:<server-port>";
+  const steps = remoteAccessSteps(
+    track,
+    track === "tailscale" ? tools?.tailscale.installed === true : tools?.cloudflared.installed === true,
+    localTarget,
+    hostStatus?.url != null,
+  );
   const guideURL =
     track === "tailscale"
       ? "https://tailscale.com/kb/1223/funnel"
       : "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/";
+
+  const checkTools = useCallback(async () => {
+    if (!desktop) return;
+    setChecking(true);
+    const next = await detectTunnelTools();
+    setTools(next);
+    if (!manualTrack.current) setTrack(recommendedTunnelTrack(next));
+    setChecking(false);
+  }, [desktop]);
+
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    void desktopServerStatus()
+      .then((next) => {
+        if (!cancelled) setHostStatus(next);
+      })
+      .catch(() => {
+        // The explicit local-target placeholder makes this failure actionable.
+      });
+    void checkTools();
+    return () => {
+      cancelled = true;
+    };
+  }, [checkTools, desktop]);
 
   return (
     <div className="settings-source glass-rest settings-remote-access">
@@ -1667,7 +2377,7 @@ function RemoteAccessPanel() {
       </div>
       <p className="settings-hint t-secondary">
         Expose this self-hosted server to phones and tablets off your network
-        with a tunnel — no router ports to open, and traffic stays encrypted.
+        with a tunnel - no router ports to open, and traffic stays encrypted.
       </p>
 
       <div className="settings-source-row">
@@ -1678,9 +2388,56 @@ function RemoteAccessPanel() {
             { value: "tailscale", label: "Tailscale" },
             { value: "cloudflare", label: "Cloudflare Tunnel" },
           ]}
-          onChange={(value) => setTrack(value as "tailscale" | "cloudflare")}
+          onChange={(value) => {
+            manualTrack.current = true;
+            setTrack(value as "tailscale" | "cloudflare");
+          }}
         />
       </div>
+
+      {desktop && tools != null && (
+        <div className="settings-remote-tool-statuses" aria-live="polite">
+          <p className="settings-hint t-secondary">
+            {tools.tailscale.installed ? (
+              <>
+                <strong>Tailscale detected</strong>
+                {tools.tailscale.version != null ? ` (${tools.tailscale.version})` : ""}
+                {` - ${tools.tailscale.detail === "connected" ? "connected" : "not logged in"}`}
+              </>
+            ) : (
+              <>
+                <strong>Tailscale: Not installed.</strong>{" "}
+                <a href={TAILSCALE_INSTALL_URL} target="_blank" rel="noreferrer">
+                  Install Tailscale
+                </a>
+              </>
+            )}
+          </p>
+          <p className="settings-hint t-secondary">
+            {tools.cloudflared.installed ? (
+              <>
+                <strong>cloudflared detected</strong>
+                {tools.cloudflared.version != null ? ` (${tools.cloudflared.version})` : ""}
+              </>
+            ) : (
+              <>
+                <strong>cloudflared: Not installed.</strong>{" "}
+                <a href={CLOUDFLARED_INSTALL_URL} target="_blank" rel="noreferrer">
+                  Install cloudflared
+                </a>
+              </>
+            )}
+          </p>
+          <button
+            type="button"
+            className="chip"
+            onClick={() => void checkTools()}
+            disabled={checking}
+          >
+            {checking ? "Checking..." : "Re-check"}
+          </button>
+        </div>
+      )}
 
       <ol className="settings-remote-steps">
         {steps.map((step, index) => (
@@ -1689,6 +2446,7 @@ function RemoteAccessPanel() {
             <span className="settings-remote-step-body">
               <strong>{step.title}</strong>
               <span className="t-secondary">{step.detail}</span>
+              {step.command != null && <code>{step.command}</code>}
             </span>
           </li>
         ))}
@@ -1717,7 +2475,7 @@ function RemoteAccessPanel() {
       </div>
       <p className="settings-hint t-secondary">
         Once you have the public URL, paste it into <strong>Connect to a
-        server</strong> above. The desktop host can also show it automatically —
+        server</strong> above. The desktop host can also show it automatically - 
         launch with <code>DEBRIDSTREAMER_DESKTOP_SHARE_URL</code> set.
       </p>
     </div>
@@ -1936,7 +2694,7 @@ function ServerTab() {
   }
 
   async function saveSharedCredential() {
-    // Same double-submit guard + busy state as its siblings below — this one
+    // Same double-submit guard + busy state as its siblings below - this one
     // was missing it, so a double-click could double-PUT with no feedback.
     if (saving != null) return;
     setMessage(null);
@@ -2002,6 +2760,12 @@ function ServerTab() {
         confirmPassword: "",
       });
       setMessage("Password changed. Other sessions were signed out.");
+      // The server just revoked the other sessions and wrote an audit event.
+      // Without this the "Signed-in devices" list directly below still lists
+      // them as active, contradicting the message above it, and still offers a
+      // Revoke button for a session that is already gone. refresh() clears
+      // `error` but not `message`, so the success text survives.
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -2701,7 +3465,7 @@ function RequestQueuePanel({
                 )}
                 <span className="t-secondary">
                   {" "}
-                  — {request.requestedByDisplayName ?? "Someone"}
+                  - {request.requestedByDisplayName ?? "Someone"}
                 </span>
               </span>
               <span className="settings-profile-meta t-secondary">
@@ -2902,7 +3666,7 @@ function KidsProfilesPanel() {
         <div className="settings-usage-list">
           {manageable.map((profile) => {
             const busy = busyId === profile.id;
-            // When kid mode is off there's no cap to show — default the picker to
+            // When kid mode is off there's no cap to show - default the picker to
             // PG-13 so turning it on has a sensible starting cap.
             const cap = profile.maturityMax ?? DEFAULT_MATURITY_CAP;
             return (
@@ -3168,6 +3932,9 @@ function ServerUsagePanel({ usage }: { usage: ServerUsage }) {
               </span>
               <span className="t-secondary">
                 {formatBytes(profile.totalBytes)} · {profile.streamCount} streams
+                {profile.bandwidthCapBytes != null
+                  ? ` · ${formatBytes(profile.bandwidthUsageBytes ?? 0)} of ${formatBytes(profile.bandwidthCapBytes)} cap (${profile.bandwidthStatus ?? "ok"})`
+                  : " · No monthly cap"}
               </span>
             </div>
           ))}
@@ -3190,6 +3957,141 @@ function ServerUsagePanel({ usage }: { usage: ServerUsage }) {
   );
 }
 
+/** Reorder + show/hide the navigation items. Reorder is scoped within each nav
+ * group (moving an item never changes its group); "Settings" is always shown so
+ * the user can never lock themselves out of this very screen. Hidden items stay
+ * listed here (greyed) so they can be brought back. Changes apply live. */
+function NavCustomizer({
+  order,
+  hidden,
+  onChange,
+}: {
+  order: readonly ScreenId[];
+  hidden: readonly ScreenId[];
+  onChange: (next: { order: ScreenId[]; hidden: ScreenId[] }) => void;
+}) {
+  const serverMode = isServerMode();
+  // Offer only items that exist in the current mode (drop server-only-unavailable
+  // screens like Debrid/Downloads in Server Mode). simpleMode is left false so
+  // power-user items can still be pre-arranged before switching to Advanced.
+  const offered = NAV_RAIL_ITEMS.filter(
+    (item) => !isScreenHidden(item.id, { serverMode, simpleMode: false }),
+  );
+  // Show every offered item in the user's current order (hidden ones included so
+  // they can be un-hidden) - pass hidden:[] so nothing is filtered out here.
+  const ordered = applyNavCustomization(offered, { order, hidden: [] });
+  const hiddenSet = new Set(hidden);
+  const groups = NAV_RAIL_GROUPS.filter((group) =>
+    ordered.some((item) => item.group === group),
+  );
+  const isCustomized = order.length > 0 || hidden.length > 0;
+
+  function move(id: ScreenId, dir: -1 | 1) {
+    const flat = ordered.map((item) => item.id);
+    const groupOf = (sid: ScreenId) =>
+      ordered.find((item) => item.id === sid)?.group;
+    const idx = flat.indexOf(id);
+    const j = idx + dir;
+    // Group items are contiguous, so an in-group neighbor is exactly idx +/- 1;
+    // a cross-group neighbor means we're at a group edge - no move.
+    if (j < 0 || j >= flat.length || groupOf(flat[idx]) !== groupOf(flat[j])) {
+      return;
+    }
+    [flat[idx], flat[j]] = [flat[j], flat[idx]];
+    onChange({ order: flat, hidden: [...hidden] });
+  }
+
+  function toggleHidden(id: ScreenId) {
+    if (id === "settings") return;
+    const next = hiddenSet.has(id)
+      ? hidden.filter((h) => h !== id)
+      : [...hidden, id];
+    onChange({ order: [...order], hidden: next });
+  }
+
+  return (
+    <div className="settings-navcustom">
+      <div className="settings-navcustom-head">
+        <span className="settings-label-line">
+          <span className="settings-sources-title">Menu items</span>
+          <InfoTip label="About menu items">
+            Reorder items within a section or hide the ones you do not use.
+            Settings always stays visible.
+          </InfoTip>
+        </span>
+        <button
+          type="button"
+          className="settings-navcustom-reset"
+          disabled={!isCustomized}
+          onClick={() => onChange({ order: [], hidden: [] })}
+        >
+          Reset
+        </button>
+      </div>
+
+      {groups.map((group) => {
+        const groupItems = ordered.filter((item) => item.group === group);
+        return (
+          <div className="settings-navcustom-group" key={group}>
+            <div className="settings-navcustom-group-label">{group}</div>
+            {groupItems.map((item, indexInGroup) => {
+              const isHidden = hiddenSet.has(item.id);
+              const locked = item.id === "settings";
+              return (
+                <div
+                  className={`settings-navcustom-row${isHidden ? " is-hidden" : ""}`}
+                  key={item.id}
+                >
+                  <span className="settings-navcustom-icon" aria-hidden>
+                    <Icon name={item.icon} size={17} />
+                  </span>
+                  <span className="settings-navcustom-name">{item.label}</span>
+                  {locked && (
+                    <span className="settings-navcustom-lock">Always shown</span>
+                  )}
+                  <div className="settings-navcustom-actions">
+                    <button
+                      type="button"
+                      className="settings-navcustom-move"
+                      onClick={() => move(item.id, -1)}
+                      disabled={indexInGroup === 0}
+                      aria-label={`Move ${item.label} up`}
+                    >
+                      <span aria-hidden>↑</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-navcustom-move"
+                      onClick={() => move(item.id, 1)}
+                      disabled={indexInGroup === groupItems.length - 1}
+                      aria-label={`Move ${item.label} down`}
+                    >
+                      <span aria-hidden>↓</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-navcustom-toggle"
+                      onClick={() => toggleHidden(item.id)}
+                      disabled={locked}
+                      aria-pressed={!isHidden}
+                      aria-label={
+                        isHidden ? `Show ${item.label}` : `Hide ${item.label}`
+                      }
+                      title={isHidden ? "Show" : "Hide"}
+                    >
+                      <Icon name={isHidden ? "eye-off" : "eye"} size={16} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AppearanceTab({
   draft,
   applyAppearance,
@@ -3205,23 +4107,25 @@ function AppearanceTab({
   const currentAccent =
     ACCENTS.find((accent) => accent.id === draft.appearanceAccent) ?? ACCENTS[0];
   // Smart preloading is a per-device preference (localStorage), not a synced
-  // AppSettings field — toggled here with local mirror state.
+  // AppSettings field - toggled here with local mirror state.
   const [smartPreload, setSmartPreload] = useState(isSmartPreloadEnabled());
 
   return (
     <div className="settings-fields">
-      <p className="settings-hint t-secondary">
+      <SettingsInfo label="About appearance settings">
         Tune the interface for the device and room you are using. Appearance
         changes apply instantly and are saved to this profile.
-      </p>
+      </SettingsInfo>
 
       <div className="appearance-profile-card settings-source glass-rest">
         <div className="appearance-profile-head">
           <div>
-            <span className="settings-label">Quick profile</span>
-            <p className="settings-hint t-secondary">
+            <span className="settings-label-line">
+              <span className="settings-label">Quick profile</span>
+              <InfoTip label="About quick profiles">
               Apply a complete interface setup, then fine tune each control below.
-            </p>
+              </InfoTip>
+            </span>
           </div>
           <label className="appearance-profile-picker">
             <span className="settings-secret-label">Profile</span>
@@ -3327,10 +4231,12 @@ function AppearanceTab({
 
       <div className="appearance-section-head">
         <div>
-          <span className="settings-sources-title">Display</span>
-          <p className="settings-hint t-secondary">
+          <span className="settings-label-line">
+            <span className="settings-sources-title">Display</span>
+            <InfoTip label="About display controls">
             Device-scale defaults come first; switch only the dimensions that need it.
-          </p>
+            </InfoTip>
+          </span>
         </div>
       </div>
 
@@ -3437,10 +4343,12 @@ function AppearanceTab({
 
       <div className="appearance-section-head">
         <div>
-          <span className="settings-sources-title">Navigation and catalog</span>
-          <p className="settings-hint t-secondary">
+          <span className="settings-label-line">
+            <span className="settings-sources-title">Navigation and catalog</span>
+            <InfoTip label="About navigation and catalog controls">
             Tune the dock, rail labels, and poster density for the screen in use.
-          </p>
+            </InfoTip>
+          </span>
         </div>
       </div>
 
@@ -3455,6 +4363,19 @@ function AppearanceTab({
           ]}
           onChange={(value) =>
             applyAppearance({ appearanceNavLabels: value as AppearanceNavLabels })
+          }
+        />
+        <SegmentedControl
+          label="Nav position"
+          value={draft.appearanceNavPosition}
+          options={[
+            { value: "side", label: "Side rail" },
+            { value: "bottom", label: "Bottom bar" },
+          ]}
+          onChange={(value) =>
+            applyAppearance({
+              appearanceNavPosition: value as AppearanceNavPosition,
+            })
           }
         />
         <SegmentedControl
@@ -3482,6 +4403,42 @@ function AppearanceTab({
           }
         />
       </div>
+
+      <label className="settings-field">
+        <span className="settings-field-label">
+          <strong>Start on</strong>
+          <span className="t-secondary">
+            {" "}
+            - the screen the app opens to at launch.
+          </span>
+        </span>
+        <select
+          value={draft.appearanceDefaultTab}
+          onChange={(event) =>
+            applyAppearance({
+              appearanceDefaultTab: event.target.value as ScreenId,
+            })
+          }
+        >
+          <option value="discover">Discover</option>
+          <option value="search">Search</option>
+          <option value="library">Library</option>
+          <option value="watchlist">Watchlist</option>
+          <option value="calendar">Calendar</option>
+          <option value="history">History</option>
+        </select>
+      </label>
+
+      <NavCustomizer
+        order={draft.appearanceNavOrder}
+        hidden={draft.appearanceNavHidden}
+        onChange={(next) =>
+          applyAppearance({
+            appearanceNavOrder: next.order,
+            appearanceNavHidden: next.hidden,
+          })
+        }
+      />
 
       <div className="settings-source glass-rest">
         <div className="settings-sources-head">
@@ -3534,6 +4491,97 @@ function AppearanceTab({
           <div className="settings-range-labels" aria-hidden="true">
             <span>Solid</span>
             <span>Frosted</span>
+          </div>
+        </div>
+      </Field>
+
+      <div className="appearance-section-head">
+        <div>
+          <span className="settings-label-line">
+            <span className="settings-sources-title">Subtitles</span>
+            <InfoTip label="About subtitle appearance">
+              Adjust the size, text color, and background of captions in the player.
+            </InfoTip>
+          </span>
+        </div>
+      </div>
+
+      <Field
+        label="Font scale"
+        hint="Adjust the size of subtitle text in the player."
+      >
+        <div className="settings-range-shell">
+          <div className="settings-range-control">
+            <input
+              type="range"
+              min={0.7}
+              max={1.8}
+              step={0.1}
+              value={draft.subtitleFontScale}
+              onChange={(event) =>
+                applyAppearance({ subtitleFontScale: Number(event.target.value) })
+              }
+              aria-label="Subtitle font scale"
+            />
+            <output aria-live="polite">
+              {Math.round(draft.subtitleFontScale * 100)}%
+            </output>
+          </div>
+          <div className="settings-range-labels" aria-hidden="true">
+            <span>Smaller</span>
+            <span>Larger</span>
+          </div>
+        </div>
+      </Field>
+
+      <div className="settings-source glass-rest">
+        <div className="settings-sources-head">
+          <span className="settings-sources-title">Text color</span>
+          <span className="settings-hint t-secondary">High-legibility presets</span>
+        </div>
+        <div className="accent-grid" role="radiogroup" aria-label="Subtitle text color">
+          {SUBTITLE_COLORS.map((color) => {
+            const active = draft.subtitleTextColor === color;
+            return (
+              <button
+                key={color}
+                type="button"
+                className={`accent-swatch${active ? " is-active" : ""}`}
+                style={{ background: color }}
+                onClick={() => applyAppearance({ subtitleTextColor: color })}
+                role="radio"
+                aria-checked={active}
+                aria-label={`Subtitle color ${color}`}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <Field
+        label="Background opacity"
+        hint="Add contrast behind subtitles when the video is bright."
+      >
+        <div className="settings-range-shell">
+          <div className="settings-range-control">
+            <input
+              type="range"
+              min={0}
+              max={0.95}
+              step={0.05}
+              value={draft.subtitleBgOpacity}
+              onChange={(event) =>
+                applyAppearance({ subtitleBgOpacity: Number(event.target.value) })
+              }
+              aria-label="Subtitle background opacity"
+            />
+            <output aria-live="polite">
+              {Math.round(draft.subtitleBgOpacity * 100)}%
+            </output>
+          </div>
+          <div className="settings-range-labels" aria-hidden="true">
+            <span>None</span>
+            <span>Solid</span>
           </div>
         </div>
       </Field>
@@ -3594,10 +4642,10 @@ function AppearanceTab({
           />
           <span>
             <strong>Smart preloading</strong>
-            <span className="settings-hint t-secondary">
+            <InfoTip label="About Smart preloading">
               Quietly warms upcoming screens and images so the app feels instant.
               Turn off on a metered connection to save data.
-            </span>
+            </InfoTip>
           </span>
         </label>
         <label className="settings-toggle-row">
@@ -3608,10 +4656,23 @@ function AppearanceTab({
           />
           <span>
             <strong>Show watch stats</strong>
-            <span className="settings-hint t-secondary">
+            <InfoTip label="About watch stats">
               Adds a personal insights card (time watched, completion, streak,
               favourite genres) to the top of the History screen.
-            </span>
+            </InfoTip>
+          </span>
+        </label>
+        <label className="settings-toggle-row">
+          <input
+            type="checkbox"
+            checked={draft.showPosterRatings}
+            onChange={(e) => applyAppearance({ showPosterRatings: e.target.checked })}
+          />
+          <span>
+            <strong>Show ratings on posters</strong>
+            <InfoTip label="About poster ratings">
+              Keeps the TMDB score visible in a poster corner while you browse.
+            </InfoTip>
           </span>
         </label>
         <button
@@ -3644,15 +4705,20 @@ function SegmentedControl({
   value,
   options,
   onChange,
+  infoTip,
 }: {
   label: string;
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
+  infoTip?: React.ReactNode;
 }) {
   return (
     <div className="settings-segment-block">
-      <span className="settings-label">{label}</span>
+      <span className="settings-label-line">
+        <span className="settings-label">{label}</span>
+        {infoTip && <InfoTip label={`About ${label}`}>{infoTip}</InfoTip>}
+      </span>
       <div
         className="settings-segmented"
         role="radiogroup"
@@ -3676,21 +4742,184 @@ function SegmentedControl({
   );
 }
 
+// Static fallbacks shown before (or when) a live fetch runs. The Refresh button
+// replaces these with the provider's actual catalog.
 const AI_MODEL_OPTIONS: Record<AppSettings["aiProvider"], string[]> = {
-  openai: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1"],
-  anthropic: ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-opus-4-1"],
+  openai: ["gpt-5", "gpt-5-mini", "gpt-4.1-mini", "o4-mini"],
+  anthropic: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
   ollama: ["llama3.2", "qwen2.5", "mistral"],
+  gemini: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"],
+  openrouter: [
+    "openai/gpt-5-mini",
+    "anthropic/claude-sonnet-4-6",
+    "meta-llama/llama-3.3-70b-instruct",
+  ],
+  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+  mistral: ["mistral-small-latest", "mistral-large-latest", "open-mistral-nemo"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  xai: ["grok-4", "grok-3", "grok-3-mini"],
 };
 
-function modelOptions(provider: AppSettings["aiProvider"], current: string): string[] {
-  const base = AI_MODEL_OPTIONS[provider] ?? [];
-  return current.trim().length > 0 && !base.includes(current)
-    ? [current, ...base]
-    : base;
+/** Merge the current value + live-fetched ids + static fallbacks into a unique,
+ * ordered option list (current first so an off-list saved model stays visible). */
+function modelOptions(
+  provider: AppSettings["aiProvider"],
+  current: string,
+  fetched: string[],
+): string[] {
+  const base = fetched.length > 0 ? fetched : AI_MODEL_OPTIONS[provider] ?? [];
+  const merged =
+    current.trim().length > 0 && !base.includes(current)
+      ? [current, ...base]
+      : base;
+  const seen = new Set<string>();
+  return merged.filter((m) => (seen.has(m) ? false : (seen.add(m), true)));
+}
+
+/** Short "3 min ago" / "2 days ago" for a cache timestamp. */
+function relativeTime(fromMs: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - fromMs) / 1000));
+  if (s < 45) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return `${d} day${d === 1 ? "" : "s"} ago`;
+}
+
+/** The "Model" picker. Seeds instantly from a per-provider cache, then quietly
+ * refreshes the provider's live catalog in the background (no manual click
+ * needed) whenever the provider or credential changes. A manual Refresh forces
+ * a re-fetch. Falls back to the static list before any fetch/cache exists. */
+function ModelSelectField({ draft, patch }: TabProps) {
+  const [fetched, setFetched] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  // Bumped on every provider change and every (re)fetch; a resolved fetch only
+  // commits its result if its id still matches, so a slow response from the
+  // previous provider can't populate the new provider's dropdown.
+  const reqId = useRef(0);
+
+  const provider = draft.aiProvider;
+  const apiKey = draft.aiApiKey;
+  const endpoint = draft.ollamaEndpoint;
+  const hasCredential =
+    provider === "ollama"
+      ? endpoint.trim().length > 0
+      : apiKey.trim().length > 0;
+
+  const load = useCallback(
+    async (force: boolean) => {
+      const id = (reqId.current += 1);
+      const store = getStore();
+      // 1. Seed from cache immediately (instant + offline-friendly).
+      const cached = await readModelCache(store, provider).catch(() => null);
+      if (id !== reqId.current) return;
+      if (cached != null && cached.models.length > 0) {
+        setFetched(cached.models);
+        setFetchedAt(cached.fetchedAt);
+      } else {
+        setFetched([]);
+        setFetchedAt(null);
+      }
+      setError(null);
+      // 2. Decide whether to hit the network: a forced Refresh always does; an
+      // automatic pass only when there's a credential AND the cache is missing
+      // or stale (so re-opening Settings doesn't re-hit the API every time).
+      const cacheFresh = cached != null && !cached.stale && cached.models.length > 0;
+      const credential =
+        provider === "ollama"
+          ? endpoint.trim().length > 0
+          : apiKey.trim().length > 0;
+      if (!credential) return;
+      if (!force && cacheFresh) return;
+
+      setLoading(true);
+      try {
+        const models = await fetchAvailableModels({
+          kind: provider,
+          apiKey,
+          endpoint,
+          fetchImpl: appFetch,
+        });
+        if (id !== reqId.current) return;
+        setFetched(models);
+        const now = Date.now();
+        setFetchedAt(now);
+        void writeModelCache(store, provider, models, now);
+      } catch (err) {
+        if (id !== reqId.current) return;
+        // Keep any cached list visible; a fetch failure is a soft warning.
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (id === reqId.current) setLoading(false);
+      }
+    },
+    [provider, apiKey, endpoint],
+  );
+
+  // Auto-load on mount and whenever the provider/credential changes. Debounced
+  // so typing an API key character-by-character coalesces into a single fetch
+  // (once the user pauses) instead of firing a request per keystroke. The reqId
+  // guard inside load() still drops any stale in-flight result.
+  useEffect(() => {
+    const t = window.setTimeout(() => void load(false), 600);
+    return () => window.clearTimeout(t);
+  }, [load]);
+
+  return (
+    <Field label="Model" hint="Updates automatically from your provider's live catalog.">
+      <div className="settings-model-row">
+        <select
+          value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
+          onChange={(event) =>
+            patch({
+              aiModel: event.target.value === "__default" ? "" : event.target.value,
+            })
+          }
+        >
+          <option value="__default">Provider default (recommended)</option>
+          {modelOptions(provider, draft.aiModel, fetched).map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="chip settings-model-refresh"
+          onClick={() => void load(true)}
+          disabled={loading}
+          aria-busy={loading}
+          title="Reload the provider's current models"
+        >
+          <Icon name="refresh" size={14} />
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+      {error != null ? (
+        <p className="settings-model-msg t-warning">{error}</p>
+      ) : loading ? (
+        <p className="settings-model-msg t-secondary">Loading live models…</p>
+      ) : fetchedAt != null ? (
+        <p className="settings-model-msg t-secondary">
+          {fetched.length} model{fetched.length === 1 ? "" : "s"} · updated{" "}
+          {relativeTime(fetchedAt)}
+        </p>
+      ) : !hasCredential ? (
+        <p className="settings-model-msg t-secondary">
+          Add your API key to load this provider's live model list.
+        </p>
+      ) : null}
+    </Field>
+  );
 }
 
 function KeysTab({ draft, patch }: TabProps) {
   const [keyPanel, setKeyPanel] = useState<"catalog" | "assistant">("catalog");
+  const serverMode = isServerMode();
   const keyPanels: Array<{
     id: "catalog" | "assistant";
     label: string;
@@ -3710,10 +4939,10 @@ function KeysTab({ draft, patch }: TabProps) {
 
   return (
     <div className="settings-fields">
-      <p className="settings-hint settings-secret-summary">
+      <SettingsInfo label="About credential storage">
         Secrets stay in this profile. Desktop builds keep them in secure device
         storage when available.
-      </p>
+      </SettingsInfo>
 
       <div className="settings-subsection-picker is-option-only">
         <label className="settings-subsection-select settings-mobile-picker">
@@ -3749,85 +4978,80 @@ function KeysTab({ draft, patch }: TabProps) {
 
       <div className="settings-key-grid is-single">
         {keyPanel === "catalog" && (
-          <section className="settings-key-card glass-rest" aria-label="Catalog metadata credentials">
-            <Field
-              label="TMDB API key"
-              hint="Powers Discover, Search, and Detail metadata. Free to sign up."
-              helpUrl={signupUrl("tmdb") ?? undefined}
-              helpLabel="Get a free TMDB key"
-            >
-              <SecretInput
-                value={draft.tmdbKey}
-                onChange={(e) => patch({ tmdbKey: e.target.value })}
-                placeholder="v3 API key"
-              />
-            </Field>
-
-            {/* OMDB is optional enrichment on top of TMDB — an Advanced extra. */}
-            <AdvancedOnly>
-              <Field label="OMDB API key" hint="Optional IMDb / Rotten Tomatoes enrichment.">
+          <>
+            <section className="settings-key-card glass-rest" aria-label="Catalog metadata credentials">
+              <Field
+                label="TMDB API key"
+                hint="Powers Discover, Search, and Detail metadata. Free to sign up."
+                helpUrl={signupUrl("tmdb") ?? undefined}
+                helpLabel="Get a free TMDB key"
+              >
                 <SecretInput
-                  value={draft.omdbKey}
-                  onChange={(e) => patch({ omdbKey: e.target.value })}
-                  placeholder="OMDB key"
+                  value={draft.tmdbKey}
+                  onChange={(e) => patch({ tmdbKey: e.target.value })}
+                  placeholder="v3 API key"
                 />
               </Field>
-            </AdvancedOnly>
 
-            <Field
-              label="OpenSubtitles API key"
-              hint="Enables in-player subtitle search and download."
-              helpUrl={signupUrl("openSubtitles") ?? undefined}
-              helpLabel="Create an OpenSubtitles account"
-            >
-              <SecretInput
-                value={draft.openSubtitlesApiKey}
-                onChange={(e) => patch({ openSubtitlesApiKey: e.target.value })}
-                placeholder="OpenSubtitles key"
-              />
-            </Field>
-          </section>
+              {/* OMDB is optional enrichment on top of TMDB - an Advanced extra. */}
+              <AdvancedOnly>
+                <Field label="OMDB API key" hint="Optional IMDb / Rotten Tomatoes enrichment.">
+                  <SecretInput
+                    value={draft.omdbKey}
+                    onChange={(e) => patch({ omdbKey: e.target.value })}
+                    placeholder="OMDB key"
+                  />
+                </Field>
+              </AdvancedOnly>
+
+              <Field
+                label="OpenSubtitles API key"
+                hint="Enables in-player subtitle search and download."
+                helpUrl={signupUrl("openSubtitles") ?? undefined}
+                helpLabel="Create an OpenSubtitles account"
+              >
+                <SecretInput
+                  value={draft.openSubtitlesApiKey}
+                  onChange={(e) => patch({ openSubtitlesApiKey: e.target.value })}
+                  placeholder="OpenSubtitles key"
+                />
+              </Field>
+            </section>
+            {!serverMode && <TraktConnectionSection draft={draft} patch={patch} />}
+          </>
         )}
 
         {keyPanel === "assistant" && (
           <section className="settings-key-card glass-rest" aria-label="Assistant AI credentials">
             <div className="settings-key-provider-grid">
-              <Field label="AI provider" hint="Provider default is selected first.">
+              <Field
+                label="AI provider"
+                hint="Ollama runs locally (no key); the rest need an API key below."
+              >
                 <select
                   value={draft.aiProvider}
                   onChange={(e) =>
-                    patch({ aiProvider: e.target.value as AppSettings["aiProvider"] })
+                    // Reset the model override too: a model id from the old
+                    // provider (e.g. gpt-4o-mini) would be rejected by the new host.
+                    patch({
+                      aiProvider: e.target.value as AppSettings["aiProvider"],
+                      aiModel: "",
+                    })
                   }
                 >
                   {AIProviderKind.allCases().map((k) => (
                     <option key={k} value={k}>
                       {AIProviderKind.displayName(k)}
+                      {k === "ollama" ? " · local, no key" : ""}
                     </option>
                   ))}
                 </select>
               </Field>
 
-              {/* The explicit model override is an Advanced dial — Simple mode
+              {/* The explicit model override is an Advanced dial - Simple mode
                   sticks with the recommended provider default. */}
               <AdvancedOnly>
-                <Field label="Model" hint="Recommended default stays first.">
-                  <select
-                    value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
-                    onChange={(event) =>
-                      patch({
-                        aiModel:
-                          event.target.value === "__default" ? "" : event.target.value,
-                      })
-                    }
-                  >
-                    <option value="__default">Provider default (recommended)</option>
-                    {modelOptions(draft.aiProvider, draft.aiModel).map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <ModelSelectField draft={draft} patch={patch} />
               </AdvancedOnly>
             </div>
 
@@ -3853,6 +5077,148 @@ function KeysTab({ draft, patch }: TabProps) {
         )}
       </div>
     </div>
+  );
+}
+
+function TraktConnectionSection({ draft, patch }: TabProps) {
+  const [connection, setConnection] = useState<{
+    connected: boolean;
+    username: string | null;
+  }>({ connected: false, username: null });
+  const [checking, setChecking] = useState(true);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const loadConnection = useCallback(async () => {
+    try {
+      const connected = await isTraktConnected();
+      const stored = connected ? await loadTraktConnection() : null;
+      return {
+        connected,
+        username: stored?.meta.username ?? null,
+      };
+    } catch {
+      return { connected: false, username: null };
+    }
+  }, []);
+
+  const refreshConnection = useCallback(async () => {
+    setChecking(true);
+    setConnection(await loadConnection());
+    setChecking(false);
+  }, [loadConnection]);
+
+  useEffect(() => {
+    let active = true;
+    setChecking(true);
+    void loadConnection().then((next) => {
+      if (!active) return;
+      setConnection(next);
+      setChecking(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [loadConnection]);
+
+  async function disconnect() {
+    setDisconnecting(true);
+    try {
+      await clearTraktConnection();
+      await refreshConnection();
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  const hasCredentials =
+    draft.traktClientId.trim().length > 0 &&
+    draft.traktClientSecret.trim().length > 0;
+
+  return (
+    <section className="settings-key-card glass-rest" aria-label="Trakt connection">
+      <div className="settings-key-card-head">
+        <div>
+          <strong>Trakt</strong>
+          <p className="settings-hint">
+            Register a free app at trakt.tv/oauth/applications, then paste its Client ID and Secret.
+          </p>
+        </div>
+      </div>
+
+      <Field label="Trakt Client ID">
+        <SecretInput
+          value={draft.traktClientId}
+          onChange={(event) => patch({ traktClientId: event.target.value })}
+          placeholder="Client ID"
+        />
+      </Field>
+      <Field label="Trakt Client Secret">
+        <SecretInput
+          value={draft.traktClientSecret}
+          onChange={(event) => patch({ traktClientSecret: event.target.value })}
+          placeholder="Client Secret"
+        />
+      </Field>
+
+      <div className="settings-model-row">
+        <span className="settings-model-msg t-secondary" aria-live="polite">
+          {checking
+            ? "Checking Trakt connection…"
+            : connection.connected
+              ? `Connected${connection.username != null ? ` as ${connection.username}` : ""}`
+              : "Not connected"}
+        </span>
+        {connection.connected ? (
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => void disconnect()}
+            disabled={disconnecting}
+          >
+            {disconnecting ? "Disconnecting…" : "Disconnect"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-prominent btn-sm"
+            onClick={() => setDialogOpen(true)}
+            disabled={!hasCredentials || checking}
+          >
+            Connect
+          </button>
+        )}
+      </div>
+
+      <label className="settings-toggle-row">
+        <input
+          type="checkbox"
+          checked={draft.traktScrobbleEnabled}
+          disabled={!connection.connected || checking}
+          onChange={(event) => patch({ traktScrobbleEnabled: event.target.checked })}
+        />
+        <span>
+          <strong>Scrobble to Trakt</strong>
+          <span className="t-secondary">
+            {" "}- mark what you watch as watching/watched on your Trakt profile.
+          </span>
+        </span>
+      </label>
+
+      <p className="settings-model-msg t-secondary">
+        Syncs movies and series in the watchlist. Scrobbling is opt-in and only
+        reports real player activity.
+      </p>
+
+      {dialogOpen && (
+        <TraktConnectDialog
+          clientId={draft.traktClientId.trim()}
+          clientSecret={draft.traktClientSecret.trim()}
+          onClose={() => setDialogOpen(false)}
+          onConnected={() => void refreshConnection()}
+        />
+      )}
+    </section>
   );
 }
 
@@ -3980,14 +5346,12 @@ function DebridTab({ draft, patch }: TabProps) {
 
   return (
     <div className="settings-fields">
-      <p className="settings-hint t-secondary">
-        <strong>{CONCEPTS.debrid.term}:</strong> {CONCEPTS.debrid.blurb}
-      </p>
-      <p className="settings-hint t-secondary">
-        Choose one provider at a time. Saved providers are tried in priority
-        order; the first that has a cached result wins. Tokens stay in this
-        profile, with secure device storage in desktop builds when available.
-      </p>
+      <SettingsInfo label={`About ${CONCEPTS.debrid.term}`}>
+        <strong>{CONCEPTS.debrid.term}:</strong> {CONCEPTS.debrid.blurb} Choose
+        one provider at a time. Saved providers are tried in priority order; the
+        first that has a cached result wins. Tokens stay in this profile, with
+        secure device storage in desktop builds when available.
+      </SettingsInfo>
 
       <Field label="Provider" hint="Real-Debrid is selected first by default.">
         <select
@@ -4085,10 +5449,10 @@ function SourcesTab({ draft, patch }: TabProps) {
 
   return (
     <div className="settings-fields">
-      <p className="settings-hint t-secondary">
+      <SettingsInfo label={`About ${CONCEPTS.source.term}`}>
         <strong>{CONCEPTS.source.term}:</strong> {CONCEPTS.source.blurb} Pair a
         source with a debrid service to stream instantly.
-      </p>
+      </SettingsInfo>
       <label className="settings-toggle-row">
         <input
           type="checkbox"
@@ -4098,7 +5462,7 @@ function SourcesTab({ draft, patch }: TabProps) {
         <span>
           <strong>Built-in scrapers</strong>
           <span className="settings-built-in-list t-secondary">
-            APIBay, YTS, EZTV
+            Torrentio, APIBay, YTS, EZTV
           </span>
           <span className="settings-pill">No setup needed</span>
         </span>
@@ -4294,8 +5658,10 @@ function Field({
 }) {
   return (
     <label className="settings-field">
-      <span className="settings-label">{label}</span>
-      {hint && <span className="settings-field-hint t-secondary">{hint}</span>}
+      <span className="settings-label-line">
+        <span className="settings-label">{label}</span>
+        {hint && <InfoTip label={`About ${label}`}>{hint}</InfoTip>}
+      </span>
       {children}
       {helpUrl && (
         <a

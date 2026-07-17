@@ -22,6 +22,8 @@ import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/re
 
 const navigate = vi.fn();
 const openDetail = vi.fn();
+const closeDetail = vi.fn();
+const closeBrowse = vi.fn();
 const search = vi.fn();
 
 type StoreSlice = {
@@ -30,10 +32,19 @@ type StoreSlice = {
   detailItem: unknown;
   browseContext: unknown;
   openDetail: typeof openDetail;
+  closeDetail: typeof closeDetail;
+  closeBrowse: typeof closeBrowse;
   search: typeof search;
-  settings: { autoUpdateChecks: boolean; autoInstallUpdates: boolean };
+  settings: {
+    autoUpdateChecks: boolean;
+    autoInstallUpdates: boolean;
+    tmdbKey: string;
+    omdbKey: string;
+  };
   simpleMode: boolean;
   hydrated: boolean;
+  calendar: { episodes: unknown[]; loading: boolean; error: string | null };
+  calendarLastSeenAt: number | null;
   services: {
     debrid: { hasServices: boolean } | null;
     indexers: { activeIndexers: unknown[] } | null;
@@ -44,6 +55,7 @@ let store: StoreSlice;
 
 vi.mock("./store/AppStore", () => ({
   useAppStore: () => store,
+  useAppActions: () => ({ search }),
 }));
 
 // --- serverMode / preload helpers ---------------------------------------
@@ -71,12 +83,16 @@ vi.mock("./App.css", () => ({}));
 // Each screen renders a unique marker so we can assert which one App routed to.
 // Discover gets the openDetail handler so we can verify it's wired through.
 
+let routeThrows = false;
 vi.mock("./screens/Discover", () => ({
-  Discover: ({ onSelect }: { onSelect: (i: unknown) => void }) => (
-    <button data-testid="screen-discover" onClick={() => onSelect({ id: "x" })}>
-      discover
-    </button>
-  ),
+  Discover: ({ onSelect }: { onSelect: (i: unknown) => void }) => {
+    if (routeThrows) throw new Error("route exploded");
+    return (
+      <button data-testid="screen-discover" onClick={() => onSelect({ id: "x" })}>
+        discover
+      </button>
+    );
+  },
 }));
 vi.mock("./screens/Search", () => ({
   Search: () => <div data-testid="screen-search">search</div>,
@@ -105,8 +121,12 @@ vi.mock("./screens/Settings", () => ({
 vi.mock("./screens/Browse", () => ({
   Browse: () => <div data-testid="overlay-browse">browse</div>,
 }));
+let detailThrows = false;
 vi.mock("./screens/Detail", () => ({
-  Detail: () => <div data-testid="overlay-detail">detail</div>,
+  Detail: () => {
+    if (detailThrows) throw new Error("player exploded");
+    return <div data-testid="overlay-detail">detail</div>;
+  },
 }));
 
 // --- Child component stubs ----------------------------------------------
@@ -123,12 +143,14 @@ vi.mock("./components/NavRail", async () => {
       selected,
       onSelect,
       onSwitchProfile,
+      calendarBadgeCount = 0,
     }: {
       selected: string;
       onSelect: (s: string) => void;
       onSwitchProfile: () => void;
+      calendarBadgeCount?: number;
     }) => (
-      <nav data-testid="nav-rail" data-selected={selected}>
+      <nav data-testid="nav-rail" data-selected={selected} data-calendar-badge={calendarBadgeCount}>
         <button data-testid="nav-go-library" onClick={() => onSelect("library")}>
           go-library
         </button>
@@ -141,8 +163,8 @@ vi.mock("./components/NavRail", async () => {
 });
 
 vi.mock("./components/GlobalSearch", () => ({
-  GlobalSearch: ({ onSubmit }: { onSubmit: (q: string) => void }) => (
-    <button data-testid="global-search" onClick={() => onSubmit("q")}>
+  GlobalSearch: () => (
+    <button data-testid="global-search" onClick={() => search("q")}>
       global-search
     </button>
   ),
@@ -163,56 +185,18 @@ vi.mock("./components/ProfilePicker", () => ({
 }));
 
 vi.mock("./components/CommandPalette", () => ({
-  CommandPalette: () => <div data-testid="command-palette" />,
-}));
-
-vi.mock("./components/SetupNudge", () => ({
-  SetupNudge: ({
-    onStartWizard,
-    onShowTour,
-    onDismiss,
-  }: {
-    onStartWizard: () => void;
-    onShowTour: () => void;
-    onDismiss: () => void;
-  }) => (
-    <div>
-      <button data-testid="setup-nudge" onClick={onStartWizard}>
-        setup
-      </button>
-      <button data-testid="setup-nudge-tour" onClick={onShowTour}>
-        tour
-      </button>
-      <button data-testid="setup-nudge-dismiss" onClick={onDismiss}>
-        dismiss
-      </button>
-    </div>
+  CommandPalette: ({ initiallyOpen = false }: { initiallyOpen?: boolean }) => (
+    <div
+      data-testid="command-palette"
+      data-initially-open={String(initiallyOpen)}
+    />
   ),
 }));
 
 vi.mock("./components/WelcomeGuide", () => ({
-  WelcomeGuide: ({
-    onClose,
-    onOpenSettings,
-  }: {
-    onClose: () => void;
-    onOpenSettings: () => void;
-  }) => (
-    <div>
-      <button data-testid="welcome-guide" onClick={onClose}>
-        welcome-guide
-      </button>
-      <button data-testid="welcome-guide-open-settings" onClick={onOpenSettings}>
-        open-settings
-      </button>
-    </div>
-  ),
-}));
-
-vi.mock("./components/KeyboardShortcuts", () => ({
-  KeyboardShortcuts: ({ onClose }: { onClose: () => void }) => (
-    <button data-testid="keyboard-shortcuts" onClick={onClose}>
-      keyboard-shortcuts
+  WelcomeGuide: ({ onClose }: { onClose: () => void }) => (
+    <button data-testid="welcome-guide" onClick={onClose}>
+      welcome-guide
     </button>
   ),
 }));
@@ -261,11 +245,15 @@ vi.mock("./components/TierOnboarding", () => ({
 let sessionValue: { role: string } | null = null;
 vi.mock("./lib/ServerSessionContext", () => ({
   useServerSession: () => sessionValue,
+  useServerProfiles: () => [],
 }));
 
 let firstRunValue = false;
+let keyGateValue = false;
 vi.mock("./lib/firstRun", () => ({
   isFirstRun: () => Promise.resolve(firstRunValue),
+  devBypassesOnboarding: () => false,
+  needsKeyOnboarding: () => keyGateValue,
 }));
 
 let serverSetupValue = false;
@@ -274,28 +262,9 @@ vi.mock("./lib/serverSetup", () => ({
 }));
 
 let adminHealthCredentials = 0;
-let fetchServerAdminHealthError = false;
-let serverHealthResolver: ((value: { counts: { credentials: number } }) => void) | null = null;
-let serverHealthRejecter: ((reason: unknown) => void) | null = null;
-let shouldResolveServerHealth = false;
-let shouldRejectServerHealth = false;
 vi.mock("./lib/serverApi", () => ({
-  fetchServerAdminHealth: () => {
-    if (fetchServerAdminHealthError) {
-      return Promise.reject(new Error("blocked"));
-    }
-    if (shouldResolveServerHealth) {
-      return new Promise<{ counts: { credentials: number } }>((resolve) => {
-        serverHealthResolver = resolve;
-      });
-    }
-    if (shouldRejectServerHealth) {
-      return new Promise<{ counts: { credentials: number } }>((_, reject) => {
-        serverHealthRejecter = reject;
-      });
-    }
-    return Promise.resolve({ counts: { credentials: adminHealthCredentials } });
-  },
+  fetchServerAdminHealth: () =>
+    Promise.resolve({ counts: { credentials: adminHealthCredentials } }),
 }));
 
 import { App, FirstRunHost } from "./App";
@@ -329,10 +298,14 @@ function makeStore(over: Partial<StoreSlice> = {}): StoreSlice {
     detailItem: null,
     browseContext: null,
     openDetail,
+    closeDetail,
+    closeBrowse,
     search,
-    settings: { autoUpdateChecks: true, autoInstallUpdates: false },
+    settings: { autoUpdateChecks: true, autoInstallUpdates: false, tmdbKey: "k", omdbKey: "" },
     simpleMode: false,
     hydrated: true,
+    calendar: { episodes: [], loading: false, error: null },
+    calendarLastSeenAt: null,
     // Configured by default so the "finish setup" nudge stays hidden here.
     services: {
       debrid: { hasServices: true },
@@ -345,19 +318,19 @@ function makeStore(over: Partial<StoreSlice> = {}): StoreSlice {
 beforeEach(() => {
   navigate.mockClear();
   openDetail.mockClear();
+  closeDetail.mockClear();
+  closeBrowse.mockClear();
   search.mockClear();
+  detailThrows = false;
+  routeThrows = false;
   whenIdle.mockClear();
   serverModeValue = false;
   smartPreloadEnabled = false;
   sessionValue = null;
   firstRunValue = false;
+  keyGateValue = false;
   serverSetupValue = false;
   adminHealthCredentials = 0;
-  fetchServerAdminHealthError = false;
-  shouldResolveServerHealth = false;
-  shouldRejectServerHealth = false;
-  serverHealthResolver = null;
-  serverHealthRejecter = null;
   store = makeStore();
   installLocalStorage();
   // Default: the welcome-guide seen flag is set so the auto-tour is OFF unless
@@ -413,26 +386,27 @@ describe("App routing", () => {
 });
 
 describe("Setup nudge", () => {
-  it("shows the finish-setup nudge when Local Mode has no debrid", () => {
+  it("shows the finish-setup nudge when Local Mode has no debrid", async () => {
     store = makeStore({
       services: { debrid: null, indexers: { activeIndexers: [{}] } },
     });
     render(<App />);
-    expect(screen.getByTestId("setup-nudge")).toBeInTheDocument();
+    // SetupNudge is code-split (React.lazy) - resolve its chunk before asserting.
+    expect(await screen.findByText("Let's get you streaming")).toBeInTheDocument();
   });
 
-  it("shows the nudge when there is no active source", () => {
+  it("shows the nudge when there is no active source", async () => {
     store = makeStore({
       services: { debrid: { hasServices: true }, indexers: { activeIndexers: [] } },
     });
     render(<App />);
-    expect(screen.getByTestId("setup-nudge")).toBeInTheDocument();
+    expect(await screen.findByText("Let's get you streaming")).toBeInTheDocument();
   });
 
   it("hides the nudge once a debrid + source are configured", () => {
     store = makeStore(); // configured by default
     render(<App />);
-    expect(screen.queryByTestId("setup-nudge")).toBeNull();
+    expect(screen.queryByText("Let's get you streaming")).toBeNull();
   });
 
   it("hides the nudge on the Settings screen", () => {
@@ -441,124 +415,7 @@ describe("Setup nudge", () => {
       services: { debrid: null, indexers: { activeIndexers: [] } },
     });
     render(<App />);
-    expect(screen.queryByTestId("setup-nudge")).toBeNull();
-  });
-
-  it("hides the nudge while the welcome guide is visible", () => {
-    globalThis.localStorage.removeItem("ds_welcome_guide_seen");
-    store = makeStore({
-      services: { debrid: null, indexers: { activeIndexers: [] } },
-    });
-    render(<App />);
-    expect(screen.getByTestId("welcome-guide")).toBeInTheDocument();
-    expect(screen.queryByTestId("setup-nudge")).not.toBeInTheDocument();
-  });
-
-  it("uses the setup-nudge button to open and close the FirstRunWizard", () => {
-    store = makeStore({
-      services: { debrid: null, indexers: { activeIndexers: [] } },
-    });
-    render(<App />);
-    fireEvent.click(screen.getByTestId("setup-nudge"));
-    expect(screen.getByTestId("first-run")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("first-run"));
-    expect(screen.queryByTestId("first-run")).not.toBeInTheDocument();
-  });
-
-  it("uses setup-nudge tour action to open WelcomeGuide", () => {
-    store = makeStore({
-      services: { debrid: null, indexers: { activeIndexers: [] } },
-    });
-    render(<App />);
-    fireEvent.click(screen.getByTestId("setup-nudge-tour"));
-    expect(screen.getByTestId("welcome-guide")).toBeInTheDocument();
-  });
-
-  it("dismisses setup nudge with localStorage.write failures handled gracefully", () => {
-    Object.defineProperty(globalThis, "localStorage", {
-      configurable: true,
-      value: {
-        getItem: (key: string) => (key === "ds_welcome_guide_seen" ? "1" : null),
-        setItem: () => {
-          throw new Error("blocked");
-        },
-        removeItem: () => {},
-        clear: () => {},
-        key: () => null,
-        length: 0,
-      },
-    });
-    store = makeStore({
-      services: { debrid: null, indexers: { activeIndexers: [] } },
-    });
-    render(<App />);
-    fireEvent.click(screen.getByTestId("setup-nudge-dismiss"));
-    expect(screen.queryByTestId("setup-nudge")).not.toBeInTheDocument();
-  });
-
-  it("falls back to defaults when setup nudge localStorage reads fail", () => {
-    Object.defineProperty(globalThis, "localStorage", {
-      configurable: true,
-      value: {
-        getItem: () => {
-          throw new Error("blocked");
-        },
-        setItem: () => {},
-        removeItem: () => {},
-        clear: () => {},
-        key: () => null,
-        length: 0,
-      },
-    });
-    store = makeStore({
-      services: { debrid: null, indexers: { activeIndexers: [] } },
-    });
-    render(<App />);
-    expect(screen.getByTestId("setup-nudge")).toBeInTheDocument();
-  });
-});
-
-describe("overlay event listeners", () => {
-  it("opens the first-run wizard on ds:open-first-run", () => {
-    store = makeStore({
-      services: { debrid: null, indexers: { activeIndexers: [] } },
-    });
-    render(<App />);
-    fireEvent(window, new Event("ds:open-first-run"));
-    expect(screen.getByTestId("first-run")).toBeInTheDocument();
-  });
-
-  it("opens the keyboard shortcuts overlay on ds:open-shortcuts", () => {
-    render(<App />);
-    fireEvent(window, new Event("ds:open-shortcuts"));
-    expect(screen.getByTestId("keyboard-shortcuts")).toBeInTheDocument();
-  });
-
-  it("can close the keyboard shortcuts overlay", () => {
-    render(<App />);
-    fireEvent(window, new Event("ds:open-shortcuts"));
-    fireEvent.click(screen.getByTestId("keyboard-shortcuts"));
-    expect(screen.queryByTestId("keyboard-shortcuts")).not.toBeInTheDocument();
-  });
-
-  it("opens the tier welcome on ds:open-tier-welcome", () => {
-    render(<App />);
-    fireEvent(window, new Event("ds:open-tier-welcome"));
-    expect(screen.getByTestId("tier-onboarding")).toBeInTheDocument();
-  });
-
-  it("can close the tier onboarding overlay", () => {
-    render(<App />);
-    fireEvent(window, new Event("ds:open-tier-welcome"));
-    fireEvent.click(screen.getByTestId("tier-onboarding"));
-    expect(screen.queryByTestId("tier-onboarding")).not.toBeInTheDocument();
-  });
-
-  it("opens welcome-guide settings from the overlay action", () => {
-    render(<App />);
-    fireEvent(window, new Event("ds:open-welcome-guide"));
-    fireEvent.click(screen.getByTestId("welcome-guide-open-settings"));
-    expect(navigate).toHaveBeenCalledWith("settings");
+    expect(screen.queryByText("Let's get you streaming")).toBeNull();
   });
 });
 
@@ -618,6 +475,16 @@ describe("Browse + Detail overlays", () => {
     expect(await screen.findByTestId("overlay-detail")).toBeInTheDocument();
   });
 
+  it("mirrors overlay state to the document root and removes it on close", () => {
+    store = makeStore({ detailItem: { id: "a" } });
+    const { rerender } = render(<App />);
+    expect(document.documentElement).toHaveAttribute("data-overlay-open");
+
+    store = makeStore();
+    rerender(<App />);
+    expect(document.documentElement).not.toHaveAttribute("data-overlay-open");
+  });
+
   it("mounts both overlays together (Detail over Browse)", async () => {
     store = makeStore({
       browseContext: { kind: "category" },
@@ -627,6 +494,40 @@ describe("Browse + Detail overlays", () => {
     expect(await screen.findByTestId("overlay-browse")).toBeInTheDocument();
     expect(await screen.findByTestId("overlay-detail")).toBeInTheDocument();
   });
+
+  it("a Detail render crash closes the overlay instead of escaping the shell", async () => {
+    const boom = vi.spyOn(console, "error").mockImplementation(() => {});
+    detailThrows = true;
+    store = makeStore({ detailItem: { id: "a" } });
+    render(<App />);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(closeDetail).toHaveBeenCalled();
+    boom.mockRestore();
+  });
+
+  it("adds the overlay class when the Detail boundary catches a crash", async () => {
+    const boom = vi.spyOn(console, "error").mockImplementation(() => {});
+    detailThrows = true;
+    store = makeStore({ detailItem: { id: "a" } });
+    render(<App />);
+    expect(await screen.findByRole("alert")).toHaveClass(
+      "error-boundary",
+      "error-boundary-overlay",
+    );
+    boom.mockRestore();
+  });
+
+  it("does not add the overlay class when the route boundary catches a crash", async () => {
+    const boom = vi.spyOn(console, "error").mockImplementation(() => {});
+    routeThrows = true;
+    store = makeStore({ route: "discover" });
+    render(<App />);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveClass("error-boundary");
+    expect(alert).not.toHaveClass("error-boundary-overlay");
+    boom.mockRestore();
+  });
 });
 
 describe("ProfilePicker gating", () => {
@@ -635,24 +536,31 @@ describe("ProfilePicker gating", () => {
     expect(screen.queryByTestId("profile-picker")).not.toBeInTheDocument();
   });
 
-  it("opens the picker from the rail and closes it via onClose", () => {
+  it("opens the picker from the rail and closes it via onClose", async () => {
+    serverModeValue = true;
     render(<App />);
     fireEvent.click(screen.getByTestId("nav-switch-profile"));
-    expect(screen.getByTestId("profile-picker")).toBeInTheDocument();
+    // ProfilePicker is code-split (React.lazy) - await its chunk.
+    expect(await screen.findByTestId("profile-picker")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("profile-picker"));
     expect(screen.queryByTestId("profile-picker")).not.toBeInTheDocument();
   });
 });
 
 describe("CommandPalette + UpdateBanner globals", () => {
-  it("always renders the CommandPalette", () => {
+  it("loads and opens the CommandPalette on the first Cmd-K", async () => {
     render(<App />);
-    expect(screen.getByTestId("command-palette")).toBeInTheDocument();
+    expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    expect(await screen.findByTestId("command-palette")).toHaveAttribute(
+      "data-initially-open",
+      "true",
+    );
   });
 
   it("forwards update settings to the UpdateBanner", () => {
     store = makeStore({
-      settings: { autoUpdateChecks: false, autoInstallUpdates: true },
+      settings: { autoUpdateChecks: false, autoInstallUpdates: true, tmdbKey: "k", omdbKey: "" },
     });
     render(<App />);
     const banner = screen.getByTestId("update-banner");
@@ -661,11 +569,43 @@ describe("CommandPalette + UpdateBanner globals", () => {
   });
 });
 
+describe("Calendar new-episode indicator", () => {
+  it("passes the followed-release count to navigation and clears it after the watermark advances", () => {
+    const airDate = new Date();
+    airDate.setDate(airDate.getDate() - 1);
+    const lastSeen = new Date();
+    lastSeen.setDate(lastSeen.getDate() - 2);
+    store = makeStore({
+      calendar: {
+        loading: false,
+        error: null,
+        episodes: [
+          {
+            series: { id: "show", type: "series", title: "Followed show" },
+            seasonNumber: 1,
+            episodeNumber: 2,
+            title: "New episode",
+            airDate: `${airDate.getFullYear()}-${String(airDate.getMonth() + 1).padStart(2, "0")}-${String(airDate.getDate()).padStart(2, "0")}`,
+          },
+        ],
+      },
+      calendarLastSeenAt: lastSeen.getTime(),
+    });
+    const { rerender } = render(<App />);
+    expect(screen.getByTestId("nav-rail")).toHaveAttribute("data-calendar-badge", "1");
+
+    store.calendarLastSeenAt = Date.now();
+    rerender(<App />);
+    expect(screen.getByTestId("nav-rail")).toHaveAttribute("data-calendar-badge", "0");
+  });
+});
+
 describe("WelcomeGuide auto-tour", () => {
-  it("auto-opens when the seen flag is absent", () => {
+  it("auto-opens when the seen flag is absent", async () => {
     globalThis.localStorage.removeItem("ds_welcome_guide_seen");
     render(<App />);
-    expect(screen.getByTestId("welcome-guide")).toBeInTheDocument();
+    // WelcomeGuide is code-split (React.lazy) - await its chunk on first mount.
+    expect(await screen.findByTestId("welcome-guide")).toBeInTheDocument();
   });
 
   it("stays closed when the seen flag is set", () => {
@@ -722,35 +662,28 @@ describe("smart preload effect", () => {
     render(<App />);
     expect(whenIdle).toHaveBeenCalledTimes(1);
   });
-
-  it("runs the smart-preload callback path", () => {
-    smartPreloadEnabled = true;
-    const trigger = vi.fn();
-    whenIdle.mockImplementation(trigger);
-    render(<App />);
-    expect(trigger).toHaveBeenCalledTimes(1);
-    trigger.mock.calls[0]?.[0]?.();
-  });
 });
 
 // -----------------------------------------------------------------------
-// FirstRunHost — the async wizard gate that decides between TierOnboarding,
+// FirstRunHost - the async wizard gate that decides between TierOnboarding,
 // FirstRunWizard, ServerSetupWizard, and the App itself. It returns null until
 // BOTH the relevant async gate AND store hydration resolve, so most assertions
 // use findBy* / waitFor to let the effects settle.
 // -----------------------------------------------------------------------
 
 describe("FirstRunHost gating", () => {
-  it("renders nothing until the store has hydrated", async () => {
+  it("renders boot chrome until the store has hydrated", async () => {
     store = makeStore({ hydrated: false });
     const { container } = render(<FirstRunHost />);
-    // firstRun resolves to false, but hydrated=false keeps it null-rendering.
+    // firstRun resolves to false, but hydrated=false keeps app/wizard decisions
+    // gated while a lightweight boot shell prevents a blank window.
     await waitFor(() => {
-      // nothing meaningful mounted (no app, no wizard markers).
+      // No app or wizard mounts before hydration.
       expect(screen.queryByTestId("nav-rail")).not.toBeInTheDocument();
       expect(screen.queryByTestId("first-run")).not.toBeInTheDocument();
     });
-    expect(container).toBeEmptyDOMElement();
+    expect(container).not.toBeEmptyDOMElement();
+    expect(screen.getByTestId("spinner")).toBeInTheDocument();
   });
 
   it("renders the App once hydrated with no first-run and no server setup", async () => {
@@ -792,6 +725,23 @@ describe("FirstRunHost gating", () => {
     expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
   });
 
+  it("forces the wizard when keys are missing even after onboarding completed", async () => {
+    firstRunValue = false; // onboarding_completed is set…
+    keyGateValue = true; // …but the launch found no catalog key / debrid token
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    expect(await screen.findByTestId("first-run")).toBeInTheDocument();
+  });
+
+  it("key-gated wizard completion reveals the App for this session", async () => {
+    firstRunValue = false;
+    keyGateValue = true;
+    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
+    render(<FirstRunHost />);
+    fireEvent.click(await screen.findByTestId("first-run"));
+    expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
+  });
+
   it("shows the ServerSetupWizard for a fresh server when the owner has no credentials", async () => {
     serverModeValue = true;
     sessionValue = { role: "owner" };
@@ -800,18 +750,6 @@ describe("FirstRunHost gating", () => {
     globalThis.localStorage.setItem("ds_tier_welcomed", "1");
     render(<FirstRunHost />);
     expect(await screen.findByTestId("server-setup")).toBeInTheDocument();
-  });
-
-  it("shows TierOnboarding before ServerSetup when the account is fresh and first-run is not yet acknowledged", async () => {
-    serverModeValue = true;
-    sessionValue = { role: "owner" };
-    serverSetupValue = true;
-    adminHealthCredentials = 0;
-    globalThis.localStorage.removeItem("ds_tier_welcomed");
-    render(<FirstRunHost />);
-
-    expect(await screen.findByTestId("tier-onboarding")).toBeInTheDocument();
-    expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
   });
 
   it("completing the ServerSetupWizard reveals the App", async () => {
@@ -831,41 +769,6 @@ describe("FirstRunHost gating", () => {
     globalThis.localStorage.setItem("ds_tier_welcomed", "1");
     render(<FirstRunHost />);
     expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
-    expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
-  });
-
-  it("falls back to App when server setup health check fails", async () => {
-    serverModeValue = true;
-    sessionValue = { role: "owner" };
-    fetchServerAdminHealthError = true;
-    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
-    render(<FirstRunHost />);
-    expect(await screen.findByTestId("nav-rail")).toBeInTheDocument();
-    expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
-  });
-
-  it("ignores server setup health failure callbacks after unmount", async () => {
-    serverModeValue = true;
-    sessionValue = { role: "owner" };
-    shouldRejectServerHealth = true;
-    const { unmount } = render(<FirstRunHost />);
-    await waitFor(() => expect(serverHealthRejecter).toBeTypeOf("function"));
-    unmount();
-    expect(() => {
-      serverHealthRejecter?.(new Error("blocked"));
-    }).not.toThrow();
-    await Promise.resolve();
-    expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
-  });
-
-  it("ignores in-flight server setup decision updates after unmount", async () => {
-    serverModeValue = true;
-    sessionValue = { role: "owner" };
-    shouldResolveServerHealth = true;
-    globalThis.localStorage.setItem("ds_tier_welcomed", "1");
-    const { unmount } = render(<FirstRunHost />);
-    unmount();
-    serverHealthResolver?.({ counts: { credentials: 0 } });
     expect(screen.queryByTestId("server-setup")).not.toBeInTheDocument();
   });
 

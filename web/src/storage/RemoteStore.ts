@@ -3,6 +3,7 @@ import type {
   AIUsageRecord,
   CachedResolutionRecord,
   DebridConfigRecord,
+  DownloadRecord,
   IndexerConfigRecord,
   FolderKind,
   LibraryEntryRecord,
@@ -11,6 +12,7 @@ import type {
   MediaCacheRecord,
   TasteEventRecord,
   WatchHistoryRecord,
+  WatchlistFolderRecord,
   WatchlistRecord,
 } from "./models";
 import { hasResumePoint } from "./models";
@@ -202,7 +204,7 @@ export class RemoteStore implements Store, SecretStore {
   private readonly api: ServerAPI;
   private settingsCache: Record<string, string> | null = null;
   // Bumped on every settings mutation. allSettings() captures it before its
-  // fetch and only caches the response if it hasn't changed since — so a
+  // fetch and only caches the response if it hasn't changed since - so a
   // setSetting() that lands while a fetch is in flight can't be silently
   // clobbered by the fetch caching a pre-mutation snapshot (lost update).
   private settingsGen = 0;
@@ -295,7 +297,7 @@ export class RemoteStore implements Store, SecretStore {
     this.pendingSecrets.delete(key);
   }
 
-  async addToWatchlist(preview: MediaPreview): Promise<void> {
+  async addToWatchlist(preview: MediaPreview, _folderId?: string | null): Promise<void> {
     await this.api.put(`/api/library/watchlist/${encodeURIComponent(preview.id)}`, {
       preview,
     });
@@ -321,6 +323,29 @@ export class RemoteStore implements Store, SecretStore {
     return rows.some((row) => row.mediaId === mediaId);
   }
 
+  // These folders are a local Dexie feature for now. Keeping the methods on the
+  // shared Store contract lets the Watchlist UI fail honestly in Server Mode
+  // instead of silently pretending an assignment persisted remotely.
+  async createWatchlistFolder(_name: string): Promise<WatchlistFolderRecord> {
+    throw unsupportedRemoteWrite("createWatchlistFolder");
+  }
+
+  async listWatchlistFolders(): Promise<WatchlistFolderRecord[]> {
+    return [];
+  }
+
+  async renameWatchlistFolder(_id: string, _name: string): Promise<void> {
+    throw unsupportedRemoteWrite("renameWatchlistFolder");
+  }
+
+  async deleteWatchlistFolder(_id: string): Promise<void> {
+    throw unsupportedRemoteWrite("deleteWatchlistFolder");
+  }
+
+  async assignWatchlistFolder(_mediaId: string, _folderId: string | null): Promise<void> {
+    throw unsupportedRemoteWrite("assignWatchlistFolder");
+  }
+
   async recordHistory(entry: WatchHistoryUpsert): Promise<WatchHistoryRecord> {
     const episodeId = entry.episodeId ?? null;
     const progressSeconds = entry.progressSeconds ?? 0;
@@ -338,7 +363,7 @@ export class RemoteStore implements Store, SecretStore {
       lastWatched,
     });
     // The PUT is authoritative; build the record locally instead of re-fetching
-    // up to 500 history rows to re-find the row we just wrote — that read-back
+    // up to 500 history rows to re-find the row we just wrote - that read-back
     // could page the new row out (when >500 newer rows exist) and spuriously
     // throw even though the write succeeded.
     return {
@@ -354,9 +379,24 @@ export class RemoteStore implements Store, SecretStore {
     };
   }
 
+  async deleteHistory(mediaId: string, episodeId?: string | null): Promise<void> {
+    const query =
+      episodeId != null && episodeId.length > 0
+        ? `?episodeId=${encodeURIComponent(episodeId)}`
+        : "";
+    await this.api.delete(`/api/history/${encodeURIComponent(mediaId)}${query}`);
+  }
+
   async listHistory(limit = 100): Promise<WatchHistoryRecord[]> {
     const response = await this.api.get<ServerHistoryResponse>(
       `/api/history?limit=${encodeURIComponent(String(limit))}`,
+    );
+    return response.items.map(mapHistory);
+  }
+
+  async listHistoryForMedia(mediaId: string): Promise<WatchHistoryRecord[]> {
+    const response = await this.api.get<ServerHistoryResponse>(
+      `/api/history/${encodeURIComponent(mediaId)}/entries`,
     );
     return response.items.map(mapHistory);
   }
@@ -365,7 +405,7 @@ export class RemoteStore implements Store, SecretStore {
     mediaId: string,
     episodeId?: string | null,
   ): Promise<WatchHistoryRecord | null> {
-    // Exact keyed lookup — NOT a windowed list scan — so the viewed-only merge
+    // Exact keyed lookup - NOT a windowed list scan - so the viewed-only merge
     // (data/library.ts) reads the real resume position for any history size
     // (scanning only the newest 500 could miss it and zero the row).
     const query =
@@ -380,7 +420,7 @@ export class RemoteStore implements Store, SecretStore {
 
   async continueWatching(limit = 20): Promise<WatchHistoryRecord[]> {
     // Widen the fetch window (the server caps at 500), then filter to resumable
-    // rows BEFORE slicing — both so completed titles don't push older resumables
+    // rows BEFORE slicing - both so completed titles don't push older resumables
     // out of the window, AND so zero-progress "viewed" rows don't fill the limit
     // and crowd genuinely resumable titles out (parity with DexieStore).
     const rows = await this.listHistory(Math.max(limit, 500));
@@ -500,16 +540,26 @@ export class RemoteStore implements Store, SecretStore {
       : null;
     const token =
       secretKey != null ? this.pendingSecrets.get(secretKey) : config.apiToken;
-    if (token == null || token.trim().length === 0) return;
-    await this.api.put("/api/profile/credentials", {
-      id: config.id,
-      provider: config.service,
-      label: config.service,
-      value: token,
-      priority: config.priority,
-      isActive: config.isActive,
-    });
-    if (secretKey != null) this.pendingSecrets.delete(secretKey);
+    if (token == null || token.trim().length === 0) {
+      // Nothing to send - but still drop any transient (e.g. empty) pending entry.
+      if (secretKey != null) this.pendingSecrets.delete(secretKey);
+      return;
+    }
+    try {
+      await this.api.put("/api/profile/credentials", {
+        id: config.id,
+        provider: config.service,
+        label: config.service,
+        value: token,
+        priority: config.priority,
+        isActive: config.isActive,
+      });
+    } finally {
+      // Clear the transient plaintext secret whether or not the PUT succeeded - 
+      // a failed save must not leave a credential sitting in memory until the
+      // next profile switch or restart. A retry re-populates it via setSecret().
+      if (secretKey != null) this.pendingSecrets.delete(secretKey);
+    }
   }
 
   async listDebridConfigs(): Promise<DebridConfigRecord[]> {
@@ -539,7 +589,7 @@ export class RemoteStore implements Store, SecretStore {
     return 0;
   }
 
-  async putMedia(_item: MediaItem): Promise<void> {
+  async putMedia(_item: MediaItem, _key?: string): Promise<void> {
     // Server-side media cache endpoints come after stream/search APIs.
   }
 
@@ -555,11 +605,40 @@ export class RemoteStore implements Store, SecretStore {
     return null;
   }
 
+  async getCachedResolutions(_mediaIds: string[]): Promise<CachedResolutionRecord[]> {
+    return [];
+  }
+
   async listCachedResolutions(): Promise<CachedResolutionRecord[]> {
     return [];
   }
 
   async deleteCachedResolution(_mediaId: string): Promise<void> {
     // No local cache to delete in Server Mode.
+  }
+
+  // ---- Desktop downloads ---------------------------------------------------
+
+  async saveDownload(_record: DownloadRecord): Promise<void> {
+    throw unsupportedRemoteWrite("saveDownload");
+  }
+
+  async updateDownload(
+    _jobId: string,
+    _changes: Partial<Omit<DownloadRecord, "jobId" | "createdAt">>,
+  ): Promise<DownloadRecord | null> {
+    throw unsupportedRemoteWrite("updateDownload");
+  }
+
+  async deleteDownload(_jobId: string): Promise<void> {
+    throw unsupportedRemoteWrite("deleteDownload");
+  }
+
+  async listDownloads(): Promise<DownloadRecord[]> {
+    return [];
+  }
+
+  subscribeDownloads(_listener: (records: DownloadRecord[]) => void): () => void {
+    return () => {};
   }
 }

@@ -143,7 +143,7 @@ struct MediaPreview: Codable, Sendable, Identifiable, Equatable {
     var posterPath: String?
     var imdbRating: Double?
     var tmdbId: Int?
-    /// Optional 16:9 backdrop path — populated for hero/spotlight surfaces.
+    /// Optional 16:9 backdrop path - populated for hero/spotlight surfaces.
     /// Declared last with a default so the memberwise init and Codable stay
     /// backward-compatible with existing call sites and cached JSON.
     var backdropPath: String? = nil

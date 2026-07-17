@@ -1,4 +1,4 @@
-// Genre catalog tiles — the "Browse categories" entry grid.
+// Genre catalog tiles - the "Browse categories" entry grid.
 //
 // Ported from VPStudio's ExploreGenreCatalog: a fixed set of mood/genre tiles
 // plus two special "New Releases" / "Coming Soon" tiles. Tapping a genre tile
@@ -57,7 +57,7 @@ export const GENRE_CATALOG: GenreCatalogTile[] = [
 ];
 
 /** The genre id for a tile under a media type (null when it doesn't apply).
- * `MediaType` is "movie" | "series" — anything non-movie maps to the TV id. */
+ * `MediaType` is "movie" | "series" - anything non-movie maps to the TV id. */
 export function tileGenreId(tile: GenreCatalogTile, type: MediaType): number | null {
   return type === "movie" ? tile.movieGenreId : tile.tvGenreId;
 }

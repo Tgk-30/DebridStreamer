@@ -501,6 +501,29 @@ describe("DebridManager checkCacheAll aggregation", () => {
     expect(merged.h.service).toBe(DebridServiceTypeNS.allDebrid);
   });
 
+  it("merges the same torrent echoed in different cases to one lowercase key", async () => {
+    // Providers return infoHashes in different cases (RD tends uppercase). The
+    // same torrent from two providers must merge under one canonical lowercase
+    // key - not split in two - or the caller's lookup misses and a cached
+    // stream reads as uncached.
+    const upper = new StubDebridService({
+      serviceType: DebridServiceTypeNS.allDebrid,
+      cache: { ABCDEF123: cached() },
+    });
+    const lower = new StubDebridService({
+      serviceType: DebridServiceTypeNS.premiumize,
+      cache: { abcdef123: cached() },
+    });
+    const manager = new DebridManager();
+    manager.addService(upper);
+    manager.addService(lower);
+
+    const merged = await manager.checkCacheAll(["ABCDEF123"]);
+    expect(Object.keys(merged)).toEqual(["abcdef123"]);
+    // Higher-priority (index 0) service still binds the merged entry.
+    expect(merged.abcdef123.service).toBe(DebridServiceTypeNS.allDebrid);
+  });
+
   it("a later cached result still overrides an earlier non-cached one", async () => {
     // index 0 says notCached, index 1 says cached -> cached wins regardless of order.
     const s1 = new StubDebridService({

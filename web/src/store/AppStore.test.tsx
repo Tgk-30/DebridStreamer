@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Component/hook tests for the AppStore provider — the single source of truth for
+// Component/hook tests for the AppStore provider - the single source of truth for
 // routing, the Detail/Browse overlays, the shared services, and the persisted
 // settings / watchlist / history.
 //
@@ -18,7 +18,7 @@ import {
   it,
   vi,
 } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { render, renderHook, act, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import type { MediaPreview } from "../models/media";
 import type { AppServices, AppSettings } from "../data/settings";
@@ -52,12 +52,17 @@ vi.mock("../data/settings", () => ({
   loadSettings: () => loadSettings(),
   loadSettingsFromStore: () => loadSettingsFromStore(),
   saveSettingsToStore: (s: AppSettings) => saveSettingsToStore(s),
+  // Identity in tests: the one-time design refresh is exercised in its own
+  // unit suite; here it must not mutate the hydrated fixture.
+  applyDesignRefresh: (s: AppSettings) => s,
+  markDesignRefreshApplied: () => {},
 }));
 
 const loadWatchlist = vi.fn<() => Promise<MediaPreview[]>>();
 const loadHistory = vi.fn<() => Promise<MediaPreview[]>>();
 const loadContinueWatching = vi.fn<() => Promise<unknown[]>>();
 const recordHistory = vi.fn<(item: MediaPreview, opts?: unknown) => Promise<MediaPreview[]>>();
+const storeRecordHistory = vi.fn<(entry: unknown) => Promise<unknown>>();
 const toggleWatchlistStore = vi.fn<(item: MediaPreview) => Promise<MediaPreview[]>>();
 const removeFromWatchlistStore = vi.fn<(id: string) => Promise<MediaPreview[]>>();
 
@@ -71,20 +76,50 @@ vi.mock("../data/library", () => ({
 }));
 
 const listCachedResolutions = vi.fn<() => Promise<Array<{ mediaId: string }>>>();
+const getCachedResolutions = vi.fn<(ids: string[]) => Promise<Array<{ mediaId: string }>>>();
 const deleteCachedResolution = vi.fn<(id: string) => Promise<void>>();
 const isInWatchlist = vi.fn<(id: string) => Promise<boolean>>();
 const addToWatchlist = vi.fn<(preview: MediaPreview) => Promise<void>>();
 const fakeStore = {
   listCachedResolutions: () => listCachedResolutions(),
+  getCachedResolutions: (ids: string[]) => getCachedResolutions(ids),
   deleteCachedResolution: (id: string) => deleteCachedResolution(id),
   isInWatchlist: (id: string) => isInWatchlist(id),
   addToWatchlist: (preview: MediaPreview) => addToWatchlist(preview),
+  recordHistory: (entry: unknown) => storeRecordHistory(entry),
   resetProfileCache: vi.fn(),
 };
 const getStore = vi.fn(() => fakeStore);
+const swapLocalProfileStore = vi.fn<(name: string) => Promise<void>>();
 
 vi.mock("../storage", () => ({
   getStore: () => getStore(),
+  swapLocalProfileStore: (name: string) => swapLocalProfileStore(name),
+}));
+
+const registryProfiles = vi.hoisted(() => [
+  { id: "default", name: "You", isDefault: true, isAdmin: true, createdAt: 1 },
+]);
+const ensureDefaultProfile = vi.fn();
+const getActiveProfileId = vi.fn();
+const getProfile = vi.fn();
+const listProfiles = vi.fn();
+const isMultiUserEnabled = vi.fn();
+const setActiveProfileId = vi.fn();
+const updateProfileRecord = vi.fn();
+vi.mock("../storage/ProfileRegistry", () => ({
+  dbNameForProfile: (profile: { id: string; isDefault: boolean }) => profile.isDefault ? "debridstreamer" : `debridstreamer_p_${profile.id}`,
+  ensureDefaultProfile: () => ensureDefaultProfile(),
+  getActiveProfileId: () => getActiveProfileId(),
+  getProfile: (id: string) => getProfile(id),
+  listProfiles: () => listProfiles(),
+  isMultiUserEnabled: () => isMultiUserEnabled(),
+  setActiveProfileId: (id: string) => setActiveProfileId(id),
+  updateProfileRecord: (id: string, patch: unknown) => updateProfileRecord(id, patch),
+}));
+const verifyPassword = vi.fn();
+vi.mock("../lib/passwordHash", () => ({
+  verifyPassword: (plain: string, hash: string) => verifyPassword(plain, hash),
 }));
 
 // RemoteStore identity matters: AppStore does `store instanceof RemoteStore`.
@@ -122,7 +157,7 @@ vi.mock("../lib/serverMode", () => ({
 }));
 
 // Imported AFTER mocks (vi.mock is hoisted).
-import { AppStoreProvider, useAppStore, useSimpleMode } from "./AppStore";
+import { AppStoreProvider, useAppActions, useAppStore, useSimpleMode } from "./AppStore";
 import {
   ServerSessionProvider,
   type ServerSession,
@@ -136,6 +171,9 @@ import { RemoteStore as MockRemoteStore } from "../storage/RemoteStore";
 function settings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
     tmdbKey: "",
+    traktClientId: "",
+    traktClientSecret: "",
+    traktScrobbleEnabled: false,
     omdbKey: "",
     debridTokens: [],
     sources: [],
@@ -144,6 +182,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     aiApiKey: "",
     aiModel: "",
     ollamaEndpoint: "http://localhost:11434",
+    networkMode: "standard",
     theme: "midnight",
     appearanceAccent: "theme",
     appearanceDensity: "comfortable",
@@ -156,8 +195,12 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     appearanceHeroScale: "standard",
     appearancePanelContrast: "standard",
     appearanceNavLabels: "auto",
+    appearanceNavPosition: "side",
     appearanceNavTint: "balanced",
     appearancePosterSize: "default",
+    appearanceDefaultTab: "discover",
+    appearanceNavOrder: [],
+    appearanceNavHidden: [],
     subtitleFontScale: 1,
     subtitleTextColor: "#ffffff",
     subtitleBgOpacity: 0.55,
@@ -171,7 +214,13 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     dataSaver: false,
     autoAdvanceEpisodes: true,
     showWatchStats: false,
+    showPosterRatings: true,
     transcode: false,
+    ratingScale: "ten",
+    preferredExternalPlayer: "",
+    builtInPlayer: true,
+    userName: "",
+    userAvatar: "",
     ...overrides,
   };
 }
@@ -213,12 +262,23 @@ beforeEach(() => {
   loadHistory.mockResolvedValue([]);
   loadContinueWatching.mockResolvedValue([]);
   recordHistory.mockResolvedValue([]);
+  storeRecordHistory.mockResolvedValue({});
   toggleWatchlistStore.mockResolvedValue([]);
   removeFromWatchlistStore.mockResolvedValue([]);
   listCachedResolutions.mockResolvedValue([]);
+  getCachedResolutions.mockResolvedValue([]);
   deleteCachedResolution.mockResolvedValue(undefined);
   isInWatchlist.mockResolvedValue(false);
   addToWatchlist.mockResolvedValue(undefined);
+  ensureDefaultProfile.mockResolvedValue(registryProfiles[0]);
+  getActiveProfileId.mockResolvedValue("default");
+  getProfile.mockImplementation(async (id: string) => registryProfiles.find((profile) => profile.id === id));
+  listProfiles.mockResolvedValue(registryProfiles);
+  isMultiUserEnabled.mockResolvedValue(true);
+  setActiveProfileId.mockResolvedValue(undefined);
+  updateProfileRecord.mockResolvedValue(undefined);
+  swapLocalProfileStore.mockResolvedValue(undefined);
+  verifyPassword.mockResolvedValue(true);
   schedulerKick.mockResolvedValue(null);
   getStore.mockReturnValue(fakeStore);
   isServerMode.mockReturnValue(false);
@@ -241,6 +301,115 @@ describe("useAppStore guard", () => {
   });
 });
 
+describe("useAppActions", () => {
+  it("does not re-render an action-only consumer when detailItem changes", async () => {
+    let actionRenders = 0;
+    let openDetail!: (item: MediaPreview) => void;
+    function ActionProbe() {
+      useAppActions();
+      actionRenders += 1;
+      return null;
+    }
+    function StateDriver() {
+      openDetail = useAppStore().openDetail;
+      return null;
+    }
+
+    render(
+      <ServerSessionProvider initial={null}>
+        <AppStoreProvider>
+          <ActionProbe />
+          <StateDriver />
+        </AppStoreProvider>
+      </ServerSessionProvider>,
+    );
+    await waitFor(() => expect(openDetail).toBeTypeOf("function"));
+    const beforeDetailOpen = actionRenders;
+
+    act(() => openDetail(media("detail-item")));
+
+    expect(actionRenders).toBe(beforeDetailOpen);
+  });
+});
+
+describe("Local profile switching", () => {
+  it("blocks a wrong password before swapping the Local Mode database", async () => {
+    const locked = {
+      id: "kid", name: "Kid", isDefault: false, isAdmin: false,
+      passwordHash: "pbkdf2:v1:test", createdAt: 2,
+    };
+    registryProfiles.push(locked);
+    getProfile.mockImplementation(async (id: string) => registryProfiles.find((profile) => profile.id === id));
+    verifyPassword.mockResolvedValue(false);
+    const { result } = await renderStore();
+
+    let switched: { ok: boolean; reason?: string } | undefined;
+    await act(async () => {
+      switched = await result.current.switchLocalProfile("kid", "wrong");
+    });
+
+    expect(switched).toEqual({ ok: false, reason: "bad-password" });
+    expect(swapLocalProfileStore).not.toHaveBeenCalled();
+    registryProfiles.pop();
+  });
+
+  it("does NOT swap the database at boot for the default profile (zero migration)", async () => {
+    await renderStore();
+    // The default profile IS the already-open legacy "debridstreamer" DB, so an
+    // existing single user must never close/reopen it at boot.
+    expect(swapLocalProfileStore).not.toHaveBeenCalled();
+  });
+
+  it("swaps to the active non-default profile's database at boot", async () => {
+    const other = { id: "abc", name: "Other", isDefault: false, isAdmin: false, createdAt: 2 };
+    registryProfiles.push(other);
+    getActiveProfileId.mockResolvedValue("abc");
+    await renderStore();
+    expect(swapLocalProfileStore).toHaveBeenCalledWith("debridstreamer_p_abc");
+    registryProfiles.pop();
+  });
+
+  it("switching an unprotected profile swaps its DB, marks it active, and reloads", async () => {
+    const other = { id: "abc", name: "Other", isDefault: false, isAdmin: false, createdAt: 2 };
+    registryProfiles.push(other);
+    const { result } = await renderStore();
+    expect(swapLocalProfileStore).not.toHaveBeenCalled(); // booted on default
+    getActiveProfileId.mockResolvedValue("abc");
+
+    let res: { ok: boolean; reason?: string } | undefined;
+    await act(async () => {
+      res = await result.current.switchLocalProfile("abc");
+    });
+
+    expect(res).toEqual({ ok: true });
+    expect(swapLocalProfileStore).toHaveBeenCalledWith("debridstreamer_p_abc");
+    expect(setActiveProfileId).toHaveBeenCalledWith("abc");
+    expect(updateProfileRecord).toHaveBeenCalledWith("abc", expect.objectContaining({ lastUsedAt: expect.any(Number) }));
+    expect(result.current.activeProfile?.id).toBe("abc");
+    registryProfiles.pop();
+  });
+
+  it("returns not-found (no swap) when the target profile is gone", async () => {
+    const { result } = await renderStore();
+    getProfile.mockResolvedValueOnce(undefined);
+    let res: { ok: boolean; reason?: string } | undefined;
+    await act(async () => {
+      res = await result.current.switchLocalProfile("ghost");
+    });
+    expect(res).toEqual({ ok: false, reason: "not-found" });
+    expect(swapLocalProfileStore).not.toHaveBeenCalled();
+  });
+
+  it("still hydrates when the profile registry throws (no permanent spinner)", async () => {
+    ensureDefaultProfile.mockRejectedValue(new Error("idb blocked"));
+    // renderStore resolves only once hydrated === true; a boot that rejected the
+    // profile chain without the guard would hang here and fail the test.
+    const { result } = await renderStore();
+    expect(result.current.hydrated).toBe(true);
+    expect(result.current.activeProfile).toBeNull();
+  });
+});
+
 describe("initial load / hydration", () => {
   it("starts on the discover route with overlays closed", async () => {
     const { result } = await renderStore();
@@ -248,6 +417,14 @@ describe("initial load / hydration", () => {
     expect(result.current.detailItem).toBeNull();
     expect(result.current.browseContext).toBeNull();
     expect(result.current.pendingSearch).toBeNull();
+  });
+
+  it("lands on the user's chosen default tab after hydration", async () => {
+    loadSettingsFromStore.mockResolvedValue(
+      settings({ appearanceDefaultTab: "watchlist" }),
+    );
+    const { result } = await renderStore();
+    expect(result.current.route).toBe("watchlist");
   });
 
   it("hydrates settings/watchlist/history/continueWatching/cachedResolutions from the Store", async () => {
@@ -335,14 +512,14 @@ describe("browse overlay", () => {
 });
 
 describe("openDetail / closeDetail", () => {
-  it("sets the detail item and records a (viewed) history entry, then refreshes history", async () => {
-    recordHistory.mockResolvedValue([]);
-    loadHistory.mockResolvedValueOnce([]); // mount
+  it("sets the detail item and adopts the history list recordHistory read back", async () => {
     const { result } = await renderStore();
 
-    // After mount, loadHistory is refreshed via recordHistory().then(refreshHistory).
-    loadHistory.mockResolvedValue([media("d1")]);
-    loadContinueWatching.mockResolvedValue([]);
+    // recordHistory already returns the refreshed list, so a title open must
+    // NOT re-read history or run the continue-watching scan.
+    recordHistory.mockResolvedValue([media("d1")]);
+    loadHistory.mockClear();
+    loadContinueWatching.mockClear();
 
     act(() => result.current.openDetail(media("d1")));
     expect(result.current.detailItem).toEqual(media("d1"));
@@ -350,9 +527,9 @@ describe("openDetail / closeDetail", () => {
     // wrapper forwards the (undefined) second arg, so match it explicitly.
     expect(recordHistory).toHaveBeenCalledWith(media("d1"), undefined);
 
-    await waitFor(() =>
-      expect(result.current.history).toEqual([media("d1")]),
-    );
+    await waitFor(() => expect(result.current.history).toEqual([media("d1")]));
+    expect(loadHistory).not.toHaveBeenCalled();
+    expect(loadContinueWatching).not.toHaveBeenCalled();
 
     act(() => result.current.closeDetail());
     expect(result.current.detailItem).toBeNull();
@@ -385,17 +562,28 @@ describe("search / pendingSearch", () => {
 });
 
 describe("updateSettings", () => {
-  it("optimistically updates in-memory settings, rebuilds services, and persists", async () => {
+  it("optimistically updates in-memory settings without rebuilding services for unrelated preferences", async () => {
     const { result } = await renderStore();
     buildServices.mockClear();
 
     const next = settings({ theme: "noir", dataSaver: true });
-    act(() => result.current.updateSettings(next));
+    act(() => void result.current.updateSettings(next));
 
     expect(result.current.settings).toEqual(next);
-    // services rebuilt because settings identity changed.
-    expect(buildServices).toHaveBeenCalledWith(next);
+    // Theme/data-saver are not service inputs, so service identities and the
+    // download runtime dependency remain stable through this settings save.
+    expect(buildServices).not.toHaveBeenCalled();
     await waitFor(() => expect(saveSettingsToStore).toHaveBeenCalledWith(next));
+  });
+
+  it("rebuilds services when a service configuration input changes", async () => {
+    const { result } = await renderStore();
+    buildServices.mockClear();
+
+    const next = settings({ tmdbKey: "new-key" });
+    act(() => void result.current.updateSettings(next));
+
+    expect(buildServices).toHaveBeenCalledWith(next);
   });
 
   it("surfaces a persistence failure to console.error without throwing", async () => {
@@ -404,7 +592,7 @@ describe("updateSettings", () => {
     const { result } = await renderStore();
 
     const next = settings({ theme: "noir" });
-    act(() => result.current.updateSettings(next));
+    act(() => void result.current.updateSettings(next));
     // In-memory value is still applied for the session.
     expect(result.current.settings).toEqual(next);
     await waitFor(() =>
@@ -549,7 +737,9 @@ describe("recordResume", () => {
     const item = media("r1");
 
     act(() => result.current.recordResume(item, 95, 100));
-    expect(recordHistory).toHaveBeenCalledWith(item, {
+    expect(storeRecordHistory).toHaveBeenCalledWith({
+      mediaId: item.id,
+      preview: item,
       progressSeconds: 95,
       durationSeconds: 100,
       completed: true,
@@ -562,7 +752,9 @@ describe("recordResume", () => {
     const item = media("r5");
 
     act(() => result.current.recordResume(item, 42, 100, "s2e5"));
-    expect(recordHistory).toHaveBeenCalledWith(item, {
+    expect(storeRecordHistory).toHaveBeenCalledWith({
+      mediaId: item.id,
+      preview: item,
       progressSeconds: 42,
       durationSeconds: 100,
       completed: false,
@@ -574,56 +766,135 @@ describe("recordResume", () => {
     const { result } = await renderStore();
 
     act(() => result.current.recordResume(media("r2"), 40, 100));
-    expect(recordHistory).toHaveBeenCalledWith(media("r2"), {
+    expect(storeRecordHistory).toHaveBeenCalledWith({
+      mediaId: "r2",
+      preview: media("r2"),
       progressSeconds: 40,
       durationSeconds: 100,
       completed: false,
       episodeId: null,
     });
 
-    recordHistory.mockClear();
+    storeRecordHistory.mockClear();
     act(() => result.current.recordResume(media("r3"), 10, null));
-    expect(recordHistory).toHaveBeenCalledWith(media("r3"), {
+    expect(storeRecordHistory).toHaveBeenCalledWith({
+      mediaId: "r3",
+      preview: media("r3"),
       progressSeconds: 10,
       durationSeconds: null,
       completed: false,
       episodeId: null,
     });
 
-    recordHistory.mockClear();
+    storeRecordHistory.mockClear();
     act(() => result.current.recordResume(media("r4"), 10, 0));
-    expect(recordHistory).toHaveBeenCalledWith(media("r4"), {
+    expect(storeRecordHistory).toHaveBeenCalledWith({
+      mediaId: "r4",
+      preview: media("r4"),
       progressSeconds: 10,
       durationSeconds: 0,
       completed: false,
       episodeId: null,
     });
   });
+
+  it("persists progress without refreshing the history slices or provider state", async () => {
+    const { result } = await renderStore();
+    loadHistory.mockClear();
+    loadContinueWatching.mockClear();
+    const historyBefore = result.current.history;
+    const continueWatchingBefore = result.current.continueWatching;
+
+    act(() => result.current.recordResume(media("no-refresh"), 30, 100));
+    await waitFor(() => expect(storeRecordHistory).toHaveBeenCalledTimes(1));
+
+    expect(loadHistory).not.toHaveBeenCalled();
+    expect(loadContinueWatching).not.toHaveBeenCalled();
+    expect(result.current.history).toBe(historyBefore);
+    expect(result.current.continueWatching).toBe(continueWatchingBefore);
+  });
+
+  it("refreshes continue watching after the final progress write at player close", async () => {
+    let finishWrite: (value: unknown) => void = () => {};
+    storeRecordHistory.mockReturnValue(
+      new Promise((resolve) => {
+        finishWrite = resolve;
+      }),
+    );
+    const { result } = await renderStore();
+    loadContinueWatching.mockClear();
+    const updated = {
+      mediaId: "resume-after-close",
+      episodeId: null,
+      progressSeconds: 80,
+      durationSeconds: 100,
+      completed: false,
+    };
+    loadContinueWatching.mockResolvedValue([updated]);
+
+    act(() =>
+      result.current.recordResume(media("resume-after-close"), 80, 100),
+    );
+    const closeRefresh = result.current.refreshContinueWatching();
+    expect(loadContinueWatching).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishWrite({});
+      await closeRefresh;
+    });
+
+    expect(loadContinueWatching).toHaveBeenCalledTimes(1);
+    expect(result.current.continueWatching).toEqual([updated]);
+  });
 });
 
 describe("refreshCachedResolutions", () => {
-  it("re-reads the cached-resolution table into the keyed map", async () => {
+  it("re-reads only watchlist cached resolutions into the keyed map", async () => {
+    loadWatchlist.mockResolvedValue([media("a"), media("b")]);
     const { result } = await renderStore();
-    listCachedResolutions.mockResolvedValue([{ mediaId: "a" }, { mediaId: "b" }]);
+    getCachedResolutions.mockResolvedValue([{ mediaId: "a" }, { mediaId: "b" }]);
 
     await act(async () => {
       await result.current.refreshCachedResolutions();
     });
+    expect(getCachedResolutions).toHaveBeenLastCalledWith(["a", "b"]);
     expect(Object.keys(result.current.cachedResolutions).sort()).toEqual([
       "a",
       "b",
     ]);
   });
 
-  it("swallows a listCachedResolutions rejection (best-effort)", async () => {
+  it("swallows a keyed cached-resolution read rejection (best-effort)", async () => {
     const { result } = await renderStore();
     const before = result.current.cachedResolutions;
-    listCachedResolutions.mockRejectedValue(new Error("boom"));
+    getCachedResolutions.mockRejectedValue(new Error("boom"));
     await act(async () => {
       await result.current.refreshCachedResolutions();
     });
     // No throw; map unchanged.
     expect(result.current.cachedResolutions).toEqual(before);
+  });
+
+  it("uses a keyed read for five watchlist badges instead of the full cache table", async () => {
+    const watchlist = Array.from({ length: 5 }, (_, index) => media(`watch-${index}`));
+    const completeCache = Array.from({ length: 100 }, (_, index) => ({
+      mediaId: `cache-${index}`,
+    }));
+    loadWatchlist.mockResolvedValue(watchlist);
+    listCachedResolutions.mockResolvedValue(completeCache);
+    const { result } = await renderStore();
+    const scopedRows = watchlist.map((item) => ({ mediaId: item.id }));
+    getCachedResolutions.mockResolvedValue(scopedRows);
+    getCachedResolutions.mockClear();
+
+    await act(async () => {
+      await result.current.refreshCachedResolutions();
+    });
+
+    expect(getCachedResolutions).toHaveBeenCalledWith(watchlist.map((item) => item.id));
+    expect(Object.keys(result.current.cachedResolutions).sort()).toEqual(
+      watchlist.map((item) => item.id).sort(),
+    );
   });
 });
 
@@ -640,7 +911,7 @@ describe("auto-resolve scheduler effect", () => {
     await renderStore();
     expect(schedulerStart).toHaveBeenCalled();
     // The effect calls refreshCachedResolutions() immediately on start.
-    await waitFor(() => expect(listCachedResolutions).toHaveBeenCalled());
+    await waitFor(() => expect(getCachedResolutions).toHaveBeenCalled());
   });
 });
 
@@ -719,11 +990,11 @@ describe("simpleMode wiring", () => {
     expect(result.current.simpleMode).toBe(false);
   });
 
-  it("Server Mode defaults to simple=true when the session has not loaded", async () => {
+  it("Server Mode defaults to advanced when the session has not loaded", async () => {
     isServerMode.mockReturnValue(true);
     loadSettingsFromStore.mockResolvedValue(settings({ simpleMode: false }));
     const { result } = await renderStore(null);
-    expect(result.current.simpleMode).toBe(true);
+    expect(result.current.simpleMode).toBe(false);
   });
 });
 

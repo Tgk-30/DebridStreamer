@@ -158,10 +158,15 @@ export class TorBoxService implements DebridService {
     const fileName = selectedFile?.name ?? "TorBox Stream";
     const size = selectedFile?.sizeBytes ?? 0;
 
+    // requestdl is the ONE TorBox endpoint that authenticates via a `token=`
+    // QUERY param, not the Bearer header - its API requires it (a header-only
+    // request 422s with {"loc":["query","token"],"msg":"Field required"}), and
+    // the returned link is meant to be usable directly. The Bearer header
+    // requestRaw also attaches is harmless/ignored here.
     const data = await this.requestRaw(
       "/torrents/requestdl",
       "GET",
-      `torrent_id=${torrentId}&file_id=${fileId}&zip_link=false`,
+      `token=${encodeURIComponent(this.apiToken)}&torrent_id=${torrentId}&file_id=${fileId}&zip_link=false`,
     );
 
     const json = parseJSONObject(data);

@@ -2,12 +2,12 @@
 //
 // The proxy fetches a decrypted upstream URL on the server's behalf. Without a
 // guard, an authenticated user (or, with DS_SERVER_ALLOW_RAW_STREAM_URLS, the
-// dev default) — or a malicious/redirecting debrid response — could make the
+// dev default) - or a malicious/redirecting debrid response - could make the
 // server fetch internal services or cloud metadata (http://169.254.169.254/...,
 // loopback, RFC1918, etc.). We therefore (a) allow only http/https, (b) resolve
 // the host and refuse any private/reserved address, and (c) follow redirects
 // ourselves, re-validating each hop (so a public URL can't 302 to an internal
-// one, and the single-IP property is preserved — the client never connects to
+// one, and the single-IP property is preserved - the client never connects to
 // the redirected host directly).
 //
 // Residual: this validates the DNS result then fetches by hostname, so a
@@ -108,7 +108,7 @@ function isPrivateOrReservedV6(ip: string): boolean {
   const lower = ip.toLowerCase();
   // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) addresses embed
   // an IPv4 in the low 32 bits when the high 80 bits are zero. Validate that
-  // embedded IPv4 with the v4 rules — this closes the hex-grouped bypass:
+  // embedded IPv4 with the v4 rules - this closes the hex-grouped bypass:
   // ::ffff:7f00:1 (127.0.0.1), ::ffff:a9fe:a9fe (169.254.169.254 metadata),
   // the fully-expanded 0:0:0:0:0:ffff:127.0.0.1, and ::a.b.c.d.
   const h = expandV6Hextets(lower);
@@ -145,7 +145,7 @@ export function isPrivateOrReserved(ip: string): boolean {
 /**
  * Throws a 502 unless `raw` is an http(s) URL pointing at an allowed host. The
  * scheme check (http/https only) is always enforced. The private/reserved-address
- * block is enforced unless `allowPrivate` is true — which the caller sets when the
+ * block is enforced unless `allowPrivate` is true - which the caller sets when the
  * operator has explicitly opted into arbitrary/raw URLs (DS_SERVER_ALLOW_RAW_STREAM_URLS,
  * the dev default), so localhost/LAN upstreams work for local testing and on-LAN
  * sources. In production that flag is off, so the full SSRF guard applies.
@@ -199,7 +199,7 @@ export async function fetchUpstreamSafely(
       try {
         await response.body?.cancel();
       } catch {
-        // ignore — we're discarding this hop's body
+        // ignore - we're discarding this hop's body
       }
       current = next;
       continue;

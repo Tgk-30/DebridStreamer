@@ -1,11 +1,11 @@
-// TasteProfile — assembles a short plain-text "taste profile" from the user's
+// TasteProfile - assembles a short plain-text "taste profile" from the user's
 // own local signals (recent taste events incl. like/dislike, watch history, and
 // watchlist), to personalize the "Would I Like This?" analysis.
 //
 // Ported from VPStudio's AssistantContextAssembler (the context-notes half): it
 // applies a ~90-day linear recency decay (floored at 0.1) so recent signals
 // dominate, then emits a compact, plain-text context the AI prompt prefixes onto
-// the title being analyzed. When there is no signal at all it returns "" — the
+// the title being analyzed. When there is no signal at all it returns "" - the
 // caller still works (the analysis is then non-personalized).
 //
 // Where VPStudio reads a denormalized UserTasteProfile (liked/disliked genres),
@@ -19,7 +19,7 @@
 import type { Store } from "../../storage/types";
 import type { TasteEventRecord } from "../../storage/models";
 
-/** Recency-decay window (days) — signals older than this floor at the minimum
+/** Recency-decay window (days) - signals older than this floor at the minimum
  * weight. Mirrors VPStudio's `recencyWindowDays`. */
 const RECENCY_WINDOW_DAYS = 90;
 /** The minimum recency weight, so old signals still count a little. Mirrors
@@ -32,7 +32,7 @@ const MAX_CONTEXT_CHARS = 1500;
 /** Settings KV key the assembled context is cached under (value is a JSON
  * `{ context, builtAt }` envelope). */
 const CACHE_KEY = "tasteContextCache";
-/** Cache TTL — 24h. */
+/** Cache TTL - 24h. */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** A cached taste-context envelope persisted in the settings KV table. */
@@ -154,22 +154,78 @@ async function assembleTasteContext(store: Store, now: number): Promise<string> 
   const dislikedTitles: string[] = [];
   const likedSeen = new Set<string>();
   const dislikedSeen = new Set<string>();
+  // Numeric ratings (1–10 / 0–100), collected with their normalized /10 score.
+  const ratedHigh: string[] = [];
+  const ratedLow: string[] = [];
+  const ratedHighSeen = new Set<string>();
+  const ratedLowSeen = new Set<string>();
+  // Only the newest rating per title counts (events arrive newest-first), so a
+  // re-rate supersedes the old score instead of stacking or contradicting it.
+  const ratedSeen = new Set<string>();
 
   for (const event of events) {
-    if (event.eventType !== "liked" && event.eventType !== "disliked") continue;
     const weight = recencyDecay(event.createdAt, now);
-    const target = event.eventType === "liked" ? likedGenreScore : dislikedGenreScore;
-    for (const genre of genresFromEvent(event)) {
-      target.set(genre, (target.get(genre) ?? 0) + weight);
+
+    if (event.eventType === "liked" || event.eventType === "disliked") {
+      const target = event.eventType === "liked" ? likedGenreScore : dislikedGenreScore;
+      for (const genre of genresFromEvent(event)) {
+        target.set(genre, (target.get(genre) ?? 0) + weight);
+      }
+      const title = titleFromEvent(event);
+      if (title != null) {
+        if (event.eventType === "liked") pushUnique(likedTitles, title, likedSeen, 8);
+        else pushUnique(dislikedTitles, title, dislikedSeen, 8);
+      }
+      continue;
     }
-    const title = titleFromEvent(event);
-    if (title != null) {
-      if (event.eventType === "liked") pushUnique(likedTitles, title, likedSeen, 8);
-      else pushUnique(dislikedTitles, title, dislikedSeen, 8);
+
+    if (event.eventType === "rated") {
+      const title = titleFromEvent(event);
+      // Dedupe by the stable media id (falling back to title) so two different
+      // titles that happen to share a name don't collide, and a re-rate of the
+      // SAME media is superseded by its newest event. The seen-check comes FIRST
+      // (before reading norm) so a newest "cleared" rating - one with no norm - 
+      // still suppresses an older score for that media instead of letting it leak.
+      const key =
+        event.mediaId != null && event.mediaId.length > 0
+          ? `id:${event.mediaId}`
+          : title != null
+            ? `t:${title.toLowerCase()}`
+            : null;
+      if (key != null) {
+        if (ratedSeen.has(key)) continue; // older duplicate - newest already decided
+        ratedSeen.add(key);
+      }
+      // metadata.norm is the rating on a [0,1] scale, so it feeds the profile the
+      // same way regardless of whether the user rates out of 10 or 100. A cleared
+      // rating has no norm → NaN → contributes nothing (media already marked seen).
+      const norm = Number(event.metadata?.norm);
+      if (!Number.isFinite(norm)) continue;
+      const clamped = Math.min(1, Math.max(0, norm));
+      // Scale the genre signal by distance from neutral (5/10): a 10/10 counts
+      // like a full like, a 7/10 as a partial one, a 5/10 as nothing.
+      const magnitude = Math.abs(clamped * 2 - 1);
+      const scoreOutOf10 = Math.round(clamped * 10);
+      if (clamped >= 0.7) {
+        for (const genre of genresFromEvent(event)) {
+          likedGenreScore.set(genre, (likedGenreScore.get(genre) ?? 0) + weight * magnitude);
+        }
+        if (title != null) {
+          pushUnique(ratedHigh, `${title} (${scoreOutOf10}/10)`, ratedHighSeen, 8);
+        }
+      } else if (clamped <= 0.4) {
+        for (const genre of genresFromEvent(event)) {
+          dislikedGenreScore.set(genre, (dislikedGenreScore.get(genre) ?? 0) + weight * magnitude);
+        }
+        if (title != null) {
+          pushUnique(ratedLow, `${title} (${scoreOutOf10}/10)`, ratedLowSeen, 8);
+        }
+      }
+      continue;
     }
   }
 
-  // Recently-watched titles (newest first) — already recency-ordered by the
+  // Recently-watched titles (newest first) - already recency-ordered by the
   // Store, so just take the display titles off the previews.
   const recentlyWatched: string[] = [];
   const watchedSeen = new Set<string>();
@@ -199,6 +255,12 @@ async function assembleTasteContext(store: Store, now: number): Promise<string> 
   }
   if (dislikedTitles.length > 0) {
     notes.push(`Disliked titles: ${dislikedTitles.join(", ")}`);
+  }
+  if (ratedHigh.length > 0) {
+    notes.push(`Rated highly: ${ratedHigh.join(", ")}`);
+  }
+  if (ratedLow.length > 0) {
+    notes.push(`Rated low: ${ratedLow.join(", ")}`);
   }
   if (recentlyWatched.length > 0) {
     notes.push(`Recently watched: ${recentlyWatched.join(", ")}`);

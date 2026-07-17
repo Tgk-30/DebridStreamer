@@ -1,4 +1,4 @@
-/* Debrid library manager — toolbar, bulk bar, and the torrents table. */
+/* Debrid library manager - toolbar, bulk bar, and the torrents table. */
 
 .dl-cta {
   align-self: flex-start;
@@ -34,7 +34,7 @@
   display: flex;
   gap: var(--sp-sm);
 }
-/* Active filter/tab chip — accent fill, used only for the selected one. */
+/* Active filter/tab chip - accent fill, used only for the selected one. */
 .dl-chip-active,
 .hl-tab-active {
   background: rgba(var(--accent-rgb), 0.16) !important;
@@ -167,7 +167,10 @@
    the real rows arrive. The shimmer keyframe is global (components/MediaCard.css). */
 
 .dl-skel-table {
-  /* Decorative placeholder — keep it quiet relative to real, interactive rows. */
+  /* Decorative placeholder - keep it quiet relative to real, interactive rows. */
+  position: relative;
+  background: var(--glass-tint-rest);
+  border-radius: var(--r-md);
   pointer-events: none;
 }
 .dl-skel-row:hover {
@@ -183,7 +186,7 @@
     rgba(255, 255, 255, 0.02) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.4s ease-in-out 12;
   border-radius: var(--r-md);
   display: block;
 }

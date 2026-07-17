@@ -68,7 +68,7 @@ export type BrowseContext =
   | DiscoverTarget;
 
 /** The advanced-filter draft the slideover edits. A superset of TMDB's
- * `DiscoverFilters` (which only carries genreId/year/minRating/sortBy/page) —
+ * `DiscoverFilters` (which only carries genreId/year/minRating/sortBy/page) - 
  * the extra fields are threaded through `buildDiscoverParams` as raw discover
  * query params (vote_count.gte, runtime, year range, language, multi-genre). */
 export interface BrowseFilters {
@@ -151,8 +151,8 @@ export function browseTitle(ctx: BrowseContext): string {
  * the subset TMDBService.discover() builds, extended with the slideover's extra
  * fields (multi-genre, year range, min votes, runtime, language). */
 /** Clamp a year to a plausible 4-digit window; anything outside → null. A 1-3
- * digit (or absurd-future) value — e.g. the "20" a user has typed so far toward
- * "2010" — would otherwise build a malformed "20-01-01" discover date param and
+ * digit (or absurd-future) value - e.g. the "20" a user has typed so far toward
+ * "2010" - would otherwise build a malformed "20-01-01" discover date param and
  * silently return wrong/empty results. The input itself stays permissive
  * (parseYear) so it's typeable; this clamp only governs whether the bound is
  * actually applied to a query. */
@@ -188,7 +188,7 @@ export function buildDiscoverParams(
     params.with_genres = filters.genreIds.join(",");
   }
   // Clamp implausible/partial years to null, then swap an inverted range
-  // (From=2020, To=2000) so the floor is never above the ceiling — TMDB returns
+  // (From=2020, To=2000) so the floor is never above the ceiling - TMDB returns
   // an empty set otherwise, which reads as a silent bug.
   const [yearGTE, yearLTE] = orderYearBounds(
     plausibleYear(filters.yearGTE),
@@ -207,7 +207,7 @@ export function buildDiscoverParams(
   if (filters.minRating != null) {
     params["vote_average.gte"] = String(filters.minRating);
     // Default a sane vote floor when filtering by rating so a single 10/10 vote
-    // doesn't dominate — overridden by an explicit minVotes below.
+    // doesn't dominate - overridden by an explicit minVotes below.
     params["vote_count.gte"] = "50";
   }
   if (filters.minVotes != null) {
@@ -243,7 +243,7 @@ export function toDiscoverFilters(
 // ---- Page loading -----------------------------------------------------------
 
 /** One loaded page of a Browse: the items plus pagination cursor info. */
-export interface BrowsePage {
+interface BrowsePage {
   items: MediaPreview[];
   page: number;
   totalPages: number;
@@ -441,9 +441,9 @@ export function sortPreviews(
 
 // ---- React hook -------------------------------------------------------------
 
-export type BrowseSource = "live" | "fixtures";
+type BrowseSource = "live" | "fixtures";
 
-export interface BrowseState {
+interface BrowseState {
   items: MediaPreview[];
   loading: boolean;
   /** True while a load-more page is in flight (the first load uses `loading`). */

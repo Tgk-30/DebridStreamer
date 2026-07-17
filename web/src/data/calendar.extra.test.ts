@@ -1,4 +1,4 @@
-// Extra tests for the calendar data layer — covers branches the original
+// Extra tests for the calendar data layer - covers branches the original
 // calendar.test.ts does not: collectSeries (store-backed dedup / type-filter /
 // fault tolerance) plus additional groupEpisodes edge cases.
 
@@ -20,11 +20,11 @@ function preview(id: string, type: MediaPreview["type"] = "series"): MediaPrevie
   return { id, type, title: `Title ${id}` };
 }
 
-function libEntry(p: MediaPreview) {
-  return { preview: p };
+function libEntry(p: MediaPreview, addedAt = "2026-01-01T00:00:00.000Z") {
+  return { preview: p, addedAt };
 }
-function watchRecord(p: MediaPreview) {
-  return { preview: p };
+function watchRecord(p: MediaPreview, addedAt = "2026-01-01T00:00:00.000Z") {
+  return { preview: p, addedAt };
 }
 
 function ep(airDate: string, episodeNumber = 1): UpcomingEpisode {
@@ -47,13 +47,18 @@ afterEach(() => {
 });
 
 describe("collectSeries", () => {
-  it("merges favorites + watchlist into series previews", async () => {
-    listLibrary.mockResolvedValue([libEntry(preview("a")), libEntry(preview("b"))]);
-    listWatchlist.mockResolvedValue([watchRecord(preview("c"))]);
+  it("merges favorites + watchlist newest-first across both sources", async () => {
+    listLibrary.mockResolvedValue([
+      libEntry(preview("a"), "2026-01-01T00:00:00.000Z"),
+      libEntry(preview("b"), "2026-01-03T00:00:00.000Z"),
+    ]);
+    listWatchlist.mockResolvedValue([
+      watchRecord(preview("c"), "2026-01-02T00:00:00.000Z"),
+    ]);
 
     const out = await collectSeries();
 
-    expect(out.map((p) => p.id)).toEqual(["a", "b", "c"]);
+    expect(out.map((p) => p.id)).toEqual(["b", "c", "a"]);
     // Favorites must be requested with the "favorites" list type.
     expect(listLibrary).toHaveBeenCalledWith("favorites");
     expect(listWatchlist).toHaveBeenCalled();
@@ -148,7 +153,7 @@ describe("groupEpisodes (additional edge cases)", () => {
   });
 
   it("drops a stale/past air date instead of mis-bucketing it as 'week' (regression)", () => {
-    // A date before 'today' has already aired — it must not show as upcoming.
+    // A date before 'today' has already aired - it must not show as upcoming.
     const groups = groupEpisodes([ep("2026-06-10", 1)], NOW);
     expect(groups).toEqual([]);
   });

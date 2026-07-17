@@ -3,8 +3,8 @@
 // This is the "hidden key" path: the OMDb API key lives ONLY on the server
 // (env DS_SERVER_OMDB_API_KEY, or an encrypted server/profile credential in the
 // DB) and the server makes the OMDb request on the client's behalf. The client
-// receives only the parsed ratings — never the key, and never the OMDb request
-// itself — so a limited-distribution build can ship rich ratings with a key
+// receives only the parsed ratings - never the key, and never the OMDb request
+// itself - so a limited-distribution build can ship rich ratings with a key
 // that cannot be extracted from the client or sniffed off the client's wire.
 //
 // Defensive parsing mirrors the web OMDBService (PascalCase keys, "N/A"
@@ -79,7 +79,7 @@ function finiteOrUndef(v: unknown): number | undefined {
 }
 
 /** Whitelist an untrusted ratings object (e.g. from a broker) down to the three
- *  known numeric fields — never trust the broker's JSON shape verbatim. */
+ *  known numeric fields - never trust the broker's JSON shape verbatim. */
 export function sanitizeRatings(raw: unknown): OMDBRatings | null {
   if (raw == null || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
@@ -99,7 +99,7 @@ const OMDB_BASE = "https://www.omdbapi.com/";
  * Fetch ratings for an IMDb id using a server-held key. The host is fixed and
  * the id is strictly validated (`tt\d+`), so there is no SSRF surface. Returns
  * `null` on any failure (bad id, transport error, OMDb "Response":"False", or
- * an unparseable body) — callers treat that as "no ratings".
+ * an unparseable body) - callers treat that as "no ratings".
  */
 export async function fetchOmdbRatings(
   apiKey: string,
@@ -159,7 +159,7 @@ export async function fetchOmdbViaBroker(
     });
     if (!res.ok) return null;
     const body = (await res.json()) as { ratings?: unknown };
-    // Never trust the broker's JSON shape — whitelist the numeric fields.
+    // Never trust the broker's JSON shape - whitelist the numeric fields.
     return sanitizeRatings(body?.ratings);
   } catch {
     return null;

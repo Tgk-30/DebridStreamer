@@ -601,7 +601,7 @@ actor DatabaseManager {
 
     /// Bulk variant of `fetchWatchHistory(mediaId:)` for the no-episode (movie /
     /// media-level) case: one query for many mediaIds instead of N round-trips.
-    /// Mirrors the single-row semantics — only rows with `episodeId IS NULL` are
+    /// Mirrors the single-row semantics - only rows with `episodeId IS NULL` are
     /// considered, and exactly one row is returned per mediaId. When a mediaId
     /// somehow has multiple media-level rows the most recently watched wins, which
     /// is the most-relevant resume point. mediaIds absent from the result simply

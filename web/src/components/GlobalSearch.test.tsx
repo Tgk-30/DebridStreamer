@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("./Icon", () => ({
   Icon: ({ name }: { name: string }) => <span data-testid={`icon-${name}`} />,
 }));
+const search = vi.fn();
+vi.mock("../store/AppStore", () => ({
+  useAppActions: () => ({ search }),
+}));
 
 import { GlobalSearch } from "./GlobalSearch";
+
+beforeEach(() => search.mockClear());
 
 describe("GlobalSearch", () => {
   it("renders the search field with a magnifier and no clear button initially", () => {
@@ -35,18 +41,16 @@ describe("GlobalSearch", () => {
   });
 
   it("submits the trimmed query on Enter", async () => {
-    const onSubmit = vi.fn();
-    render(<GlobalSearch onSubmit={onSubmit} />);
+    render(<GlobalSearch />);
     const input = screen.getByRole("textbox");
     await userEvent.type(input, "  dune  {Enter}");
-    expect(onSubmit).toHaveBeenCalledWith("dune");
+    expect(search).toHaveBeenCalledWith("dune");
   });
 
   it("does not submit a blank/whitespace-only query", async () => {
-    const onSubmit = vi.fn();
-    render(<GlobalSearch onSubmit={onSubmit} />);
+    render(<GlobalSearch />);
     const input = screen.getByRole("textbox");
     await userEvent.type(input, "   {Enter}");
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
   });
 });

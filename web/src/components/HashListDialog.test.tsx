@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Component coverage for HashListDialog — the import / export / generate(AI)
+// Component coverage for HashListDialog - the import / export / generate(AI)
 // hash-list dialog. The pure hashlist codec, the data-layer orchestration
 // (import/export/aiEmit), and the AppStore are mocked so each tab's branches
 // (gated-on-missing-service, paste→submit→progress→summary, export string +

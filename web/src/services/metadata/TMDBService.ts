@@ -27,6 +27,7 @@ import {
   TMDBError,
   type TrendingWindow,
 } from "./types";
+import { assertNetworkAllowed } from "../../lib/networkPolicy";
 
 // MARK: - Raw TMDB response shapes (snake_case as the API returns them).
 //
@@ -64,7 +65,7 @@ interface RawExternalIds {
   tvdb_id?: number | null;
 }
 
-// /movie/{id}/release_dates — per-country release dates, each carrying a
+// /movie/{id}/release_dates - per-country release dates, each carrying a
 // certification (the US entry is what `getCertification` reads).
 interface RawReleaseDates {
   results: Array<{
@@ -73,13 +74,13 @@ interface RawReleaseDates {
   }>;
 }
 
-// /tv/{id}/content_ratings — per-country TV content rating (the US `rating`).
+// /tv/{id}/content_ratings - per-country TV content rating (the US `rating`).
 interface RawContentRatings {
   results: Array<{ iso_3166_1: string; rating?: string | null }>;
 }
 
 // US maturity ranking, mirroring the server's MATURITY_RANK ladder. Used only to
-// pick the MOST RESTRICTIVE certification when a movie carries several — the
+// pick the MOST RESTRICTIVE certification when a movie carries several - the
 // server remains the authority for the cap comparison.
 const CERT_RANK: Readonly<Record<string, number>> = {
   G: 0,
@@ -127,6 +128,17 @@ interface RawCredits {
   cast: RawCastMember[];
 }
 
+interface RawVideos {
+  results: RawVideo[];
+}
+interface RawVideo {
+  key?: string | null;
+  site?: string | null;
+  type?: string | null;
+  official?: boolean | null;
+  name?: string | null;
+}
+
 interface RawCastMember {
   id: number;
   name: string;
@@ -170,6 +182,16 @@ interface RawEpisode {
 interface RawFindResponse {
   movie_results: RawSearchResult[];
   tv_results: RawSearchResult[];
+}
+
+/** A movie release date from TMDB's now-playing or upcoming catalog. The
+ * catalog endpoint supplies a primary release date, which is the best
+ * date-level signal available without fanning out into one request per movie
+ * for territory-specific release windows. */
+export interface MovieRelease {
+  movie: MediaPreview;
+  releaseDate: string;
+  source: "now_playing" | "upcoming";
 }
 
 // MARK: - Mappers (mirror toMediaPreview / toMediaItem)
@@ -278,9 +300,11 @@ export class TMDBService implements MetadataProvider {
   private readonly fetchImpl: FetchImpl;
 
   // Bounded TTL cache of already-DECODED read responses, keyed by
-  // `path + sorted query params`. Only successful reads are cached — errors
+  // `path + sorted query params`. Only successful reads are cached - errors
   // are never stored, so a failure is always retried.
   private responseCache = new Map<string, CacheEntry>();
+  /** Identical reads that begin before the TTL cache is populated share work. */
+  private inFlight = new Map<string, Promise<unknown>>();
   private readonly cacheCapacity = 256;
 
   /** Short TTL for volatile catalog reads (search/trending/category/discover/
@@ -309,9 +333,19 @@ export class TMDBService implements MetadataProvider {
     if (entry && entry.expiresAt > Date.now()) {
       return entry.value as T;
     }
-    const value = await produce();
-    this.store(key, value, ttl);
-    return value;
+    const pending = this.inFlight.get(key);
+    if (pending != null) return pending as Promise<T>;
+
+    const request = produce()
+      .then((value) => {
+        this.store(key, value, ttl);
+        return value;
+      })
+      .finally(() => {
+        this.inFlight.delete(key);
+      });
+    this.inFlight.set(key, request);
+    return request;
   }
 
   /** Inserts into the bounded cache: expired entries are swept first, then the
@@ -422,6 +456,76 @@ export class TMDBService implements MetadataProvider {
     });
   }
 
+  /**
+   * Release-dated movie rows for calendar surfaces. This intentionally reads
+   * only the first now-playing and upcoming pages: two cached catalog requests
+   * give the calendar a useful recent and near-future cadence without a detail
+   * or release-dates request for every movie.
+   */
+  async getMovieReleaseCalendar(): Promise<MovieRelease[]> {
+    const fetchCategory = async (
+      source: MovieRelease["source"],
+    ): Promise<MovieRelease[]> => {
+      const path = `/movie/${source}`;
+      const params = { page: "1", language: "en-US" };
+      const response = await this.cached(
+        this.cacheKey(path, params),
+        TMDBService.shortTTL,
+        () => this.request<RawPagedResponse<RawSearchResult>>(path, params),
+      );
+      // Guard against a non-standard/error response (TMDB unreachable, missing
+      // key, rate limited) so the calendar degrades to its honest empty/error
+      // state instead of throwing on `.results` being undefined.
+      const rows = Array.isArray(response?.results) ? response.results : [];
+      return rows.flatMap((raw) => {
+        const movie = toMediaPreview(raw);
+        const releaseDate = raw.release_date;
+        if (
+          movie == null ||
+          movie.type !== MediaTypeNS.movie ||
+          releaseDate == null ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(releaseDate)
+        ) {
+          return [];
+        }
+        return [{ movie, releaseDate, source }];
+      });
+    };
+
+    const results = await Promise.allSettled([
+      fetchCategory("now_playing"),
+      fetchCategory("upcoming"),
+    ]);
+    const releases = results.flatMap((result) =>
+      result.status === "fulfilled" ? result.value : [],
+    );
+    if (releases.length === 0) {
+      const failure = results.find(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+      if (failure != null) throw failure.reason;
+    }
+
+    // A movie can move between both category endpoints around its release day.
+    // Keep one date per title, preferring the upcoming source for an exact tie.
+    const unique = new Map<string, MovieRelease>();
+    for (const release of releases) {
+      const current = unique.get(release.movie.id);
+      if (
+        current == null ||
+        release.releaseDate < current.releaseDate ||
+        (release.releaseDate === current.releaseDate && release.source === "upcoming")
+      ) {
+        unique.set(release.movie.id, release);
+      }
+    }
+    return [...unique.values()].sort((a, b) =>
+      a.releaseDate === b.releaseDate
+        ? a.movie.title.localeCompare(b.movie.title)
+        : a.releaseDate.localeCompare(b.releaseDate),
+    );
+  }
+
   async discover(
     type: MediaType,
     filters: DiscoverFilters,
@@ -457,7 +561,7 @@ export class TMDBService implements MetadataProvider {
   /** Like `discover`, but takes the full raw `/discover` query-param map so the
    * advanced Browse filter slideover can use TMDB params beyond the core
    * `DiscoverFilters` (multi-genre, year range, vote_count, runtime, original
-   * language). Additive — the Discover screen still uses `discover()`. `api_key`
+   * language). Additive - the Discover screen still uses `discover()`. `api_key`
    * is appended by `request`; pass everything else (page/sort_by/language/…). */
   async discoverWithParams(
     type: MediaType,
@@ -517,8 +621,10 @@ export class TMDBService implements MetadataProvider {
 
   async getExternalIds(tmdbId: number, type: MediaType): Promise<ExternalIds> {
     const path = `/${MediaTypeNS.tmdbPath(type)}/${tmdbId}/external_ids`;
-    const raw = await this.request<RawExternalIds>(path, {});
-    return { imdbId: raw.imdb_id ?? null, tvdbId: raw.tvdb_id ?? null };
+    return this.cached(this.cacheKey(path, {}), TMDBService.shortTTL, async () => {
+      const raw = await this.request<RawExternalIds>(path, {});
+      return { imdbId: raw.imdb_id ?? null, tvdbId: raw.tvdb_id ?? null };
+    });
   }
 
   async getCast(tmdbId: number, type: MediaType): Promise<CastMember[]> {
@@ -529,6 +635,28 @@ export class TMDBService implements MetadataProvider {
       return response.cast.map((c) =>
         makeCastMember(c.id, c.name, c.character ?? "", c.profile_path),
       );
+    });
+  }
+
+  /** The YouTube key of the best official trailer (prefer official Trailer, then
+   * any Trailer, then a Teaser), or null when TMDB has no usable YouTube video.
+   * Cached with the short TTL. */
+  async getTrailer(tmdbId: number, type: MediaType): Promise<string | null> {
+    const path = `/${MediaTypeNS.tmdbPath(type)}/${tmdbId}/videos`;
+    const params = { language: "en-US" };
+    return this.cached(this.cacheKey(path, params), TMDBService.shortTTL, async () => {
+      const response = await this.request<RawVideos>(path, params);
+      const yt = response.results.filter(
+        (v) =>
+          v.site === "YouTube" && typeof v.key === "string" && v.key.length > 0,
+      );
+      const pick =
+        yt.find((v) => v.type === "Trailer" && v.official === true) ??
+        yt.find((v) => v.type === "Trailer") ??
+        yt.find((v) => v.type === "Teaser" && v.official === true) ??
+        yt.find((v) => v.type === "Teaser") ??
+        yt[0];
+      return pick?.key ?? null;
     });
   }
 
@@ -549,7 +677,7 @@ export class TMDBService implements MetadataProvider {
   /** The US maturity certification for a title, or null when TMDB has none.
    * Movies read `/movie/{id}/release_dates` (the first non-empty US
    * certification); series read `/tv/{id}/content_ratings` (the US `rating`).
-   * Cached with the long TTL — certifications effectively never change. The
+   * Cached with the long TTL - certifications effectively never change. The
    * server's kid play-block treats a null return as "unknown" → fail-closed. */
   async getCertification(
     tmdbId: number,
@@ -564,7 +692,7 @@ export class TMDBService implements MetadataProvider {
         // A title can carry multiple US certifications (theatrical R, edited-for-TV
         // PG-13, an NC-17 director's cut, …) across its release_dates, in no
         // guaranteed order. Return the MOST RESTRICTIVE so the kid play-block stays
-        // fail-safe — an unrecognized cert ranks highest so it blocks rather than
+        // fail-safe - an unrecognized cert ranks highest so it blocks rather than
         // slips through.
         const certs = us.release_dates
           .map((d) => d.certification)
@@ -617,6 +745,7 @@ export class TMDBService implements MetadataProvider {
     path: string,
     params: Record<string, string>,
   ): Promise<T> {
+    assertNetworkAllowed("metadata", "TMDB");
     const url = new URL(this.baseURL + path);
     for (const [k, v] of Object.entries(params)) {
       url.searchParams.append(k, v);

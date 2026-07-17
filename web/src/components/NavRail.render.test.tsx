@@ -71,6 +71,33 @@ describe("NavRail render", () => {
     }
   });
 
+  it("keeps Calendar reachable in Advanced mode", async () => {
+    mockSimpleMode = false;
+    const onSelect = vi.fn();
+    renderRail({ selected: "calendar", onSelect });
+
+    const calendar = screen.getByRole("button", { name: "Calendar" });
+    expect(calendar).toHaveAttribute("aria-current", "page");
+    await userEvent.click(calendar);
+    expect(onSelect).toHaveBeenCalledWith("calendar");
+  });
+
+  it("shows the in-app new-episode count and clears it when the watermark advances", () => {
+    const onSelect = vi.fn();
+    const { rerender } = renderRail({
+      selected: "discover",
+      onSelect,
+      calendarBadgeCount: 2,
+    });
+
+    expect(screen.getByRole("button", { name: "Calendar, 2 new episodes" })).toBeInTheDocument();
+    expect(screen.getByTestId("calendar-new-episode-badge")).toHaveTextContent("2");
+
+    rerender(<NavRail selected="discover" onSelect={onSelect} calendarBadgeCount={0} />);
+    expect(screen.getByRole("button", { name: "Calendar" })).toBeInTheDocument();
+    expect(screen.queryByTestId("calendar-new-episode-badge")).toBeNull();
+  });
+
   it("marks the selected screen with aria-current=page and is-selected", () => {
     const { container } = renderRail({ selected: "library", onSelect: () => {} });
     const lib = screen.getByRole("button", { name: "Library" });

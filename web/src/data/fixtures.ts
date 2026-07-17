@@ -1,15 +1,15 @@
-// DEV FALLBACK FIXTURES — used only when no VITE_TMDB_KEY is set, so the
+// DEV FALLBACK FIXTURES - used only when no VITE_TMDB_KEY is set, so the
 // Discover screen renders fully (for a screenshot / design review) without an
 // API key.
 //
 // These are real, well-known titles with REAL TMDB `poster_path` /
 // `backdrop_path` values. The poster/backdrop IMAGES are served by
-// image.tmdb.org, which needs NO API key — so they load even offline-from-the-
+// image.tmdb.org, which needs NO API key - so they load even offline-from-the-
 // API. Only the JSON catalog (which would need a key) is faked here.
 //
 // Shape matches `MediaPreview` (models/media.ts) exactly, including the
 // `tmdb-{id}` id convention and the optional `backdropPath` for hero items.
-// NOT for production — the live path (TMDBService) replaces all of this.
+// NOT for production - the live path (TMDBService) replaces all of this.
 
 import type { MediaPreview } from "../models/media";
 
@@ -106,7 +106,7 @@ const TRENDING_TV: FixtureSeed[] = [
 
 // ---- Public fixture catalog ------------------------------------------------
 
-export interface DiscoverFixtures {
+interface DiscoverFixtures {
   trendingMovies: MediaPreview[];
   trendingTV: MediaPreview[];
   popularMovies: MediaPreview[];

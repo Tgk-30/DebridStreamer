@@ -2,8 +2,8 @@ import Foundation
 
 /// High-level Trakt coordinator that sits on top of `TraktSyncService` and the
 /// `SettingsManager`-backed credential store. It owns the "is the user connected,
-/// and what is a currently-valid access token" question — including proactively
-/// refreshing an expiring token — so callers (settings, player scrobbling,
+/// and what is a currently-valid access token" question - including proactively
+/// refreshing an expiring token - so callers (settings, player scrobbling,
 /// watchlist import) don't each re-implement that dance.
 ///
 /// All work is best-effort and fault tolerant: a missing credential or a network
@@ -25,7 +25,7 @@ actor TraktCoordinator {
         let accessToken: String
     }
 
-    /// True when both a client id and an access token are stored — i.e. the user
+    /// True when both a client id and an access token are stored - i.e. the user
     /// has completed device auth at least once.
     func isConnected() async -> Bool {
         let clientID = (try? await settings.getValue(forKey: SettingsKeys.traktClientId)) ?? nil
@@ -115,7 +115,7 @@ actor TraktCoordinator {
     /// Best-effort scrobble: resolves valid credentials and forwards to Trakt.
     /// Movies are identified by a bare IMDb id (`tt…`); series additionally need
     /// season/episode. Silently no-ops when the user isn't connected or the id is
-    /// not IMDb-shaped. Never throws to the caller — failures are swallowed so
+    /// not IMDb-shaped. Never throws to the caller - failures are swallowed so
     /// playback is never affected.
     func scrobble(
         imdbID: String,

@@ -8,6 +8,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -49,7 +50,7 @@ vi.mock("./Icon", () => ({
 
 vi.mock("./StreamPicker.css", () => ({}));
 
-import { StreamPicker } from "./StreamPicker";
+import { STREAM_RESOLVE_TIMEOUT_MS, StreamPicker } from "./StreamPicker";
 
 // --- Fixtures -----------------------------------------------------------
 
@@ -79,6 +80,8 @@ function baseState(over: Partial<StreamsState> = {}): StreamsState {
     error: null,
     hasIndexers: true,
     hasDebrid: true,
+    missingImdbId: false,
+    sourceErrors: [],
     ...over,
   };
 }
@@ -90,6 +93,7 @@ const neverResolve = async (): Promise<StreamInfo> => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   storeSettings = {
     dataSaver: false,
     streamCachedOnly: false,
@@ -164,6 +168,42 @@ describe("StreamPicker", () => {
     expect(screen.getByText("No streams found")).toBeInTheDocument();
   });
 
+  it("says the search NEVER RAN when the title has no IMDb id (not 'No streams found')", () => {
+    // The silent P0: a null imdb id used to fall through to the generic empty
+    // state, reading as an exhaustive search that found nothing - when in truth
+    // zero requests were made.
+    render(
+      <StreamPicker
+        state={baseState({ rows: [], missingImdbId: true })}
+        resolveStream={neverResolve}
+        onPlay={noop}
+      />,
+    );
+    expect(screen.getByText("Can't search for this title yet")).toBeInTheDocument();
+    expect(screen.queryByText("No streams found")).toBeNull();
+  });
+
+  it("names failed sources under the empty state so empty ≠ exhaustive", () => {
+    render(
+      <StreamPicker
+        state={baseState({
+          rows: [],
+          sourceErrors: [
+            { indexer: "Torrentio", error: "timed out" },
+            { indexer: "EZTV", error: "dns" },
+          ],
+        })}
+        resolveStream={neverResolve}
+        onPlay={noop}
+      />,
+    );
+    expect(screen.getByText("No streams found")).toBeInTheDocument();
+    expect(
+      screen.getByText(/2 sources.*couldn't be reached/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Torrentio, EZTV/)).toBeInTheDocument();
+  });
+
   it("tells the truth with no debrid service and routes to the guided setup", () => {
     const onEvent = vi.fn();
     window.addEventListener("ds:open-first-run", onEvent);
@@ -175,10 +215,10 @@ describe("StreamPicker", () => {
           onPlay={noop}
         />,
       );
-      // NOT the misleading "sources did not return a match" copy — nothing was
+      // NOT the misleading "sources did not return a match" copy - nothing was
       // searched for playback without a debrid service.
       expect(
-        screen.getByText("Almost there — add a debrid service"),
+        screen.getByText("Almost there - add a debrid service"),
       ).toBeInTheDocument();
       expect(screen.queryByText("No streams found")).toBeNull();
       fireEvent.click(screen.getByRole("button", { name: "Run guided setup" }));
@@ -305,6 +345,48 @@ describe("StreamPicker", () => {
     expect(screen.getByText(/1 instant · 3 total/)).toBeInTheDocument();
   });
 
+  it("starts with the Settings cached-only default, while the picker toggle stays session-scoped", () => {
+    storeSettings = {
+      dataSaver: false,
+      streamCachedOnly: true,
+      streamMaxQuality: "any",
+      streamMaxSizeGB: 0,
+    };
+    const rows = [
+      makeRow({ hash: "A", title: "Cached default 1080p", cachedOn: DebridServiceType.realDebrid }),
+      makeRow({ hash: "B", title: "Uncached default 1080p", cachedOn: null }),
+    ];
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+
+    const toggle = screen.getByRole("checkbox", { name: /Cached only/ });
+    expect(toggle).toBeChecked();
+    expect(screen.getByText("Cached default 1080p")).toBeInTheDocument();
+    expect(screen.queryByText("Uncached default 1080p")).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText("Uncached default 1080p")).toBeInTheDocument();
+  });
+
+  it("renders 10 streams initially and expands by 20 at a time", () => {
+    const rows = Array.from({ length: 31 }, (_, index) =>
+      makeRow({ hash: `page-${index}`, title: `Paged stream ${index + 1} 1080p` }),
+    );
+    render(
+      <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
+    );
+
+    expect(screen.getAllByText(/^Paged stream /)).toHaveLength(10);
+    const more = screen.getByRole("button", { name: "Show 20 more" });
+    fireEvent.click(more);
+    expect(screen.getAllByText(/^Paged stream /)).toHaveLength(30);
+    fireEvent.click(screen.getByRole("button", { name: "Show 20 more" }));
+    expect(screen.getAllByText(/^Paged stream /)).toHaveLength(31);
+    expect(screen.queryByRole("button", { name: "Show 20 more" })).toBeNull();
+  });
+
   it("cached-first sorts the rows (instant rows render before will-cache ones)", () => {
     const rows = [
       makeRow({ hash: "A", title: "Uncached First 1080p", cachedOn: null }),
@@ -395,11 +477,14 @@ describe("StreamPicker", () => {
       />,
     );
 
+    expect(screen.getByText(/Instant/)).toBeInTheDocument();
     fireEvent.click(screen.getByText("Pick Me 1080p").closest("button")!);
 
     await waitFor(() => expect(onPlay).toHaveBeenCalledTimes(1));
     expect(resolveStream).toHaveBeenCalledWith(row);
     expect(onPlay).toHaveBeenCalledWith(resolved, row.result);
+    expect(screen.getByText(/Instant/)).toBeInTheDocument();
+    expect(screen.queryByText("Failed · Retry")).not.toBeInTheDocument();
   });
 
   it("shows a Resolving… badge and disables the row while resolving", async () => {
@@ -456,6 +541,73 @@ describe("StreamPicker", () => {
     await waitFor(() => expect(screen.getByText("Debrid 429")).toBeInTheDocument());
     // Row is interactive again (resolving cleared).
     expect(screen.getByText("Bad Pick 1080p").closest("button")!).not.toBeDisabled();
+    expect(screen.getByText("Failed · Retry")).toBeInTheDocument();
+  });
+
+  it("times out a cached season-pack resolve into a failed retry state", async () => {
+    vi.useFakeTimers();
+    const row = makeRow({
+      hash: "SEASON9",
+      title: "Rick and Morty Season 9 Complete 1080p",
+      cachedOn: DebridServiceType.realDebrid,
+    });
+    const resolveStream = vi.fn(() => new Promise<StreamInfo>(() => {}));
+    const onPlay = vi.fn();
+
+    render(
+      <StreamPicker
+        state={baseState({ rows: [row] })}
+        resolveStream={resolveStream}
+        onPlay={onPlay}
+        episodeContext={{ season: 9, episode: 8 }}
+      />,
+    );
+
+    const button = screen.getByText("Rick and Morty Season 9 Complete 1080p").closest("button")!;
+    fireEvent.click(button);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STREAM_RESOLVE_TIMEOUT_MS);
+    });
+
+    expect(screen.queryByText("Resolving…")).not.toBeInTheDocument();
+    expect(screen.getByText("Failed · Retry")).toBeInTheDocument();
+    expect(screen.getByText(/took too long to resolve/)).toBeInTheDocument();
+    expect(button).not.toBeDisabled();
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it("fails a season pack that resolves to a different episode instead of playing it", async () => {
+    const row = makeRow({
+      hash: "SEASON9-WRONG-FILE",
+      title: "Rick and Morty Season 9 Complete 1080p",
+      cachedOn: DebridServiceType.realDebrid,
+    });
+    const resolveStream = vi.fn().mockResolvedValue({
+      streamURL: "https://cdn.example/rick-and-morty-s09e07.mkv",
+      quality: "1080p",
+      codec: "H.264",
+      audio: "Unknown",
+      source: "WEB-DL",
+      sizeBytes: 1,
+      fileName: "Rick.and.Morty.S09E07.1080p.mkv",
+      debridService: "RD",
+    } satisfies StreamInfo);
+    const onPlay = vi.fn();
+
+    render(
+      <StreamPicker
+        state={baseState({ rows: [row] })}
+        resolveStream={resolveStream}
+        onPlay={onPlay}
+        episodeContext={{ season: 9, episode: 8 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Rick and Morty Season 9 Complete 1080p").closest("button")!);
+
+    expect(await screen.findByText(/Couldn't find S09E08 in this season pack/)).toBeInTheDocument();
+    expect(screen.getByText("Failed · Retry")).toBeInTheDocument();
+    expect(onPlay).not.toHaveBeenCalled();
   });
 
   it("surfaces a non-Error resolve error and still clears resolving state", async () => {
@@ -601,7 +753,7 @@ describe("StreamPicker", () => {
     fireEvent.click(chip4k);
     expect(chip4k).toHaveAttribute("aria-pressed", "true");
 
-    // A different title resolves (new rows identity) that also has a 4K option —
+    // A different title resolves (new rows identity) that also has a 4K option - 
     // the old 4K chip must NOT carry over and silently pre-filter it.
     const rowsB = [
       makeRow({ hash: "C", title: "Title B 2160p x265", cachedOn: null }),

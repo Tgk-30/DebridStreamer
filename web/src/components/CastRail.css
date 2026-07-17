@@ -1,4 +1,4 @@
-/* CastRail — circular headshots in a horizontal scroller. */
+/* CastRail - circular headshots in a horizontal scroller. */
 
 .cast {
   display: flex;
@@ -40,8 +40,13 @@
   border: none;
   background: transparent;
   color: var(--text-primary);
-  cursor: pointer;
   text-align: center;
+}
+/* Click affordances belong only to the interactive variant (rendered as a
+   <button> when CastRail is given an onSelect). Without one the card is a plain
+   <div>, so no pointer cursor promising an action that isn't there. */
+button.cast-card {
+  cursor: pointer;
 }
 
 .cast-photo {
@@ -59,13 +64,16 @@
     rgba(255, 255, 255, 0.04) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  /* Bounded, not infinite - the loaded image covers this element, but an
+     animated background keeps repainting it every frame anyway. Matches the
+     MediaCard shimmer bound. */
+  animation: shimmer 1.4s ease-in-out 12;
   transition:
     border-color 0.16s,
     box-shadow 0.16s,
     transform 0.2s;
 }
-.cast-card:hover .cast-photo {
+button.cast-card:hover .cast-photo {
   transform: scale(1.04);
   border-color: rgba(var(--accent-rgb), 0.5);
   box-shadow: 0 6px 16px rgba(var(--accent-rgb), 0.22);

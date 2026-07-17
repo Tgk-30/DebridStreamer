@@ -1,4 +1,4 @@
-/* MediaGrid — responsive poster grid. */
+/* MediaGrid - responsive poster grid. */
 
 .media-grid {
   display: grid;
@@ -10,4 +10,9 @@
 /* The cards are fixed-width buttons; center them in their grid cell. */
 .media-grid .media-card {
   justify-self: center;
+}
+
+.media-grid-item {
+  justify-self: center;
+  min-width: 0;
 }

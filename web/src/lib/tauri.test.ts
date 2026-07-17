@@ -16,6 +16,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
+const listenMock = vi.fn();
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: (...args: unknown[]) => listenMock(...args),
+}));
+
 const openUrlMock = vi.fn();
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (...args: unknown[]) => openUrlMock(...args),
@@ -31,9 +36,21 @@ import {
   mpvGetPosition,
   mpvStop,
   desktopServerStatus,
+  detectTunnelTools,
   startDesktopServer,
   stopDesktopServer,
   openExternalURL,
+  getAppInstallInfo,
+  downloadStart,
+  downloadCancel,
+  downloadForceStop,
+  listenDownloadProgress,
+  castDiscover,
+  castLoad,
+  castControl,
+  castStatus,
+  castSetVolume,
+  type CastDevice,
   type DesktopServerStatus,
   type MpvPlayResult,
 } from "./tauri";
@@ -45,6 +62,7 @@ function enterTauri(): void {
 
 beforeEach(() => {
   invokeMock.mockReset();
+  listenMock.mockReset();
   openUrlMock.mockReset();
 });
 
@@ -73,6 +91,44 @@ describe("isTauri", () => {
   });
 });
 
+describe("detectTunnelTools", () => {
+  it("returns an absent-tools result in a browser without invoking Tauri", async () => {
+    await expect(detectTunnelTools()).resolves.toEqual({
+      cloudflared: { installed: false, version: null, detail: null },
+      tailscale: { installed: false, version: null, detail: null },
+    });
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("invokes the native detector in Tauri", async () => {
+    enterTauri();
+    const tools = {
+      cloudflared: { installed: true, version: "cloudflared 2026.1.0", detail: null },
+      tailscale: { installed: true, version: "1.82.0", detail: "connected" },
+    };
+    invokeMock.mockResolvedValue(tools);
+
+    await expect(detectTunnelTools()).resolves.toEqual(tools);
+    expect(invokeMock).toHaveBeenCalledWith("detect_tunnel_tools");
+  });
+});
+
+describe("getAppInstallInfo", () => {
+  it("returns native installation details in Tauri", async () => {
+    enterTauri();
+    const info = {
+      os: "linux" as const,
+      format: "linux-deb" as const,
+      appBundlePath: null,
+      appimagePath: null,
+    };
+    invokeMock.mockResolvedValue(info);
+
+    await expect(getAppInstallInfo()).resolves.toEqual(info);
+    expect(invokeMock).toHaveBeenCalledWith("app_install_info");
+  });
+});
+
 describe("openInExternalPlayer", () => {
   it("throws when not running under Tauri (no invoke)", async () => {
     await expect(openInExternalPlayer("http://x/file.mkv")).rejects.toThrow(
@@ -88,6 +144,17 @@ describe("openInExternalPlayer", () => {
     expect(status).toBe("opened");
     expect(invokeMock).toHaveBeenCalledWith("open_in_external_player", {
       url: "http://x/file.mkv",
+      preferred: null,
+    });
+  });
+
+  it("forwards a preferred player when given", async () => {
+    enterTauri();
+    invokeMock.mockResolvedValue("Opened in IINA");
+    await openInExternalPlayer("http://x/file.mkv", "IINA");
+    expect(invokeMock).toHaveBeenCalledWith("open_in_external_player", {
+      url: "http://x/file.mkv",
+      preferred: "IINA",
     });
   });
 });
@@ -140,6 +207,124 @@ describe("mpv control commands (no isTauri gate)", () => {
     invokeMock.mockResolvedValue(undefined);
     await mpvStop();
     expect(invokeMock).toHaveBeenCalledWith("mpv_stop");
+  });
+});
+
+describe("DLNA cast IPC bridge", () => {
+  const device: CastDevice = {
+    id: "uuid:tv-1",
+    name: "Living Room TV",
+    avControlUrl: "http://10.0.0.10/av",
+    renderingControlUrl: "http://10.0.0.10/volume",
+    location: "http://10.0.0.10/device.xml",
+  };
+
+  it("guards every cast command outside Tauri", async () => {
+    await expect(castDiscover()).rejects.toThrow(/Not running under Tauri/);
+    await expect(
+      castLoad(device, "https://cdn.example/movie.mkv", "Movie"),
+    ).rejects.toThrow(/Not running under Tauri/);
+    await expect(castControl(device, "pause")).rejects.toThrow(
+      /Not running under Tauri/,
+    );
+    await expect(castStatus(device)).rejects.toThrow(/Not running under Tauri/);
+    await expect(castSetVolume(device, 50)).rejects.toThrow(
+      /Not running under Tauri/,
+    );
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the typed native command payloads", async () => {
+    enterTauri();
+    invokeMock
+      .mockResolvedValueOnce([device])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({
+        state: "PLAYING",
+        positionSecs: 12,
+        durationSecs: 120,
+      })
+      .mockResolvedValueOnce(undefined);
+
+    await expect(castDiscover(1800)).resolves.toEqual([device]);
+    await castLoad(
+      device,
+      "https://cdn.example/movie.mkv",
+      "Movie & More",
+      "https://cdn.example/movie.srt",
+    );
+    await castControl(device, "seek", 42);
+    await expect(castStatus(device)).resolves.toEqual({
+      state: "PLAYING",
+      positionSecs: 12,
+      durationSecs: 120,
+    });
+    await castSetVolume(device, 101);
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "cast_discover", {
+      timeoutMs: 1800,
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "cast_load", {
+      args: {
+        device,
+        url: "https://cdn.example/movie.mkv",
+        title: "Movie & More",
+        subtitleUrl: "https://cdn.example/movie.srt",
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, "cast_control", {
+      args: { device, action: "seek", positionSecs: 42 },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(4, "cast_status", { device });
+    expect(invokeMock).toHaveBeenNthCalledWith(5, "cast_set_volume", {
+      args: { device, level: 100 },
+    });
+  });
+});
+
+describe("download IPC bridge", () => {
+  it("invokes start, cancel, and force-stop with the contract payloads", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    await downloadStart({
+      jobId: "job-1",
+      url: "https://cdn.example/file",
+      destPath: "/Downloads/file.mkv",
+    });
+    await downloadCancel("job-1");
+    await downloadForceStop("job-1");
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "download_start", {
+      args: {
+        jobId: "job-1",
+        url: "https://cdn.example/file",
+        destPath: "/Downloads/file.mkv",
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "download_cancel", { jobId: "job-1" });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, "download_force_stop", { jobId: "job-1" });
+  });
+
+  it("forwards download-progress payloads and returns the native unlisten function", async () => {
+    const unlisten = vi.fn();
+    let nativeListener!: (event: { payload: unknown }) => void;
+    listenMock.mockImplementation(async (_eventName: string, listener: typeof nativeListener) => {
+      nativeListener = listener;
+      return unlisten;
+    });
+    const listener = vi.fn();
+    await expect(listenDownloadProgress(listener)).resolves.toBe(unlisten);
+    expect(listenMock).toHaveBeenCalledWith("download-progress", expect.any(Function));
+
+    const payload = {
+      jobId: "job-1",
+      phase: "downloading" as const,
+      bytesDone: 1_048_576,
+      bytesTotal: 2_097_152,
+      speedBps: 1_048_576,
+    };
+    nativeListener({ payload });
+    expect(listener).toHaveBeenCalledWith(payload);
   });
 });
 

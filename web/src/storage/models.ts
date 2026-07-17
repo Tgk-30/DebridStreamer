@@ -1,4 +1,4 @@
-// Storage-layer record shapes — TS mirrors of the GRDB tables the UI needs.
+// Storage-layer record shapes - TS mirrors of the GRDB tables the UI needs.
 //
 // These are intentionally defined HERE (under storage/) rather than under
 // web/src/models, because models/ is off-limits to modify and already-tested.
@@ -12,7 +12,7 @@
 //
 // Dates are persisted as ISO-8601 strings (Dexie stores them fine as Date too,
 // but strings keep the records JSON-clean for later sync). Everything is plain
-// data — no class instances — so it round-trips through IndexedDB structured
+// data - no class instances - so it round-trips through IndexedDB structured
 // clone without custom (de)serialization.
 
 import type { MediaPreview } from "../models/media";
@@ -22,7 +22,7 @@ import type { MediaPreview } from "../models/media";
 /** Tracks a user's watch progress for a movie or episode. One row per
  * (mediaId, episodeId); episodeId is null for movies. Mirrors `WatchHistory`. */
 export interface WatchHistoryRecord {
-  /** Primary key — `${mediaId}:${episodeId ?? ""}` so there is exactly one row
+  /** Primary key - `${mediaId}:${episodeId ?? ""}` so there is exactly one row
    * per (media, episode). */
   id: string;
   mediaId: string;
@@ -37,6 +37,22 @@ export interface WatchHistoryRecord {
    * without a separate media-cache join. Not present in the Swift schema
    * (which joins media_cache); kept here so the web UI is self-contained. */
   preview: MediaPreview;
+  /** Remembered in-window-player preferences for this (media, episode), so the
+   * next play restores the viewer's choices. All optional (older rows lack them);
+   * non-indexed, so adding them needs no Dexie version bump. */
+  preferredAudioId?: string | null;
+  preferredAudioLang?: string | null;
+  /** Subtitle track id as a string, or "no" for explicitly off, or null/unset. */
+  preferredSubId?: string | null;
+  playbackSpeed?: number | null;
+}
+
+/** The in-window-player choices remembered per (media, episode). */
+export interface PlaybackPrefs {
+  preferredAudioId?: string | null;
+  preferredAudioLang?: string | null;
+  preferredSubId?: string | null;
+  playbackSpeed?: number | null;
 }
 
 /** Progress as a fraction 0..1. Mirrors `WatchHistory.progressPercent`. */
@@ -72,8 +88,8 @@ export function watchProgressMap(
 }
 
 /** The newest incomplete record (with a real resume point) per media id. The
- * Continue Watching rail shows ONE card per show — resuming its most recent
- * episode — while the older per-episode records stay in storage and drive the
+ * Continue Watching rail shows ONE card per show - resuming its most recent
+ * episode - while the older per-episode records stay in storage and drive the
  * per-episode bars in the episode picker. */
 export function latestResumeByMedia(
   records: WatchHistoryRecord[],
@@ -95,11 +111,27 @@ export function latestResumeByMedia(
  * list-type in user_library; here it is a focused store keyed by mediaId with no
  * duplicates, carrying the display preview so the screen can render directly. */
 export interface WatchlistRecord {
-  /** Primary key — the media id. No duplicates. */
+  /** Primary key - the media id. No duplicates. */
   mediaId: string;
   /** ISO-8601 timestamp added (most-recent-first ordering). */
   addedAt: string;
+  /** Optional named watchlist folder. Older rows and uncategorized titles use
+   * null; keeping this optional makes the additive IndexedDB migration safe for
+   * rows that predate folders. */
+  folderId?: string | null;
   preview: MediaPreview;
+}
+
+/** A named, flat folder for organizing saved watchlist titles. This is separate
+ * from Library folders on purpose: a title can only appear once in the
+ * watchlist, then optionally belongs to one of these folders. */
+export interface WatchlistFolderRecord {
+  id: string;
+  name: string;
+  /** ISO-8601 timestamp. */
+  createdAt: string;
+  /** ISO-8601 timestamp. */
+  updatedAt: string;
 }
 
 // MARK: - User library (Models/WatchHistory.swift → UserLibraryEntry)
@@ -175,7 +207,7 @@ export type DebridServiceType =
 
 /** A persisted debrid service configuration. Mirrors `DebridConfig`. The
  * `apiToken` here is the raw token (web phase). The keychain indirection of the
- * native build — where apiToken is a keychain reference — is the documented
+ * native build - where apiToken is a keychain reference - is the documented
  * SecretStore follow-up. */
 export interface DebridConfigRecord {
   id: string;
@@ -189,7 +221,7 @@ export interface DebridConfigRecord {
 // MARK: - Indexer configs (Models/DebridConfig.swift → IndexerConfig)
 
 /** Indexer kinds. Includes `stremio_addon` (present in the Swift model) even
- * though the ported web IndexerManager cannot yet construct it — persisting it
+ * though the ported web IndexerManager cannot yet construct it - persisting it
  * faithfully means a later Stremio-capable factory needs no migration. Mirrors
  * `IndexerConfig.IndexerType`. */
 export type StoredIndexerType =
@@ -323,7 +355,7 @@ export interface TasteEventRecord {
 import type { MediaItem } from "../models/media";
 
 export interface MediaCacheRecord {
-  /** Primary key — the media id. */
+  /** Primary key - the media id. */
   id: string;
   item: MediaItem;
   /** ISO-8601 of the last fetch (for eviction policies later). */
@@ -336,11 +368,11 @@ export interface MediaCacheRecord {
  * background auto-resolve job (lib/autoResolve.ts). Keyed by mediaId so a single
  * "best" cached resolution is kept per title; re-resolving replaces it. The
  * stored `stream` is the ported `StreamInfo` value (a direct/HLS URL plus the
- * parsed quality/codec metadata). This is a web-only convenience table — the
- * native app re-resolves on demand — so the UI can show a "Ready to play" badge
+ * parsed quality/codec metadata). This is a web-only convenience table - the
+ * native app re-resolves on demand - so the UI can show a "Ready to play" badge
  * and play instantly without re-walking indexers + debrid. */
 export interface CachedResolutionRecord {
-  /** Primary key — the media id. One cached resolution per title. */
+  /** Primary key - the media id. One cached resolution per title. */
   mediaId: string;
   /** The resolved, ready-to-play stream (ported `StreamInfo`). */
   stream: import("../services/debrid/models").StreamInfo;
@@ -356,10 +388,10 @@ export interface CachedResolutionRecord {
 
 /** A single AI call's token + cost usage, persisted locally so the app can show
  * a running estimate of what AI features cost. Written on each `analyzeTitle`
- * call (and a natural home for future AI calls). Local-only this phase — Server
+ * call (and a natural home for future AI calls). Local-only this phase - Server
  * Mode no-ops the write (it owns its own usage accounting server-side). */
 export interface AIUsageRecord {
-  /** Primary key — a unique id per call. */
+  /** Primary key - a unique id per call. */
   id: string;
   /** The AI provider kind ("openai" | "anthropic" | "ollama"). */
   provider: string;
@@ -373,6 +405,44 @@ export interface AIUsageRecord {
   estimatedCostUSD: number | null;
   /** ISO-8601 timestamp of the call. Indexed for recency ordering. */
   createdAt: string;
+}
+
+// MARK: - Downloads (local desktop only)
+
+/** A durable native desktop download job. The browser never executes these
+ * records, while the Tauri app can recover its queue after a restart. */
+export interface DownloadRecord {
+  /** Caller-generated UUID and native progress-event correlation id. */
+  jobId: string;
+  mediaId: string;
+  episodeId: string | null;
+  title: string;
+  season: number | null;
+  episode: number | null;
+  infoHash: string;
+  fileHint: string | null;
+  mode: "full" | "optimized";
+  optimizeProfile: "remux" | "h265" | null;
+  keepAudioLangs: string[];
+  keepSubLangs: string[];
+  status:
+    | "queued"
+    | "resolving"
+    | "downloading"
+    | "optimizing"
+    | "completed"
+    | "failed"
+    | "canceled"
+    | "paused";
+  bytesDone: number;
+  bytesTotal: number | null;
+  /** Last reported transcode percentage (0-100), or null outside optimizing.
+   *  Separate from bytesDone/bytesTotal because ffmpeg measures time, not bytes. */
+  optimizePercent: number | null;
+  destPath: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // MARK: - Settings / secrets key-value

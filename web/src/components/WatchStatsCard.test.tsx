@@ -69,7 +69,7 @@ describe("WatchStatsCard", () => {
     render(
       <WatchStatsCard stats={stats({ streakDays: 0, streakOngoing: false })} />,
     );
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
   });
 
   it("renders a singular day label when streak is exactly one day", () => {

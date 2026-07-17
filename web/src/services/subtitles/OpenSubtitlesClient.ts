@@ -15,7 +15,7 @@ import type { FetchImpl } from "../../lib/http";
 
 const API_BASE = "https://api.opensubtitles.com/api/v1";
 /** OpenSubtitles requires a unique, descriptive UA per consumer app. */
-export const OPEN_SUBTITLES_USER_AGENT = "DebridStreamer v2";
+const OPEN_SUBTITLES_USER_AGENT = "DebridStreamer v2";
 
 /** A normalized subtitle search result (one row per file). */
 export interface SubtitleSearchResult {
@@ -25,7 +25,7 @@ export interface SubtitleSearchResult {
   language: string;
   /** Human file/release name for the picker. */
   release: string;
-  /** Download count (popularity) — used to sort. */
+  /** Download count (popularity) - used to sort. */
   downloadCount: number;
   /** Whether the uploader flagged it as hearing-impaired. */
   hearingImpaired: boolean;
@@ -55,12 +55,15 @@ export interface SubtitleClient {
   /** Whether searches can run (a key is configured, here or server-side). */
   readonly hasKey: boolean;
   search(params: SubtitleSearchParams): Promise<SubtitleSearchResult[]>;
-  /** Resolve a file id to raw subtitle text (SRT/VTT — parseSubtitles handles both).
+  /** Resolve a file id to raw subtitle text (SRT/VTT - parseSubtitles handles both).
    *  `imdbId` (the title being watched) lets a Server-Mode client enforce the
    *  maturity cap on the fetched dialogue; the local client ignores it. */
   download(fileId: string, imdbId?: string | null): Promise<string>;
 }
 
+// Exported: the bundled Node server imports this cross-package (see
+// server/src/subtitles-runtime.js) and relies on `instanceof OpenSubtitlesError`.
+// Do NOT drop this export even though nothing in web/ imports it by name.
 export class OpenSubtitlesError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {

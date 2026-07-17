@@ -65,7 +65,7 @@ function isInstallerAsset(asset) {
   return !/\.(sig|sha256|sha512|blockmap)$/i.test(asset.name) &&
     !/latest\.json$/i.test(asset.name) &&
     // The headless self-host server package (debridstreamer-server_*.deb) is not
-    // a desktop-app download — keep it out of the platform pickers so a Linux
+    // a desktop-app download - keep it out of the platform pickers so a Linux
     // visitor can't grab the server by mistake. It's fetched from the Ubuntu
     // guide instead.
     !/^debridstreamer-server[_-]/i.test(asset.name);
@@ -101,6 +101,21 @@ function platformAssets(release, platform) {
 
 function bestAsset(release, platform) {
   return platformAssets(release, platform)[0] ?? null;
+}
+
+// macOS ships PER-ARCH (two DMGs) - an arm64-only build won't launch on an Intel
+// Mac and vice-versa. Resolve each arch's best asset by its Tauri filename
+// (aarch64 vs x64) so the picker can offer both explicitly. Falls back to null
+// when that arch isn't present (e.g. an older single-arch release).
+const macArchPatterns = {
+  arm64: /(aarch64|arm64)/i,
+  intel: /(x86_64|x64|intel|amd64)/i,
+};
+
+function macAssetForArch(release, arch) {
+  const pattern = macArchPatterns[arch];
+  if (!pattern) return null;
+  return platformAssets(release, "mac").find((entry) => pattern.test(entry.name ?? "")) ?? null;
 }
 
 function formatBytes(bytes) {
@@ -207,13 +222,24 @@ async function hydrateDownloads() {
       return res.json();
     });
 
-    for (const key of ["mac", "windows", "linux"]) {
+    for (const key of ["windows", "linux"]) {
       const asset = bestAsset(release, key);
       if (asset?.browser_download_url) {
         setLink(`[data-download="${key}"]`, asset.browser_download_url);
       }
       setMeta(key, asset);
     }
+
+    // macOS is per-arch: fill the Apple Silicon + Intel rows from their own DMGs
+    // so no Mac visitor is handed a build that won't launch. The "mac" hook is
+    // Apple Silicon (falling back to the best mac asset for older single-arch
+    // releases); "mac-intel" is the Intel build.
+    const macArm = macAssetForArch(release, "arm64") ?? bestAsset(release, "mac");
+    if (macArm?.browser_download_url) setLink('[data-download="mac"]', macArm.browser_download_url);
+    setMeta("mac", macArm);
+    const macIntel = macAssetForArch(release, "intel");
+    if (macIntel?.browser_download_url) setLink('[data-download="mac-intel"]', macIntel.browser_download_url);
+    setMeta("mac-intel", macIntel);
 
     const asset = bestAsset(release, platform);
     if (smart && asset?.browser_download_url) {
@@ -351,12 +377,105 @@ function initSectionNav() {
   requestSettledUpdates();
 }
 
+/* ── The scrubline: scroll progress as a hairline playback bar across the top
+      of the viewport. Sets --scrub (0–1) on a fixed, width-only element, so it
+      can never touch layout or cause horizontal overflow. ─────────────────── */
+function initScrubline() {
+  const line = document.querySelector(".scrubline span");
+  if (!line) return;
+  let frame = 0;
+  function update() {
+    frame = 0;
+    const total = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = total > 0 ? Math.min(1, Math.max(0, window.scrollY / total)) : 0;
+    line.style.setProperty("--scrub", progress.toFixed(4));
+  }
+  function request() {
+    if (!frame) frame = window.requestAnimationFrame(update);
+  }
+  window.addEventListener("scroll", request, { passive: true });
+  window.addEventListener("resize", request);
+  update();
+}
+
+/* Scroll reveals - sections rise in on first view. FAILSAFE: the content is
+   visible by default (no .reveal class = no opacity:0); the class is only added
+   when we can also arm an observer to un-hide it, AND a load/timeout backstop
+   reveals everything unconditionally, so content can never get stuck hidden. */
+function initReveals() {
+  if (!("IntersectionObserver" in window)) return;
+  const nodes = document.querySelectorAll(
+    ".proof-strip span, .section-head, .rail-card, .picker, .split > *, .hosting-grid article, .steps article, .status-list",
+  );
+  if (!nodes.length) return;
+
+  const revealAll = () => {
+    for (const node of nodes) node.classList.add("is-in");
+  };
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add("is-in");
+        observer.unobserve(entry.target);
+      }
+    },
+    { rootMargin: "0px 0px -8% 0px", threshold: 0.1 },
+  );
+  let index = 0;
+  for (const node of nodes) {
+    node.classList.add("reveal");
+    node.style.transitionDelay = `${(index % 5) * 70}ms`;
+    index += 1;
+    observer.observe(node);
+  }
+  // Backstops: if anything (a flaky observer, a bfcache restore, an inert tab)
+  // leaves a block hidden, reveal it unconditionally. Content > choreography.
+  window.addEventListener("load", () => window.setTimeout(revealAll, 1500));
+  window.setTimeout(revealAll, 3500);
+  window.addEventListener("pageshow", (e) => {
+    if (e.persisted) revealAll();
+  });
+}
+
+/* The hero window leans toward the cursor - fine pointers only, never under
+   reduced motion. Pure transform, rAF-throttled. */
+function initTilt() {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (window.matchMedia("(pointer: coarse)").matches) return;
+  const stage = document.querySelector(".product-stage");
+  const target = document.querySelector(".app-window-main");
+  if (!stage || !target) return;
+
+  let frame = 0;
+  let tiltX = 0;
+  let tiltY = 0;
+  stage.addEventListener("pointermove", (event) => {
+    const rect = stage.getBoundingClientRect();
+    tiltY = ((event.clientX - rect.left) / rect.width - 0.5) * 4.4;
+    tiltX = (0.5 - (event.clientY - rect.top) / rect.height) * 3.2;
+    if (!frame) {
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        target.style.setProperty("--tilt-x", `${tiltX.toFixed(2)}deg`);
+        target.style.setProperty("--tilt-y", `${tiltY.toFixed(2)}deg`);
+      });
+    }
+  });
+  stage.addEventListener("pointerleave", () => {
+    target.style.setProperty("--tilt-x", "0deg");
+    target.style.setProperty("--tilt-y", "0deg");
+  });
+}
+
 if (typeof window !== "undefined") {
   window.DebridStreamerWebsite = {
     bestAsset,
     detectPlatform,
     isInstallerAsset,
     labelFor,
+    macAssetForArch,
     platformAssets,
     scoreAsset,
   };
@@ -367,4 +486,7 @@ if (typeof window !== "undefined" && !window.__DEBRIDSTREAMER_WEBSITE_TEST__) {
   initCommandCopy();
   initMobileMenu();
   initSectionNav();
+  initScrubline();
+  initReveals();
+  initTilt();
 }

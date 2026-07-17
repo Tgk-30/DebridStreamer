@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- The built-in player loads libmpv + its wrapper (not signed by our team)
+       via dlopen. Under the hardened runtime that requires disabling library
+       validation. Notarization permits this entitlement. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- mpv's gpu-next / libplacebo path may JIT shader pipelines. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+</dict>
+</plist>

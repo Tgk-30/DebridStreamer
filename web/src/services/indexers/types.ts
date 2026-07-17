@@ -40,7 +40,7 @@ export interface TorrentIndexer {
  * `badServerResponse`, an unbuildable URL throws `badURL`, and an unparseable
  * feed throws `cannotParseResponse`.
  */
-export type IndexerErrorKind =
+type IndexerErrorKind =
   | "badServerResponse"
   | "badURL"
   | "cannotParseResponse";
@@ -216,7 +216,7 @@ export function makeIndexerConfig(partial: {
  * template's `FetchImpl`. The Swift indexers inject a `URLSession`; here tests
  * inject this to stub the network. The optional `init.headers` carries the
  * Torznab `X-Api-Key` header. The response exposes `status` plus `text()`
- * (JSON bodies) — XML bodies are also read via `text()`.
+ * (JSON bodies) - XML bodies are also read via `text()`.
  */
 export type FetchImpl = (
   url: string,

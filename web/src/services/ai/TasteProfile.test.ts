@@ -177,16 +177,151 @@ describe("buildTasteContext genre tally + ranking", () => {
     expect(lineValues(context, "Disliked genres")).toEqual(["Western"]);
   });
 
-  it("ignores taste events that are neither liked nor disliked", async () => {
+  it("ignores taste events that carry no usable signal", async () => {
     const store = makeFakeStore({
       tasteEvents: [
         tasteEvent({ id: "a", eventType: "watched", metadata: { genres: "Drama", title: "Heat" } }),
         tasteEvent({ id: "b", eventType: "searched", metadata: { genres: "Comedy", title: "Up" } }),
+        // A "rated" event with no normalized score contributes nothing.
         tasteEvent({ id: "c", eventType: "rated", metadata: { genres: "Horror", title: "It" } }),
       ],
     });
     const context = await buildTasteContext(store, { useCache: false, now: NOW });
-    // None of those event types contribute, so there is no signal at all.
+    expect(context).toBe("");
+  });
+});
+
+// MARK: - numeric ratings feeding the profile
+
+describe("buildTasteContext numeric ratings", () => {
+  it("treats a high rating as a liked-genre + rated-highly signal", async () => {
+    const store = makeFakeStore({
+      tasteEvents: [
+        tasteEvent({
+          id: "a",
+          eventType: "rated",
+          metadata: { norm: "0.9", genres: "Science Fiction", title: "Dune" },
+        }),
+      ],
+    });
+    const context = await buildTasteContext(store, { useCache: false, now: NOW });
+    expect(lineValues(context, "Liked genres")).toContain("Science Fiction");
+    expect(lineValues(context, "Rated highly")).toContain("Dune (9/10)");
+  });
+
+  it("treats a low rating as a disliked-genre + rated-low signal", async () => {
+    const store = makeFakeStore({
+      tasteEvents: [
+        tasteEvent({
+          id: "a",
+          eventType: "rated",
+          metadata: { norm: "0.2", genres: "Western", title: "Old Trail" },
+        }),
+      ],
+    });
+    const context = await buildTasteContext(store, { useCache: false, now: NOW });
+    expect(lineValues(context, "Disliked genres")).toContain("Western");
+    expect(lineValues(context, "Rated low")).toContain("Old Trail (2/10)");
+  });
+
+  it("ignores a neutral rating (no like/dislike pull)", async () => {
+    const store = makeFakeStore({
+      tasteEvents: [
+        tasteEvent({
+          id: "a",
+          eventType: "rated",
+          metadata: { norm: "0.5", genres: "Drama", title: "Middling" },
+        }),
+      ],
+    });
+    const context = await buildTasteContext(store, { useCache: false, now: NOW });
+    expect(context).toBe("");
+  });
+
+  it("counts only the newest rating per media (re-rate supersedes)", async () => {
+    const store = makeFakeStore({
+      tasteEvents: [
+        // Same mediaId, newest first: a fresh low re-rate wins over the old high.
+        tasteEvent({
+          id: "new",
+          mediaId: "flip",
+          eventType: "rated",
+          createdAt: isoDaysAgo(0),
+          metadata: { norm: "0.2", genres: "Thriller", title: "Flip" },
+        }),
+        tasteEvent({
+          id: "old",
+          mediaId: "flip",
+          eventType: "rated",
+          createdAt: isoDaysAgo(5),
+          metadata: { norm: "0.9", genres: "Thriller", title: "Flip" },
+        }),
+      ],
+    });
+    const context = await buildTasteContext(store, { useCache: false, now: NOW });
+    expect(lineValues(context, "Rated low")).toContain("Flip (2/10)");
+    expect(lineValues(context, "Rated highly")).toEqual([]);
+  });
+
+  it("keeps same-named but different media distinct (no title collision)", async () => {
+    const store = makeFakeStore({
+      tasteEvents: [
+        tasteEvent({
+          id: "a",
+          mediaId: "movie-1",
+          eventType: "rated",
+          metadata: { norm: "0.9", genres: "Drama", title: "The Office" },
+        }),
+        tasteEvent({
+          id: "b",
+          mediaId: "series-2",
+          eventType: "rated",
+          metadata: { norm: "0.1", genres: "Comedy", title: "The Office" },
+        }),
+      ],
+    });
+    const context = await buildTasteContext(store, { useCache: false, now: NOW });
+    // Distinct media ids → both survive, one high, one low.
+    expect(lineValues(context, "Rated highly")).toContain("The Office (9/10)");
+    expect(lineValues(context, "Rated low")).toContain("The Office (1/10)");
+  });
+
+  it("clamps an out-of-range norm before scoring", async () => {
+    const store = makeFakeStore({
+      tasteEvents: [
+        tasteEvent({
+          id: "a",
+          eventType: "rated",
+          metadata: { norm: "1.5", genres: "Fantasy", title: "Epic" },
+        }),
+      ],
+    });
+    const context = await buildTasteContext(store, { useCache: false, now: NOW });
+    expect(lineValues(context, "Rated highly")).toContain("Epic (10/10)");
+  });
+
+  it("a newest cleared rating suppresses the older score for that media", async () => {
+    const store = makeFakeStore({
+      tasteEvents: [
+        // Newest first: a cleared rating (no norm) over an older 9/10.
+        tasteEvent({
+          id: "clr",
+          mediaId: "m",
+          eventType: "rated",
+          createdAt: isoDaysAgo(0),
+          metadata: { cleared: "true", title: "Dune" },
+        }),
+        tasteEvent({
+          id: "old",
+          mediaId: "m",
+          eventType: "rated",
+          createdAt: isoDaysAgo(3),
+          metadata: { norm: "0.9", genres: "Science Fiction", title: "Dune" },
+        }),
+      ],
+    });
+    const context = await buildTasteContext(store, { useCache: false, now: NOW });
+    // The cleared rating wins → no liked-genre pull, no "Rated highly" line.
     expect(context).toBe("");
   });
 });

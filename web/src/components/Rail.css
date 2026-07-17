@@ -1,4 +1,4 @@
-/* Rail — bold title + horizontally scrolling track with a trailing-edge fade. */
+/* Rail - bold title + horizontally scrolling track with a trailing-edge fade. */
 
 .rail {
   display: flex;
@@ -15,12 +15,12 @@
 
 .rail-title {
   margin: 0;
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: 0;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
 }
 
-/* "See all" — a quiet text affordance; accent only on hover. */
+/* "See all" - a quiet text affordance; accent only on hover. */
 .rail-see-all {
   display: inline-flex;
   align-items: center;
@@ -61,8 +61,12 @@
 .rail-scroll {
   overflow-x: auto;
   overflow-y: hidden;
-  /* leave room so the hover-lift glow isn't clipped */
-  padding: var(--sp-xs) 0 var(--sp-sm);
+  /* Cards lift -14px + scale 1.08 on hover (~25px above rest). Pad enough that
+     overflow-y: hidden (needed alongside overflow-x: auto) doesn't clip that
+     expansion, and pull the box back with a negative margin so the rows keep
+     their vertical rhythm. */
+  padding: 30px 0 22px;
+  margin: -16px 0 -12px;
   scroll-padding-inline: var(--sp-md);
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
@@ -89,4 +93,12 @@
 
 .rail-track .media-card {
   scroll-snap-align: start;
+}
+
+/* Ranked (Top 10) rows: the big numerals live in each card's left padding, so
+   give the row a touch more air and a little left inset so the #1 isn't clipped
+   against the scroll edge. */
+.rail-ranked .rail-track {
+  gap: var(--sp-md);
+  padding-left: 6px;
 }

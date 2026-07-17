@@ -1,4 +1,4 @@
-// DebridStreamer service worker — app-shell offline support.
+// DebridStreamer service worker - app-shell offline support.
 //
 // Strategy:
 //  - Hashed, immutable build assets (/assets/*) and icons: cache-first (instant,

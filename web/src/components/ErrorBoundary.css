@@ -1,0 +1,53 @@
+.error-boundary {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-xl, 32px);
+}
+
+/* Overlay variant (Browse / Detail). Those overlays are themselves fixed (see
+   Detail.css), so their boundary must be too: .app-content is a scroll
+   container, and an absolutely positioned card would be laid out at scroll
+   offset 0 and sit off-screen whenever the user has scrolled. Mirrors .detail's
+   geometry so the card lands over the content and not the nav rail. The opaque
+   background hides the live screen still mounted underneath. */
+.error-boundary-overlay {
+  position: fixed;
+  inset: 0 0 0 var(--nav-safe-left, 78px);
+  background: var(--bg-1);
+}
+
+.error-boundary-card {
+  max-width: 440px;
+  width: 100%;
+  padding: 28px 30px;
+  border-radius: var(--r-lg, 18px);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.error-boundary-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.error-boundary-msg {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.66));
+  word-break: break-word;
+}
+
+.error-boundary-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 8px;
+}

@@ -12,19 +12,85 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # VLCKit.xcframework is tracked via Git LFS; the build needs the real binary.
-          lfs: true
+          # Keep the LFS pointer files in the checkout. Downloading VLCKit on
+          # every push and pull request exhausted the repository owner's monthly
+          # LFS bandwidth allowance.
+          lfs: false
+
+      - name: Detect native Swift changes
+        id: native
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          REF_TYPE: ${{ github.ref_type }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [[ "${REF_TYPE}" == "tag" ]]; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            base="${PR_BASE_SHA}"
+          else
+            base="${BEFORE_SHA}"
+          fi
+
+          if [[ -z "${base}" || "${base}" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}"; then
+            base="$(git merge-base HEAD "origin/${DEFAULT_BRANCH}")"
+          fi
+
+          if git diff --name-only "${base}" "${GITHUB_SHA}" | grep -Eq \
+            '^(Package\.swift$|Package\.resolved$|Sources/|Tests/|Vendor/|scripts/check_swift_tests\.mjs$)'; then
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Cache VLCKit
+        id: vlckit-cache
+        if: steps.native.outputs.changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: Vendor/VLCKit.xcframework
+          key: vlckit-lfs-${{ runner.os }}-${{ hashFiles('Vendor/VLCKit.xcframework/**') }}
+
+      - name: Fetch VLCKit on cache miss
+        if: steps.native.outputs.changed == 'true' && steps.vlckit-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          git lfs install --local
+          git lfs pull --include="Vendor/VLCKit.xcframework/**" --exclude=""
+
+      - name: Verify VLCKit
+        if: steps.native.outputs.changed == 'true'
+        shell: bash
+        run: |
+          binary="Vendor/VLCKit.xcframework/macos-arm64_x86_64/VLCKit.framework/Versions/A/VLCKit"
+          expected_sha="$(git show "HEAD:${binary}" | sed -n 's/^oid sha256://p')"
+          actual_sha="$(shasum -a 256 "${binary}" | awk '{print $1}')"
+
+          if [ -z "${expected_sha}" ] || [ "${actual_sha}" != "${expected_sha}" ]; then
+            echo "::error::The cached VLCKit binary does not match its Git LFS pointer."
+            exit 1
+          fi
 
       - name: Select Xcode
+        if: steps.native.outputs.changed == 'true'
         uses: maxim-lobanov/setup-xcode@v1
         with:
           # Pin to whatever stable Xcode the runner image ships (16.0 was removed).
           xcode-version: "latest-stable"
 
       - name: Build
+        if: steps.native.outputs.changed == 'true'
         run: swift build
 
       - name: Test
+        if: steps.native.outputs.changed == 'true'
         run: node scripts/check_swift_tests.mjs
 
   # The self-hosted server + web client (the Server Mode deliverable). The server
@@ -62,20 +128,20 @@ jobs:
         run: node scripts/check_app_responsive_contract.mjs
 
       # The server's esbuild bundle imports web TypeScript that pulls 3rd-party
-      # deps (e.g. subsrt-ts) which esbuild resolves from web/node_modules — so
+      # deps (e.g. subsrt-ts) which esbuild resolves from web/node_modules - so
       # web deps must be installed BEFORE the server build.
-      - name: Web — install deps
+      - name: Web - install deps
         working-directory: web
         run: npm ci
 
-      - name: Server — install, build (typecheck + bundle), test
+      - name: Server - install, build (typecheck + bundle), test
         working-directory: server
         run: |
           npm ci
           npm run build
           npx vitest run
 
-      - name: Web — build (typecheck + vite), test
+      - name: Web - build (typecheck + vite), test
         working-directory: web
         run: |
           npm run build

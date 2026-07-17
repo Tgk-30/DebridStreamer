@@ -1,7 +1,7 @@
 // Port of Sources/DebridStreamer/Services/AI/AnthropicProvider.swift.
 //
 // A fetch-based Anthropic Messages provider. Mirrors the Swift struct: the same
-// endpoint/headers/request shape (note `temperature` is intentionally omitted —
+// endpoint/headers/request shape (note `temperature` is intentionally omitted - 
 // it is rejected by current Claude models), the first text content-part as the
 // response text, the usage decoding, and the cost estimate. The `fetch`
 // implementation is injectable so tests stub the network (Swift injects a

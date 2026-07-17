@@ -7,7 +7,7 @@
 // abandoned jobs, and stop() (wired to the app's onClose) tears everything down.
 //
 // Only constructed/started when transcoding is active (operator flag on AND
-// ffmpeg present) — so it has zero cost in the default (off) configuration.
+// ffmpeg present) - so it has zero cost in the default (off) configuration.
 
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
@@ -198,7 +198,7 @@ export class TranscodeRegistry {
       child = this.transcoder.spawnHls(hlsArgs(upstreamUrl, dir));
     } catch (err) {
       // spawn threw synchronously (e.g. fd/memory exhaustion) BEFORE the job was
-      // registered — rm the orphaned dir now (the boot sweep only knows about
+      // registered - rm the orphaned dir now (the boot sweep only knows about
       // dirs recorded on a session row, so it could never reclaim this one).
       await rm(dir, { recursive: true, force: true }).catch(() => {});
       throw err;

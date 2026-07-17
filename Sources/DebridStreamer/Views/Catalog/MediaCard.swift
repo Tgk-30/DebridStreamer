@@ -32,7 +32,7 @@ struct MediaCard: View {
                     .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
             )
 
-            // Title — reserve 2 lines always so the year/rating row keeps a
+            // Title - reserve 2 lines always so the year/rating row keeps a
             // constant baseline across a rail (L13), regardless of title length.
             Text(item.title)
                 .font(.subheadline.weight(.semibold))

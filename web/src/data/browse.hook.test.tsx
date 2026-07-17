@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Tests for the useBrowse React hook (browse.ts) — the stateful piece the pure
+// Tests for the useBrowse React hook (browse.ts) - the stateful piece the pure
 // browse.test.ts doesn't reach: page-1 load, no-key fixture fallback, loadMore
 // appending + de-dup, canLoadMore gating, ctx-change re-load, the live-error
 // fixture fallback, Server Mode routing, and the runIdRef stale-guard.
@@ -84,7 +84,7 @@ beforeEach(() => {
   mockSearchServerMedia.mockReset();
 });
 
-describe("useBrowse — initial state", () => {
+describe("useBrowse - initial state", () => {
   it("starts in a loading/empty state before the first page resolves", () => {
     const svc = fakeService();
     const { result } = renderHook(() => useBrowse(svc, CATEGORY_CTX));
@@ -97,7 +97,7 @@ describe("useBrowse — initial state", () => {
   });
 });
 
-describe("useBrowse — live page-1 load", () => {
+describe("useBrowse - live page-1 load", () => {
   it("loads page 1 from the service and sets canLoadMore when more pages remain", async () => {
     const svc = fakeService();
     const { result } = renderHook(() => useBrowse(svc, CATEGORY_CTX));
@@ -125,7 +125,7 @@ describe("useBrowse — live page-1 load", () => {
   });
 });
 
-describe("useBrowse — fixture fallback (no key)", () => {
+describe("useBrowse - fixture fallback (no key)", () => {
   it("renders a single fixture page when service is null and not in server mode", async () => {
     const { result } = renderHook(() => useBrowse(null, CATEGORY_CTX));
 
@@ -141,7 +141,7 @@ describe("useBrowse — fixture fallback (no key)", () => {
   });
 });
 
-describe("useBrowse — loadMore", () => {
+describe("useBrowse - loadMore", () => {
   it("appends the next page and advances the cursor", async () => {
     const svc = fakeService();
     const { result } = renderHook(() => useBrowse(svc, CATEGORY_CTX));
@@ -199,7 +199,7 @@ describe("useBrowse — loadMore", () => {
 
     act(() => result.current.loadMore());
     expect(result.current.loadingMore).toBe(false);
-    // getCategory only called for page 1 — loadMore never requested page 2.
+    // getCategory only called for page 1 - loadMore never requested page 2.
     expect(svc.getCategory).toHaveBeenCalledTimes(1);
   });
 
@@ -226,7 +226,7 @@ describe("useBrowse — loadMore", () => {
   });
 });
 
-describe("useBrowse — live error fallback", () => {
+describe("useBrowse - live error fallback", () => {
   it("falls back to a fixture page and surfaces the error message", async () => {
     const svc = fakeService({
       getCategory: () => Promise.reject(new Error("network down")),
@@ -254,7 +254,7 @@ describe("useBrowse — live error fallback", () => {
   });
 });
 
-describe("useBrowse — context change re-loads", () => {
+describe("useBrowse - context change re-loads", () => {
   it("re-runs page 1 when the context changes", async () => {
     const svc = fakeService();
     const { result, rerender } = renderHook(
@@ -286,14 +286,14 @@ describe("useBrowse — context change re-loads", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(svc.getCategory).toHaveBeenCalledTimes(1);
 
-    // Fresh object, same shape — JSON.stringify ctxKey is identical.
+    // Fresh object, same shape - JSON.stringify ctxKey is identical.
     rerender({ ctx: { ...CATEGORY_CTX } });
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(svc.getCategory).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("useBrowse — runIdRef stale-guard", () => {
+describe("useBrowse - runIdRef stale-guard", () => {
   it("ignores a slow page-1 from a superseded context", async () => {
     // First ctx's load resolves AFTER the context already changed; its result
     // must be dropped (runIdRef mismatch), so the second ctx's items win.
@@ -339,7 +339,7 @@ describe("useBrowse — runIdRef stale-guard", () => {
   });
 });
 
-describe("useBrowse — Server Mode", () => {
+describe("useBrowse - Server Mode", () => {
   it("routes page-1 through the server API when isServerMode() is true", async () => {
     mockIsServerMode.mockReturnValue(true);
     mockFetchServerCategory.mockResolvedValue(

@@ -1,5 +1,4 @@
-/* MediaCard — premium poster with motion-driven hover lift + cinematic reveal.
-   Transform/scale are driven by `motion` (variants); CSS handles the look. */
+/* MediaCard - premium poster with CSS-driven hover lift + cinematic reveal. */
 
 .media-card {
   --poster-w: var(--poster-card-width, 168px);
@@ -16,6 +15,11 @@
   text-align: left;
   cursor: pointer;
   color: var(--text-primary);
+  /* Isolate each card's layout so one card's internal changes (shimmer, reveal,
+     progress) don't reflow the whole grid. NOT `paint` here - the card lifts +
+     scales past its box on hover and paint containment would clip that. */
+  contain: layout;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .media-card:hover,
 .media-card:focus-visible {
@@ -23,7 +27,9 @@
   outline: none;
   /* Promote to a layer only while interacting (not for every idle poster). */
   will-change: transform;
+  transform: translateY(-14px) scale(1.08);
 }
+.media-card:active { transform: scale(0.98); }
 /* A real, offset keyboard-focus ring on the poster (the grid is the most-
    navigated surface; a 1px hairline isn't enough for remote/keyboard users). */
 .media-card:focus-visible .media-card-poster {
@@ -37,6 +43,9 @@
   aspect-ratio: 2 / 3;
   border-radius: var(--r-md);
   overflow: hidden;
+  /* Safe here (already clips via overflow): scopes the shimmer/reveal/progress
+     repaints to the poster box so they never invalidate the surrounding grid. */
+  contain: layout paint;
   border: 0.5px solid rgba(255, 255, 255, 0.1);
   background: rgba(0, 0, 0, 0.35);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
@@ -46,9 +55,47 @@
 .media-card:hover .media-card-poster,
 .media-card:focus-visible .media-card-poster {
   border-color: rgba(var(--accent-rgb), 0.55);
-  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(var(--accent-rgb), 0.4),
-    0 8px 36px rgba(var(--accent-rgb), 0.3);
+  box-shadow: 0 24px 54px -12px rgba(0, 0, 0, 0.66),
+    0 0 0 1px rgba(var(--accent-rgb), 0.45),
+    0 10px 40px rgba(var(--accent-rgb), 0.32);
+}
+
+/* ── "Top 10" ranked treatment ────────────────────────────────────────────
+   A small GOLD-metallic rank numeral in the poster's TOP-LEFT corner - 
+   contained inside the poster, a gold gradient fill with a lower sheen band,
+   dark edge for legibility over any art, and a soft gold glow. */
+.media-card-rank {
+  position: absolute;
+  top: calc(var(--sp-sm) + 6px);
+  left: calc(var(--sp-sm) + 8px);
+  z-index: 2;
+  font-family: var(--font-display, ui-sans-serif, system-ui, sans-serif);
+  font-weight: 800;
+  font-size: clamp(24px, calc(var(--poster-w) * 0.25), 40px);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  background: linear-gradient(
+    155deg,
+    #fff4cf 0%,
+    #f4d074 40%,
+    #dca63f 68%,
+    #f7de95 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6))
+    drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6))
+    drop-shadow(0 0 8px rgba(226, 178, 70, 0.4));
+  pointer-events: none;
+  user-select: none;
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.media-card:hover .media-card-rank,
+.media-card:focus-visible .media-card-rank {
+  transform: scale(1.08);
 }
 
 .media-card-poster img {
@@ -56,9 +103,17 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  opacity: 0;
+  transform: scale(1.04);
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.media-card-poster img.is-loaded {
+  opacity: 1;
+  transform: scale(1);
 }
 
-/* Continue Watching progress bar — pinned to the poster's bottom edge, above the
+/* Continue Watching progress bar - pinned to the poster's bottom edge, above the
    hover reveal so it stays visible while scanning the row. */
 .media-card-progress {
   position: absolute;
@@ -88,7 +143,7 @@
     rgba(255, 255, 255, 0.03) 70%
   );
   background-size: 200% 100%;
-  /* PERF: bounded, not `infinite` — lazy posters below the fold never fire
+  /* PERF: bounded, not `infinite` - lazy posters below the fold never fire
      onLoad, so their shimmers used to animate forever offscreen. 12 cycles
      (~17s) covers any realistic load; afterwards the gradient's first stop
      reads as a normal static placeholder. */
@@ -99,7 +154,7 @@
   to { background-position: -200% 0; }
 }
 
-/* Cinematic reveal layer (opacity driven by motion). */
+/* Cinematic reveal layer. */
 .media-card-reveal {
   position: absolute;
   inset: 0;
@@ -112,10 +167,13 @@
     rgba(0, 0, 0, 0) 72%
   );
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease-out;
 }
 .media-card:hover .media-card-reveal,
 .media-card:focus-visible .media-card-reveal {
   pointer-events: auto;
+  opacity: 1;
 }
 .media-card-reveal-inner {
   width: 100%;
@@ -123,6 +181,15 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.media-card:hover .media-card-reveal-inner,
+.media-card:focus-visible .media-card-reveal-inner {
+  opacity: 1;
+  transform: translateY(0);
 }
 .media-card-reveal-title {
   font-size: 13.5px;
@@ -187,8 +254,8 @@
   background: rgba(255, 255, 255, 0.26);
 }
 
-/* "Ready to play" badge — a cached resolution exists (auto-resolve). */
-/* Corner label ("S2 E5") — a quiet glass chip opposite the ready badge. */
+/* "Ready to play" badge - a cached resolution exists (auto-resolve). */
+/* Corner label ("S2 E5") - a quiet glass chip opposite the ready badge. */
 .media-card-corner-label {
   position: absolute;
   top: 7px;
@@ -204,6 +271,23 @@
   border: 0.75px solid var(--glass-border);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+
+/* "Watched" check - a finished title. Top-right so it never collides with the
+   top-left "Ready" badge (a watchlisted title can be both). */
+.media-card-watched {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  color: #07210f;
+  background: rgba(var(--success-rgb, 92, 217, 140), 0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .media-card-ready {
@@ -222,6 +306,31 @@
   color: #07210f;
   background: rgba(var(--success-rgb, 92, 217, 140), 0.95);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Persistent score chip: bottom-right keeps it clear of Ready (top-left) and
+   the corner-label / watched treatments (top-right). It shares the existing
+   glass chip recipe so the score remains legible on both bright and dark art. */
+.media-card-poster-rating {
+  position: absolute;
+  right: 7px;
+  bottom: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px 2px 6px;
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-1) 62%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
 }
 
 .media-card-placeholder {
@@ -276,4 +385,30 @@
 }
 .media-card-rating svg {
   color: var(--warning);
+}
+
+/* Designed fallback for a missing OR broken poster (replaces the browser's
+   broken-image glyph, e.g. when a TMDB poster 404s). A stable per-title hue
+   keeps a grid of fallbacks looking varied rather than a wall of grey. */
+.media-card-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(130% 120% at 28% 18%, hsl(var(--fallback-hue, 220) 40% 32%), hsl(var(--fallback-hue, 220) 36% 14%) 72%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.media-card-fallback-initial {
+  font-size: clamp(28px, 3.4vw, 52px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+}
+.media-card-fallback-icon {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  color: rgba(255, 255, 255, 0.34);
 }

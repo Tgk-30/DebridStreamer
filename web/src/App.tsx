@@ -1,4 +1,4 @@
-// App shell — mirrors Sources/.../Views/ContentView.swift (the Hybrid nav).
+// App shell - mirrors Sources/.../Views/ContentView.swift (the Hybrid nav).
 //
 // Aurora background + restrained glow, a slim glass NavRail on the left, a
 // content area that routes between screens via the app store, a floating
@@ -6,24 +6,66 @@
 // overlay that mounts over the content area whenever a media item is selected.
 
 import "./theme/theme.css";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { NavRail, isScreenHidden, type ScreenId } from "./components/NavRail";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { episodesAiredSince } from "./data/calendar";
+import type { TourStep } from "./components/SpotlightTour";
+
+// The point-and-highlight tour shown once after the welcome guide. Each step
+// spotlights a real nav destination by its stable [data-screen] anchor.
+const TOUR_STEPS: TourStep[] = [
+  {
+    target: '[data-screen="discover"]',
+    title: "Your home base",
+    body: "A cinematic hero plus your Top 10 and rails of trending, popular, and new releases - all pulled live.",
+    placement: "right",
+  },
+  {
+    target: '[data-screen="search"]',
+    title: "Find anything, instantly",
+    body: "Search any movie or show - results appear as you type, no Enter needed.",
+    placement: "right",
+  },
+  {
+    target: '[data-screen="watchlist"]',
+    title: "Save it for later",
+    body: "Add titles to your Watchlist to come back to. In Server Mode it syncs across every device in your household.",
+    placement: "right",
+  },
+  {
+    target: '[data-screen="settings"]',
+    title: "Your keys & preferences",
+    body: "Add or change your TMDB / OMDb and debrid keys, pick a theme, choose your rating scale, and tune playback here anytime.",
+    placement: "right",
+  },
+];
+const TOUR_SEEN_KEY = "ds_tour_seen";
 import { GlobalSearch } from "./components/GlobalSearch";
+import { ProfileMenu } from "./components/ProfileMenu";
 import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
-import { FirstRunWizard } from "./components/FirstRunWizard";
-import { ServerSetupWizard } from "./components/ServerSetupWizard";
-import { TierOnboarding } from "./components/TierOnboarding";
-import { ProfilePicker } from "./components/ProfilePicker";
-import { CommandPalette } from "./components/CommandPalette";
-import { WelcomeGuide } from "./components/WelcomeGuide";
-import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
-import { SetupNudge } from "./components/SetupNudge";
+import { BandwidthWarningBanner } from "./components/BandwidthWarningBanner";
+import { InstallPrompt, isInstallPromptEligible } from "./components/InstallPrompt";
+import { LocalPlayerHost } from "./components/LocalPlayerHost";
+// Eager (not lazy): the lock screen must paint in the SAME commit as the app
+// shell, or a code-split chunk load would flash a protected profile's content
+// behind a null Suspense fallback before the gate appears.
+import { LocalProfilePicker } from "./components/LocalProfilePicker";
 import { isSmartPreloadEnabled, whenIdle } from "./lib/smartPreload";
-import { useAppStore } from "./store/AppStore";
+import { setIdleGateSuppressed, usePlayerMounted } from "./lib/attention";
+import { isLocalProfileUnlocked, useAppStore } from "./store/AppStore";
 import { useServerSession } from "./lib/ServerSessionContext";
 import { isServerMode } from "./lib/serverMode";
-import { isFirstRun } from "./lib/firstRun";
+import { isTauri } from "./lib/tauri";
+import { getStore } from "./storage";
+import { getAutoEnterProfileId } from "./storage/ProfileRegistry";
+import {
+  startDownloadsRuntime,
+  stopDownloadsRuntime,
+} from "./services/downloads";
+import { devBypassesOnboarding, isFirstRun, needsKeyOnboarding } from "./lib/firstRun";
+import { secretReadsFailedThisSession } from "./storage/KeychainSecretStore";
 import { shouldShowServerSetup } from "./lib/serverSetup";
 import { fetchServerAdminHealth } from "./lib/serverApi";
 import { useTheme } from "./theme/useTheme";
@@ -36,7 +78,6 @@ import { Search } from "./screens/Search";
 import { Library } from "./screens/Library";
 import { Watchlist } from "./screens/Watchlist";
 import { History } from "./screens/History";
-import { Assistant } from "./screens/Assistant";
 
 // Heavy / not-on-first-paint screens + overlays are code-split into their own
 // chunks (React.lazy), so the initial bundle doesn't carry them. The Detail
@@ -49,14 +90,54 @@ const Calendar = lazy(() =>
 const DebridLibrary = lazy(() =>
   import("./screens/DebridLibrary").then((m) => ({ default: m.DebridLibrary })),
 );
+const Downloads = lazy(() =>
+  import("./screens/Downloads").then((m) => ({ default: m.Downloads })),
+);
 const Settings = lazy(() =>
   import("./screens/Settings").then((m) => ({ default: m.Settings })),
 );
 const Browse = lazy(() =>
   import("./screens/Browse").then((m) => ({ default: m.Browse })),
 );
+const Assistant = lazy(() =>
+  import("./screens/Assistant").then((m) => ({ default: m.Assistant })),
+);
 const Detail = lazy(() =>
   import("./screens/Detail").then((m) => ({ default: m.Detail })),
+);
+
+// Modal/overlay flows most returning users never open (onboarding wizards, the
+// command palette, the guide, the shortcuts sheet) are code-split too, so their
+// bytes - and ServerSetupWizard's QRCode dependency - stay out of first paint.
+// Each render site sits inside a <Suspense fallback={null}> (a modal appearing a
+// frame late is invisible). InstallPrompt stays eager: it shares a module with
+// the isInstallPromptEligible predicate used during render.
+const FirstRunWizard = lazy(() =>
+  import("./components/FirstRunWizard").then((m) => ({ default: m.FirstRunWizard })),
+);
+const ServerSetupWizard = lazy(() =>
+  import("./components/ServerSetupWizard").then((m) => ({ default: m.ServerSetupWizard })),
+);
+const TierOnboarding = lazy(() =>
+  import("./components/TierOnboarding").then((m) => ({ default: m.TierOnboarding })),
+);
+const ProfilePicker = lazy(() =>
+  import("./components/ProfilePicker").then((m) => ({ default: m.ProfilePicker })),
+);
+const WelcomeGuide = lazy(() =>
+  import("./components/WelcomeGuide").then((m) => ({ default: m.WelcomeGuide })),
+);
+const KeyboardShortcuts = lazy(() =>
+  import("./components/KeyboardShortcuts").then((m) => ({ default: m.KeyboardShortcuts })),
+);
+const SetupNudge = lazy(() =>
+  import("./components/SetupNudge").then((m) => ({ default: m.SetupNudge })),
+);
+const SpotlightTour = lazy(() =>
+  import("./components/SpotlightTour").then((m) => ({ default: m.SpotlightTour })),
+);
+const CommandPalette = lazy(() =>
+  import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })),
 );
 
 /** Gates a genuine first-run behind the right wizard, then the app:
@@ -64,16 +145,45 @@ const Detail = lazy(() =>
  *   • Server Mode → the owner-only ServerSetupWizard for a fresh server
  *     (shouldShowServerSetup), driven off the live admin health counts.
  *
- *  Renders nothing until the async checks resolve to avoid a flash of the app
- *  before a wizard. Lives inside AppStoreProvider + ServerSessionProvider so all
- *  branches have store + session access. */
+ *  Renders boot chrome while async checks resolve, avoiding a blank opaque
+ *  window before a wizard decision. Lives inside AppStoreProvider +
+ *  ServerSessionProvider so all branches have store + session access. */
 export function FirstRunHost() {
-  const { hydrated } = useAppStore();
+  const { hydrated, settings, services } = useAppStore();
   const session = useServerSession();
   const serverMode = isServerMode();
 
   // Local-Mode persona wizard gate.
   const [firstRun, setFirstRun] = useState<boolean | null>(null);
+  // The FORCED key gate: a Local-Mode launch without a catalog key or a debrid
+  // token re-opens the wizard as mandatory, regardless of onboarding history.
+  // Latched ONCE per launch (after hydration) so completing the wizard - or
+  // deliberately clearing keys in Settings - doesn't re-trap mid-session; the
+  // next launch re-evaluates.
+  const [keyGate, setKeyGate] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!hydrated || keyGate != null) return;
+    if (devBypassesOnboarding()) {
+      setKeyGate(false);
+      return;
+    }
+    // A locked/broken keychain hydrates secrets as null - the keys may exist
+    // but be unreadable. Never force onboarding on top of that.
+    if (secretReadsFailedThisSession()) {
+      setKeyGate(false);
+      return;
+    }
+    setKeyGate(
+      needsKeyOnboarding({
+        serverMode,
+        // services.tmdb folds in an env-provided key; settings alone would
+        // force dev builds that are actually configured.
+        hasTmdb: services.tmdb != null,
+        omdbKey: settings.omdbKey,
+        hasDebrid: services.debrid?.hasServices === true,
+      }),
+    );
+  }, [hydrated, keyGate, serverMode, settings.omdbKey, services]);
   // Server-Mode owner setup gate (null = undecided, false = skip/done/non-owner).
   const [serverSetup, setServerSetup] = useState<boolean | null>(null);
   // Tier-aware welcome (shown once, before the setup wizards, on a fresh start).
@@ -132,23 +242,137 @@ export function FirstRunHost() {
   // Wait for BOTH the relevant gate AND Store hydration before deciding. This
   // ensures the wizard's choice (e.g. Advanced → simpleMode false) is applied
   // AFTER hydration's setSettings, so a late hydration can't revert it.
-  if (firstRun == null || serverSetup == null || !hydrated) return null;
+  if (firstRun == null || serverSetup == null || keyGate == null || !hydrated) {
+    return (
+      <div
+        aria-busy="true"
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background: "var(--bg-1, #0a0b16)",
+        }}
+      >
+        <Spinner label="Starting DebridStreamer" />
+      </div>
+    );
+  }
   // Tier-tailored welcome first, on a genuine fresh start (then the existing
   // mode-specific setup wizard collects the actual config).
-  if (!welcomed && (firstRun || serverSetup)) {
-    return <TierOnboarding onDone={markWelcomed} />;
+  if (!welcomed && (firstRun || keyGate || serverSetup)) {
+    return (
+      <Suspense fallback={null}>
+        <TierOnboarding onDone={markWelcomed} />
+      </Suspense>
+    );
   }
-  if (firstRun) return <FirstRunWizard onDone={() => setFirstRun(false)} />;
-  if (serverSetup) return <ServerSetupWizard onDone={() => setServerSetup(false)} />;
+  if (firstRun || keyGate) {
+    return (
+      <Suspense fallback={null}>
+        <FirstRunWizard
+          forced={keyGate}
+          onDone={() => {
+            setFirstRun(false);
+            setKeyGate(false);
+          }}
+        />
+      </Suspense>
+    );
+  }
+  if (serverSetup)
+    return (
+      <Suspense fallback={null}>
+        <ServerSetupWizard onDone={() => setServerSetup(false)} />
+      </Suspense>
+    );
   return <App />;
 }
 
 export function App() {
-  const { route, navigate, detailItem, browseContext, openDetail, search, settings, simpleMode, services } =
-    useAppStore();
+  const {
+    route,
+    navigate,
+    detailItem,
+    browseContext,
+    closeBrowse,
+    openDetail,
+    closeDetail,
+    settings,
+    simpleMode,
+    services,
+    calendar,
+    calendarLastSeenAt,
+    activeProfile,
+    multiUserEnabled = false,
+    profiles = [],
+    switchLocalProfile,
+  } = useAppStore();
+  const playerMounted = usePlayerMounted();
+  // Calendar data is resolved once in AppStore. Recompute this bounded selector
+  // only when that data, its watermark, or navigation changes - never on every
+  // shell render. A failed/unavailable Server Mode calendar simply has no badge.
+  const calendarBadgeCount = useMemo(() => {
+    if (calendar.loading || calendar.error != null || calendarLastSeenAt == null) return 0;
+    return episodesAiredSince(calendar.episodes, calendarLastSeenAt).length;
+  }, [calendar.episodes, calendar.error, calendar.loading, calendarLastSeenAt, route]);
 
-  // "Who's watching" picker visibility (Server Mode only; opened from the rail).
+  // A mounted player can play for hours without pointer or keyboard activity.
+  // Keep the input-idle route parking from treating that as unattended, while
+  // the unfocused signal still parks non-video chrome in another window.
+  useEffect(() => {
+    setIdleGateSuppressed(playerMounted);
+    return () => setIdleGateSuppressed(false);
+  }, [playerMounted]);
+
+  // "Who's watching" picker visibility, server or Local Mode.
   const [profilePickerOpen, setProfilePickerOpen] = useState(false);
+  // Keep a tiny always-loaded shortcut shim so the first Cmd-K requests the
+  // lazy palette and opens it in its initial render.
+  const [commandPaletteRequested, setCommandPaletteRequested] = useState(false);
+  useEffect(() => {
+    const openCommandPalette = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        (event.key === "k" || event.key === "K")
+      ) {
+        event.preventDefault();
+        setCommandPaletteRequested(true);
+      }
+    };
+    window.addEventListener("keydown", openCommandPalette);
+    return () => window.removeEventListener("keydown", openCommandPalette);
+  }, []);
+  // A password lock is independent of the "enable multiple profiles" toggle:
+  // once a profile has a password it stays gated until unlocked, even if
+  // multi-user is later switched off (otherwise the toggle silently voids it).
+  const localProfileLocked = !isServerMode() && activeProfile?.passwordHash != null && !isLocalProfileUnlocked(activeProfile.id);
+
+  // Launch choice: with several profiles, ask who's watching - unless the user
+  // nominated one to enter automatically (Settings -> Profiles). Runs once per
+  // launch. A protected profile still meets its password prompt via
+  // localProfileLocked above, so auto-enter never walks past a password.
+  const [launchPickerOpen, setLaunchPickerOpen] = useState(false);
+  const launchChoiceMade = useRef(false);
+  useEffect(() => {
+    if (launchChoiceMade.current || isServerMode()) return;
+    // Wait for the registry to report; [] is also "still loading" here.
+    if (profiles.length === 0) return;
+    launchChoiceMade.current = true;
+    if (profiles.length === 1) return; // nothing to choose between
+    void (async () => {
+      const autoId = await getAutoEnterProfileId();
+      const target = autoId != null ? profiles.find((p) => p.id === autoId) : undefined;
+      if (target == null) {
+        setLaunchPickerOpen(true); // no preference, or it was deleted -> ask
+        return;
+      }
+      if (target.id === activeProfile?.id) return; // already the active profile
+      // Switching to a protected profile needs its password, which this path
+      // cannot supply - fall back to the chooser so the prompt is shown there.
+      const result = await switchLocalProfile(target.id);
+      if (!result.ok) setLaunchPickerOpen(true);
+    })();
+  }, [profiles, activeProfile?.id, switchLocalProfile]);
 
   // First-run feature tour. App only mounts past the setup wizards, so this is
   // the moment to greet a new user. Shown once (localStorage flag); existing
@@ -161,20 +385,40 @@ export function App() {
         setWelcomeGuideOpen(true);
       }
     } catch {
-      // private mode — just skip the auto-tour
+      // private mode - just skip the auto-tour
     }
     const reopen = () => setWelcomeGuideOpen(true);
     window.addEventListener("ds:open-welcome-guide", reopen);
     return () => window.removeEventListener("ds:open-welcome-guide", reopen);
   }, []);
+  // The point-and-highlight tour runs once, right after the welcome guide.
+  const [tourOpen, setTourOpen] = useState(false);
   const closeWelcomeGuide = () => {
     setWelcomeGuideOpen(false);
     try {
       globalThis.localStorage?.setItem("ds_welcome_guide_seen", "1");
+      if (globalThis.localStorage?.getItem(TOUR_SEEN_KEY) !== "1") {
+        // Let the shell paint before the tour measures its targets.
+        setTimeout(() => setTourOpen(true), 350);
+      }
     } catch {
       // ignore (private mode)
     }
   };
+  const closeTour = () => {
+    setTourOpen(false);
+    try {
+      globalThis.localStorage?.setItem(TOUR_SEEN_KEY, "1");
+    } catch {
+      // ignore (private mode)
+    }
+  };
+  // Allow re-running the tour on demand (e.g. from a help menu / ⌘K).
+  useEffect(() => {
+    const open = () => setTourOpen(true);
+    window.addEventListener("ds:open-tour", open);
+    return () => window.removeEventListener("ds:open-tour", open);
+  }, []);
 
   // On-demand guided setup: the SAME persona wizard a genuine first run shows,
   // re-runnable at any time. This is the clear onboarding path for installs
@@ -188,7 +432,7 @@ export function App() {
     return () => window.removeEventListener("ds:open-first-run", openWizard);
   }, []);
 
-  // App-wide keyboard-shortcuts reference, opened from ⌘K (no persistence — it's
+  // App-wide keyboard-shortcuts reference, opened from ⌘K (no persistence - it's
   // a reference, not a one-time greeting).
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useEffect(() => {
@@ -207,7 +451,7 @@ export function App() {
   }, []);
 
   // Contextual "finish setup" nudge (Local Mode only): a dismissible bar shown
-  // while the app can't stream yet — no debrid service, or no active source. It
+  // while the app can't stream yet - no debrid service, or no active source. It
   // auto-hides once setup is complete; dismissal is remembered so it never nags.
   const [nudgeDismissed, setNudgeDismissed] = useState(() => {
     try {
@@ -238,6 +482,36 @@ export function App() {
     !firstRunOpen &&
     !shortcutsOpen;
 
+  // Mobile-browser "add to home screen" card. Eligibility is static for the
+  // session (platform + display-mode don't change mid-run); dismissal persists.
+  const [installEligible] = useState(() => isInstallPromptEligible());
+  const [installDismissed, setInstallDismissed] = useState(() => {
+    try {
+      return globalThis.localStorage?.getItem("ds_pwa_install_dismissed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismissInstall = () => {
+    setInstallDismissed(true);
+    try {
+      globalThis.localStorage?.setItem("ds_pwa_install_dismissed", "1");
+    } catch {
+      // ignore (private mode)
+    }
+  };
+  // The setup nudge outranks it - one bottom card at a time.
+  const showInstallPrompt =
+    installEligible &&
+    !installDismissed &&
+    !showSetupNudge &&
+    route !== "settings" &&
+    detailItem == null &&
+    !welcomeGuideOpen &&
+    !tierWelcomeOpen &&
+    !firstRunOpen &&
+    !shortcutsOpen;
+
   // Smart preloading (invisible): while idle, warm the lazy Detail + Browse code
   // chunks so opening a title or "See all" is instant instead of waiting on a
   // chunk fetch. Off → metered users skip the background bytes.
@@ -252,6 +526,29 @@ export function App() {
   // Apply the persisted theme to the document root (instantly on change, and on
   // startup once the Store hydrates the saved choice).
   useTheme(settings);
+
+  // A covered screen keeps compositing: its animations invalidate the
+  // full-viewport backdrop-filter of the overlay above it every frame.
+  // Mirror overlay state onto the root so CSS can park the covered tree.
+  useEffect(() => {
+    const covered = detailItem != null || browseContext != null;
+    document.documentElement.toggleAttribute("data-overlay-open", covered);
+    return () => document.documentElement.removeAttribute("data-overlay-open");
+  }, [detailItem, browseContext]);
+
+  // The native executor is durable but its event subscription is not. Start
+  // one local-mode runtime at app launch so interrupted jobs are recovered even
+  // before the user opens the Downloads screen.
+  useEffect(() => {
+    if (!isTauri() || isServerMode()) return;
+    const manager = startDownloadsRuntime(getStore(), services.debrid);
+    return () => stopDownloadsRuntime(manager);
+    // activeProfile?.id is in the deps so a Local Mode profile switch rebinds
+    // the runtime to the NEW profile's Store. Without it, two profiles sharing
+    // one debrid token keep services.debrid referentially identical, the effect
+    // never re-runs, and the DownloadManager keeps writing to the previous
+    // profile's now-closed database.
+  }, [services.debrid, activeProfile?.id]);
 
   // If the current screen is hidden under the active modes (e.g. the user flips
   // to Simple while on Assistant/Debrid, or is in Server Mode), redirect to
@@ -270,6 +567,7 @@ export function App() {
     route !== "search" &&
     route !== "calendar" &&
     route !== "debrid" &&
+    route !== "downloads" &&
     route !== "assistant" &&
     detailItem == null &&
     browseContext == null;
@@ -277,17 +575,30 @@ export function App() {
   return (
     // data-setup-nudge reserves scroll room under the fixed get-started card
     // (App.css) so the last content row is never stranded behind it.
-    <div className="app" data-setup-nudge={showSetupNudge || undefined}>
+    <div className="app" data-setup-nudge={showSetupNudge || showInstallPrompt || undefined}>
       <div className="aurora-glow" />
+      <BandwidthWarningBanner />
 
       <NavRail
         selected={route}
         onSelect={navigate}
         onSwitchProfile={() => setProfilePickerOpen(true)}
+        localProfile={activeProfile}
+        localProfileCount={profiles.length}
+        localMultiUserEnabled={multiUserEnabled}
+        navOrder={settings.appearanceNavOrder}
+        navHidden={settings.appearanceNavHidden}
+        calendarBadgeCount={calendarBadgeCount}
       />
 
       <main className="app-content">
-        {showsGlobalSearch && <GlobalSearch onSubmit={search} />}
+        {showsGlobalSearch && <GlobalSearch />}
+        {showsGlobalSearch && (
+          <ProfileMenu
+            onSwitchProfile={() => setProfilePickerOpen(true)}
+            showSwitch={isServerMode() || (multiUserEnabled && profiles.length > 1)}
+          />
+        )}
 
         {/* Route transition: a keyed frame that plays a CSS enter animation on
             each navigation. The `key={route}` remounts this div on every route
@@ -298,69 +609,126 @@ export function App() {
             nested-motion screens. Suspense stays inside so a lazy screen shows the
             spinner within the frame. */}
         <div key={route} className="route-frame">
-          <Suspense fallback={<Spinner variant="inline" />}>
-            {renderScreen(route)}
-          </Suspense>
+          {/* Per-screen boundary: a single screen's render crash offers "Go
+              home" instead of sinking the whole app. resetKey={route} clears it
+              on navigation (the keyed frame also remounts). */}
+          <ErrorBoundary
+            label={route}
+            resetKey={route}
+            onGoHome={() => navigate("discover")}
+          >
+            <Suspense fallback={<Spinner variant="inline" />}>
+              {renderScreen(route)}
+            </Suspense>
+          </ErrorBoundary>
         </div>
 
-        {/* Browse overlay — mounts over the current screen ("See all" +
-            advanced filters), below the Detail overlay. */}
+        {/* Browse overlay - mounts over the current screen ("See all" +
+            advanced filters), below the Detail overlay. Its own boundary: a
+            crash here closes the overlay instead of sinking the app. */}
         {browseContext != null && (
-          <Suspense fallback={<Spinner variant="overlay" />}>
-            <Browse />
-          </Suspense>
+          <ErrorBoundary
+            label="browse"
+            resetKey={browseContext}
+            onGoHome={closeBrowse}
+            homeLabel="Close"
+            overlay
+          >
+            <Suspense fallback={<Spinner variant="overlay" />}>
+              <Browse />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
-        {/* Detail overlay — mounts over the current screen (and over Browse). */}
+        {/* Detail overlay - mounts over the current screen (and over Browse).
+            It hosts the VideoPlayer, so it gets its own boundary: a player
+            render crash closes the overlay rather than reaching the root
+            boundary in main.tsx and taking the whole app down. resetKey is the
+            item id, so navigating to a different title from inside a crashed
+            Detail recovers without a reload. */}
         {detailItem != null && (
-          <Suspense fallback={<Spinner variant="overlay" />}>
-            <Detail />
-          </Suspense>
+          <ErrorBoundary
+            label="detail"
+            resetKey={detailItem.id}
+            onGoHome={closeDetail}
+            homeLabel="Close"
+            overlay
+          >
+            <Suspense fallback={<Spinner variant="overlay" />}>
+              <Detail />
+            </Suspense>
+          </ErrorBoundary>
         )}
       </main>
 
-      {/* "Who's watching" picker overlay (Server Mode only) — mounts above
-          everything when opened from the rail's profile switcher. */}
-      {profilePickerOpen && (
-        <ProfilePicker onClose={() => setProfilePickerOpen(false)} />
-      )}
+      {/* Completed downloads can launch playback without opening a Detail
+          overlay. The host owns the app-wide native-mpv mount. */}
+      <LocalPlayerHost />
 
-      {/* ⌘K quick switcher — self-contained; hidden until invoked. */}
-      <CommandPalette />
+      {/* Lazily-loaded overlays - each chunk downloads only when first opened.
+          A null Suspense fallback is correct here: these are modals, so "nothing
+          for a frame" is invisible until the chunk resolves. */}
+      <Suspense fallback={null}>
+        {profilePickerOpen && (isServerMode() ? (
+          <ProfilePicker onClose={() => setProfilePickerOpen(false)} />
+        ) : (
+          <LocalProfilePicker onClose={() => setProfilePickerOpen(false)} />
+        ))}
+        {/* Launch choice. The lock gate wins when both apply, so a protected
+            profile shows its password prompt rather than two stacked pickers. */}
+        {launchPickerOpen && !localProfileLocked && (
+          <LocalProfilePicker mode="select" onClose={() => setLaunchPickerOpen(false)} />
+        )}
+        {localProfileLocked && (
+          <LocalProfilePicker mode="lock" onClose={() => {}} />
+        )}
 
-      {/* First-run feature tour (and re-openable from Settings / ⌘K). */}
-      {welcomeGuideOpen && (
-        <WelcomeGuide
-          onClose={closeWelcomeGuide}
-          onOpenSettings={() => navigate("settings")}
-        />
-      )}
+        {/* ⌘K quick switcher - fetched only after its first shortcut. */}
+        {commandPaletteRequested && (
+          <Suspense fallback={null}>
+            <CommandPalette initiallyOpen />
+          </Suspense>
+        )}
 
-      {shortcutsOpen && (
-        <KeyboardShortcuts onClose={() => setShortcutsOpen(false)} />
-      )}
+        {/* First-run feature tour (and re-openable from Settings / ⌘K). */}
+        {welcomeGuideOpen && (
+          <WelcomeGuide
+            onClose={closeWelcomeGuide}
+            onOpenSettings={() => navigate("settings")}
+          />
+        )}
 
-      {tierWelcomeOpen && (
-        <TierOnboarding onDone={() => setTierWelcomeOpen(false)} />
-      )}
+        {tourOpen && <SpotlightTour steps={TOUR_STEPS} onDone={closeTour} />}
 
-      {/* Re-run of the first-run persona wizard (full-screen; closes on done or
-          skip — the wizard persists its own onboarding_completed flag). */}
-      {firstRunOpen && <FirstRunWizard onDone={() => setFirstRunOpen(false)} />}
+        {shortcutsOpen && (
+          <KeyboardShortcuts onClose={() => setShortcutsOpen(false)} />
+        )}
 
-      {showSetupNudge && (
-        <SetupNudge
-          onStartWizard={() => setFirstRunOpen(true)}
-          onShowTour={() => setWelcomeGuideOpen(true)}
-          onDismiss={dismissNudge}
-        />
-      )}
+        {tierWelcomeOpen && (
+          <TierOnboarding onDone={() => setTierWelcomeOpen(false)} />
+        )}
+
+        {/* Re-run of the first-run persona wizard (full-screen; closes on done or
+            skip - the wizard persists its own onboarding_completed flag). */}
+        {firstRunOpen && <FirstRunWizard onDone={() => setFirstRunOpen(false)} />}
+
+        {showSetupNudge && (
+          <SetupNudge
+            onStartWizard={() => setFirstRunOpen(true)}
+            onShowTour={() => setWelcomeGuideOpen(true)}
+            onDismiss={dismissNudge}
+          />
+        )}
+      </Suspense>
+
+      {showInstallPrompt && <InstallPrompt onDismiss={dismissInstall} />}
 
       {/* Desktop auto-update toast. Runs the launch-time check itself and is a
           no-op in a plain browser (isTauri-gated in updater.ts). */}
       <UpdateBanner
         autoCheck={settings.autoUpdateChecks}
         autoInstall={settings.autoInstallUpdates}
+        networkMode={settings.networkMode}
       />
     </div>
   );
@@ -383,6 +751,8 @@ export function App() {
         return <Assistant />;
       case "debrid":
         return <DebridLibrary />;
+      case "downloads":
+        return <Downloads />;
       case "settings":
         return <Settings />;
     }

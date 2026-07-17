@@ -1,8 +1,8 @@
 # Remote Access
 
 By default your server is reachable only on your local network
-(`http://<server-ip>:43110`). To watch from anywhere — your phone on cellular, a
-friend's house — you need to reach it remotely **without** exposing an open,
+(`http://<server-ip>:43110`). To watch from anywhere - your phone on cellular, a
+friend's house - you need to reach it remotely **without** exposing an open,
 unauthenticated port to the internet.
 
 The two recommended ways are **Tailscale** (private mesh VPN) and **Cloudflare
@@ -16,7 +16,7 @@ Tunnel** (public HTTPS hostname). Both avoid port-forwarding.
 ## Why route through the server at all (the single-IP rationale)
 
 When you stream **through** your DebridStreamer server, your indexers and debrid
-provider see **one IP address — the server's** — no matter how many people watch
+provider see **one IP address - the server's** - no matter how many people watch
 or where they are.
 
 Why that matters:
@@ -31,13 +31,13 @@ Why that matters:
 This is the core reason to self-host rather than have every device call debrid
 directly. Remote access just lets people reach that single egress point safely.
 
-> The server still sends the full video bytes to each viewer — relaying does not
+> The server still sends the full video bytes to each viewer - relaying does not
 > reduce a viewer's own data usage. Use the per-profile **cached-only / max
 > quality / max file size** playback controls to limit heavy remote playback.
 
 ---
 
-## Option A: Tailscale (private — easiest, recommended)
+## Option A: Tailscale (private - easiest, recommended)
 
 Tailscale puts your devices and your server on a private encrypted mesh network.
 Nothing is exposed to the public internet; only your own devices can reach the
@@ -63,7 +63,7 @@ Best for: your own household and devices.
 
    Install it to the home screen as a PWA and you're done.
 
-Because traffic stays inside the tailnet, you can leave it on plain HTTP — the
+Because traffic stays inside the tailnet, you can leave it on plain HTTP - the
 tailnet itself is the encryption layer. No environment changes are required for
 a basic setup.
 
@@ -120,7 +120,7 @@ can even load the page:
 > **Important:** Cloudflare Access and Tailscale are *outer* protection layers.
 > They control who can reach the server. They do **not** replace DebridStreamer's
 > own logins and profiles, which keep each person's history, credentials, and
-> sessions separate. Always create real profiles per person — see
+> sessions separate. Always create real profiles per person - see
 > [Multi-user & profiles](multi-user-and-profiles.md).
 
 ---

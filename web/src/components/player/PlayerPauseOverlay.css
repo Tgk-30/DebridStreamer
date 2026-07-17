@@ -1,0 +1,179 @@
+/* Paused state: a semi full-screen cinematic banner. The backdrop fills the
+   frame with a slow Ken Burns drift, a bottom-left scrim keeps the text
+   legible, and the content sits as a lower-left banner (not a boxed card). */
+.player-pause-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff;
+  cursor: pointer;
+  animation: playerPauseIn 0.4s ease-out both;
+}
+
+@keyframes playerPauseIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.player-pause-art,
+.player-pause-scrim {
+  position: absolute;
+  inset: 0;
+}
+
+.player-pause-art {
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.92;
+  filter: saturate(0.96) brightness(0.82) contrast(1.03);
+  transform-origin: 62% 38%;
+  animation: playerPauseKenBurns 26s ease-out both;
+}
+
+/* Slow, subtle drift so a paused frame still feels alive. */
+@keyframes playerPauseKenBurns {
+  from { transform: scale(1.06); }
+  to { transform: scale(1.16) translate3d(-1.6%, -1.2%, 0); }
+}
+
+.player-pause-scrim {
+  z-index: -1;
+  background:
+    linear-gradient(to top, rgba(2, 3, 8, 0.94) 0%, rgba(3, 4, 10, 0.5) 34%, rgba(3, 4, 10, 0.12) 62%, transparent 100%),
+    linear-gradient(100deg, rgba(2, 3, 9, 0.82) 0%, rgba(3, 4, 10, 0.34) 44%, transparent 74%);
+}
+
+.player-pause-content {
+  position: relative;
+  width: min(760px, calc(100vw - 96px));
+  margin: 0 0 clamp(40px, 7vh, 88px) clamp(40px, 6vw, 88px);
+  text-align: left;
+  animation: playerPauseContentIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both;
+}
+
+@keyframes playerPauseContentIn {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.player-pause-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 16px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.player-pause-eyebrow::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(var(--accent-rgb));
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.14), 0 0 14px rgba(var(--accent-rgb), 0.8);
+  content: "";
+  animation: playerPausePulse 2s ease-in-out infinite;
+}
+
+@keyframes playerPausePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.82); }
+}
+
+.player-pause-content h2,
+.player-pause-meta,
+.player-pause-overview {
+  margin: 0;
+}
+
+.player-pause-content h2 {
+  font-size: clamp(38px, 6vw, 68px);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+  text-wrap: balance;
+  text-shadow: 0 3px 26px rgba(0, 0, 0, 0.5);
+}
+
+.player-pause-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.player-pause-meta-item {
+  display: inline-flex;
+  align-items: center;
+  min-height: 27px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  font-weight: 680;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.player-pause-meta-item.is-rating {
+  border-color: rgba(255, 206, 107, 0.32);
+  background: rgba(255, 193, 76, 0.18);
+  color: #ffd98b;
+}
+
+.player-pause-overview {
+  display: -webkit-box;
+  max-width: 58ch;
+  margin: 20px 0 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 15px;
+  font-weight: 450;
+  line-height: 1.6;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+
+
+
+
+@media (max-width: 640px) {
+  .player-pause-content {
+    width: calc(100vw - 44px);
+    margin: 0 0 clamp(28px, 6vh, 56px) 22px;
+  }
+  .player-pause-content h2 {
+    font-size: clamp(30px, 10vw, 46px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-pause-screen,
+  .player-pause-content,
+  .player-pause-art,
+  .player-pause-eyebrow::before {
+    animation: none;
+    transition: none;
+  }
+}

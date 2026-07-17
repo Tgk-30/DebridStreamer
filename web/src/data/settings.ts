@@ -19,9 +19,10 @@
 import { TMDBService } from "../services/metadata/TMDBService";
 import { OMDBService } from "../services/metadata/OMDBService";
 import { embeddedOmdbKey } from "./embeddedOmdb";
+import { embeddedTmdbKey } from "./embeddedTmdb";
 import { DebridManager } from "../services/debrid/DebridManager";
 import type { DebridService } from "../services/debrid/types";
-import type { DebridServiceType } from "../services/debrid/models";
+import { DebridServiceType } from "../services/debrid/models";
 import { RealDebridService } from "../services/debrid/RealDebridService";
 import { AllDebridService } from "../services/debrid/AllDebridService";
 import { PremiumizeService } from "../services/debrid/PremiumizeService";
@@ -33,14 +34,16 @@ import {
   makeIndexerConfig,
 } from "../services/indexers/types";
 import type { AIAssistantProvider } from "../services/ai/types";
-import type { AIProviderKind } from "../services/ai/models";
+import { AIProviderKind, OPENAI_COMPATIBLE } from "../services/ai/models";
 import { OpenAIProvider } from "../services/ai/OpenAIProvider";
 import { AnthropicProvider } from "../services/ai/AnthropicProvider";
 import { OllamaProvider } from "../services/ai/OllamaProvider";
 import { getSecretStore, getStore } from "../storage";
 import type { SecretStore } from "../storage";
+import type { ScreenId } from "../components/NavRail";
 import { appFetch } from "../lib/http";
 import { isServerMode } from "../lib/serverMode";
+import type { NetworkMode } from "../lib/networkPolicy";
 import { DEFAULT_THEME_ID, resolveThemeId } from "../theme/themes";
 import {
   OpenSubtitlesClient,
@@ -66,6 +69,9 @@ const STORAGE_KEY = "debridstreamer.settings.v1";
  * `secret:<key>` marker left in the KV table so a later sweep can find them. */
 const SettingsKeys = {
   tmdbApiKey: "tmdb_api_key",
+  traktClientId: "trakt_client_id",
+  traktClientSecret: "trakt_client_secret",
+  traktScrobbleEnabled: "trakt_scrobble_enabled",
   omdbApiKey: "omdb_api_key",
   builtInIndexersEnabled: "built_in_indexers_enabled",
   aiProvider: "ai_provider",
@@ -84,8 +90,12 @@ const SettingsKeys = {
   appearanceHeroScale: "appearance_hero_scale",
   appearancePanelContrast: "appearance_panel_contrast",
   appearanceNavLabels: "appearance_nav_labels",
+  appearanceNavPosition: "appearance_nav_position",
   appearanceNavTint: "appearance_nav_tint",
   appearancePosterSize: "appearance_poster_size",
+  appearanceDefaultTab: "appearance_default_tab",
+  appearanceNavOrder: "appearance_nav_order",
+  appearanceNavHidden: "appearance_nav_hidden",
   subtitleFontScale: "subtitle_font_scale",
   subtitleTextColor: "subtitle_text_color",
   subtitleBgOpacity: "subtitle_bg_opacity",
@@ -99,7 +109,14 @@ const SettingsKeys = {
   dataSaver: "data_saver",
   autoAdvanceEpisodes: "auto_advance_episodes",
   showWatchStats: "show_watch_stats",
+  showPosterRatings: "show_poster_ratings",
   transcode: "transcode",
+  ratingScale: "rating_scale",
+  preferredExternalPlayer: "preferred_external_player",
+  builtInPlayer: "built_in_player",
+  userName: "user_name",
+  userAvatar: "user_avatar",
+  networkMode: "network_mode",
 } as const;
 
 /** Marker written into the KV table for secret-valued keys; the real value
@@ -110,6 +127,8 @@ const SECRET_MARKER = "secret:";
 /** Keys whose values are credentials and must go through `SecretStore`. */
 const SECRET_KEYS = new Set<string>([
   SettingsKeys.tmdbApiKey,
+  SettingsKeys.traktClientId,
+  SettingsKeys.traktClientSecret,
   SettingsKeys.omdbApiKey,
   SettingsKeys.aiApiKey,
   SettingsKeys.openSubtitlesApiKey,
@@ -118,7 +137,7 @@ const SECRET_KEYS = new Set<string>([
 /** A user-configured external indexer (Torznab/Jackett/Prowlarr/Stremio addon).
  * `type` is the storage-layer indexer type, which includes `stremio_addon`
  * (persisted faithfully even though the ported web IndexerManager cannot build
- * one yet — see buildIndexerConfigs, which skips types the web factory lacks). */
+ * one yet - see buildIndexerConfigs, which skips types the web factory lacks). */
 export interface SourceEntry {
   id: string;
   type: StoredIndexerType;
@@ -152,12 +171,32 @@ export type AppearanceBackdrop = "ambient" | "subtle" | "plain";
 export type AppearanceHeroScale = "compact" | "standard" | "cinematic";
 export type AppearancePanelContrast = "soft" | "standard" | "high";
 export type AppearanceNavLabels = "auto" | "labels" | "icons";
+export type AppearanceNavPosition = "side" | "bottom";
 export type AppearanceNavTint = "airy" | "balanced" | "solid";
 export type AppearancePosterSize = "compact" | "default" | "large";
 
 /** Everything the user can configure, persisted to localStorage this phase. */
+/** How the user rates a title on Detail. "ten" = 1–10, "hundred" = 0–100
+ *  slider, "thumbs" = like/dislike. Default is "ten". */
+export type RatingScale = "ten" | "hundred" | "thumbs";
+function isRatingScale(v: unknown): v is RatingScale {
+  return v === "ten" || v === "hundred" || v === "thumbs";
+}
+/** Coerce any persisted value to a legal scale, falling back to the 1–10 default
+ * so a poisoned/stale blob can never render one control while another is saved. */
+export function normalizeRatingScale(v: unknown): RatingScale {
+  return isRatingScale(v) ? v : "ten";
+}
+
 export interface AppSettings {
   tmdbKey: string;
+  /** Trakt OAuth app credentials (user-registered, like every other key in
+   *  this app). Empty until the user connects Trakt. The access/refresh tokens
+   *  themselves live outside AppSettings in traktConnection.ts. */
+  traktClientId: string;
+  traktClientSecret: string;
+  /** Opt-in only: report actual player lifecycle events to Trakt. */
+  traktScrobbleEnabled: boolean;
   omdbKey: string;
   debridTokens: DebridTokenEntry[];
   sources: SourceEntry[];
@@ -166,6 +205,8 @@ export interface AppSettings {
   aiApiKey: string;
   aiModel: string;
   ollamaEndpoint: string;
+  /** Per-profile privacy policy for outbound network requests. */
+  networkMode: NetworkMode;
   /** Selected UI theme id (see theme/themes.ts). */
   theme: string;
   appearanceAccent: AppearanceAccent;
@@ -179,8 +220,19 @@ export interface AppSettings {
   appearanceHeroScale: AppearanceHeroScale;
   appearancePanelContrast: AppearancePanelContrast;
   appearanceNavLabels: AppearanceNavLabels;
+  /** Desktop nav placement: side rail (default) or a bottom bar. */
+  appearanceNavPosition: AppearanceNavPosition;
   appearanceNavTint: AppearanceNavTint;
   appearancePosterSize: AppearancePosterSize;
+  /** The nav destination the app lands on at launch. Default "discover". */
+  appearanceDefaultTab: ScreenId;
+  /** User's preferred order of nav items, by screen id. Reorder is scoped
+   * within each nav group; ids missing here keep their default relative order,
+   * and unknown ids are dropped. Empty means "default order". */
+  appearanceNavOrder: ScreenId[];
+  /** Nav items the user chose to hide, by screen id. "settings" is never
+   * hideable (it hosts the Simple/Advanced toggle) and is stripped on load. */
+  appearanceNavHidden: ScreenId[];
   /** Subtitle appearance, applied to the player's `::cue` (ported from
    * VPStudio's subtitle settings): font scale (1 = default), text color (hex),
    * and caption-background opacity (0–0.95). */
@@ -202,7 +254,7 @@ export interface AppSettings {
   streamMaxQuality: StreamMaxQuality;
   /** Maximum stream result size in GB; 0 disables the cap. */
   streamMaxSizeGB: number;
-  /** Master Data Saver — clamps the stream list AND automatic (watchlist)
+  /** Master Data Saver - clamps the stream list AND automatic (watchlist)
    *  playback to a bandwidth-friendly tier (≤720p, ≤5 GB) without transcoding. */
   dataSaver: boolean;
   /** Auto-play the next episode when a series episode ends (cached streams only). */
@@ -210,10 +262,27 @@ export interface AppSettings {
   /** Opt-in: show a personal watch-stats card on the History screen (off by
    *  default so the screen stays uncluttered for users who don't want it). */
   showWatchStats: boolean;
+  /** Keep the TMDB score visible on poster cards while browsing a catalog. */
+  showPosterRatings: boolean;
   /** Server-Mode only: request the server's transcoded 720p HLS variant for
    *  playback (lower bitrate, re-encoded). Only effective when the server
    *  advertises transcodeAvailable. */
   transcode: boolean;
+  /** Which rating control Detail shows (1–10, 0–100, or thumbs). */
+  ratingScale: RatingScale;
+  /** Chosen external player name (from list_external_players); "" = auto. */
+  preferredExternalPlayer: string;
+  /** Desktop: play MKV/HEVC/AV1 in the built-in libmpv window instead of
+   *  handing off to an external player (VLC/mpv/IINA). The default in-window
+   *  path on macOS, Windows, and Linux (X11); libmpv is bundled per-platform
+   *  in web-release.yml. If the native surface can't init (e.g. Wayland, or a
+   *  missing lib) playback falls back automatically to the webview transcode
+   *  with the resume position preserved, then to an external player. */
+  builtInPlayer: boolean;
+  /** Local profile display name shown on the top-right avatar; "" = "You". */
+  userName: string;
+  /** Local profile avatar as a data: URL (resized on upload); "" = initial. */
+  userAvatar: string;
 }
 
 /** Read a `VITE_*` env var without assuming `import.meta.env` exists. */
@@ -291,12 +360,88 @@ function normalizeAppearanceNavLabels(value: unknown): AppearanceNavLabels {
   return value === "labels" || value === "icons" ? value : "auto";
 }
 
+function normalizeAppearanceNavPosition(value: unknown): AppearanceNavPosition {
+  return value === "bottom" ? "bottom" : "side";
+}
+
 function normalizeAppearanceNavTint(value: unknown): AppearanceNavTint {
   return value === "airy" || value === "solid" ? value : "balanced";
 }
 
 function normalizeAppearancePosterSize(value: unknown): AppearancePosterSize {
   return value === "compact" || value === "large" ? value : "default";
+}
+
+/** The nav destinations a user can pick as their default landing tab. */
+const DEFAULT_TAB_VALUES: readonly ScreenId[] = [
+  "discover",
+  "search",
+  "library",
+  "watchlist",
+  "calendar",
+  "history",
+  "assistant",
+  "debrid",
+  "settings",
+];
+function normalizeAppearanceDefaultTab(value: unknown): ScreenId {
+  return typeof value === "string" &&
+    (DEFAULT_TAB_VALUES as readonly string[]).includes(value)
+    ? (value as ScreenId)
+    : "discover";
+}
+
+/** Every nav destination that can be reordered or hidden. Kept in sync with
+ * NavRail's NAV_ITEMS; a superset of DEFAULT_TAB_VALUES (includes "downloads"). */
+const NAV_SCREEN_IDS: readonly ScreenId[] = [
+  "discover",
+  "search",
+  "library",
+  "watchlist",
+  "calendar",
+  "history",
+  "assistant",
+  "debrid",
+  "downloads",
+  "settings",
+];
+
+/** Coerce a persisted nav-id list (a real array from the localStorage blob, or a
+ * JSON string from the KV store) into a clean, de-duplicated ScreenId[]. Unknown
+ * ids are dropped so a stale/poisoned blob can never inject a phantom nav entry.
+ * When `dropSettings` is set, "settings" is stripped (it can never be hidden). */
+function normalizeNavIdList(
+  value: unknown,
+  opts?: { dropSettings?: boolean },
+): ScreenId[] {
+  let list: unknown = value;
+  if (typeof value === "string") {
+    try {
+      list = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  const seen = new Set<string>();
+  const out: ScreenId[] = [];
+  for (const entry of list) {
+    if (typeof entry !== "string") continue;
+    if (!(NAV_SCREEN_IDS as readonly string[]).includes(entry)) continue;
+    if (opts?.dropSettings && entry === "settings") continue;
+    if (seen.has(entry)) continue;
+    seen.add(entry);
+    out.push(entry as ScreenId);
+  }
+  return out;
+}
+
+export function normalizeAppearanceNavOrder(value: unknown): ScreenId[] {
+  return normalizeNavIdList(value);
+}
+
+export function normalizeAppearanceNavHidden(value: unknown): ScreenId[] {
+  return normalizeNavIdList(value, { dropSettings: true });
 }
 
 function toFiniteNumber(value: unknown): number | null {
@@ -331,6 +476,9 @@ function normalizeSubtitleTextColor(value: unknown): string {
 export function defaultSettings(): AppSettings {
   return {
     tmdbKey: env("VITE_TMDB_KEY"),
+    traktClientId: "",
+    traktClientSecret: "",
+    traktScrobbleEnabled: false,
     omdbKey: env("VITE_OMDB_KEY"),
     debridTokens: [],
     sources: [],
@@ -339,34 +487,49 @@ export function defaultSettings(): AppSettings {
     aiApiKey: env("VITE_AI_KEY"),
     aiModel: "",
     ollamaEndpoint: "http://localhost:11434",
+    networkMode: "standard",
     theme: env("VITE_THEME") || DEFAULT_THEME_ID,
     appearanceAccent: "theme",
     appearanceDensity: "comfortable",
     appearanceTextSize: "m",
     appearanceMotion: "system",
-    appearanceRadius: "default",
+    appearanceRadius: "round",
     appearanceBlur: 18,
     appearanceChrome: "balanced",
     appearanceBackdrop: "ambient",
-    appearanceHeroScale: "standard",
+    appearanceHeroScale: "cinematic",
     appearancePanelContrast: "standard",
     appearanceNavLabels: "auto",
+    appearanceNavPosition: "side",
     appearanceNavTint: "balanced",
-    appearancePosterSize: "default",
+    appearancePosterSize: "large",
+    appearanceDefaultTab: "discover",
+    appearanceNavOrder: [],
+    appearanceNavHidden: [],
     subtitleFontScale: 1,
     subtitleTextColor: "#ffffff",
     subtitleBgOpacity: 0.55,
     openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
-    simpleMode: true,
+    simpleMode: false,
     autoUpdateChecks: true,
     autoInstallUpdates: false,
-    streamCachedOnly: false,
+    streamCachedOnly: true,
     streamMaxQuality: "any",
     streamMaxSizeGB: 0,
     dataSaver: false,
     autoAdvanceEpisodes: true,
-    showWatchStats: false,
+    showWatchStats: true,
+    showPosterRatings: true,
     transcode: false,
+    ratingScale: "ten",
+    preferredExternalPlayer: "",
+    // The in-window player is the DEFAULT on macOS (libmpv + its deps ship inside
+    // the .app - see scripts/bundle-mpv-deps.sh). Turn it off to hand off to an
+    // external player (VLC/IINA/…) instead. macOS-only; VideoPlayer falls back to
+    // the external hand-off on other platforms regardless.
+    builtInPlayer: true,
+    userName: "",
+    userAvatar: "",
   };
 }
 
@@ -383,6 +546,14 @@ export function loadSettings(): AppSettings {
       // Don't let a missing array clobber the [] default.
       debridTokens: parsed.debridTokens ?? base.debridTokens,
       sources: parsed.sources ?? base.sources,
+      traktScrobbleEnabled:
+        typeof parsed.traktScrobbleEnabled === "boolean"
+          ? parsed.traktScrobbleEnabled
+          : base.traktScrobbleEnabled,
+      showPosterRatings:
+        typeof parsed.showPosterRatings === "boolean"
+          ? parsed.showPosterRatings
+          : base.showPosterRatings,
       streamMaxQuality: normalizeStreamMaxQuality(parsed.streamMaxQuality),
       streamMaxSizeGB: normalizeStreamMaxSizeGB(parsed.streamMaxSizeGB),
       appearanceAccent: normalizeAppearanceAccent(parsed.appearanceAccent),
@@ -398,15 +569,102 @@ export function loadSettings(): AppSettings {
         parsed.appearancePanelContrast,
       ),
       appearanceNavLabels: normalizeAppearanceNavLabels(parsed.appearanceNavLabels),
+      appearanceNavPosition: normalizeAppearanceNavPosition(
+        parsed.appearanceNavPosition,
+      ),
       appearanceNavTint: normalizeAppearanceNavTint(parsed.appearanceNavTint),
       appearancePosterSize: normalizeAppearancePosterSize(parsed.appearancePosterSize),
+      appearanceDefaultTab: normalizeAppearanceDefaultTab(parsed.appearanceDefaultTab),
+      appearanceNavOrder: normalizeAppearanceNavOrder(parsed.appearanceNavOrder),
+      appearanceNavHidden: normalizeAppearanceNavHidden(parsed.appearanceNavHidden),
       subtitleFontScale: normalizeSubtitleFontScale(parsed.subtitleFontScale),
       subtitleTextColor: normalizeSubtitleTextColor(parsed.subtitleTextColor),
       subtitleBgOpacity: normalizeSubtitleBgOpacity(parsed.subtitleBgOpacity),
+      ratingScale: normalizeRatingScale(parsed.ratingScale),
+      preferredExternalPlayer:
+        typeof parsed.preferredExternalPlayer === "string"
+          ? parsed.preferredExternalPlayer
+          : "",
+      userName: typeof parsed.userName === "string" ? parsed.userName : "",
+      userAvatar:
+        typeof parsed.userAvatar === "string" ? parsed.userAvatar : "",
+      networkMode:
+        parsed.networkMode === "fullLocal" || parsed.networkMode === "offline"
+          ? parsed.networkMode
+          : "standard",
+      // A stale/poisoned provider id would route to a host that can't serve it.
+      aiProvider: AIProviderKind.allCases().includes(
+        parsed.aiProvider as AIProviderKind,
+      )
+        ? (parsed.aiProvider as AIProviderKind)
+        : base.aiProvider,
     };
   } catch {
     return base;
   }
+}
+
+/** Per-device marker for the one-time premium-redesign appearance refresh. Bump
+ * the VERSION to re-run it on a future redesign. */
+const DESIGN_REFRESH_KEY = "ds_design_refresh";
+const DESIGN_REFRESH_VERSION = "2026-07-premium";
+
+/** True while the one-time design refresh is still pending on this device.
+ * False once it has been applied+persisted, or when localStorage is unavailable
+ * (we can't track once-only there, so we skip rather than re-apply every load - 
+ * SSR / private-mode / tests). */
+function isDesignRefreshPending(): boolean {
+  try {
+    const store = globalThis.localStorage;
+    if (!store) return false;
+    return store.getItem(DESIGN_REFRESH_KEY) !== DESIGN_REFRESH_VERSION;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Record that the design refresh has been applied AND durably persisted, so it
+ * never runs again on this device. Call this ONLY after the refreshed settings
+ * have been successfully written to the Store - that ordering is what makes a
+ * failed Store write retry on the next load instead of being lost forever (the
+ * reset is idempotent, so at worst a re-apply is a no-op).
+ */
+export function markDesignRefreshApplied(): void {
+  try {
+    globalThis.localStorage?.setItem(DESIGN_REFRESH_KEY, DESIGN_REFRESH_VERSION);
+  } catch {
+    /* best-effort: if we can't record the marker, the refresh re-applies next
+       load - idempotent, so harmless. */
+  }
+}
+
+/**
+ * One-time redesign refresh: adopt the premium *spatial* appearance defaults
+ * (spacing, text size, corner radius, hero scale, poster size, backdrop) for
+ * installs that predate the redesign, so the new look isn't hidden behind a
+ * saved "compact/small/sharp" profile. Deliberately narrow - it never touches
+ * theme, accent, motion, keys, debrid, or sources, and is fully reversible via
+ * Settings → Appearance. A no-op on fresh installs (their values already equal
+ * the defaults) and once the refresh has been marked applied.
+ *
+ * Does NOT record completion - the caller marks it via markDesignRefreshApplied()
+ * only after the result is durably persisted, so a failed persist retries next
+ * load instead of losing the redesign. Returns the same reference when nothing
+ * changes, so callers can skip a redundant persist with an identity check.
+ */
+export function applyDesignRefresh(loaded: AppSettings): AppSettings {
+  if (!isDesignRefreshPending()) return loaded;
+  const d = defaultSettings();
+  return {
+    ...loaded,
+    appearanceDensity: d.appearanceDensity,
+    appearanceTextSize: d.appearanceTextSize,
+    appearanceRadius: d.appearanceRadius,
+    appearanceHeroScale: d.appearanceHeroScale,
+    appearancePosterSize: d.appearancePosterSize,
+    appearanceBackdrop: d.appearanceBackdrop,
+  };
 }
 
 /** Parse the RAW legacy localStorage blob WITHOUT merging env/defaults, so a
@@ -425,11 +683,10 @@ function readRawLegacyBlob(): Partial<AppSettings> | null {
 
 /** Has the Store already been written by a prior (possibly interrupted)
  * migration? ANY persisted KV key (other than the init flag) or ANY debrid/
- * indexer config row counts — so a partial Store of any shape isn't misread as
+ * indexer config row counts - so a partial Store of any shape isn't misread as
  * empty (which would let a redacted replay clear real data). */
-async function storeHasAnyData(): Promise<boolean> {
+async function storeHasAnyData(all: Record<string, string>): Promise<boolean> {
   const store = getStore();
-  const all = await store.allSettings();
   for (const key of Object.keys(all)) {
     if (key !== "storage_port_initialized") return true;
   }
@@ -449,7 +706,7 @@ export function saveSettings(settings: AppSettings): void {
 }
 
 /** A copy of settings with every credential field blanked. The localStorage
- * bootstrap cache must NEVER hold plaintext secrets — those live only in the
+ * bootstrap cache must NEVER hold plaintext secrets - those live only in the
  * SecretStore / OS keychain. localStorage is readable by any same-origin script
  * (XSS) and sits in plaintext on disk, so caching raw keys there would defeat
  * the SecretStore indirection. The synchronous bootstrap render only needs the
@@ -459,6 +716,8 @@ export function redactSecrets(settings: AppSettings): AppSettings {
   return {
     ...settings,
     tmdbKey: "",
+    traktClientId: "",
+    traktClientSecret: "",
     omdbKey: "",
     aiApiKey: "",
     openSubtitlesApiKey: "",
@@ -469,11 +728,13 @@ export function redactSecrets(settings: AppSettings): AppSettings {
 
 // ---- Store-backed settings (the storage port) -------------------------------
 
-/** Read a setting value, transparently resolving the secret indirection: a
- * `secret:<key>` marker in the KV table means the real value is in SecretStore. */
-async function getStoredValue(key: string): Promise<string | null> {
-  const store = getStore();
-  const raw = await store.getSetting(key);
+/** Resolve a setting from a bulk KV snapshot, following the SecretStore marker
+ * when the real value is kept outside the settings table. */
+async function getStoredValue(
+  all: ReadonlyMap<string, string>,
+  key: string,
+): Promise<string | null> {
+  const raw = all.get(key);
   if (raw == null) return null;
   if (raw.startsWith(SECRET_MARKER)) {
     return getSecretStore().getSecret(raw.slice(SECRET_MARKER.length));
@@ -514,12 +775,65 @@ async function setStoredValue(
   await store.setSetting(key, value);
 }
 
+/** Normalized non-secret KV entries. Secrets and config-row reconciliation have
+ * their own ordering/error semantics and deliberately stay outside this diff. */
+function scalarSettingEntries(settings: AppSettings): Array<[string, string]> {
+  return [
+    [SettingsKeys.aiProvider, settings.aiProvider],
+    [
+      SettingsKeys.traktScrobbleEnabled,
+      settings.traktScrobbleEnabled ? "true" : "false",
+    ],
+    [SettingsKeys.aiModel, settings.aiModel],
+    [SettingsKeys.ollamaEndpoint, settings.ollamaEndpoint],
+    [SettingsKeys.networkMode, settings.networkMode],
+    [SettingsKeys.theme, resolveThemeId(settings.theme)],
+    [SettingsKeys.appearanceAccent, normalizeAppearanceAccent(settings.appearanceAccent)],
+    [SettingsKeys.appearanceDensity, normalizeAppearanceDensity(settings.appearanceDensity)],
+    [SettingsKeys.appearanceTextSize, normalizeAppearanceTextSize(settings.appearanceTextSize)],
+    [SettingsKeys.appearanceMotion, normalizeAppearanceMotion(settings.appearanceMotion)],
+    [SettingsKeys.appearanceRadius, normalizeAppearanceRadius(settings.appearanceRadius)],
+    [SettingsKeys.appearanceBlur, String(normalizeAppearanceBlur(settings.appearanceBlur))],
+    [SettingsKeys.appearanceChrome, normalizeAppearanceChrome(settings.appearanceChrome)],
+    [SettingsKeys.appearanceBackdrop, normalizeAppearanceBackdrop(settings.appearanceBackdrop)],
+    [SettingsKeys.appearanceHeroScale, normalizeAppearanceHeroScale(settings.appearanceHeroScale)],
+    [SettingsKeys.appearancePanelContrast, normalizeAppearancePanelContrast(settings.appearancePanelContrast)],
+    [SettingsKeys.appearanceNavLabels, normalizeAppearanceNavLabels(settings.appearanceNavLabels)],
+    [SettingsKeys.appearanceNavPosition, normalizeAppearanceNavPosition(settings.appearanceNavPosition)],
+    [SettingsKeys.appearanceNavTint, normalizeAppearanceNavTint(settings.appearanceNavTint)],
+    [SettingsKeys.appearancePosterSize, normalizeAppearancePosterSize(settings.appearancePosterSize)],
+    [SettingsKeys.appearanceDefaultTab, normalizeAppearanceDefaultTab(settings.appearanceDefaultTab)],
+    [SettingsKeys.appearanceNavOrder, JSON.stringify(normalizeAppearanceNavOrder(settings.appearanceNavOrder))],
+    [SettingsKeys.appearanceNavHidden, JSON.stringify(normalizeAppearanceNavHidden(settings.appearanceNavHidden))],
+    [SettingsKeys.subtitleFontScale, String(normalizeSubtitleFontScale(settings.subtitleFontScale))],
+    [SettingsKeys.subtitleTextColor, normalizeSubtitleTextColor(settings.subtitleTextColor)],
+    [SettingsKeys.subtitleBgOpacity, String(normalizeSubtitleBgOpacity(settings.subtitleBgOpacity))],
+    [SettingsKeys.autoUpdateChecks, settings.autoUpdateChecks ? "true" : "false"],
+    [SettingsKeys.simpleMode, settings.simpleMode ? "true" : "false"],
+    [SettingsKeys.autoInstallUpdates, settings.autoInstallUpdates ? "true" : "false"],
+    [SettingsKeys.streamCachedOnly, settings.streamCachedOnly ? "true" : "false"],
+    [SettingsKeys.streamMaxQuality, normalizeStreamMaxQuality(settings.streamMaxQuality)],
+    [SettingsKeys.streamMaxSizeGB, String(normalizeStreamMaxSizeGB(settings.streamMaxSizeGB))],
+    [SettingsKeys.dataSaver, settings.dataSaver ? "true" : "false"],
+    [SettingsKeys.autoAdvanceEpisodes, settings.autoAdvanceEpisodes ? "true" : "false"],
+    [SettingsKeys.showWatchStats, settings.showWatchStats ? "true" : "false"],
+    [SettingsKeys.showPosterRatings, settings.showPosterRatings ? "true" : "false"],
+    [SettingsKeys.transcode, settings.transcode ? "true" : "false"],
+    [SettingsKeys.ratingScale, settings.ratingScale],
+    [SettingsKeys.preferredExternalPlayer, settings.preferredExternalPlayer],
+    [SettingsKeys.builtInPlayer, settings.builtInPlayer ? "true" : "false"],
+    [SettingsKeys.userName, settings.userName],
+    [SettingsKeys.userAvatar, settings.userAvatar],
+    [SettingsKeys.builtInIndexersEnabled, settings.builtInIndexersEnabled ? "true" : "false"],
+  ];
+}
+
 /** Best-effort secret deletion for the REMOVAL path. On the Tauri desktop build
- * `deleteSecret` fails CLOSED — it rejects if the OS keychain is locked/denied
+ * `deleteSecret` fails CLOSED - it rejects if the OS keychain is locked/denied
  * (see KeychainSecretStore). But by the time we call this we have already
  * cleared the owning KV marker / config row, so the secret is unreferenced
  * (load only follows live markers/rows). A keychain failure therefore means at
- * worst a harmless value lingers in the keychain — it must NOT propagate and
+ * worst a harmless value lingers in the keychain - it must NOT propagate and
  * abort the surrounding reconciliation (which would orphan the very row/marker
  * we just removed and leave the rest of the Save half-applied). Swallow + warn;
  * only the key NAME is logged, never a secret value. */
@@ -532,7 +846,7 @@ async function deleteSecretBestEffort(
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn(
-      `[settings] best-effort secret delete failed for "${key}" — the ` +
+      `[settings] best-effort secret delete failed for "${key}" - the ` +
         `credential is now unreferenced but may linger in the keychain.`,
       err,
     );
@@ -549,7 +863,11 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
   // One-time migration: if the Store has nothing yet but localStorage has a
   // legacy blob, seed the Store from it so the upgrade is seamless.
   const store = getStore();
-  const existingFlag = await store.getSetting("storage_port_initialized");
+  // One KV snapshot avoids serial IndexedDB reads for every scalar setting on
+  // the first-paint path. RemoteStore implements the same Store contract.
+  const all = await store.allSettings();
+  const settingsByKey = new Map(Object.entries(all));
+  const existingFlag = settingsByKey.get("storage_port_initialized") ?? null;
   // True when we took the migration SKIP branch (flag was unset but the Store
   // already held data). In that case the legacy cache may still hold un-migrated
   // plaintext, so the scrub at the end must NOT run this load (it would destroy
@@ -557,10 +875,10 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
   let skippedMigration = false;
   if (existingFlag == null) {
     const rawLegacy = readRawLegacyBlob();
-    const storeHasData = await storeHasAnyData();
+    const storeHasData = await storeHasAnyData(all);
 
-    // Replay ONLY into a genuinely empty Store. Once the Store holds ANY data —
-    // an interrupted migration's own writes, OR the user's later changes — the
+    // Replay ONLY into a genuinely empty Store. Once the Store holds ANY data - 
+    // an interrupted migration's own writes, OR the user's later changes - the
     // migration must NOT replay: a stale/partial legacy blob (or its env-default
     // gaps) would overwrite newer Store credentials with old/blank values. The
     // decision uses the RAW blob's mere presence, never env-merged secrets.
@@ -592,17 +910,27 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     skippedMigration = true;
   }
 
-  const [tmdbKey, omdbKey, aiApiKey, openSubtitlesApiKey] = await Promise.all([
-    getStoredValue(SettingsKeys.tmdbApiKey),
-    getStoredValue(SettingsKeys.omdbApiKey),
-    getStoredValue(SettingsKeys.aiApiKey),
-    getStoredValue(SettingsKeys.openSubtitlesApiKey),
+  const [
+    tmdbKey,
+    traktClientId,
+    traktClientSecret,
+    omdbKey,
+    aiApiKey,
+    openSubtitlesApiKey,
+  ] = await Promise.all([
+    getStoredValue(settingsByKey, SettingsKeys.tmdbApiKey),
+    getStoredValue(settingsByKey, SettingsKeys.traktClientId),
+    getStoredValue(settingsByKey, SettingsKeys.traktClientSecret),
+    getStoredValue(settingsByKey, SettingsKeys.omdbApiKey),
+    getStoredValue(settingsByKey, SettingsKeys.aiApiKey),
+    getStoredValue(settingsByKey, SettingsKeys.openSubtitlesApiKey),
   ]);
   const [
     aiProvider,
     aiModel,
     ollamaEndpoint,
     builtIn,
+    traktScrobbleEnabled,
     theme,
     appearanceAccent,
     appearanceDensity,
@@ -615,8 +943,12 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceHeroScale,
     appearancePanelContrast,
     appearanceNavLabels,
+    appearanceNavPosition,
     appearanceNavTint,
     appearancePosterSize,
+    appearanceDefaultTab,
+    appearanceNavOrder,
+    appearanceNavHidden,
     subtitleFontScale,
     subtitleTextColor,
     subtitleBgOpacity,
@@ -628,41 +960,60 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     dataSaver,
     autoAdvanceEpisodes,
     showWatchStats,
+    showPosterRatings,
     transcode,
     simpleMode,
-  ] = await Promise.all([
-    store.getSetting(SettingsKeys.aiProvider),
-    store.getSetting(SettingsKeys.aiModel),
-    store.getSetting(SettingsKeys.ollamaEndpoint),
-    store.getSetting(SettingsKeys.builtInIndexersEnabled),
-    store.getSetting(SettingsKeys.theme),
-    store.getSetting(SettingsKeys.appearanceAccent),
-    store.getSetting(SettingsKeys.appearanceDensity),
-    store.getSetting(SettingsKeys.appearanceTextSize),
-    store.getSetting(SettingsKeys.appearanceMotion),
-    store.getSetting(SettingsKeys.appearanceRadius),
-    store.getSetting(SettingsKeys.appearanceBlur),
-    store.getSetting(SettingsKeys.appearanceChrome),
-    store.getSetting(SettingsKeys.appearanceBackdrop),
-    store.getSetting(SettingsKeys.appearanceHeroScale),
-    store.getSetting(SettingsKeys.appearancePanelContrast),
-    store.getSetting(SettingsKeys.appearanceNavLabels),
-    store.getSetting(SettingsKeys.appearanceNavTint),
-    store.getSetting(SettingsKeys.appearancePosterSize),
-    store.getSetting(SettingsKeys.subtitleFontScale),
-    store.getSetting(SettingsKeys.subtitleTextColor),
-    store.getSetting(SettingsKeys.subtitleBgOpacity),
-    store.getSetting(SettingsKeys.autoUpdateChecks),
-    store.getSetting(SettingsKeys.autoInstallUpdates),
-    store.getSetting(SettingsKeys.streamCachedOnly),
-    store.getSetting(SettingsKeys.streamMaxQuality),
-    store.getSetting(SettingsKeys.streamMaxSizeGB),
-    store.getSetting(SettingsKeys.dataSaver),
-    store.getSetting(SettingsKeys.autoAdvanceEpisodes),
-    store.getSetting(SettingsKeys.showWatchStats),
-    store.getSetting(SettingsKeys.transcode),
-    store.getSetting(SettingsKeys.simpleMode),
-  ]);
+    ratingScale,
+    preferredExternalPlayer,
+    userName,
+    userAvatar,
+    builtInPlayer,
+    networkMode,
+  ] = [
+    settingsByKey.get(SettingsKeys.aiProvider) ?? null,
+    settingsByKey.get(SettingsKeys.aiModel) ?? null,
+    settingsByKey.get(SettingsKeys.ollamaEndpoint) ?? null,
+    settingsByKey.get(SettingsKeys.builtInIndexersEnabled) ?? null,
+    settingsByKey.get(SettingsKeys.traktScrobbleEnabled) ?? null,
+    settingsByKey.get(SettingsKeys.theme) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceAccent) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceDensity) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceTextSize) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceMotion) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceRadius) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceBlur) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceChrome) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceBackdrop) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceHeroScale) ?? null,
+    settingsByKey.get(SettingsKeys.appearancePanelContrast) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceNavLabels) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceNavPosition) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceNavTint) ?? null,
+    settingsByKey.get(SettingsKeys.appearancePosterSize) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceDefaultTab) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceNavOrder) ?? null,
+    settingsByKey.get(SettingsKeys.appearanceNavHidden) ?? null,
+    settingsByKey.get(SettingsKeys.subtitleFontScale) ?? null,
+    settingsByKey.get(SettingsKeys.subtitleTextColor) ?? null,
+    settingsByKey.get(SettingsKeys.subtitleBgOpacity) ?? null,
+    settingsByKey.get(SettingsKeys.autoUpdateChecks) ?? null,
+    settingsByKey.get(SettingsKeys.autoInstallUpdates) ?? null,
+    settingsByKey.get(SettingsKeys.streamCachedOnly) ?? null,
+    settingsByKey.get(SettingsKeys.streamMaxQuality) ?? null,
+    settingsByKey.get(SettingsKeys.streamMaxSizeGB) ?? null,
+    settingsByKey.get(SettingsKeys.dataSaver) ?? null,
+    settingsByKey.get(SettingsKeys.autoAdvanceEpisodes) ?? null,
+    settingsByKey.get(SettingsKeys.showWatchStats) ?? null,
+    settingsByKey.get(SettingsKeys.showPosterRatings) ?? null,
+    settingsByKey.get(SettingsKeys.transcode) ?? null,
+    settingsByKey.get(SettingsKeys.simpleMode) ?? null,
+    settingsByKey.get(SettingsKeys.ratingScale) ?? null,
+    settingsByKey.get(SettingsKeys.preferredExternalPlayer) ?? null,
+    settingsByKey.get(SettingsKeys.userName) ?? null,
+    settingsByKey.get(SettingsKeys.userAvatar) ?? null,
+    settingsByKey.get(SettingsKeys.builtInPlayer) ?? null,
+    settingsByKey.get(SettingsKeys.networkMode) ?? null,
+  ];
 
   const debridConfigs = await store.listDebridConfigs();
   const indexerConfigs = await store.listIndexerConfigs();
@@ -690,14 +1041,26 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
 
   const loaded: AppSettings = {
     tmdbKey: tmdbKey ?? base.tmdbKey,
+    traktClientId: traktClientId ?? base.traktClientId,
+    traktClientSecret: traktClientSecret ?? base.traktClientSecret,
+    traktScrobbleEnabled:
+      traktScrobbleEnabled == null
+        ? base.traktScrobbleEnabled
+        : traktScrobbleEnabled === "true",
     omdbKey: omdbKey ?? base.omdbKey,
     debridTokens,
     sources,
     builtInIndexersEnabled: builtIn == null ? base.builtInIndexersEnabled : builtIn === "true",
-    aiProvider: (aiProvider as AIProviderKind) ?? base.aiProvider,
+    aiProvider: AIProviderKind.allCases().includes(aiProvider as AIProviderKind)
+      ? (aiProvider as AIProviderKind)
+      : base.aiProvider,
     aiApiKey: aiApiKey ?? base.aiApiKey,
     aiModel: aiModel ?? base.aiModel,
     ollamaEndpoint: ollamaEndpoint ?? base.ollamaEndpoint,
+    networkMode:
+      networkMode === "fullLocal" || networkMode === "offline"
+        ? networkMode
+        : base.networkMode,
     theme: resolveThemeId(theme ?? base.theme),
     appearanceAccent: normalizeAppearanceAccent(
       appearanceAccent ?? base.appearanceAccent,
@@ -730,11 +1093,23 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     appearanceNavLabels: normalizeAppearanceNavLabels(
       appearanceNavLabels ?? base.appearanceNavLabels,
     ),
+    appearanceNavPosition: normalizeAppearanceNavPosition(
+      appearanceNavPosition ?? base.appearanceNavPosition,
+    ),
     appearanceNavTint: normalizeAppearanceNavTint(
       appearanceNavTint ?? base.appearanceNavTint,
     ),
     appearancePosterSize: normalizeAppearancePosterSize(
       appearancePosterSize ?? base.appearancePosterSize,
+    ),
+    appearanceDefaultTab: normalizeAppearanceDefaultTab(
+      appearanceDefaultTab ?? base.appearanceDefaultTab,
+    ),
+    appearanceNavOrder: normalizeAppearanceNavOrder(
+      appearanceNavOrder ?? base.appearanceNavOrder,
+    ),
+    appearanceNavHidden: normalizeAppearanceNavHidden(
+      appearanceNavHidden ?? base.appearanceNavHidden,
     ),
     subtitleFontScale: normalizeSubtitleFontScale(
       subtitleFontScale ?? base.subtitleFontScale,
@@ -762,7 +1137,16 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
         : autoAdvanceEpisodes === "true",
     showWatchStats:
       showWatchStats == null ? base.showWatchStats : showWatchStats === "true",
+    showPosterRatings:
+      showPosterRatings == null ? base.showPosterRatings : showPosterRatings === "true",
     transcode: transcode == null ? base.transcode : transcode === "true",
+    ratingScale: normalizeRatingScale(ratingScale),
+    preferredExternalPlayer:
+      typeof preferredExternalPlayer === "string" ? preferredExternalPlayer : "",
+    builtInPlayer:
+      builtInPlayer == null ? base.builtInPlayer : builtInPlayer === "true",
+    userName: typeof userName === "string" ? userName : "",
+    userAvatar: typeof userAvatar === "string" ? userAvatar : "",
   };
 
   // Proactively scrub any pre-existing plaintext-secret blob a prior build wrote
@@ -783,22 +1167,22 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
  *
  * `redactCache` (default true) controls the localStorage bootstrap-cache sync.
  * The first-run migration passes `false` so the legacy plaintext blob is NOT
- * redacted as part of the write — the migration only redacts after the Store
+ * redacted as part of the write - the migration only redacts after the Store
  * write fully succeeds AND the init flag is durable, so a failed migration leaves
  * the plaintext legacy intact for a retry. */
 export async function saveSettingsToStore(
   settings: AppSettings,
-  options: { redactCache?: boolean; mergeOnly?: boolean } = {},
+  options: { redactCache?: boolean; mergeOnly?: boolean; previous?: AppSettings } = {},
 ): Promise<void> {
-  const { redactCache = true, mergeOnly = false } = options;
+  const { redactCache = true, mergeOnly = false, previous } = options;
   const store = getStore();
   const secrets = getSecretStore();
 
-  // Collected WRITE failures — a fail-closed keychain credential write OR a
+  // Collected WRITE failures - a fail-closed keychain credential write OR a
   // genuine KV/DB write error (quota, corruption, aborted txn). Either way the
   // value wasn't persisted and the user must be told. We persist everything we
-  // can FIRST — so one failure never leaves the KV / debrid / indexer tables
-  // half-reconciled — then surface them at the very end. (Kept deliberately
+  // can FIRST - so one failure never leaves the KV / debrid / indexer tables
+  // half-reconciled - then surface them at the very end. (Kept deliberately
   // generic: this bucket mixes secret writes and plain setSetting writes, so the
   // surfaced error must not claim every failure was a "secret" write.)
   const writeFailures: unknown[] = [];
@@ -806,8 +1190,19 @@ export async function saveSettingsToStore(
   // allSettled (not all): a single write that fails (keychain locked, or a DB
   // error) must not abort the remaining KV writes or the debrid/indexer
   // reconciliation below.
+  const previousScalars =
+    previous == null ? null : new Map(scalarSettingEntries(previous));
+  const changedScalarWrites = scalarSettingEntries(settings).filter(
+    ([key, value]) => mergeOnly || previousScalars == null || previousScalars.get(key) !== value,
+  );
   const kvResults = await Promise.allSettled([
     setStoredValue(SettingsKeys.tmdbApiKey, settings.tmdbKey, mergeOnly),
+    setStoredValue(SettingsKeys.traktClientId, settings.traktClientId, mergeOnly),
+    setStoredValue(
+      SettingsKeys.traktClientSecret,
+      settings.traktClientSecret,
+      mergeOnly,
+    ),
     setStoredValue(SettingsKeys.omdbApiKey, settings.omdbKey, mergeOnly),
     setStoredValue(SettingsKeys.aiApiKey, settings.aiApiKey, mergeOnly),
     setStoredValue(
@@ -815,115 +1210,7 @@ export async function saveSettingsToStore(
       settings.openSubtitlesApiKey,
       mergeOnly,
     ),
-    store.setSetting(SettingsKeys.aiProvider, settings.aiProvider),
-    store.setSetting(SettingsKeys.aiModel, settings.aiModel),
-    store.setSetting(SettingsKeys.ollamaEndpoint, settings.ollamaEndpoint),
-    store.setSetting(SettingsKeys.theme, resolveThemeId(settings.theme)),
-    store.setSetting(
-      SettingsKeys.appearanceAccent,
-      normalizeAppearanceAccent(settings.appearanceAccent),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceDensity,
-      normalizeAppearanceDensity(settings.appearanceDensity),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceTextSize,
-      normalizeAppearanceTextSize(settings.appearanceTextSize),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceMotion,
-      normalizeAppearanceMotion(settings.appearanceMotion),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceRadius,
-      normalizeAppearanceRadius(settings.appearanceRadius),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceBlur,
-      String(normalizeAppearanceBlur(settings.appearanceBlur)),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceChrome,
-      normalizeAppearanceChrome(settings.appearanceChrome),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceBackdrop,
-      normalizeAppearanceBackdrop(settings.appearanceBackdrop),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceHeroScale,
-      normalizeAppearanceHeroScale(settings.appearanceHeroScale),
-    ),
-    store.setSetting(
-      SettingsKeys.appearancePanelContrast,
-      normalizeAppearancePanelContrast(settings.appearancePanelContrast),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceNavLabels,
-      normalizeAppearanceNavLabels(settings.appearanceNavLabels),
-    ),
-    store.setSetting(
-      SettingsKeys.appearanceNavTint,
-      normalizeAppearanceNavTint(settings.appearanceNavTint),
-    ),
-    store.setSetting(
-      SettingsKeys.appearancePosterSize,
-      normalizeAppearancePosterSize(settings.appearancePosterSize),
-    ),
-    store.setSetting(
-      SettingsKeys.subtitleFontScale,
-      String(normalizeSubtitleFontScale(settings.subtitleFontScale)),
-    ),
-    store.setSetting(
-      SettingsKeys.subtitleTextColor,
-      normalizeSubtitleTextColor(settings.subtitleTextColor),
-    ),
-    store.setSetting(
-      SettingsKeys.subtitleBgOpacity,
-      String(normalizeSubtitleBgOpacity(settings.subtitleBgOpacity)),
-    ),
-    store.setSetting(
-      SettingsKeys.autoUpdateChecks,
-      settings.autoUpdateChecks ? "true" : "false",
-    ),
-    store.setSetting(SettingsKeys.simpleMode, settings.simpleMode ? "true" : "false"),
-    store.setSetting(
-      SettingsKeys.autoInstallUpdates,
-      settings.autoInstallUpdates ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.streamCachedOnly,
-      settings.streamCachedOnly ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.streamMaxQuality,
-      normalizeStreamMaxQuality(settings.streamMaxQuality),
-    ),
-    store.setSetting(
-      SettingsKeys.streamMaxSizeGB,
-      String(normalizeStreamMaxSizeGB(settings.streamMaxSizeGB)),
-    ),
-    store.setSetting(
-      SettingsKeys.dataSaver,
-      settings.dataSaver ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.autoAdvanceEpisodes,
-      settings.autoAdvanceEpisodes ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.showWatchStats,
-      settings.showWatchStats ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.transcode,
-      settings.transcode ? "true" : "false",
-    ),
-    store.setSetting(
-      SettingsKeys.builtInIndexersEnabled,
-      settings.builtInIndexersEnabled ? "true" : "false",
-    ),
+    ...changedScalarWrites.map(([key, value]) => store.setSetting(key, value)),
   ]);
   for (const r of kvResults) {
     if (r.status === "rejected") writeFailures.push(r.reason);
@@ -943,8 +1230,8 @@ export async function saveSettingsToStore(
       // Write the secret BEFORE the marker'd row. If the keychain write fails
       // closed (desktop), skip the row so we never persist a config pointing at
       // a secret we couldn't store (load would surface an empty token). Any
-      // existing row for this id stays put — id is already in keptDebridIds, so
-      // the removal sweep below won't delete it — and we record the failure so
+      // existing row for this id stays put - id is already in keptDebridIds, so
+      // the removal sweep below won't delete it - and we record the failure so
       // the whole Save still completes and then reports it.
       await secrets.setSecret(debridSecretKey(id), entry.apiToken);
     } catch (err) {
@@ -1016,7 +1303,7 @@ export async function saveSettingsToStore(
   }
 
   // Keep the legacy localStorage blob in sync as a belt-and-suspenders cache so
-  // the synchronous bootstrap render has a recent snapshot before hydration —
+  // the synchronous bootstrap render has a recent snapshot before hydration - 
   // but REDACTED: secrets live only in the SecretStore/keychain, never plaintext
   // in localStorage (see redactSecrets). The first-run migration opts out
   // (redactCache:false) so it can keep the legacy plaintext until the migration
@@ -1028,7 +1315,7 @@ export async function saveSettingsToStore(
   // Everything that COULD be persisted now has been (KV + debrid + indexer tables
   // are fully reconciled and the localStorage cache is in sync). If any write
   // failed (a fail-closed keychain credential write, or a KV/DB error), surface
-  // it now so the caller can tell the user their change wasn't fully saved —
+  // it now so the caller can tell the user their change wasn't fully saved - 
   // without having lost the rest of the Save to a mid-flight abort. The message
   // stays generic because the bucket mixes secret and plain settings writes; the
   // wrapped `errors` carry each underlying cause for real diagnostics.
@@ -1091,7 +1378,7 @@ export interface AppServices {
 /** Module-level cache for the built DebridManager, keyed by a signature of the
  * debrid config (service types + tokens). The manager's identity must stay
  * stable across UNRELATED settings edits (e.g. the instant theme save) so that
- * useDebridLibrary's effect — which depends on `services.debrid` identity —
+ * useDebridLibrary's effect - which depends on `services.debrid` identity - 
  * doesn't re-fetch the whole account on every save. Only when the debrid config
  * actually changes do we rebuild. */
 let debridManagerCache: { signature: string; manager: DebridManager } | null =
@@ -1143,13 +1430,20 @@ function getOrBuildDebridManager(settings: AppSettings): DebridManager | null {
     return debridManagerCache.manager;
   }
   const manager = new DebridManager();
-  for (const s of services) manager.addService(s);
+  // Register in the canonical priority order (DebridServiceType.allCases:
+  // TorBox first), not token-entry order - insertion order IS the manager's
+  // priority, so this decides which service wins cache badges + resolution.
+  const priority = DebridServiceType.allCases();
+  const ranked = [...services].sort(
+    (a, b) => priority.indexOf(a.serviceType) - priority.indexOf(b.serviceType),
+  );
+  for (const s of ranked) manager.addService(s);
   debridManagerCache = { signature, manager };
   return manager;
 }
 
 /** Build (or reuse the cached) IndexerManager for the current settings. Keeps a
- * stable identity while the indexer config is unchanged — so an unrelated
+ * stable identity while the indexer config is unchanged - so an unrelated
  * settings save (e.g. a theme change) does NOT churn the manager's identity and
  * make the stream picker re-run a full indexer search + cache-check. Mirrors
  * getOrBuildDebridManager. */
@@ -1171,12 +1465,12 @@ function getOrBuildIndexerManager(settings: AppSettings): IndexerManager {
 
 /** Real delay for the debrid retry/poll loops. The services default their
  *  `sleep` to a test no-op; in production we MUST pass a real timer or uncached
- *  transfers and 5xx-retry backoffs spin with zero wait — hammering the service
+ *  transfers and 5xx-retry backoffs spin with zero wait - hammering the service
  *  and failing/rate-limiting instead of waiting for the torrent to cache. */
 const realSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-function buildDebridService(entry: DebridTokenEntry): DebridService | null {
+export function buildDebridService(entry: DebridTokenEntry): DebridService | null {
   const token = entry.apiToken.trim();
   if (token.length === 0) return null;
   // Route through `appFetch` so debrid hosts (CORS-blocked in a plain browser)
@@ -1247,19 +1541,27 @@ function buildAIProvider(settings: AppSettings): AIAssistantProvider | null {
   // default model parameter applies; `appFetch` is threaded either way so AI
   // hosts work in the desktop app (degrades to global fetch in a browser).
   const modelArg = model.length > 0 ? model : undefined;
-  switch (settings.aiProvider) {
-    case "openai":
-      if (key.length === 0) return null;
-      return new OpenAIProvider(key, modelArg, appFetch);
-    case "anthropic":
-      if (key.length === 0) return null;
-      return new AnthropicProvider(key, modelArg, appFetch);
-    case "ollama": {
-      const endpoint = settings.ollamaEndpoint.trim();
-      if (endpoint.length === 0) return null;
-      return new OllamaProvider(endpoint, modelArg, appFetch);
-    }
+  const kind = settings.aiProvider;
+
+  if (kind === "anthropic") {
+    if (key.length === 0) return null;
+    return new AnthropicProvider(key, modelArg, appFetch);
   }
+  if (kind === "ollama") {
+    const endpoint = settings.ollamaEndpoint.trim();
+    if (endpoint.length === 0) return null;
+    return new OllamaProvider(endpoint, modelArg, appFetch);
+  }
+  // Everything else is an OpenAI-compatible host (OpenAI, Gemini, OpenRouter,
+  // Groq, Mistral, DeepSeek, xAI) - one provider class, different base URL.
+  const compat = OPENAI_COMPATIBLE[kind];
+  if (compat == null || key.length === 0) return null;
+  return new OpenAIProvider(key, modelArg, appFetch, {
+    baseURL: compat.baseURL,
+    kind,
+    label: AIProviderKind.displayName(kind),
+    defaultModel: compat.defaultModel,
+  });
 }
 
 /** Build-time TMDB key fallback (VITE_TMDB_KEY), read defensively. Lets the
@@ -1275,11 +1577,15 @@ export function buildServices(settings: AppSettings): AppServices {
   const tmdbKey = settings.tmdbKey.trim();
   const omdbKey = settings.omdbKey.trim();
 
-  // Prefer the user's saved TMDB key; fall back to a build-time VITE_TMDB_KEY.
+  // TMDB key precedence: the user's own key (BYOK) -> a build-time embedded key
+  // (the serverless limited-distribution path, so a fresh install shows a real
+  // catalog instead of fixtures) -> a VITE_TMDB_KEY dev/screenshot fallback.
   // Driving `services.tmdb` (used by Search/Browse AND now Discover) from this
-  // single source means saving a key in Settings lights up every screen — not
-  // just Search/Browse — without a reload.
-  const effectiveTmdbKey = tmdbKey.length > 0 ? tmdbKey : readEnvTmdbKey();
+  // single source means saving a key in Settings lights up every screen - not
+  // just Search/Browse - without a reload. Embedded is dormant by default (no
+  // key baked in), so this changes nothing until a build sets TMDB_EMBED_KEY.
+  const effectiveTmdbKey =
+    tmdbKey.length > 0 ? tmdbKey : embeddedTmdbKey() || readEnvTmdbKey();
   const tmdb = getOrBuildTmdb(effectiveTmdbKey);
   // OMDb key precedence: the user's own key (BYOK) → a build-time embedded key
   // (the serverless limited-distribution path, Mode 3). In Server Mode leave
@@ -1292,7 +1598,7 @@ export function buildServices(settings: AppSettings): AppServices {
   // Debrid: priority order = insertion order (entry order in settings). The
   // manager is cached by config signature so its identity is stable across
   // unrelated settings edits (avoids re-fetching the whole account on, e.g., a
-  // theme save) — only rebuilt when the debrid config actually changes.
+  // theme save) - only rebuilt when the debrid config actually changes.
   const debrid = getOrBuildDebridManager(settings);
 
   // Cached by indexer-config signature so its identity stays stable across

@@ -25,7 +25,7 @@ cd "${REPO_ROOT}"
 command -v node >/dev/null || { echo "Node.js not found. Install Node 24+ first." >&2; exit 1; }
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 if [[ "${NODE_MAJOR}" -lt 22 ]]; then
-  echo "Node ${NODE_MAJOR} is too old — install Node 24+ (see README Option B)." >&2
+  echo "Node ${NODE_MAJOR} is too old - install Node 24+ (see README Option B)." >&2
   exit 1
 fi
 
@@ -57,9 +57,9 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     sed -i "s#^DS_SERVER_SECRET_KEY=.*#DS_SERVER_SECRET_KEY=${SECRET}#" "${ENV_FILE}"
   fi
   chmod 600 "${ENV_FILE}"
-  echo "    Wrote ${ENV_FILE} — review it (set DS_SERVER_SETUP_TOKEN, proxy flags)."
+  echo "    Wrote ${ENV_FILE} - review it (set DS_SERVER_SETUP_TOKEN, proxy flags)."
 else
-  echo "    ${ENV_FILE} already exists — left unchanged."
+  echo "    ${ENV_FILE} already exists - left unchanged."
 fi
 
 echo "==> Installing systemd service"

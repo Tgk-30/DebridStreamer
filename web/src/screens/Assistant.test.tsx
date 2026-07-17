@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Render/interaction tests for the Assistant screen — a one-shot AI recommend
+// Render/interaction tests for the Assistant screen - a one-shot AI recommend
 // call. Without an AI provider (and not in Server Mode) it shows a configure
 // state; otherwise submitting a prompt calls provider.recommend (local) or
 // recommendServerAI (server) and renders the title/year/reason/score cards.
@@ -76,7 +76,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("Assistant — gated state", () => {
+describe("Assistant - gated state", () => {
   it("shows the configure state when no provider and not server mode", async () => {
     mockProvider = null;
     mockServerMode = false;
@@ -95,7 +95,7 @@ describe("Assistant — gated state", () => {
   });
 });
 
-describe("Assistant — recommend flow (local provider)", () => {
+describe("Assistant - recommend flow (local provider)", () => {
   it("disables Recommend until the prompt is non-empty", async () => {
     render(<Assistant />);
     const btn = screen.getByRole("button", { name: "Recommend" });
@@ -198,7 +198,7 @@ describe("Assistant — recommend flow (local provider)", () => {
   });
 });
 
-describe("Assistant — server mode routing", () => {
+describe("Assistant - server mode routing", () => {
   it("routes to recommendServerAI (not the local provider) in Server Mode", async () => {
     mockProvider = null;
     mockServerMode = true;

@@ -5,7 +5,7 @@ import GRDB
 
 /// Coverage for the additive bulk `fetchWatchHistory(mediaIds:)` accessor, which
 /// resolves media-level (episodeId IS NULL) resume points for many mediaIds in a
-/// single query — the no-N+1 backbone of the Continue-Watching rail.
+/// single query - the no-N+1 backbone of the Continue-Watching rail.
 @Suite("WatchHistory bulk fetch Tests")
 struct WatchHistoryBulkTests {
     @Test("Bulk fetch returns the correct media-level history per id in one call")

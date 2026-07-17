@@ -3,7 +3,7 @@
 //
 // The AppStore only keeps history as display previews (no durations/timestamps),
 // so this reads the complete records straight from the Store. Disabled → no work
-// and no snapshot. `deps` re-aggregates when they change — pass the STABLE store
+// and no snapshot. `deps` re-aggregates when they change - pass the STABLE store
 // slices (e.g. [history, continueWatching]) whose identity changes on any refresh,
 // so progress to an already-recorded title also re-aggregates, not just new rows.
 

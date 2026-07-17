@@ -10,13 +10,13 @@ import {
 describe("serverSetupCredentials", () => {
   it("defaults the debrid selector to the first concrete provider", () => {
     expect(DEFAULT_DEBRID_PROVIDER).toBe(DEBRID_PROVIDER_OPTIONS[0].provider);
-    expect(DEFAULT_DEBRID_PROVIDER).toBe("real_debrid");
+    expect(DEFAULT_DEBRID_PROVIDER).toBe("torbox");
   });
 
   it("offers every supported debrid credential provider", () => {
     expect(DEBRID_PROVIDER_OPTIONS.map((option) => option.provider)).toEqual([
-      "real_debrid",
       "torbox",
+      "real_debrid",
       "premiumize",
       "all_debrid",
     ]);

@@ -1,5 +1,5 @@
 // Unit tests for the shared debrid JSON-coercion helpers. These pin the exact
-// null-vs-value contract that the concrete services rely on — e.g. asObject([])
+// null-vs-value contract that the concrete services rely on - e.g. asObject([])
 // and asObjectArray({}) returning null is what makes an all-miss / single-object
 // provider response degrade safely rather than crash.
 

@@ -1,4 +1,4 @@
-// Extra coverage for src/services/metadata/TMDBService.ts — the branches the
+// Extra coverage for src/services/metadata/TMDBService.ts - the branches the
 // primary TMDBService.test.ts leaves uncovered:
 //  - toMediaPreview's media_type:"tv" case and the title/name fallback,
 //  - findByImdbId resolving from tv_results vs movie_results,

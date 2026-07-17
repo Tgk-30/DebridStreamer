@@ -1,8 +1,8 @@
 // Metadata helpers shared by the Calendar + watchlist auto-resolve features.
 //
 // These build on the ported TMDBService (read-only) without modifying it:
-//  - `resolveImdbId`     — derive the IMDb id (tt…) an indexer search needs.
-//  - `getUpcomingEpisodes` — find a series' unaired / upcoming episodes by
+//  - `resolveImdbId`     - derive the IMDb id (tt…) an indexer search needs.
+//  - `getUpcomingEpisodes` - find a series' unaired / upcoming episodes by
 //    walking seasons -> episodes and filtering by air date.
 //
 // Everything is fault-tolerant (a TMDB failure yields null / [] rather than
@@ -10,6 +10,10 @@
 
 import type { MediaPreview, MediaType } from "../models/media";
 import type { TMDBService } from "../services/metadata/TMDBService";
+
+/** Hard privacy and request-volume ceiling for one calendar refresh. Callers
+ * pass series in recency-priority order, so the newest followed shows win. */
+export const MAX_CALENDAR_SERIES = 30;
 
 /** Derive the numeric TMDB id for a preview, from its `tmdbId` or `tmdb-{id}` id. */
 export function tmdbIdOf(preview: MediaPreview): number | null {
@@ -65,7 +69,7 @@ export interface UpcomingEpisode {
 /** A timestamp as a LOCAL `YYYY-MM-DD` string. TMDB air dates are bare
  * date-only strings with no timezone, so they must be compared against the
  * user's *local* calendar day. Using the UTC date (toISOString) misclassifies
- * by a day for non-UTC users in evening/early-morning windows — dropping
+ * by a day for non-UTC users in evening/early-morning windows - dropping
  * tonight's premiere as "already aired" or labeling tomorrow's as "Today". */
 export function localISODate(now: number): string {
   const d = new Date(now);
@@ -79,25 +83,29 @@ function todayISODate(now: number): string {
   return localISODate(now);
 }
 
-/** Find a series' upcoming (today-or-later) episodes by walking TMDB seasons ->
- * episodes. Only TV series are considered; movies and no-key states yield [].
+/** Find a series' scheduled episodes by walking TMDB seasons -> episodes. Only
+ * TV series are considered; movies and no-key states yield [].
  *
- * To stay cheap and fault-tolerant we only inspect the LATEST season(s) — most
+ * To stay cheap and fault-tolerant we only inspect the LATEST season(s) - most
  * unaired episodes live in the current/last season. We look at the highest one
  * or two real seasons (skipping season 0 "specials"), pull their episodes, and
- * keep those with an air date >= today. Bounded so a series with many seasons
- * doesn't fan out into dozens of episode requests. Never throws. */
+ * keep those with an air date inside the requested recent window. Bounded so a
+ * series with many seasons doesn't fan out into dozens of episode requests.
+ * Never throws. */
 export async function getUpcomingEpisodes(
   series: MediaPreview,
   tmdb: TMDBService | null,
   now: number = Date.now(),
+  recentDays = 0,
 ): Promise<UpcomingEpisode[]> {
   if (tmdb == null) return [];
   if (series.type !== "series") return [];
   const tmdbId = tmdbIdOf(series);
   if (tmdbId == null) return [];
 
-  const today = todayISODate(now);
+  const start = new Date(now);
+  start.setDate(start.getDate() - Math.max(0, recentDays));
+  const earliestDate = todayISODate(start.getTime());
 
   try {
     const seasons = await tmdb.getSeasons(tmdbId);
@@ -107,7 +115,7 @@ export async function getUpcomingEpisodes(
       .sort((a, b) => b.seasonNumber - a.seasonNumber);
     if (realSeasons.length === 0) return [];
 
-    // Inspect at most the latest two seasons — enough to catch a season that has
+    // Inspect at most the latest two seasons - enough to catch a season that has
     // started airing plus the next one, without fanning out across the whole run.
     const candidates = realSeasons.slice(0, 2);
 
@@ -116,7 +124,7 @@ export async function getUpcomingEpisodes(
         try {
           const episodes = await tmdb.getEpisodes(tmdbId, season.seasonNumber);
           return episodes
-            .filter((ep) => ep.airDate != null && ep.airDate >= today)
+            .filter((ep) => ep.airDate != null && ep.airDate >= earliestDate)
             .map<UpcomingEpisode>((ep) => ({
               series,
               seasonNumber: ep.seasonNumber,
@@ -145,18 +153,31 @@ export async function getUpcomingEpisodesForSeries(
   seriesList: MediaPreview[],
   tmdb: TMDBService | null,
   now: number = Date.now(),
+  recentDays = 0,
 ): Promise<UpcomingEpisode[]> {
   if (tmdb == null) return [];
   const seen = new Set<string>();
-  const unique = seriesList.filter((s) => {
-    if (s.type !== "series") return false;
-    if (seen.has(s.id)) return false;
-    seen.add(s.id);
-    return true;
-  });
+  const unique = seriesList
+    .filter((s) => {
+      if (s.type !== "series") return false;
+      if (seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    })
+    .slice(0, MAX_CALENDAR_SERIES);
 
-  const all = await Promise.all(
-    unique.map((s) => getUpcomingEpisodes(s, tmdb, now)),
-  );
-  return all.flat().sort((a, b) => a.airDate.localeCompare(b.airDate));
+  // Keep the UI responsive for large watchlists. Each title still only reads
+  // its latest two seasons, and TMDBService coalesces/cache-hits repeated
+  // requests, but no more than six titles fan out at a time. The hard series
+  // cap above also bounds total first-load volume regardless of watchlist size.
+  const results: UpcomingEpisode[][] = [];
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(6, unique.length) }, async () => {
+    while (cursor < unique.length) {
+      const series = unique[cursor++];
+      results.push(await getUpcomingEpisodes(series, tmdb, now, recentDays));
+    }
+  });
+  await Promise.all(workers);
+  return results.flat().sort((a, b) => a.airDate.localeCompare(b.airDate));
 }

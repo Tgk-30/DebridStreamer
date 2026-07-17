@@ -1,12 +1,13 @@
 // In-app auto-update check + install.
 //
-// Runs once on launch (via the UpdateBanner component, mounted from App.tsx). It
-// is a deliberate no-op in a plain browser — the updater plugin only exists in
-// the desktop Tauri shell — so it's guarded by `isTauri()` and never throws into
+// Runs on launch and then weekly for long-running instances (via the
+// UpdateBanner component, mounted from App.tsx). It
+// is a deliberate no-op in a plain browser - the updater plugin only exists in
+// the desktop Tauri shell - so it's guarded by `isTauri()` and never throws into
 // the UI. When running under Tauri it asks the updater plugin whether a newer
 // signed release is available (resolved from the `plugins.updater.endpoints`
 // `latest.json` in tauri.conf.json) and, when one is, surfaces a small
-// non-blocking glass banner ("Update vX.Y available — Install"). Installing
+// non-blocking glass banner ("Update vX.Y available - Install"). Installing
 // downloads + applies the update (with progress) then relaunches the app.
 //
 // Releases are signed with the updater keypair (public key in tauri.conf.json,
@@ -15,6 +16,36 @@
 // before reporting an update, so an unsigned/forged `latest.json` is ignored.
 
 import { isTauri } from "./tauri";
+import { isNetworkAllowed } from "./networkPolicy";
+
+const LAST_CHECK_KEY = "ds_last_update_check";
+
+/** Record that an update check just ran - drives the weekly re-check cadence for
+ * long-running app instances (a fresh launch always checks regardless). */
+export function markUpdateChecked(now = Date.now()): void {
+  try {
+    globalThis.localStorage?.setItem(LAST_CHECK_KEY, String(now));
+  } catch {
+    // best-effort; without persistence every poll simply reads as "due".
+  }
+}
+
+/** Milliseconds since the last recorded update check, or Infinity when never
+ * checked / unreadable (so the first eligible poll is always "due"). */
+export function updateCheckAgeMs(now = Date.now()): number {
+  try {
+    const raw = globalThis.localStorage?.getItem(LAST_CHECK_KEY);
+    const at = raw != null ? Number(raw) : NaN;
+    if (!Number.isFinite(at)) return Infinity;
+    return Math.max(0, now - at);
+  } catch {
+    return Infinity;
+  }
+}
+
+/** How often a long-running instance re-checks for updates (the user's "check
+ * every week" cadence). A fresh launch always checks immediately regardless. */
+export const WEEKLY_UPDATE_CHECK_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** A pending desktop update, with the version + an install action. The install
  * action downloads + applies the update (reporting byte progress) and then
@@ -31,10 +62,11 @@ export interface PendingUpdate {
 }
 
 /** Check for an available desktop update. Resolves to a {@link PendingUpdate}
- * when a newer signed release is available, else `null`. Never throws — a flaky
+ * when a newer signed release is available, else `null`. Never throws - a flaky
  * network, a missing release, or running in a plain browser all resolve to
  * `null` (with a console warning) so launch is never degraded. */
 export async function checkForUpdates(): Promise<PendingUpdate | null> {
+  if (!isNetworkAllowed("updates")) return null;
   if (!isTauri()) return null;
 
   try {

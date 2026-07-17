@@ -1,21 +1,42 @@
-// EpisodePicker — the season/episode browser on a series' Detail screen.
+// EpisodePicker - the season/episode browser on a series' Detail screen.
 //
-// Rich mode (an episode guide is available — local TMDB key or the Server-Mode
+// Rich mode (an episode guide is available - local TMDB key or the Server-Mode
 // metadata proxy): a season chip row plus an episode list with stills, titles,
 // air dates/runtimes, per-episode resume bars, and an accent ring on the
 // selected episode. Selecting an episode re-drives the stream search below.
 //
 // Degraded mode (no guide): a plain season/episode stepper so streaming still
-// works — "Episode guide unavailable — pick the season and episode to search."
+// works - "Episode guide unavailable - pick the season and episode to search."
 
 import { useEffect, useState } from "react";
 import type { TMDBService } from "../services/metadata/TMDBService";
 import type { Episode } from "../models/media";
 import { episodeIdFor, useEpisodes, useSeasons } from "../data/episodes";
+import { seasonIsWatched } from "../data/watchedState";
 import { Icon } from "./Icon";
+import { isNetworkAllowed } from "../lib/networkPolicy";
 import "./EpisodePicker.css";
 
 const TMDB_STILL_BASE = "https://image.tmdb.org/t/p/w300";
+const DATE_FMT = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+// Above this many seasons the chip row gets unwieldy (wraps into a big block),
+// so we switch to a compact "Season N" dropdown instead.
+const MANY_SEASONS = 6;
+
+/** A season's dropdown label: its TMDB name (or "Season N") + episode count. */
+function seasonOptionLabel(s: {
+  name: string;
+  seasonNumber: number;
+  episodeCount: number;
+}): string {
+  const base = s.name || `Season ${s.seasonNumber}`;
+  return s.episodeCount > 0 ? `${base} · ${s.episodeCount} eps` : base;
+}
 
 interface EpisodePickerProps {
   /** Numeric TMDB id for the series (null → degraded stepper mode). */
@@ -32,17 +53,22 @@ interface EpisodePickerProps {
     ep: { season: number; episode: number },
     watched: boolean,
   ) => void;
+  /** Toggle every currently loaded episode in the browsed season. */
+  onToggleSeasonWatched?: (
+    episodes: Array<{ season: number; episode: number }>,
+    watched: boolean,
+  ) => void;
+  /** Toggle every regular season in the series. */
+  onToggleSeriesWatched?: (watched: boolean) => void;
+  /** True only when every regular TMDB season is complete. */
+  seriesWatched?: boolean;
 }
 
 function airDateLabel(airDate: string | null | undefined): string | null {
   if (!airDate) return null;
   const d = new Date(`${airDate}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(d);
+  return DATE_FMT.format(d);
 }
 
 function metaLabel(ep: Episode): string {
@@ -58,11 +84,14 @@ export function EpisodePicker({
   progressByEpisodeId = {},
   watchedEpisodeIds,
   onToggleWatched,
+  onToggleSeasonWatched,
+  onToggleSeriesWatched,
+  seriesWatched = false,
 }: EpisodePickerProps) {
   const seasons = useSeasons(tmdbId, true, tmdb);
   const rich = seasons.source === "live";
 
-  // The season being BROWSED (chip row) — follows the selected episode's
+  // The season being BROWSED (chip row) - follows the selected episode's
   // season by default but browsing doesn't change the selection until an
   // episode is tapped.
   const [browseSeason, setBrowseSeason] = useState(selected.season);
@@ -75,6 +104,16 @@ export function EpisodePicker({
     rich ? browseSeason : null,
     tmdb,
   );
+  const season = seasons.seasons.find((item) => item.seasonNumber === browseSeason);
+  const seasonWatched = seasonIsWatched(
+    watchedEpisodeIds ?? new Set<string>(),
+    browseSeason,
+    season?.episodeCount ?? 0,
+  );
+  const seasonEpisodes = episodes.episodes.map((episode) => ({
+    season: episode.seasonNumber,
+    episode: episode.episodeNumber,
+  }));
 
   // Degraded stepper state mirrors the selection directly.
   function step(field: "season" | "episode", delta: number) {
@@ -117,7 +156,7 @@ export function EpisodePicker({
           <h3 className="episode-picker-title">Episodes</h3>
         </div>
         <p className="episode-picker-note t-secondary">
-          Episode guide unavailable — pick the season and episode to search.
+          Episode guide unavailable - pick the season and episode to search.
         </p>
         <div className="episode-stepper-row">
           {(["season", "episode"] as const).map((field) => (
@@ -155,23 +194,80 @@ export function EpisodePicker({
     <section className="episode-picker glass-rest" aria-label="Episodes">
       <div className="episode-picker-head">
         <h3 className="episode-picker-title">Episodes</h3>
-        <div className="episode-picker-seasons">
-          {seasons.seasons.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={
-                "episode-season-chip chip" +
-                (s.seasonNumber === browseSeason ? " is-active" : "")
-              }
-              aria-pressed={s.seasonNumber === browseSeason}
-              onClick={() => setBrowseSeason(s.seasonNumber)}
+        {seasons.seasons.length > MANY_SEASONS ? (
+          // Many seasons → a compact dropdown so the head doesn't wrap into a
+          // huge chip block. Still a real, keyboard-accessible season selector.
+          <label className="episode-season-select glass-rest">
+            <span className="episode-season-select-label t-secondary">Season</span>
+            <select
+              className="episode-season-select-input"
+              value={browseSeason}
+              onChange={(e) => setBrowseSeason(Number(e.target.value))}
+              aria-label="Season"
             >
-              {s.name || `Season ${s.seasonNumber}`}
-            </button>
-          ))}
-        </div>
+              {seasons.seasons.map((s) => (
+                <option key={s.id} value={s.seasonNumber}>
+                  {seasonOptionLabel(s)}
+                </option>
+              ))}
+            </select>
+            <span className="episode-season-select-caret" aria-hidden>
+              ▾
+            </span>
+          </label>
+        ) : (
+          <div className="episode-picker-seasons">
+            {seasons.seasons.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={
+                  "episode-season-chip chip" +
+                  (s.seasonNumber === browseSeason ? " is-active" : "")
+                }
+                aria-pressed={s.seasonNumber === browseSeason}
+                onClick={() => setBrowseSeason(s.seasonNumber)}
+              >
+                {s.name || `Season ${s.seasonNumber}`}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {(onToggleSeasonWatched != null || onToggleSeriesWatched != null) && (
+        <div className="episode-picker-watch-controls" role="group" aria-label="Watched controls">
+          {onToggleSeasonWatched != null && (
+            <button
+              type="button"
+              className={`episode-rollup-btn${seasonWatched ? " is-watched" : ""}`}
+              aria-pressed={seasonWatched}
+              disabled={episodes.loading || seasonEpisodes.length === 0}
+              onClick={() => onToggleSeasonWatched(seasonEpisodes, !seasonWatched)}
+            >
+              <Icon name="check" size={14} />
+              {seasonWatched ? "Mark season unwatched" : "Mark season watched"}
+            </button>
+          )}
+          {onToggleSeriesWatched != null && (
+            <div className="episode-rollup-series">
+              <span className="episode-rollup-series-label">Entire series</span>
+              <button
+                type="button"
+                className={`episode-rollup-series-btn${seriesWatched ? " is-watched" : ""}`}
+                aria-pressed={seriesWatched}
+                disabled={seasons.loading || seasons.seasons.length === 0}
+                onClick={() => onToggleSeriesWatched(!seriesWatched)}
+              >
+                <Icon name="check" size={13} />
+                {seriesWatched
+                  ? "Mark entire series unwatched"
+                  : "Mark entire series watched"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <ul className="episode-list" aria-busy={episodes.loading}>
         {episodes.loading &&
@@ -198,29 +294,6 @@ export function EpisodePicker({
                 key={id}
                 className={"episode-row-item" + (watched ? " is-watched" : "")}
               >
-                {onToggleWatched != null && (
-                  <button
-                    type="button"
-                    className={
-                      "episode-watched-btn" + (watched ? " is-watched" : "")
-                    }
-                    aria-pressed={watched}
-                    aria-label={
-                      watched
-                        ? `Mark E${ep.episodeNumber} unwatched`
-                        : `Mark E${ep.episodeNumber} watched`
-                    }
-                    title={watched ? "Watched — click to unmark" : "Mark watched"}
-                    onClick={() =>
-                      onToggleWatched(
-                        { season: ep.seasonNumber, episode: ep.episodeNumber },
-                        !watched,
-                      )
-                    }
-                  >
-                    <Icon name="check" size={13} />
-                  </button>
-                )}
                 <button
                   type="button"
                   className={"episode-row" + (isSelected ? " is-selected" : "")}
@@ -229,7 +302,7 @@ export function EpisodePicker({
                     onSelect({ season: ep.seasonNumber, episode: ep.episodeNumber })
                   }
                 >
-                  {ep.stillPath ? (
+                  {ep.stillPath && isNetworkAllowed("images") ? (
                     <img
                       className="episode-still"
                       src={`${TMDB_STILL_BASE}${ep.stillPath}`}
@@ -263,6 +336,29 @@ export function EpisodePicker({
                     )}
                   </span>
                 </button>
+                {onToggleWatched != null && (
+                  <button
+                    type="button"
+                    className={
+                      "episode-watched-btn" + (watched ? " is-watched" : "")
+                    }
+                    aria-pressed={watched}
+                    aria-label={
+                      watched
+                        ? `Mark E${ep.episodeNumber} unwatched`
+                        : `Mark E${ep.episodeNumber} watched`
+                    }
+                    title={watched ? "Mark unwatched" : "Mark watched"}
+                    onClick={() =>
+                      onToggleWatched(
+                        { season: ep.seasonNumber, episode: ep.episodeNumber },
+                        !watched,
+                      )
+                    }
+                  >
+                    <Icon name="check" size={15} />
+                  </button>
+                )}
               </li>
             );
           })}

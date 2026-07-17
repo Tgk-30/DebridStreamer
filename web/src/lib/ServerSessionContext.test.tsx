@@ -50,7 +50,7 @@ function wrapper(props: Partial<ComponentProps<typeof ServerSessionProvider>> = 
   };
 }
 
-describe("ServerSessionProvider — initial values surfaced by hooks", () => {
+describe("ServerSessionProvider - initial values surfaced by hooks", () => {
   it("surfaces the initial session, transcode, omdb and build-profile flags", () => {
     const { result } = renderHook(
       () => ({
@@ -96,7 +96,7 @@ describe("ServerSessionProvider — initial values surfaced by hooks", () => {
   });
 });
 
-describe("ServerSessionProvider — setters update in-memory state", () => {
+describe("ServerSessionProvider - setters update in-memory state", () => {
   it("setSession replaces the session (and can clear it back to null)", () => {
     const { result } = renderHook(
       () => ({ session: useServerSession(), set: useSetServerSession() }),
@@ -120,7 +120,7 @@ describe("ServerSessionProvider — setters update in-memory state", () => {
   });
 });
 
-describe("ServerSession hooks — context defaults without a provider", () => {
+describe("ServerSession hooks - context defaults without a provider", () => {
   it("read the createContext default value (null session, false flags, public)", () => {
     const { result } = renderHook(() => ({
       session: useServerSession(),

@@ -1,16 +1,24 @@
-/* Browse screen — overlay surface (mirrors Detail) with a paginated grid. */
+/* Browse screen - overlay surface (mirrors Detail) with a paginated grid. */
 
 .browse {
   position: fixed;
-  inset: 0 0 0 var(--nav-rail-width, 96px);
+  inset: 0 0 0 var(--nav-safe-left, 96px);
   /* Below Detail (z-index 20) so a Detail opened from Browse layers on top,
    * above the base content + global search. */
   z-index: 18;
   overflow-y: auto;
+  background: transparent;
+}
+.browse::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 0 var(--nav-safe-left, 96px);
+  z-index: 0;
+  pointer-events: none;
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--bg-1) 62%, transparent),
-    color-mix(in srgb, var(--bg-1) 88%, transparent)
+    color-mix(in srgb, var(--bg-1) 90%, transparent),
+    color-mix(in srgb, var(--bg-1) 96%, transparent)
   );
   backdrop-filter: blur(20px) saturate(1.2);
   -webkit-backdrop-filter: blur(20px) saturate(1.2);
@@ -20,6 +28,8 @@
 }
 
 .browse-inner {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: var(--sp-lg);
@@ -140,7 +150,7 @@
   justify-self: center;
 }
 
-/* Skeleton card — a shimmering redacted 2:3 poster block that matches the real
+/* Skeleton card - a shimmering redacted 2:3 poster block that matches the real
  * MediaCard footprint so the grid doesn't shift when page 1 resolves. Reuses the
  * global @keyframes shimmer (defined in components/MediaCard.css). */
 .browse-skel {
@@ -156,7 +166,7 @@
     rgba(255, 255, 255, 0.02) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.4s ease-in-out 12;
 }
 
 /* ---- Load more ------------------------------------------------------------ */

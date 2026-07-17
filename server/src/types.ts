@@ -43,7 +43,7 @@ export interface ServerConfig {
   sessionTtlSeconds: number;
   allowRawStreamUrls: boolean;
   /** Operator opt-in for server-side HLS transcoding (Phase 3b). Default false.
-   *  When false — or when ffmpeg is absent at boot — the transcode routes 404 and
+   *  When false - or when ffmpeg is absent at boot - the transcode routes 404 and
    *  the /api/stream/:id proxy is byte-for-byte unchanged. */
   enableTranscode: boolean;
   /** Max concurrent ffmpeg transcode jobs. Default 1 (Pi-friendly). */
@@ -54,14 +54,14 @@ export interface ServerConfig {
   trustProxy: boolean;
   corsOrigin: string | null;
   logger: boolean;
-  /** Distribution tier this build/deploy targets — drives the client's
+  /** Distribution tier this build/deploy targets - drives the client's
    *  onboarding flow (family = connect to your server, friends = self-host with
    *  baked keys, public = guided BYOK). Informational; not a security control. */
   buildProfile: "family" | "friends" | "public";
   /** "Hidden key" OMDb support: a server-held OMDb API key used to enrich
    *  titles with IMDb / Rotten Tomatoes / Metacritic ratings via the
    *  `/api/omdb/:imdbId` proxy. Lives ONLY on the server (this env value, or an
-   *  encrypted server/profile credential) and is never sent to clients — so a
+   *  encrypted server/profile credential) and is never sent to clients - so a
    *  limited-distribution build ships ratings with an unextractable key. A
    *  per-profile OMDb credential, when set, overrides this. Null = no
    *  server-provided OMDb (clients fall back to their own key, if any). */
@@ -69,8 +69,8 @@ export interface ServerConfig {
   // ── Key broker (the truly-unextractable "friends" path) ──────────────────
   // Two roles; a server can be either or both:
   //   • CONSUMER (the friend's server): set `omdbBrokerUrl` + `brokerAuthToken`.
-  //     It forwards OMDb lookups to the broker and holds NO OMDb key — only a
-  //     revocable token — so the key is never on the friend's machine.
+  //     It forwards OMDb lookups to the broker and holds NO OMDb key - only a
+  //     revocable token - so the key is never on the friend's machine.
   //   • BROKER (the server YOU run): set `brokerTokens` (accepted tokens) and a
   //     real OMDb key. It answers /api/broker/omdb for valid tokens and returns
   //     only ratings, never the key.
@@ -100,7 +100,7 @@ export interface AuthContext {
    * curated movie-only browse). Independent of `maturityMax` in principle, but
    * an owner sets them together. */
   isKid: boolean;
-  /** The active profile's maturity ceiling — a US movie certification
+  /** The active profile's maturity ceiling - a US movie certification
    * (G/PG/PG-13/R/NC-17), or null for no cap. The resolve play-block compares a
    * title's certification against this; null means unrestricted. */
   maturityMax: string | null;

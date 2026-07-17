@@ -74,7 +74,7 @@ afterEach(() => {
   notifyUnauthorized.mockReset();
 });
 
-describe("serverApi — request building (via serverRequest)", () => {
+describe("serverApi - request building (via serverRequest)", () => {
   it("builds a GET with credentials:'include' and no content-type / csrf header", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ genres: [] }) as never);
     await api.fetchServerGenres("movie");
@@ -137,7 +137,7 @@ describe("serverApi — request building (via serverRequest)", () => {
 
   it("throws when Server Mode is not configured (null base URL)", async () => {
     configuredServerURL.mockReturnValue(null);
-    // Note: no fetch response is queued here — serverBaseURL throws before fetch
+    // Note: no fetch response is queued here - serverBaseURL throws before fetch
     // is reached, and a queued mockResolvedValueOnce would otherwise leak into
     // the next test's fetch call.
     await expect(api.fetchServerGenres("movie")).rejects.toThrow(
@@ -147,7 +147,7 @@ describe("serverApi — request building (via serverRequest)", () => {
   });
 });
 
-describe("serverApi — JSON parsing & error handling", () => {
+describe("serverApi - JSON parsing & error handling", () => {
   it("returns {} (parsed) for an empty 2xx body", async () => {
     fetchMock.mockResolvedValueOnce(rawResponse("") as never);
     // revokeServerStreamSession returns void; it must resolve, not throw.
@@ -609,6 +609,32 @@ describe("household sub-profiles", () => {
     await api.switchAccountProfile("p1", "");
     expect(JSON.parse(lastCall().init.body as string)).toEqual({
       profileId: "p1",
+    });
+  });
+
+  it("setProfilePin posts the PIN endpoint and returns refreshed profile state", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ profiles: { profiles: [], activeProfileId: "p1" } }) as never,
+    );
+    await expect(api.setProfilePin("p 1", "1234")).resolves.toEqual({
+      profiles: { profiles: [], activeProfileId: "p1" },
+    });
+    expect(lastCall().url).toBe("https://server.example/api/profiles/pin");
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({
+      profileId: "p 1",
+      pin: "1234",
+    });
+  });
+
+  it("setProfileBandwidthQuota posts a clear as capBytes:null", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ profiles: { profiles: [], activeProfileId: "p1" } }) as never,
+    );
+    await api.setProfileBandwidthQuota("p1", null);
+    expect(lastCall().url).toBe("https://server.example/api/profiles/quota");
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({
+      profileId: "p1",
+      capBytes: null,
     });
   });
 });

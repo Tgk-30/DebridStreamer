@@ -40,7 +40,7 @@ private func tmdbOK(_ request: URLRequest) throws -> HTTPURLResponse {
 }
 
 /// Builds a 500 `HTTPURLResponse` for the request URL (used to prove the second
-/// read is served from cache and never decodes a fresh — failing — response).
+/// read is served from cache and never decodes a fresh - failing - response).
 private func tmdbServerError(_ request: URLRequest) throws -> HTTPURLResponse {
     guard let url = request.url else {
         throw NSError(domain: "TMDBCacheAndCreditsTests", code: 3)
@@ -217,7 +217,7 @@ struct TMDBServiceGetRecommendationsTests {
 
 @Suite("TMDBService TTL response cache")
 struct TMDBServiceResponseCacheTests {
-    @Test("getCast memoizes within TTL — second read served from cache, no extra network hit")
+    @Test("getCast memoizes within TTL - second read served from cache, no extra network hit")
     func getCastMemoizes() async throws {
         let sessionID = UUID().uuidString
         let session = makeMockSession(sessionID: sessionID)
@@ -248,7 +248,7 @@ struct TMDBServiceResponseCacheTests {
         #expect(second.first?.name == "Edward Norton")
     }
 
-    @Test("getRecommendations memoizes within TTL — cached value persists when stub later errors")
+    @Test("getRecommendations memoizes within TTL - cached value persists when stub later errors")
     func getRecommendationsMemoizes() async throws {
         let sessionID = UUID().uuidString
         let session = makeMockSession(sessionID: sessionID)
@@ -275,7 +275,7 @@ struct TMDBServiceResponseCacheTests {
         #expect(second.first?.title == "Se7en")
     }
 
-    @Test("Cache is keyed per request — distinct tmdbIds each hit the network")
+    @Test("Cache is keyed per request - distinct tmdbIds each hit the network")
     func cacheKeyDistinguishesRequests() async throws {
         let sessionID = UUID().uuidString
         let session = makeMockSession(sessionID: sessionID)

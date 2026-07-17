@@ -1,11 +1,10 @@
-// DetailHero — cinematic top of the Detail screen.
+// DetailHero - cinematic top of the Detail screen.
 //
 // Full-bleed backdrop with a slow Ken Burns drift + layered scrim/vignette, then
 // poster + large title, a dotted meta row, genre chips, the overview, and the
 // primary actions (Play prominent + Watchlist). Content settles in with motion.
 
-import { useState } from "react";
-import { motion } from "motion/react";
+import { useState, type ReactNode } from "react";
 import { MediaItem as MediaItemNS } from "../models/media";
 import type { MediaItem } from "../models/media";
 import { Icon } from "./Icon";
@@ -21,22 +20,32 @@ interface DetailHeroProps {
   onPlay: () => void;
   onToggleWatchlist: () => void;
   onClose: () => void;
-  /** Server Mode only — file a title request for this item. Omitted (and the
+  /** Server Mode only - file a title request for this item. Omitted (and the
    *  button hidden) in Local Mode. */
   onRequest?: () => void;
   /** Drives the Request button label/disabled state: idle → "Request",
    *  requesting → busy, requested → "Requested", already → "Already requested". */
-  requestState?: "idle" | "requesting" | "requested" | "already";
+  requestState?: "idle" | "requesting" | "requested" | "already" | "failed";
   /** Current like/dislike signal for this title (null = no signal yet). */
   tasteSignal?: TasteSignal;
   /** Record (or toggle off) a like/dislike taste signal for this title. */
   onTasteSignal?: (signal: "liked" | "disliked") => void;
   /** When set, Play is disabled and this explains why (e.g. no debrid service
-   *  configured yet) — an honest gate instead of a click that goes nowhere. */
+   *  configured yet) - an honest gate instead of a click that goes nowhere. */
   playDisabledReason?: string | null;
+  /** Local desktop-only download action, rendered beside Play when supplied. */
+  onDownload?: () => void;
+  /** Honest explanation for a disabled download action. */
+  downloadDisabledReason?: string | null;
+  /** Movie-only watched state, controlled by Detail's durable history row. */
+  movieWatched?: boolean;
+  /** Movie-only action to toggle the durable watched history row. */
+  onToggleMovieWatched?: () => void;
+  /** Async external ratings owned by Detail, placed beside the TMDB score. */
+  externalRatings?: ReactNode;
+  /** Full-title completion state derived from durable watch history. */
+  completionLabel?: "Watched" | "Completed" | null;
 }
-
-const EASE = [0.16, 1, 0.3, 1] as const;
 
 export function DetailHero({
   item,
@@ -49,9 +58,17 @@ export function DetailHero({
   tasteSignal = null,
   onTasteSignal,
   playDisabledReason = null,
+  onDownload,
+  downloadDisabledReason = null,
+  movieWatched = false,
+  onToggleMovieWatched,
+  externalRatings,
+  completionLabel = null,
 }: DetailHeroProps) {
+  const itemKey = `${item.type}:${item.id}`;
   const backdrop = MediaItemNS.backdropURL(item);
-  const [backdropFailed, setBackdropFailed] = useState(false);
+  const [backdropFailedFor, setBackdropFailedFor] = useState<string | null>(null);
+  const backdropFailed = backdropFailedFor === itemKey;
   const poster = MediaItemNS.posterThumbnailURL(item);
   const rating = MediaItemNS.ratingString(item);
   const runtime = MediaItemNS.runtimeString(item);
@@ -64,11 +81,9 @@ export function DetailHero({
 
   return (
     <div className="detail-hero">
-      <motion.div
+      <div
+        key={`backdrop:${itemKey}`}
         className="detail-hero-backdrop-layer"
-        initial={{ scale: 1.12 }}
-        animate={{ scale: 1.04 }}
-        transition={{ duration: 18, ease: "easeOut" }}
       >
         {backdrop && !backdropFailed ? (
           <img
@@ -76,14 +91,14 @@ export function DetailHero({
             src={backdrop}
             alt=""
             draggable={false}
-            onError={() => setBackdropFailed(true)}
+            onError={() => setBackdropFailedFor(itemKey)}
           />
         ) : (
           // No backdrop, or it failed to load → the on-brand gradient instead of
           // a broken-image frame.
           <div className="detail-hero-backdrop hero-gradient" />
         )}
-      </motion.div>
+      </div>
       <div className="detail-hero-scrim" />
       <div className="detail-hero-vignette" />
 
@@ -97,11 +112,9 @@ export function DetailHero({
         <Icon name="xmark" size={17} />
       </button>
 
-      <motion.div
+      <div
+        key={`content:${itemKey}`}
         className="detail-hero-content"
-        initial={{ opacity: 0, y: 22 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: EASE, delay: 0.05 }}
       >
         {poster && (
           <img
@@ -113,18 +126,30 @@ export function DetailHero({
         )}
 
         <div className="detail-hero-info">
-          <h1 className="detail-hero-title">{item.title}</h1>
+          <div className="detail-hero-title-row">
+            <h1 className="detail-hero-title">{item.title}</h1>
+            {completionLabel != null && (
+              <span className="detail-hero-completion" aria-label={completionLabel}>
+                <Icon name="check" size={13} />
+                {completionLabel}
+              </span>
+            )}
+          </div>
 
-          <div className="detail-hero-meta">
+          <div className="detail-hero-ratings">
             {rating !== "N/A" && (
               <span className="detail-hero-rating">
                 <Icon name="star" size={13} className="t-warning" />
                 {rating}
               </span>
             )}
+            {externalRatings}
+          </div>
+
+          <div className="detail-hero-meta">
             {metaBits.map((bit, i) => (
               <span key={bit + i} className="detail-hero-metabit">
-                {(rating !== "N/A" || i > 0) && <span className="detail-hero-dot">·</span>}
+                {i > 0 && <span className="detail-hero-dot">·</span>}
                 {bit}
               </span>
             ))}
@@ -153,6 +178,30 @@ export function DetailHero({
               <Icon name="play" size={16} />
               Play
             </button>
+            {onDownload && (
+              <button
+                type="button"
+                className="btn detail-download"
+                onClick={onDownload}
+                disabled={downloadDisabledReason != null}
+                title={downloadDisabledReason ?? "Download"}
+              >
+                <Icon name="debrid" size={16} />
+                Download
+              </button>
+            )}
+            {onToggleMovieWatched && (
+              <button
+                type="button"
+                className={`btn detail-watched${movieWatched ? " is-on" : ""}`}
+                onClick={onToggleMovieWatched}
+                aria-pressed={movieWatched}
+                title={movieWatched ? "Watched. Mark unwatched" : "Mark watched"}
+              >
+                <Icon name="check" size={16} filled={movieWatched} />
+                {movieWatched ? "Mark unwatched" : "Mark watched"}
+              </button>
+            )}
             <button
               type="button"
               className={`btn detail-watch${inWatchlist ? " is-on" : ""}`}
@@ -170,13 +219,19 @@ export function DetailHero({
                     : ""
                 }`}
                 onClick={onRequest}
-                disabled={requestState !== "idle"}
+                disabled={
+                  requestState === "requesting" ||
+                  requestState === "requested" ||
+                  requestState === "already"
+                }
                 title={
                   requestState === "already"
                     ? "Already requested"
                     : requestState === "requested"
                       ? "Request sent"
-                      : "Ask an admin to add this title"
+                      : requestState === "failed"
+                        ? "Request failed - tap to try again"
+                        : "Ask an admin to add this title"
                 }
               >
                 <Icon
@@ -193,7 +248,9 @@ export function DetailHero({
                     ? "Requested"
                     : requestState === "already"
                       ? "Already requested"
-                      : "Request"}
+                      : requestState === "failed"
+                        ? "Request failed - retry"
+                        : "Request"}
               </button>
             )}
 
@@ -231,7 +288,7 @@ export function DetailHero({
             )}
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

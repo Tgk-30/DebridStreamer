@@ -232,7 +232,7 @@ actor TraktSyncService {
     }
 
     /// The Trakt scrobble action. `start` marks playback began, `pause` a pause,
-    /// and `stop` finalizes — Trakt auto-marks the item watched when a `stop`
+    /// and `stop` finalizes - Trakt auto-marks the item watched when a `stop`
     /// arrives with progress >= 80%.
     enum ScrobbleAction: String, Sendable {
         case start

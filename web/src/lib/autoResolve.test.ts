@@ -11,7 +11,10 @@ import type { Store } from "../storage/types";
 const preview = { id: "tt1", type: "movie", title: "Movie" } as unknown as MediaPreview;
 
 function settings(over: Partial<AppSettings>): AppSettings {
-  return { ...defaultSettings(), ...over };
+  // These auto-resolve cases exercise the opt-out behavior, not the picker
+  // default. A user who leaves cached-only on intentionally skips uncached
+  // pre-caching, covered by the explicit test below.
+  return { ...defaultSettings(), streamCachedOnly: false, ...over };
 }
 
 function torrent(infoHash: string, quality: VideoQuality, sizeGB: number) {
@@ -38,7 +41,7 @@ function deps(over: {
   };
 }
 
-describe("resolveOne — data-saver-aware auto-pick", () => {
+describe("resolveOne - data-saver-aware auto-pick", () => {
   // Quality-sorted best-first, as the indexers return them.
   const results = [
     torrent("4k", VideoQuality.uhd4k, 60),
@@ -47,7 +50,7 @@ describe("resolveOne — data-saver-aware auto-pick", () => {
 
   it("picks the within-cap source when Data Saver clamps quality (the bug fix)", async () => {
     const record = await resolveOne(preview, deps({ results, settings: settings({ dataSaver: true }) }));
-    // Not the over-cap 4K, even though it's first/best — auto-pick now respects the cap.
+    // Not the over-cap 4K, even though it's first/best - auto-pick now respects the cap.
     expect(record?.infoHash).toBe("720p");
   });
 

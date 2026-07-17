@@ -1,4 +1,4 @@
-// Extra coverage for src/services/ai/types.ts — targets the rarely-hit branches
+// Extra coverage for src/services/ai/types.ts - targets the rarely-hit branches
 // the primary ai.test.ts / analysis.test.ts / boundedRead.test.ts don't reach:
 //  - AIUsageCostEstimator family fallbacks (mini/haiku/sonnet/opus substring
 //    pricing + the unknown-model total-token fallback, incl. the null returns),
@@ -11,7 +11,7 @@
 //  - sumTokens null handling.
 //
 // These are pure (no network) functions, so no fetch stub / store mock is
-// needed. TESTS ONLY — no source file is touched.
+// needed. TESTS ONLY - no source file is touched.
 
 import { describe, expect, it } from "vitest";
 import {
@@ -186,7 +186,7 @@ describe("AIAssistantJSONParser.parseRecommendations edge paths", () => {
   });
 
   it("drops empty-title entries BEFORE capping, so it still returns maxResults", () => {
-    // The empty-title item sits within the first maxResults — a slice-then-filter
+    // The empty-title item sits within the first maxResults - a slice-then-filter
     // design would return 2; filter-then-slice keeps the count at 3.
     const raw = JSON.stringify([
       { title: "A", score: 0.9 },

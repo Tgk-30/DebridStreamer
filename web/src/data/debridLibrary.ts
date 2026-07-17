@@ -1,4 +1,4 @@
-// Debrid Library data layer — the account's torrents/files + dedup detection.
+// Debrid Library data layer - the account's torrents/files + dedup detection.
 //
 // Lists the user's torrents across configured debrid services
 // (DebridManager.listTorrents, Tauri-only/CORS-free), and computes a "duplicate
@@ -137,7 +137,7 @@ export function useDebridLibrary(debrid: DebridManager | null): {
 
 /** Format a byte count as a human-readable size (e.g. "4.2 GB"). Pure. */
 export function formatSize(bytes: number): string {
-  if (bytes <= 0) return "—";
+  if (bytes <= 0) return " - ";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
   let unit = 0;

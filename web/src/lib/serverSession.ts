@@ -5,7 +5,7 @@
 //  1. CSRF token. The server's double-submit check compares the `ds_csrf` cookie
 //     to an `x-csrf-token` header. Same-origin clients can read the cookie via
 //     document.cookie, but a CROSS-ORIGIN client (a pasted remote server URL)
-//     cannot — document.cookie only exposes the page origin. So we capture the
+//     cannot - document.cookie only exposes the page origin. So we capture the
 //     token the server returns in its auth/bootstrap response bodies and hold it
 //     here, falling back to the cookie only when in memory has nothing.
 //  2. Unauthorized (401) signal. If the session expires/gets revoked while the
@@ -19,7 +19,7 @@ let csrf: string | null = null;
 export function setCsrfToken(token: string | null | undefined): void {
   if (typeof token === "string" && token.length > 0) {
     csrf = token;
-    // A fresh token means we're authenticated again — re-arm the 401 signal.
+    // A fresh token means we're authenticated again - re-arm the 401 signal.
     notifiedUnauthorized = false;
   }
 }

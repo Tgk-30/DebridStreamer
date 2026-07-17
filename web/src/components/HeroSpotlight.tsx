@@ -1,15 +1,21 @@
 // Cinematic billboard hero: auto-rotates through a few featured titles with a
 // crossfade + slow Ken Burns zoom on the backdrop, a layered scrim for legibility,
 // large title, badges, Play/Details, and bar indicators. Pauses on hover. Falls
-// back to a single item. Motion via `motion` + AnimatePresence.
+// back to a single item. Animation is pure CSS (see the route-frame note in App).
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import type { MediaPreview } from "../models/media";
 import { Icon } from "./Icon";
-import { isSmartPreloadEnabled } from "../lib/smartPreload";
 import "./HeroSpotlight.css";
+
+/** One backdrop layer in the crossfade stack. `seq` keys the layer (item ids
+ *  repeat when the carousel rotates back to a title). */
+interface BackdropLayer {
+  seq: number;
+  id: string;
+  url: string | null;
+}
 
 interface HeroSpotlightProps {
   /** One or more featured items; rotates when >1. */
@@ -20,15 +26,16 @@ interface HeroSpotlightProps {
   onPlay?: (item: MediaPreview) => void;
   onDetails?: (item: MediaPreview) => void;
   intervalMs?: number;
+  /** Park the rotation while an overlay covers this screen - a covered
+   *  carousel still invalidates the overlay's backdrop blur every frame. */
+  suspended?: boolean;
 }
-
-const EASE = [0.16, 1, 0.3, 1] as const;
 
 /**
  * Content-aware accent: sample the backdrop down to a tiny canvas and average
  * the vivid (saturated, mid-luminance) pixels into one dominant RGB. Used to
  * recolor the hero chrome per title (the Apple-TV / Disney+ signature). Returns
- * null when the canvas is tainted (no CORS) or there isn't enough vivid color —
+ * null when the canvas is tainted (no CORS) or there isn't enough vivid color - 
  * the caller then falls back to the global accent.
  */
 function extractDominantRGB(img: HTMLImageElement): string | null {
@@ -54,7 +61,7 @@ function extractDominantRGB(img: HTMLImageElement): string | null {
       const min = Math.min(cr, cg, cb);
       const sat = max === 0 ? 0 : (max - min) / max;
       const lum = (cr + cg + cb) / 3;
-      // Skip near-black, near-white, and washed-out pixels — keep the vivid ones.
+      // Skip near-black, near-white, and washed-out pixels - keep the vivid ones.
       if (lum < 30 || lum > 226 || sat < 0.25) continue;
       r += cr;
       g += cg;
@@ -69,11 +76,11 @@ function extractDominantRGB(img: HTMLImageElement): string | null {
     const lift = Math.max(0, 96 - (r + g + b) / 3);
     return `${Math.min(255, r + lift)}, ${Math.min(255, g + lift)}, ${Math.min(255, b + lift)}`;
   } catch {
-    return null; // tainted canvas (no CORS) — fall back to the global accent.
+    return null; // tainted canvas (no CORS) - fall back to the global accent.
   }
 }
 
-// Accent extraction is pure per-URL — cache results so rotating back to a title
+// Accent extraction is pure per-URL - cache results so rotating back to a title
 // (every ~42s on a 6-item carousel) doesn't re-download and re-scan the full
 // bitmap each pass. Failed extractions are cached too (null) so hopeless
 // backdrops aren't re-probed. Small FIFO cap keeps it bounded across screens.
@@ -86,18 +93,42 @@ export function HeroSpotlight({
   overview,
   onPlay,
   onDetails,
-  intervalMs = 7000,
+  // 12s cadence - the 4s Ken Burns still plays per slide, but the blur-sampled
+  // animation duty cycle drops from 57% to 33% (measured +6-7 points of device
+  // GPU while idle on Discover). Trivially reversible.
+  intervalMs = 12000,
+  suspended = false,
 }: HeroSpotlightProps) {
   const list = (items && items.length > 0 ? items : item ? [item] : []).slice(0, 6);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
-  // PERF: park the carousel entirely while the window is hidden — otherwise it
+  // PERF: park the carousel entirely while the window is hidden - otherwise it
   // keeps rotating (and preloading + probing backdrops) forever in a window
   // nobody can see.
   const [hidden, setHidden] = useState(() => document.hidden);
   const heroRef = useRef<HTMLDivElement>(null);
   const active = list[Math.min(index, list.length - 1)];
   const backdrop = active ? MediaPreviewNS.backdropURL(active) : null;
+
+  // Backdrop crossfade layers, oldest first. The incoming layer fades in ON TOP
+  // of the previous one, which stays fully opaque underneath until it is covered
+  // and then drops out on animationend - so there is never a luminance dip or a
+  // frame of empty hero, even if a dot is clicked mid-crossfade.
+  const [layers, setLayers] = useState<BackdropLayer[]>(() =>
+    active ? [{ seq: 1, id: active.id, url: backdrop }] : [],
+  );
+
+  useEffect(() => {
+    if (!active) return;
+    setLayers((prev) => {
+      // Idempotent: never stack the same slide twice in a row (StrictMode
+      // re-runs mount effects). `seq` is derived from the tail so it stays
+      // unique across the live list without an impure ref bump.
+      const last = prev[prev.length - 1];
+      if (last && last.id === active.id) return prev;
+      return [...prev, { seq: (last?.seq ?? 0) + 1, id: active.id, url: backdrop }];
+    });
+  }, [active, backdrop]);
 
   useEffect(() => {
     const onVis = () => setHidden(document.hidden);
@@ -106,21 +137,24 @@ export function HeroSpotlight({
   }, []);
 
   useEffect(() => {
-    if (list.length <= 1 || paused || hidden) return;
+    if (list.length <= 1 || paused || hidden || suspended) return;
     const t = setInterval(() => setIndex((i) => (i + 1) % list.length), intervalMs);
     return () => clearInterval(t);
-  }, [list.length, paused, hidden, intervalMs]);
+  }, [list.length, paused, hidden, suspended, intervalMs]);
 
   // Invisible polish: preload the next backdrop so the crossfade never flashes a
-  // half-loaded image. Gated by the smart-preload preference. The Image is held
+  // half-loaded image. This is a single image the carousel is about to show in
+  // ~12s regardless, so we preload it unconditionally (it's the same bytes, just
+  // a beat earlier - not extra data) rather than gating on smart-preload; only
+  // the expensive code-chunk preloads stay gated (see App). The Image is held
   // and detached on cleanup so an in-flight preload doesn't keep loading (and
   // pinning memory) after the hero unmounts or advances. Keyed on the URL string
-  // (`list` is a fresh slice every render — using it as a dep re-ran this effect,
+  // (`list` is a fresh slice every render - using it as a dep re-ran this effect,
   // and re-issued the preload, on every single render).
   const nextBackdrop =
     list.length > 1 ? MediaPreviewNS.backdropURL(list[(index + 1) % list.length]) : null;
   useEffect(() => {
-    if (!nextBackdrop || !isSmartPreloadEnabled()) return;
+    if (!nextBackdrop) return;
     const img = new Image();
     img.src = nextBackdrop;
     return () => {
@@ -135,7 +169,7 @@ export function HeroSpotlight({
     const el = heroRef.current;
     if (el) el.style.removeProperty("--title-accent-rgb");
     if (!backdrop || el == null) return;
-    // Cache hit: no network fetch, no bitmap scan — just set the property.
+    // Cache hit: no network fetch, no bitmap scan - just set the property.
     if (accentCache.has(backdrop)) {
       const cached = accentCache.get(backdrop);
       if (cached != null) el.style.setProperty("--title-accent-rgb", cached);
@@ -158,7 +192,7 @@ export function HeroSpotlight({
     return () => {
       cancelled = true;
       // Fully detach so an in-flight download/decode can't complete (and pin the
-      // bitmap) after rotation — mirrors the preload cleanup above.
+      // bitmap) after rotation - mirrors the preload cleanup above.
       probe.onload = null;
       probe.src = "";
     };
@@ -174,24 +208,29 @@ export function HeroSpotlight({
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      {/* Backdrop crossfade + Ken Burns.
-          PERF: the Ken Burns scale used to run `intervalMs/1000 + 1` = 8s —
-          longer than the 7s rotation, so motion's rAF loop NEVER went idle
-          (each new slide started a zoom that outlived the slide). A fixed 4s
-          zoom completes with ~3s of genuine idle per cycle. */}
-      <AnimatePresence mode="popLayout">
-        <motion.div
-          key={active.id}
+      {/* Backdrop crossfade + Ken Burns, both pure CSS.
+          PERF: the Ken Burns scale used to run `intervalMs/1000 + 1` = 8s - 
+          longer than the 7s rotation, so the zoom NEVER went idle (each new
+          slide started a zoom that outlived the slide). A fixed 4s zoom
+          completes with ~3s of genuine idle per cycle. */}
+      {layers.map((layer) => (
+        <div
+          key={layer.seq}
           className="hero-backdrop-layer"
-          initial={{ opacity: 0, scale: 1.08 }}
-          animate={{ opacity: 1, scale: 1.0 }}
-          exit={{ opacity: 0 }}
-          transition={{ opacity: { duration: 0.9, ease: "easeInOut" }, scale: { duration: 4, ease: "linear" } }}
+          onAnimationEnd={(e) => {
+            // Only the fade-in settles the crossfade; the Ken Burns animation on
+            // the same element also fires animationend (at 4s) - ignore it.
+            if (e.animationName !== "heroBackdropIn") return;
+            setLayers((prev) => {
+              const i = prev.findIndex((l) => l.seq === layer.seq);
+              return i <= 0 ? prev : prev.slice(i);
+            });
+          }}
         >
-          {backdrop ? (
+          {layer.url ? (
             <img
               className="hero-backdrop"
-              src={backdrop}
+              src={layer.url}
               alt=""
               draggable={false}
               decoding="async"
@@ -203,69 +242,59 @@ export function HeroSpotlight({
           ) : (
             <div className="hero-backdrop hero-gradient" />
           )}
-        </motion.div>
-      </AnimatePresence>
+        </div>
+      ))}
 
       <div className="hero-scrim" />
       <div className="hero-vignette" />
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={active.id}
-          className="hero-content"
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.55, ease: EASE }}
-        >
-          <div className="hero-badges">
-            <span className="chip hero-featured">
-              Featured
-            </span>
-            {active.year != null && (
-              <>
-                <span className="hero-meta-separator" aria-hidden="true" />
-                <span className="hero-year">{active.year}</span>
-              </>
-            )}
-            {rating !== "" && (
-              <>
-                <span className="hero-meta-separator" aria-hidden="true" />
-                <span className="hero-rating">
-                  <Icon name="star" size={12} className="t-warning" />
-                  {rating}
-                </span>
-              </>
-            )}
-          </div>
+      <div key={active.id} className="hero-content">
+        <div className="hero-badges">
+          <span className="chip hero-featured">
+            Featured
+          </span>
+          {active.year != null && (
+            <>
+              <span className="hero-meta-separator" aria-hidden="true" />
+              <span className="hero-year">{active.year}</span>
+            </>
+          )}
+          {rating !== "" && (
+            <>
+              <span className="hero-meta-separator" aria-hidden="true" />
+              <span className="hero-rating">
+                <Icon name="star" size={12} className="t-warning" />
+                {rating}
+              </span>
+            </>
+          )}
+        </div>
 
-          <h1 className="hero-title">{active.title}</h1>
-          {overview && <p className="hero-overview">{overview}</p>}
+        <h1 className="hero-title">{active.title}</h1>
+        {overview && <p className="hero-overview">{overview}</p>}
 
-          <div className="hero-actions">
-            <button type="button" className="btn btn-prominent hero-play" onClick={() => onPlay?.(active)}>
-              <Icon name="play" size={16} />
-              Play
-            </button>
-            <button type="button" className="btn hero-info" onClick={() => onDetails?.(active)}>
-              <Icon name="info" size={16} />
-              More info
-            </button>
-          </div>
-        </motion.div>
-      </AnimatePresence>
+        <div className="hero-actions">
+          <button type="button" className="btn btn-prominent hero-play" onClick={() => onPlay?.(active)}>
+            <Icon name="play" size={16} />
+            Play
+          </button>
+          <button type="button" className="btn hero-info" onClick={() => onDetails?.(active)}>
+            <Icon name="info" size={16} />
+            More info
+          </button>
+        </div>
+      </div>
 
       {list.length > 1 && (
-        <div className="hero-dots">
-          <span className="hero-dots-label">
-            {index + 1}/{list.length}
-          </span>
+        <div className="hero-dots" role="tablist" aria-label="Featured titles">
           {list.map((it, i) => (
             <button
               key={it.id}
               type="button"
+              role="tab"
+              aria-selected={i === index}
               className={"hero-dot" + (i === index ? " is-active" : "")}
-              aria-label={`Featured ${i + 1}`}
+              aria-label={`Featured ${i + 1} of ${list.length}`}
               onClick={() => setIndex(i)}
             />
           ))}

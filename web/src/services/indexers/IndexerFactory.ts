@@ -1,7 +1,8 @@
 // Port of Sources/DebridStreamer/Services/Indexers/IndexerFactory.swift.
 //
 // Builds the active indexer set from a list of IndexerConfigs (built-in
-// APIBay/YTS/EZTV when enabled, plus priority-sorted external Torznab indexers)
+// Torrentio/APIBay/YTS/EZTV when enabled, plus priority-sorted external Torznab
+// indexers)
 // and validates an external endpoint via `testConnection` (2xx + a positive
 // Torznab/RSS feed without an `<error>` envelope).
 
@@ -18,6 +19,17 @@ import {
 import { TorznabIndexer } from "./TorznabIndexer";
 import { YTSIndexer } from "./YTSIndexer";
 
+/** Torrentio's public endpoint, shipped as a built-in. It's a Stremio addon that
+ * aggregates dozens of trackers (YTS, EZTV, RARBG mirrors, 1337x, ThePirateBay,
+ * TorrentGalaxy, Nyaa, …) behind one IMDb-keyed API, so it returns far more (and
+ * higher-quality) sources than the individual built-ins alone - the bare
+ * endpoint uses its default broad provider set + quality/seeder sort. It's
+ * IMDb-native (no free-text search), so it strengthens the imdb pass in both
+ * Local and Server Mode and stays kid-safe (imdb-exact, bindable by the play
+ * block). Per-indexer failures are absorbed by IndexerManager, so if Torrentio
+ * is unreachable the other built-ins still serve results. */
+const TORRENTIO_BUILT_IN_BASE_URL = "https://torrentio.strem.fun";
+
 export const IndexerFactory = {
   /** Builds the active indexer list. Built-in scrapers come first (enabled
    * unless a `built_in` config is explicitly inactive), then active external
@@ -31,6 +43,13 @@ export const IndexerFactory = {
     const builtInConfig = configs.find((c) => c.type === "built_in");
     const builtInEnabled = builtInConfig?.isActive ?? true;
     if (builtInEnabled) {
+      // Torrentio first - the broadest, best-seeded source. APIBay/YTS/EZTV stay
+      // as fallbacks and, for APIBay, the name-search that feeds the title pass
+      // (Torrentio resolves by IMDb id only). Cross-source dupes collapse by
+      // infoHash downstream, so the overlap costs nothing.
+      result.push(
+        new StremioAddonIndexer("Torrentio", TORRENTIO_BUILT_IN_BASE_URL, fetchImpl),
+      );
       result.push(new APIBayIndexer(fetchImpl));
       result.push(new YTSIndexer(fetchImpl));
       result.push(new EZTVIndexer(fetchImpl));
@@ -193,11 +212,15 @@ function makeExternalIndexer(
   config: IndexerConfig,
   fetchImpl: FetchImpl,
 ): TorrentIndexer | null {
-  if (config.type === "built_in") {
+  // Snapshot the discriminator once. Besides avoiding repeated property access,
+  // this keeps factory behavior deterministic for configs supplied through a
+  // proxy or accessor-backed object.
+  const type = config.type;
+  if (type === "built_in") {
     return null;
   }
 
-  switch (config.type) {
+  switch (type) {
     case "jackett":
     case "prowlarr":
     case "torznab":
@@ -208,7 +231,7 @@ function makeExternalIndexer(
       const name =
         displayName != null && displayName.length > 0
           ? displayName
-          : indexerTypeDisplayName(config.type);
+          : indexerTypeDisplayName(type);
       const trimmedEndpointPath = config.endpointPath.trim();
       const sendAPIKeyAsHeader =
         config.providerSubtype === ProviderSubtype.prowlarr;
@@ -236,13 +259,13 @@ function makeExternalIndexer(
       const name =
         displayName != null && displayName.length > 0
           ? displayName
-          : indexerTypeDisplayName(config.type);
+          : indexerTypeDisplayName(type);
       return new StremioAddonIndexer(name, baseURL, fetchImpl);
     }
     default:
       // Keep unknown types resilient and observably labeled even if a new backend
       // value slips through before a proper case exists.
-      indexerTypeDisplayName(config.type);
+      indexerTypeDisplayName(type);
       return null;
   }
 }

@@ -116,7 +116,7 @@ actor PremiumizeService: DebridServiceProtocol {
     }
 
     func unrestrict(link: String) async throws -> URL {
-        // Premiumize doesn't have a separate unrestrict — directdl handles it
+        // Premiumize doesn't have a separate unrestrict - directdl handles it
         guard let url = URL(string: link) else {
             throw DebridError.downloadFailed("Invalid link")
         }

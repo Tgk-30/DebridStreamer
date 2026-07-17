@@ -1,7 +1,7 @@
-// DetailAnalysis — the AI "Would I Like This?" card on the Detail screen.
+// DetailAnalysis - the AI "Will I Like This?" card on the Detail screen.
 //
 // Shown only when an AI provider is configured (the parent gates on it). It
-// offers a single "Would I like this?" button; on click it builds the user's
+// offers a single "Will I like this?" button; on click it builds the user's
 // taste-profile context, calls provider.analyzeTitle(...), and renders a
 // verdict-tinted glass card: a big predicted X/10, a verdict pill, the
 // personalized blurb, and 2-4 bullet reasons. Loading + error states are inline.
@@ -10,7 +10,6 @@
 // local AI usage record (token/cost estimate) into the Store.
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import type { MediaItem } from "../models/media";
 import type {
   AIAssistantProvider,
@@ -27,8 +26,6 @@ interface DetailAnalysisProps {
   item: MediaItem;
   provider: AIAssistantProvider;
 }
-
-const EASE = [0.16, 1, 0.3, 1] as const;
 
 /** Human-facing verdict labels. */
 const VERDICT_LABEL: Record<AIPersonalizedVerdict, string> = {
@@ -109,17 +106,12 @@ export function DetailAnalysis({ item, provider }: DetailAnalysisProps) {
 
   return (
     <div className="detail-analysis">
-      <AnimatePresence mode="wait" initial={false}>
-        {analysis != null ? (
-          <motion.div
+      {analysis != null ? (
+          <div
             key="result"
-            className={`detail-analysis-card glass-raised glass-lit ${verdictTone(
+            className={`detail-analysis-card detail-analysis-in glass-raised glass-lit ${verdictTone(
               analysis.verdict,
             )}`}
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.32, ease: EASE }}
           >
             <div className="detail-analysis-head">
               <div className="detail-analysis-score" aria-hidden="true">
@@ -129,7 +121,7 @@ export function DetailAnalysis({ item, provider }: DetailAnalysisProps) {
                 <span className="detail-analysis-score-den">/10</span>
               </div>
               <div className="detail-analysis-headtext">
-                <span className="detail-analysis-eyebrow">Would I like this?</span>
+                <span className="detail-analysis-eyebrow">Will I like this?</span>
                 <span className="detail-analysis-verdict">
                   {VERDICT_LABEL[analysis.verdict]}
                 </span>
@@ -158,27 +150,21 @@ export function DetailAnalysis({ item, provider }: DetailAnalysisProps) {
                 ))}
               </ul>
             )}
-          </motion.div>
+          </div>
         ) : loading ? (
-          <motion.div
+          <div
             key="loading"
-            className="detail-analysis-status"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            className="detail-analysis-status detail-analysis-fade-in"
           >
             <span className="detail-analysis-spinner" aria-hidden />
             <span className="t-secondary">
               Analyzing based on your taste profile…
             </span>
-          </motion.div>
+          </div>
         ) : error != null ? (
-          <motion.div
+          <div
             key="error"
-            className="detail-analysis-status detail-analysis-error"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            className="detail-analysis-status detail-analysis-error detail-analysis-fade-in"
           >
             <Icon name="info" size={15} className="t-warning" />
             <span className="t-secondary">{error}</span>
@@ -189,22 +175,18 @@ export function DetailAnalysis({ item, provider }: DetailAnalysisProps) {
             >
               Try again
             </button>
-          </motion.div>
+          </div>
         ) : (
-          <motion.button
+          <button
             key="cta"
             type="button"
-            className="detail-analysis-cta chip"
+            className="detail-analysis-cta detail-analysis-fade-in chip"
             onClick={() => void run()}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
           >
             <Icon name="sparkles" size={15} className="t-accent" />
-            Would I like this?
-          </motion.button>
+            Will I like this?
+          </button>
         )}
-      </AnimatePresence>
     </div>
   );
 }

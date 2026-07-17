@@ -5,21 +5,19 @@
 // native app submitting routes to the Search screen via pendingSearchQuery;
 // here it's wired through a callback (Search is a placeholder this phase).
 
-import { useState } from "react";
+import { memo, useState } from "react";
+import { useAppActions } from "../store/AppStore";
 import { Icon } from "./Icon";
 import "./GlobalSearch.css";
 
-interface GlobalSearchProps {
-  onSubmit?: (query: string) => void;
-}
-
-export function GlobalSearch({ onSubmit }: GlobalSearchProps) {
+export const GlobalSearch = memo(function GlobalSearch() {
+  const { search } = useAppActions();
   const [text, setText] = useState("");
 
   function submit() {
     const q = text.trim();
     if (!q) return;
-    onSubmit?.(q);
+    search(q);
   }
 
   return (
@@ -48,4 +46,4 @@ export function GlobalSearch({ onSubmit }: GlobalSearchProps) {
       )}
     </div>
   );
-}
+});

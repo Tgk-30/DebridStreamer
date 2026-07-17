@@ -1,7 +1,7 @@
 [package]
 name = "debridstreamer"
-version = "0.2.7"
-description = "DebridStreamer — debrid streaming desktop app"
+version = "0.9.13"
+description = "DebridStreamer - debrid streaming desktop app"
 authors = ["tgk30"]
 edition = "2021"
 
@@ -18,7 +18,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# macos-private-api enables the transparent-window + native Metal rendering the
+# embedded libmpv player needs (video renders behind the transparent webview).
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
 # Native HTTP client exposed to the webview. The JS side calls it via
 # `@tauri-apps/plugin-http`'s `fetch` to bypass the browser CORS policy for
@@ -39,6 +41,13 @@ raw-window-handle = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 getrandom = "0.2"
+# Native download streaming and cancellable background jobs.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "stream"] }
+roxmltree = "0.20"
+tokio = { version = "1", features = ["fs", "io-util", "process", "rt", "time"] }
+futures-util = "0.3"
+# OS-appropriate Movies/Downloads directory discovery.
+dirs = "6"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 # Desktop-only auto-updater. The JS side calls `check()` on launch (see
@@ -47,17 +56,70 @@ getrandom = "0.2"
 tauri-plugin-updater = "2"
 
 # OS-keychain backend for the SecretStore commands (src/keychain.rs).
-# keyring v3 ships NO default credential store — each platform MUST enable its
+# keyring v3 ships NO default credential store - each platform MUST enable its
 # own backend feature or it silently falls back to an in-memory mock (secrets
 # would not persist). Target-gated so each OS pulls only its own backend and a
 # bad feature combo can't break another platform's release build.
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+# In-window mpv render-API player (render_player.rs): drive libmpv's render API
+# into our own NSOpenGLView composited behind the transparent webview, paced by a
+# CVDisplayLink. Replaces the unreliable --wid embedding on macOS.
+libmpv2 = "5"
+# Raw mpv FFI for the event loop: libmpv2's safe wait_event panics (unreachable!)
+# on MPV_FORMAT_NONE property changes (a property becoming unavailable), which is
+# routine - so we pull events via libmpv2-sys and handle NONE ourselves.
+libmpv2-sys = "4"
+libc = "0.2"
+# Grand Central Dispatch - hop AppKit setup onto the main thread reliably
+# (Tauri's run_on_main_thread proxy doesn't drain while the loop is idle).
+dispatch2 = "0.3"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"
+# Typed WKWebView access for the render surface's playback-scoped opacity flips.
+objc2-web-kit = { version = "0.3.2", default-features = false, features = [
+    "WKWebView",
+    "objc2-app-kit",
+] }
+# CAOpenGLLayer (layer-backed GL surface - survives window occlusion/activation,
+# unlike a bare NSOpenGLContext+NSView) needs the GL/CV/CF interop features.
+objc2-quartz-core = { version = "0.3", features = [
+    "CAOpenGLLayer",
+    "objc2-core-foundation",
+    "objc2-core-video",
+    "objc2-open-gl",
+] }
+objc2-core-video = "0.3"
+objc2-open-gl = "0.3"
+objc2-core-foundation = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+# In-window mpv wid-embed player (render_player/surface_windows.rs): the shared
+# core links libmpv; the Windows surface hands mpv the window's HWND (read via
+# raw-window-handle) as `wid` and mpv renders natively (vo=gpu-next + d3d11).
+# libmpv-2.dll is delay-loaded (build.rs) and LoadLibrary'd from resources/lib at
+# startup (lib.rs preload_bundled_libmpv) - see windows-sys below.
+libmpv2 = "5"
+libmpv2-sys = "4"
+libc = "0.2"
+# LoadLibraryExW: preload the bundled libmpv-2.dll by full path so the delay-load
+# stub binds to it (the DLL ships in resources/lib, not next to the exe).
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+] }
 
 # Linux: Secret Service over D-Bus (sync), pure-Rust crypto (no OpenSSL system
-# dep), vendored libdbus (no system build dep) — headless-CI-friendly.
+# dep), vendored libdbus (no system build dep) - headless-CI-friendly.
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"] }
+# In-window mpv wid-embed player (render_player/surface_linux.rs): the shared core
+# links libmpv; the Linux surface hands mpv the window's X11 XID (read via
+# raw-window-handle) as `wid` and mpv renders natively (vo=gpu + gpu-context=auto).
+# Needs a system libmpv with the 2.x client API (libmpv.so.2): CI installs
+# libmpv-dev; the .deb declares libmpv2 as a runtime dependency.
+libmpv2 = "5"
+libmpv2-sys = "4"
+libc = "0.2"

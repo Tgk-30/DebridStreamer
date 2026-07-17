@@ -12,11 +12,13 @@
 
 // MARK: - Public result type (mirrors Swift `OMDBRatings`)
 
+import { assertNetworkAllowed } from "../../lib/networkPolicy";
+
 /**
  * Aggregated ratings parsed from an OMDB lookup (B1).
  *
  * Every field is optional and defensively `undefined` when OMDB returns "N/A"
- * or an unparseable value — callers can surface whatever is present without
+ * or an unparseable value - callers can surface whatever is present without
  * crashing. Mirrors Swift `OMDBRatings` (Swift `nil` -> TS `undefined`).
  */
 export interface OMDBRatings {
@@ -102,13 +104,13 @@ function toRatings(raw: RawOMDBResponse): OMDBRatings {
 
 // MARK: - Errors (mirror Swift `OMDBError`)
 
-export type OMDBErrorKind =
+type OMDBErrorKind =
   | "invalidURL"
   | "invalidResponse"
   | "httpError"
   | "notFound";
 
-export class OMDBError extends Error {
+class OMDBError extends Error {
   readonly kind: OMDBErrorKind;
   /** HTTP status code, present for `httpError`. */
   readonly statusCode?: number;
@@ -162,6 +164,13 @@ export class OMDBService {
   private readonly apiKey: string;
   private readonly baseURL = "https://www.omdbapi.com/";
   private readonly fetchImpl: FetchImpl;
+  private readonly responseCache = new Map<
+    string,
+    { expiresAt: number; value: OMDBRatings }
+  >();
+  private readonly inFlight = new Map<string, Promise<OMDBRatings>>();
+  private readonly cacheCapacity = 128;
+  static readonly cacheTTL = 5 * 60 * 1000;
 
   constructor(apiKey: string, fetchImpl?: FetchImpl) {
     this.apiKey = apiKey;
@@ -176,6 +185,25 @@ export class OMDBService {
    * available" and silently skips. Mirrors Swift `fetchRatings(imdbId:)`.
    */
   async fetchRatings(imdbId: string): Promise<OMDBRatings> {
+    const cached = this.responseCache.get(imdbId);
+    if (cached != null && cached.expiresAt > Date.now()) return cached.value;
+    const pending = this.inFlight.get(imdbId);
+    if (pending != null) return pending;
+
+    const request = this.fetchRatingsUncached(imdbId)
+      .then((ratings) => {
+        this.store(imdbId, ratings);
+        return ratings;
+      })
+      .finally(() => {
+        this.inFlight.delete(imdbId);
+      });
+    this.inFlight.set(imdbId, request);
+    return request;
+  }
+
+  private async fetchRatingsUncached(imdbId: string): Promise<OMDBRatings> {
+    assertNetworkAllowed("ratings", "OMDb");
     let url: URL;
     try {
       url = new URL(this.baseURL);
@@ -203,5 +231,20 @@ export class OMDBService {
       throw OMDBError.notFound(decoded.Error ?? imdbId);
     }
     return toRatings(decoded);
+  }
+
+  private store(imdbId: string, ratings: OMDBRatings): void {
+    const now = Date.now();
+    for (const [key, entry] of this.responseCache) {
+      if (entry.expiresAt <= now) this.responseCache.delete(key);
+    }
+    if (this.responseCache.size >= this.cacheCapacity) {
+      const oldest = this.responseCache.keys().next().value;
+      if (oldest != null) this.responseCache.delete(oldest);
+    }
+    this.responseCache.set(imdbId, {
+      expiresAt: now + OMDBService.cacheTTL,
+      value: ratings,
+    });
   }
 }

@@ -1,122 +1,367 @@
-/* Calendar agenda — grouped upcoming-episode rows. */
+/* Release cadence calendar: a compact month grid backed by a full daily agenda. */
 
-.cal-groups {
+.cal-screen {
+  max-width: 1320px;
+}
+
+.cal-title-row {
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-xl);
-  margin-top: var(--sp-sm);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-lg);
 }
 
-.cal-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-sm);
-}
-
-.cal-group-label {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.cal-rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-sm);
-}
-
-.cal-row {
+.cal-legend {
   display: flex;
   align-items: center;
   gap: var(--sp-md);
-  /* Min-height keeps rows uniform whether or not an episode title is present,
-     so swapping titled/untitled rows (or the loading skeleton) causes no CLS. */
-  min-height: 57px;
-  box-sizing: border-box;
-  padding: var(--sp-sm) var(--sp-md);
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.cal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.cal-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.cal-dot--episode { background: rgb(var(--accent-rgb)); }
+.cal-dot--movie { background: #d6a85f; }
+
+.cal-month {
+  margin-top: var(--sp-xl);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.cal-toolbar {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-md);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.cal-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+}
+.cal-month-label {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 650;
+}
+.cal-month-control,
+.cal-today-btn {
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.cal-month-control {
+  padding: 0 10px;
+  font-size: 25px;
+  line-height: 1;
+  font-family: inherit;
+}
+.cal-today-btn {
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.cal-month-control:hover,
+.cal-today-btn:hover:not(:disabled) {
+  background: rgba(var(--accent-rgb), 0.13);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+.cal-today-btn:disabled {
+  cursor: default;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+.cal-weekdays,
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.cal-weekdays {
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.08);
+}
+/* Left padding matches .cal-day so each weekday sits over its date column. */
+.cal-weekdays span {
+  padding: 9px 6px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.cal-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* Fits the date plus three poster-bearing events (30 + 84 + 14). Grid rows
+     size to their tallest cell, so this must clear a full cell or busy weeks
+     would render taller than quiet ones. */
+  min-height: 128px;
+  padding: 6px 6px 8px;
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.01);
+  transition: background 0.14s;
+}
+.cal-day:nth-child(7n) { border-right: 0; }
+.cal-day:nth-last-child(-n + 7) { border-bottom: 0; }
+.cal-day:not(.is-outside):hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+.cal-day.is-outside {
+  background: rgba(0, 0, 0, 0.11);
+}
+.cal-day.is-outside .cal-day-number { opacity: 0.35; }
+/* Today is marked by the filled circle on the date alone (the calendar
+   convention). A full inset ring on top of that read as a heavy selected-cell
+   box; a faint wash is enough to carry the eye to the column. */
+.cal-day.is-today {
+  background: rgba(var(--accent-rgb), 0.06);
+}
+/* A fixed square so the today marker is a clean CIRCLE, not a stretched ellipse
+   (it used to be display:block and filled the cell width). Sits top-left. */
+.cal-day-number {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.cal-day.is-today .cal-day-number {
+  border-radius: 50%;
+  background: rgb(var(--accent-rgb));
+  color: var(--on-accent, #fff);
+  font-weight: 700;
+}
+.cal-day-events {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cal-event {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  overflow: hidden;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 5px;
+  color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  color: var(--text-primary);
-  transition:
-    transform 0.12s ease-out,
-    border-color 0.16s;
+  transition: background-color 0.14s, box-shadow 0.14s;
 }
-.cal-row:hover {
+.cal-more {
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 1px 4px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+}
+/* Tiny poster on each month-grid event. A chip is 26px tall with this, so a
+   full day (date + three chips) needs the 128px .cal-day min-height above. */
+.cal-event-thumb {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 20px;
+  border-radius: 2px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+}
+.cal-event-thumb.is-placeholder {
+  background: rgba(255, 255, 255, 0.06);
+}
+.cal-event span,
+.cal-event small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-event span {
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 650;
+}
+.cal-event small {
+  flex: 0 1 auto;
+  font-size: 10px;
+  opacity: 0.78;
+}
+.cal-event--episode {
+  background: rgba(var(--accent-rgb), 0.16);
+  border-left-color: rgb(var(--accent-rgb));
+}
+.cal-event--movie {
+  background: rgba(214, 168, 95, 0.16);
+  border-left-color: #d6a85f;
+}
+.cal-event:hover,
+.cal-event:focus-visible {
+  outline: none;
+  filter: brightness(1.22);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.cal-agenda {
+  margin-top: var(--sp-xl);
+}
+.cal-agenda-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-md);
+}
+.cal-agenda-head h2,
+.cal-agenda-day h3 {
+  margin: 0;
+}
+.cal-agenda-head h2 {
+  font-size: 16px;
+  font-weight: 650;
+}
+.cal-agenda-head span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.cal-agenda-days {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+}
+.cal-agenda-day {
+  display: grid;
+  grid-template-columns: minmax(145px, 0.2fr) minmax(0, 1fr);
+  gap: var(--sp-lg);
+}
+.cal-agenda-day h3 {
+  padding-top: 11px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 650;
+}
+.cal-agenda-day h3.is-today { color: rgb(var(--accent-rgb)); }
+.cal-release-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+.cal-release-row {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-sm) var(--sp-md);
+  border: 1px solid transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s ease-out, border-color 0.16s;
+}
+.cal-release-row:hover {
   transform: translateY(-1px);
   border-color: rgba(var(--accent-rgb), 0.4);
 }
-
-.cal-row-poster {
+.cal-release-poster {
   flex: 0 0 auto;
-  /* Fixed 2:3 box so the lazy-loaded <img> never reflows the row on load. */
-  width: 38px;
-  height: 57px;
-  aspect-ratio: 2 / 3;
-  border-radius: var(--r-xs);
+  width: 40px;
+  height: 60px;
   overflow: hidden;
+  border-radius: var(--r-xs);
   background: rgba(255, 255, 255, 0.05);
 }
-.cal-row-poster img {
+.cal-release-poster img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
 }
-.cal-row-poster-ph {
+.cal-release-poster-ph {
   width: 100%;
   height: 100%;
   display: grid;
   place-items: center;
   color: var(--text-tertiary);
 }
-
-.cal-row-main {
-  flex: 1 1 auto;
+.cal-release-main {
   min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
-.cal-row-title {
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
+.cal-release-title,
+.cal-release-detail {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.cal-row-sub {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-sm);
-  font-size: 12px;
-  min-width: 0;
-}
-.cal-code {
-  flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--accent);
-}
-.cal-eptitle {
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-
-.cal-row-date {
+.cal-release-title { font-size: 14px; font-weight: 650; }
+.cal-release-detail { font-size: 12px; }
+.cal-release-kind {
   flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.cal-release-kind--episode {
+  color: rgb(var(--accent-rgb));
+  background: rgba(var(--accent-rgb), 0.13);
+}
+.cal-release-kind--movie {
+  color: #e4bd7b;
+  background: rgba(214, 168, 95, 0.14);
+}
+.cal-agenda-empty {
+  margin: 0;
+  padding: var(--sp-lg);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--r-md);
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
 }
 
-/* --- Loading skeleton --- shimmer placeholders shaped like real cal rows.
-   Reuses the global @keyframes shimmer (components/MediaCard.css). */
+/* Loading skeleton shaped like the finished calendar. */
+.cal-month--loading { padding-top: var(--sp-md); }
 .cal-skel {
+  display: block;
+  border-radius: var(--r-xs);
   background-color: rgba(255, 255, 255, 0.05);
   background-image: linear-gradient(
     100deg,
@@ -125,45 +370,52 @@
     rgba(255, 255, 255, 0.02) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
-  border-radius: var(--r-md);
+  animation: shimmer 1.4s ease-in-out 12;
+}
+.cal-skel-heading {
+  width: 140px;
+  height: 20px;
+  margin: 0 auto var(--sp-md);
+}
+.cal-day--skel { min-height: 128px; }
+/* Top-left, matching the real .cal-day-number - the skeleton used to park it on
+   the right, so the layout visibly jumped when the month resolved. */
+.cal-skel-day {
+  width: 24px;
+  height: 24px;
+}
+.cal-skel-event {
+  width: 82%;
+  height: 16px;
+  margin-top: 12px;
 }
 
-/* Group heading placeholder — sized like .cal-group-label's line. */
-.cal-skel-label {
-  width: 96px;
-  height: 13px;
-  border-radius: var(--r-xs);
+@media (max-width: 760px) {
+  .cal-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--sp-sm);
+  }
+  .cal-legend { gap: var(--sp-sm); }
+  .cal-day { min-height: 104px; padding: 5px 3px; }
+  .cal-weekdays span { padding: 8px 3px; font-size: 10px; }
+  .cal-day-number { margin-bottom: 3px; font-size: 11px; }
+  .cal-event { padding: 2px 3px; }
+  .cal-event span { font-size: 10px; }
+  .cal-event small { display: none; }
+  .cal-event-thumb { width: 11px; height: 16px; }
+  .cal-agenda-day {
+    grid-template-columns: 1fr;
+    gap: var(--sp-xs);
+  }
+  .cal-agenda-day h3 { padding-top: 0; }
+  .cal-release-kind { display: none; }
 }
 
-/* Non-interactive skeleton row: same box as .cal-row, no hover lift. */
-.cal-row-skel {
-  cursor: default;
-}
-.cal-row-skel:hover {
-  transform: none;
-  border-color: transparent;
-}
-
-/* Poster placeholder keeps the 2:3 box; override the flat fill with shimmer. */
-.cal-row-skel .cal-row-poster {
-  background: none;
-  border-radius: var(--r-xs);
-}
-
-.cal-skel-title {
-  width: 60%;
-  height: 14px;
-  border-radius: var(--r-xs);
-}
-.cal-skel-sub {
-  width: 40%;
-  height: 12px;
-  border-radius: var(--r-xs);
-}
-.cal-skel-date {
-  flex: 0 0 auto;
-  width: 56px;
-  height: 13px;
-  border-radius: var(--r-xs);
+@media (max-width: 440px) {
+  .cal-day { min-height: 68px; }
+  .cal-event { overflow: hidden; }
+  .cal-event span { font-size: 9px; }
+  /* No room left for artwork once the cell is this short. */
+  .cal-event-thumb { display: none; }
 }

@@ -64,16 +64,16 @@ const validFeed = '<?xml version="1.0"?><rss version="2.0"><channel></channel></
 // ============================================================================
 
 describe("IndexerFactory.buildIndexers built-in set", () => {
-  it("returns the three built-in scrapers in order when given no configs", () => {
+  it("returns the four built-in scrapers in order when given no configs", () => {
     const indexers = IndexerFactory.buildIndexers([]);
-    expect(indexers.map((i) => i.name)).toEqual(["APIBay", "YTS", "EZTV"]);
+    expect(indexers.map((i) => i.name)).toEqual(["Torrentio", "APIBay", "YTS", "EZTV"]);
   });
 
   it("keeps built-ins when a built_in config is explicitly active", () => {
     const indexers = IndexerFactory.buildIndexers([
       makeIndexerConfig({ id: "b", type: "built_in", baseURL: "", isActive: true }),
     ]);
-    expect(indexers.map((i) => i.name)).toEqual(["APIBay", "YTS", "EZTV"]);
+    expect(indexers.map((i) => i.name)).toEqual(["Torrentio", "APIBay", "YTS", "EZTV"]);
   });
 
   it("omits built-ins when a built_in config is inactive", () => {
@@ -92,7 +92,7 @@ describe("IndexerFactory.buildIndexers built-in set", () => {
         displayName: "Ext",
       }),
     ]);
-    expect(indexers.map((i) => i.name)).toEqual(["APIBay", "YTS", "EZTV", "Ext"]);
+    expect(indexers.map((i) => i.name)).toEqual(["Torrentio", "APIBay", "YTS", "EZTV", "Ext"]);
   });
 
   it("uses only the first built_in config's isActive flag", () => {
@@ -235,8 +235,9 @@ describe("IndexerFactory.buildIndexers external indexer types", () => {
 
     const indexers = IndexerFactory.buildIndexers([mutable as any]);
     expect(reads).toBe(3);
-    expect(indexers).toHaveLength(3);
+    expect(indexers).toHaveLength(4);
     expect(indexers.map((indexer) => indexer.name)).toEqual([
+      "Torrentio",
       "APIBay",
       "YTS",
       "EZTV",
@@ -251,8 +252,9 @@ describe("IndexerFactory.buildIndexers external indexer types", () => {
     };
 
     const indexers = IndexerFactory.buildIndexers([mutable as any]);
-    expect(indexers).toHaveLength(3);
+    expect(indexers).toHaveLength(4);
     expect(indexers.map((indexer) => indexer.name)).toEqual([
+      "Torrentio",
       "APIBay",
       "YTS",
       "EZTV",
@@ -331,7 +333,7 @@ describe("IndexerFactory.buildIndexers filtering and ordering", () => {
         priority: 1,
       }),
     ]);
-    expect(indexers.map((i) => i.name)).toEqual(["APIBay", "YTS", "EZTV", "A", "B"]);
+    expect(indexers.map((i) => i.name)).toEqual(["Torrentio", "APIBay", "YTS", "EZTV", "A", "B"]);
   });
 
   it("never includes a built_in config among the external set even when active", () => {
@@ -340,7 +342,7 @@ describe("IndexerFactory.buildIndexers filtering and ordering", () => {
     const indexers = IndexerFactory.buildIndexers([
       makeIndexerConfig({ id: "b", type: "built_in", baseURL: "x", isActive: true }),
     ]);
-    expect(indexers.map((i) => i.name)).toEqual(["APIBay", "YTS", "EZTV"]);
+    expect(indexers.map((i) => i.name)).toEqual(["Torrentio", "APIBay", "YTS", "EZTV"]);
   });
 });
 

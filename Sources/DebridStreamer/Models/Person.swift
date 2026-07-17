@@ -1,7 +1,7 @@
 import Foundation
 
 /// A TMDB person (actor, director, crew) shown on the Person/Cast page
-/// (Overseerr/Jellyseerr pattern). A lightweight, display-only value type — it is
+/// (Overseerr/Jellyseerr pattern). A lightweight, display-only value type - it is
 /// not persisted, so it never touches MediaItem's GRDB encoding.
 struct Person: Identifiable, Sendable, Equatable {
     let id: Int

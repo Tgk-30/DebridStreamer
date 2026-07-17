@@ -10,6 +10,19 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { CastMember, MediaItem, MediaPreview } from "../models/media";
 import type { TMDBService } from "../services/metadata/TMDBService";
+import { NetworkBlockedError, setNetworkMode } from "../lib/networkPolicy";
+
+const mediaCache = new Map<string, MediaItem>();
+vi.mock("../storage", () => ({
+  getStore: () => ({
+    putMedia: async (item: MediaItem, key: string = item.id) =>
+      void mediaCache.set(key, item),
+    getMedia: async (id: string) => {
+      const item = mediaCache.get(id);
+      return item == null ? null : { id, item, lastFetched: item.lastFetched };
+    },
+  }),
+}));
 
 // ── Module mocks ─────────────────────────────────────────────────────────────
 const isServerMode = vi.fn(() => false as boolean);
@@ -48,7 +61,7 @@ vi.mock("./fixtures", () => ({
   loadDiscoverFixtures: () => loadDiscoverFixtures(),
 }));
 
-import { useDetail } from "./detail";
+import { loadDetailWithOfflineFallback, loadLive, useDetail } from "./detail";
 import {
   useDiscover,
   loadLiveDiscover,
@@ -58,7 +71,7 @@ import {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function preview(partial: Partial<MediaPreview> = {}): MediaPreview {
   // Spread last so an explicit `null` (e.g. backdropPath: null) overrides the
-  // default — `?? `would swallow a deliberate null.
+  // default - `?? `would swallow a deliberate null.
   return {
     id: "tmdb-42",
     type: "movie",
@@ -110,6 +123,7 @@ const cast: CastMember[] = [
 function fakeTMDB(over: Partial<Record<string, unknown>> = {}): TMDBService {
   const base = {
     getDetail: vi.fn(async () => mediaItem()),
+    getExternalIds: vi.fn(async () => ({ imdbId: null, tvdbId: null })),
     getCast: vi.fn(async () => cast),
     getRecommendations: vi.fn(async () => [preview({ id: "tmdb-7", title: "Rec" })]),
     getTrending: vi.fn(async (kind: string) => ({
@@ -122,13 +136,67 @@ function fakeTMDB(over: Partial<Record<string, unknown>> = {}): TMDBService {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mediaCache.clear();
+  setNetworkMode("standard");
   isServerMode.mockReturnValue(false);
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// detail.ts — useDetail
+// detail.ts - useDetail
 // ════════════════════════════════════════════════════════════════════════════
 describe("useDetail", () => {
+  it("falls back to a cached item when Offline blocks metadata", async () => {
+    const cached = mediaItem({ id: "tt0084787" });
+    mediaCache.set(cached.id, cached);
+    setNetworkMode("offline");
+    const svc = fakeTMDB({
+      getDetail: vi.fn(async () => {
+        throw new NetworkBlockedError("metadata", "offline", "TMDB");
+      }),
+    });
+
+    await expect(loadDetailWithOfflineFallback(svc, preview({ id: cached.id }))).resolves.toMatchObject({
+      item: cached,
+      cast: [],
+      related: [],
+    });
+  });
+
+  it("caches under the PREVIEW id so Offline finds a title opened online (tmdb- vs tt- id)", async () => {
+    // Online open: preview id (tmdb-42) differs from the detail id (tt0084787).
+    const online = fakeTMDB({ getDetail: vi.fn(async () => mediaItem({ id: "tt0084787" })) });
+    await loadLive(online, preview({ id: "tmdb-42" }));
+    // The write MUST be keyed by the preview id, not the detail id, or the read
+    // (which only knows the preview id) can never hit.
+    expect(mediaCache.has("tmdb-42")).toBe(true);
+    expect(mediaCache.has("tt0084787")).toBe(false);
+
+    // Offline reopen of the same browse card must serve the cached detail.
+    setNetworkMode("offline");
+    const offline = fakeTMDB({
+      getDetail: vi.fn(async () => {
+        throw new NetworkBlockedError("metadata", "offline", "TMDB");
+      }),
+    });
+    const cachedResult = await loadDetailWithOfflineFallback(offline, preview({ id: "tmdb-42" }));
+    expect(cachedResult?.item?.id).toBe("tt0084787");
+  });
+
+  it("reports the offline not-cached state when metadata is blocked", async () => {
+    setNetworkMode("offline");
+    const svc = fakeTMDB({
+      getDetail: vi.fn(async () => {
+        throw new NetworkBlockedError("metadata", "offline", "TMDB");
+      }),
+    });
+    const p = preview();
+    const { result } = renderHook(() => useDetail(p, svc));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data.item).toBeNull();
+    expect(result.current.error).toBe("Not available offline (not cached yet).");
+  });
+
   it("stays in the initial loading/fixtures state when preview is null", () => {
     const svc = fakeTMDB();
     const { result } = renderHook(() => useDetail(null, svc));
@@ -153,6 +221,18 @@ describe("useDetail", () => {
     expect(result.current.data.imdbId).toBe("tt0084787");
     expect(svc.getCast).toHaveBeenCalledWith(1091, "movie");
     expect(svc.getRecommendations).toHaveBeenCalledWith(1091, "movie");
+  });
+
+  it("publishes external IMDb ids before a slow detail payload settles", async () => {
+    const svc = fakeTMDB({
+      getDetail: vi.fn(() => new Promise<MediaItem>(() => {})),
+      getExternalIds: vi.fn(async () => ({ imdbId: "tt1091", tvdbId: null })),
+    });
+    const p = preview({ tmdbId: 1091 });
+    const { result } = renderHook(() => useDetail(p, svc));
+
+    await waitFor(() => expect(result.current.data.imdbId).toBe("tt1091"));
+    expect(result.current.loading).toBe(true);
   });
 
   it("derives the tmdb id from a tmdb- prefixed preview id when tmdbId is absent", async () => {
@@ -366,7 +446,7 @@ describe("useDetail", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// discover.ts — pure helpers
+// discover.ts - pure helpers
 // ════════════════════════════════════════════════════════════════════════════
 describe("loadLiveDiscover", () => {
   it("fetches all rails and unwraps .items; picks first trending movie w/ backdrop as hero", async () => {
@@ -435,7 +515,7 @@ describe("loadFixtureDiscover", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// discover.ts — useDiscover
+// discover.ts - useDiscover
 // ════════════════════════════════════════════════════════════════════════════
 describe("useDiscover", () => {
   it("loads live via the service and reports source=live", async () => {
@@ -471,6 +551,22 @@ describe("useDiscover", () => {
     expect(result.current.source).toBe("fixtures");
     expect(result.current.error).toBeNull();
     expect(result.current.data?.hero?.id).toBe("tmdb-100");
+  });
+
+  it("Offline shows an honest empty state, NOT the bundled demo fixtures", async () => {
+    setNetworkMode("offline");
+    const svc = fakeTMDB({
+      getTrending: vi.fn(async () => {
+        throw new NetworkBlockedError("metadata", "offline", "TMDB");
+      }),
+    });
+    const { result } = renderHook(() => useDiscover(svc));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.source).toBe("offline");
+    // Empty rails, and specifically NOT the fixture title (tmdb-100).
+    expect(result.current.data?.trendingMovies ?? []).toEqual([]);
+    expect(result.current.data?.hero ?? null).toBeNull();
+    expect(result.current.error).toMatch(/offline/i);
   });
 
   it("server mode: returns the server payload as live", async () => {

@@ -192,6 +192,39 @@ describe("TraktSyncService fetchWatchlist", () => {
   });
 });
 
+describe("TraktSyncService fetchWatchlistShows", () => {
+  it("decodes show ids and sets the auth headers", async () => {
+    const body = JSON.stringify([
+      {
+        show: {
+          title: "Severance",
+          year: 2022,
+          ids: { trakt: 1390, imdb: "tt11280740", tmdb: 95396 },
+        },
+      },
+    ]);
+    const mock = makeMockFetch(() => ok(body));
+    const service = new TraktSyncService(mock.fetchImpl);
+
+    const items = await service.fetchWatchlistShows("client-id", "access-token");
+    expect(items).toEqual([
+      {
+        traktID: 1390,
+        imdbID: "tt11280740",
+        tmdbID: 95396,
+        title: "Severance",
+        year: 2022,
+      },
+    ]);
+
+    const req = mock.last()!;
+    expect(req.url.pathname).toBe("/sync/watchlist/shows");
+    expect(req.method).toBe("GET");
+    expect(req.headers!["trakt-api-key"]).toBe("client-id");
+    expect(req.headers!.Authorization).toBe("Bearer access-token");
+  });
+});
+
 // MARK: - HTTP errors surface status and body (errorHandling)
 
 describe("TraktSyncService error handling", () => {
@@ -242,36 +275,6 @@ describe("TraktSyncService error handling", () => {
   });
 });
 
-describe("TraktSyncService request internals", () => {
-  it("returns invalidURL when the base URL cannot form a request URL", async () => {
-    let called = false;
-    const fetchImpl: FetchImpl = async () => {
-      called = true;
-      return {
-        status: 200,
-        text: async () =>
-          JSON.stringify({
-            device_code: "dev-code",
-            user_code: "ABCD-EFGH",
-            verification_url: "https://trakt.tv/activate",
-            expires_in: 600,
-            interval: 5,
-          }),
-      };
-    };
-
-    const service = new TraktSyncService(fetchImpl) as TraktSyncService & {
-      baseURL: string;
-    };
-    service.baseURL = ":::";
-
-    await expect(service.startDeviceAuth("client-id")).rejects.toMatchObject({
-      kind: "invalidURL",
-    });
-    expect(called).toBe(false);
-  });
-});
-
 // MARK: - pushWatchlist decodes added/existing/not_found (pushWatchlistDecodesSummary)
 
 describe("TraktSyncService pushWatchlist", () => {
@@ -300,6 +303,67 @@ describe("TraktSyncService pushWatchlist", () => {
     expect(req.headers!.Authorization).toBe("Bearer access-token");
     expect(JSON.parse(req.body!)).toEqual({
       movies: [{ ids: { imdb: "tt1111111" } }, { ids: { imdb: "tt9999999" } }],
+      shows: [],
+    });
+  });
+
+  it("posts show TMDB ids beside movie ids", async () => {
+    const mock = makeMockFetch(() => ok("{}"));
+    const service = new TraktSyncService(mock.fetchImpl);
+
+    await service.pushWatchlist(
+      "client-id",
+      "access-token",
+      ["tt0133093"],
+      [1399, 95396],
+    );
+
+    expect(JSON.parse(mock.last()!.body!)).toEqual({
+      movies: [{ ids: { imdb: "tt0133093" } }],
+      shows: [{ ids: { tmdb: 1399 } }, { ids: { tmdb: 95396 } }],
+    });
+  });
+});
+
+describe("TraktSyncService scrobble", () => {
+  it("posts movie and episode lifecycle bodies", async () => {
+    const mock = makeMockFetch(() => ok("{}"));
+    const service = new TraktSyncService(mock.fetchImpl);
+
+    await service.scrobbleStart("client-id", "access-token", {
+      type: "movie",
+      tmdbID: 603,
+      progress: 12.5,
+    });
+    expect(mock.last()!.url.pathname).toBe("/scrobble/start");
+    expect(JSON.parse(mock.last()!.body!)).toEqual({
+      movie: { ids: { tmdb: 603 } },
+      progress: 12.5,
+    });
+
+    await service.scrobblePause("client-id", "access-token", {
+      type: "episode",
+      tmdbID: 1399,
+      season: 5,
+      episode: 2,
+      progress: 66.6,
+    });
+    expect(mock.last()!.url.pathname).toBe("/scrobble/pause");
+    expect(JSON.parse(mock.last()!.body!)).toEqual({
+      show: { ids: { tmdb: 1399 } },
+      episode: { season: 5, number: 2 },
+      progress: 66.6,
+    });
+
+    await service.scrobbleStop("client-id", "access-token", {
+      type: "movie",
+      tmdbID: 603,
+      progress: 80,
+    });
+    expect(mock.last()!.url.pathname).toBe("/scrobble/stop");
+    expect(JSON.parse(mock.last()!.body!)).toEqual({
+      movie: { ids: { tmdb: 603 } },
+      progress: 80,
     });
   });
 });

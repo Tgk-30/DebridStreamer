@@ -107,7 +107,7 @@ function jsonFetch<T>(
       try {
         parsed = JSON.parse(text) as { error?: string };
       } catch {
-        // Non-JSON body (e.g. a reverse-proxy HTML error page) — fall back to a
+        // Non-JSON body (e.g. a reverse-proxy HTML error page) - fall back to a
         // status-based message instead of throwing a misleading parse error.
         parsed = {};
       }

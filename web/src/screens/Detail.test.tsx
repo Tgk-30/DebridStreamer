@@ -9,11 +9,12 @@
 // can be asserted without their internals.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MediaPreview, MediaItem } from "../models/media";
 import type { DetailState } from "../data/detail";
 import type { StreamsState } from "../data/streams";
+import { TorrentResult } from "../services/indexers/models";
 
 // --- mutable mock state -----------------------------------------------------
 
@@ -25,12 +26,19 @@ let inWatchlistResult = false;
 let mockCached: { stream: any } | null = null;
 let mockContinueWatching: any[] = [];
 let serverModeOn = false;
+const tauriState = vi.hoisted(() => ({ on: false }));
+const downloadsFfmpegAvailable = vi.hoisted(() => vi.fn(async () => true));
+const downloadsRuntime = vi.hoisted(() => ({
+  enqueue: vi.fn(async () => {}),
+  enqueueSeason: vi.fn(async () => {}),
+}));
 
 const closeDetail = vi.fn();
 const openDetail = vi.fn();
 const navigate = vi.fn();
 const toggleWatchlist = vi.fn();
 const recordResume = vi.fn();
+const refreshContinueWatching = vi.fn(async () => {});
 
 let mockServices: any = {
   tmdb: null,
@@ -54,6 +62,7 @@ vi.mock("../store/AppStore", () => ({
     toggleWatchlist,
     recordResume,
     continueWatching: mockContinueWatching,
+    refreshContinueWatching,
     cachedResolutions: mockCached
       ? { [mockDetailItem?.id ?? "x"]: mockCached }
       : {},
@@ -66,6 +75,7 @@ vi.mock("../data/detail", () => ({
 
 vi.mock("../data/streams", () => ({
   useStreams: () => mockStreams,
+  filterStreamRows: (rows: unknown[]) => rows,
 }));
 
 vi.mock("../data/library", () => ({
@@ -76,14 +86,28 @@ vi.mock("../lib/serverMode", () => ({
   isServerMode: () => serverModeOn,
 }));
 
+vi.mock("../lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/tauri")>()),
+  isTauri: () => tauriState.on,
+}));
+
 vi.mock("../lib/ServerSessionContext", () => ({
   useTranscodeAvailable: () => false,
 }));
 
+vi.mock("../lib/downloadsBridge", () => ({
+  getDownloadsBridge: () => ({ downloadsFfmpegAvailable }),
+}));
+vi.mock("../services/downloads", () => ({
+  startDownloadsRuntime: () => downloadsRuntime,
+}));
+
 const createRequest = vi.fn<(...a: any[]) => any>();
 const resolveServerStream = vi.fn<(...a: any[]) => any>();
+const fetchServerEpisodes = vi.fn<(...a: any[]) => any>();
 vi.mock("../lib/serverApi", () => ({
   createRequest: (...a: unknown[]) => createRequest(...a),
+  fetchServerEpisodes: (...a: unknown[]) => fetchServerEpisodes(...a),
   resolveServerStream: (...a: unknown[]) => resolveServerStream(...a),
 }));
 
@@ -93,10 +117,21 @@ const addTasteEvent = vi.fn<(...a: any[]) => Promise<void>>(async () => {});
 const rebuildTasteContext = vi.fn<(...a: any[]) => Promise<string>>(
   async () => "ctx",
 );
+const listHistory = vi.fn<(...a: any[]) => Promise<any[]>>(async () => []);
+const listHistoryForMedia = vi.fn<(...a: any[]) => Promise<any[]>>(async () => []);
+const getResume = vi.fn<(...a: any[]) => Promise<any>>(async () => null);
+const storeRecordHistory = vi.fn<(...a: any[]) => Promise<any>>(async () => ({}));
+const deleteHistory = vi.fn<(...a: any[]) => Promise<void>>(async () => {});
+let movieHistory: any = null;
 vi.mock("../storage", () => ({
   getStore: () => ({
     recentTasteEvents,
     addTasteEvent,
+    listHistory,
+    listHistoryForMedia,
+    getResume,
+    recordHistory: storeRecordHistory,
+    deleteHistory,
   }),
 }));
 vi.mock("../services/ai/TasteProfile", () => ({
@@ -116,13 +151,31 @@ vi.mock("../components/DetailHero", () => ({
     tasteSignal,
     onTasteSignal,
     onPlay,
+    onDownload,
+    downloadDisabledReason,
+    externalRatings,
+    completionLabel,
+    movieWatched,
+    onToggleMovieWatched,
   }: any) => (
     <div data-testid="hero">
       <span data-testid="hero-title">{item?.title}</span>
       <span data-testid="hero-inwl">{String(inWatchlist)}</span>
       <span data-testid="hero-reqstate">{requestState}</span>
       <span data-testid="hero-taste">{tasteSignal ?? "none"}</span>
+      <span data-testid="hero-completion">{completionLabel ?? "none"}</span>
+      {externalRatings}
       <button onClick={onPlay}>play</button>
+      {onToggleMovieWatched && (
+        <button onClick={onToggleMovieWatched} aria-pressed={movieWatched}>
+          {movieWatched ? "Mark unwatched" : "Mark watched"}
+        </button>
+      )}
+      {onDownload && (
+        <button onClick={onDownload} disabled={downloadDisabledReason != null}>
+          download
+        </button>
+      )}
       <button onClick={onClose}>close</button>
       <button onClick={onToggleWatchlist}>toggle-wl</button>
       <button onClick={() => onTasteSignal?.("liked")}>like</button>
@@ -143,10 +196,46 @@ vi.mock("../components/OmdbRatings", () => ({
 }));
 
 vi.mock("../components/StreamPicker", () => ({
-  StreamPicker: ({ onOpenSettings }: any) => (
+  StreamPicker: ({ onOpenSettings, onPlay }: any) => (
     <div data-testid="streampicker">
       <button onClick={onOpenSettings}>open-settings</button>
+      <button
+        data-testid="play-stream"
+        onClick={() =>
+          onPlay(
+            { streamURL: "https://cdn.example/x.mp4", fileName: "x.mp4", codec: "H.264" },
+            { title: "Src" },
+          )
+        }
+      >
+        play-stream
+      </button>
     </div>
+  ),
+}));
+
+vi.mock("../components/EpisodePicker", () => ({
+  EpisodePicker: ({ onSelect, onToggleWatched }: any) => (
+    <>
+      <button
+        data-testid="pick-episode"
+        onClick={() => onSelect({ season: 1, episode: 3 })}
+      >
+        pick-ep
+      </button>
+      <button
+        data-testid="mark-episode-watched"
+        onClick={() => onToggleWatched?.({ season: 1, episode: 2 }, true)}
+      >
+        mark-episode-watched
+      </button>
+      <button
+        data-testid="mark-episode-unwatched"
+        onClick={() => onToggleWatched?.({ season: 1, episode: 2 }, false)}
+      >
+        mark-episode-unwatched
+      </button>
+    </>
   ),
 }));
 
@@ -173,8 +262,41 @@ vi.mock("../components/Spinner", () => ({
 }));
 
 vi.mock("../components/VideoPlayer", () => ({
-  VideoPlayer: ({ title }: any) => (
-    <div data-testid="player" data-title={title} />
+  VideoPlayer: ({
+    title,
+    subtitle,
+    nowPlaying,
+    sourceFileName,
+    engine,
+    requestWebviewFallback,
+    upNext,
+    autoCountdown,
+    onClose,
+    onProgress,
+  }: any) => (
+    <div
+      data-testid="player"
+      data-title={title}
+      data-subtitle={subtitle ?? ""}
+      data-source-file={sourceFileName ?? ""}
+      data-engine={engine}
+      data-pause-year={nowPlaying?.year ?? ""}
+      data-pause-runtime={nowPlaying?.runtimeMinutes ?? ""}
+      data-pause-rating={nowPlaying?.rating ?? ""}
+      data-pause-overview={nowPlaying?.overview ?? ""}
+      data-pause-episode={nowPlaying?.episodeLabel ?? ""}
+      data-pause-backdrop={nowPlaying?.backdropUrl ?? ""}
+      data-has-fallback={String(requestWebviewFallback != null)}
+      data-up-next={upNext?.label ?? ""}
+      data-auto-countdown={String(autoCountdown)}
+    >
+      <button type="button" onClick={() => onProgress?.(80, 100)}>
+        report-progress
+      </button>
+      <button type="button" onClick={onClose}>
+        close-player
+      </button>
+    </div>
   ),
 }));
 
@@ -225,6 +347,20 @@ function streamsState(): StreamsState {
   return { rows: [], loading: false, error: null } as unknown as StreamsState;
 }
 
+function downloadRow(title: string, sizeBytes: number) {
+  return {
+    result: TorrentResult.fromSearch({
+      infoHash: title,
+      title,
+      sizeBytes,
+      seeders: 10,
+      leechers: 0,
+      indexerName: "Test source",
+    }),
+    cachedOn: null,
+  };
+}
+
 beforeEach(() => {
   mockDetailItem = preview("m1", { type: "movie", title: "Selected" });
   mockDetail = detailState();
@@ -234,6 +370,7 @@ beforeEach(() => {
   mockCached = null;
   mockContinueWatching = [];
   serverModeOn = false;
+  tauriState.on = false;
   mockServices = {
     tmdb: null,
     indexers: null,
@@ -242,9 +379,22 @@ beforeEach(() => {
     subtitles: null,
     translator: null,
   };
-  mockSettings = { transcode: false };
+  mockSettings = { transcode: false, ratingScale: "thumbs" };
   vi.clearAllMocks();
+  movieHistory = null;
   recentTasteEvents.mockResolvedValue([]);
+  listHistory.mockResolvedValue([]);
+  listHistoryForMedia.mockResolvedValue([]);
+  getResume.mockImplementation(async (_mediaId, episodeId) =>
+    episodeId == null ? movieHistory : null,
+  );
+  storeRecordHistory.mockImplementation(async (entry) => {
+    if (entry.episodeId == null) movieHistory = { ...entry };
+    return entry;
+  });
+  deleteHistory.mockImplementation(async (mediaId, episodeId) => {
+    if (mediaId === "m1" && episodeId == null) movieHistory = null;
+  });
 });
 
 afterEach(() => {
@@ -269,9 +419,29 @@ describe("Detail base render", () => {
     expect(screen.getByTestId("hero")).toBeInTheDocument();
     expect(screen.getByTestId("hero-title").textContent).toBe("The Movie");
     expect(screen.getByTestId("omdb").getAttribute("data-imdb")).toBe("tt100");
+    expect(screen.getByTestId("omdb").closest('[data-testid="hero"]')).not.toBeNull();
     expect(screen.getByTestId("streampicker")).toBeInTheDocument();
     expect(screen.getByTestId("castrail").getAttribute("data-count")).toBe("1");
     expect(screen.getByText("related-rel1")).toBeInTheDocument();
+  });
+
+  it("refreshes Continue Watching once when a player session closes", async () => {
+    render(<Detail />);
+    await userEvent.click(screen.getByTestId("play-stream"));
+    expect(await screen.findByTestId("player")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("report-progress"));
+    expect(recordResume).toHaveBeenCalledWith(
+      mockDetailItem,
+      80,
+      100,
+      null,
+      undefined,
+    );
+    await userEvent.click(screen.getByText("close-player"));
+
+    await waitFor(() => expect(refreshContinueWatching).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId("player")).not.toBeInTheDocument();
   });
 
   it("omits the hero when the detail item is null (no metadata yet)", () => {
@@ -282,22 +452,133 @@ describe("Detail base render", () => {
     expect(screen.getByTestId("streampicker")).toBeInTheDocument();
   });
 
+  it("series: streams open on a dedicated page, not inline at the bottom", async () => {
+    mockDetailItem = preview("s1", { type: "series", title: "The Series", tmdbId: 200 });
+    mockDetail = detailState({ item: mediaItem({ type: "series", id: "s1", tmdbId: 200 }) });
+    render(<Detail />);
+    // For a series the picker is NOT inline - it lives on its own page.
+    expect(screen.queryByTestId("streampicker")).not.toBeInTheDocument();
+    // Picking an episode opens the dedicated streams page.
+    await userEvent.click(screen.getByTestId("pick-episode"));
+    expect(screen.getByRole("dialog", { name: /Streams/ })).toBeInTheDocument();
+    expect(screen.getByTestId("streampicker")).toBeInTheDocument();
+    // "‹ Episodes" back button returns to the episode list (closes the page).
+    await userEvent.click(screen.getByRole("button", { name: /Episodes/ }));
+    expect(screen.queryByTestId("streampicker")).not.toBeInTheDocument();
+  });
+
+  it("keeps the streams page open while Escape reaches the player", async () => {
+    mockDetailItem = preview("s1", { type: "series", title: "The Series", tmdbId: 200 });
+    mockDetail = detailState({ item: mediaItem({ type: "series", id: "s1", tmdbId: 200 }) });
+    render(<Detail />);
+    await userEvent.click(screen.getByTestId("pick-episode"));
+    await userEvent.click(screen.getByTestId("play-stream"));
+    expect(await screen.findByTestId("player")).toBeInTheDocument();
+
+    const playerKeydown = vi.fn();
+    window.addEventListener("keydown", playerKeydown);
+    fireEvent.keyDown(document.body, { key: "Escape" });
+
+    expect(playerKeydown).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("player")).toBeInTheDocument();
+    window.removeEventListener("keydown", playerKeydown);
+  });
+
+  it("closes the streams page on Escape when no player is mounted", async () => {
+    mockDetailItem = preview("s1", { type: "series", title: "The Series", tmdbId: 200 });
+    mockDetail = detailState({ item: mediaItem({ type: "series", id: "s1", tmdbId: 200 }) });
+    render(<Detail />);
+    await userEvent.click(screen.getByTestId("pick-episode"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("renders the AI analysis only when the provider exposes analyzeTitle", () => {
     mockServices.ai = { analyzeTitle: vi.fn() };
     render(<Detail />);
     expect(screen.getByTestId("analysis")).toBeInTheDocument();
   });
 
-  it("omits the AI analysis when no analyzeTitle provider is configured", () => {
+  it("omits the AI analysis but shows an honest Settings hint when no analyzeTitle provider is configured", () => {
     mockServices.ai = null;
     render(<Detail />);
     expect(screen.queryByTestId("analysis")).toBeNull();
+    // Never a silently-absent feature: a quiet hint + a link into Settings.
+    expect(
+      screen.getByText(/Add an AI provider in Settings/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open Settings" }),
+    ).toBeInTheDocument();
   });
 
   it("reflects watchlist membership in the hero", () => {
     inWatchlistResult = true;
     render(<Detail />);
     expect(screen.getByTestId("hero-inwl").textContent).toBe("true");
+  });
+
+  it("marks and unmarks an episode through history without touching continue watching", async () => {
+    mockDetailItem = preview("s1", {
+      type: "series",
+      title: "The Series",
+      tmdbId: 200,
+    });
+    mockDetail = detailState({
+      item: mediaItem({ id: "s1", type: "series", title: "The Series", tmdbId: 200 }),
+    });
+    render(<Detail />);
+
+    await userEvent.click(screen.getByTestId("mark-episode-watched"));
+    await waitFor(() =>
+      expect(storeRecordHistory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mediaId: "s1",
+          episodeId: "s1e2",
+          progressSeconds: 1,
+          durationSeconds: 1,
+          completed: true,
+        }),
+      ),
+    );
+    await userEvent.click(screen.getByTestId("mark-episode-unwatched"));
+    await waitFor(() =>
+      expect(deleteHistory).toHaveBeenCalledWith("s1", "s1e2"),
+    );
+    expect(recordResume).not.toHaveBeenCalled();
+    expect(refreshContinueWatching).not.toHaveBeenCalled();
+  });
+
+  it("marks and unmarks a movie through its completed history row", async () => {
+    render(<Detail />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Mark watched" }));
+    await waitFor(() =>
+      expect(storeRecordHistory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mediaId: "m1",
+          episodeId: null,
+          progressSeconds: 1,
+          durationSeconds: 1,
+          completed: true,
+        }),
+      ),
+    );
+    expect(await screen.findByRole("button", { name: "Mark unwatched" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Mark unwatched" }));
+    await waitFor(() => expect(deleteHistory).toHaveBeenCalledWith("m1", null));
+    expect(await screen.findByRole("button", { name: "Mark watched" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 });
 
@@ -347,7 +628,14 @@ describe("Detail play", () => {
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
   });
 
-  it("instant-plays a browser-playable cached stream in-window", async () => {
+  it("uses movie metadata in player chrome and keeps the resolved filename in diagnostics", async () => {
+    mockDetail = detailState({
+      item: mediaItem({
+        backdropPath: "/backdrop.jpg",
+        posterPath: "/poster.jpg",
+        overview: "A movie overview.",
+      }),
+    });
     mockCached = {
       stream: {
         fileName: "movie.mp4",
@@ -361,8 +649,63 @@ describe("Detail play", () => {
       expect(screen.getByTestId("player")).toBeInTheDocument();
     });
     expect(screen.getByTestId("player").getAttribute("data-title")).toBe(
-      "movie.mp4",
+      "The Movie (2020)",
     );
+    expect(screen.getByTestId("player")).toHaveAttribute("data-source-file", "movie.mp4");
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-engine",
+      "webview-direct",
+    );
+    expect(screen.getByTestId("player")).toHaveAttribute("data-pause-year", "2020");
+    expect(screen.getByTestId("player")).toHaveAttribute("data-pause-runtime", "120");
+    expect(screen.getByTestId("player")).toHaveAttribute("data-pause-rating", "7.5");
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-pause-overview",
+      "A movie overview.",
+    );
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-pause-backdrop",
+      "https://image.tmdb.org/t/p/w1280/backdrop.jpg",
+    );
+  });
+
+  it("falls back to the resolved filename only when media metadata is unavailable", async () => {
+    mockDetailItem = preview("m1", { title: "" });
+    mockDetail = detailState({ item: null });
+    render(<Detail />);
+
+    await userEvent.click(screen.getByTestId("play-stream"));
+    const player = await screen.findByTestId("player");
+    expect(player).toHaveAttribute("data-title", "x.mp4");
+    expect(player).toHaveAttribute("data-source-file", "x.mp4");
+  });
+
+  it("uses show and episode metadata for series player title and subtitle", async () => {
+    const getEpisodes = vi.fn(async () => [
+      {
+        id: "ep-3",
+        mediaId: "s1",
+        seasonNumber: 1,
+        episodeNumber: 3,
+        title: "The Arrival",
+      },
+    ]);
+    mockDetailItem = preview("s1", { type: "series", title: "Obsession", tmdbId: 200 });
+    mockDetail = detailState({
+      item: mediaItem({ id: "s1", type: "series", title: "Obsession", tmdbId: 200 }),
+    });
+    mockServices.tmdb = { getEpisodes, getSeasons: vi.fn(async () => []) };
+    render(<Detail />);
+
+    await userEvent.click(screen.getByTestId("pick-episode"));
+    await waitFor(() => expect(getEpisodes).toHaveBeenCalledWith(200, 1));
+    await userEvent.click(screen.getByTestId("play-stream"));
+
+    const player = await screen.findByTestId("player");
+    expect(player).toHaveAttribute("data-title", "Obsession");
+    expect(player).toHaveAttribute("data-subtitle", "S1 E3 - The Arrival");
+    expect(player).toHaveAttribute("data-up-next", "S1 E4");
+    expect(player).toHaveAttribute("data-auto-countdown", "false");
   });
 
   it("requests a transcode HLS url for an MKV cached stream", async () => {
@@ -380,6 +723,10 @@ describe("Detail play", () => {
     await waitFor(() => expect(getTranscodeHLS).toHaveBeenCalled());
     await waitFor(() =>
       expect(screen.getByTestId("player")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-engine",
+      "webview-hls-transcode",
     );
   });
 
@@ -399,6 +746,72 @@ describe("Detail play", () => {
       expect(screen.getByTestId("player")).toBeInTheDocument(),
     );
     expect(getTranscodeHLS).toHaveBeenCalled();
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-engine",
+      "native-mpv",
+    );
+  });
+
+  it("routes 2160p DV/HDR H265-in-MP4 straight to native mpv on desktop", async () => {
+    tauriState.on = true;
+    const getTranscodeHLS = vi.fn(async () => "https://cdn/lossy.m3u8");
+    mockServices.debrid = { getTranscodeHLS };
+    mockSettings = {
+      ...mockSettings,
+      builtInPlayer: true,
+      preferredExternalPlayer: "IINA",
+    };
+    mockCached = {
+      stream: {
+        fileName:
+          "Obsession.2026.2160p.iT.WEB-DL.UNRATED.DV.HDR10+.MULTi.H265.MP4",
+        streamURL: "https://cdn/obsession.mp4",
+        // Route defensively from the filename even if cached metadata is stale.
+        codec: "Unknown",
+        restrictedId: "rd-id",
+      },
+    };
+
+    render(<Detail />);
+    await userEvent.click(screen.getByText("play"));
+    const player = await screen.findByTestId("player");
+
+    expect(player).toHaveAttribute("data-engine", "native-mpv");
+    expect(player).toHaveAttribute("data-has-fallback", "true");
+    // RD HLS is lazy recovery only. It must not run before native has failed.
+    expect(getTranscodeHLS).not.toHaveBeenCalled();
+  });
+
+  it("keeps a browser-playable H264 MP4 in the webview even on desktop", async () => {
+    // The structural guarantee behind routing: the browser-playable check runs
+    // BEFORE isTauri(), so a container/codec the webview can decode never gets
+    // upgraded to native mpv just because we're on desktop. Pinned here because
+    // the existing webview-direct test runs in a browser session (isTauri=false);
+    // this exercises the desktop branch to prove it still yields webview-direct.
+    tauriState.on = true;
+    const getTranscodeHLS = vi.fn(async () => "https://cdn/lossy.m3u8");
+    mockServices.debrid = { getTranscodeHLS };
+    mockSettings = {
+      ...mockSettings,
+      builtInPlayer: true,
+      preferredExternalPlayer: "IINA",
+    };
+    mockCached = {
+      stream: {
+        fileName: "movie.mp4",
+        streamURL: "https://cdn/movie.mp4",
+        codec: "H.264",
+      },
+    };
+
+    render(<Detail />);
+    await userEvent.click(screen.getByText("play"));
+    const player = await screen.findByTestId("player");
+
+    expect(player).toHaveAttribute("data-engine", "webview-direct");
+    // Never routed to native and never asked RD to transcode - it just plays.
+    expect(player).not.toHaveAttribute("data-engine", "native-mpv");
+    expect(getTranscodeHLS).not.toHaveBeenCalled();
   });
 });
 
@@ -452,6 +865,142 @@ describe("Detail taste signal", () => {
   });
 });
 
+describe("Detail downloads", () => {
+  it("passes the selected source size into the download queue", async () => {
+    tauriState.on = true;
+    mockServices = {
+      tmdb: null,
+      indexers: {},
+      debrid: { hasServices: true },
+      ai: null,
+      subtitles: null,
+      translator: null,
+    };
+    mockSettings = {
+      transcode: false,
+      ratingScale: "thumbs",
+      streamCachedOnly: false,
+    };
+    mockStreams = streamsState();
+    mockStreams.rows = [downloadRow("Movie 2160p", 8_000_000_000)];
+
+    render(<Detail />);
+    await userEvent.click(screen.getByRole("button", { name: "download" }));
+    await userEvent.click(screen.getByRole("button", { name: "Download movie" }));
+
+    await waitFor(() =>
+      expect(downloadsRuntime.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ sizeBytes: 8_000_000_000 }),
+      ),
+    );
+  });
+
+  it("shows an estimate for the selected resolution and updates it for optimization", async () => {
+    tauriState.on = true;
+    mockServices = {
+      tmdb: null,
+      indexers: {},
+      debrid: { hasServices: true },
+      ai: null,
+      subtitles: null,
+      translator: null,
+    };
+    mockSettings = {
+      transcode: false,
+      ratingScale: "thumbs",
+      streamCachedOnly: false,
+    };
+    mockStreams = streamsState();
+    mockStreams.rows = [
+      downloadRow("Movie 2160p", 8 * 1024 * 1024 * 1024),
+      downloadRow("Movie 720p", 1536 * 1024 * 1024),
+    ];
+
+    render(<Detail />);
+    await userEvent.click(screen.getByRole("button", { name: "download" }));
+    expect(await screen.findByText("Estimated total: 8.0 GB")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Download resolution"), {
+      target: { value: "720p" },
+    });
+    expect(screen.getByText("Estimated total: 1.5 GB")).toBeInTheDocument();
+
+    const optimized = screen.getByRole("button", { name: "Optimized" });
+    await waitFor(() => expect(optimized).toBeEnabled());
+    await userEvent.click(optimized);
+    expect(screen.getByText("Estimated total: up to 1.5 GB")).toBeInTheDocument();
+    expect(screen.getByLabelText("Audio languages to keep")).toBeInTheDocument();
+    expect(screen.getByLabelText("Subtitle languages to keep")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "H.265 re-encode" }));
+    expect(screen.getByText("Planning estimate: about 768 MB")).toBeInTheDocument();
+  });
+});
+
+describe("Detail numeric rating", () => {
+  it("records a 1–10 pick as a normalized 'rated' taste event", async () => {
+    mockSettings.ratingScale = "ten";
+    render(<Detail />);
+    // The stars sit behind an explicit "Rate" button now.
+    await userEvent.click(await screen.findByRole("button", { name: "Rate" }));
+    await userEvent.click(await screen.findByLabelText("8 out of 10"));
+    await waitFor(() => expect(addTasteEvent).toHaveBeenCalled());
+    const evt = addTasteEvent.mock.calls[0][0] as any;
+    expect(evt.eventType).toBe("rated");
+    expect(evt.mediaId).toBe("m1");
+    expect(evt.signalStrength).toBeCloseTo(0.6, 5);
+    expect(evt.metadata.rating).toBe("8");
+    expect(evt.metadata.scale).toBe("ten");
+    expect(evt.metadata.norm).toBe("0.8000");
+    await waitFor(() => expect(rebuildTasteContext).toHaveBeenCalled());
+  });
+
+  it("seeds the 1–10 control from the newest saved rating", async () => {
+    mockSettings.ratingScale = "ten";
+    recentTasteEvents.mockResolvedValue([
+      {
+        mediaId: "m1",
+        eventType: "rated",
+        metadata: { norm: "0.7" },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    render(<Detail />);
+    // Collapsed, the saved score shows on the Rate button; revealing it seeds
+    // the stars from that value.
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Your rating: 7/10" }),
+    );
+    expect(await screen.findByText("7/10")).toBeTruthy();
+    expect(
+      screen.getByLabelText("7 out of 10").getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("commits a 0–100 rating only on release", async () => {
+    mockSettings.ratingScale = "hundred";
+    render(<Detail />);
+    await userEvent.click(await screen.findByRole("button", { name: "Rate" }));
+    const slider = await screen.findByLabelText("Rate out of 100");
+    fireEvent.change(slider, { target: { value: "90" } });
+    expect(addTasteEvent).not.toHaveBeenCalled();
+    fireEvent.pointerUp(slider);
+    await waitFor(() => expect(addTasteEvent).toHaveBeenCalled());
+    const evt = addTasteEvent.mock.calls[0][0] as any;
+    expect(evt.metadata.scale).toBe("hundred");
+    expect(evt.metadata.rating).toBe("90");
+    expect(evt.metadata.norm).toBe("0.9000");
+    expect(evt.signalStrength).toBeCloseTo(0.8, 5);
+  });
+
+  it("hides the numeric control in thumbs mode (hero thumbs only)", async () => {
+    mockSettings.ratingScale = "thumbs";
+    render(<Detail />);
+    await screen.findByTestId("hero");
+    expect(screen.queryByLabelText("Your rating")).toBeNull();
+  });
+});
+
 describe("Detail server-mode title request", () => {
   it("does not expose a request action outside server mode", () => {
     serverModeOn = false;
@@ -486,12 +1035,30 @@ describe("Detail server-mode title request", () => {
     );
   });
 
-  it("returns to idle on a non-409 request failure", async () => {
+  it("reports a non-409 request failure instead of silently resetting", async () => {
+    // Returning to "idle" made a failed request look identical to one never
+    // made: the button span back to "Request" with nothing said.
     serverModeOn = true;
     createRequest.mockRejectedValue({ status: 500 });
     render(<Detail />);
     await userEvent.click(screen.getByText("request"));
     await waitFor(() => expect(createRequest).toHaveBeenCalled());
-    expect(screen.getByTestId("hero-reqstate").textContent).toBe("idle");
+    expect(screen.getByTestId("hero-reqstate").textContent).toBe("failed");
+  });
+
+  it("lets the user retry after a failure", async () => {
+    serverModeOn = true;
+    createRequest.mockRejectedValueOnce({ status: 500 });
+    render(<Detail />);
+    await userEvent.click(screen.getByText("request"));
+    await waitFor(() =>
+      expect(screen.getByTestId("hero-reqstate").textContent).toBe("failed"),
+    );
+    // A failed request must stay actionable.
+    createRequest.mockResolvedValueOnce(undefined);
+    await userEvent.click(screen.getByText("request"));
+    await waitFor(() =>
+      expect(screen.getByTestId("hero-reqstate").textContent).toBe("requested"),
+    );
   });
 });

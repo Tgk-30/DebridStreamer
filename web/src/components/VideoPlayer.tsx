@@ -2,17 +2,29 @@
 //
 // Two-backend playback (the plan proven by poc-tauri):
 //   1. In-webview <video> for HLS (.m3u8, via hls.js when the browser lacks
-//      native HLS) and progressive MP4/WebM — the browser path.
+//      native HLS) and progressive MP4/WebM - the browser path.
 //   2. Desktop hand-off to a native player (VLC/mpv/IINA) for containers/codecs
-//      the webview can't decode (MKV / HEVC) — only when running under Tauri,
+//      the webview can't decode (MKV / HEVC) - only when running under Tauri,
 //      via the `open_in_external_player` Rust command. In a plain browser this
 //      path shows an "open externally" note instead.
 //
 // `kind` lets the caller force the external path (e.g. an MKV stream); otherwise
 // the extension is sniffed from the URL.
 
-import { useEffect, useRef, useState } from "react";
-import Hls from "hls.js";
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+// Type-only: the runtime module is imported on demand inside the HLS effect
+// below, so this import contributes no bytes to the chunk.
+import type HlsType from "hls.js";
+type HlsInstance = InstanceType<typeof HlsType>;
 import { Icon } from "./Icon";
 import {
   isTauri,
@@ -20,51 +32,102 @@ import {
   playWithMpv,
   mpvStop,
 } from "../lib/tauri";
+import { deviceKind } from "../lib/platform";
 import type { SubtitleClient } from "../services/subtitles/OpenSubtitlesClient";
 import type { Translator } from "../services/subtitles/SubtitleTranslator";
 import { useSubtitleTracks } from "./player/useSubtitleTracks";
 import { useScrubThumbnails } from "./player/useScrubThumbnails";
 import { ScrubBar } from "./player/ScrubBar";
 import { CaptionsMenu } from "./player/CaptionsMenu";
+import { EmbeddedPlayer } from "./EmbeddedPlayer";
+import { CastControls } from "./CastControls";
+import type { PlaybackPrefs } from "../storage/models";
+import {
+  currentViewportPixelSize,
+  type PixelSize,
+  type PlaybackEngine,
+} from "../lib/playbackEngine";
+import { PlayerInfoPopover } from "./player/PlayerInfoPopover";
+import {
+  PlayerPauseOverlay,
+  type NowPlayingMetadata,
+} from "./player/PlayerPauseOverlay";
+import { registerPlayerMount } from "../lib/attention";
+import {
+  scrobblePlaybackPause,
+  scrobblePlaybackStart,
+  scrobblePlaybackStop,
+  type TraktScrobbleContext,
+} from "../data/traktScrobble";
 import "./VideoPlayer.css";
 
 type Playability = "webview" | "external";
 
 interface VideoPlayerProps {
   url: string;
+  /** Human-facing media metadata. Never pass the raw resolved file here when
+   * metadata is available. */
   title: string;
+  /** Series context shown beneath the show title. */
+  subtitle?: string | null;
+  /** Optional Detail metadata used by the paused now-playing treatment. */
+  nowPlaying?: NowPlayingMetadata | null;
+  /** Raw resolved filename, confined to Playback information. */
+  sourceFileName?: string | null;
   /** Force a path; when omitted it's sniffed from the URL extension. */
   kind?: Playability;
+  /** Explicit renderer identity. Detail always supplies this; inference remains
+   * for isolated callers and backwards compatibility. */
+  engine?: PlaybackEngine;
+  /** Native built-in failure fallback. Called only after libmpv fails, never on
+   * the normal native path, so lossless playback starts without transcode delay. */
+  requestWebviewFallback?: () => Promise<string | null>;
   onClose: () => void;
   /** Reports playback progress (seconds watched + total duration) so the store
    * can persist a resume position. Called periodically and on close. */
-  onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
+  onProgress?: (
+    currentSeconds: number,
+    durationSeconds: number | null,
+    prefs?: PlaybackPrefs,
+  ) => void;
   /** Resume position (seconds) from the saved watch history. The in-webview
-   * player seeks here once, on first metadata load — making cross-device resume
+   * player seeks here once, on first metadata load - making cross-device resume
    * actually pick up where you left off. 0/undefined starts from the beginning. */
   startPositionSeconds?: number;
+  /** Remembered audio/subtitle/speed for this title (in-window player only). */
+  savedPrefs?: PlaybackPrefs | null;
   /** Subtitle source (local OpenSubtitles client or the Server-Mode client) when
-   * available — powers subtitle search. Null disables the search UI. */
+   * available - powers subtitle search. Null disables the search UI. */
   subtitleClient?: SubtitleClient | null;
-  /** Subtitle translator (local or Server-Mode) when available — powers subtitle
+  /** Subtitle translator (local or Server-Mode) when available - powers subtitle
    * translation. Null hides the translate action. */
   translator?: Translator | null;
   /** Auto-seed context for the captions search. */
   imdbId?: string | null;
   season?: number | null;
   episode?: number | null;
+  /** Immutable TMDB playback identity, snapshotted by Detail when Play opens. */
+  scrobbleContext?: TraktScrobbleContext | null;
   /** Next-episode context: when set, an "Up next" card appears at video end.
    *  Null/omitted (movies, finale, setting off) renders nothing. */
   upNext?: { label: string } | null;
   /** Play the next episode (the card's action + the countdown target). */
   onPlayNext?: () => void;
-  /** Whether the card auto-plays after a countdown (false under Data Saver —
+  /** Whether the card auto-plays after a countdown (false under Data Saver - 
    *  nothing plays without a click). */
   autoCountdown?: boolean;
+  /** Chosen external player name (Settings). Passed to the VLC/IINA/mpv hand-off
+   *  so it opens the user's preferred app first. "" / undefined = auto order. */
+  preferredPlayer?: string;
+  /** Desktop only (EXPERIMENTAL): use the in-window libmpv player for containers
+   *  the webview can't decode (MKV/HEVC) instead of handing off to an external
+   *  app. When false the external hand-off (bundled mpv / VLC) is used. Opt-in
+   *  (default false) until native bundling is verified. */
+  useBuiltInPlayer?: boolean;
 }
 
 /** Toggle fullscreen on an element, defensively (the APIs are absent in jsdom
- * and on some webviews — the optional calls then no-op rather than throw). */
+ * and on some webviews - the optional calls then no-op rather than throw). */
 function toggleFullscreen(el: HTMLElement): void {
   const d = document as Document & { webkitFullscreenElement?: Element | null };
   const active = document.fullscreenElement ?? d.webkitFullscreenElement ?? null;
@@ -89,7 +152,7 @@ function shouldIgnoreShortcut(
     tag === "INPUT" ||
     tag === "TEXTAREA" ||
     tag === "SELECT" ||
-    // A focused button/link owns Space/Enter — don't hijack it for play/pause.
+    // A focused button/link owns Space/Enter - don't hijack it for play/pause.
     tag === "BUTTON" ||
     tag === "A" ||
     el.isContentEditable
@@ -122,42 +185,260 @@ function classify(url: string): Playability {
   return "webview";
 }
 
+function inferEngine(url: string, kind?: Playability): PlaybackEngine {
+  const mode = kind ?? classify(url);
+  if (mode === "external") return "native-mpv";
+  return url.split("?")[0].toLowerCase().endsWith(".m3u8")
+    ? "webview-hls-transcode"
+    : "webview-direct";
+}
+
+/** Return the Trakt percentage at a lifecycle event, never a progress-tick. */
+function playbackProgressPct(current: number, duration: number): number {
+  if (!Number.isFinite(current) || !Number.isFinite(duration) || duration <= 0) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, (current / duration) * 100));
+}
+
+interface WebviewScrubberHandle {
+  setCurrentTime(time: number): void;
+}
+
+/** Keep media-clock updates local to the scrub bar. Browser `timeupdate` fires
+ * about four times per second; captions, help controls, and the video shell do
+ * not need to reconcile for each tick. */
+const WebviewScrubber = memo(
+  forwardRef<
+    WebviewScrubberHandle,
+    Omit<React.ComponentProps<typeof ScrubBar>, "currentTime"> & { active: boolean }
+  >(function WebviewScrubber({ duration, active, ...props }, ref) {
+    const [currentTime, setCurrentTime] = useState(0);
+    const latestTimeRef = useRef(0);
+    const activeRef = useRef(active);
+    activeRef.current = active;
+
+    const flush = useCallback(() => {
+      const next = latestTimeRef.current;
+      setCurrentTime((current) => (current === next ? current : next));
+    }, []);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        setCurrentTime(time) {
+          latestTimeRef.current = time;
+          if (activeRef.current) flush();
+        },
+      }),
+      [flush],
+    );
+
+    useEffect(() => {
+      if (active) flush();
+    }, [active, flush]);
+
+    return <ScrubBar {...props} duration={duration} currentTime={currentTime} />;
+  }),
+);
+
 export function VideoPlayer({
   url,
   title,
+  subtitle,
+  nowPlaying,
+  sourceFileName,
   kind,
+  engine,
+  requestWebviewFallback,
   onClose,
   onProgress,
   startPositionSeconds,
+  savedPrefs,
   subtitleClient,
   translator,
   imdbId,
   season,
   episode,
+  scrobbleContext = null,
   upNext = null,
   onPlayNext,
   autoCountdown = true,
+  preferredPlayer,
+  useBuiltInPlayer = true,
 }: VideoPlayerProps) {
-  const mode = kind ?? classify(url);
+  const requestedEngine = engine ?? inferEngine(url, kind);
+  const [fallbackSource, setFallbackSource] = useState<{
+    originUrl: string;
+    originEngine: PlaybackEngine;
+    url: string;
+  } | null>(null);
+  const activeFallback =
+    fallbackSource?.originUrl === url &&
+    fallbackSource.originEngine === requestedEngine
+      ? fallbackSource
+      : null;
+  const effectiveUrl = activeFallback?.url ?? url;
+  const effectiveEngine: PlaybackEngine = activeFallback
+    ? "webview-hls-transcode"
+    : requestedEngine;
+  const mode: Playability =
+    effectiveEngine === "native-mpv" ? "external" : "webview";
+  const underTauri = isTauri();
+  // In-window native player: the DEFAULT desktop path for containers/codecs the
+  // webview can't decode (MKV/HEVC). Renders libmpv on a native surface behind the
+  // transparent window (see EmbeddedPlayer): macOS = CAOpenGLLayer render API,
+  // Windows/Linux = mpv wid-embed. If the surface can't init (e.g. Wayland, or a
+  // missing libmpv) the player offers a one-click external hand-off; when the user
+  // opts out it's the external hand-off (VLC/IINA/…) directly.
+  const dk = deviceKind();
+  const useEmbedded =
+    underTauri &&
+    (dk === "mac" || dk === "windows" || dk === "linux") &&
+    mode === "external" &&
+    useBuiltInPlayer;
   const [externalStatus, setExternalStatus] = useState<string | null>(null);
   const [externalError, setExternalError] = useState<string | null>(null);
+  const [detailsSection, setDetailsSection] = useState<"info" | "shortcuts" | null>(null);
+  const [sourceSize, setSourceSize] = useState<PixelSize | null>(null);
+  const [displaySize, setDisplaySize] = useState<PixelSize | null>(() =>
+    currentViewportPixelSize(),
+  );
+  const [webChromeVisible, setWebChromeVisible] = useState(true);
+  const [webviewPaused, setWebviewPaused] = useState(false);
+  const [captionsOpen, setCaptionsOpen] = useState(false);
+  const [castSuspended, setCastSuspended] = useState(false);
+  const [activeSubtitleUrl, setActiveSubtitleUrl] = useState<string | null>(null);
+  const [chromeHovered, setChromeHovered] = useState(false);
+  const [chromeFocused, setChromeFocused] = useState(false);
+  const chromeHideTimer = useRef<number | undefined>(undefined);
+  const chromePinned =
+    webviewPaused || captionsOpen || detailsSection != null || chromeHovered || chromeFocused;
+  const chromePinnedRef = useRef(chromePinned);
+  chromePinnedRef.current = chromePinned;
 
-  // Native hand-off when running under Tauri. Primary path is the BUNDLED mpv
-  // sidecar (shipped + app-controlled over IPC); if mpv isn't available we fall
-  // back to the raw VLC/IINA hand-off. On macOS mpv's `--wid` in-window
-  // embedding is unreliable, so mpv typically opens its own (app-controlled)
-  // window — see src-tauri/src/player.rs. mpv is stopped when this panel closes.
-  const underTauri = isTauri();
-  const startedMpvRef = useRef(false);
+  const clearChromeTimer = useCallback(() => {
+    window.clearTimeout(chromeHideTimer.current);
+    chromeHideTimer.current = undefined;
+  }, []);
+  const nudgeChrome = useCallback(() => {
+    if (mode !== "webview") return;
+    setWebChromeVisible(true);
+    clearChromeTimer();
+    chromeHideTimer.current = window.setTimeout(() => {
+      chromeHideTimer.current = undefined;
+      if (!chromePinnedRef.current) setWebChromeVisible(false);
+    }, 3200);
+  }, [clearChromeTimer, mode]);
+  const holdChrome = useCallback(() => {
+    setChromeHovered(true);
+    nudgeChrome();
+  }, [nudgeChrome]);
+  const releaseChrome = useCallback(() => {
+    setChromeHovered(false);
+    nudgeChrome();
+  }, [nudgeChrome]);
+  const focusChrome = useCallback(() => {
+    setChromeFocused(true);
+    nudgeChrome();
+  }, [nudgeChrome]);
+  const blurChrome = useCallback(
+    (event: React.FocusEvent<HTMLElement>) => {
+      if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+        return;
+      }
+      setChromeFocused(false);
+      nudgeChrome();
+    },
+    [nudgeChrome],
+  );
+
+  useEffect(() => registerPlayerMount(), []);
   useEffect(() => {
-    if (mode !== "external" || !underTauri) return;
+    if (mode !== "webview") {
+      clearChromeTimer();
+      setWebChromeVisible(true);
+      return;
+    }
+    nudgeChrome();
+    return clearChromeTimer;
+  }, [clearChromeTimer, mode, nudgeChrome]);
+  useEffect(() => {
+    if (mode !== "webview") return;
+    if (chromePinned) {
+      clearChromeTimer();
+      setWebChromeVisible(true);
+      return;
+    }
+    nudgeChrome();
+  }, [chromePinned, clearChromeTimer, mode, nudgeChrome]);
+  const webChromeShown = mode !== "webview" || webChromeVisible || chromePinned;
+  const hiddenWebChrome = mode === "webview" && !webChromeShown;
+
+  useEffect(() => {
+    setSourceSize(null);
+    setDetailsSection(null);
+  }, [effectiveUrl]);
+
+  useEffect(() => {
+    const measure = () => setDisplaySize(currentViewportPixelSize());
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  // A single top-right panel owns both playback information and the keymap.
+  // Escape dismisses it before any lower-level player action can run.
+  useEffect(() => {
+    if (detailsSection == null) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setDetailsSection(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detailsSection]);
+
+  const recoverNativeInWebview = useCallback(async (): Promise<boolean> => {
+    if (requestWebviewFallback == null) return false;
+    let hlsUrl: string | null = null;
+    try {
+      hlsUrl = await requestWebviewFallback();
+    } catch {
+      hlsUrl = null;
+    }
+    if (hlsUrl == null || hlsUrl.length === 0) return false;
+    setFallbackSource({
+      originUrl: url,
+      originEngine: requestedEngine,
+      url: hlsUrl,
+    });
+    return true;
+  }, [requestWebviewFallback, requestedEngine, url]);
+
+  // Native hand-off when running under Tauri and the in-window player is off.
+  // Primary path is the BUNDLED mpv sidecar (shipped + app-controlled over IPC);
+  // if mpv isn't available we fall back to the raw VLC/IINA hand-off. On macOS
+  // mpv's `--wid` in-window embedding is unreliable, so mpv typically opens its
+  // own window - see src-tauri/src/player.rs. mpv is stopped when this closes.
+  const startedMpvRef = useRef(false);
+  const castSuspendedRef = useRef(castSuspended);
+  castSuspendedRef.current = castSuspended;
+  useEffect(() => {
+    if (mode !== "external" || !underTauri || useEmbedded) return;
     let cancelled = false;
     startedMpvRef.current = false;
 
-    playWithMpv(url)
+    playWithMpv(effectiveUrl)
       .then((res) => {
         if (cancelled) return;
         startedMpvRef.current = true;
+        if (castSuspendedRef.current) {
+          void import("../lib/tauri")
+            .then(({ mpvPause }) => mpvPause())
+            .catch(() => {});
+        }
         setExternalStatus(
           res.embedded
             ? "Playing in the bundled mpv (in-window embedding attempted)."
@@ -165,9 +446,9 @@ export function VideoPlayer({
         );
       })
       .catch(() => {
-        // mpv missing / failed to spawn — fall back to the VLC/IINA hand-off.
+        // mpv missing / failed to spawn - fall back to the VLC/IINA hand-off.
         if (cancelled) return;
-        openInExternalPlayer(url)
+        openInExternalPlayer(effectiveUrl, preferredPlayer)
           .then((status) => {
             if (!cancelled) setExternalStatus(status);
           })
@@ -185,30 +466,136 @@ export function VideoPlayer({
         mpvStop().catch(() => {});
       }
     };
-  }, [mode, underTauri, url]);
+  }, [mode, underTauri, effectiveUrl, preferredPlayer, useEmbedded]);
 
-  return (
+  useEffect(() => {
+    if (mode !== "external" || useEmbedded || !startedMpvRef.current) return;
+    void import("../lib/tauri")
+      .then(({ mpvPause, mpvResume }) =>
+        castSuspended ? mpvPause() : mpvResume(),
+      )
+      .catch(() => {});
+  }, [castSuspended, mode, useEmbedded]);
+
+  // In-window native player takes over the whole window (transparent surface +
+  // hidden app chrome), so render it standalone - outside the modal frame.
+  if (useEmbedded) {
+    const epLabel =
+      season != null && episode != null
+        ? `S${season} · E${episode}`
+        : null;
+    return (
+      <EmbeddedPlayer
+        savedPrefs={savedPrefs}
+        url={effectiveUrl}
+        title={title}
+        subtitle={subtitle ?? epLabel}
+        nowPlaying={nowPlaying}
+        sourceFileName={sourceFileName}
+        engine={effectiveEngine}
+        onPlaybackError={recoverNativeInWebview}
+        startPositionSeconds={startPositionSeconds}
+        onProgress={(current, duration, prefs) =>
+          onProgress?.(current, duration, prefs)
+        }
+        scrobbleContext={scrobbleContext}
+        onPlayNext={upNext != null ? onPlayNext : undefined}
+        nextLabel={upNext?.label ?? null}
+        onClose={onClose}
+      />
+    );
+  }
+
+  // Detail is a fixed, nav-inset surface with backdrop-filter. Filters establish
+  // a containing block for fixed descendants, so mounting this shell there would
+  // make inset:0 mean "the Detail rect", not the window. Portal every webview and
+  // external shell to body, just as EmbeddedPlayer does for its HTML controls.
+  return createPortal(
     <div className="player-backdrop" onClick={onClose}>
       <div
-        className="player glass-hero glass-lit"
+        className="player"
         onClick={(e) => e.stopPropagation()}
+        onPointerMove={mode === "webview" ? nudgeChrome : undefined}
       >
-        <div className="player-bar">
-          <span className="player-title">{title}</span>
-          <button
-            type="button"
-            className="player-close"
-            onClick={onClose}
-            aria-label="Close player"
-          >
-            <Icon name="xmark" size={18} />
-          </button>
+        <div
+          className={`player-bar${webChromeShown ? " is-visible" : ""}`}
+          aria-hidden={hiddenWebChrome || undefined}
+          onPointerEnter={holdChrome}
+          onPointerLeave={releaseChrome}
+          onFocusCapture={focusChrome}
+          onBlurCapture={blurChrome}
+        >
+          <div className="player-title-group">
+            <span className="player-title">{title}</span>
+            {subtitle && <span className="player-subtitle">{subtitle}</span>}
+          </div>
+          <div className="player-bar-actions">
+            <CastControls
+              media={{
+                url: effectiveUrl,
+                title,
+                subtitleUrl: activeSubtitleUrl,
+              }}
+              buttonClassName="player-info-button"
+              onLocalPlaybackChange={setCastSuspended}
+            />
+            <button
+              type="button"
+              className="player-info-button"
+              onClick={() =>
+                setDetailsSection((section) => section === "info" ? null : "info")
+              }
+              aria-label="Player details and shortcuts"
+              aria-haspopup="dialog"
+              aria-expanded={detailsSection != null}
+              title="Player details and shortcuts (?)"
+              tabIndex={hiddenWebChrome ? -1 : undefined}
+            >
+              <Icon name="info" size={17} />
+            </button>
+            <button
+              type="button"
+              className="player-close"
+              onClick={onClose}
+              aria-label="Close player"
+              tabIndex={hiddenWebChrome ? -1 : undefined}
+            >
+              <Icon name="xmark" size={18} />
+            </button>
+          </div>
         </div>
+
+        {detailsSection != null && (
+          <PlayerInfoPopover
+            engine={effectiveEngine}
+            sourceSize={sourceSize}
+            displaySize={displaySize}
+            sourceFileName={sourceFileName}
+            section={detailsSection}
+            onSectionChange={setDetailsSection}
+            shortcuts={WEBVIEW_SHORTCUTS}
+            onClose={() => setDetailsSection(null)}
+          />
+        )}
 
         {mode === "webview" && externalError == null ? (
           <WebviewPlayer
-            url={url}
+            url={effectiveUrl}
             title={title}
+            nowPlaying={nowPlaying}
+            detailsOpen={detailsSection != null}
+            chromeVisible={webChromeShown}
+            onChromeEnter={holdChrome}
+            onChromeLeave={releaseChrome}
+            onChromeFocus={focusChrome}
+            onChromeBlur={blurChrome}
+            onActivity={nudgeChrome}
+            onPausedChange={setWebviewPaused}
+            onCaptionsOpenChange={setCaptionsOpen}
+            suspended={castSuspended}
+            onActiveSubtitleUrlChange={setActiveSubtitleUrl}
+            onOpenShortcuts={() => setDetailsSection("shortcuts")}
+            onSourceSize={setSourceSize}
             onProgress={onProgress}
             startPositionSeconds={startPositionSeconds}
             onHlsUnsupported={() =>
@@ -219,6 +606,7 @@ export function VideoPlayer({
             imdbId={imdbId ?? null}
             season={season ?? null}
             episode={episode ?? null}
+            scrobbleContext={scrobbleContext}
             upNext={upNext}
             onPlayNext={onPlayNext}
             autoCountdown={autoCountdown}
@@ -226,13 +614,14 @@ export function VideoPlayer({
         ) : (
           <ExternalPanel
             underTauri={underTauri}
-            url={url}
+            url={effectiveUrl}
             status={externalStatus}
             error={externalError}
           />
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -242,6 +631,20 @@ export function VideoPlayer({
 function WebviewPlayer({
   url,
   title,
+  nowPlaying,
+  detailsOpen,
+  chromeVisible,
+  onChromeEnter,
+  onChromeLeave,
+  onChromeFocus,
+  onChromeBlur,
+  onActivity,
+  onPausedChange,
+  onCaptionsOpenChange,
+  suspended,
+  onActiveSubtitleUrlChange,
+  onOpenShortcuts,
+  onSourceSize,
   onProgress,
   startPositionSeconds,
   onHlsUnsupported,
@@ -250,12 +653,27 @@ function WebviewPlayer({
   imdbId,
   season,
   episode,
+  scrobbleContext,
   upNext = null,
   onPlayNext,
   autoCountdown = true,
 }: {
   url: string;
   title: string;
+  nowPlaying?: NowPlayingMetadata | null;
+  detailsOpen: boolean;
+  chromeVisible: boolean;
+  onChromeEnter: () => void;
+  onChromeLeave: () => void;
+  onChromeFocus: () => void;
+  onChromeBlur: (event: React.FocusEvent<HTMLElement>) => void;
+  onActivity: () => void;
+  onPausedChange: (paused: boolean) => void;
+  onCaptionsOpenChange: (open: boolean) => void;
+  suspended: boolean;
+  onActiveSubtitleUrlChange: (url: string | null) => void;
+  onOpenShortcuts: () => void;
+  onSourceSize: (size: PixelSize | null) => void;
   onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
   startPositionSeconds?: number;
   onHlsUnsupported: () => void;
@@ -264,19 +682,53 @@ function WebviewPlayer({
   imdbId: string | null;
   season: number | null;
   episode: number | null;
+  scrobbleContext: TraktScrobbleContext | null;
   upNext?: { label: string } | null;
   onPlayNext?: () => void;
   autoCountdown?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [currentTime, setCurrentTime] = useState(0);
+  const pausedForCastRef = useRef(false);
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
+  const scrubberRef = useRef<WebviewScrubberHandle | null>(null);
   const [duration, setDuration] = useState(0);
   const [captionsOpen, setCaptionsOpen] = useState(false);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  // Set when the video reaches its natural end — drives the Up-next card.
+  const [paused, setPaused] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
+  // Set when the video reaches its natural end - drives the Up-next card.
   const [ended, setEnded] = useState(false);
 
+  useEffect(() => {
+    onCaptionsOpenChange(captionsOpen);
+  }, [captionsOpen, onCaptionsOpenChange]);
+
   const subs = useSubtitleTracks(subtitleClient, translator);
+  useEffect(() => {
+    const activeTrack = subs.tracks.find(
+      (track) => track.id === subs.activeTrackId,
+    );
+    const subtitleUrl =
+      activeTrack != null && /^https?:\/\//i.test(activeTrack.vttUrl)
+        ? activeTrack.vttUrl
+        : null;
+    onActiveSubtitleUrlChange(subtitleUrl);
+    return () => onActiveSubtitleUrlChange(null);
+  }, [onActiveSubtitleUrlChange, subs.activeTrackId, subs.tracks]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video == null) return;
+    if (suspended) {
+      pausedForCastRef.current = !video.paused;
+      video.pause();
+      return;
+    }
+    if (pausedForCastRef.current) {
+      pausedForCastRef.current = false;
+      void video.play().catch(() => {});
+    }
+  }, [suspended]);
   // Thumbnails only work on a progressive source the browser can re-open and
   // seek (MP4/WebM). For HLS the manifest URL can't drive a second <video>
   // reliably, so gate them to non-HLS in-webview sources.
@@ -290,10 +742,12 @@ function WebviewPlayer({
   // render (onProgress identity changes every render → re-subscribe loop).
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
+  const onSourceSizeRef = useRef(onSourceSize);
+  onSourceSizeRef.current = onSourceSize;
   // Stable ref for the HLS-unsupported callback so the source-attach effect does
   // NOT list a fresh inline arrow in its deps. Detail re-renders every ~5s (the
   // progress → recordResume → refreshHistory loop), and a changing callback
-  // identity would otherwise re-run that effect and reload video.src — restarting
+  // identity would otherwise re-run that effect and reload video.src - restarting
   // playback from 0 every few seconds.
   const onHlsUnsupportedRef = useRef(onHlsUnsupported);
   onHlsUnsupportedRef.current = onHlsUnsupported;
@@ -306,13 +760,14 @@ function WebviewPlayer({
     const video = videoRef.current;
     if (video == null) return;
     didSeekRef.current = false;
+    onSourceSizeRef.current(null);
 
     const report = () => {
       const d = Number.isFinite(video.duration) ? video.duration : null;
       onProgressRef.current?.(video.currentTime, d);
     };
     const onTimeUpdate = () => {
-      setCurrentTime(video.currentTime);
+      scrubberRef.current?.setCurrentTime(video.currentTime);
       const now = Date.now();
       if (onProgressRef.current != null && now - lastReportRef.current >= 5000) {
         lastReportRef.current = now;
@@ -323,7 +778,7 @@ function WebviewPlayer({
     // meaningful offset and not basically at the end (so a finished item still
     // starts fresh). HLS reports `duration` AFTER loadedmetadata, so when the
     // duration isn't known yet we wait and let the durationchange handler retry
-    // — seeking into an unknown/zero seekable range just gets clamped to 0 and,
+    // - seeking into an unknown/zero seekable range just gets clamped to 0 and,
     // since we'd have marked it done, would never resume.
     const applyResume = () => {
       if (didSeekRef.current) return;
@@ -333,14 +788,14 @@ function WebviewPlayer({
         return;
       }
       const d = Number.isFinite(video.duration) ? video.duration : 0;
-      if (d <= 0) return; // duration unknown yet (HLS) — retry on durationchange
+      if (d <= 0) return; // duration unknown yet (HLS) - retry on durationchange
       if (start >= d - 10) {
-        didSeekRef.current = true; // basically finished — don't resume
+        didSeekRef.current = true; // basically finished - don't resume
         return;
       }
       try {
         video.currentTime = start;
-        // Only mark the resume done once the seek was accepted — if the element
+        // Only mark the resume done once the seek was accepted - if the element
         // rejects an early seek we leave the guard unset so a later canplay /
         // durationchange retries instead of silently dropping the resume.
         didSeekRef.current = true;
@@ -350,28 +805,62 @@ function WebviewPlayer({
     };
     const onLoadedMeta = () => {
       if (Number.isFinite(video.duration)) setDuration(video.duration);
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      onSourceSizeRef.current(
+        width > 0 && height > 0 ? { width, height } : null,
+      );
       applyResume();
     };
     const onDurationChange = () => {
       if (Number.isFinite(video.duration)) setDuration(video.duration);
       applyResume();
     };
-    const onEnded = () => setEnded(true);
-    setEnded(false); // a new URL is a new playback — clear any stale end state
+    const progressPct = () => playbackProgressPct(video.currentTime, video.duration);
+    const onEnded = () => {
+      setEnded(true);
+      if (scrobbleContext != null) scrobblePlaybackStop(scrobbleContext, progressPct());
+    };
+    const onPause = () => {
+      setPaused(true);
+      onPausedChange(true);
+      if (!video.ended && scrobbleContext != null) {
+        scrobblePlaybackPause(scrobbleContext, progressPct());
+      }
+    };
+    const onPlay = () => {
+      if (suspendedRef.current) {
+        video.pause();
+        return;
+      }
+      setPaused(false);
+      onPausedChange(false);
+      if (scrobbleContext != null) {
+        scrobblePlaybackStart({ ...scrobbleContext, progressPct: progressPct() });
+      }
+    };
+    setEnded(false); // a new URL is a new playback - clear any stale end state
+    setPaused(false);
+    onPausedChange(false);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMeta);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("canplay", applyResume);
     video.addEventListener("ended", onEnded);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("play", onPlay);
     return () => {
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMeta);
       video.removeEventListener("durationchange", onDurationChange);
       video.removeEventListener("canplay", applyResume);
       video.removeEventListener("ended", onEnded);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("play", onPlay);
       if (onProgressRef.current != null && video.currentTime > 0) report();
+      if (scrobbleContext != null) scrobblePlaybackStop(scrobbleContext, progressPct());
     };
-  }, [url]);
+  }, [onPausedChange, scrobbleContext, url]);
 
   // Wire hls.js for HLS streams when the browser can't play them natively.
   useEffect(() => {
@@ -379,7 +868,7 @@ function WebviewPlayer({
     if (video == null) return;
 
     if (!isHls) {
-      // Only (re)assign on an actual URL change — reassigning the same src
+      // Only (re)assign on an actual URL change - reassigning the same src
       // invokes the media load algorithm and restarts playback from 0.
       if (video.src !== url) video.src = url;
       return;
@@ -388,13 +877,35 @@ function WebviewPlayer({
       if (video.src !== url) video.src = url;
       return;
     }
-    if (Hls.isSupported()) {
-      const hls = new Hls();
-      hls.loadSource(url);
-      hls.attachMedia(video);
-      return () => hls.destroy();
-    }
-    onHlsUnsupportedRef.current();
+
+    // hls.js is ~151 KB gz and is reachable ONLY here: an .m3u8 the browser
+    // cannot play natively. A static import pinned it into this chunk, so every
+    // player open paid for it - including the native-mpv and direct-file paths
+    // that return above and never touch it. Fetch it on demand instead.
+    let cancelled = false;
+    let instance: HlsInstance | null = null;
+    void import("hls.js").then(({ default: Hls }) => {
+      // The effect can be torn down (or the URL swapped) while the chunk is in
+      // flight; without this we would attach a player to a stale <video>.
+      if (cancelled) return;
+      const element = videoRef.current;
+      if (element == null) return;
+      if (!Hls.isSupported()) {
+        onHlsUnsupportedRef.current();
+        return;
+      }
+      // Bound the media buffers - hls.js defaults to backBufferLength: Infinity,
+      // which retains every played segment: a 2h stream grows to GBs in the
+      // WebContent process. 60s behind + 30s (up to 120s) ahead keeps seeks snappy
+      // without the balloon.
+      instance = new Hls({ backBufferLength: 60, maxBufferLength: 30, maxMaxBufferLength: 120 });
+      instance.loadSource(url);
+      instance.attachMedia(element);
+    });
+    return () => {
+      cancelled = true;
+      instance?.destroy();
+    };
   }, [url, isHls]);
 
   // Reflect the active subtitle track onto the <video>'s text tracks: show only
@@ -410,14 +921,17 @@ function WebviewPlayer({
       const tt = list[i];
       if (tt.kind !== "subtitles") continue;
       const match = subs.tracks.find((t) => t.label === tt.label);
-      if (match == null) continue; // not one of ours (hls.js-injected) — leave it
+      if (match == null) continue; // not one of ours (hls.js-injected) - leave it
       tt.mode = match.id === subs.activeTrackId ? "showing" : "hidden";
     }
   }, [subs.tracks, subs.activeTrackId]);
 
   const seek = (t: number) => {
     const video = videoRef.current;
-    if (video != null && Number.isFinite(t)) video.currentTime = t;
+    if (video != null && Number.isFinite(t)) {
+      video.currentTime = t;
+      scrubberRef.current?.setCurrentTime(t);
+    }
   };
 
   // Keyboard shortcuts (invisible power-user nicety). Active only while this
@@ -431,6 +945,8 @@ function WebviewPlayer({
       const video = videoRef.current;
       if (video == null) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (suspendedRef.current) return;
+      onActivity();
       if (shouldIgnoreShortcut(e.target, video)) return;
       const dur = Number.isFinite(video.duration) ? video.duration : 0;
       const seekTo = (t: number) => {
@@ -492,7 +1008,7 @@ function WebviewPlayer({
           break;
         case "?":
           e.preventDefault();
-          setShortcutsOpen((o) => !o);
+          onOpenShortcuts();
           break;
         default:
           if (/^[0-9]$/.test(e.key) && dur > 0) {
@@ -503,10 +1019,18 @@ function WebviewPlayer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [onActivity, onOpenShortcuts]);
+
+  const resumePlayback = useCallback(() => {
+    setPaused(false);
+    void videoRef.current?.play();
   }, []);
 
   return (
-    <div className="webview-player">
+    <div
+      className={`webview-player${suspended ? " is-casting" : ""}`}
+      onPointerMove={onActivity}
+    >
       <div className="player-stage">
         <video
           ref={videoRef}
@@ -528,14 +1052,40 @@ function WebviewPlayer({
         </video>
       </div>
 
-      <div className="player-osd">
-        <ScrubBar
-          currentTime={currentTime}
+      {suspended && (
+        <div className="cast-local-placeholder" aria-hidden="true">
+          <Icon name="cast" size={36} />
+          <span>Playing on your cast device</span>
+        </div>
+      )}
+
+      {paused && !ended && !captionsOpen && !detailsOpen && !scrubbing && (
+        <PlayerPauseOverlay
+          title={title}
+          nowPlaying={nowPlaying}
+          onResume={resumePlayback}
+        />
+      )}
+
+      <div
+        className={`player-osd${chromeVisible ? " is-visible" : ""}`}
+        aria-hidden={!chromeVisible || undefined}
+        onPointerEnter={onChromeEnter}
+        onPointerLeave={onChromeLeave}
+        onFocusCapture={onChromeFocus}
+        onBlurCapture={onChromeBlur}
+      >
+        <WebviewScrubber
+          key={url}
+          ref={scrubberRef}
+          active={chromeVisible}
           duration={duration}
           preview={thumbs.available ? thumbs.preview : null}
           onHover={thumbs.onHover}
           onLeave={thumbs.onLeave}
           onSeek={seek}
+          onScrubbingChange={setScrubbing}
+          disabled={!chromeVisible}
         />
         <div className="player-osd-row">
           <button
@@ -546,6 +1096,7 @@ function WebviewPlayer({
             aria-haspopup="dialog"
             aria-expanded={captionsOpen}
             title="Subtitles"
+            tabIndex={chromeVisible ? undefined : -1}
           >
             <Icon name="captions" size={14} />
             CC
@@ -553,23 +1104,8 @@ function WebviewPlayer({
               <span className="captions-active-dot" />
             )}
           </button>
-          <button
-            type="button"
-            className={`chip player-help-btn${shortcutsOpen ? " is-active" : ""}`}
-            onClick={() => setShortcutsOpen((o) => !o)}
-            aria-label="Keyboard shortcuts"
-            aria-haspopup="dialog"
-            aria-expanded={shortcutsOpen}
-            title="Keyboard shortcuts (?)"
-          >
-            ?
-          </button>
         </div>
       </div>
-
-      {shortcutsOpen && (
-        <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />
-      )}
 
       {ended && upNext != null && onPlayNext != null && (
         <UpNextOverlay
@@ -594,8 +1130,8 @@ function WebviewPlayer({
 }
 
 /** A small, dismissible reference for the player keyboard shortcuts. Surfaced
- * by the "?" key or the "?" OSD button — invisible otherwise. */
-const SHORTCUTS: Array<[string, string]> = [
+ * by the "?" key or the "?" OSD button - invisible otherwise. */
+const WEBVIEW_SHORTCUTS: Array<[string, string]> = [
   ["Space / K", "Play / pause"],
   ["← / →", "Back / forward 5s"],
   ["J / L", "Back / forward 10s"],
@@ -622,7 +1158,7 @@ function UpNextOverlay({
   const [dismissed, setDismissed] = useState(false);
   const [remaining, setRemaining] = useState(10);
   // The countdown fires through a ref so re-renders during the countdown
-  // (polls, seasons landing) always reach the LATEST handler — an interval
+  // (polls, seasons landing) always reach the LATEST handler - an interval
   // closure would capture a stale one.
   const onPlayNextRef = useRef(onPlayNext);
   onPlayNextRef.current = onPlayNext;
@@ -638,7 +1174,7 @@ function UpNextOverlay({
         return r - 1;
       });
     }, 1000);
-    // Cleared on unmount AND on the dismiss re-run — no timer leak, and a
+    // Cleared on unmount AND on the dismiss re-run - no timer leak, and a
     // dismissed card can never fire.
     return () => clearInterval(timer);
   }, [auto, dismissed]);
@@ -667,44 +1203,6 @@ function UpNextOverlay({
             Dismiss
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
-  return (
-    <div
-      className="player-shortcuts-scrim"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="player-shortcuts glass-raised"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Keyboard shortcuts"
-      >
-        <div className="player-shortcuts-head">
-          <span className="player-shortcuts-title">Keyboard shortcuts</span>
-          <button
-            type="button"
-            className="player-shortcuts-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <Icon name="xmark" size={16} />
-          </button>
-        </div>
-        <ul className="player-shortcuts-list">
-          {SHORTCUTS.map(([keys, label]) => (
-            <li key={keys}>
-              <kbd>{keys}</kbd>
-              <span>{label}</span>
-            </li>
-          ))}
-        </ul>
       </div>
     </div>
   );

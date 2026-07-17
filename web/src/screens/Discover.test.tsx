@@ -1,655 +1,364 @@
 // @vitest-environment jsdom
 //
-// Render tests for Discover: loading skeleton, hero/rail composition, and every
-// mood path:
-// - no AI provider → filter-based browse
-// - server AI path (curateServerAI)
-// - local AI path (services.ai.recommend + TMDB fallback + direct mediaId fallback)
+// Render/interaction tests for the Discover screen. The screen is dependency-
+// heavy, so the data hook (useDiscover), the app store, serverMode, and the
+// serverApi curate call are mocked, and the child surfaces (HeroSpotlight,
+// MoodStrip, Rail) are replaced with lightweight test doubles that expose their
+// props/callbacks as DOM. The pure storage/models helpers are used as-is.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { AIMovieRecommendation } from "../services/ai/models";
 import type { MediaPreview } from "../models/media";
 import type { WatchHistoryRecord } from "../storage/models";
-import { SortOption } from "../services/metadata/types";
+import type { DiscoverData } from "../data/discover";
 
-// --- mutable mock state ------------------------------------------------------
+// --- mutable mock state -----------------------------------------------------
 
-const mockOpenBrowse = vi.fn();
-let mockContinueWatching: WatchHistoryRecord[] = [];
-const mockRecommend = vi.fn();
-const mockCurateServerAI = vi.fn();
-const mockTmdbSearch = vi.fn();
-let mockServerMode = false;
-let mockMoodPrompt = "thriller 2010s best";
-
-let mockDiscoverState: {
-  data: null | {
-    hero: MediaPreview | null;
-    trendingMovies: MediaPreview[];
-    trendingTV: MediaPreview[];
-    popularMovies: MediaPreview[];
-    topRatedMovies: MediaPreview[];
-    nowPlayingMovies: MediaPreview[];
-    upcomingMovies: MediaPreview[];
-  };
+let mockDiscover: {
+  data: DiscoverData | null;
   loading: boolean;
-  error: string | null;
-  source: "live" | "fixtures";
+  railsLoading?: boolean;
 } = {
   data: null,
-  loading: false,
-  error: null,
-  source: "fixtures",
+  loading: true,
 };
 
+const openBrowse = vi.fn();
+const openDetail = vi.fn();
+let mockContinueWatching: WatchHistoryRecord[] = [];
 let mockServices: {
-  ai: { recommend: typeof mockRecommend } | null;
-  tmdb: { search: typeof mockTmdbSearch } | null;
-} = {
-  ai: null,
-  tmdb: null,
-};
+  tmdb: unknown;
+  ai: { recommend: ReturnType<typeof vi.fn> } | null;
+} = { tmdb: null, ai: null };
 
-function railId(title: string): string {
-  return `rail:${title}`;
-}
-
-function mkItem(
-  id: string,
-  title: string,
-  overrides: Partial<MediaPreview> = {},
-): MediaPreview {
-  return {
-    id,
-    type: "movie",
-    title,
-    ...overrides,
-  };
-}
-
-function mkResume(mediaId: string, percent: number): WatchHistoryRecord {
-  return {
-    id: `${mediaId}:resume`,
-    mediaId,
-    episodeId: null,
-    progressSeconds: Math.round(1000 * percent),
-    durationSeconds: 1000,
-    completed: percent >= 0.95,
-    lastWatched: "2026-01-01T00:00:00Z",
-    streamQuality: null,
-    preview: mkItem(mediaId, `Continue ${mediaId}`),
-  };
-}
+vi.mock("../data/discover", () => ({
+  // Default railsLoading to false (the settled state) so tests that don't set it
+  // match the real non-optional field rather than leaving it undefined.
+  useDiscover: () => ({ railsLoading: false, ...mockDiscover }),
+}));
 
 vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({
-    openBrowse: mockOpenBrowse,
-    continueWatching: mockContinueWatching,
     services: mockServices,
+    openBrowse,
+    openDetail,
+    continueWatching: mockContinueWatching,
   }),
 }));
 
-vi.mock("../data/discover", () => ({
-  useDiscover: () => mockDiscoverState,
-}));
-
+let serverModeOn = false;
 vi.mock("../lib/serverMode", () => ({
-  isServerMode: () => mockServerMode,
+  isServerMode: () => serverModeOn,
 }));
 
+const curateServerAI = vi.fn();
 vi.mock("../lib/serverApi", () => ({
-  curateServerAI: (...args: unknown[]) => mockCurateServerAI(...args),
+  curateServerAI: (...args: unknown[]) => curateServerAI(...args),
 }));
 
-// Child components are mocked so tests stay deterministic and we can inspect
-// branch-visible props.
+// Child doubles. Each renders its title/props so the parent wiring is testable.
 vi.mock("../components/HeroSpotlight", () => ({
-  HeroSpotlight: ({ items, onPlay }: any) => (
-    <div>
-      <div data-testid="hero-item-count">{items.length}</div>
-      <div data-testid="hero-items">{items.map((item: MediaPreview) => item.id).join("|")}</div>
-      {items.map((item: MediaPreview) => (
-        <button key={item.id} type="button" onClick={() => onPlay?.(item)}>
-          hero:{item.id}
-        </button>
-      ))}
+  HeroSpotlight: ({ items, onPlay, onDetails }: any) => (
+    <div data-testid="hero">
+      <span data-testid="hero-count">{items.length}</span>
+      <button onClick={() => onPlay?.(items[0])}>hero-play</button>
+      <button onClick={() => onDetails?.(items[0])}>hero-details</button>
     </div>
   ),
 }));
 
-vi.mock("../components/MoodStrip", () => ({
-  MoodStrip: ({
-    onCurate,
-    loading,
-    status,
-    error,
-    aiAvailable,
-  }: {
-    onCurate: (prompt: string) => void;
-    loading: boolean;
-    status: string | null;
-    error: string | null;
-    aiAvailable: boolean;
-  }) => (
-    <div>
-      <button type="button" onClick={() => onCurate(mockMoodPrompt)}>
-        run mood
-      </button>
-      <span data-testid="mood-loading">{loading ? "loading" : "idle"}</span>
-      <span data-testid="mood-status">{status ?? ""}</span>
-      <span data-testid="mood-error">{error ?? ""}</span>
-      <span data-testid="mood-ai">{aiAvailable ? "ai" : "no"}</span>
+vi.mock("../components/ContinueWatchingRail", () => ({
+  ContinueWatchingRail: ({ records, onResume }: any) => (
+    <div data-testid="cw-rail">
+      <span data-testid="cw-count">{records.length}</span>
+      {records.map((r: any) => (
+        <button key={r.id} onClick={() => onResume?.(r.preview)}>
+          cw-{r.id}
+        </button>
+      ))}
     </div>
   ),
 }));
 
 vi.mock("../components/Rail", () => ({
-  Rail: ({
-    title,
-    items,
-    onSelect,
-    onSeeAll,
-  }: {
-    title: string;
-    items: MediaPreview[];
-    onSelect?: (item: MediaPreview) => void;
-    onSeeAll?: () => void;
-  }) => (
-    <section data-testid={`rail:${title}`}>
-      <h3>{title}</h3>
-      {items.map((item: MediaPreview) => (
-        <button
-          key={`${item.type}:${item.id}`}
-          type="button"
-          onClick={() => onSelect?.(item)}
-          data-id={item.id}
-        >
-          {title}:{item.id}
+  Rail: ({ title, items, onSelect, onSeeAll, progressById }: any) => (
+    <div data-testid="rail" data-title={title}>
+      <span data-testid="rail-title">{title}</span>
+      <span data-testid="rail-count">{items.length}</span>
+      <span data-testid="rail-has-seeall">{String(onSeeAll != null)}</span>
+      <span data-testid="rail-progress">{JSON.stringify(progressById ?? null)}</span>
+      {items.map((it: MediaPreview) => (
+        <button key={it.id} onClick={() => onSelect?.(it)}>
+          item-{it.id}
         </button>
       ))}
-      {onSeeAll ? <button type="button" onClick={onSeeAll}>see-all</button> : null}
-    </section>
+      {onSeeAll && <button onClick={() => onSeeAll()}>seeall-{title}</button>}
+    </div>
   ),
 }));
 
 import { Discover } from "./Discover";
 
+// --- fixtures ---------------------------------------------------------------
+
+function preview(id: string, over: Partial<MediaPreview> = {}): MediaPreview {
+  return { id, type: "movie", title: `Title ${id}`, ...over };
+}
+
+function fullData(): DiscoverData {
+  return {
+    hero: preview("hero1", { backdropPath: "/bd.jpg", type: "movie" }),
+    trendingMovies: [
+      preview("tm1", { backdropPath: "/a.jpg" }),
+      preview("tm2"),
+    ],
+    trendingTV: [preview("tv1", { type: "series" })],
+    popularMovies: [preview("pm1")],
+    topRatedMovies: [preview("tr1")],
+    nowPlayingMovies: [preview("np1")],
+    upcomingMovies: [preview("up1")],
+  };
+}
+
+function historyRecord(
+  id: string,
+  progress: number,
+  duration: number | null,
+): WatchHistoryRecord {
+  return {
+    id,
+    mediaId: id,
+    episodeId: null,
+    progressSeconds: progress,
+    durationSeconds: duration,
+    completed: false,
+    lastWatched: new Date().toISOString(),
+    streamQuality: null,
+    preview: preview(id),
+  };
+}
+
 beforeEach(() => {
-  mockOpenBrowse.mockClear();
-  mockRecommend.mockReset();
-  mockCurateServerAI.mockReset();
-  mockTmdbSearch.mockReset();
+  mockDiscover = { data: null, loading: true };
   mockContinueWatching = [];
-  mockServerMode = false;
-  mockMoodPrompt = "thriller 2010s best";
-  mockServices = {
-    ai: null,
-    tmdb: null,
-  };
-  mockDiscoverState = {
-    loading: false,
-    error: null,
-    source: "fixtures",
-    data: {
-      hero: mkItem("hero1", "Hero One", { backdropPath: "/hero.jpg" }),
-      trendingMovies: [
-        mkItem("hero1", "Hero One", { backdropPath: "/hero.jpg" }),
-        mkItem("trend1", "Trend One", { backdropPath: "/tm.jpg" }),
-      ],
-      trendingTV: [],
-      popularMovies: [mkItem("popular1", "Popular One")],
-      topRatedMovies: [mkItem("top1", "Top One")],
-      nowPlayingMovies: [mkItem("now1", "Now One")],
-      upcomingMovies: [mkItem("up1", "Up One")],
-    },
-  };
+  mockServices = { tmdb: null, ai: null };
+  serverModeOn = false;
+  openBrowse.mockReset();
+  openDetail.mockReset();
+  curateServerAI.mockReset();
 });
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("Discover — loading", () => {
-  it("renders the loading skeleton when discover data is loading", () => {
-    mockDiscoverState = { data: null, loading: true, error: null, source: "fixtures" };
+describe("Discover skeleton", () => {
+  it("renders the cold-start skeleton while loading", () => {
+    mockDiscover = { data: null, loading: true };
     const { container } = render(<Discover />);
-    expect(container.querySelector(".discover")).toBeTruthy();
-    expect(container.querySelector(".skel-hero")).toBeTruthy();
+    expect(container.querySelector(".skel-hero")).not.toBeNull();
+    // three redacted rails, six cards each
     expect(container.querySelectorAll(".skel-rail")).toHaveLength(3);
+    expect(container.querySelectorAll(".skel-card")).toHaveLength(18);
+    expect(screen.queryByTestId("hero")).toBeNull();
+  });
+
+  it("renders the skeleton when not loading but data is still null", () => {
+    mockDiscover = { data: null, loading: false };
+    const { container } = render(<Discover />);
+    expect(container.querySelector(".skel-hero")).not.toBeNull();
   });
 });
 
-describe("Discover — content", () => {
-  it("renders hero, continue watching, and rails with hero dedupe", async () => {
-    const user = userEvent.setup();
-    const onSelect = vi.fn();
-    mockContinueWatching = [mkResume("resume-a", 0.5), mkResume("resume-b", 0.01), mkResume("resume-c", 0.97)];
-    mockDiscoverState = {
-      ...mockDiscoverState,
-      data: {
-        hero: mkItem("hero-main", "Hero One", { backdropPath: "/hero.jpg" }),
-        trendingMovies: [
-          mkItem("hero-main", "Hero One", { backdropPath: "/hero-dup.jpg" }),
-          mkItem("trend1", "Trend One", { backdropPath: "/trend1.jpg" }),
-          mkItem("hero-no-backdrop", "Hero No Backdrop", { backdropPath: null }),
-        ],
-        trendingTV: [mkItem("hero-main", "Hero TV", { type: "series", backdropPath: "/tv.jpg" })],
-        popularMovies: [mkItem("popular1", "Popular One")],
-        topRatedMovies: [mkItem("top1", "Top One")],
-        nowPlayingMovies: [mkItem("now1", "Now One")],
-        upcomingMovies: [mkItem("up1", "Up One")],
-      },
-    };
-
-    render(<Discover onSelect={onSelect} />);
-
-    expect(screen.getByTestId("hero-item-count")).toHaveTextContent("3");
-    expect(screen.getByTestId("hero-items")).toHaveTextContent("hero-main|trend1|hero-main");
-
-    const trendingMoviesRail = screen.getByTestId(railId("Trending Movies"));
-    expect(trendingMoviesRail).toHaveTextContent("Trending Movies:trend1");
-    expect(trendingMoviesRail).not.toHaveTextContent("Trending Movies:hero-main");
-
-    const continueRail = screen.getByTestId(railId("Continue Watching"));
-    const resumeButton = within(continueRail).getByRole("button", {
-      name: "Continue Watching:resume-a",
-    });
-    expect(resumeButton).toBeInTheDocument();
-    expect(resumeButton).toHaveAttribute("data-id", "resume-a");
-    await user.click(resumeButton);
-    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: "resume-a" }));
-  });
-
-  it("renders correctly when no hero is available", () => {
-    mockDiscoverState = {
-      ...mockDiscoverState,
-      data: {
-        hero: null,
-        trendingMovies: [
-          mkItem("trend1", "Trend One", { backdropPath: "/tm.jpg" }),
-          mkItem("trend2", "Trend Two", { backdropPath: "/tm2.jpg" }),
-        ],
-        trendingTV: [mkItem("tv1", "TV One", { type: "series", backdropPath: "/tv.jpg" })],
-        popularMovies: [mkItem("popular1", "Popular One")],
-        topRatedMovies: [mkItem("top1", "Top One")],
-        nowPlayingMovies: [mkItem("now1", "Now One")],
-        upcomingMovies: [mkItem("up1", "Up One")],
-      },
-    };
-
+describe("Discover loaded", () => {
+  it("renders hero and all rails when data is present", () => {
+    mockDiscover = { data: fullData(), loading: false };
     render(<Discover />);
-    expect(screen.queryByTestId("hero-item-count")).not.toBeInTheDocument();
-    const trendingMoviesRail = screen.getByTestId(railId("Trending Movies"));
-    expect(trendingMoviesRail).toHaveTextContent("Trending Movies:trend1");
-    expect(trendingMoviesRail).toHaveTextContent("Trending Movies:trend2");
-  });
-});
+    expect(screen.getByTestId("hero")).toBeInTheDocument();
 
-describe("Discover — no AI mood path", () => {
-  it("opens discover browse with filters for mood keywords", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt =
-      "mystery thriller sci-fi road adventure feel-good animated family 2010s best mind-bending";
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-
-    expect(screen.getByTestId("mood-status")).toHaveTextContent(
-      "No AI provider is configured, so this opened a filter-based browse.",
+    const titles = screen.getAllByTestId("rail-title").map((n) => n.textContent);
+    expect(titles).toEqual(
+      expect.arrayContaining([
+        "Top 10 Movies",
+        "Top 10 TV Shows",
+        "Popular Movies",
+        "Top Rated Movies",
+        "Now Playing",
+        "Upcoming",
+      ]),
     );
-    expect(mockOpenBrowse).toHaveBeenCalledWith({
-      kind: "discover",
-      type: "movie",
-      filters: expect.objectContaining({
-        genreIds: [9648, 53, 878, 12, 35, 16, 10751],
-        yearGTE: 2010,
-        yearLTE: 2019,
-        minRating: 7,
-        minVotes: null,
-        runtimeLTE: null,
-        originalLanguage: null,
-        sortBy: SortOption.ratingDesc,
-      }),
-    });
-    expect(screen.getByTestId("mood-ai")).toHaveTextContent("no");
+    // "Describe a vibe" moved to Search; no mood rail on Discover.
+    expect(titles).not.toContain("Mood picks");
   });
 
-  it("opens browse with classic-era filters", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "classic 1990s noir";
+  it("holds a titled skeleton for a category rail still streaming in (progressive)", () => {
+    // Trending resolved (hero + Top 10 present) but Popular hasn't yet.
+    const data = { ...fullData(), popularMovies: [] };
+    mockDiscover = { data, loading: false, railsLoading: true };
+    const { container } = render(<Discover />);
+    // A skeleton placeholder (titled, with skel cards) holds Popular's row.
+    expect(container.querySelectorAll(".skel-card").length).toBeGreaterThan(0);
+    // It's a skeleton, not the (mocked) Rail - so no rail-title for Popular yet,
+    // while a populated category still renders its real rail.
+    const railTitles = screen.getAllByTestId("rail-title").map((n) => n.textContent);
+    expect(railTitles).not.toContain("Popular Movies");
+    expect(railTitles).toContain("Now Playing");
+  });
 
+  it("hides an empty category rail once loading settles (no skeleton)", () => {
+    const data = { ...fullData(), popularMovies: [] };
+    mockDiscover = { data, loading: false, railsLoading: false };
+    const { container } = render(<Discover />);
+    expect(container.querySelector(".skel-card")).toBeNull();
+    const railTitles = screen.getAllByTestId("rail-title").map((n) => n.textContent);
+    expect(railTitles).not.toContain("Popular Movies");
+  });
+
+  it("hides the hero when data.hero is null", () => {
+    mockDiscover = { data: { ...fullData(), hero: null }, loading: false };
     render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-
-    expect(screen.getByTestId("mood-status")).toHaveTextContent(
-      "No AI provider is configured, so this opened a filter-based browse.",
-    );
-    expect(mockOpenBrowse).toHaveBeenCalledWith({
-      kind: "discover",
-      type: "movie",
-      filters: expect.objectContaining({
-        genreIds: [9648],
-        yearGTE: null,
-        yearLTE: 1999,
-        minRating: null,
-        sortBy: SortOption.popularityDesc,
-      }),
-    });
+    expect(screen.queryByTestId("hero")).toBeNull();
   });
 
-  it("defaults filters when no recognizable mood tokens are found", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "a random cozy prompt";
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-
-    expect(mockOpenBrowse).toHaveBeenCalledWith({
-      kind: "discover",
-      type: "movie",
-      filters: expect.objectContaining({
-        genreIds: [35],
-        yearGTE: null,
-        yearLTE: null,
-        minRating: null,
-        minVotes: null,
-        runtimeLTE: null,
-        originalLanguage: null,
-        sortBy: SortOption.popularityDesc,
-      }),
-    });
-  });
-
-  it("handles older-era vibe keywords with non-1990s year filtering", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "older";
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-
-    expect(mockOpenBrowse).toHaveBeenCalledWith({
-      kind: "discover",
-      type: "movie",
-      filters: expect.objectContaining({
-        yearLTE: 1989,
-      }),
-    });
-  });
-});
-
-describe("Discover — server AI mood path", () => {
-  it("uses server recommendations and enables See all on the result rail", async () => {
-    const user = userEvent.setup();
-    const vibe = "server picks this week";
-    mockServerMode = true;
-    mockMoodPrompt = vibe;
-    mockCurateServerAI.mockResolvedValue({
-      items: [mkItem("s1", "Server Pick"), mkItem("s2", "Server Two")],
-    });
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-
-    expect(await screen.findByText("2 titles matched.")).toBeInTheDocument();
-    const title = `Mood picks for “${vibe}”`;
-    const moodRail = screen.getByTestId(railId(title));
-    expect(within(moodRail).getByRole("button", { name: `${title}:s1` })).toBeInTheDocument();
-    expect(within(moodRail).getByRole("button", { name: `${title}:s2` })).toBeInTheDocument();
-
-    await user.click(within(moodRail).getByRole("button", { name: "see-all" }));
-    expect(mockOpenBrowse).toHaveBeenCalledWith({
-      kind: "search",
-      type: null,
-      query: vibe,
-    });
-  });
-
-  it("reports no-match when server recommendations are empty", async () => {
-    const user = userEvent.setup();
-    mockServerMode = true;
-    mockMoodPrompt = "server no matches";
-    mockCurateServerAI.mockResolvedValue({ items: [] });
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-    expect(await screen.findByText("The assistant returned titles, but none could be matched.")).toBeInTheDocument();
-  });
-
-  it("surfaces curateServerAI errors in the mood status", async () => {
-    const user = userEvent.setup();
-    mockServerMode = true;
-    mockMoodPrompt = "server error";
-    mockCurateServerAI.mockRejectedValue(new Error("server failed"));
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-    expect(await screen.findByText("server failed")).toBeInTheDocument();
-  });
-
-  it("surfaces non-Error server errors in the mood status", async () => {
-    const user = userEvent.setup();
-    mockServerMode = true;
-    mockMoodPrompt = "server string";
-    mockCurateServerAI.mockRejectedValue("server string failure");
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-    expect(await screen.findByText("server string failure")).toBeInTheDocument();
-  });
-});
-
-describe("Discover — local AI mood path", () => {
-  it("resolves TMDB-backed recommendations, picks best match, and deduplicates", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "local sorted dedupe";
-    const recs: AIMovieRecommendation[] = [
-      { title: "Match Me", mediaType: "movie", year: 2022, mediaId: "ignore-1", posterPath: "/a.jpg" },
-      { title: "Match Me", mediaType: "movie", year: 2022, mediaId: "ignore-2", posterPath: "/b.jpg" },
-      { title: "Missing", mediaType: "movie", year: 2021, mediaId: "ignore-3", posterPath: null },
+  it("keeps a backdrop-having duplicate in the hero even when a backdrop-less twin sorts first", () => {
+    // hero1 has no backdrop, but a trending twin (same id) does. Deduping on the
+    // first occurrence overall would drop BOTH; the backdrop version must survive.
+    const data = fullData();
+    data.hero = preview("hero1", { backdropPath: null, type: "movie" });
+    data.trendingMovies = [
+      preview("hero1", { backdropPath: "/dup.jpg" }),
+      preview("tm9", { backdropPath: "/x.jpg" }),
     ];
-
-    mockServices = {
-      ...mockServices,
-      ai: { recommend: mockRecommend },
-      tmdb: { search: mockTmdbSearch },
-    };
-    mockRecommend.mockResolvedValue({ recommendations: recs });
-    mockTmdbSearch.mockImplementation(async (query: string) => {
-      if (query === "Match Me") {
-        return {
-          items: [
-            mkItem("low-confidence", "Match Me: Extra", { year: 2022 }),
-            mkItem("exact-match", "Match Me", { year: 2022 }),
-            mkItem("near-match", "Match Me", { year: 2021 }),
-          ],
-        };
-      }
-      return { items: [] };
-    });
-
+    mockDiscover = { data, loading: false };
     render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-
-    expect(await screen.findByText("1 titles matched.")).toBeInTheDocument();
-    const title = `Mood picks for “${mockMoodPrompt}”`;
-    const moodRail = screen.getByTestId(railId(title));
-    expect(within(moodRail).getByRole("button", { name: `${title}:exact-match` })).toBeInTheDocument();
-    expect(within(moodRail).queryByRole("button", { name: `${title}:low-confidence` })).toBeNull();
-    expect(within(moodRail).queryByRole("button", { name: `${title}:near-match` })).toBeNull();
-    expect(mockTmdbSearch).toHaveBeenCalledTimes(3);
+    // hero1 (with backdrop) + tm9 = 2 spotlight items.
+    expect(screen.getByTestId("hero-count").textContent).toBe("2");
   });
 
-  it("falls back to the recommendation mediaId when TMDB is not available", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "fallback to direct";
-    mockServices = {
-      ...mockServices,
-      ai: { recommend: mockRecommend },
-      tmdb: null,
-    };
-    mockRecommend.mockResolvedValue({
-      recommendations: [
-        {
-          title: "Offline Match",
-          year: 2018,
-          mediaType: "movie",
-          mediaId: "offline-id",
-          posterPath: "/offline.jpg",
-        },
-      ],
-    });
-
+  it("keeps a movie and a TV title that share a numeric id (dedupe by type+id)", () => {
+    const data = fullData();
+    data.hero = preview("hero1", { backdropPath: "/h.jpg", type: "movie" });
+    // A TV title with the SAME id as the hero movie - must not be deduped away.
+    data.trendingTV = [
+      preview("hero1", { backdropPath: "/tv.jpg", type: "series" }),
+    ];
+    data.trendingMovies = [];
+    mockDiscover = { data, loading: false };
     render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-
-    expect(await screen.findByText("1 titles matched.")).toBeInTheDocument();
-    const title = `Mood picks for “${mockMoodPrompt}”`;
-    const moodRail = screen.getByTestId(railId(title));
-    expect(within(moodRail).getByRole("button", { name: `${title}:offline-id` })).toBeInTheDocument();
+    // Both the movie and the series survive → 2 spotlight items.
+    expect(screen.getByTestId("hero-count").textContent).toBe("2");
   });
 
-  it("surfaces no-match when recommendation items cannot be resolved", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "unresolvable";
-    mockServices = {
-      ...mockServices,
-      ai: { recommend: mockRecommend },
-      tmdb: { search: mockTmdbSearch },
-    };
-    mockRecommend.mockResolvedValue({
-      recommendations: [{ title: "Nope", mediaType: "movie", year: 2000, mediaId: null, posterPath: null }],
-    });
-    mockTmdbSearch.mockResolvedValue({ items: [] });
-
+  it("filters the hero item out of the withoutHero rails (Popular)", () => {
+    const data = fullData();
+    // hero1 is also injected into a withoutHero rail (Popular) to prove dedupe.
+    data.popularMovies = [
+      preview("hero1", { backdropPath: "/bd.jpg" }),
+      preview("pm2"),
+    ];
+    mockDiscover = { data, loading: false };
     render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-    expect(
-      await screen.findByText("The assistant returned titles, but none could be matched."),
-    ).toBeInTheDocument();
+    const popular = screen
+      .getAllByTestId("rail")
+      .find((r) => r.getAttribute("data-title") === "Popular Movies")!;
+    // hero1 removed, only pm2 left.
+    expect(within(popular).queryByText("item-hero1")).toBeNull();
+    expect(within(popular).getByText("item-pm2")).toBeInTheDocument();
   });
 
-  it("shows recommendation errors from local AI", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "local failure";
-    mockServices = {
-      ...mockServices,
-      ai: { recommend: mockRecommend },
-      tmdb: { search: mockTmdbSearch },
-    };
-    mockRecommend.mockRejectedValue(new Error("recommendation failed"));
-
+  it("keeps the true chart (incl. hero) in the ranked Top 10 rail", () => {
+    const data = fullData();
+    // The hero also tops the trending chart - the Top 10 rail must still show it
+    // as #1 (a real chart), unlike the withoutHero rails.
+    data.trendingMovies = [
+      preview("hero1", { backdropPath: "/bd.jpg" }),
+      preview("tm2"),
+    ];
+    mockDiscover = { data, loading: false };
     render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-    expect(await screen.findByText("recommendation failed")).toBeInTheDocument();
+    const top10 = screen
+      .getAllByTestId("rail")
+      .find((r) => r.getAttribute("data-title") === "Top 10 Movies")!;
+    expect(within(top10).getByText("item-hero1")).toBeInTheDocument();
+    expect(within(top10).getByText("item-tm2")).toBeInTheDocument();
   });
 
-  it("falls back to null when ai recommendation has no resolvable IDs without TMDB", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "null recommendation fields";
-    mockServices = {
-      ...mockServices,
-      ai: { recommend: mockRecommend },
-      tmdb: null,
-    };
-    mockRecommend.mockResolvedValue({
-      recommendations: [
-        {
-          title: "No Ids",
-          year: 2025,
-          mediaType: null,
-          mediaId: null,
-          posterPath: null,
-        },
-      ],
-    });
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-    expect(
-      await screen.findByText("The assistant returned titles, but none could be matched."),
-    ).toBeInTheDocument();
+  it("forwards item clicks to onSelect", async () => {
+    const onSelect = vi.fn();
+    mockDiscover = { data: fullData(), loading: false };
+    render(<Discover onSelect={onSelect} />);
+    await userEvent.click(screen.getByText("item-pm1"));
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "pm1" }),
+    );
   });
 
-  it("skips a resolution error from one recommendation and keeps the others", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "partial tmdb failures";
-    mockServices = {
-      ...mockServices,
-      ai: { recommend: mockRecommend },
-      tmdb: { search: mockTmdbSearch },
-    };
-    mockRecommend.mockResolvedValue({
-      recommendations: [
-        { title: "Good Match", mediaType: "movie", year: 2021, mediaId: "ignore-1", posterPath: "/good.jpg" },
-        { title: "Bad Search", mediaType: "movie", year: 2022, mediaId: "ignore-2", posterPath: null },
-      ],
-    });
-    mockTmdbSearch.mockImplementation(async (query: string) => {
-      if (query === "Good Match") {
-        return {
-          items: [mkItem("good-match", "Good Match", { year: 2021 })],
-        };
-      }
-      return Promise.reject(new Error("search failed"));
-    });
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-    expect(await screen.findByText("1 titles matched.")).toBeInTheDocument();
-    const title = `Mood picks for “${mockMoodPrompt}”`;
-    const moodRail = screen.getByTestId(railId(title));
-    expect(within(moodRail).getByRole("button", { name: `${title}:good-match` })).toBeInTheDocument();
-    expect(within(moodRail).queryByRole("button", { name: `${title}:bad` })).toBeNull();
-  });
-
-  it("covers title and year comparator branches for near matches", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "comparator edge case";
-    mockServices = {
-      ...mockServices,
-      ai: { recommend: mockRecommend },
-      tmdb: { search: mockTmdbSearch },
-    };
-    mockRecommend.mockResolvedValue({
-      recommendations: [
-        {
-          title: "Sort Me",
-          mediaType: null,
-          year: null,
-          mediaId: null,
-          posterPath: null,
-        },
-      ],
-    });
-    mockTmdbSearch.mockResolvedValue({
-      items: [
-        mkItem("candidate-b", "Sort Me", { year: 1998 }),
-        mkItem("candidate-a", "Sort Me: Extra", { year: 1999 }),
-      ],
-    });
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-    expect(await screen.findByText("1 titles matched.")).toBeInTheDocument();
-    const title = `Mood picks for “${mockMoodPrompt}”`;
-    const moodRail = screen.getByTestId(railId(title));
-    expect(within(moodRail).getByRole("button", { name: `${title}:candidate-b` })).toBeInTheDocument();
-  });
-
-  it("surfaces non-Error local AI failures", async () => {
-    const user = userEvent.setup();
-    mockMoodPrompt = "local string";
-    mockServices = {
-      ...mockServices,
-      ai: { recommend: mockRecommend },
-      tmdb: { search: mockTmdbSearch },
-    };
-    mockRecommend.mockRejectedValue("local string failure");
-
-    render(<Discover />);
-    await user.click(screen.getByRole("button", { name: "run mood" }));
-    expect(await screen.findByText("local string failure")).toBeInTheDocument();
+  it("wires hero onPlay/onDetails to onSelect", async () => {
+    const onSelect = vi.fn();
+    mockDiscover = { data: fullData(), loading: false };
+    render(<Discover onSelect={onSelect} />);
+    await userEvent.click(screen.getByText("hero-play"));
+    await userEvent.click(screen.getByText("hero-details"));
+    expect(onSelect).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("Discover Continue Watching", () => {
+  it("surfaces resumable items in the banner rail", () => {
+    // 50% → resumable
+    mockContinueWatching = [historyRecord("res1", 50, 100)];
+    mockDiscover = { data: fullData(), loading: false };
+    render(<Discover />);
+    const cw = screen.getByTestId("cw-rail");
+    expect(within(cw).getByText("cw-res1")).toBeInTheDocument();
+    expect(within(cw).getByTestId("cw-count").textContent).toBe("1");
+  });
+
+  it("hides the rail entirely when nothing is resumable (hasResumePoint filter)", () => {
+    mockContinueWatching = [
+      historyRecord("done", 99, 100), // 99% → excluded
+      historyRecord("fresh", 1, 100), // 1% → excluded
+    ];
+    mockDiscover = { data: fullData(), loading: false };
+    render(<Discover />);
+    // Rail is only rendered when there is something to resume.
+    expect(screen.queryByTestId("cw-rail")).toBeNull();
+  });
+
+  it("forwards a resume click to onResume (openDetail) with the preview", async () => {
+    mockContinueWatching = [historyRecord("res1", 50, 100)];
+    mockDiscover = { data: fullData(), loading: false };
+    render(<Discover />);
+    await userEvent.click(screen.getByText("cw-res1"));
+    // openDetail is the mocked store callback wired to onResume.
+    expect(openDetail).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "res1" }),
+    );
+  });
+});
+
+describe("Discover See all", () => {
+  it("opens browse with the category context for a rail", async () => {
+    mockDiscover = { data: fullData(), loading: false };
+    render(<Discover />);
+    await userEvent.click(screen.getByText("seeall-Top 10 Movies"));
+    expect(openBrowse).toHaveBeenCalledWith({
+      kind: "category",
+      type: "movie",
+      category: "trending",
+    });
+  });
+
+  it("opens browse for the trending TV rail with type series", async () => {
+    mockDiscover = { data: fullData(), loading: false };
+    render(<Discover />);
+    await userEvent.click(screen.getByText("seeall-Top 10 TV Shows"));
+    expect(openBrowse).toHaveBeenCalledWith({
+      kind: "category",
+      type: "series",
+      category: "trending",
+    });
+  });
+});
+

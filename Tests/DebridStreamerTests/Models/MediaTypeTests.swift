@@ -65,7 +65,7 @@ struct VideoQualityTests {
 
     @Test("Embedded 'sd' inside a word does not match SD quality")
     func sdTokenBoundary() {
-        // "x264" lowercased is "x264" — no bounded "sd"; titles like "Wisdom" must not match.
+        // "x264" lowercased is "x264" - no bounded "sd"; titles like "Wisdom" must not match.
         #expect(VideoQuality.parse(from: "Bosdal.Movie.x264") == .unknown)
         #expect(VideoQuality.parse(from: "Wisdom.2024.x265") == .unknown)
         // Delimited "sd" still resolves to SD.

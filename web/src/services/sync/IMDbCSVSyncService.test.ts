@@ -11,7 +11,7 @@
 // canned data is reused verbatim from the Swift tests.
 
 import { describe, expect, it } from "vitest";
-import type { MediaItem } from "../../models/media";
+import type { MediaItem, MediaPreview } from "../../models/media";
 import { IMDbCSVSyncService } from "./IMDbCSVSyncService";
 
 function makeMedia(id: string, title: string, year: number | null): MediaItem {
@@ -61,6 +61,25 @@ describe("IMDbCSVSyncService.exportCSV", () => {
     const service = new IMDbCSVSyncService();
     const output = service.exportCSV([makeMedia("tt1", "Hello, World", 2000)]);
     expect(output).toContain('tt1,"Hello, World",2000');
+  });
+
+  it("accepts MediaPreview-shaped watchlist rows", () => {
+    const service = new IMDbCSVSyncService();
+    const preview: MediaPreview = {
+      id: "tt0133093",
+      type: "movie",
+      title: "The Matrix",
+      year: 1999,
+    };
+    expect(service.exportCSV([preview])).toBe("Const,Title,Year\ntt0133093,The Matrix,1999");
+  });
+
+  it("exports TMDB fallback rows by title and year without a Const", () => {
+    const service = new IMDbCSVSyncService();
+    const output = service.exportCSV([
+      { id: "tmdb-603", title: "The Matrix", year: 1999 },
+    ]);
+    expect(output).toBe("Const,Title,Year\n,The Matrix,1999");
   });
 });
 

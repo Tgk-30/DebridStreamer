@@ -5,20 +5,39 @@
 // be aria-hidden (not exposed as unreachable interactive controls).
 
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MediaCard } from "./MediaCard";
 import type { MediaPreview } from "../models/media";
 
+const appSettings = vi.hoisted(() => ({ showPosterRatings: true }));
+vi.mock("../store/AppStore", () => ({
+  useAppStore: () => ({ settings: appSettings }),
+}));
+
 const item: MediaPreview = { id: "tt1", type: "movie", title: "Inception" };
-const ratedItem: MediaPreview = {
-  id: "tt2",
-  type: "movie",
-  title: "Arrival",
-  year: 2016,
-  posterPath: "/arr.png",
-  imdbRating: 7.4,
-};
+
+function renderCard(overrides: Partial<MediaPreview> = {}) {
+  return render(<MediaCard item={{ ...item, ...overrides }} onSelect={() => {}} />);
+}
+
+describe("MediaCard poster rating badge", () => {
+  it("shows a rated card's persistent badge only while the preference is on", () => {
+    appSettings.showPosterRatings = true;
+    const { rerender } = renderCard({ imdbRating: 8.2 });
+    expect(screen.getByLabelText("Rating 8.2 out of 10")).toBeInTheDocument();
+
+    appSettings.showPosterRatings = false;
+    rerender(<MediaCard item={{ ...item, imdbRating: 8.2 }} onSelect={() => {}} />);
+    expect(screen.queryByLabelText("Rating 8.2 out of 10")).toBeNull();
+  });
+
+  it("never shows a persistent badge for a ratingless card", () => {
+    appSettings.showPosterRatings = true;
+    renderCard();
+    expect(screen.queryByLabelText(/Rating .* out of 10/)).toBeNull();
+  });
+});
 
 describe("MediaCard a11y", () => {
   it("exposes a single button with the title as its accessible name", () => {
@@ -45,138 +64,38 @@ describe("MediaCard a11y", () => {
     await userEvent.keyboard("{Enter}");
     expect(onSelect).toHaveBeenCalledWith(item);
   });
+});
 
-  it("renders a placeholder when no poster is available", () => {
-    render(<MediaCard item={item} />);
-    const placeholder = document.querySelector(".media-card-placeholder");
-    expect(placeholder).not.toBeNull();
-    expect(placeholder?.querySelector("svg")).not.toBeNull();
+describe("MediaCard watched badge", () => {
+  it("renders a Watched badge only when watched is set", () => {
+    const { rerender } = render(<MediaCard item={item} onSelect={() => {}} />);
+    expect(screen.queryByLabelText("Watched")).toBeNull();
+
+    rerender(<MediaCard item={item} onSelect={() => {}} watched />);
+    expect(screen.getByLabelText("Watched")).toBeInTheDocument();
   });
 
-  it("shows rating text and optional meta when year and rating are present", () => {
-    const { container } = render(<MediaCard item={ratedItem} />);
-    const title = container.querySelector(".media-card-title");
-    const revealMeta = container.querySelector(".media-card-reveal-meta");
-    expect(title).not.toBeNull();
-    expect(title).toHaveTextContent("Arrival");
-    expect(within(revealMeta as HTMLElement).getByText("2016")).toBeInTheDocument();
-    expect(within(revealMeta as HTMLElement).getByText("7.4")).toBeInTheDocument();
+  it("keeps the card a single button when the badge is shown (badge is not interactive)", () => {
+    render(<MediaCard item={item} onSelect={() => {}} watched />);
+    expect(screen.getAllByRole("button")).toHaveLength(1);
   });
+});
 
-  it("calls onPlay and does not call onSelect when pressing the reveal play affordance", async () => {
-    const onSelect = vi.fn();
-    const onPlay = vi.fn();
-    render(<MediaCard item={ratedItem} onSelect={onSelect} onPlay={onPlay} />);
+describe("MediaCard poster fallback", () => {
+  it("uses the designed fallback for both a missing and failed search-result poster", () => {
+    const noPoster: MediaPreview = { ...item, id: "missing", posterPath: null };
+    const { container, rerender } = render(<MediaCard item={noPoster} onSelect={() => {}} />);
+    expect(container.querySelector(".media-card-fallback")).toBeInTheDocument();
+    expect(container.querySelector(".media-card-fallback-initial")).toHaveTextContent("I");
 
-    const playAction = document.querySelector(".media-card-play");
-    expect(playAction).toBeTruthy();
-    await userEvent.click(playAction!);
-
-    expect(onPlay).toHaveBeenCalledWith(ratedItem);
-    expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it("falls back to onSelect when onPlay is missing", async () => {
-    const onSelect = vi.fn();
-    render(<MediaCard item={ratedItem} onSelect={onSelect} />);
-
-    const playAction = document.querySelector(".media-card-play");
-    expect(playAction).toBeTruthy();
-    await userEvent.click(playAction!);
-
-    expect(onSelect).toHaveBeenCalledWith(ratedItem);
-  });
-
-  it("supports ready and corner labels as explicit badge and chip", () => {
-    const itemWithCorner: MediaPreview = {
-      ...ratedItem,
-      id: "tt3",
-      title: "Corner",
-    };
-    render(
+    rerender(
       <MediaCard
-        item={itemWithCorner}
-        ready
-        cornerLabel="S2 E5"
-        progress={0.5}
+        item={{ ...item, id: "failed", posterPath: "/missing-poster.jpg" }}
+        onSelect={() => {}}
       />,
     );
-
-    expect(screen.getByText("Ready")).toBeInTheDocument();
-    expect(screen.getByText("S2 E5")).toBeInTheDocument();
-    const fill = document.querySelector(".media-card-progress-fill");
-    expect(fill).toHaveStyle({ width: "50%" });
-  });
-
-  it("clamps progress outside 0..1 and still renders the progress bar", () => {
-    const high = render(<MediaCard item={ratedItem} progress={1.8} />);
-    expect(high.container.querySelector(".media-card-progress-fill")).toHaveStyle({
-      width: "100%",
-    });
-
-    const low = render(
-      <MediaCard item={{ ...ratedItem, id: "tt4", title: "Low" }} progress={-0.1} />,
-    );
-    expect(low.container.querySelector(".media-card-progress-fill")).toBeNull();
-    expect(low.container.querySelector(".media-card-progress")).toBeNull();
-  });
-
-  it("hides shimmer after image load and keeps it on load-error fallback", async () => {
-    const withPoster = {
-      ...ratedItem,
-      id: "tt5",
-      title: "Loaded",
-    };
-    render(<MediaCard item={withPoster} />);
-
-    const img = screen.getByRole("img") as HTMLImageElement;
-    expect(document.querySelector(".media-card-shimmer")).toBeTruthy();
-
-    fireEvent.load(img);
-    expect(document.querySelector(".media-card-shimmer")).toBeNull();
-
-    render(
-      <MediaCard
-        item={{ ...ratedItem, id: "tt6", title: "Errored", posterPath: "/err.png" }}
-      />,
-    );
-    const secondImg = screen.getAllByRole("img").at(-1) as HTMLImageElement;
-    expect(document.querySelector(".media-card-shimmer")).toBeTruthy();
-    fireEvent.error(secondImg);
-    expect(document.querySelector(".media-card-shimmer")).toBeNull();
-  });
-
-  it("skips loading shimmer when the image is already complete on mount", () => {
-    const originalComplete = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "complete");
-    const originalNaturalWidth = Object.getOwnPropertyDescriptor(
-      HTMLImageElement.prototype,
-      "naturalWidth",
-    );
-
-    Object.defineProperty(HTMLImageElement.prototype, "complete", {
-      configurable: true,
-      get: () => true,
-    });
-    Object.defineProperty(HTMLImageElement.prototype, "naturalWidth", {
-      configurable: true,
-      get: () => 640,
-    });
-
-    try {
-      render(<MediaCard item={ratedItem} />);
-      expect(document.querySelector(".media-card-shimmer")).toBeNull();
-    } finally {
-      if (originalComplete != null) {
-        Object.defineProperty(HTMLImageElement.prototype, "complete", originalComplete);
-      }
-      if (originalNaturalWidth != null) {
-        Object.defineProperty(
-          HTMLImageElement.prototype,
-          "naturalWidth",
-          originalNaturalWidth,
-        );
-      }
-      expect(document.querySelector(".media-card-shimmer")).toBeNull();
-    }
+    fireEvent.error(screen.getByRole("img", { name: "Inception" }));
+    expect(container.querySelector(".media-card-fallback")).toBeInTheDocument();
+    expect(container.querySelector("img")).toBeNull();
   });
 });

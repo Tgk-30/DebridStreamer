@@ -151,10 +151,15 @@ const credentialLiteralPattern =
 
 // Obvious NON-secret test fixtures that happen to pattern-match the generic
 // name=value heuristic (mixed-case, hyphenated strings ≥16 chars). Allowlisted
-// by exact value so both the working tree AND historical blobs pass — the string
+// by exact value so both the working tree AND historical blobs pass - the string
 // is a deliberate, self-labelled placeholder, never a real credential.
 const allowlistedLiterals = new Set([
   "omdb-secret-key-DO-NOT-LEAK-xyz",
+  // Swift string-interpolation cache key in AIAssistantManager.swift - the
+  // variable is named cacheKey and the interpolated value is >=16 chars, so
+  // the generic heuristic fires. It is a verdict-cache map key, not a
+  // credential. Allowlisted by exact value because the blob is in history.
+  "\\(item.id)|\\(personalizationEnabled)",
 ]);
 
 function looksLikeSecretLiteral(value) {

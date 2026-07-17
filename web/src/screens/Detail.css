@@ -1,20 +1,27 @@
-/* Detail screen — overlay surface that scrolls over the app content. */
+/* Detail screen - overlay surface that scrolls over the app content. */
 
 /* Fixed over the content viewport (to the right of the 78px nav rail) so it
  * fully covers the screen behind it regardless of the underlying scroll. */
 .detail {
   position: fixed;
-  inset: 0 0 0 var(--nav-rail-width, 78px);
+  /* Sit to the right of the floating glass rail (which stays visible + frosts
+     the page behind it), not flush against the window edge. */
+  inset: 0 0 0 var(--nav-safe-left, 78px);
   z-index: 20;
   overflow-y: auto;
   scroll-padding-top: var(--sp-xl);
+  /* Opaque immersive surface: nothing behind it can bleed through. Keep the
+     soft aurora glow + subtle glass hint over a solid deep base. */
   background:
-    radial-gradient(circle at 16% 14%, rgba(var(--accent-rgb), 0.12), transparent 32%),
-    color-mix(in srgb, var(--bg-1) 72%, transparent);
-  backdrop-filter: blur(24px) saturate(1.22);
-  -webkit-backdrop-filter: blur(24px) saturate(1.22);
+    radial-gradient(circle at 16% 10%, rgba(var(--accent-rgb), 0.16), transparent 38%),
+    radial-gradient(circle at 88% 4%, rgba(var(--accent-secondary-rgb), 0.1), transparent 34%),
+    var(--bg-1);
+  /* No backdrop-filter here on purpose: the fully opaque base prevents
+     background bleed, while a full-viewport filter re-rasterizes the screen
+     every frame anything underneath animates. The aurora radials supply the
+     glass hint without that GPU cost. */
 }
-/* The container takes programmatic focus on open (a11y) — no ring on the
+/* The container takes programmatic focus on open (a11y) - no ring on the
    surface itself; interactive children keep their own focus-visible rings. */
 .detail:focus {
   outline: none;
@@ -53,6 +60,110 @@
   scroll-margin-top: var(--sp-xl);
 }
 
+.detail-download-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  align-self: flex-start;
+  width: min(620px, 100%);
+  padding: var(--sp-md);
+  border-radius: var(--r-md);
+}
+.detail-download-menu-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+.detail-download-menu-head p,
+.detail-download-track-note,
+.detail-download-notice {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.detail-download-modes,
+.detail-download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.detail-download-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+/* Only the side-by-side language fields share a row and need to flex. The
+   Resolution field is a direct child of the column-direction menu, where
+   `flex: 1 1 180px` would read as a 180px min HEIGHT that then grows - which is
+   what left a large empty gap above the size estimate. */
+.detail-download-language-fields .detail-download-field {
+  flex: 1 1 180px;
+}
+.detail-download-field select,
+.detail-download-field input {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 9px;
+  font: inherit;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.08));
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+}
+.detail-download-field select:focus-visible,
+.detail-download-field input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(140, 133, 250, 0.5));
+}
+.detail-download-optimize {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm);
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.025);
+}
+.detail-download-profile,
+.detail-download-language-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.detail-download-estimate {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--sp-sm) var(--sp-md);
+  border: 0.75px solid rgba(var(--accent-rgb), 0.35);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  background: rgba(var(--accent-rgb), 0.09);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.detail-download-estimate strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.detail-download-source {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+}
+.detail-download-track-note {
+  margin-top: 0;
+}
+.detail-download-notice {
+  color: var(--accent-secondary);
+}
+
 @media (max-width: 699px) {
   .detail {
     inset: 0 0 calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + var(--sp-xs)) 0;
@@ -64,4 +175,134 @@
     padding: var(--sp-lg);
     padding-bottom: var(--sp-xl);
   }
+}
+
+/* ── Episode streams page - a dedicated view for a series' episode streams,
+      opened from the episode picker instead of loading inline at the bottom. */
+.episode-streams {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding: clamp(16px, 4vw, 48px) 16px;
+  overflow-y: auto;
+  /* Opaque base, no full-viewport filter. */
+  background: var(--bg-1);
+  animation: episode-streams-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes episode-streams-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .episode-streams { animation: none; }
+}
+.episode-streams-panel {
+  width: min(880px, 100%);
+  align-self: flex-start;
+}
+.episode-streams-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 6px 0 12px;
+}
+.episode-streams-back {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-primary, #fff);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.07));
+  border: 0.75px solid var(--glass-border, rgba(255, 255, 255, 0.14));
+  border-radius: var(--r-pill, 999px);
+  padding: 9px 16px 9px 12px;
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s;
+}
+.episode-streams-back:hover {
+  background: var(--glass-tint-hover, rgba(255, 255, 255, 0.12));
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+.episode-streams-title {
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Watch trailer" affordance - sits between the hero and the ratings/analysis. */
+.detail-trailer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+
+/* Rate control - the stars sit behind an explicit "Rate" button until revealed. */
+.detail-rate {
+  align-self: flex-start;
+}
+.detail-rate-btn {
+  font-weight: 600;
+}
+.detail-rate-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+.detail-rate-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
+}
+.detail-rate-done {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--accent);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.08));
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.detail-rate-done:hover {
+  background: var(--glass-tint-hover, rgba(255, 255, 255, 0.14));
+}
+
+/* Honest gate for the "Will I like this?" AI verdict when no AI provider is
+   configured - a quiet hint with a link into Settings, never a dead feature. */
+.detail-ai-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.detail-ai-hint-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.detail-ai-hint-link:hover {
+  text-decoration: underline;
 }

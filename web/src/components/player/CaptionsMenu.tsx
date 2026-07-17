@@ -20,7 +20,7 @@ import type { UseSubtitleTracks } from "./useSubtitleTracks";
 import type { SubtitleSearchParams } from "../../services/subtitles/OpenSubtitlesClient";
 
 /** Caption text-color presets (white + the common high-legibility tints). */
-const SUBTITLE_COLORS = ["#ffffff", "#ffe066", "#9be7ff", "#9bffb0"];
+export const SUBTITLE_COLORS = ["#ffffff", "#ffe066", "#9be7ff", "#9bffb0"];
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -89,7 +89,7 @@ export function CaptionsMenu({
   return (
     <div
       ref={menuRef}
-      className="captions-menu glass-raised glass-lit"
+      className="captions-menu glass-lit"
       role="dialog"
       aria-modal="true"
       aria-label="Subtitles"
@@ -161,7 +161,7 @@ export function CaptionsMenu({
         </div>
       )}
 
-      {/* Subtitle appearance (font size / color / background — persisted) */}
+      {/* Subtitle appearance (font size / color / background - persisted) */}
       <div className="captions-section captions-appearance">
         <span className="t-secondary">Appearance</span>
         <div className="captions-appearance-row">

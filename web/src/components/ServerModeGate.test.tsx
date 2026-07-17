@@ -559,7 +559,7 @@ describe("ServerModeGate", () => {
 
       await screen.findByText("Create owner account");
       // With an initialSetupToken present, the visible Setup token input is hidden
-      // (the token rides along silently) — only Username/Password fields show.
+      // (the token rides along silently) - only Username/Password fields show.
       expect(screen.queryByText("Setup token")).not.toBeInTheDocument();
 
       await user.type(screen.getByLabelText("Username"), "owner");

@@ -1,11 +1,11 @@
-// HashListDialog — import / export / AI-emit of a shareable hash list.
+// HashListDialog - import / export / AI-emit of a shareable hash list.
 //
 // Three tabs:
-//  • Import — paste a hash-list string (dshl1:… or raw hashes), bulk-add each
+//  • Import - paste a hash-list string (dshl1:… or raw hashes), bulk-add each
 //    magnet to the user's debrid (so they get cached), with progress + summary.
-//  • Export — produce a shareable string from the user's debrid library (the
+//  • Export - produce a shareable string from the user's debrid library (the
 //    torrents passed in), copyable to the clipboard.
-//  • Generate (AI) — ask the assistant for N titles for a prompt, resolve them
+//  • Generate (AI) - ask the assistant for N titles for a prompt, resolve them
 //    to infoHashes, and produce a one-click-hydratable hash list.
 //
 // Everything debrid/indexer/AI is Tauri-gated upstream (this dialog is only
@@ -218,7 +218,7 @@ function ExportTab({ torrents }: { torrents: DebridTorrent[] }) {
   if (!shareable) {
     return (
       <p className="hl-note t-secondary">
-        Your debrid library is empty — add some torrents first, then export them
+        Your debrid library is empty - add some torrents first, then export them
         as a shareable hash list.
       </p>
     );

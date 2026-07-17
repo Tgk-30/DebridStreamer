@@ -1,11 +1,11 @@
-// Assistant screen — a one-shot AI recommend call wired to a ported provider.
+// Assistant screen - a one-shot AI recommend call wired to a ported provider.
 //
 // When an AI provider is configured (Settings → AI), submitting a prompt calls
 // provider.recommend(...) and renders the returned recommendations (title · year
 // · reason · score). Without a key it shows a clear "configure an AI provider"
 // state. The provider is built read-only from settings (services.ai). The DB-
 // backed context assembler / candidate enrichment is deferred to the storage
-// port — we pass an empty candidate set, which the provider handles.
+// port - we pass an empty candidate set, which the provider handles.
 
 import { useState } from "react";
 import { useAppStore } from "../store/AppStore";
@@ -59,7 +59,7 @@ export function Assistant() {
 
   if (!aiAvailable) {
     return (
-      <div className="assistant-screen">
+      <div className="assistant-screen is-empty">
         <h1 className="assistant-h1">AI Assistant</h1>
         <EmptyState
           icon="assistant"

@@ -1,4 +1,4 @@
-// storage/index — getStore() / getSecretStore() backend selection.
+// storage/index - getStore() / getSecretStore() backend selection.
 //
 // index.ts holds process-wide singletons, so each test resets the module
 // registry (vi.resetModules) and re-imports a fresh copy after configuring the
@@ -24,6 +24,15 @@ vi.mock("../lib/tauri", () => ({
 vi.mock("./DexieStore", () => ({
   DexieStore: class {
     readonly kind = "dexie";
+    readonly name: string;
+    // Mirror the real signature: default arg is the legacy "debridstreamer" DB.
+    constructor(name = "debridstreamer") {
+      this.name = name;
+    }
+    async close() {}
+    async open() {
+      return this;
+    }
   },
 }));
 
@@ -34,11 +43,8 @@ vi.mock("./RemoteStore", () => ({
   },
 }));
 
-vi.mock("./KeychainSecretStore", () => ({
-  KeychainSecretStore: class {
-    readonly kind = "keychain";
-    constructor(public readonly fallback: unknown) {}
-  },
+vi.mock("./keychainMigration", () => ({
+  migrateKeychainSecretsOnce: async () => {},
 }));
 
 async function freshIndex() {
@@ -89,20 +95,20 @@ describe("getSecretStore()", () => {
     expect(secret.kind).toBe("dexie");
   });
 
-  it("wraps Dexie in a KeychainSecretStore under Tauri", async () => {
+  it("uses a migration-gated LOCAL store under Tauri (no OS keychain)", async () => {
     tauri = true;
     const mod = await freshIndex();
-    const secret = mod.getSecretStore() as unknown as { kind: string; fallback: { kind: string } };
-    expect(secret.kind).toBe("keychain");
-    // The keychain store keeps the Dexie instance only for legacy migration.
-    expect(secret.fallback.kind).toBe("dexie");
+    const secret = mod.getSecretStore() as unknown as { dexie: { kind: string } };
+    // Desktop secrets live in the same Dexie store as the browser build; the
+    // wrapper only gates operations on the one-time keychain->local migration.
+    expect(secret.dexie.kind).toBe("dexie");
   });
 
   it("returns the RemoteStore itself as the SecretStore in Server Mode (write-only)", async () => {
     serverURL = "http://srv";
     const mod = await freshIndex();
     const secret = mod.getSecretStore() as unknown as { kind: string };
-    // Same instance as the store — RemoteStore implements both interfaces.
+    // Same instance as the store - RemoteStore implements both interfaces.
     expect(secret).toBe(mod.getStore());
     expect(secret.kind).toBe("remote");
   });
@@ -120,13 +126,27 @@ describe("getSecretStore()", () => {
     expect(mod.getSecretStore()).toBe(mod.getSecretStore());
   });
 
-  it("shares one underlying Dexie instance between the store and the keychain fallback", async () => {
+  it("shares one underlying Dexie instance between the store and the secret store", async () => {
     tauri = true;
     const mod = await freshIndex();
     const store = mod.getStore();
-    const secret = mod.getSecretStore() as unknown as { fallback: unknown };
-    // getSecretStore's keychain fallback is the very same DexieStore getStore() returns.
-    expect(secret.fallback).toBe(store);
+    const secret = mod.getSecretStore() as unknown as { dexie: unknown };
+    // getSecretStore's backing Dexie is the very same instance getStore() returns.
+    expect(secret.dexie).toBe(store);
+  });
+
+  it("does NOT keychain-migrate a non-default profile database under Tauri", async () => {
+    tauri = true;
+    const mod = await freshIndex();
+    await mod.swapLocalProfileStore("debridstreamer_p_abc");
+    // A non-default profile DB must return the RAW Dexie secret store (kind
+    // "dexie"), never the keychain-migrating wrapper (which has no `kind`), so
+    // it can never re-read the OS keychain and absorb the owner's secrets.
+    const secret = mod.getSecretStore() as unknown as { kind?: string };
+    expect(secret.kind).toBe("dexie");
+    // The default DB, by contrast, IS wrapped (no `kind` on the wrapper).
+    await mod.swapLocalProfileStore("debridstreamer");
+    expect((mod.getSecretStore() as unknown as { kind?: string }).kind).toBeUndefined();
   });
 });
 

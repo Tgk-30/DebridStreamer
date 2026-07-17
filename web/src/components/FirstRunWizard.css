@@ -1,4 +1,4 @@
-/* Persona first-run wizard — a centered glass card over the app background. */
+/* Persona first-run wizard - a centered glass card over the app background. */
 
 .first-run {
   position: fixed;
@@ -24,13 +24,13 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(640px, 100%);
-  padding: clamp(var(--sp-xl), 4vw, 44px);
+  width: min(680px, 100%);
+  padding: clamp(var(--sp-xl), 4.5vw, 52px);
   border-radius: var(--r-lg);
   background: var(--glass-tint-hero);
   border: 0.75px solid var(--glass-border);
-  box-shadow: 0 40px 100px -28px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: 0 48px 120px -30px rgba(0, 0, 0, 0.74),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 /* Quiet escape hatch, centered under the choices (no longer a floating
@@ -65,17 +65,18 @@
 }
 
 .first-run-title {
-  margin: 0 0 6px;
-  font-size: clamp(22px, 3vw, 28px);
+  margin: 0 0 8px;
+  font-size: clamp(26px, 3.4vw, 34px);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
 }
 .first-run-sub {
-  margin: 0 0 var(--sp-lg);
-  font-size: 14px;
-  line-height: 1.5;
+  margin: 0 0 var(--sp-xl);
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--text-secondary);
-  max-width: 48ch;
+  max-width: 50ch;
 }
 
 .first-run-choices {
@@ -247,10 +248,10 @@
 }
 .first-run-primary,
 .first-run-secondary {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
   font-family: inherit;
-  padding: 10px 20px;
+  padding: 13px 28px;
   border-radius: var(--r-pill);
   cursor: pointer;
   border: 0.75px solid var(--glass-border);
@@ -544,4 +545,104 @@
 }
 .server-setup-skip-inline:hover {
   color: var(--text-primary);
+}
+
+/* ── Device-path key steps ──────────────────────────────────────────────── */
+
+/* Quiet escape under the step actions - honest, findable, not inviting. */
+.first-run-escape {
+  align-self: center;
+  min-height: 44px;
+  margin-top: var(--sp-sm);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  max-width: 46ch;
+}
+.first-run-escape:hover {
+  color: var(--text-primary);
+}
+
+.first-run-footnote {
+  margin: var(--sp-md) 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+/* Optional catalog field (OMDb) - labelled with a quiet "Optional" tag and a
+   little more breathing room from the primary TMDB field above it. */
+.first-run-field-optional {
+  margin-top: 6px;
+}
+.first-run-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.first-run-optional-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  color: var(--text-secondary);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
+  border: 0.75px solid var(--glass-border);
+}
+.first-run-hint {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* Skip-confirm warning box */
+.first-run-warn {
+  margin: 0 0 var(--sp-md);
+  padding: var(--sp-md) var(--sp-lg);
+  border-radius: var(--r-md);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  border: 0.75px solid rgba(var(--danger-rgb), 0.45);
+  background: rgba(var(--danger-rgb), 0.1);
+}
+
+.first-run-danger {
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 10px 20px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  color: var(--danger);
+  background: none;
+  border: 0.75px solid rgba(var(--danger-rgb), 0.45);
+}
+.first-run-danger:hover {
+  background: rgba(var(--danger-rgb), 0.12);
+}
+
+/* Signup + "watch setup guide" links sit on one wrapping row under a key field. */
+.first-run-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+}
+.first-run-video {
+  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
+}
+.first-run-video:hover {
+  color: var(--accent);
 }

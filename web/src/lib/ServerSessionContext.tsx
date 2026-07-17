@@ -27,9 +27,15 @@ export interface ServerProfileSummary {
   avatarColor: string | null;
   simpleMode: boolean;
   isDefault: boolean;
-  /** Kid (maturity-capped) profile — drives the picker's "Kids" badge and the
+  /** Kid (maturity-capped) profile - drives the picker's "Kids" badge and the
    *  parental-lock prompt when leaving it. */
   isKid: boolean;
+  /** Server-side household PIN set flag. The PIN itself is never exposed. */
+  hasPin?: boolean;
+  /** Warn-only rolling 30-day household bandwidth status. */
+  bandwidthCapBytes?: number | null;
+  bandwidthUsageBytes?: number;
+  bandwidthStatus?: "ok" | "approaching" | "over";
 }
 
 interface ServerSessionContextValue {
@@ -43,9 +49,9 @@ interface ServerSessionContextValue {
   transcodeAvailable: boolean;
   /** Whether the server can supply OMDb ratings for this profile (a profile,
    *  server, or env OMDb key is configured server-side). The key itself never
-   *  reaches the client — this only says the /api/omdb proxy will answer. */
+   *  reaches the client - this only says the /api/omdb proxy will answer. */
   omdbProxy: boolean;
-  /** Distribution tier this build targets — drives the onboarding flow. */
+  /** Distribution tier this build targets - drives the onboarding flow. */
   buildProfile: "family" | "friends" | "public";
 }
 

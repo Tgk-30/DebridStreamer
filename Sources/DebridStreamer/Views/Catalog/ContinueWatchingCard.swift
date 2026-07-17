@@ -99,7 +99,7 @@ struct ContinueWatchingCard: View {
             .scaleEffect(hovering ? 1.06 : 1)
     }
 
-    /// Thin inset progress bar — accent fill signals "active" resume position.
+    /// Thin inset progress bar - accent fill signals "active" resume position.
     private var progressBar: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {

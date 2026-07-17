@@ -1,26 +1,69 @@
 /* Discover screen layout + cold-start skeleton. */
 
+/* Full-width shell: the HERO renders outside the capped column so it can span
+   the true window width, and `.discover-body` carries the content cap. The old
+   design capped + left-pinned the WHOLE screen, so the hero's negative-margin
+   breakout could never escape the 1440px box - on wide windows everything
+   stopped short and the raw theme background filled the right side as a hard
+   seam (the "background color on the right" bug). */
 .discover {
   display: flex;
   flex-direction: column;
   gap: var(--sp-xl);
-  padding: var(--sp-xl);
-  /* clear the floating top-right global search field */
-  padding-top: 64px;
+  padding: 0;
+}
+
+/* The capped, CENTERED content column (rails, continue watching). Centering
+   keeps wide-window gutters symmetric instead of one empty right margin. */
+.discover-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xl);
+  padding: 0 var(--sp-xl) var(--sp-xl);
   max-width: 1440px;
-  /* Centered column so wide displays don't strand a one-sided gutter. */
+  width: 100%;
   margin-inline: auto;
 }
 
-/* Full-bleed cinematic billboard: the hero breaks out of the column padding and
-   reaches the top, with a flat top + gently rounded bottom that feathers into
-   the page — a window into the title, not a card on a page. Desktop only;
-   mobile keeps the inset card (it reads better in a narrow column). */
+/* A default desktop rail contributes about 316px to the stack: 28px title,
+   12px gap, and a 252px poster row with the scroll track's net 24px vertical
+   padding/margin. Reserve 390px so large poster-size and wrapped header cases
+   materialize without a scroll-anchor jump. */
+.discover-body > .rail {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 390px;
+}
+
+/* Without a hero above it (cold start / no artwork), the first block must still
+   clear the floating global search field. */
+.discover > .discover-body:first-child {
+  padding-top: 64px;
+}
+
+/* Full-bleed cinematic billboard: slides left UNDER the floating glass rail
+   (the app content area is padded by --nav-safe-left), which frosts it into a
+   translucent reflection, and reaches the window's right edge naturally. Flat
+   top, rounded bottom. Desktop only; mobile keeps the inset card. */
 @media (min-width: 768px) {
   .discover > .hero {
-    margin: calc(-1 * 64px) calc(-1 * var(--sp-xl)) 0;
+    margin: 0 0 0 calc(-1 * var(--nav-safe-left));
     border-radius: 0 0 var(--r-lg) var(--r-lg);
     box-shadow: 0 24px 48px -28px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Keep the hero's title/actions clear of the rail on the left edge. */
+  .discover > .hero .hero-content {
+    padding-left: calc(
+      var(--nav-safe-left) + clamp(var(--sp-lg), 1.8vw, var(--sp-xl))
+    );
+  }
+}
+
+/* Mobile: inset hero card inside side padding (the pre-restructure look). */
+@media (max-width: 767px) {
+  .discover > .hero {
+    margin: var(--sp-md) var(--sp-md) 0;
+    border-radius: var(--r-lg);
   }
 }
 
@@ -66,7 +109,7 @@
     rgba(255, 255, 255, 0.02) 70%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.4s ease-in-out 12;
 }
 
 @media (max-width: 767px) {

@@ -1,9 +1,9 @@
-// Browse screen — paginated "See all" grid + advanced filters.
+// Browse screen - paginated "See all" grid + advanced filters.
 //
 // Mounts as an overlay (like Detail) whenever the store has a `browseContext`.
-// Renders a MediaCard grid for the active context — a category (trending/
+// Renders a MediaCard grid for the active context - a category (trending/
 // popular/top-rated/…), a single genre, a free-text search, or a full
-// `discover` filter set — with load-more / infinite scroll (append pages until
+// `discover` filter set - with load-more / infinite scroll (append pages until
 // totalPages), loading/empty states, and tapping a card opens its Detail.
 //
 // The "Filters" button opens the FilterSlideover. Applying refines the context
@@ -25,6 +25,7 @@ import { genreName, useGenres } from "../data/genres";
 import { SortOption } from "../services/metadata/types";
 import type { MediaType } from "../models/media";
 import { MediaCard } from "../components/MediaCard";
+import { VirtualMediaGrid } from "../components/MediaGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import "./Browse.css";
@@ -168,7 +169,7 @@ function BrowseInner({
 
         {state.source === "fixtures" && ctx.kind === "genre" && (
           <p className="browse-fixture-note t-secondary">
-            Showing sample titles — genre filtering needs a TMDB key (Settings →
+            Showing sample titles - genre filtering needs a TMDB key (Settings →
             API keys).
           </p>
         )}
@@ -217,11 +218,11 @@ function BrowseInner({
           />
         ) : (
           <>
-            <div className="browse-grid">
-              {state.items.map((item) => (
-                <MediaCard key={item.id} item={item} onSelect={onSelect} />
-              ))}
-            </div>
+            <VirtualMediaGrid
+              items={state.items}
+              className="browse-grid"
+              renderItem={(item) => <MediaCard item={item} onSelect={onSelect} />}
+            />
 
             {/* Infinite-scroll sentinel + an explicit fallback button. */}
             <div ref={sentinelRef} className="browse-sentinel" />
@@ -361,7 +362,7 @@ function BrowseSkeleton() {
   return (
     <div className="browse-grid">
       {Array.from({ length: 18 }).map((_, i) => (
-        <div className="browse-skel glass-rest" key={i} />
+        <div className="browse-skel" key={i} />
       ))}
     </div>
   );

@@ -1,15 +1,12 @@
-/* In-app player overlay — a centered glass panel over a dimmed backdrop. */
+/* In-app player overlay. The playback surface and every chrome edge are tied to
+ * the WINDOW, never to a modal card or a computed video rectangle. */
 
 .player-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: var(--sp-xl);
-  background: rgba(2, 3, 8, 0.86);
-  backdrop-filter: blur(18px) saturate(120%);
-  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  padding: 0;
+  background: #000;
   animation: playerFadeIn 0.32s ease-out;
 }
 @keyframes playerFadeIn {
@@ -18,63 +15,116 @@
 }
 
 .player {
-  width: min(1180px, 100%);
-  max-height: 92vh;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-height: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: var(--r-lg);
+  border-radius: 0;
   background: #07080e;
-  box-shadow: 0 40px 100px -24px rgba(0, 0, 0, 0.85),
-    0 0 0 1px rgba(255, 255, 255, 0.06);
-  animation: playerRise 0.42s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes playerRise {
-  from { opacity: 0; transform: scale(0.96) translateY(16px); }
-  to { opacity: 1; transform: none; }
+  box-shadow: none;
 }
 
 .player-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 12;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-md);
-  padding: var(--sp-md) var(--sp-lg);
-  border-bottom: 0.75px solid var(--glass-border);
+  padding: 18px 24px 52px;
+  border: 0;
+  background:
+    linear-gradient(to bottom, rgba(2, 3, 8, 0.82) 0%, rgba(3, 4, 10, 0.54) 48%, transparent 100%),
+    linear-gradient(90deg, rgba(5, 7, 15, 0.34), transparent 65%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.player-bar.is-visible {
+  opacity: 1;
+}
+.player-title-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .player-title {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
 }
-.player-close {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-secondary);
-  cursor: pointer;
+.player-subtitle {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.player-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex: 0 0 auto;
 }
-.player-close:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.1);
+.player-bar.is-visible .player-bar-actions {
+  pointer-events: auto;
+}
+.player-close,
+.player-info-button {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 13px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.055));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 5px 16px rgba(0, 0, 0, 0.16);
+  color: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.player-close:hover,
+.player-info-button:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.1));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 20px rgba(0, 0, 0, 0.23);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.player-close:active,
+.player-info-button:active {
+  transform: translateY(0) scale(0.94);
+}
+.player-close:focus-visible,
+.player-info-button:focus-visible,
+.player-osd .chip:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb));
+  outline-offset: 3px;
 }
 
 .player-video {
   width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: 78vh;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
+  object-fit: contain;
+  object-position: center;
   background: #000;
   display: block;
 }
 
-/* Subtitle appearance — driven by the --sub-* CSS vars set in useTheme from the
+/* Subtitle appearance - driven by the --sub-* CSS vars set in useTheme from the
  * persisted subtitle settings (font scale, text color, caption bg opacity). */
 .player-video::cue {
   font-size: calc(1em * var(--sub-font-scale, 1));
@@ -84,9 +134,11 @@
 }
 
 .player-external {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--sp-md);
   text-align: center;
   padding: var(--sp-xxxl) var(--sp-xl);
@@ -117,24 +169,87 @@
  * controls) + the captions OSD button + the captions menu popover.
  * ------------------------------------------------------------------------- */
 .webview-player {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+.webview-player.is-casting .player-stage,
+.webview-player.is-casting .player-osd {
+  visibility: hidden;
+}
+.cast-local-placeholder {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: #07080e;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  font-weight: 700;
+}
+.cast-local-placeholder svg {
+  color: rgb(var(--accent-rgb));
 }
 .player-stage {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: #000;
 }
 
 .player-osd {
+  position: absolute;
+  inset: auto 0 54px;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: var(--sp-xs);
-  padding: var(--sp-sm) var(--sp-md) var(--sp-md);
+  padding: 46px 24px 12px;
+  background:
+    linear-gradient(to top, rgba(2, 3, 8, 0.82) 0%, rgba(3, 4, 10, 0.52) 48%, transparent 100%),
+    linear-gradient(90deg, rgba(6, 8, 17, 0.22), transparent 64%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.player-osd.is-visible {
+  opacity: 1;
 }
 .player-osd-row {
   display: flex;
   align-items: center;
   gap: var(--sp-sm);
+}
+.player-osd.is-visible .player-osd-row,
+.player-osd.is-visible .scrubbar-wrap {
+  pointer-events: auto;
+}
+.player-osd .chip {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 13px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.055));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 5px 16px rgba(0, 0, 0, 0.16);
+  color: #fff;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.player-osd .chip:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.1));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 20px rgba(0, 0, 0, 0.23);
+  transform: translateY(-1px);
+}
+.player-osd .chip:active {
+  transform: translateY(0) scale(0.96);
+}
+.player-osd .chip.is-active {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: linear-gradient(145deg, rgba(var(--accent-rgb), 0.38), rgba(var(--accent-rgb), 0.18));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), 0 0 18px rgba(var(--accent-rgb), 0.2);
 }
 .captions-active-dot {
   width: 6px;
@@ -143,73 +258,30 @@
   background: var(--accent);
   margin-left: 2px;
 }
-/* The "?" help chip sits at the far end of the OSD row. */
-.player-help-btn {
-  margin-left: auto;
-  min-width: 30px;
-  justify-content: center;
-  font-weight: 600;
+
+@media (prefers-reduced-motion: reduce) {
+  .player-backdrop,
+  .player-bar,
+  .player-osd,
+  .player-close,
+  .player-info-button,
+  .player-osd .chip,
+  .scrubbar-track {
+    animation: none;
+    transition: none;
+  }
 }
 
-/* Keyboard-shortcuts reference overlay (toggled by "?"). */
+/* The end-of-episode card keeps the centered dimmed treatment after the
+ * shortcuts overlay moved into the top-right details panel. */
 .player-shortcuts-scrim {
   position: absolute;
   inset: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 5;
-}
-.player-shortcuts {
-  width: min(340px, 90%);
-  border-radius: var(--radius-lg, 14px);
-  padding: var(--sp-md);
-}
-.player-shortcuts-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--sp-sm);
-}
-.player-shortcuts-title {
-  font-weight: 600;
-  font-size: 14px;
-}
-.player-shortcuts-close {
-  display: inline-flex;
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 2px;
-}
-.player-shortcuts-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.player-shortcuts-list li {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-sm);
-  font-size: 13px;
-}
-.player-shortcuts-list kbd {
-  flex: 0 0 96px;
-  text-align: center;
-  font-size: 12px;
-  padding: 3px 6px;
-  border-radius: 6px;
-  background: var(--glass-rest, rgba(255, 255, 255, 0.08));
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  font-family: inherit;
-}
-.player-shortcuts-list span {
-  color: var(--text-secondary);
 }
 
 /* Scrub bar + hover thumbnail tooltip. */
@@ -235,10 +307,12 @@
 .scrubbar-fill {
   position: absolute;
   inset: 0 auto 0 0;
+  width: 100%;
   height: 100%;
   border-radius: var(--r-pill);
   background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
   box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.6);
+  transform-origin: left center;
 }
 .scrubbar-hover {
   position: absolute;
@@ -292,6 +366,9 @@
   overflow-y: auto;
   padding: var(--sp-md);
   border-radius: var(--r-lg);
+  background: rgba(12, 14, 22, 1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: var(--sp-sm);
@@ -484,7 +561,7 @@
 /* ── Up next (auto-advance) ──────────────────────────────────────────────────
    End-of-episode card on the shortcuts scrim: next-episode label, an optional
    numeric countdown (suppressed under Data Saver), Play now / Dismiss. Static
-   by design — no looping animation (idle-CPU discipline). */
+   by design - no looping animation (idle-CPU discipline). */
 .player-upnext {
   display: flex;
   flex-direction: column;

@@ -90,6 +90,12 @@ export function getServerUpcomingEpisodes(
   },
 ): Promise<unknown>;
 
+export function getServerMovieReleaseCalendar(
+  db: AppDatabase,
+  config: ServerConfig,
+  profileId: string,
+): Promise<unknown>;
+
 export function getServerDetail(
   db: AppDatabase,
   config: ServerConfig,
@@ -100,7 +106,7 @@ export function getServerDetail(
   },
 ): Promise<unknown>;
 
-/** Throws on TMDB/key failures — the /api/media/seasons route converts any
+/** Throws on TMDB/key failures - the /api/media/seasons route converts any
  *  rejection into a 503 ("Episode guide is unavailable right now."). */
 export function getServerSeasons(
   db: AppDatabase,
@@ -111,7 +117,7 @@ export function getServerSeasons(
   },
 ): Promise<unknown>;
 
-/** Throws on TMDB/key failures — the /api/media/episodes route converts any
+/** Throws on TMDB/key failures - the /api/media/episodes route converts any
  *  rejection into a 503 ("Episode guide is unavailable right now."). */
 export function getServerEpisodes(
   db: AppDatabase,

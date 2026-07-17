@@ -18,19 +18,19 @@ The first time you open the app on a device, you are asked:
 
 > **How do you want to use DebridStreamer?**
 
-You pick one of four paths. Each one sets the right defaults — including whether
+You pick one of four paths. Each one sets the right defaults - including whether
 you start in Simple or Advanced mode.
 
 | Choice | What it does | Starts in |
 | --- | --- | --- |
-| **Just watch on this device** | Start watching immediately. Everything stays on this device — no account, no setup. You can connect a server later. | Simple |
+| **Just watch on this device** | Start watching immediately. Everything stays on this device - no account, no setup. You can connect a server later. | Simple |
 | **Connect to a server** | You already have a DebridStreamer server (or an invite link). Paste the address and sign in. | (server decides) |
 | **Host for my family** | Run a server on this computer so your household can sign in from their own devices. Opens Settings → Install & setup. | Simple |
-| **Advanced setup** | Jump straight into full settings — every provider, source, indexer, and appearance control. | Advanced |
+| **Advanced setup** | Jump straight into full settings - every provider, source, indexer, and appearance control. | Advanced |
 
 There is also a **Skip for now** option that drops you in with defaults.
 
-You can change anything later in **Settings** — the first-run choice is just a
+You can change anything later in **Settings** - the first-run choice is just a
 starting point, not a lock-in.
 
 > Note: this persona picker runs in **Local Mode** (the app on your own device).
@@ -43,8 +43,8 @@ starting point, not a lock-in.
 
 Switch any time in **Settings**, using the **Experience** toggle at the top:
 
-- **Simple** — shows the essentials. Good for "I just want to watch."
-- **Advanced** — reveals all tabs and controls: sources, updates, server admin,
+- **Simple** - shows the essentials. Good for "I just want to watch."
+- **Advanced** - reveals all tabs and controls: sources, updates, server admin,
   and every dial.
 
 The hint under the toggle tells you what you'll unlock:
@@ -79,7 +79,7 @@ Mode, regardless of tier.*
 | **Sources** (indexers) | Hidden | Shown |
 | **Server** (admin) | Hidden | Shown** |
 
-\** *The Server tab only appears in Server Mode at all — it is hidden in Local
+\** *The Server tab only appears in Server Mode at all - it is hidden in Local
 Mode even in Advanced.*
 
 **Settings never hides**, because it hosts the Simple/Advanced toggle itself. If
@@ -100,8 +100,8 @@ visible tab automatically.
 
 ## Quick reference
 
-- Don't see a feature you expected? You're probably in **Simple** mode — flip to
+- Don't see a feature you expected? You're probably in **Simple** mode - flip to
   **Advanced** in Settings.
 - The **Debrid Library** screen is desktop-only; it never appears on a hosted
   server.
-- Your first-run persona only sets defaults — nothing is permanent.
+- Your first-run persona only sets defaults - nothing is permanent.

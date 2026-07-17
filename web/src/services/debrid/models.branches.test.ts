@@ -36,7 +36,7 @@ import {
 // debrid/models.ts
 // ============================================================================
 
-describe("VideoQuality.sortOrder (debrid) — full tier ladder", () => {
+describe("VideoQuality.sortOrder (debrid) - full tier ladder", () => {
   it("maps every quality tier to its weight", () => {
     expect(VideoQuality.sortOrder("4K")).toBe(5);
     expect(VideoQuality.sortOrder("1080p")).toBe(4);
@@ -113,10 +113,10 @@ describe("CacheStatus", () => {
 describe("DebridServiceType accessors", () => {
   it("allCases lists every persisted raw value", () => {
     expect(DebridServiceType.allCases()).toEqual([
+      "torbox",
       "real_debrid",
       "all_debrid",
       "premiumize",
-      "torbox",
     ]);
   });
 
@@ -179,7 +179,7 @@ describe("makeDebridConfig defaults", () => {
   });
 });
 
-describe("DebridFileSelector — codec & container scoring tiers", () => {
+describe("DebridFileSelector - codec & container scoring tiers", () => {
   function f(
     fileName: string,
     sizeBytes: number,
@@ -285,7 +285,7 @@ describe("DebridFileSelector — codec & container scoring tiers", () => {
 // indexers/models.ts
 // ============================================================================
 
-describe("VideoQuality.sortOrder (indexers) — full tier ladder", () => {
+describe("VideoQuality.sortOrder (indexers) - full tier ladder", () => {
   it("maps every quality tier to its weight", () => {
     expect(IdxVideoQuality.sortOrder("4K")).toBe(5);
     expect(IdxVideoQuality.sortOrder("1080p")).toBe(4);
@@ -296,7 +296,7 @@ describe("VideoQuality.sortOrder (indexers) — full tier ladder", () => {
   });
 });
 
-describe("indexers enum parsers — remaining branches", () => {
+describe("indexers enum parsers - remaining branches", () => {
   it("VideoQuality.parse covers 1080i, 480p and the SD-token fallback", () => {
     expect(IdxVideoQuality.parse("Film.1080i.mkv")).toBe("1080p");
     expect(IdxVideoQuality.parse("Film.480p.mkv")).toBe("480p");
@@ -381,10 +381,34 @@ describe("AIProviderKind", () => {
     expect(AIProviderKind.displayName("openai")).toBe("OpenAI");
     expect(AIProviderKind.displayName("anthropic")).toBe("Anthropic");
     expect(AIProviderKind.displayName("ollama")).toBe("Ollama");
+    expect(AIProviderKind.displayName("gemini")).toBe("Google Gemini");
+    expect(AIProviderKind.displayName("openrouter")).toBe("OpenRouter");
+    expect(AIProviderKind.displayName("groq")).toBe("Groq");
+    expect(AIProviderKind.displayName("mistral")).toBe("Mistral");
+    expect(AIProviderKind.displayName("deepseek")).toBe("DeepSeek");
+    expect(AIProviderKind.displayName("xai")).toBe("xAI (Grok)");
   });
 
   it("allCases lists every provider raw value", () => {
-    expect(AIProviderKind.allCases()).toEqual(["openai", "anthropic", "ollama"]);
+    expect(AIProviderKind.allCases()).toEqual([
+      "anthropic",
+      "openai",
+      "gemini",
+      "openrouter",
+      "groq",
+      "mistral",
+      "deepseek",
+      "xai",
+      "ollama",
+    ]);
+  });
+
+  it("flags OpenAI-compatible hosts (and excludes anthropic/ollama)", () => {
+    expect(AIProviderKind.isOpenAICompatible("openai")).toBe(true);
+    expect(AIProviderKind.isOpenAICompatible("groq")).toBe(true);
+    expect(AIProviderKind.isOpenAICompatible("gemini")).toBe(true);
+    expect(AIProviderKind.isOpenAICompatible("anthropic")).toBe(false);
+    expect(AIProviderKind.isOpenAICompatible("ollama")).toBe(false);
   });
 });
 

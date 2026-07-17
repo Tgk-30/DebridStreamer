@@ -104,6 +104,27 @@ const release = {
 };
 
 check("mac best asset prefers dmg", site.bestAsset(release, "mac")?.browser_download_url === "dmg");
+
+// Per-arch macOS (two DMGs): each arch must resolve to its own build so an Intel
+// Mac never gets the arm64 DMG (and vice-versa).
+const perArchMac = {
+  assets: [
+    asset("DebridStreamer_0.7.7_aarch64.dmg", "arm-dmg"),
+    asset("DebridStreamer_0.7.7_x64.dmg", "intel-dmg"),
+  ],
+};
+check(
+  "mac arm64 arch resolves to the aarch64 dmg",
+  site.macAssetForArch(perArchMac, "arm64")?.browser_download_url === "arm-dmg",
+);
+check(
+  "mac intel arch resolves to the x64 dmg",
+  site.macAssetForArch(perArchMac, "intel")?.browser_download_url === "intel-dmg",
+);
+check(
+  "mac intel arch is null when only an arm64 build exists",
+  site.macAssetForArch({ assets: [asset("DebridStreamer_0.7.7_aarch64.dmg", "arm-dmg")] }, "intel") === null,
+);
 check("windows best asset prefers msi", site.bestAsset(release, "windows")?.browser_download_url === "msi");
 check("linux best asset prefers AppImage", site.bestAsset(release, "linux")?.browser_download_url === "appimage");
 check(

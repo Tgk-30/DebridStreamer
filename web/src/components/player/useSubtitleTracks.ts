@@ -86,7 +86,7 @@ export function useSubtitleTracks(
     total: number;
   } | null>(null);
 
-  // The imdb id of the last search — forwarded to download() so a Server-Mode
+  // The imdb id of the last search - forwarded to download() so a Server-Mode
   // client can enforce a kid's maturity cap on the fetched dialogue.
   const lastSearchImdbIdRef = useRef<string | null>(null);
 

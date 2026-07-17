@@ -1,4 +1,4 @@
-// Core coverage for the stream-RESOLUTION layer of streams.ts — the part that
+// Core coverage for the stream-RESOLUTION layer of streams.ts - the part that
 // the existing two suites deliberately skip.
 //
 //   - streams.test.ts        → happy paths of the pure filter/quality exports.
@@ -106,7 +106,8 @@ function torrent(overrides: Partial<TorrentResult>): TorrentResult {
   };
 }
 
-/** Minimal IndexerManager stand-in: only activeIndexers + searchAll are read. */
+/** Minimal IndexerManager stand-in: activeIndexers + searchAll (+ optional
+ * searchByQuery, exercised by the title-based pass). */
 function fakeIndexers(opts: {
   active?: string[];
   searchAll?: (
@@ -114,21 +115,28 @@ function fakeIndexers(opts: {
     type: MediaType,
     season?: number | null,
     episode?: number | null,
+    signal?: AbortSignal,
   ) => Promise<TorrentResult[]>;
+  searchByQuery?: (query: string, type: MediaType, signal?: AbortSignal) => Promise<TorrentResult[]>;
 }): IndexerManager {
   return {
     get activeIndexers() {
       return opts.active ?? ["jackett"];
     },
-    searchAll:
-      opts.searchAll ?? (async () => [] as TorrentResult[]),
+    // Read by useStreams after every search (honest empty states). A fake with
+    // no failures reports none.
+    get lastSearchErrors() {
+      return [];
+    },
+    searchAll: opts.searchAll ?? (async () => [] as TorrentResult[]),
+    searchByQuery: opts.searchByQuery ?? (async () => [] as TorrentResult[]),
   } as unknown as IndexerManager;
 }
 
 /** Minimal DebridManager stand-in: only hasServices + checkCacheAll are read. */
 function fakeDebrid(opts: {
   hasServices?: boolean;
-  checkCacheAll?: (hashes: string[]) => Promise<Record<string, MergedCacheEntry>>;
+  checkCacheAll?: (hashes: string[], signal?: AbortSignal) => Promise<Record<string, MergedCacheEntry>>;
 }): DebridManager {
   return {
     get hasServices() {
@@ -148,10 +156,11 @@ async function renderStreams(
   debrid: DebridManager | null,
   season: number | null = null,
   episode: number | null = null,
+  title: string | null = null,
 ): Promise<{ state: StreamsState; cleanup: () => void }> {
   // First synchronous render: the hook returns the initial state and registers
   // its effect.
-  const initial = useStreams(imdbId, type, season, episode, indexers, debrid);
+  const initial = useStreams(imdbId, type, season, episode, title, indexers, debrid);
   // Run the registered effect (kicks off the async run + returns teardown).
   const teardown = cell.effect ? cell.effect() : undefined;
   // Flush the microtask queue so the async `run` settles into setState.
@@ -186,7 +195,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("useStreams — idle / no-imdb / no-indexer guards", () => {
+describe("useStreams - idle / no-imdb / no-indexer guards", () => {
   it("is idle (not loading, empty) when imdbId is null", async () => {
     const indexers = fakeIndexers({ active: ["jackett"] });
     const { state } = await renderStreams(null, "movie", indexers, null);
@@ -209,7 +218,7 @@ describe("useStreams — idle / no-imdb / no-indexer guards", () => {
   });
 });
 
-describe("useStreams — Local resolve path (resolveStreams)", () => {
+describe("useStreams - Local resolve path (resolveStreams)", () => {
   it("returns empty rows (no debrid call) when searchAll yields nothing", async () => {
     const checkCacheAll = vi.fn(async () => ({}));
     const indexers = fakeIndexers({ searchAll: async () => [] });
@@ -239,7 +248,7 @@ describe("useStreams — Local resolve path (resolveStreams)", () => {
     const debrid = fakeDebrid({ hasServices: true, checkCacheAll });
     const { state } = await renderStreams("tt9", "series", indexers, debrid);
 
-    expect(checkCacheAll).toHaveBeenCalledWith(["h1", "h2", "h3"]);
+    expect(checkCacheAll).toHaveBeenCalledWith(["h1", "h2", "h3"], expect.any(AbortSignal));
     expect(state.rows.map((r) => [r.result.infoHash, r.cachedOn])).toEqual([
       ["h1", DebridServiceType.realDebrid],
       ["h2", null],
@@ -249,7 +258,9 @@ describe("useStreams — Local resolve path (resolveStreams)", () => {
     expect(state.error).toBeNull();
   });
 
-  it("preserves searchAll order (resolveStreams maps, does not sort)", async () => {
+  it("sorts the merged results by quality (highest first)", async () => {
+    // resolveStreams now merges the imdb-based + title-based passes, so it
+    // re-sorts by quality/seeders rather than trusting one pass's order.
     const results = [
       torrent({ infoHash: "z", quality: VideoQuality.sd480p }),
       torrent({ infoHash: "a", quality: VideoQuality.uhd4k }),
@@ -258,7 +269,72 @@ describe("useStreams — Local resolve path (resolveStreams)", () => {
     const indexers = fakeIndexers({ searchAll: async () => results });
     const debrid = fakeDebrid({ hasServices: true });
     const { state } = await renderStreams("tt1", "movie", indexers, debrid);
-    expect(state.rows.map((r) => r.result.infoHash)).toEqual(["z", "a", "m"]);
+    // 4k → 1080p → 480p.
+    expect(state.rows.map((r) => r.result.infoHash)).toEqual(["a", "m", "z"]);
+  });
+
+  it("runs a title-based query and merges it when the imdb pass is empty", async () => {
+    // The real bug: EZTV (imdb-native) is down so searchAll returns nothing, but
+    // APIBay (name-matching) finds the episode via a `Title SxxEyy` query.
+    let capturedQuery = "";
+    const indexers = fakeIndexers({
+      searchAll: async () => [],
+      searchByQuery: async (q) => {
+        capturedQuery = q;
+        return [torrent({ infoHash: "t1", title: "Show S01E06 1080p x264" })];
+      },
+    });
+    const { state } = await renderStreams(
+      "tt9",
+      "series",
+      indexers,
+      null,
+      1,
+      6,
+      "Show",
+    );
+    expect(capturedQuery).toBe("Show S01E06");
+    expect(state.rows.map((r) => r.result.infoHash)).toEqual(["t1"]);
+  });
+
+  it("dedupes the same torrent across the imdb and title passes (higher seeders wins)", async () => {
+    const indexers = fakeIndexers({
+      searchAll: async () => [torrent({ infoHash: "DUP", seeders: 5 })],
+      // Same torrent, different hash case + more seeders.
+      searchByQuery: async () => [torrent({ infoHash: "dup", seeders: 40 })],
+    });
+    const { state } = await renderStreams(
+      "tt9",
+      "movie",
+      indexers,
+      null,
+      null,
+      null,
+      "Movie", // matches the default torrent title "Movie.1080p.BluRay"
+    );
+    expect(state.rows).toHaveLength(1);
+    expect(state.rows[0].result.seeders).toBe(40);
+  });
+
+  it("drops title-pass results whose name doesn't contain the requested title", async () => {
+    const indexers = fakeIndexers({
+      searchAll: async () => [],
+      searchByQuery: async () => [
+        torrent({ infoHash: "good", title: "Breaking Bad S01E06 1080p" }),
+        torrent({ infoHash: "wrong", title: "Better Call Saul S01E06 1080p" }),
+      ],
+    });
+    const { state } = await renderStreams(
+      "tt9",
+      "series",
+      indexers,
+      null,
+      1,
+      6,
+      "Breaking Bad",
+    );
+    // Only the matching show survives the title validation.
+    expect(state.rows.map((r) => r.result.infoHash)).toEqual(["good"]);
   });
 
   it("leaves every row uncached when no debrid manager is supplied", async () => {
@@ -289,13 +365,13 @@ describe("useStreams — Local resolve path (resolveStreams)", () => {
     const debrid = fakeDebrid({ hasServices: true, checkCacheAll });
     const { state } = await renderStreams("tt1", "movie", indexers, debrid);
     // The try/catch inside resolveStreams turns the cache failure into "all
-    // uncached" — it is NOT surfaced as a top-level error.
+    // uncached" - it is NOT surfaced as a top-level error.
     expect(state.error).toBeNull();
     expect(state.rows.map((r) => r.cachedOn)).toEqual([null, null]);
   });
 });
 
-describe("useStreams — error path", () => {
+describe("useStreams - error path", () => {
   it("surfaces a searchAll Error message into state.error", async () => {
     const indexers = fakeIndexers({
       searchAll: async () => {
@@ -320,7 +396,22 @@ describe("useStreams — error path", () => {
   });
 });
 
-describe("useStreams — cancellation", () => {
+describe("useStreams - cancellation", () => {
+  it("aborts the request signal on effect cleanup", () => {
+    let signal: AbortSignal | undefined;
+    const indexers = fakeIndexers({
+      searchAll: (_imdbId, _type, _season, _episode, requestSignal) => {
+        signal = requestSignal;
+        return new Promise<TorrentResult[]>(() => {});
+      },
+    });
+    useStreams("tt1", "movie", null, null, null, indexers, null);
+    const teardown = cell.effect ? cell.effect() : undefined;
+    expect(signal?.aborted).toBe(false);
+    if (typeof teardown === "function") teardown();
+    expect(signal?.aborted).toBe(true);
+  });
+
   it("does not commit results after the effect is torn down (cancelled)", async () => {
     let resolveSearch: (v: TorrentResult[]) => void = () => {};
     const indexers = fakeIndexers({
@@ -330,7 +421,7 @@ describe("useStreams — cancellation", () => {
         }),
     });
     // Render and immediately tear down BEFORE the search resolves.
-    const initial = useStreams("tt1", "movie", null, null, indexers, null);
+    const initial = useStreams("tt1", "movie", null, null, null, indexers, null);
     expect(initial.loading).toBe(true); // imdb + indexers ⇒ starts loading
     const teardown = cell.effect ? cell.effect() : undefined;
     if (typeof teardown === "function") teardown(); // mark cancelled
@@ -343,7 +434,7 @@ describe("useStreams — cancellation", () => {
   });
 });
 
-describe("useStreams — Server mode", () => {
+describe("useStreams - Server mode", () => {
   beforeEach(() => {
     mockConfiguredServerURL.mockReturnValue("https://srv.example");
   });
@@ -360,18 +451,44 @@ describe("useStreams — Server mode", () => {
     const indexers = fakeIndexers({ active: [] });
     const { state } = await renderStreams("tt5", "movie", indexers, null);
 
-    expect(mockFetchServerStreams).toHaveBeenCalledWith({
-      imdbId: "tt5",
-      type: "movie",
-      season: null,
-      episode: null,
-    });
+    expect(mockFetchServerStreams).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imdbId: "tt5",
+        type: "movie",
+        season: null,
+        episode: null,
+        title: null,
+        signal: expect.any(AbortSignal),
+      }),
+    );
     expect(state.rows.map((r) => r.result.infoHash)).toEqual(["s1"]);
     expect(state.rows[0].cachedOn).toBe(DebridServiceType.torBox);
     // server response drives the final hasIndexers/hasDebrid flags.
     expect(state.hasIndexers).toBe(true);
     expect(state.hasDebrid).toBe(false);
     expect(state.loading).toBe(false);
+  });
+
+  it("forwards the title + episode context so the server can run its name pass", async () => {
+    mockFetchServerStreams.mockResolvedValue({
+      rows: [],
+      hasIndexers: true,
+      hasDebrid: true,
+    });
+    const indexers = fakeIndexers({ active: [] });
+    // series + season/episode + title - the exact context the server needs to
+    // build "The Bear S01E06" for its APIBay-style name-matching pass.
+    await renderStreams("tt5", "series", indexers, null, 1, 6, "The Bear");
+    expect(mockFetchServerStreams).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imdbId: "tt5",
+        type: "series",
+        season: 1,
+        episode: 6,
+        title: "The Bear",
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 
   it("surfaces a server fetch error into state.error", async () => {

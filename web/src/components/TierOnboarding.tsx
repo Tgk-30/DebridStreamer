@@ -1,4 +1,4 @@
-// Tier-aware welcome onboarding — the first thing a new user sees, tailored to
+// Tier-aware welcome onboarding - the first thing a new user sees, tailored to
 // which build they were given (family / friends / public). It guides them to the
 // right setup; the existing FirstRunWizard / ServerSetupWizard then collect the
 // actual config. Branches on useBuildProfile(); uses the AI ambient loops.
@@ -19,7 +19,7 @@ const FLOWS: Record<BuildProfile, Step[]> = {
     {
       video: "aurora",
       title: "Welcome",
-      body: "This app connects to a private family server. Your library, history, and streaming all run through it — there are no keys for you to manage.",
+      body: "This app connects to a private family server. Your library, history, and streaming all run through it - there are no keys for you to manage.",
     },
     {
       video: "secure",
@@ -31,7 +31,7 @@ const FLOWS: Record<BuildProfile, Step[]> = {
     {
       video: "aurora",
       title: "Your server is ready",
-      body: "You're self-hosting DebridStreamer. This build already has the media keys you were given, encrypted into the server — nothing to paste.",
+      body: "You're self-hosting DebridStreamer. This build already has the media keys you were given, encrypted into the server - nothing to paste.",
     },
     {
       video: "secure",
@@ -41,19 +41,19 @@ const FLOWS: Record<BuildProfile, Step[]> = {
     {
       video: "cinema",
       title: "Invite your household",
-      body: "Add profiles for the people you live with — with kids limits if you want — any time from Settings → Server.",
+      body: "Add profiles for the people you live with - with kids limits if you want - any time from Settings → Server.",
     },
   ],
   public: [
     {
       video: "aurora",
       title: "Welcome to DebridStreamer",
-      body: "A streaming app you run yourself. To get going you'll add a few of your own keys — it only takes a minute.",
+      body: "A streaming app you run yourself. To get going you'll add a few of your own keys - it only takes a minute.",
     },
     {
       video: "secure",
       title: "Bring your own keys",
-      body: "In Settings, add a free TMDB key (artwork + discovery) and your debrid account (Real-Debrid, AllDebrid, Premiumize, or TorBox) for streams. OMDb is optional for extra ratings.",
+      body: "In Settings, add a free TMDB key (artwork + discovery) and your debrid account (TorBox, Real-Debrid, AllDebrid, or Premiumize) for streams. OMDb is optional for extra ratings.",
     },
     {
       video: "cinema",

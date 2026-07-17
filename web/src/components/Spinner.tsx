@@ -1,4 +1,4 @@
-// Spinner / Suspense fallback — a lightweight glass loading indicator.
+// Spinner / Suspense fallback - a lightweight glass loading indicator.
 //
 // Used as the <Suspense fallback> while a code-split (React.lazy) screen or
 // overlay chunk downloads. `variant="overlay"` fills an overlay surface (Detail /

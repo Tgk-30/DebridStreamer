@@ -297,7 +297,7 @@ final class VLCKitPlaybackSession: NSObject, VLCPlaybackSession {
             return ([:], [:])
         }
 
-        // Ask VLCKit to parse metadata opportunistically, but only ONCE — the
+        // Ask VLCKit to parse metadata opportunistically, but only ONCE - the
         // legacy `parse()` is synchronous-ish and runs on the main actor, so
         // calling it on every track refresh repeatedly blocks the UI. If parse
         // hasn't completed yet we fall back to track name/index mapping below.

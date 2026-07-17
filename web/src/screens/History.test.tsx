@@ -44,16 +44,29 @@ vi.mock("../data/useWatchStats", () => ({
   useWatchStats: () => mockStats,
 }));
 
-vi.mock("../components/MediaGrid", () => ({
-  MediaGrid: (props: { items: MediaPreview[]; onSelect?: (i: MediaPreview) => void }) => (
-    <div data-testid="media-grid">
-      {props.items.map((i) => (
-        <button key={i.id} type="button" onClick={() => props.onSelect?.(i)}>
-          grid:{i.title}
-        </button>
-      ))}
-    </div>
+// The grid is now inlined with MediaCard directly (so it can carry the watched
+// badge); stub the card to assert on the item lists + the progress/watched props.
+vi.mock("../components/MediaCard", () => ({
+  MediaCard: (props: {
+    item: MediaPreview;
+    onSelect?: (i: MediaPreview) => void;
+    progress?: number;
+    watched?: boolean;
+  }) => (
+    <button
+      type="button"
+      data-progress={props.progress ?? ""}
+      data-watched={props.watched ? "yes" : "no"}
+      onClick={() => props.onSelect?.(props.item)}
+    >
+      card:{props.item.title}
+    </button>
   ),
+}));
+
+let mockWatchedIds = new Set<string>();
+vi.mock("../data/useWatchedIds", () => ({
+  useWatchedIds: () => mockWatchedIds,
 }));
 
 vi.mock("../components/Rail", () => ({
@@ -117,6 +130,7 @@ beforeEach(() => {
   mockContinueWatching = [];
   mockSettings = { showWatchStats: false };
   mockStats = null;
+  mockWatchedIds = new Set<string>();
 });
 
 afterEach(() => {
@@ -137,7 +151,7 @@ function statsFixture(over: Partial<WatchStats> = {}): WatchStats {
   };
 }
 
-describe("History — watch stats card", () => {
+describe("History - watch stats card", () => {
   it("is hidden when the setting is off", () => {
     mockSettings = { showWatchStats: false };
     mockStats = statsFixture();
@@ -162,7 +176,7 @@ describe("History — watch stats card", () => {
   });
 });
 
-describe("History — empty", () => {
+describe("History - empty", () => {
   it("renders the empty-state with Browse + Search CTAs when nothing watched", async () => {
     render(<History />);
     expect(screen.getByText("Nothing here yet")).toBeInTheDocument();
@@ -181,28 +195,36 @@ describe("History — empty", () => {
   });
 });
 
-describe("History — grid", () => {
+describe("History - grid", () => {
   it("renders the history grid and opens detail on select", async () => {
     mockHistory = [preview("m1", "Heat"), preview("m2", "Drive")];
     render(<History />);
-    expect(screen.getByText("grid:Heat")).toBeInTheDocument();
-    expect(screen.getByText("grid:Drive")).toBeInTheDocument();
+    expect(screen.getByText("card:Heat")).toBeInTheDocument();
+    expect(screen.getByText("card:Drive")).toBeInTheDocument();
     expect(screen.queryByText("Nothing here yet")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByText("grid:Drive"));
+    await userEvent.click(screen.getByText("card:Drive"));
     expect(openDetail).toHaveBeenCalledWith(
       expect.objectContaining({ id: "m2" }),
     );
   });
+
+  it("flags finished titles with the watched badge from the history lookup", () => {
+    mockHistory = [preview("m1", "Heat"), preview("m2", "Drive")];
+    mockWatchedIds = new Set<string>(["m1"]);
+    render(<History />);
+    expect(screen.getByText("card:Heat")).toHaveAttribute("data-watched", "yes");
+    expect(screen.getByText("card:Drive")).toHaveAttribute("data-watched", "no");
+  });
 });
 
-describe("History — Continue Watching rail", () => {
+describe("History - Continue Watching rail", () => {
   it("surfaces only records with a resume point and passes their progress fraction", async () => {
     mockHistory = [preview("m1", "Heat")];
     mockContinueWatching = [
-      record("m1", "Heat", 1800, 3600), // 50% — resumable
-      record("m2", "Tooearly", 10, 3600), // ~0.3% — below floor, dropped
-      record("m3", "Almostdone", 3500, 3600), // ~97% — above ceiling, dropped
+      record("m1", "Heat", 1800, 3600), // 50% - resumable
+      record("m2", "Tooearly", 10, 3600), // ~0.3% - below floor, dropped
+      record("m3", "Almostdone", 3500, 3600), // ~97% - above ceiling, dropped
     ];
     render(<History />);
 
@@ -230,7 +252,7 @@ describe("History — Continue Watching rail", () => {
     mockContinueWatching = [record("m1", "Heat", 3600, 3600)]; // 100% complete
     render(<History />);
     expect(screen.queryByTestId("rail")).not.toBeInTheDocument();
-    expect(screen.getByText("grid:Heat")).toBeInTheDocument();
+    expect(screen.getByText("card:Heat")).toBeInTheDocument();
   });
 
   it("passes episode labels for resumable series entries", () => {

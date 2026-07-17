@@ -11,6 +11,7 @@ import type { Genre, MediaCategory } from "../services/metadata/types";
 import type { OMDBRatings } from "../services/metadata/OMDBService";
 import type { StreamRow } from "../data/streams";
 import type { UpcomingEpisode } from "./metadata";
+import type { MovieRelease } from "../services/metadata/TMDBService";
 import { configuredServerURL } from "./serverMode";
 import { notifyUnauthorized, readCsrfToken } from "./serverSession";
 
@@ -48,7 +49,7 @@ async function serverRequest<T>(
     try {
       parsed = JSON.parse(text) as JsonObject;
     } catch {
-      // Non-JSON body (e.g. an HTML 5xx page from a reverse proxy) — fall back to
+      // Non-JSON body (e.g. an HTML 5xx page from a reverse proxy) - fall back to
       // a status-based message rather than throwing a misleading parse error.
       parsed = {};
     }
@@ -79,6 +80,10 @@ export async function fetchServerStreams(input: {
   type: MediaType;
   season?: number | null;
   episode?: number | null;
+  /** Human title for the server's name-matching indexer pass (APIBay etc.),
+   *  which an imdb id alone can't reach. Optional - older servers ignore the
+   *  extra query param and fall back to the imdb-only search. */
+  title?: string | null;
 }): Promise<{
   rows: StreamRow[];
   hasIndexers: boolean;
@@ -87,6 +92,9 @@ export async function fetchServerStreams(input: {
   const params = new URLSearchParams({ type: input.type });
   if (input.season != null) params.set("season", String(input.season));
   if (input.episode != null) params.set("episode", String(input.episode));
+  if (input.title != null && input.title.trim().length > 0) {
+    params.set("title", input.title.trim());
+  }
   const response = await serverRequest<{
     rows: StreamRow[];
     hasIndexers: boolean;
@@ -107,7 +115,7 @@ export async function resolveServerStream(
   opts: {
     transcode?: boolean;
     media?: { id: string; type: MediaType };
-    /** Episode context (series) — steers season-pack file selection on the
+    /** Episode context (series) - steers season-pack file selection on the
      *  server. Omitted for movies / older servers (unknown fields ignored). */
     fileHint?: { season: number; episode: number } | null;
   } = {},
@@ -130,7 +138,7 @@ export async function resolveServerStream(
   );
   // When transcoding is requested, point the player at the session's HLS manifest
   // variant of the same playback URL. VideoPlayer sniffs the ".m3u8" suffix and
-  // plays it via hls.js — so no player change is needed.
+  // plays it via hls.js - so no player change is needed.
   const path = opts.transcode
     ? `${response.stream.streamURL}/index.m3u8`
     : response.stream.streamURL;
@@ -224,6 +232,15 @@ export async function fetchServerUpcomingEpisodes(
   return response.episodes;
 }
 
+/** Movie release dates resolved by the Server Mode TMDB broker. */
+export async function fetchServerMovieReleases(): Promise<MovieRelease[]> {
+  const response = await serverRequest<{ releases: MovieRelease[] }>(
+    "GET",
+    "/api/calendar/movies",
+  );
+  return response.releases;
+}
+
 export async function recommendServerAI(input: {
   prompt: string;
   count?: number;
@@ -293,6 +310,12 @@ export interface AccountProfile {
   isKid: boolean;
   /** US movie cert cap ("G"|"PG"|"PG-13"|"R"|"NC-17"), or null when not a kid. */
   maturityMax: string | null;
+  /** A server-side household PIN is set. The PIN hash never leaves the server. */
+  hasPin?: boolean;
+  /** Warn-only rolling 30-day household bandwidth data. */
+  bandwidthCapBytes?: number | null;
+  bandwidthUsageBytes?: number;
+  bandwidthStatus?: "ok" | "approaching" | "over";
 }
 
 export interface AccountProfileState {
@@ -313,7 +336,7 @@ export async function createAccountProfile(input: {
   return serverRequest("POST", "/api/account/profiles", {
     displayName: input.displayName,
     avatarColor: input.avatarColor ?? null,
-    // Only send a password when one was actually entered — the server treats it
+    // Only send a password when one was actually entered - the server treats it
     // as optional for household viewer profiles.
     ...(input.password != null && input.password.length > 0
       ? { password: input.password }
@@ -335,7 +358,7 @@ export async function deleteAccountProfile(
   return serverRequest("DELETE", `/api/account/profiles/${encodeURIComponent(id)}`);
 }
 
-/** Owner/admin only. Sets kid mode + maturity cap together — the server rejects a
+/** Owner/admin only. Sets kid mode + maturity cap together - the server rejects a
  *  half-state (kid without a cap, or a cap without kid mode) with a 400. */
 export async function setProfileMaturity(
   id: string,
@@ -362,12 +385,30 @@ export async function switchAccountProfile(
   } | null;
   profiles: AccountProfileState | null;
 }> {
-  // The password is only required when LEAVING a kid profile; send it when given
-  // so the server can verify it (a wrong/missing one 403s in that case).
+  // The same server contract carries the account password when leaving a kid
+  // profile and the target profile PIN when entering a PIN-protected profile.
   return serverRequest("POST", "/api/profiles/switch", {
     profileId,
     ...(password != null && password.length > 0 ? { password } : {}),
   });
+}
+
+/** Set or clear a viewer profile's 4-6 digit household PIN. The response is the
+ * refreshed picker state so the lock glyph updates without a separate fetch. */
+export async function setProfilePin(
+  profileId: string,
+  pin: string | null,
+): Promise<{ profiles: AccountProfileState }> {
+  return serverRequest("POST", "/api/profiles/pin", { profileId, pin });
+}
+
+/** Owner/admin only. A rolling monthly household warning cap, never playback
+ * enforcement. `null` clears the cap and returns refreshed picker state. */
+export async function setProfileBandwidthQuota(
+  profileId: string,
+  capBytes: number | null,
+): Promise<{ profiles: AccountProfileState }> {
+  return serverRequest("POST", "/api/profiles/quota", { profileId, capBytes });
 }
 
 // ---- Title requests (Phase 4) ---------------------------------------------
@@ -477,7 +518,7 @@ export async function fetchServerEpisodes(input: {
 
 /** Fetch OMDb ratings for an IMDb id via the server "hidden key" proxy. The
  *  server holds the key (profile / server / env) and returns only the parsed
- *  ratings — the key never reaches the client. Returns null when the server has
+ *  ratings - the key never reaches the client. Returns null when the server has
  *  no OMDb key for this profile. */
 export async function fetchServerOmdb(imdbId: string): Promise<OMDBRatings | null> {
   const res = await serverRequest<{ ratings: OMDBRatings | null }>(
@@ -508,7 +549,7 @@ export type ServerCredentialProvider =
   | "opensubtitles"
   | "trakt";
 
-/** Save (or overwrite) a SHARED server credential — same PUT the Server tab's
+/** Save (or overwrite) a SHARED server credential - same PUT the Server tab's
  *  "Save shared credential" button uses. Owner/admin only on the server. */
 export async function saveServerSharedCredential(input: {
   provider: ServerCredentialProvider;
@@ -522,12 +563,12 @@ export async function saveServerSharedCredential(input: {
   });
 }
 
-export interface ServerInviteResult {
+interface ServerInviteResult {
   token: string;
   invite: { id: string };
 }
 
-/** Create a household invite — same POST the Server tab's invite form uses. The
+/** Create a household invite - same POST the Server tab's invite form uses. The
  *  caller builds the shareable URL from the returned token. */
 export async function createServerInvite(input: {
   label?: string;

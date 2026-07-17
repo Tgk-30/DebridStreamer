@@ -83,7 +83,7 @@ non-fatal after assertions have passed.
 ### Local builds are UNSIGNED / ad-hoc
 
 The only code-signing identity on the dev machine is an **"Apple Development"**
-certificate, which is a *development* cert — it **cannot** notarize an app for
+certificate, which is a *development* cert - it **cannot** notarize an app for
 distribution. So the local build is intentionally left unsigned:
 
 - `tauri.conf.json` deliberately does **not** set a macOS `signingIdentity`.
@@ -161,7 +161,7 @@ The updater **private key** was generated with `tauri signer generate` and is
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The password for that key (`""` / empty if generated without one). |
 
 > Keep the private key secret. If it is lost, a new keypair must be generated
-> and the new public key committed to `tauri.conf.json` — and clients on old
+> and the new public key committed to `tauri.conf.json` - and clients on old
 > versions will not be able to auto-update across the key change.
 
 To rotate / regenerate the keypair:

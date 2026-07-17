@@ -1,0 +1,209 @@
+/* Top-right profile avatar + customize popover. */
+
+.profile-menu {
+  position: absolute;
+  top: var(--sp-md);
+  right: var(--sp-lg);
+  z-index: 6;
+}
+
+.profile-menu-avatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.14));
+  background: color-mix(in srgb, var(--bg-1) 55%, transparent);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+}
+.profile-menu-avatar:hover,
+.profile-menu-avatar:focus-visible {
+  outline: none;
+  transform: scale(1.05);
+  border-color: rgba(var(--accent-rgb), 0.6);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.36),
+    0 0 0 1px rgba(var(--accent-rgb), 0.4);
+}
+.profile-menu-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.profile-menu-initial {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.profile-menu-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.profile-menu-pop {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 45;
+  width: 264px;
+  padding: var(--sp-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.14));
+  box-shadow: 0 28px 60px -20px rgba(0, 0, 0, 0.66);
+  animation: profileMenuIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes profileMenuIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-menu-pop { animation: none; }
+}
+
+.profile-menu-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+.profile-menu-big {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(var(--accent-rgb), 0.16);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+}
+.profile-menu-big img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-menu-big .profile-menu-initial {
+  font-size: 22px;
+  color: var(--accent);
+}
+.profile-menu-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
+  border: 0.75px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+  outline: none;
+}
+.profile-menu-name:focus-visible {
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.profile-menu-actions {
+  display: flex;
+  gap: var(--sp-sm);
+}
+.profile-menu-action,
+.profile-menu-switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  font-weight: 650;
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--text-primary);
+  background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
+  border: 0.75px solid var(--glass-border);
+  transition: background 0.16s, border-color 0.16s, color 0.16s;
+}
+.profile-menu-action:hover:not(:disabled),
+.profile-menu-switch:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+.profile-menu-action:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.profile-menu-switch {
+  flex: 1 1 100%;
+}
+
+/* Built-in preset avatars - a quick alternative to uploading a photo. */
+.profile-menu-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-menu-presets-label {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.profile-menu-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 8px;
+}
+.profile-menu-preset {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  background: none;
+  transition: transform 0.14s ease, border-color 0.14s ease;
+}
+.profile-menu-preset img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-menu-preset:hover {
+  transform: translateY(-2px) scale(1.06);
+}
+.profile-menu-preset.is-selected {
+  border-color: rgb(var(--accent-rgb));
+}
+@media (max-width: 480px) {
+  .profile-menu-presets-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Surfaced when a picked avatar image cannot be decoded - the user asked for
+   it, so the failure has to be visible rather than silently ignored. */
+.profile-menu-error {
+  margin: 0 0 var(--sp-sm);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+}

@@ -1,4 +1,4 @@
-// DexieStore tests — run against fake-indexeddb (an in-memory, spec-compliant
+// DexieStore tests - run against fake-indexeddb (an in-memory, spec-compliant
 // IndexedDB) so the real Dexie code path is exercised without a browser.
 //
 // Mirrors the intent of the Swift DatabaseManager tests: settings get/set/all;
@@ -7,6 +7,7 @@
 // library + folder CRUD; indexer/debrid config CRUD + ordering; secrets.
 
 import "fake-indexeddb/auto";
+import Dexie from "dexie";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DexieStore } from "./DexieStore";
 import {
@@ -15,6 +16,7 @@ import {
   type AIUsageRecord,
   type CachedResolutionRecord,
   type DebridConfigRecord,
+  type DownloadRecord,
   type TasteEventRecord,
 } from "./models";
 import type { MediaPreview } from "../models/media";
@@ -68,6 +70,58 @@ describe("settings", () => {
   });
 });
 
+// ---- Desktop downloads -----------------------------------------------------
+
+function download(jobId: string): DownloadRecord {
+  return {
+    jobId,
+    mediaId: "tmdb-1",
+    episodeId: null,
+    title: "Movie (2024)",
+    season: null,
+    episode: null,
+    infoHash: "abc",
+    fileHint: null,
+    mode: "full",
+    optimizeProfile: null,
+    keepAudioLangs: [],
+    keepSubLangs: [],
+    status: "queued",
+    bytesDone: 0,
+    bytesTotal: null,
+    optimizePercent: null,
+    destPath: null,
+    error: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+}
+
+describe("desktop downloads", () => {
+  it("saves, updates, lists, and deletes queue records", async () => {
+    await db.saveDownload(download("job-1"));
+    await db.updateDownload("job-1", { status: "paused", bytesDone: 50 });
+    expect(await db.listDownloads()).toMatchObject([
+      { jobId: "job-1", status: "paused", bytesDone: 50 },
+    ]);
+    await db.deleteDownload("job-1");
+    expect(await db.listDownloads()).toEqual([]);
+  });
+
+  it("notifies download subscribers when the queue changes", async () => {
+    const changed = new Promise<DownloadRecord[]>((resolve) => {
+      const unsubscribe = db.subscribeDownloads((records) => {
+        if (records.some((record) => record.jobId === "job-sub")) {
+          unsubscribe();
+          resolve(records);
+        }
+      });
+    });
+    await db.saveDownload(download("job-sub"));
+    await expect(changed).resolves.toMatchObject([{ jobId: "job-sub" }]);
+  });
+});
+
 // ---- Watchlist --------------------------------------------------------------
 
 describe("watchlist", () => {
@@ -103,6 +157,61 @@ describe("watchlist", () => {
     expect(list[0].mediaId).toBe("tt2");
     expect(list[1].mediaId).toBe("tt1");
   });
+
+  it("creates, renames, assigns, and deletes folders without deleting titles", async () => {
+    await db.addToWatchlist(preview("tt1", "Arrival"));
+    await db.addToWatchlist(preview("tt2", "Dune"));
+    const folder = await db.createWatchlistFolder("Sci-Fi");
+    await db.assignWatchlistFolder("tt1", folder.id);
+
+    expect(await db.listWatchlistFolders()).toContainEqual(
+      expect.objectContaining({ id: folder.id, name: "Sci-Fi" }),
+    );
+    expect(await db.listWatchlist()).toContainEqual(
+      expect.objectContaining({ mediaId: "tt1", folderId: folder.id }),
+    );
+
+    await db.renameWatchlistFolder(folder.id, "Science Fiction");
+    expect(await db.listWatchlistFolders()).toContainEqual(
+      expect.objectContaining({ id: folder.id, name: "Science Fiction" }),
+    );
+
+    await db.deleteWatchlistFolder(folder.id);
+    expect(await db.listWatchlist()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ mediaId: "tt1", folderId: null }),
+        expect.objectContaining({ mediaId: "tt2", folderId: null }),
+      ]),
+    );
+    expect(await db.listWatchlistFolders()).not.toContainEqual(
+      expect.objectContaining({ id: folder.id }),
+    );
+  });
+
+  it("migrates pre-folder watchlist rows to uncategorized without losing data", async () => {
+    const name = `legacy-watchlist-${Date.now()}-${counter}`;
+    const legacy = new Dexie(name);
+    legacy.version(5).stores({ watchlist: "mediaId, addedAt" });
+    await legacy.open();
+    await legacy.table("watchlist").put({
+      mediaId: "tt-legacy",
+      addedAt: "2021-01-02T00:00:00.000Z",
+      preview: preview("tt-legacy", "Stored before folders"),
+    });
+    legacy.close();
+
+    await db.delete();
+    db = new DexieStore(name);
+    const rows = await db.listWatchlist();
+    expect(rows).toEqual([
+      expect.objectContaining({
+        mediaId: "tt-legacy",
+        addedAt: "2021-01-02T00:00:00.000Z",
+        folderId: null,
+        preview: expect.objectContaining({ title: "Stored before folders" }),
+      }),
+    ]);
+  });
 });
 
 // ---- Watch history / resume -------------------------------------------------
@@ -126,6 +235,53 @@ describe("watch history", () => {
     });
     const all = await db.listHistory();
     expect(all).toHaveLength(2);
+  });
+
+  it("deletes only the requested completed episode row when unmarked", async () => {
+    await db.recordHistory({
+      mediaId: "show",
+      episodeId: "s1e1",
+      preview: preview("show"),
+      progressSeconds: 1,
+      durationSeconds: 1,
+      completed: true,
+    });
+    await db.recordHistory({
+      mediaId: "show",
+      episodeId: "s1e2",
+      preview: preview("show"),
+      progressSeconds: 1,
+      durationSeconds: 1,
+      completed: true,
+    });
+    await db.deleteHistory("show", "s1e1");
+    expect(await db.getResume("show", "s1e1")).toBeNull();
+    expect((await db.getResume("show", "s1e2"))?.completed).toBe(true);
+  });
+
+  it("remembers player prefs and preserves them across progress-only writes", async () => {
+    // First write sets the remembered audio/sub/speed.
+    await db.recordHistory({
+      mediaId: "tt1",
+      preview: preview("tt1"),
+      progressSeconds: 60,
+      preferredAudioId: "2",
+      preferredAudioLang: "eng",
+      preferredSubId: "no",
+      playbackSpeed: 1.5,
+    });
+    // A later progress-only write (no pref fields) must NOT wipe them.
+    await db.recordHistory({
+      mediaId: "tt1",
+      preview: preview("tt1"),
+      progressSeconds: 900,
+    });
+    const resume = await db.getResume("tt1");
+    expect(resume?.progressSeconds).toBe(900);
+    expect(resume?.preferredAudioId).toBe("2");
+    expect(resume?.preferredAudioLang).toBe("eng");
+    expect(resume?.preferredSubId).toBe("no");
+    expect(resume?.playbackSpeed).toBe(1.5);
   });
 
   it("getResume returns the (media, episode) row", async () => {
@@ -174,6 +330,84 @@ describe("watch history", () => {
     });
     const cw = await db.continueWatching();
     expect(cw.map((r) => r.mediaId)).toEqual(["tt2", "tt1"]);
+  });
+
+  it("continueWatching stops its reverse cursor after collecting the requested resumables", async () => {
+    const recordZeroProgress = async (id: string, lastWatched: string) => {
+      await db.recordHistory({
+        mediaId: id,
+        preview: preview(id),
+        progressSeconds: 0,
+        durationSeconds: null,
+        lastWatched,
+      });
+    };
+
+    // The trailing block is intentionally large: an unbounded filter would read
+    // all 242 rows, while the bounded cursor never reaches it.
+    for (let i = 0; i < 80; i += 1) {
+      await recordZeroProgress(
+        `new-zero-${i}`,
+        `2030-01-01T00:00:00.${String(i).padStart(3, "0")}Z`,
+      );
+    }
+    await db.recordHistory({
+      mediaId: "resumable-new",
+      preview: preview("resumable-new"),
+      progressSeconds: 100,
+      durationSeconds: 1_000,
+      lastWatched: "2025-01-01T00:00:00.000Z",
+    });
+    for (let i = 0; i < 80; i += 1) {
+      await recordZeroProgress(
+        `middle-zero-${i}`,
+        `2024-01-01T00:00:00.${String(i).padStart(3, "0")}Z`,
+      );
+    }
+    await db.recordHistory({
+      mediaId: "resumable-old",
+      preview: preview("resumable-old"),
+      progressSeconds: 200,
+      durationSeconds: 1_000,
+      lastWatched: "2023-01-01T00:00:00.000Z",
+    });
+    for (let i = 0; i < 80; i += 1) {
+      await recordZeroProgress(
+        `old-zero-${i}`,
+        `2022-01-01T00:00:00.${String(i).padStart(3, "0")}Z`,
+      );
+    }
+
+    let cursorVisits = 0;
+    const historyTable = Reflect.get(db, "watchHistory") as {
+      core: {
+        openCursor(
+          ...args: unknown[]
+        ): Promise<{
+          start(callback: () => void): unknown;
+        } | null>;
+      };
+    };
+    const originalOpenCursor = historyTable.core.openCursor.bind(historyTable.core);
+    historyTable.core.openCursor = async (...args) => {
+      const cursor = await originalOpenCursor(...args);
+      if (cursor == null) return null;
+      const originalStart = cursor.start.bind(cursor);
+      cursor.start = (callback) =>
+        originalStart(() => {
+          cursorVisits += 1;
+          callback();
+        });
+      return cursor;
+    };
+
+    const rows = await db.continueWatching(2);
+
+    expect(rows.map((row) => row.mediaId)).toEqual([
+      "resumable-new",
+      "resumable-old",
+    ]);
+    expect(cursorVisits).toBeLessThan(200);
   });
 
   it("listHistory orders newest-first", async () => {
@@ -226,7 +460,7 @@ describe("library + folders", () => {
     expect(inFolder.map((e) => e.mediaId)).toEqual(["tt1"]);
   });
 
-  it("addToLibrary serializes concurrent adds — no duplicate rows (regression)", async () => {
+  it("addToLibrary serializes concurrent adds - no duplicate rows (regression)", async () => {
     await Promise.all([
       db.addToLibrary({ mediaId: "ttX", listType: "watchlist", preview: preview("ttX") }),
       db.addToLibrary({ mediaId: "ttX", listType: "watchlist", preview: preview("ttX") }),
@@ -503,6 +737,155 @@ describe("taste events", () => {
     expect(recent.map((e) => e.id)).toEqual(["e2", "e1"]);
     expect(await db.recentTasteEvents(1)).toHaveLength(1);
   });
+
+  it("uses the additive mediaId+createdAt index for per-title reads", async () => {
+    await db.addTasteEvent(event("old", "2024-01-01T00:00:00.000Z"));
+    await db.addTasteEvent({
+      ...event("other", "2024-03-01T00:00:00.000Z"),
+      mediaId: "tt-other",
+    });
+    await db.addTasteEvent(event("new", "2024-02-01T00:00:00.000Z"));
+
+    expect(db.table("tasteEvents").schema.idxByName["[mediaId+createdAt]"]).toBeDefined();
+    expect((await db.recentTasteEventsForMedia("tt1")).map((row) => row.id)).toEqual([
+      "new",
+      "old",
+    ]);
+  });
+
+  it("never prunes explicit ratings, likes, or dislikes", async () => {
+    const explicit: TasteEventRecord[] = [
+      { ...event("rated-old", "1990-01-01T00:00:00.000Z"), eventType: "rated" },
+      { ...event("liked-old", "1990-01-02T00:00:00.000Z"), eventType: "liked" },
+      { ...event("disliked-old", "1990-01-03T00:00:00.000Z"), eventType: "disliked" },
+    ];
+    const implicit = Array.from({ length: 1_002 }, (_, index) => ({
+      ...event(`implicit-${index}`, new Date(Date.UTC(2024, 0, 1, 0, 0, index)).toISOString()),
+      mediaId: `tmdb-${index}`,
+    }));
+    const table = db.table<TasteEventRecord, string>("tasteEvents");
+    await table.bulkPut([...explicit, ...implicit]);
+
+    await db.addTasteEvent(event("implicit-trigger", "2025-01-01T00:00:00.000Z"));
+
+    expect((await table.bulkGet(explicit.map((row) => row.id))).filter(Boolean)).toHaveLength(3);
+    expect(
+      await table.where("eventType").noneOf(["rated", "liked", "disliked"]).count(),
+    ).toBe(1_000);
+    // Heavier fake-IndexedDB seed (1000+ rows) than the default
+    // 5s test timeout comfortably covers on a slow CI runner.
+  }, 20000);
+});
+
+describe("v4 to v5 migration", () => {
+  it("preserves taste events and makes them queryable by the new media index", async () => {
+    const name = `migration-${Date.now()}-${Math.random()}`;
+    const legacy = new Dexie(name);
+    legacy.version(4).stores({
+      settings: "key",
+      secrets: "key",
+      watchlist: "mediaId, addedAt",
+      watchHistory: "id, mediaId, lastWatched, completed",
+      library: "id, mediaId, folderId, listType, addedAt",
+      folders: "id, parentId, listType, isSystem",
+      indexerConfigs: "id, priority, isActive",
+      debridConfigs: "id, priority, isActive",
+      tasteEvents: "id, userId, createdAt",
+      mediaCache: "id, lastFetched",
+      cachedResolutions: "mediaId, resolvedAt",
+      aiUsage: "id, createdAt",
+      downloads: "jobId, status, updatedAt, createdAt, mediaId, episodeId",
+    });
+    const seeded: TasteEventRecord[] = [
+      {
+        id: "legacy-1",
+        userId: "default",
+        mediaId: "tt-upgrade",
+        episodeId: null,
+        eventType: "rated",
+        signalStrength: 0.9,
+        metadata: { rating: "9" },
+        createdAt: "2024-01-01T00:00:00.000Z",
+      },
+      {
+        id: "legacy-2",
+        userId: "default",
+        mediaId: "tt-other",
+        episodeId: null,
+        eventType: "liked",
+        signalStrength: 1,
+        metadata: {},
+        createdAt: "2024-02-01T00:00:00.000Z",
+      },
+    ];
+    await legacy.table<TasteEventRecord, string>("tasteEvents").bulkAdd(seeded);
+    legacy.close();
+
+    const upgraded = new DexieStore(name);
+    try {
+      expect(await upgraded.table("tasteEvents").count()).toBe(seeded.length);
+      expect(
+        (await upgraded.recentTasteEventsForMedia("tt-upgrade")).map((row) => row.id),
+      ).toEqual(["legacy-1"]);
+      expect(
+        upgraded.table("tasteEvents").schema.idxByName["[mediaId+createdAt]"],
+      ).toBeDefined();
+    } finally {
+      await upgraded.delete();
+    }
+  });
+});
+
+describe("storage open failure handling", () => {
+  it("reports a failed open and lets the caller offer explicit recovery", async () => {
+    const original = Dexie.dependencies.indexedDB;
+    const issue = vi.fn();
+
+    try {
+      Dexie.dependencies.indexedDB = undefined as unknown as IDBFactory;
+      // Create after removing the IndexedDB implementation so its eager open
+      // follows the same failure path a blocked/corrupt browser profile would.
+      const unavailable = new DexieStore(`unavailable-${Date.now()}`);
+      unavailable.onStorageIssue(issue);
+      await expect(unavailable.getSetting("boot")).rejects.toBeInstanceOf(Error);
+      expect(issue).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "open-failed" }),
+      );
+      unavailable.close();
+    } finally {
+      Dexie.dependencies.indexedDB = original;
+    }
+  });
+
+  it("retries after a transient open timeout and serves the waiting operation", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const originalOpen = DexieStore.prototype.open;
+    let calls = 0;
+    const open = vi
+      .spyOn(DexieStore.prototype, "open")
+      .mockImplementation(function (this: DexieStore) {
+        calls += 1;
+        if (calls === 1) {
+          return new Promise<Dexie>(() => {}) as ReturnType<DexieStore["open"]>;
+        }
+        return originalOpen.call(this);
+      });
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const recovering = new DexieStore(`recovering-${Date.now()}`);
+
+    try {
+      const read = recovering.getSetting("boot");
+      await vi.advanceTimersByTimeAsync(10_001);
+      await expect(read).resolves.toBeNull();
+      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(recovering.getStorageIssue()).toBeNull();
+    } finally {
+      open.mockRestore();
+      warning.mockRestore();
+      vi.useRealTimers();
+      await recovering.delete();
+    }
+  });
 });
 
 // ---- Media cache ------------------------------------------------------------
@@ -601,6 +984,14 @@ describe("cached resolutions", () => {
     expect(got?.mediaId).toBe("tt1");
     expect(got?.stream.streamURL).toBe("https://cdn.example/tt1.mkv");
     expect(got?.infoHash).toBe("hash-tt1");
+  });
+
+  it("bulk-gets only the requested cached resolution ids", async () => {
+    await db.putCachedResolution(resolution("tt1", "2024-01-01T00:00:00.000Z"));
+    await db.putCachedResolution(resolution("tt2", "2024-01-02T00:00:00.000Z"));
+    expect((await db.getCachedResolutions(["tt2", "missing"])).map((row) => row.mediaId)).toEqual([
+      "tt2",
+    ]);
   });
 
   it("put is an upsert keyed by mediaId (newest wins)", async () => {

@@ -66,7 +66,7 @@ describe("buildDiscoverParams", () => {
   });
 
   it("swaps an inverted year range so the floor never exceeds the ceiling", () => {
-    // From=2020, To=2000 — TMDB would return nothing for gte>lte; we normalize.
+    // From=2020, To=2000 - TMDB would return nothing for gte>lte; we normalize.
     const p = buildDiscoverParams(
       "movie",
       filters({ yearGTE: 2020, yearLTE: 2000 }),

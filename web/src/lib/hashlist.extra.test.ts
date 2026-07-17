@@ -1,4 +1,4 @@
-// Extra tests for hashlist decode — targets the per-error throw branches that
+// Extra tests for hashlist decode - targets the per-error throw branches that
 // the round-trip happy-path tests don't reach: invalid JSON, missing/non-array
 // items, over-MAX_ITEMS, and an all-invalid-hash payload. We hand-craft the
 // `dshl1:` wire string (gzip(deflate) -> base64url) so we control the inner JSON
@@ -24,7 +24,7 @@ function wrapRaw(inner: string): string {
   return PREFIX + bytesToBase64Url(deflate(new TextEncoder().encode(inner)));
 }
 
-describe("decodeHashList — payload-shape error branches", () => {
+describe("decodeHashList - payload-shape error branches", () => {
   it("throws on a payload that inflates to invalid JSON", () => {
     expect(() => decodeHashList(wrapRaw("this is not json {"))).toThrow(
       /not valid JSON/i,
@@ -73,11 +73,11 @@ describe("decodeHashList — payload-shape error branches", () => {
   });
 });
 
-describe("decodeHashList — bounded inflate (decompression bomb)", () => {
+describe("decodeHashList - bounded inflate (decompression bomb)", () => {
   it("aborts when the inflated output exceeds MAX_INFLATED_BYTES (4 MiB)", () => {
     // A long run of one character compresses tiny but inflates huge. >4 MiB of
-    // 'a' deflates to a few hundred base64url chars — well under the compressed
-    // cap — so it slips past that guard and must be stopped mid-inflate instead.
+    // 'a' deflates to a few hundred base64url chars - well under the compressed
+    // cap - so it slips past that guard and must be stopped mid-inflate instead.
     const bomb = "a".repeat(5 * 1024 * 1024);
     const encoded = wrapRaw(bomb);
     expect(encoded.length).toBeLessThan(256 * 1024 + "dshl1:".length);

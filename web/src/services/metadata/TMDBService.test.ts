@@ -8,8 +8,11 @@
 // Here we inject a `FetchImpl` stub that plays the same role: it captures the
 // requested URL and counts calls.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { type FetchImpl, TMDBService } from "./TMDBService";
+import { NetworkBlockedError, setNetworkMode } from "../../lib/networkPolicy";
+
+afterEach(() => setNetworkMode("standard"));
 
 // MARK: - fetch stub (mirrors MockURLProtocol + makeMockSession)
 
@@ -49,6 +52,29 @@ function makeMockFetch(handler: (url: URL) => MockResponse): MockFetch {
 
 const ok = (body: string): MockResponse => ({ status: 200, body });
 const serverError = (body: string): MockResponse => ({ status: 500, body });
+
+describe("TMDBService privacy gate", () => {
+  it("throws NetworkBlockedError in Offline mode before requesting metadata", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("key", mock.fetchImpl);
+    setNetworkMode("offline");
+
+    await expect(service.search("Fight Club", "movie")).rejects.toBeInstanceOf(
+      NetworkBlockedError,
+    );
+    expect(mock.hits()).toBe(0);
+  });
+
+  it("requests metadata in Standard mode", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("key", mock.fetchImpl);
+
+    await expect(service.search("Fight Club", "movie")).resolves.toMatchObject({
+      items: expect.any(Array),
+    });
+    expect(mock.hits()).toBe(1);
+  });
+});
 
 /** A fetch stub that dispatches per-path so a single service can answer the
  * multi-request flows (getDetail-via-find, etc.). Routes on URL.pathname. */
@@ -217,6 +243,50 @@ describe("TMDBService catalog reads decode into MediaPreview", () => {
 
     await service.getCategory("top_rated", "movie", 1);
     expect(mock.lastURL()!.pathname).toBe("/3/movie/top_rated");
+  });
+
+  it("builds a cached, release-dated movie calendar from now-playing and upcoming", async () => {
+    const mock = makeRoutedFetch({
+      "/3/movie/now_playing": ok(JSON.stringify({
+        page: 1,
+        results: [
+          { id: 1, title: "Recent Movie", release_date: "2026-06-10" },
+          { id: 2, title: "No Date" },
+        ],
+        total_pages: 1,
+        total_results: 2,
+      })),
+      "/3/movie/upcoming": ok(JSON.stringify({
+        page: 1,
+        results: [
+          { id: 3, title: "Future Movie", release_date: "2026-07-04" },
+        ],
+        total_pages: 1,
+        total_results: 1,
+      })),
+    });
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+
+    const first = await service.getMovieReleaseCalendar();
+    expect(first).toEqual([
+      expect.objectContaining({ releaseDate: "2026-06-10", source: "now_playing" }),
+      expect.objectContaining({ releaseDate: "2026-07-04", source: "upcoming" }),
+    ]);
+    expect(mock.hits()).toBe(2);
+
+    expect(await service.getMovieReleaseCalendar()).toEqual(first);
+    expect(mock.hits()).toBe(2);
+  });
+
+  it("returns [] without throwing when a category response has no results array", async () => {
+    // TMDB unreachable / missing key / error shape: response lacks `.results`.
+    // The calendar must degrade to empty, not crash on `.results.flatMap`.
+    const mock = makeRoutedFetch({
+      "/3/movie/now_playing": ok(JSON.stringify({ success: false, status_message: "invalid" })),
+      "/3/movie/upcoming": ok(JSON.stringify({})),
+    });
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+    await expect(service.getMovieReleaseCalendar()).resolves.toEqual([]);
   });
 
   it("discover applies filters and hits the discover path", async () => {
@@ -389,7 +459,7 @@ describe("TMDBService getRecommendations", () => {
 // MARK: - TTL response cache (TMDBServiceResponseCacheTests)
 
 describe("TMDBService TTL response cache", () => {
-  it("getCast memoizes within TTL — second read served from cache, no extra network hit", async () => {
+  it("getCast memoizes within TTL - second read served from cache, no extra network hit", async () => {
     // First hit returns valid credits; any subsequent hit returns a 500 that
     // would throw if a second network read actually occurred.
     const mock = makeMockFetch(() =>
@@ -407,7 +477,7 @@ describe("TMDBService TTL response cache", () => {
     expect(second[0].name).toBe("Edward Norton");
   });
 
-  it("getRecommendations memoizes within TTL — cached value persists when stub later errors", async () => {
+  it("getRecommendations memoizes within TTL - cached value persists when stub later errors", async () => {
     const mock = makeMockFetch(() =>
       mock.hits() === 1 ? ok(recommendationsBody) : serverError("{}"),
     );
@@ -423,7 +493,7 @@ describe("TMDBService TTL response cache", () => {
     expect(second[0].title).toBe("Se7en");
   });
 
-  it("is keyed per request — distinct tmdbIds each hit the network", async () => {
+  it("is keyed per request - distinct tmdbIds each hit the network", async () => {
     const mock = makeMockFetch(() => ok(JSON.stringify({ id: 0, cast: [] })));
     const service = new TMDBService("tmdb-key", mock.fetchImpl);
 
@@ -598,7 +668,7 @@ describe("TMDBService HTTP error mapping", () => {
     await expect(service.getCast(1, "movie")).rejects.toThrow();
   });
 
-  it("does not cache a failed read — a later success is fetched and served", async () => {
+  it("does not cache a failed read - a later success is fetched and served", async () => {
     // First call 500s (not cached), second call returns valid genres.
     const genresBody = JSON.stringify({ genres: [{ id: 1, name: "Action" }] });
     const mock = makeMockFetch(() =>
@@ -813,7 +883,7 @@ describe("TMDBService getEpisodes", () => {
   });
 });
 
-// MARK: - getExternalIds (uncached request)
+// MARK: - getExternalIds
 
 describe("TMDBService getExternalIds", () => {
   it("maps imdb_id/tvdb_id and hits the external_ids path", async () => {
@@ -826,7 +896,7 @@ describe("TMDBService getExternalIds", () => {
     expect(mock.lastURL()!.pathname).toBe("/3/tv/321/external_ids");
   });
 
-  it("maps missing ids to null and is NOT memoized (each call hits the network)", async () => {
+  it("maps missing ids to null and memoizes the result", async () => {
     const mock = makeMockFetch(() => ok(JSON.stringify({})));
     const service = new TMDBService("tmdb-key", mock.fetchImpl);
 
@@ -834,7 +904,27 @@ describe("TMDBService getExternalIds", () => {
     expect(ids).toEqual({ imdbId: null, tvdbId: null });
 
     await service.getExternalIds(321, "movie");
-    expect(mock.hits()).toBe(2); // uncached path
+    expect(mock.hits()).toBe(1);
+  });
+
+  it("deduplicates concurrent external-id reads before the cache is filled", async () => {
+    let hits = 0;
+    const fetchImpl: FetchImpl = async () => {
+      hits += 1;
+      return {
+        status: 200,
+        text: async () => JSON.stringify({ imdb_id: "tt321" }),
+      };
+    };
+    const service = new TMDBService("tmdb-key", fetchImpl);
+
+    const first = service.getExternalIds(321, "movie");
+    const second = service.getExternalIds(321, "movie");
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { imdbId: "tt321", tvdbId: null },
+      { imdbId: "tt321", tvdbId: null },
+    ]);
+    expect(hits).toBe(1);
   });
 });
 
@@ -1023,5 +1113,50 @@ describe("TMDBService cache key behavior", () => {
     await service.search("q", "movie", 1);
     await service.search("q", "series", 1);
     expect(mock.hits()).toBe(2);
+  });
+});
+
+describe("TMDBService.getTrailer", () => {
+  const trailerBody = (results: unknown[]) => JSON.stringify({ results });
+
+  it("prefers the official YouTube trailer and hits the videos path", async () => {
+    const mock = makeMockFetch(() =>
+      ok(
+        trailerBody([
+          { key: "teaser1", site: "YouTube", type: "Teaser", official: true },
+          { key: "unofficial", site: "YouTube", type: "Trailer", official: false },
+          { key: "official1", site: "YouTube", type: "Trailer", official: true },
+        ]),
+      ),
+    );
+    const service = new TMDBService("tmdb-key", mock.fetchImpl);
+    expect(await service.getTrailer(603, "movie")).toBe("official1");
+    expect(mock.lastURL()?.pathname).toBe("/3/movie/603/videos");
+  });
+
+  it("falls back to any Trailer, then a Teaser", async () => {
+    const t = makeMockFetch(() =>
+      ok(trailerBody([{ key: "any", site: "YouTube", type: "Trailer", official: false }])),
+    );
+    expect(await new TMDBService("k", t.fetchImpl).getTrailer(1, "series")).toBe("any");
+
+    const teaser = makeMockFetch(() =>
+      ok(trailerBody([{ key: "te", site: "YouTube", type: "Teaser", official: false }])),
+    );
+    expect(await new TMDBService("k", teaser.fetchImpl).getTrailer(1, "movie")).toBe("te");
+    // Series path resolves to /tv/.
+    expect(t.lastURL()?.pathname).toBe("/3/tv/1/videos");
+  });
+
+  it("ignores non-YouTube videos and returns null when none qualify", async () => {
+    const mock = makeMockFetch(() =>
+      ok(trailerBody([{ key: "v", site: "Vimeo", type: "Trailer", official: true }])),
+    );
+    expect(await new TMDBService("k", mock.fetchImpl).getTrailer(1, "movie")).toBeNull();
+  });
+
+  it("returns null for an empty results list", async () => {
+    const mock = makeMockFetch(() => ok(trailerBody([])));
+    expect(await new TMDBService("k", mock.fetchImpl).getTrailer(1, "movie")).toBeNull();
   });
 });

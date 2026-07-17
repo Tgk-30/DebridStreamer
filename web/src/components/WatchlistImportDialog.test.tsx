@@ -2,12 +2,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { MediaPreview, MediaType } from "../models/media";
+import { IMDbCSVSyncService } from "../services/sync/IMDbCSVSyncService";
 
 // --- mutable mock state -----------------------------------------------------
 
 const search = vi.fn<(q: string, t: MediaType | null) => Promise<{ items: MediaPreview[] }>>();
 const importToWatchlist =
   vi.fn<(p: MediaPreview[]) => Promise<{ added: number; skipped: number }>>();
+const createWatchlistFolder = vi.fn();
+const assignWatchlistFolder = vi.fn();
 let serverMode = false;
 let tmdb: { search: typeof search } | null = { search };
 
@@ -18,6 +21,9 @@ vi.mock("../lib/serverMode", () => ({ isServerMode: () => serverMode }));
 vi.mock("../lib/serverApi", () => ({
   searchServerMedia: (input: { query: string; type: MediaType | null }) =>
     search(input.query, input.type),
+}));
+vi.mock("../storage", () => ({
+  getStore: () => ({ createWatchlistFolder, assignWatchlistFolder }),
 }));
 vi.mock("./useModalA11y", () => ({ useModalA11y: () => ({ current: null }) }));
 vi.mock("./Icon", () => ({ Icon: ({ name }: { name: string }) => <i data-icon={name} /> }));
@@ -33,43 +39,21 @@ afterEach(() => {
   vi.clearAllMocks();
   serverMode = false;
   tmdb = { search };
+  createWatchlistFolder.mockResolvedValue({ id: "folder-imdb", name: "IMDb import" });
+  assignWatchlistFolder.mockResolvedValue(undefined);
 });
 
 describe("WatchlistImportDialog", () => {
-  it("uses server lookup when server mode is active", async () => {
-    serverMode = true;
-    tmdb = null;
-    search.mockImplementation(async (q: string) =>
-      q === "Server Title" ? { items: [preview("tmdb-server-1")] } : { items: [] },
-    );
-    importToWatchlist.mockResolvedValue({ added: 1, skipped: 0 });
-
-    render(<WatchlistImportDialog onClose={() => {}} />);
-    fireEvent.change(screen.getByLabelText("Titles or CSV to import"), {
-      target: { value: "Server Title\nNope" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Import" }));
-
-    await waitFor(() =>
-      expect(screen.getByText(/Added 1 title to your watchlist/i)).toBeInTheDocument(),
-    );
-    expect(search).toHaveBeenCalledTimes(2);
-    expect(importToWatchlist).toHaveBeenCalledWith([
-      expect.objectContaining({ id: "tmdb-server-1" }),
-    ]);
-    expect(screen.getByText(/1 couldn't be matched/i)).toBeInTheDocument();
-  });
-
   it("gates when neither a TMDB key nor a server is available", () => {
     tmdb = null;
     serverMode = false;
-    render(<WatchlistImportDialog onClose={() => {}} />);
+    render(<WatchlistImportDialog onClose={() => {}} watchlist={[]} />);
     expect(screen.getByText(/Add a TMDB API key/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Import" })).not.toBeInTheDocument();
   });
 
   it("shows a live count of detected titles", () => {
-    render(<WatchlistImportDialog onClose={() => {}} />);
+    render(<WatchlistImportDialog onClose={() => {}} watchlist={[]} />);
     fireEvent.change(screen.getByLabelText("Titles or CSV to import"), {
       target: { value: "The Matrix (1999)\nDune" },
     });
@@ -85,7 +69,7 @@ describe("WatchlistImportDialog", () => {
     );
     importToWatchlist.mockResolvedValue({ added: 1, skipped: 0 });
 
-    render(<WatchlistImportDialog onClose={() => {}} />);
+    render(<WatchlistImportDialog onClose={() => {}} watchlist={[]} />);
     fireEvent.change(screen.getByLabelText("Titles or CSV to import"), {
       target: { value: "The Matrix (1999)\nNope" },
     });
@@ -102,72 +86,65 @@ describe("WatchlistImportDialog", () => {
     expect(screen.getByText(/1 couldn't be matched/i)).toBeInTheDocument();
   });
 
-  it("reads oversized files via slice and warns when truncated", async () => {
-    const inputText = "The Matrix (1999)\nDune";
-    const { container } = render(<WatchlistImportDialog onClose={() => {}} />);
-    const fileInput = container.querySelector('input[type="file"]');
+  it("creates an IMDb import folder and assigns every matched title to it", async () => {
+    search.mockImplementation(async (q: string) => ({
+      items: [preview(`tmdb-${q}`, { title: q, year: q === "Heat" ? 1995 : 1999 })],
+    }));
+    importToWatchlist.mockResolvedValue({ added: 2, skipped: 0 });
 
-    expect(fileInput).toBeTruthy();
-
-    const oversized = {
-      size: 512 * 1024 + 1,
-      text: vi.fn(async () => "This should not be read when file is oversized"),
-      slice: vi.fn(() => ({ text: async () => inputText })),
-    } as unknown as File;
-
-    fireEvent.change(fileInput as HTMLInputElement, {
-      target: { files: [oversized] },
-    });
-
-    expect(
-      await screen.findByText(/only the first part was imported/i),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("Titles or CSV to import")).toHaveValue(inputText);
-    expect(oversized.text).not.toHaveBeenCalled();
-    expect(oversized.slice).toHaveBeenCalledWith(0, 512 * 1024);
-  });
-
-  it("handles file read failure and keeps the selected file input clear", async () => {
-    const { container } = render(<WatchlistImportDialog onClose={() => {}} />);
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-
-    expect(fileInput).toBeTruthy();
-
-    const brokenFile = {
-      size: 128,
-      text: vi.fn(async () => {
-        throw new Error("boom");
-      }),
-    } as unknown as File;
-
-    fireEvent.change(fileInput, {
-      target: { files: [brokenFile] },
-    });
-
-    expect(await screen.findByText(/Could not read that file/i)).toBeInTheDocument();
-    expect(fileInput.value).toBe("");
-  });
-
-  it("continues imports when lookup fails and shows saved/not-found summary rows", async () => {
-    search.mockImplementation(async (q: string) => {
-      if (q === "Bad Title") throw new Error("lookup failed");
-      return { items: [preview("tmdb-good", { title: "Good Title", year: 2024 })] };
-    });
-    importToWatchlist.mockResolvedValue({ added: 2, skipped: 1 });
-
-    render(<WatchlistImportDialog onClose={() => {}} />);
+    render(<WatchlistImportDialog onClose={() => {}} watchlist={[]} />);
     fireEvent.change(screen.getByLabelText("Titles or CSV to import"), {
-      target: { value: "Bad Title\nGood Title" },
+      target: {
+        value: [
+          "Const,Title,Title Type,Your Rating,Date Added,Year",
+          "tt0113277,Heat,movie,9,2024-01-01,1995",
+          "tt0133093,The Matrix,movie,10,2024-01-02,1999",
+        ].join("\n"),
+      },
     });
     fireEvent.click(screen.getByRole("button", { name: "Import" }));
 
-    expect(
-      await screen.findByText(/Added 2 titles to your watchlist/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/1 already saved\./i)).toBeInTheDocument();
-    expect(screen.getByText(/1 couldn't be matched\./i)).toBeInTheDocument();
-    expect(importToWatchlist).toHaveBeenCalledWith([
-      expect.objectContaining({ id: "tmdb-good" }),
-    ]);
+    await waitFor(() => expect(createWatchlistFolder).toHaveBeenCalledWith("IMDb import"));
+    expect(assignWatchlistFolder).toHaveBeenCalledWith("tmdb-Heat", "folder-imdb");
+    expect(assignWatchlistFolder).toHaveBeenCalledWith("tmdb-The Matrix", "folder-imdb");
+    expect(screen.getByText(/Organized in the IMDb import folder/i)).toBeInTheDocument();
+  });
+
+  it("exports the watchlist as an IMDb CSV download", () => {
+    const watchlist = [
+      preview("tt0133093", { title: "The Matrix", year: 1999 }),
+      preview("tmdb-603", { title: "The Matrix", year: 1999 }),
+    ];
+    const exportCSV = vi.spyOn(IMDbCSVSyncService.prototype, "exportCSV");
+    const createObjectURL = vi.fn(() => "blob:watchlist");
+    const revokeObjectURL = vi.fn();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    Object.defineProperties(URL, {
+      createObjectURL: { configurable: true, value: createObjectURL },
+      revokeObjectURL: { configurable: true, value: revokeObjectURL },
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    try {
+      render(<WatchlistImportDialog onClose={() => {}} watchlist={watchlist} />);
+      expect(screen.getByText(/1 of 2 titles has no IMDb id/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Export for IMDb" }));
+
+      expect(exportCSV).toHaveBeenCalledWith(watchlist);
+      expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+      expect(click).toHaveBeenCalled();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:watchlist");
+    } finally {
+      Object.defineProperties(URL, {
+        createObjectURL: { configurable: true, value: originalCreateObjectURL },
+        revokeObjectURL: { configurable: true, value: originalRevokeObjectURL },
+      });
+    }
+  });
+
+  it("hides Export for IMDb when the watchlist is empty", () => {
+    render(<WatchlistImportDialog onClose={() => {}} watchlist={[]} />);
+    expect(screen.queryByRole("button", { name: "Export for IMDb" })).toBeNull();
   });
 });

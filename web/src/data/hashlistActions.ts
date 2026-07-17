@@ -105,7 +105,7 @@ export function exportHashList(torrents: DebridTorrent[]): string {
 }
 
 /** The result of an AI-emit: the resolved entries plus the shareable string. */
-export interface AIEmitResult {
+interface AIEmitResult {
   entries: HashListEntry[];
   encoded: string;
   /** Titles the AI suggested that we could NOT resolve to an infoHash. */
@@ -201,7 +201,10 @@ async function resolveTitleToEntry(
     if (debrid != null && debrid.hasServices) {
       try {
         const merged = await debrid.checkCacheAll(results.map((r) => r.infoHash));
-        const cached = results.find((r) => merged[r.infoHash]?.status.kind === "cached");
+        // checkCacheAll canonicalizes to lowercase - look up the same way.
+        const cached = results.find(
+          (r) => merged[r.infoHash.toLowerCase()]?.status.kind === "cached",
+        );
         if (cached != null) chosen = cached;
       } catch {
         // keep the seeder-sorted top pick

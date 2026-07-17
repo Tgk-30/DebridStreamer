@@ -1,0 +1,52 @@
+/* Built-in avatar chooser (see components/AvatarPicker.tsx). */
+
+.avatar-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  max-height: 232px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.avatar-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.avatar-picker-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.avatar-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 4px;
+}
+.avatar-picker-cell {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: var(--glass-tint-control);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+.avatar-picker-cell:hover {
+  background: var(--glass-tint-control-hover);
+  transform: translateY(-1px);
+}
+.avatar-picker-cell.is-active {
+  border-color: rgb(var(--accent-rgb));
+  background: rgba(var(--accent-rgb), 0.16);
+}
+.avatar-picker-cell:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb));
+  outline-offset: 2px;
+}
