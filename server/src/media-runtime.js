@@ -310,7 +310,16 @@ export async function searchServerStreams(db, config, profileId, input) {
       ? titleIndexers.searchByQuery(titleQuery, input.type).catch(() => [])
       : Promise.resolve([]),
   ]);
-  const results = combineStreamResults(byImdb, byTitle, input.title ?? null);
+  // The year is passed for MOVIES only (combineStreamResults down-ranks
+  // wrong-year releases; episode rips carry air/rip years that legitimately
+  // differ from a series' first-air year, so the signal is meaningless there)
+  // - mirror the client web/src/data/streams.ts resolveStreams.
+  const results = combineStreamResults(
+    byImdb,
+    byTitle,
+    input.title ?? null,
+    input.type === "movie" ? input.year ?? null : null,
+  );
 
   let cacheByHash = {};
   if (debrid != null) {

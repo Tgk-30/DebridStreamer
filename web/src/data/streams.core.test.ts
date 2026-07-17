@@ -160,7 +160,7 @@ async function renderStreams(
 ): Promise<{ state: StreamsState; cleanup: () => void }> {
   // First synchronous render: the hook returns the initial state and registers
   // its effect.
-  const initial = useStreams(imdbId, type, season, episode, title, indexers, debrid);
+  const initial = useStreams(imdbId, type, season, episode, title, null, indexers, debrid);
   // Run the registered effect (kicks off the async run + returns teardown).
   const teardown = cell.effect ? cell.effect() : undefined;
   // Flush the microtask queue so the async `run` settles into setState.
@@ -405,7 +405,7 @@ describe("useStreams - cancellation", () => {
         return new Promise<TorrentResult[]>(() => {});
       },
     });
-    useStreams("tt1", "movie", null, null, null, indexers, null);
+    useStreams("tt1", "movie", null, null, null, null, indexers, null);
     const teardown = cell.effect ? cell.effect() : undefined;
     expect(signal?.aborted).toBe(false);
     if (typeof teardown === "function") teardown();
@@ -421,7 +421,7 @@ describe("useStreams - cancellation", () => {
         }),
     });
     // Render and immediately tear down BEFORE the search resolves.
-    const initial = useStreams("tt1", "movie", null, null, null, indexers, null);
+    const initial = useStreams("tt1", "movie", null, null, null, null, indexers, null);
     expect(initial.loading).toBe(true); // imdb + indexers ⇒ starts loading
     const teardown = cell.effect ? cell.effect() : undefined;
     if (typeof teardown === "function") teardown(); // mark cancelled

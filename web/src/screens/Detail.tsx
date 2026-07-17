@@ -314,6 +314,7 @@ export function Detail() {
     selected?.season ?? null,
     selected?.episode ?? null,
     detailItem?.title ?? detail.data.item?.title ?? null,
+    detailItem?.year ?? detail.data.item?.year ?? null,
     services.indexers,
     services.debrid,
   );

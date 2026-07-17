@@ -114,4 +114,21 @@ describe("combineStreamResults (server dual-search merge - mirrors client)", () 
     );
     expect(merged.map((r) => r.infoHash)).toEqual(["b", "a"]);
   });
+
+  it("down-ranks wrong-year releases when a movie year is given (Odyssey case)", () => {
+    // The v0.9.3 CV QA bug, exercised through the server's re-export: The
+    // Odyssey (2026)'s sources led with the 1997/2016 adaptations. With the
+    // movie year, wrong-year releases sink below year-compatible AND
+    // no-year ones (never dropped); yearless calls keep the old order.
+    const byTitle = [
+      tr("y1997", "The.Odyssey.1997.2160p.REMUX", 900, "4K"),
+      tr("y2016", "The Odyssey (2016) 1080p WEBRip", 300),
+      tr("noyear", "The.Odyssey.1080p.WEB.H264-GRP", 100),
+      tr("y2026", "The.Odyssey.2026.1080p.WEB-DL", 40),
+    ];
+    const ranked = combineStreamResults([], byTitle, "The Odyssey", 2026);
+    expect(ranked.map((r) => r.infoHash)).toEqual(["noyear", "y2026", "y1997", "y2016"]);
+    const unranked = combineStreamResults([], byTitle, "The Odyssey");
+    expect(unranked.map((r) => r.infoHash)).toEqual(["y1997", "y2016", "noyear", "y2026"]);
+  });
 });

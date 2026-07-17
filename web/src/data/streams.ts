@@ -216,6 +216,7 @@ async function resolveStreams(
   season: number | null,
   episode: number | null,
   title: string | null,
+  year: number | null,
   indexers: IndexerManager,
   debrid: DebridManager | null,
   signal?: AbortSignal,
@@ -251,8 +252,16 @@ async function resolveStreams(
   if (signal?.aborted) return [];
   // Fold the imdb-exact + loose title passes into one ranked, deduped set. The
   // combiner (shared with Server Mode) validates the title pass against the
-  // requested title so the two modes can never diverge.
-  const results = combineStreamResults(byImdb, byTitle, title);
+  // requested title so the two modes can never diverge. The year is passed for
+  // MOVIES only (combineStreamResults down-ranks wrong-year releases; episode
+  // rips carry air/rip years that legitimately differ from a series' first-air
+  // year, so the signal is meaningless there) - mirror media-runtime.js.
+  const results = combineStreamResults(
+    byImdb,
+    byTitle,
+    title,
+    type === "movie" ? year : null,
+  );
   if (results.length === 0) return [];
 
   // Check cache across all configured debrid services for every infoHash.
@@ -292,13 +301,16 @@ async function resolveStreams(
 /** Resolve stream rows for a title. Returns an empty/idle state until both an
  * imdb id and at least one indexer are available. For series, pass the selected
  * season/episode so the search and ranking are episode-specific; movies pass
- * null/null. */
+ * null/null. `year` is the item's release year when known - used to down-rank
+ * (movies only) same-titled releases from a different year, e.g. The Odyssey
+ * (2026) vs its 1997/2016 adaptations. */
 export function useStreams(
   imdbId: string | null,
   type: MediaType,
   season: number | null,
   episode: number | null,
   title: string | null,
+  year: number | null,
   indexers: IndexerManager,
   debrid: DebridManager | null,
 ): StreamsState {
@@ -337,6 +349,7 @@ export function useStreams(
             season: number | null;
             episode: number | null;
             title: string | null;
+            year: number | null;
             signal: AbortSignal;
           }) => ReturnType<typeof fetchServerStreams>)({
             imdbId,
@@ -344,6 +357,7 @@ export function useStreams(
             season,
             episode,
             title,
+            year,
             signal,
           });
           if (!signal.aborted) {
@@ -369,6 +383,7 @@ export function useStreams(
           season,
           episode,
           title,
+          year,
           indexers,
           debrid,
           signal,
@@ -415,7 +430,7 @@ export function useStreams(
         }
       }
     },
-    [imdbId, type, season, episode, title, indexers, debrid, hasIndexers, hasDebrid, serverMode],
+    [imdbId, type, season, episode, title, year, indexers, debrid, hasIndexers, hasDebrid, serverMode],
   );
 
   useEffect(() => {
