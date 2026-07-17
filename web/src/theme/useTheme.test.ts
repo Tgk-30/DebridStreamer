@@ -24,12 +24,14 @@ describe("useTheme", () => {
     const { rerender } = renderHook((props) => useTheme(props), {
       initialProps: settings({ theme: "aurora" }),
     });
-    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+    expect(document.documentElement.getAttribute("data-theme")).toBe("aurora");
 
     vi.stubGlobal("document", undefined);
-    expect(() => rerender(settings({ theme: "midnight" }))).not.toThrow();
-
-    vi.unstubAllGlobals();
+    try {
+      expect(() => rerender(settings({ theme: "midnight" }))).not.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("reflects all appearance fields onto the document root dataset", () => {

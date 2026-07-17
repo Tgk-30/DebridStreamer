@@ -4,7 +4,7 @@ import {
   buildChatCall,
   buildTranslationPrompt,
 } from "./SubtitleTranslator";
-import type { AIProviderKind } from "../ai/models";
+import { OPENAI_COMPATIBLE, type AIProviderKind } from "../ai/models";
 import type { FetchImpl } from "../../lib/http";
 import type { SubtitleCue } from "./cues";
 
@@ -57,6 +57,25 @@ describe("buildTranslationPrompt", () => {
 });
 
 describe("buildChatCall", () => {
+  it("builds calls for every OpenAI-compatible provider in the registry", () => {
+    for (const [provider, compatible] of Object.entries(OPENAI_COMPATIBLE)) {
+      const call = buildChatCall(
+        {
+          provider: provider as AIProviderKind,
+          apiKey: "  provider-key ",
+          model: "",
+          ollamaEndpoint: "",
+        },
+        "Translate now",
+      );
+
+      expect(call).not.toBeNull();
+      expect(call!.url).toBe(`${compatible.baseURL}/chat/completions`);
+      expect(call!.headers.Authorization).toBe("Bearer provider-key");
+      expect(JSON.parse(call!.body).model).toBe(compatible.defaultModel);
+    }
+  });
+
   it("builds OpenAI calls with auth and model defaults", () => {
     const call = buildChatCall(
       {

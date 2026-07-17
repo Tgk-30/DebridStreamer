@@ -84,7 +84,7 @@ describe("useSubtitleTracks gating", () => {
 });
 
 describe("search", () => {
-  it("no-ops when the client is null", async () => {
+  it("sets the configure-key error when the client is null", async () => {
     const { result } = renderHook(() => useSubtitleTracks(null, null));
     await act(async () => {
       await result.current.search({ query: "x", languages: ["en"] });
