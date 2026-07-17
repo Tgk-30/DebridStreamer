@@ -22,6 +22,7 @@ import {
   Minimize,
   Pause,
   Play,
+  PictureInPicture,
   RefreshCw,
   RotateCcw,
   RotateCw,
@@ -84,6 +85,7 @@ export type IconName =
   | "speed"
   | "fullscreen"
   | "fullscreen-exit"
+  | "picture-in-picture"
   | "skip-next"
   | "help";
 
@@ -135,6 +137,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   speed: Gauge,
   fullscreen: Maximize,
   "fullscreen-exit": Minimize,
+  "picture-in-picture": PictureInPicture,
   "skip-next": SkipForward,
   "thumbs-up": ThumbsUp,
   "thumbs-down": ThumbsDown,
