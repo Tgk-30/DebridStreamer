@@ -28,6 +28,7 @@ import { MediaCard } from "../components/MediaCard";
 import { VirtualMediaGrid } from "../components/MediaGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { useModalA11y } from "../components/useModalA11y";
 import "./Browse.css";
 
 // The advanced filter panel is code-split out of the Browse chunk; it only
@@ -40,16 +41,22 @@ const FilterSlideover = lazy(() =>
 );
 
 export function Browse() {
-  const { browseContext, closeBrowse, openDetail } = useAppStore();
+  const {
+    browseContext,
+    closeBrowse,
+    openDetail,
+    browseFiltersOpen,
+    openBrowseFilters,
+    closeBrowseFilters,
+    updateBrowseContext,
+  } = useAppStore();
   // A local working copy so the slideover can refine the context without round-
   // tripping through the store (the store just holds the initial target).
   const [ctx, setCtx] = useState<BrowseContext | null>(browseContext);
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Re-seed when the store hands us a new target (a different "See all").
   useEffect(() => {
     setCtx(browseContext);
-    setFiltersOpen(false);
   }, [browseContext]);
 
   if (ctx == null) return null;
@@ -57,8 +64,10 @@ export function Browse() {
     <BrowseInner
       ctx={ctx}
       setCtx={setCtx}
-      filtersOpen={filtersOpen}
-      setFiltersOpen={setFiltersOpen}
+      filtersOpen={browseFiltersOpen}
+      onOpenFilters={openBrowseFilters}
+      onCloseFilters={closeBrowseFilters}
+      onUpdateContext={updateBrowseContext}
       onClose={closeBrowse}
       onSelect={openDetail}
     />
@@ -69,7 +78,9 @@ interface BrowseInnerProps {
   ctx: BrowseContext;
   setCtx: (ctx: BrowseContext) => void;
   filtersOpen: boolean;
-  setFiltersOpen: (open: boolean) => void;
+  onOpenFilters: () => void;
+  onCloseFilters: () => void;
+  onUpdateContext: (ctx: BrowseContext) => void;
   onClose: () => void;
   onSelect: (item: import("../models/media").MediaPreview) => void;
 }
@@ -78,13 +89,20 @@ function BrowseInner({
   ctx,
   setCtx,
   filtersOpen,
-  setFiltersOpen,
+  onOpenFilters,
+  onCloseFilters,
+  onUpdateContext,
   onClose,
   onSelect,
 }: BrowseInnerProps) {
-  const { services } = useAppStore();
+  const { services, settings, detailItem } = useAppStore();
   const state = useBrowse(services.tmdb, ctx);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // The nested filter dialog owns keyboard focus and Escape while it is open.
+  // A Detail overlay can also stack over Browse (open a title from a "See all"
+  // grid); while it is up, Detail is the topmost modal and owns Escape/focus, so
+  // Browse yields to avoid Escape double-closing both back to the base screen.
+  const rootRef = useModalA11y<HTMLDivElement>(onClose, !filtersOpen && detailItem == null);
 
   // Only pull in the (code-split) FilterSlideover chunk once the user has opened
   // the panel at least once; keep it mounted thereafter so it animates closed.
@@ -116,16 +134,17 @@ function BrowseInner({
     );
     io.observe(node);
     return () => io.disconnect();
-  }, [state.canLoadMore, state.loadMore, state.items.length]);
+  }, [state.canLoadMore, state.loadMore]);
 
   function applyFilters(type: MediaType, filters: BrowseFilters) {
-    setFiltersOpen(false);
-    if (hasActiveFilters(filters)) {
-      setCtx({ kind: "discover", type, filters });
-    } else {
+    const next = hasActiveFilters(filters)
+      ? { kind: "discover" as const, type, filters }
       // Cleared everything → fall back to a plain "popular" category browse.
-      setCtx({ kind: "category", type, category: "popular" });
-    }
+      : { kind: "category" as const, type, category: "popular" as const };
+    setCtx(next);
+    // Applying filters changes the Browse target, so replace the filter entry
+    // instead of walking Back to its stale pre-filter target.
+    onUpdateContext(next);
   }
 
   const title = browseTitle(ctx);
@@ -133,7 +152,14 @@ function BrowseInner({
   const filtersActive = ctx.kind === "discover" && hasActiveFilters(ctx.filters);
 
   return (
-    <div className={`browse${filtersOpen ? " has-filters-open" : ""}`}>
+    <div
+      className={`browse${filtersOpen ? " has-filters-open" : ""}`}
+      ref={rootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="browse-title"
+      tabIndex={-1}
+    >
       <div className="browse-inner">
         <header className="browse-head">
           <button
@@ -149,7 +175,7 @@ function BrowseInner({
           </button>
 
           <div className="browse-title-row">
-            <h1 className="browse-h1">{title}</h1>
+            <h1 id="browse-title" className="browse-h1">{title}</h1>
             {state.totalResults > 0 && state.source === "live" && (
               <span className="browse-count t-secondary">
                 {state.totalResults.toLocaleString()} titles
@@ -160,7 +186,7 @@ function BrowseInner({
           <button
             type="button"
             className={`btn browse-filter-btn${filtersActive ? " browse-filter-on" : ""}`}
-            onClick={() => setFiltersOpen(true)}
+            onClick={onOpenFilters}
           >
             <Icon name="sliders" size={15} />
             Filters
@@ -181,14 +207,16 @@ function BrowseInner({
                 key={chip.key}
                 type="button"
                 className="chip browse-chip"
-                onClick={() =>
-                  ctx.kind === "discover" &&
-                  setCtx({
-                    kind: "discover",
+                onClick={() => {
+                  if (ctx.kind !== "discover") return;
+                  const next = {
+                    kind: "discover" as const,
                     type: ctx.type,
                     filters: chip.remove(ctx.filters),
-                  })
-                }
+                  };
+                  setCtx(next);
+                  onUpdateContext(next);
+                }}
                 title={`Remove ${chip.label}`}
               >
                 {chip.label}
@@ -198,10 +226,16 @@ function BrowseInner({
             <button
               type="button"
               className="browse-chip-clear t-secondary"
-              onClick={() =>
-                ctx.kind === "discover" &&
-                setCtx({ kind: "category", type: ctx.type, category: "popular" })
-              }
+              onClick={() => {
+                if (ctx.kind !== "discover") return;
+                const next = {
+                  kind: "category" as const,
+                  type: ctx.type,
+                  category: "popular" as const,
+                };
+                setCtx(next);
+                onUpdateContext(next);
+              }}
             >
               Clear all
             </button>
@@ -221,7 +255,13 @@ function BrowseInner({
             <VirtualMediaGrid
               items={state.items}
               className="browse-grid"
-              renderItem={(item) => <MediaCard item={item} onSelect={onSelect} />}
+              renderItem={(item) => (
+                <MediaCard
+                  item={item}
+                  onSelect={onSelect}
+                  showPosterRatings={settings?.showPosterRatings ?? false}
+                />
+              )}
             />
 
             {/* Infinite-scroll sentinel + an explicit fallback button. */}
@@ -251,7 +291,7 @@ function BrowseInner({
             open={filtersOpen}
             type={draftType}
             filters={draftFilters}
-            onClose={() => setFiltersOpen(false)}
+            onClose={onCloseFilters}
             onApply={applyFilters}
           />
         </Suspense>

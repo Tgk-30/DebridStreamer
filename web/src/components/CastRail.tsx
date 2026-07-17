@@ -3,6 +3,7 @@
 
 import type { CastMember } from "../models/media";
 import { Icon } from "./Icon";
+import { ImgWithFallback } from "./ImgWithFallback";
 import { isNetworkAllowed } from "../lib/networkPolicy";
 import "./CastRail.css";
 
@@ -33,11 +34,16 @@ export function CastRail({ cast, onSelect }: CastRailProps) {
               <>
                 <div className="cast-photo">
                   {member.profileURL && isNetworkAllowed("images") ? (
-                    <img
+                    <ImgWithFallback
                       src={member.profileURL}
                       alt={member.name}
                       loading="lazy"
                       draggable={false}
+                      fallback={
+                        <div className="cast-photo-placeholder" aria-hidden="true">
+                          <Icon name="assistant" size={20} />
+                        </div>
+                      }
                     />
                   ) : (
                     <div className="cast-photo-placeholder">

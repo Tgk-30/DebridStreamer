@@ -73,6 +73,11 @@
   padding: var(--sp-xs);
   overflow: hidden;
 }
+.dl-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--sp-md);
+}
 
 .dl-row {
   display: grid;

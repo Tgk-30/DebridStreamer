@@ -521,6 +521,7 @@ export function Watchlist() {
                     ready={cachedResolutions[item.id] != null}
                     progress={progress[item.id]}
                     watched={watchedIds.has(item.id)}
+                    showPosterRatings={settings?.showPosterRatings ?? false}
                   />
                   <button
                     type="button"

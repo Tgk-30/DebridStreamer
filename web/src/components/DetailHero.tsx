@@ -8,6 +8,7 @@ import { useState, type ReactNode } from "react";
 import { MediaItem as MediaItemNS } from "../models/media";
 import type { MediaItem } from "../models/media";
 import { Icon } from "./Icon";
+import { ImgWithFallback } from "./ImgWithFallback";
 import "./DetailHero.css";
 
 /** The user's current like/dislike taste signal for this title (drives the
@@ -117,11 +118,19 @@ export function DetailHero({
         className="detail-hero-content"
       >
         {poster && (
-          <img
+          <ImgWithFallback
             className="detail-hero-poster"
             src={poster}
             alt={item.title}
             draggable={false}
+            fallback={
+              <div
+                className="detail-hero-poster detail-hero-poster-placeholder"
+                aria-hidden="true"
+              >
+                <Icon name="discover" size={30} />
+              </div>
+            }
           />
         )}
 

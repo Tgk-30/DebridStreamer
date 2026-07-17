@@ -254,6 +254,10 @@ async function renderStore(session: ServerSession | null = null) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Browser history is intentionally durable across provider remounts. Reset it
+  // between isolated provider tests so one test's navigation does not emulate a
+  // reload in the next one.
+  window.history.replaceState(null, "", "/");
   // Default happy-path resolutions.
   loadSettings.mockReturnValue(settings());
   loadSettingsFromStore.mockResolvedValue(settings());

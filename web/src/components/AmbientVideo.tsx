@@ -5,6 +5,7 @@
 // if the file is missing or the browser blocks autoplay, the dark background
 // underneath is unchanged, so nothing depends on it.
 
+import { useEffect, useRef } from "react";
 import "./AmbientVideo.css";
 
 export type AmbientVideoName = "aurora" | "cinema" | "secure";
@@ -17,8 +18,44 @@ interface Props {
 }
 
 export function AmbientVideo({ name, opacity = 0.35, className }: Props) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    let suspended = false;
+    const syncPlayback = () => {
+      const video = videoRef.current;
+      if (video == null) return;
+      if (document.hidden || suspended) {
+        video.pause();
+      } else {
+        // Browsers return a promise; the optional chain also keeps lightweight
+        // embedded/test media shims that return void from crashing the effect.
+        void video.play()?.catch(() => {});
+      }
+    };
+    const onVisibilityChange = () => syncPlayback();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    const observer =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver(([entry]) => {
+            if (entry == null) return;
+            suspended = entry.intersectionRatio === 0;
+            syncPlayback();
+          });
+    if (observer != null && videoRef.current != null) observer.observe(videoRef.current);
+    syncPlayback();
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      observer?.disconnect();
+    };
+  }, []);
+
   return (
     <video
+      ref={videoRef}
       className={`ambient-video${className ? ` ${className}` : ""}`}
       style={{ opacity }}
       src={`/videos/${name}.mp4`}

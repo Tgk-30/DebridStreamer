@@ -4,7 +4,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
-import type { CalendarEntry } from "../data/calendar";
+import { ImgWithFallback } from "../components/ImgWithFallback";
+import {
+  calendarEntries,
+  type CalendarEntry,
+  useMovieReleaseCalendar,
+} from "../data/calendar";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
 import { useAppStore } from "../store/AppStore";
 import "./LibraryScreens.css";
@@ -118,7 +123,17 @@ function ReleaseRow({
     >
       <div className="cal-release-poster">
         {poster != null ? (
-          <img src={poster} alt={entry.media.title} loading="lazy" draggable={false} />
+          <ImgWithFallback
+            src={poster}
+            alt={entry.media.title}
+            loading="lazy"
+            draggable={false}
+            fallback={
+              <div className="cal-release-poster-ph" aria-hidden="true">
+                <Icon name={entry.kind === "episode" ? "calendar" : "discover"} size={17} />
+              </div>
+            }
+          />
         ) : (
           <div className="cal-release-poster-ph">
             <Icon name={entry.kind === "episode" ? "calendar" : "discover"} size={17} />
@@ -137,7 +152,33 @@ function ReleaseRow({
 }
 
 export function Calendar() {
-  const { calendar: state, openDetail, markCalendarSeen } = useAppStore();
+  const {
+    calendar: episodeCalendar,
+    openDetail,
+    markCalendarSeen,
+    services,
+  } = useAppStore();
+  // Movie release pages are not useful to the NavRail, so load them only after
+  // the Calendar screen itself mounts. Episodes remain store-owned for the
+  // app-wide new-release badge.
+  const movieCalendar = useMovieReleaseCalendar(services?.tmdb);
+  const state = useMemo(
+    () => ({
+      ...episodeCalendar,
+      entries: [
+        ...episodeCalendar.entries,
+        ...calendarEntries([], movieCalendar.releases),
+      ].sort((a, b) =>
+        a.date === b.date
+          ? a.media.title.localeCompare(b.media.title)
+          : a.date.localeCompare(b.date),
+      ),
+      loading: episodeCalendar.loading || movieCalendar.loading,
+      error: episodeCalendar.error ?? movieCalendar.error,
+      hasTMDB: episodeCalendar.hasTMDB || movieCalendar.hasTMDB,
+    }),
+    [episodeCalendar, movieCalendar],
+  );
   // A Calendar visit consumes the in-app release indicator. This is deliberately
   // not an OS/push notification acknowledgement or a notification center.
   useEffect(() => {
@@ -280,12 +321,15 @@ export function Calendar() {
                           aria-label={`${entry.media.title}, ${entry.detail}`}
                         >
                           {thumb != null ? (
-                            <img
+                            <ImgWithFallback
                               className="cal-event-thumb"
                               src={thumb}
                               alt=""
                               loading="lazy"
                               draggable={false}
+                              fallback={
+                                <span className="cal-event-thumb is-placeholder" aria-hidden="true" />
+                              }
                             />
                           ) : (
                             <span className="cal-event-thumb is-placeholder" aria-hidden />

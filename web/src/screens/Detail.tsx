@@ -33,6 +33,7 @@ import { OmdbRatings } from "../components/OmdbRatings";
 import { StreamPicker } from "../components/StreamPicker";
 import { CastRail } from "../components/CastRail";
 import { TrailerModal } from "../components/TrailerModal";
+import { useModalA11y } from "../components/useModalA11y";
 import { useTrailer } from "../data/trailer";
 import { Rail } from "../components/Rail";
 import { Spinner } from "../components/Spinner";
@@ -239,6 +240,12 @@ export function Detail() {
     continueWatching,
     refreshContinueWatching,
     cachedResolutions,
+    trailerOpen,
+    openTrailer,
+    closeTrailer,
+    detailPlayerOpen,
+    openDetailPlayer,
+    closeDetailPlayer,
   } = useAppStore();
   configureTraktScrobble({
     enabled: settings.traktScrobbleEnabled,
@@ -405,7 +412,6 @@ export function Detail() {
 
   // The title's YouTube trailer (null while loading / when TMDB has none). Kept
   // above the early return so hook order stays stable.
-  const [trailerOpen, setTrailerOpen] = useState(false);
   const trailer = useTrailer(
     // Prefer the fresh navigation target's id; detail.data.item can lag a title
     // change by a fetch. Falls back to the enriched id when the preview lacks one.
@@ -483,7 +489,7 @@ export function Detail() {
     streamsBackRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         setStreamsPageOpen(false);
       }
     };
@@ -537,17 +543,13 @@ export function Detail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPlayPending, streams.loading, streams.rows, selected, settings]);
 
-  // A11y: move focus into the overlay on open (so keyboard/screen-reader users
-  // land in context) and hand it back to whatever opened the Detail on close.
-  const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const opener =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    rootRef.current?.focus({ preventScroll: true });
-    return () => opener?.focus({ preventScroll: true });
-  }, []);
+  // Focus, Escape-to-close, and tab containment are shared by all modal
+  // surfaces. The episode streams page above intercepts Escape first so it can
+  // return to the episode picker rather than closing this overlay.
+  const rootRef = useModalA11y<HTMLDivElement>(
+    closeDetail,
+    player == null && !trailerOpen,
+  );
   // Server Mode "title request" state for this detail. Detail doesn't remount
   // between titles (openDetail just swaps detailItem), so reset on id change.
   const [requestState, setRequestState] = useState<
@@ -846,9 +848,10 @@ export function Detail() {
       episode: selected?.episode ?? null,
       scrobbleContext,
     });
+    openDetailPlayer();
   }
 
-  function closePlayer(): void {
+  function finishClosingPlayer(): void {
     setPlayer(null);
     // WebviewPlayer emits its final progress report from unmount cleanup. Run
     // the one-per-session slice refresh on the next task so that write is
@@ -857,6 +860,20 @@ export function Detail() {
       void refreshContinueWatching();
     }, 0);
   }
+
+  function closePlayer(): void {
+    if (detailPlayerOpen) {
+      closeDetailPlayer();
+    }
+    finishClosingPlayer();
+  }
+
+  // Browser Back resets the store's live player flag from the popstate
+  // descriptor. Let that state transition unmount the existing player and run
+  // its final progress cleanup without pushing a replacement history entry.
+  useEffect(() => {
+    if (!detailPlayerOpen && player != null) finishClosingPlayer();
+  }, [detailPlayerOpen, player, refreshContinueWatching]);
 
   /** Record (or toggle off) a like/dislike taste signal for the current title.
    * The event carries the title + genre names in metadata so the taste-profile
@@ -1208,7 +1225,14 @@ export function Detail() {
   }
 
   return (
-    <div className="detail" ref={rootRef} tabIndex={-1}>
+    <div
+      className="detail"
+      ref={rootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${detailItem.title} details`}
+      tabIndex={-1}
+    >
       <div className="detail-inner">
       {item && (
         <DetailHero
@@ -1450,7 +1474,6 @@ export function Detail() {
             type="button"
             className="detail-nokey-link"
             onClick={() => {
-              closeDetail();
               navigate("settings");
             }}
           >
@@ -1465,7 +1488,7 @@ export function Detail() {
         <button
           type="button"
           className="btn detail-trailer-btn"
-          onClick={() => setTrailerOpen(true)}
+          onClick={openTrailer}
         >
           <Icon name="play" size={14} />
           Watch trailer
@@ -1509,7 +1532,6 @@ export function Detail() {
               type="button"
               className="detail-ai-hint-link"
               onClick={() => {
-                closeDetail();
                 navigate("settings");
               }}
             >
@@ -1556,7 +1578,6 @@ export function Detail() {
             episodeLabel={null}
             episodeContext={null}
             onOpenSettings={() => {
-              closeDetail();
               navigate("settings");
             }}
           />
@@ -1569,6 +1590,7 @@ export function Detail() {
         title="More like this"
         items={detail.data.related}
         onSelect={openDetail}
+        showPosterRatings={settings?.showPosterRatings ?? false}
       />
       </div>
 
@@ -1604,7 +1626,6 @@ export function Detail() {
                 episodeLabel={episodeLabel(selected.season, selected.episode)}
                 episodeContext={selected}
                 onOpenSettings={() => {
-                  closeDetail();
                   navigate("settings");
                 }}
               />
@@ -1663,7 +1684,7 @@ export function Detail() {
         <TrailerModal
           videoKey={trailer.key}
           title={detailItem.title}
-          onClose={() => setTrailerOpen(false)}
+          onClose={closeTrailer}
         />
       )}
     </div>

@@ -19,15 +19,19 @@ import type {
 // --- mutable mock state -----------------------------------------------------
 
 const navigate = vi.fn();
+const openDetail = vi.fn();
 const recommend = vi.fn();
 const recommendServerAI = vi.fn();
+const searchServerMedia = vi.fn();
+const tmdbSearch = vi.fn();
 let mockProvider: { recommend: typeof recommend } | null;
 let mockServerMode = false;
 
 vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({
-    services: { ai: mockProvider },
+    services: { ai: mockProvider, tmdb: { search: tmdbSearch } },
     navigate,
+    openDetail,
   }),
 }));
 
@@ -38,6 +42,8 @@ vi.mock("../lib/serverMode", () => ({
 vi.mock("../lib/serverApi", () => ({
   recommendServerAI: (input: { prompt: string; count: number }) =>
     recommendServerAI(input),
+  searchServerMedia: (input: { query: string; type: "movie" | "series" | null }) =>
+    searchServerMedia(input),
 }));
 
 import { Assistant } from "./Assistant";
@@ -66,8 +72,14 @@ function result(recs: AIMovieRecommendation[]): AIProviderRecommendationResult {
 
 beforeEach(() => {
   navigate.mockClear();
+  openDetail.mockClear();
   recommend.mockReset();
   recommendServerAI.mockReset();
+  searchServerMedia.mockReset();
+  tmdbSearch.mockReset();
+  tmdbSearch.mockImplementation(async (title: string, type: "movie" | "series" | null) => ({
+    items: [{ id: `tmdb-${title.toLowerCase()}`, type: type ?? "movie", title }],
+  }));
   mockProvider = { recommend };
   mockServerMode = false;
 });
@@ -134,6 +146,27 @@ describe("Assistant - recommend flow (local provider)", () => {
     render(<Assistant />);
     await userEvent.type(screen.getByLabelText("Describe what to watch"), "{Enter}");
     expect(recommend).not.toHaveBeenCalled();
+  });
+
+  it("resolves a recommendation through TMDB and opens its Detail card", async () => {
+    recommend.mockResolvedValue(result([rec("Inception", 0.92, { year: 2010 })]));
+    tmdbSearch.mockResolvedValue({
+      items: [{ id: "tmdb-27205", type: "movie", title: "Inception", year: 2010 }],
+    });
+    render(<Assistant />);
+
+    await userEvent.type(screen.getByLabelText("Describe what to watch"), "sci-fi");
+    await userEvent.click(screen.getByRole("button", { name: "Recommend" }));
+    const card = await screen.findByRole("button", { name: "Open Inception" });
+
+    expect(tmdbSearch).toHaveBeenCalledWith("Inception", null, 1);
+    await userEvent.click(card);
+    expect(openDetail).toHaveBeenCalledWith({
+      id: "tmdb-27205",
+      type: "movie",
+      title: "Inception",
+      year: 2010,
+    });
   });
 
   it("submits on Enter key", async () => {
@@ -203,6 +236,9 @@ describe("Assistant - server mode routing", () => {
     mockProvider = null;
     mockServerMode = true;
     recommendServerAI.mockResolvedValue(result([rec("Tenet", 0.77)]));
+    searchServerMedia.mockResolvedValue({
+      items: [{ id: "tmdb-577922", type: "movie", title: "Tenet" }],
+    });
     render(<Assistant />);
     await userEvent.type(
       screen.getByLabelText("Describe what to watch"),
@@ -211,6 +247,7 @@ describe("Assistant - server mode routing", () => {
     await userEvent.click(screen.getByRole("button", { name: "Recommend" }));
     expect(await screen.findByText("Tenet")).toBeInTheDocument();
     expect(recommendServerAI).toHaveBeenCalledWith({ prompt: "time", count: 8 });
+    expect(searchServerMedia).toHaveBeenCalledWith({ query: "Tenet", type: null });
     expect(recommend).not.toHaveBeenCalled();
   });
 

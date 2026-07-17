@@ -53,6 +53,13 @@ describe("HeroSpotlight rendering", () => {
     expect(container.querySelector(".hero-backdrop.hero-gradient")).not.toBeNull();
   });
 
+  it("replaces a failed backdrop with the hero gradient", () => {
+    const { container } = render(<HeroSpotlight items={items} />);
+    fireEvent.error(container.querySelector("img.hero-backdrop")!);
+    expect(container.querySelector("img.hero-backdrop")).toBeNull();
+    expect(container.querySelector(".hero-backdrop.hero-gradient")).not.toBeNull();
+  });
+
   it("renders the overview paragraph only when provided", () => {
     const { rerender, container } = render(<HeroSpotlight items={items} />);
     expect(container.querySelector(".hero-overview")).toBeNull();

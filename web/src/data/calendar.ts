@@ -1,10 +1,8 @@
 // Calendar data layer - release-dated episodes and movies.
 //
-// Followed series contribute episode air dates, while TMDB's first
-// now-playing and upcoming movie pages contribute recent and near-future movie
-// release dates. The episode path remains deliberately bounded to each show's
-// latest two seasons and six concurrent shows; TMDBService's TTL cache shares
-// repeated catalog, season, and episode reads.
+// Followed series contribute bounded episode air dates for the app-wide
+// NavRail indicator. The Calendar screen additionally loads TMDB's now-playing
+// and upcoming movie pages only when that route is mounted.
 
 import { useEffect, useState } from "react";
 import type { MediaPreview } from "../models/media";
@@ -57,6 +55,16 @@ export interface CalendarState {
   /** Whether the user follows any TV series in library/watchlist. */
   hasSeries: boolean;
   /** Whether a TMDB-backed source is available. */
+  hasTMDB: boolean;
+}
+
+/** Movie releases are intentionally route-local: they are not needed for the
+ * NavRail episode badge, so fetching them at application boot wastes network
+ * and CPU on every other screen. */
+export interface MovieReleaseCalendarState {
+  releases: MovieRelease[];
+  loading: boolean;
+  error: string | null;
   hasTMDB: boolean;
 }
 
@@ -181,12 +189,12 @@ export function calendarEntries(
     );
 }
 
-/** Resolve the calendar for the user's saved series and TMDB movie releases. */
-const EMPTY_WATCHLIST: readonly MediaPreview[] = [];
+/** Resolve the app-wide, badge-relevant episode calendar for saved series. */
+const EMPTY_SERIES_SIGNATURE = "";
 
 export function useCalendar(
   tmdb: TMDBService | null,
-  watchlistVersion: readonly MediaPreview[] = EMPTY_WATCHLIST,
+  seriesWatchlistSignature: string = EMPTY_SERIES_SIGNATURE,
 ): CalendarState {
   const serverMode = isServerMode();
   const [state, setState] = useState<CalendarState>({
@@ -232,18 +240,10 @@ export function useCalendar(
             : serverMode
               ? fetchServerUpcomingEpisodes(series)
               : getUpcomingEpisodesForSeries(series, tmdb, Date.now(), CALENDAR_RECENT_DAYS);
-        // Server Mode resolves both sources through its privacy-preserving TMDB
-        // broker, so the browser never receives the household TMDB credential.
-        const moviesPromise =
-          serverMode
-            ? fetchServerMovieReleases()
-            : tmdb == null || typeof tmdb.getMovieReleaseCalendar !== "function"
-              ? Promise.resolve([] as MovieRelease[])
-              : tmdb.getMovieReleaseCalendar();
-        const [episodes, movies] = await Promise.all([episodesPromise, moviesPromise]);
+        const episodes = await episodesPromise;
         if (cancelled) return;
         setState({
-          entries: calendarEntries(episodes, movies),
+          entries: calendarEntries(episodes, []),
           episodes,
           groups: groupEpisodes(episodes),
           loading: false,
@@ -267,7 +267,60 @@ export function useCalendar(
     return () => {
       cancelled = true;
     };
-  }, [tmdb, serverMode, watchlistVersion]);
+  }, [tmdb, serverMode, seriesWatchlistSignature]);
+
+  return state;
+}
+
+/** Load TMDB movie releases only while the Calendar route is mounted. */
+export function useMovieReleaseCalendar(
+  tmdb: TMDBService | null | undefined,
+): MovieReleaseCalendarState {
+  const serverMode = isServerMode();
+  const hasTMDB = tmdb != null || serverMode;
+  const [state, setState] = useState<MovieReleaseCalendarState>({
+    releases: [],
+    loading: hasTMDB,
+    error: null,
+    hasTMDB,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!hasTMDB) {
+      setState({ releases: [], loading: false, error: null, hasTMDB: false });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setState((current) => ({ ...current, loading: true, error: null, hasTMDB: true }));
+    void (async () => {
+      try {
+        // Server Mode resolves this through its privacy-preserving TMDB broker,
+        // so the browser never receives the household TMDB credential.
+        const releases = serverMode
+          ? await fetchServerMovieReleases()
+          : tmdb == null || typeof tmdb.getMovieReleaseCalendar !== "function"
+            ? []
+            : await tmdb.getMovieReleaseCalendar();
+        if (cancelled) return;
+        setState({ releases, loading: false, error: null, hasTMDB: true });
+      } catch (error) {
+        if (cancelled) return;
+        setState({
+          releases: [],
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+          hasTMDB: true,
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tmdb, serverMode, hasTMDB]);
 
   return state;
 }

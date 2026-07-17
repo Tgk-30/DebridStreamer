@@ -21,9 +21,20 @@ interface RailProps {
   /** Render the Apple TV "Top 10" treatment: a large ghosted rank numeral to the
    * left of each poster (numbered from 1). Items are capped at 10. */
   ranked?: boolean;
+  /** Appearance preference passed from the screen's store boundary. */
+  showPosterRatings?: boolean;
 }
 
-export function Rail({ title, items, onSelect, onSeeAll, progressById, labelById, ranked }: RailProps) {
+export function Rail({
+  title,
+  items,
+  onSelect,
+  onSeeAll,
+  progressById,
+  labelById,
+  ranked,
+  showPosterRatings = false,
+}: RailProps) {
   if (items.length === 0) return null;
   // Cap only rails that offer a See-all path - capping a rail without one
   // (Library household, History, Detail "More like this") strands content.
@@ -52,6 +63,7 @@ export function Rail({ title, items, onSelect, onSeeAll, progressById, labelById
               progress={progressById?.[item.id]}
               cornerLabel={labelById?.[item.id]}
               rank={ranked ? i + 1 : undefined}
+              showPosterRatings={showPosterRatings}
             />
           ))}
         </div>

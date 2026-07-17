@@ -22,6 +22,9 @@ import { SortOption } from "../services/metadata/types";
 let mockBrowseContext: BrowseContext | null = null;
 const closeBrowse = vi.fn();
 const openDetail = vi.fn();
+const openBrowseFilters = vi.fn();
+const closeBrowseFilters = vi.fn();
+const updateBrowseContext = vi.fn();
 const mockServices = { tmdb: {} as never };
 
 vi.mock("../store/AppStore", () => ({
@@ -29,6 +32,10 @@ vi.mock("../store/AppStore", () => ({
     browseContext: mockBrowseContext,
     closeBrowse,
     openDetail,
+    browseFiltersOpen: false,
+    openBrowseFilters,
+    closeBrowseFilters,
+    updateBrowseContext,
     services: mockServices,
   }),
 }));
@@ -166,6 +173,18 @@ describe("Browse - header + results", () => {
     expect(closeBrowse).toHaveBeenCalledTimes(1);
   });
 
+  it("uses modal semantics and closes with Escape", async () => {
+    const user = userEvent.setup();
+    render(<Browse />);
+    expect(screen.getByRole("dialog", { name: "Popular movies" })).toHaveAttribute(
+      "aria-modal",
+      "true",
+    );
+
+    await user.keyboard("{Escape}");
+    expect(closeBrowse).toHaveBeenCalledTimes(1);
+  });
+
   it("does not show a count when totalResults is 0", () => {
     mockBrowseState = liveState({ totalResults: 0 });
     render(<Browse />);
@@ -275,8 +294,7 @@ describe("Browse - filters button + slideover", () => {
     // Not mounted before opening.
     expect(screen.queryByTestId("filter-slideover")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    const sv = await screen.findByTestId("filter-slideover");
-    expect(sv).toHaveAttribute("data-open", "true");
+    expect(openBrowseFilters).toHaveBeenCalledTimes(1);
   });
 });
 

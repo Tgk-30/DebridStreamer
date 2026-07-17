@@ -87,10 +87,99 @@ export interface SaveResult {
   ok: boolean;
 }
 
+/**
+ * Browser-history entries intentionally describe UI navigation only. They do
+ * not contain playback progress, service instances, or any other live data.
+ * That keeps an entry structured-cloneable and lets a reload safely restore the
+ * current screen without attempting to resume a stream.
+ */
+export type NavigationHistoryLayer =
+  | "none"
+  | "filters"
+  | "trailer"
+  | "detail-player"
+  | "local-player";
+
+export interface NavigationHistoryEntry {
+  debridStreamerNavigation: 1;
+  depth: number;
+  route: ScreenId;
+  browseContext: BrowseContext | null;
+  detailItem: MediaPreview | null;
+  layer: NavigationHistoryLayer;
+  localFilePlayer: { path: string; title: string } | null;
+}
+
+const NAVIGATION_HISTORY_LAYERS = new Set<NavigationHistoryLayer>([
+  "none",
+  "filters",
+  "trailer",
+  "detail-player",
+  "local-player",
+]);
+
+const SCREEN_IDS = new Set<ScreenId>([
+  "discover",
+  "search",
+  "library",
+  "watchlist",
+  "calendar",
+  "history",
+  "assistant",
+  "debrid",
+  "downloads",
+  "settings",
+]);
+
+/** Read only entries created by this app. Other same-document history entries
+ * must remain opaque so Back can still leave the app when it reaches them. */
+export function readNavigationHistoryEntry(
+  state: unknown,
+): NavigationHistoryEntry | null {
+  if (state == null || typeof state !== "object") return null;
+  const candidate = state as Partial<NavigationHistoryEntry>;
+  if (
+    candidate.debridStreamerNavigation !== 1 ||
+    typeof candidate.depth !== "number" ||
+    !Number.isInteger(candidate.depth) ||
+    candidate.depth < 0 ||
+    typeof candidate.route !== "string" ||
+    !SCREEN_IDS.has(candidate.route as ScreenId) ||
+    !NAVIGATION_HISTORY_LAYERS.has(candidate.layer as NavigationHistoryLayer)
+  ) {
+    return null;
+  }
+  if (
+    (candidate.browseContext != null && typeof candidate.browseContext !== "object") ||
+    (candidate.detailItem != null && typeof candidate.detailItem !== "object") ||
+    (candidate.localFilePlayer != null &&
+      (typeof candidate.localFilePlayer !== "object" ||
+        typeof candidate.localFilePlayer.path !== "string" ||
+        typeof candidate.localFilePlayer.title !== "string"))
+  ) {
+    return null;
+  }
+  return candidate as NavigationHistoryEntry;
+}
+
+function makeNavigationHistoryEntry(
+  entry: Omit<NavigationHistoryEntry, "debridStreamerNavigation">,
+): NavigationHistoryEntry {
+  return { debridStreamerNavigation: 1, ...entry };
+}
+
+function browserHistoryAvailable(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.history?.pushState === "function" &&
+    typeof window.history?.replaceState === "function"
+  );
+}
+
 export interface AppStore {
   // Routing
   route: ScreenId;
-  navigate: (route: ScreenId) => void;
+  navigate: (route: ScreenId, options?: { replace?: boolean }) => void;
 
   // Detail overlay
   detailItem: MediaPreview | null;
@@ -109,7 +198,25 @@ export interface AppStore {
   // headers and Search with a context (category | genre | discover | search).
   browseContext: BrowseContext | null;
   openBrowse: (ctx: BrowseContext) => void;
+  /** Replace the active Browse target without adding another overlay layer. */
+  updateBrowseContext: (ctx: BrowseContext) => void;
   closeBrowse: () => void;
+
+  // Browse's nested FilterSlideover is part of the browser Back stack rather
+  // than component-local state, so Back can dismiss it without closing Browse.
+  browseFiltersOpen: boolean;
+  openBrowseFilters: () => void;
+  closeBrowseFilters: () => void;
+
+  // Detail's transient overlays follow the same stack. `detailPlayerOpen` is
+  // only a live close signal: a popped player entry returns to Detail rather
+  // than trying to resurrect an expired stream URL on browser Forward.
+  trailerOpen: boolean;
+  openTrailer: () => void;
+  closeTrailer: () => void;
+  detailPlayerOpen: boolean;
+  openDetailPlayer: () => void;
+  closeDetailPlayer: () => void;
 
   // A pending query handed to the Search screen from the global search field.
   pendingSearch: string | null;
@@ -194,6 +301,7 @@ export interface AppActions {
   openDetail: AppStore["openDetail"];
   closeDetail: AppStore["closeDetail"];
   openBrowse: AppStore["openBrowse"];
+  updateBrowseContext: AppStore["updateBrowseContext"];
   closeBrowse: AppStore["closeBrowse"];
   search: AppStore["search"];
   consumePendingSearch: AppStore["consumePendingSearch"];
@@ -220,7 +328,89 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     title: string;
   } | null>(null);
   const [browseContext, setBrowseContext] = useState<BrowseContext | null>(null);
+  const [browseFiltersOpen, setBrowseFiltersOpen] = useState(false);
+  const [trailerOpen, setTrailerOpen] = useState(false);
+  const [detailPlayerOpen, setDetailPlayerOpen] = useState(false);
   const [pendingSearch, setPendingSearch] = useState<string | null>(null);
+
+  // History mutations happen only through the navigation commands below. A
+  // popstate must update React state, but must never manufacture a replacement
+  // entry while doing so or browser Back would appear to do nothing.
+  const isApplyingPopState = useRef(false);
+  const historyReady = useRef(false);
+  const restoredRouteFromHistory = useRef(false);
+  // Applying Browse filters closes a nested history layer and replaces the
+  // Browse descriptor underneath it. Carry the new context across that one
+  // asynchronous popstate so Back does not reveal the stale pre-filter target.
+  const pendingBrowseContextReplacement = useRef<BrowseContext | null>(null);
+
+  const replaceNavigationHistory = useCallback((entry: NavigationHistoryEntry) => {
+    if (!browserHistoryAvailable() || isApplyingPopState.current) return;
+    window.history.replaceState(entry, "", window.location.href);
+  }, []);
+
+  const pushNavigationHistory = useCallback(
+    (
+      entry: Omit<NavigationHistoryEntry, "debridStreamerNavigation" | "depth">,
+      options?: { replace?: boolean },
+    ) => {
+      if (!browserHistoryAvailable() || isApplyingPopState.current) return;
+      const current = readNavigationHistoryEntry(window.history.state);
+      // A forced redirect (e.g. a now-hidden screen bouncing to Discover) must
+      // REPLACE the current entry rather than add a Back step. Otherwise Back
+      // restores the hidden route, the redirect fires and pushes again, and the
+      // user is trapped in a redirect<->Discover loop.
+      if (options?.replace === true && current != null) {
+        window.history.replaceState(
+          makeNavigationHistoryEntry({ depth: current.depth, ...entry }),
+          "",
+          window.location.href,
+        );
+        return;
+      }
+      // A fresh document (or an older app build) has no managed root yet. Mark
+      // the current entry first, then add the requested layer above it.
+      if (current == null) {
+        replaceNavigationHistory(
+          makeNavigationHistoryEntry({
+            depth: 0,
+            route,
+            browseContext: null,
+            detailItem: null,
+            layer: "none",
+            localFilePlayer: null,
+          }),
+        );
+      }
+      const depth = (current?.depth ?? 0) + 1;
+      window.history.pushState(
+        makeNavigationHistoryEntry({ depth, ...entry }),
+        "",
+        window.location.href,
+      );
+    },
+    [replaceNavigationHistory, route],
+  );
+
+  /** Return to the immediately previous managed entry when a close button or
+   * Escape dismisses an overlay. The direct setter fallback is only for a
+   * malformed/legacy history state, where calling Back could leave the app. */
+  const goBackForClose = useCallback((fallback: () => void): void => {
+    if (!browserHistoryAvailable() || isApplyingPopState.current) {
+      fallback();
+      return;
+    }
+    const current = readNavigationHistoryEntry(window.history.state);
+    if (!historyReady.current || current == null || current.depth === 0) {
+      fallback();
+      return;
+    }
+    // Close controls should feel immediate. The subsequent popstate restores
+    // the parent descriptor (for example Browse beneath Detail) without adding
+    // an entry, and this direct state change is harmless if Back is delayed.
+    fallback();
+    window.history.back();
+  }, []);
 
   // Synchronous bootstrap so the first paint has something sane; the durable
   // Store hydrates over it on mount.
@@ -318,8 +508,23 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       // the app is still gated behind the wizard/hydration, so this can't stomp
       // a mid-session navigation. If the chosen tab is hidden under the active
       // modes, App's redirect effect sends it back to Discover.
-      if (refreshedSettings.appearanceDefaultTab !== "discover") {
+      if (
+        !restoredRouteFromHistory.current &&
+        refreshedSettings.appearanceDefaultTab !== "discover"
+      ) {
         setRoute(refreshedSettings.appearanceDefaultTab);
+        replaceNavigationHistory(
+          makeNavigationHistoryEntry({
+            depth: readNavigationHistoryEntry(
+              browserHistoryAvailable() ? window.history.state : null,
+            )?.depth ?? 0,
+            route: refreshedSettings.appearanceDefaultTab,
+            browseContext: null,
+            detailItem: null,
+            layer: "none",
+            localFilePlayer: null,
+          }),
+        );
       }
       setWatchlist(wl);
       setHistory(hist);
@@ -333,7 +538,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [replaceNavigationHistory]);
 
   // Re-pull every per-profile slice from the Store. Used after a Server-Mode
   // profile switch: the RemoteStore's cached settings are dropped first so the
@@ -422,16 +627,115 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [serviceConfigKey],
   );
 
-  // Resolve calendar data once at the store boundary. Calendar and the NavRail
-  // consume this same bounded result, avoiding duplicate episode requests.
-  // The watchlist identity is an intentional refresh key when follows change.
-  const calendar = useCalendar(services.tmdb, watchlist);
+  // Resolve badge-relevant episode data once at the store boundary. Avoid using
+  // the raw watchlist identity as a refresh key: movies and reorder-only changes
+  // cannot affect a followed-series episode schedule.
+  const calendarSeriesSignature = useMemo(
+    () =>
+      watchlist
+        .filter((item) => item.type === "series")
+        .map((item) => item.id)
+        .sort()
+        .join(","),
+    [watchlist],
+  );
+  const calendar = useCalendar(services.tmdb, calendarSeriesSignature);
 
   const openBrowse = useCallback((ctx: BrowseContext) => {
     setBrowseContext(ctx);
-  }, []);
+    setBrowseFiltersOpen(false);
+    setTrailerOpen(false);
+    setDetailPlayerOpen(false);
+    pushNavigationHistory({
+      route,
+      browseContext: ctx,
+      detailItem: null,
+      layer: "none",
+      localFilePlayer: null,
+    });
+  }, [pushNavigationHistory, route]);
 
-  const closeBrowse = useCallback(() => setBrowseContext(null), []);
+  const updateBrowseContext = useCallback((ctx: BrowseContext) => {
+    setBrowseContext(ctx);
+    setBrowseFiltersOpen(false);
+    const current = browserHistoryAvailable()
+      ? readNavigationHistoryEntry(window.history.state)
+      : null;
+    if (
+      current?.layer === "filters" &&
+      current.depth > 0 &&
+      historyReady.current
+    ) {
+      pendingBrowseContextReplacement.current = ctx;
+      window.history.back();
+      return;
+    }
+    replaceNavigationHistory(
+      makeNavigationHistoryEntry({
+        depth: current?.depth ?? 0,
+        route,
+        browseContext: ctx,
+        detailItem: null,
+        layer: "none",
+        localFilePlayer: null,
+      }),
+    );
+  }, [replaceNavigationHistory, route]);
+
+  const closeBrowse = useCallback(() => {
+    goBackForClose(() => {
+      setBrowseFiltersOpen(false);
+      setBrowseContext(null);
+    });
+  }, [goBackForClose]);
+
+  const openBrowseFilters = useCallback(() => {
+    if (browseContext == null) return;
+    setBrowseFiltersOpen(true);
+    pushNavigationHistory({
+      route,
+      browseContext,
+      detailItem,
+      layer: "filters",
+      localFilePlayer,
+    });
+  }, [browseContext, detailItem, localFilePlayer, pushNavigationHistory, route]);
+
+  const closeBrowseFilters = useCallback(() => {
+    goBackForClose(() => setBrowseFiltersOpen(false));
+  }, [goBackForClose]);
+
+  const openTrailer = useCallback(() => {
+    if (detailItem == null) return;
+    setTrailerOpen(true);
+    pushNavigationHistory({
+      route,
+      browseContext,
+      detailItem,
+      layer: "trailer",
+      localFilePlayer,
+    });
+  }, [browseContext, detailItem, localFilePlayer, pushNavigationHistory, route]);
+
+  const closeTrailer = useCallback(() => {
+    goBackForClose(() => setTrailerOpen(false));
+  }, [goBackForClose]);
+
+  const openDetailPlayer = useCallback(() => {
+    if (detailItem == null) return;
+    setDetailPlayerOpen(true);
+    pushNavigationHistory({
+      route,
+      browseContext,
+      detailItem,
+      layer: "detail-player",
+      localFilePlayer,
+    });
+  }, [browseContext, detailItem, localFilePlayer, pushNavigationHistory, route]);
+
+  const closeDetailPlayer = useCallback(() => {
+    goBackForClose(() => setDetailPlayerOpen(false));
+  }, [goBackForClose]);
 
   const refreshCachedResolutions = useCallback(async () => {
     try {
@@ -503,15 +807,104 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setContinueWatching(await loadContinueWatching());
   }, []);
 
+  // Install one listener for the whole app. It restores the descriptor with
+  // direct setters rather than navigation commands, and the ref guard prevents
+  // any nested command from turning a browser Back into a new pushState entry.
+  // Reload intentionally restores only the route: streams and transient
+  // overlays are not safe to replay after a fresh app session.
+  useEffect(() => {
+    if (!browserHistoryAvailable()) return;
+
+    const saved = readNavigationHistoryEntry(window.history.state);
+    restoredRouteFromHistory.current = saved != null;
+    const initial = makeNavigationHistoryEntry({
+      depth: saved?.depth ?? 0,
+      route: saved?.route ?? "discover",
+      browseContext: null,
+      detailItem: null,
+      layer: "none",
+      localFilePlayer: null,
+    });
+    isApplyingPopState.current = true;
+    try {
+      setRoute(initial.route);
+      setBrowseContext(null);
+      setBrowseFiltersOpen(false);
+      setDetailItem(null);
+      setTrailerOpen(false);
+      setDetailPlayerOpen(false);
+      setLocalFilePlayer(null);
+    } finally {
+      isApplyingPopState.current = false;
+    }
+    window.history.replaceState(initial, "", window.location.href);
+    historyReady.current = true;
+
+    const applyPopState = (event: PopStateEvent) => {
+      let entry = readNavigationHistoryEntry(event.state);
+      // Do not claim an unrelated history entry. The browser will navigate away
+      // from this document normally if it belongs to another page.
+      if (entry == null) return;
+      const pendingBrowseContext = pendingBrowseContextReplacement.current;
+      if (pendingBrowseContext != null) {
+        pendingBrowseContextReplacement.current = null;
+        entry = makeNavigationHistoryEntry({
+          depth: entry.depth,
+          route: entry.route,
+          browseContext: pendingBrowseContext,
+          detailItem: null,
+          layer: "none",
+          localFilePlayer: null,
+        });
+        window.history.replaceState(entry, "", window.location.href);
+      }
+      isApplyingPopState.current = true;
+      try {
+        setRoute(entry.route);
+        setBrowseContext(entry.browseContext);
+        setBrowseFiltersOpen(entry.layer === "filters" && entry.browseContext != null);
+        setDetailItem(entry.detailItem);
+        setTrailerOpen(entry.layer === "trailer" && entry.detailItem != null);
+        // A stream URL and playback session are deliberately not replayed by
+        // Forward. The player entry still acts as a one-step close target on Back.
+        setDetailPlayerOpen(false);
+        setLocalFilePlayer(
+          entry.layer === "local-player" ? entry.localFilePlayer : null,
+        );
+      } finally {
+        // Guarantee the flag resets even if a future setter throws; a stranded
+        // true would silently disable all subsequent history pushes.
+        isApplyingPopState.current = false;
+      }
+      if (entry.route === "history") void refreshHistory();
+    };
+
+    window.addEventListener("popstate", applyPopState);
+    return () => {
+      historyReady.current = false;
+      window.removeEventListener("popstate", applyPopState);
+    };
+  }, [refreshHistory]);
+
   // Load the history slices only when a screen requests them. In particular,
   // durable progress ticks must not deserialize the full history table and
   // rebuild the provider context every few seconds while a player is open.
-  const navigate = useCallback((next: ScreenId) => {
+  const navigate = useCallback((next: ScreenId, options?: { replace?: boolean }) => {
     setBrowseContext(null);
+    setBrowseFiltersOpen(false);
     setDetailItem(null);
+    setTrailerOpen(false);
+    setDetailPlayerOpen(false);
     setRoute(next);
+    pushNavigationHistory({
+      route: next,
+      browseContext: null,
+      detailItem: null,
+      layer: "none",
+      localFilePlayer: null,
+    }, options);
     if (next === "history") void refreshHistory();
-  }, [refreshHistory]);
+  }, [pushNavigationHistory, refreshHistory]);
 
   // Drive the background auto-resolve scheduler. It only does work under Tauri
   // with debrid configured (gated internally); here we (re)start it whenever
@@ -546,6 +939,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const openDetail = useCallback((item: MediaPreview) => {
     setDetailItem(item);
+    setBrowseFiltersOpen(false);
+    setTrailerOpen(false);
+    setDetailPlayerOpen(false);
+    pushNavigationHistory({
+      route,
+      browseContext,
+      detailItem: item,
+      layer: "none",
+      localFilePlayer,
+    });
     // Recording a view also feeds the History screen (zero-progress entry;
     // a real resume position is written later from the player).
     // `recordHistory` already reads the refreshed history list back, so adopt
@@ -556,26 +959,54 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     // identical; only its lastWatched order could shift, and the playback-close
     // refresh plus the History route refresh already cover that.
     void recordHistory(item).then(setHistory);
-  }, []);
+  }, [browseContext, localFilePlayer, pushNavigationHistory, route]);
 
-  const closeDetail = useCallback(() => setDetailItem(null), []);
+  const closeDetail = useCallback(() => {
+    goBackForClose(() => {
+      setTrailerOpen(false);
+      setDetailPlayerOpen(false);
+      setDetailItem(null);
+    });
+  }, [goBackForClose]);
 
   const playLocalFile = useCallback((path: string, title: string) => {
     // Preserve the filesystem path exactly as supplied. mpv receives this raw
     // value through the native player bridge; converting it to a webview asset
     // URL would make it unusable by libmpv.
     if (path.length === 0) return;
-    setLocalFilePlayer({ path, title });
-  }, []);
+    const next = { path, title };
+    setLocalFilePlayer(next);
+    pushNavigationHistory({
+      route,
+      browseContext,
+      detailItem,
+      layer: "local-player",
+      localFilePlayer: next,
+    });
+  }, [browseContext, detailItem, pushNavigationHistory, route]);
 
-  const closeLocalFilePlayer = useCallback(() => setLocalFilePlayer(null), []);
+  const closeLocalFilePlayer = useCallback(() => {
+    goBackForClose(() => setLocalFilePlayer(null));
+  }, [goBackForClose]);
 
   const search = useCallback((query: string) => {
     const q = query.trim();
     if (q.length === 0) return;
     setPendingSearch(q);
     setRoute("search");
-  }, []);
+    setBrowseContext(null);
+    setBrowseFiltersOpen(false);
+    setDetailItem(null);
+    setTrailerOpen(false);
+    setDetailPlayerOpen(false);
+    pushNavigationHistory({
+      route: "search",
+      browseContext: null,
+      detailItem: null,
+      layer: "none",
+      localFilePlayer: null,
+    });
+  }, [pushNavigationHistory]);
 
   const consumePendingSearch = useCallback(() => setPendingSearch(null), []);
 
@@ -739,6 +1170,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       openDetail,
       closeDetail,
       openBrowse,
+      updateBrowseContext,
       closeBrowse,
       search,
       consumePendingSearch,
@@ -758,6 +1190,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       openDetail,
       closeDetail,
       openBrowse,
+      updateBrowseContext,
       closeBrowse,
       search,
       consumePendingSearch,
@@ -790,7 +1223,17 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       closeLocalFilePlayer,
       browseContext,
       openBrowse,
+      updateBrowseContext,
       closeBrowse,
+      browseFiltersOpen,
+      openBrowseFilters,
+      closeBrowseFilters,
+      trailerOpen,
+      openTrailer,
+      closeTrailer,
+      detailPlayerOpen,
+      openDetailPlayer,
+      closeDetailPlayer,
       pendingSearch,
       search,
       consumePendingSearch,
@@ -830,7 +1273,17 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       closeLocalFilePlayer,
       browseContext,
       openBrowse,
+      updateBrowseContext,
       closeBrowse,
+      browseFiltersOpen,
+      openBrowseFilters,
+      closeBrowseFilters,
+      trailerOpen,
+      openTrailer,
+      closeTrailer,
+      detailPlayerOpen,
+      openDetailPlayer,
+      closeDetailPlayer,
       pendingSearch,
       search,
       consumePendingSearch,

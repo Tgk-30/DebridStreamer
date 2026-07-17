@@ -155,6 +155,19 @@ vi.mock("./EmbeddedPlayer", () => ({
 
 import { VideoPlayer } from "./VideoPlayer";
 
+function replaceProperty<T extends object, K extends PropertyKey>(
+  target: T,
+  key: K,
+  value: unknown,
+): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(target, key);
+  Object.defineProperty(target, key, { configurable: true, value });
+  return () => {
+    if (descriptor != null) Object.defineProperty(target, key, descriptor);
+    else delete (target as Record<PropertyKey, unknown>)[key];
+  };
+}
+
 // jsdom's <video> has no play/pause/load/canPlayType implementations.
 beforeEach(() => {
   hlsInstances.length = 0;
@@ -360,6 +373,228 @@ describe("WebviewPlayer", () => {
     expect(screen.getByTestId("scrub-bar")).toBeInTheDocument();
     // CC button lives in the OSD row.
     expect(screen.getByRole("button", { name: "Subtitles" })).toBeInTheDocument();
+  });
+
+  it("syncs Media Session metadata, transport handlers, and playback position", () => {
+    const handlers = new Map<MediaSessionAction, MediaSessionActionHandler | null>();
+    const setActionHandler = vi.fn(
+      (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+        handlers.set(action, handler);
+      },
+    );
+    const setPositionState = vi.fn();
+    const mediaSession = {
+      metadata: null as MediaMetadata | null,
+      playbackState: "none" as MediaSessionPlaybackState,
+      setActionHandler,
+      setPositionState,
+    } as unknown as MediaSession;
+    const MediaMetadataMock = vi.fn(function (
+      this: Record<string, unknown>,
+      init: MediaMetadataInit,
+    ) {
+      Object.assign(this, init);
+    });
+    const restoreMediaSession = replaceProperty(navigator, "mediaSession", mediaSession);
+    vi.stubGlobal("MediaMetadata", MediaMetadataMock);
+
+    try {
+      const { unmount } = render(
+        <VideoPlayer
+          url="https://x/test.mp4"
+          title="The Show"
+          subtitle="S2 · E5"
+          nowPlaying={{
+            episodeLabel: "S2 E5 - The Arrival",
+            posterUrl: "https://image.test/poster.png",
+          }}
+          onClose={() => {}}
+        />,
+      );
+      const video = document.querySelector("video.player-video") as HTMLVideoElement;
+      let currentTime = 30;
+      Object.defineProperties(video, {
+        duration: { configurable: true, value: 120 },
+        currentTime: {
+          configurable: true,
+          get: () => currentTime,
+          set: (next: number) => {
+            currentTime = next;
+          },
+        },
+        playbackRate: { configurable: true, value: 1.25 },
+        paused: { configurable: true, value: false },
+      });
+
+      fireEvent.loadedMetadata(video);
+      fireEvent.timeUpdate(video);
+      expect(MediaMetadataMock).toHaveBeenCalled();
+      expect(mediaSession.metadata).toMatchObject({
+        title: "The Show",
+        artist: "S2 E5 - The Arrival",
+        album: "DebridStreamer",
+        artwork: [
+          {
+            src: "https://image.test/poster.png",
+            sizes: "512x512",
+            type: "image/png",
+          },
+        ],
+      });
+      expect(setPositionState).toHaveBeenCalledWith({
+        duration: 120,
+        position: 30,
+        playbackRate: 1.25,
+      });
+      expect(handlers.get("play")).toEqual(expect.any(Function));
+      expect(handlers.get("seekbackward")).toEqual(expect.any(Function));
+      expect(handlers.get("seekforward")).toEqual(expect.any(Function));
+      expect(handlers.get("seekto")).toEqual(expect.any(Function));
+      expect(handlers.get("stop")).toEqual(expect.any(Function));
+
+      handlers.get("seekforward")?.({ action: "seekforward" });
+      expect(currentTime).toBe(40);
+      handlers.get("seekto")?.({ action: "seekto", seekTime: 75 });
+      expect(currentTime).toBe(75);
+      handlers.get("stop")?.({ action: "stop" });
+      expect(video.pause).toHaveBeenCalled();
+      expect(currentTime).toBe(0);
+
+      unmount();
+      expect(setActionHandler).toHaveBeenCalledWith("play", null);
+      expect(setActionHandler).toHaveBeenCalledWith("stop", null);
+      expect(mediaSession.metadata).toBeNull();
+    } finally {
+      restoreMediaSession();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("shows a fullscreen control and reflects fullscreenchange state", async () => {
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    const restoreRequestFullscreen = replaceProperty(
+      HTMLElement.prototype,
+      "requestFullscreen",
+      requestFullscreen,
+    );
+    const restoreFullscreenElement = replaceProperty(document, "fullscreenElement", null);
+    try {
+      render(<VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />);
+      const stage = document.querySelector(".player-stage") as HTMLElement;
+      const enter = screen.getByRole("button", { name: "Enter fullscreen" });
+      await userEvent.click(enter);
+      expect(requestFullscreen).toHaveBeenCalledWith();
+
+      Object.defineProperty(document, "fullscreenElement", {
+        configurable: true,
+        value: stage,
+      });
+      fireEvent(document, new Event("fullscreenchange"));
+      expect(screen.getByRole("button", { name: "Exit fullscreen" })).toBeInTheDocument();
+    } finally {
+      restoreRequestFullscreen();
+      restoreFullscreenElement();
+    }
+  });
+
+  it("uses the iPhone WebKit fullscreen fallback when container fullscreen is unavailable", async () => {
+    const enterWebKitFullscreen = vi.fn();
+    const restoreSupportsFullscreen = replaceProperty(
+      HTMLVideoElement.prototype,
+      "webkitSupportsFullscreen",
+      true,
+    );
+    const restoreEnterFullscreen = replaceProperty(
+      HTMLVideoElement.prototype,
+      "webkitEnterFullscreen",
+      enterWebKitFullscreen,
+    );
+    try {
+      render(<VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />);
+      await userEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+      expect(enterWebKitFullscreen).toHaveBeenCalledWith();
+    } finally {
+      restoreSupportsFullscreen();
+      restoreEnterFullscreen();
+    }
+  });
+
+  it("offers Picture-in-Picture only with a supported API and tracks its active state", async () => {
+    const requestPictureInPicture = vi.fn().mockResolvedValue(undefined);
+    const restoreEnabled = replaceProperty(document, "pictureInPictureEnabled", true);
+    const restoreElement = replaceProperty(document, "pictureInPictureElement", null);
+    const restoreRequest = replaceProperty(
+      HTMLVideoElement.prototype,
+      "requestPictureInPicture",
+      requestPictureInPicture,
+    );
+    try {
+      render(<VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />);
+      const video = document.querySelector("video.player-video") as HTMLVideoElement;
+      const pip = screen.getByRole("button", { name: "Picture in picture" });
+      await userEvent.click(pip);
+      expect(requestPictureInPicture).toHaveBeenCalledWith();
+
+      Object.defineProperty(document, "pictureInPictureElement", {
+        configurable: true,
+        value: video,
+      });
+      fireEvent(video, new Event("enterpictureinpicture"));
+      expect(screen.getByRole("button", { name: "Exit picture in picture" })).toBeInTheDocument();
+    } finally {
+      restoreEnabled();
+      restoreElement();
+      restoreRequest();
+    }
+  });
+
+  it("reveals the WebKit cast control only after an AirPlay route is available", async () => {
+    const showPlaybackTargetPicker = vi.fn();
+    const restoreAirPlay = replaceProperty(
+      HTMLVideoElement.prototype,
+      "webkitShowPlaybackTargetPicker",
+      showPlaybackTargetPicker,
+    );
+    try {
+      render(<VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />);
+      const video = document.querySelector("video.player-video") as HTMLVideoElement;
+      expect(screen.queryByRole("button", { name: "Cast to a device" })).toBeNull();
+      const event = new Event("webkitplaybacktargetavailabilitychanged") as Event & {
+        availability?: string;
+      };
+      event.availability = "available";
+      fireEvent(video, event);
+      await userEvent.click(screen.getByRole("button", { name: "Cast to a device" }));
+      expect(showPlaybackTargetPicker).toHaveBeenCalledWith();
+    } finally {
+      restoreAirPlay();
+    }
+  });
+
+  it("uses the Remote Playback availability watcher for Chromium casting", async () => {
+    const prompt = vi.fn().mockResolvedValue(undefined);
+    const cancelWatchAvailability = vi.fn().mockResolvedValue(undefined);
+    const watchAvailability = vi.fn((callback: RemotePlaybackAvailabilityCallback) => {
+      callback(true);
+      return Promise.resolve(7);
+    });
+    const restoreRemote = replaceProperty(HTMLMediaElement.prototype, "remote", {
+      prompt,
+      watchAvailability,
+      cancelWatchAvailability,
+    });
+    try {
+      const { unmount } = render(
+        <VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />,
+      );
+      const cast = await screen.findByRole("button", { name: "Cast to a device" });
+      await userEvent.click(cast);
+      expect(prompt).toHaveBeenCalledWith();
+      unmount();
+      await waitFor(() => expect(cancelWatchAvailability).toHaveBeenCalledWith(7));
+    } finally {
+      restoreRemote();
+    }
   });
 
   it("keeps timeupdate renders inside the scrubber leaf", async () => {

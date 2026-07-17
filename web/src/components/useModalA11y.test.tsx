@@ -11,7 +11,8 @@ function Dialog({ onClose }: { onClose: () => void }) {
   const ref = useModalA11y<HTMLDivElement>(onClose);
   return (
     <div ref={ref} role="dialog" aria-label="Test" tabIndex={-1}>
-      <button type="button">Inside</button>
+      <button type="button">First</button>
+      <button type="button">Last</button>
     </div>
   );
 }
@@ -54,6 +55,22 @@ describe("useModalA11y", () => {
     render(<Dialog onClose={onClose} />);
     key("Escape");
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("cycles Tab and Shift+Tab within the dialog", () => {
+    render(<Dialog onClose={() => {}} />);
+    const first = screen.getByRole("button", { name: "First" });
+    const last = screen.getByRole("button", { name: "Last" });
+
+    last.focus();
+    key("Tab");
+    expect(first).toHaveFocus();
+
+    first.focus();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }),
+    );
+    expect(last).toHaveFocus();
   });
 
   it("does not call onClose for other keys", () => {

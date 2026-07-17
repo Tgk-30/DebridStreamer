@@ -57,6 +57,11 @@ describe("FilterSlideover", () => {
     expect(screen.getByText("Sort by")).toBeInTheDocument();
   });
 
+  it("makes its persistently mounted panel inert when closed", () => {
+    const { container } = setup({ open: false });
+    expect(container.querySelector(".fs-panel")).toHaveAttribute("inert");
+  });
+
   it("shows the movie-only runtime group for a movie and hides it for series", () => {
     const { unmount } = setup({ type: "movie" });
     expect(screen.getByText("Max runtime")).toBeInTheDocument();

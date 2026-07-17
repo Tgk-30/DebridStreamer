@@ -7,7 +7,7 @@
 // Tauri or a configured debrid we show a clear "configure debrid" / "desktop
 // only" state. Imports services READ-ONLY via the app store.
 
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import {
   useDebridLibrary,
@@ -16,6 +16,7 @@ import {
 } from "../data/debridLibrary";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { ErrorNote } from "../components/ErrorNote";
 import { Spinner } from "../components/Spinner";
 import { isTauri } from "../lib/tauri";
 import "./LibraryScreens.css";
@@ -30,6 +31,8 @@ const HashListDialog = lazy(() =>
 );
 
 type Filter = "all" | "duplicates" | "ready";
+
+const TABLE_PAGE_SIZE = 100;
 
 /** "downloaded"/"Ready" → ready-to-play. */
 function isReady(status: string): boolean {
@@ -58,6 +61,7 @@ export function DebridLibrary() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [renderedRowCount, setRenderedRowCount] = useState(TABLE_PAGE_SIZE);
 
   const tauri = isTauri();
 
@@ -72,6 +76,13 @@ export function DebridLibrary() {
       return true;
     });
   }, [state.rows, query, filter]);
+
+  // Keep the table's mounted row count bounded even for accounts with thousands
+  // of torrents. Reset when the result set changes so a narrower filter does
+  // not inherit an unbounded count from a previous "Load more" sequence.
+  useEffect(() => {
+    setRenderedRowCount(TABLE_PAGE_SIZE);
+  }, [visible]);
 
   function toggleSelected(id: string) {
     setSelected((prev) => {
@@ -123,7 +134,24 @@ export function DebridLibrary() {
     }
   }
 
-  const selectedRows = visible.filter((r) => selected.has(r.torrent.id));
+  const selectedRows = useMemo(
+    () => visible.filter((row) => selected.has(row.torrent.id)),
+    [visible, selected],
+  );
+  const selectedVisibleCount = useMemo(
+    () =>
+      visible.reduce(
+        (count, row) => count + (selected.has(row.torrent.id) ? 1 : 0),
+        0,
+      ),
+    [visible, selected],
+  );
+  const allVisibleSelected =
+    visible.length > 0 && selectedVisibleCount === visible.length;
+  const selectAllIndeterminate =
+    selectedVisibleCount > 0 && selectedVisibleCount < visible.length;
+  const renderedRows = visible.slice(0, renderedRowCount);
+  const remainingRowCount = visible.length - renderedRows.length;
 
   // --- Gated states ---------------------------------------------------------
 
@@ -247,8 +275,8 @@ export function DebridLibrary() {
         </div>
       )}
 
-      {actionError && <p className="dl-error">{actionError}</p>}
-      {state.error && <p className="dl-error">{state.error}</p>}
+      {actionError && <ErrorNote className="dl-error">{actionError}</ErrorNote>}
+      {state.error && <ErrorNote className="dl-error">{state.error}</ErrorNote>}
 
       {state.loading ? (
         <div
@@ -324,86 +352,92 @@ export function DebridLibrary() {
       ) : visible.length === 0 ? (
         <p className="t-secondary dl-status">No torrents match your filters.</p>
       ) : (
-        <div className="dl-table glass-rest glass-lit">
-          <div className="dl-row dl-row-head">
-            <span className="dl-col-check">
-              <input
-                type="checkbox"
-                checked={
-                  visible.length > 0 &&
-                  visible.every((r) => selected.has(r.torrent.id))
-                }
-                // Show the partial (indeterminate) state when some - but not
-                // all - visible rows are selected. `indeterminate` is a DOM
-                // property, not an attribute, so it must be set via a ref.
-                ref={(el) => {
-                  if (el) {
-                    const sel = visible.filter((r) =>
-                      selected.has(r.torrent.id),
-                    ).length;
-                    el.indeterminate = sel > 0 && sel < visible.length;
-                  }
-                }}
-                onChange={toggleSelectAll}
-                aria-label="Select all"
-              />
-            </span>
-            <span className="dl-col-name">Name</span>
-            <span className="dl-col-size">Size</span>
-            <span className="dl-col-status">Status</span>
-            <span className="dl-col-added">Added</span>
-            <span className="dl-col-host">Host</span>
-            <span className="dl-col-actions" />
-          </div>
-          {visible.map((row) => (
-            <div
-              key={`${row.torrent.debridService}-${row.torrent.id}`}
-              className={`dl-row${row.isDuplicate ? " dl-row-dup" : ""}`}
-            >
+        <>
+          <div className="dl-table glass-rest glass-lit">
+            <div className="dl-row dl-row-head">
               <span className="dl-col-check">
                 <input
                   type="checkbox"
-                  checked={selected.has(row.torrent.id)}
-                  onChange={() => toggleSelected(row.torrent.id)}
-                  aria-label={`Select ${row.torrent.name}`}
+                  checked={allVisibleSelected}
+                  // `indeterminate` is a DOM property with no JSX attribute, so a
+                  // callback ref syncs it. It must run on every mount (the header
+                  // remounts when the filter empties then repopulates), not only
+                  // when the boolean changes, or a remounted checkbox loses its dash.
+                  ref={(el) => {
+                    if (el != null) el.indeterminate = selectAllIndeterminate;
+                  }}
+                  onChange={toggleSelectAll}
+                  aria-label="Select all"
                 />
               </span>
-              <span className="dl-col-name" title={row.torrent.name}>
-                <span className="dl-name-text">{row.torrent.name}</span>
-                <span className="dl-badges">
-                  <span className="dl-badge dl-badge-svc">
-                    {row.torrent.debridService}
-                  </span>
-                  {row.isDuplicate && (
-                    <span className="dl-badge dl-badge-dup">Duplicate</span>
-                  )}
-                </span>
-              </span>
-              <span className="dl-col-size">{formatSize(row.torrent.sizeBytes)}</span>
-              <span className="dl-col-status">
-                <span
-                  className={`dl-status-pill${isReady(row.torrent.status) ? " dl-status-ready" : ""}`}
-                >
-                  {row.torrent.status}
-                </span>
-              </span>
-              <span className="dl-col-added">{formatAdded(row.torrent.addedAt)}</span>
-              <span className="dl-col-host">{row.torrent.host ?? " - "}</span>
-              <span className="dl-col-actions">
-                <button
-                  type="button"
-                  className="dl-icon-btn"
-                  disabled={busy}
-                  onClick={() => void deleteRows([row])}
-                  aria-label={`Delete ${row.torrent.name}`}
-                  title="Delete"
-                >
-                  <Icon name="trash" size={15} />
-                </button>
-              </span>
+              <span className="dl-col-name">Name</span>
+              <span className="dl-col-size">Size</span>
+              <span className="dl-col-status">Status</span>
+              <span className="dl-col-added">Added</span>
+              <span className="dl-col-host">Host</span>
+              <span className="dl-col-actions" />
             </div>
-          ))}
-        </div>
+            {renderedRows.map((row) => (
+              <div
+                key={`${row.torrent.debridService}-${row.torrent.id}`}
+                className={`dl-row${row.isDuplicate ? " dl-row-dup" : ""}`}
+              >
+                <span className="dl-col-check">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(row.torrent.id)}
+                    onChange={() => toggleSelected(row.torrent.id)}
+                    aria-label={`Select ${row.torrent.name}`}
+                  />
+                </span>
+                <span className="dl-col-name" title={row.torrent.name}>
+                  <span className="dl-name-text">{row.torrent.name}</span>
+                  <span className="dl-badges">
+                    <span className="dl-badge dl-badge-svc">
+                      {row.torrent.debridService}
+                    </span>
+                    {row.isDuplicate && (
+                      <span className="dl-badge dl-badge-dup">Duplicate</span>
+                    )}
+                  </span>
+                </span>
+                <span className="dl-col-size">{formatSize(row.torrent.sizeBytes)}</span>
+                <span className="dl-col-status">
+                  <span
+                    className={`dl-status-pill${isReady(row.torrent.status) ? " dl-status-ready" : ""}`}
+                  >
+                    {row.torrent.status}
+                  </span>
+                </span>
+                <span className="dl-col-added">{formatAdded(row.torrent.addedAt)}</span>
+                <span className="dl-col-host">{row.torrent.host ?? " - "}</span>
+                <span className="dl-col-actions">
+                  <button
+                    type="button"
+                    className="dl-icon-btn"
+                    disabled={busy}
+                    onClick={() => void deleteRows([row])}
+                    aria-label={`Delete ${row.torrent.name}`}
+                    title="Delete"
+                  >
+                    <Icon name="trash" size={15} />
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+          {remainingRowCount > 0 && (
+            <div className="dl-load-more">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setRenderedRowCount((count) => count + TABLE_PAGE_SIZE)}
+              >
+                Load more ({remainingRowCount} remaining)
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {dialogOpen && (

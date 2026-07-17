@@ -29,6 +29,7 @@ import {
 import { formatSize } from "../data/debridLibrary";
 import { useAppStore } from "../store/AppStore";
 import { Icon } from "./Icon";
+import { ErrorNote } from "./ErrorNote";
 import "./StreamPicker.css";
 
 /** A cached debrid source should return quickly. Bound the UI wait so a stalled
@@ -262,7 +263,11 @@ export function StreamPicker({
         </div>
       )}
 
-      {resolveError && <div className="streams-error">{resolveError}</div>}
+      {resolveError && (
+        <ErrorNote as="div" className="streams-error">
+          {resolveError}
+        </ErrorNote>
+      )}
 
       <StreamBody
         state={state}

@@ -5,6 +5,7 @@
 
 import { useLayoutEffect, useState } from "react";
 import { Icon, type IconName } from "./Icon";
+import { useModalA11y } from "./useModalA11y";
 import { isServerMode } from "../lib/serverMode";
 import { useSimpleMode } from "../store/AppStore";
 import type { LocalProfile } from "../storage/ProfileRegistry";
@@ -213,6 +214,10 @@ export function NavRail({
   calendarBadgeCount = 0,
 }: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreSheetRef = useModalA11y<HTMLDivElement>(
+    () => setMoreOpen(false),
+    moreOpen,
+  );
   // Collapsed (icons-only) side rail - an ephemeral UI preference persisted to
   // localStorage. Reflected on the root so the layout var + content inset track.
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -362,7 +367,15 @@ export function NavRail({
       </button>
 
       {moreOpen && (
-        <div id="mobile-nav-more" className="nav-rail-more-sheet is-open">
+        <div
+          id="mobile-nav-more"
+          ref={moreSheetRef}
+          className="nav-rail-more-sheet is-open"
+          role="dialog"
+          aria-modal="true"
+          aria-label="More navigation"
+          tabIndex={-1}
+        >
           <div className="nav-rail-more-head">
             <span>More</span>
             <button

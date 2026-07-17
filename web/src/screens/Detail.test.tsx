@@ -39,6 +39,10 @@ const navigate = vi.fn();
 const toggleWatchlist = vi.fn();
 const recordResume = vi.fn();
 const refreshContinueWatching = vi.fn(async () => {});
+const openDetailPlayer = vi.fn();
+const closeDetailPlayer = vi.fn();
+const openTrailer = vi.fn();
+const closeTrailer = vi.fn();
 
 let mockServices: any = {
   tmdb: null,
@@ -63,6 +67,12 @@ vi.mock("../store/AppStore", () => ({
     recordResume,
     continueWatching: mockContinueWatching,
     refreshContinueWatching,
+    detailPlayerOpen: true,
+    openDetailPlayer,
+    closeDetailPlayer,
+    trailerOpen: false,
+    openTrailer,
+    closeTrailer,
     cachedResolutions: mockCached
       ? { [mockDetailItem?.id ?? "x"]: mockCached }
       : {},
@@ -452,6 +462,15 @@ describe("Detail base render", () => {
     expect(screen.getByTestId("streampicker")).toBeInTheDocument();
   });
 
+  it("is a modal dialog and closes the main Detail overlay with Escape", async () => {
+    render(<Detail />);
+    const dialog = screen.getByRole("dialog", { name: "Selected details" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+
+    await userEvent.keyboard("{Escape}");
+    expect(closeDetail).toHaveBeenCalledTimes(1);
+  });
+
   it("series: streams open on a dedicated page, not inline at the bottom", async () => {
     mockDetailItem = preview("s1", { type: "series", title: "The Series", tmdbId: 200 });
     mockDetail = detailState({ item: mediaItem({ type: "series", id: "s1", tmdbId: 200 }) });
@@ -480,7 +499,7 @@ describe("Detail base render", () => {
     fireEvent.keyDown(document.body, { key: "Escape" });
 
     expect(playerKeydown).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /Streams/ })).toBeInTheDocument();
     expect(screen.getByTestId("player")).toBeInTheDocument();
     window.removeEventListener("keydown", playerKeydown);
   });
@@ -490,11 +509,13 @@ describe("Detail base render", () => {
     mockDetail = detailState({ item: mediaItem({ type: "series", id: "s1", tmdbId: 200 }) });
     render(<Detail />);
     await userEvent.click(screen.getByTestId("pick-episode"));
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /Streams/ })).toBeInTheDocument();
 
     fireEvent.keyDown(document.body, { key: "Escape" });
 
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /Streams/ })).not.toBeInTheDocument(),
+    );
   });
 
   it("renders the AI analysis only when the provider exposes analyzeTitle", () => {
@@ -597,10 +618,9 @@ describe("Detail actions", () => {
     );
   });
 
-  it("opens settings from the stream picker (closes detail + navigates)", async () => {
+  it("opens settings from the stream picker", async () => {
     render(<Detail />);
     await userEvent.click(screen.getByText("open-settings"));
-    expect(closeDetail).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledWith("settings");
   });
 

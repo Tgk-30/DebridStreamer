@@ -14,6 +14,7 @@ import type { Episode } from "../models/media";
 import { episodeIdFor, useEpisodes, useSeasons } from "../data/episodes";
 import { seasonIsWatched } from "../data/watchedState";
 import { Icon } from "./Icon";
+import { ImgWithFallback } from "./ImgWithFallback";
 import { isNetworkAllowed } from "../lib/networkPolicy";
 import "./EpisodePicker.css";
 
@@ -303,12 +304,13 @@ export function EpisodePicker({
                   }
                 >
                   {ep.stillPath && isNetworkAllowed("images") ? (
-                    <img
+                    <ImgWithFallback
                       className="episode-still"
                       src={`${TMDB_STILL_BASE}${ep.stillPath}`}
                       alt=""
                       loading="lazy"
                       draggable={false}
+                      fallback={<span className="episode-still episode-still-empty" aria-hidden="true" />}
                     />
                   ) : (
                     <span className="episode-still episode-still-empty" aria-hidden />
