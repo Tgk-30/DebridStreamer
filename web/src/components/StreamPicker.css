@@ -275,6 +275,11 @@
   background: rgba(var(--accent-rgb), 0.12);
   border: 0.75px solid rgba(var(--accent-rgb), 0.4);
 }
+.stream-badge.is-failed {
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.12);
+  border: 0.75px solid rgba(var(--danger-rgb), 0.4);
+}
 .stream-spin {
   width: 12px;
   height: 12px;

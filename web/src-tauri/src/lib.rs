@@ -6,6 +6,8 @@
 // This command is the desktop direct-play seam: hand a Real-Debrid direct link to a
 // native player. On macOS we try VLC, then mpv/IINA as fallbacks.
 
+#[cfg(target_os = "linux")]
+use std::path::Path;
 use std::process::Command;
 
 // Bundled-mpv player (Phase 3 P1): spawns the mpv sidecar and drives it over
@@ -162,6 +164,64 @@ async fn open_in_external_player(
         .map_err(|error| error.to_string())?
 }
 
+/// Reveal a completed download without opening the media file. Every platform
+/// command receives the path as one argument, never through a shell, and any
+/// launch/status failure is returned to the webview as a normal Tauri error.
+fn reveal_in_file_manager_blocking(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = Command::new("open")
+            .args(["-R", path.as_str()])
+            .status()
+            .map_err(|error| error.to_string())?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err(format!("open -R exited with {status}"));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let status = Command::new("explorer")
+            .arg(format!("/select,{path}"))
+            .status()
+            .map_err(|error| error.to_string())?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err(format!("explorer exited with {status}"));
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let directory = Path::new(&path)
+            .parent()
+            .filter(|directory| !directory.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let status = Command::new("xdg-open")
+            .arg(directory)
+            .status()
+            .map_err(|error| error.to_string())?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err(format!("xdg-open exited with {status}"));
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = path;
+        Err("Revealing files is not supported on this platform".to_string())
+    }
+}
+
+#[tauri::command]
+async fn reveal_in_file_manager(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || reveal_in_file_manager_blocking(path))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
 /// macOS: the window is created `transparent: true` so the in-window player can
 /// reveal a native video layer through the webview. Give the NSWindow an opaque
 /// app-color background permanently. The video view lives above this background
@@ -270,6 +330,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_in_external_player,
             list_external_players,
+            reveal_in_file_manager,
             player::mpv_play,
             player::mpv_pause,
             player::mpv_resume,

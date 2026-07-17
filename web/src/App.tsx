@@ -45,6 +45,7 @@ import { ProfileMenu } from "./components/ProfileMenu";
 import { Spinner } from "./components/Spinner";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { InstallPrompt, isInstallPromptEligible } from "./components/InstallPrompt";
+import { LocalPlayerHost } from "./components/LocalPlayerHost";
 // Eager (not lazy): the lock screen must paint in the SAME commit as the app
 // shell, or a code-split chunk load would flash a protected profile's content
 // behind a null Suspense fallback before the gate appears.
@@ -632,6 +633,10 @@ export function App() {
           </ErrorBoundary>
         )}
       </main>
+
+      {/* Completed downloads can launch playback without opening a Detail
+          overlay. The host owns the app-wide native-mpv mount. */}
+      <LocalPlayerHost />
 
       {/* Lazily-loaded overlays - each chunk downloads only when first opened.
           A null Suspense fallback is correct here: these are modals, so "nothing

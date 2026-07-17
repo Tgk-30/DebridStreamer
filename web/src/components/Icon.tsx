@@ -14,6 +14,7 @@ import {
   Eye,
   EyeOff,
   Film,
+  FolderOpen,
   Gauge,
   HardDriveDownload,
   Info,
@@ -45,6 +46,7 @@ import {
 export type IconName =
   | "discover"
   | "library"
+  | "folder"
   | "watchlist"
   | "history"
   | "assistant"
@@ -96,6 +98,7 @@ interface IconProps {
 const ICONS: Record<IconName, LucideIcon> = {
   discover: Compass,
   library: Film,
+  folder: FolderOpen,
   watchlist: Bookmark,
   history: Clock3,
   assistant: BotMessageSquare,

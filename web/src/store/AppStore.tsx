@@ -92,6 +92,13 @@ export interface AppStore {
   openDetail: (item: MediaPreview) => void;
   closeDetail: () => void;
 
+  // Desktop local-file player. This is separate from Detail's stream player so
+  // completed downloads can be played from any screen without fabricating a
+  // debrid stream.
+  localFilePlayer: { path: string; title: string } | null;
+  playLocalFile: (path: string, title: string) => void;
+  closeLocalFilePlayer: () => void;
+
   // Browse overlay ("See all" + advanced filters). Non-null mounts the Browse
   // screen over the current content (like Detail). Opened from rail "See all"
   // headers and Search with a context (category | genre | discover | search).
@@ -196,6 +203,10 @@ const AppActionsContext = createContext<AppActions | null>(null);
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [route, setRoute] = useState<ScreenId>("discover");
   const [detailItem, setDetailItem] = useState<MediaPreview | null>(null);
+  const [localFilePlayer, setLocalFilePlayer] = useState<{
+    path: string;
+    title: string;
+  } | null>(null);
   const [browseContext, setBrowseContext] = useState<BrowseContext | null>(null);
   const [pendingSearch, setPendingSearch] = useState<string | null>(null);
 
@@ -527,6 +538,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const closeDetail = useCallback(() => setDetailItem(null), []);
 
+  const playLocalFile = useCallback((path: string, title: string) => {
+    // Preserve the filesystem path exactly as supplied. mpv receives this raw
+    // value through the native player bridge; converting it to a webview asset
+    // URL would make it unusable by libmpv.
+    if (path.length === 0) return;
+    setLocalFilePlayer({ path, title });
+  }, []);
+
+  const closeLocalFilePlayer = useCallback(() => setLocalFilePlayer(null), []);
+
   const search = useCallback((query: string) => {
     const q = query.trim();
     if (q.length === 0) return;
@@ -733,6 +754,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       detailItem,
       openDetail,
       closeDetail,
+      localFilePlayer,
+      playLocalFile,
+      closeLocalFilePlayer,
       browseContext,
       openBrowse,
       closeBrowse,
@@ -767,6 +791,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       detailItem,
       openDetail,
       closeDetail,
+      localFilePlayer,
+      playLocalFile,
+      closeLocalFilePlayer,
       browseContext,
       openBrowse,
       closeBrowse,

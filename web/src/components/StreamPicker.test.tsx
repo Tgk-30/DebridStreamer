@@ -8,6 +8,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -49,7 +50,7 @@ vi.mock("./Icon", () => ({
 
 vi.mock("./StreamPicker.css", () => ({}));
 
-import { StreamPicker } from "./StreamPicker";
+import { STREAM_RESOLVE_TIMEOUT_MS, StreamPicker } from "./StreamPicker";
 
 // --- Fixtures -----------------------------------------------------------
 
@@ -92,6 +93,7 @@ const neverResolve = async (): Promise<StreamInfo> => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   storeSettings = {
     dataSaver: false,
     streamCachedOnly: false,
@@ -389,11 +391,14 @@ describe("StreamPicker", () => {
       />,
     );
 
+    expect(screen.getByText(/Instant/)).toBeInTheDocument();
     fireEvent.click(screen.getByText("Pick Me 1080p").closest("button")!);
 
     await waitFor(() => expect(onPlay).toHaveBeenCalledTimes(1));
     expect(resolveStream).toHaveBeenCalledWith(row);
     expect(onPlay).toHaveBeenCalledWith(resolved, row.result);
+    expect(screen.getByText(/Instant/)).toBeInTheDocument();
+    expect(screen.queryByText("Failed · Retry")).not.toBeInTheDocument();
   });
 
   it("shows a Resolving… badge and disables the row while resolving", async () => {
@@ -450,6 +455,73 @@ describe("StreamPicker", () => {
     await waitFor(() => expect(screen.getByText("Debrid 429")).toBeInTheDocument());
     // Row is interactive again (resolving cleared).
     expect(screen.getByText("Bad Pick 1080p").closest("button")!).not.toBeDisabled();
+    expect(screen.getByText("Failed · Retry")).toBeInTheDocument();
+  });
+
+  it("times out a cached season-pack resolve into a failed retry state", async () => {
+    vi.useFakeTimers();
+    const row = makeRow({
+      hash: "SEASON9",
+      title: "Rick and Morty Season 9 Complete 1080p",
+      cachedOn: DebridServiceType.realDebrid,
+    });
+    const resolveStream = vi.fn(() => new Promise<StreamInfo>(() => {}));
+    const onPlay = vi.fn();
+
+    render(
+      <StreamPicker
+        state={baseState({ rows: [row] })}
+        resolveStream={resolveStream}
+        onPlay={onPlay}
+        episodeContext={{ season: 9, episode: 8 }}
+      />,
+    );
+
+    const button = screen.getByText("Rick and Morty Season 9 Complete 1080p").closest("button")!;
+    fireEvent.click(button);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STREAM_RESOLVE_TIMEOUT_MS);
+    });
+
+    expect(screen.queryByText("Resolving…")).not.toBeInTheDocument();
+    expect(screen.getByText("Failed · Retry")).toBeInTheDocument();
+    expect(screen.getByText(/took too long to resolve/)).toBeInTheDocument();
+    expect(button).not.toBeDisabled();
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it("fails a season pack that resolves to a different episode instead of playing it", async () => {
+    const row = makeRow({
+      hash: "SEASON9-WRONG-FILE",
+      title: "Rick and Morty Season 9 Complete 1080p",
+      cachedOn: DebridServiceType.realDebrid,
+    });
+    const resolveStream = vi.fn().mockResolvedValue({
+      streamURL: "https://cdn.example/rick-and-morty-s09e07.mkv",
+      quality: "1080p",
+      codec: "H.264",
+      audio: "Unknown",
+      source: "WEB-DL",
+      sizeBytes: 1,
+      fileName: "Rick.and.Morty.S09E07.1080p.mkv",
+      debridService: "RD",
+    } satisfies StreamInfo);
+    const onPlay = vi.fn();
+
+    render(
+      <StreamPicker
+        state={baseState({ rows: [row] })}
+        resolveStream={resolveStream}
+        onPlay={onPlay}
+        episodeContext={{ season: 9, episode: 8 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Rick and Morty Season 9 Complete 1080p").closest("button")!);
+
+    expect(await screen.findByText(/Couldn't find S09E08 in this season pack/)).toBeInTheDocument();
+    expect(screen.getByText("Failed · Retry")).toBeInTheDocument();
+    expect(onPlay).not.toHaveBeenCalled();
   });
 
   it("blocks selection with a guidance message when no debrid is configured", async () => {

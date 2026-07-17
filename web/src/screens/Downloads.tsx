@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { getDownloadsBridge, type DownloadProgress } from "../lib/downloadsBridge";
-import { isTauri } from "../lib/tauri";
+import { isTauri, revealInFileManager } from "../lib/tauri";
 import { getStore } from "../storage";
 import { MediaItem as MediaItemNS } from "../models/media";
 import type { DownloadRecord } from "../storage/models";
@@ -197,7 +197,7 @@ export function DownloadShowBanner({ title, art }: { title: string; art?: Downlo
 }
 
 export function Downloads() {
-  const { services, navigate, activeProfile } = useAppStore();
+  const { services, navigate, activeProfile, playLocalFile } = useAppStore();
   const tauri = isTauri();
   const [records, setRecords] = useState<DownloadRecord[]>([]);
   const [speeds, setSpeeds] = useState<Record<string, number>>({});
@@ -357,6 +357,7 @@ export function Downloads() {
               speeds={speeds}
               manager={manager}
               artwork={artwork}
+              playLocalFile={playLocalFile}
             />
           )}
           {groupedRecords.series.length > 0 && (
@@ -376,6 +377,7 @@ export function Downloads() {
                       speeds={speeds}
                       manager={manager}
                       artwork={artwork}
+                      playLocalFile={playLocalFile}
                     />
                   ))}
                 </section>
@@ -397,6 +399,7 @@ function DownloadSection({
   speeds,
   manager,
   artwork,
+  playLocalFile,
 }: {
   heading: string;
   nested?: boolean;
@@ -406,6 +409,7 @@ function DownloadSection({
   speeds: Record<string, number>;
   manager: ReturnType<typeof startDownloadsRuntime>;
   artwork: DownloadArtworkMap;
+  playLocalFile: (path: string, title: string) => void;
 }) {
   return (
     <section className={`downloads-section${nested ? " is-nested" : ""}`}>
@@ -426,6 +430,10 @@ function DownloadSection({
           const canPause = ["resolving", "downloading", "optimizing"].includes(record.status);
           const canResume = record.status === "paused";
           const canForceStop = !["completed", "canceled"].includes(record.status);
+          // A completed record's destination is the durable proof of the local
+          // file we created. Do not offer either action for partial/failed rows
+          // (or legacy completed records that lack a path).
+          const canOpenLocalFile = record.status === "completed" && record.destPath != null;
           return (
             <div key={record.jobId} className="downloads-row">
               <span className="dl-col-check">
@@ -466,6 +474,28 @@ function DownloadSection({
                 </span>
               </span>
               <span className="downloads-actions">
+                {canOpenLocalFile && (
+                  <button
+                    type="button"
+                    className="dl-icon-btn"
+                    onClick={() => playLocalFile(record.destPath!, record.title)}
+                    aria-label={`Play ${record.title}`}
+                    title="Play"
+                  >
+                    <Icon name="play" size={14} />
+                  </button>
+                )}
+                {canOpenLocalFile && (
+                  <button
+                    type="button"
+                    className="dl-icon-btn"
+                    onClick={() => void revealInFileManager(record.destPath!)}
+                    aria-label={`Reveal ${record.title} in folder`}
+                    title="Reveal in folder"
+                  >
+                    <Icon name="folder" size={15} />
+                  </button>
+                )}
                 {canPause && (
                   <button type="button" className="dl-icon-btn" onClick={() => void manager.pause(record.jobId)} aria-label={`Pause ${record.title}`} title="Pause">
                     Ⅱ

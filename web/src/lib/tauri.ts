@@ -41,6 +41,14 @@ export async function openInExternalPlayer(
   });
 }
 
+/** Reveal a completed local download in Finder, Explorer, or the Linux file
+ * manager. This is desktop-only, so browser callers safely no-op. */
+export async function revealInFileManager(path: string): Promise<void> {
+  if (!isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("reveal_in_file_manager", { path });
+}
+
 /** The external media players actually installed on this machine (from the Rust
  * detector). Empty outside Tauri. Drives the Settings picker so it only offers
  * real choices. */

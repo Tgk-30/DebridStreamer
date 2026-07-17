@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { DownloadRecord } from "../storage/models";
 
 const tauriState = vi.hoisted(() => ({ on: false }));
@@ -20,11 +20,20 @@ const desktopQueue = vi.hoisted(() => ({
   },
 }));
 const downloadsFfmpegAvailable = vi.hoisted(() => vi.fn(async () => true));
+const playLocalFile = vi.hoisted(() => vi.fn());
+const revealInFileManager = vi.hoisted(() => vi.fn(async () => {}));
 
 vi.mock("../store/AppStore", () => ({
-  useAppStore: () => ({ services: { debrid: null }, navigate: vi.fn() }),
+  useAppStore: () => ({
+    services: { debrid: null },
+    navigate: vi.fn(),
+    playLocalFile,
+  }),
 }));
-vi.mock("../lib/tauri", () => ({ isTauri: () => tauriState.on }));
+vi.mock("../lib/tauri", () => ({
+  isTauri: () => tauriState.on,
+  revealInFileManager,
+}));
 vi.mock("../storage", () => ({
   getStore: () => ({
     getMedia: async () => null,
@@ -88,6 +97,37 @@ describe("Downloads honest desktop gate", () => {
 });
 
 describe("Downloads desktop queue progress", () => {
+  it("offers Play and Reveal only for a completed record with a local destination", async () => {
+    tauriState.on = true;
+    desktopQueue.records = [
+      record({ status: "completed", destPath: "/Downloads/Movie.mkv" }),
+      record({
+        jobId: "paused-job",
+        title: "Paused movie",
+        status: "paused",
+        destPath: "/Downloads/Paused movie.mkv",
+      }),
+      record({ jobId: "missing-path", title: "Missing path", status: "completed" }),
+    ];
+
+    render(<Downloads />);
+
+    const play = await screen.findByRole("button", { name: "Play Movie" });
+    const reveal = screen.getByRole("button", { name: "Reveal Movie in folder" });
+    expect(screen.queryByRole("button", { name: "Play Paused movie" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reveal Paused movie in folder" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Play Missing path" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reveal Missing path in folder" })).not.toBeInTheDocument();
+
+    fireEvent.click(play);
+    fireEvent.click(reveal);
+
+    expect(playLocalFile).toHaveBeenCalledWith("/Downloads/Movie.mkv", "Movie");
+    await waitFor(() => {
+      expect(revealInFileManager).toHaveBeenCalledWith("/Downloads/Movie.mkv");
+    });
+  });
+
   it("renders the known source denominator as a determinate progress bar", async () => {
     tauriState.on = true;
     desktopQueue.records = [

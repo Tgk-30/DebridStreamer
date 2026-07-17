@@ -10,7 +10,11 @@
 // the URL up for playback.
 
 import { useEffect, useMemo, useState } from "react";
-import { DebridServiceType, type StreamInfo } from "../services/debrid/models";
+import {
+  DebridServiceType,
+  fileMatchesEpisode,
+  type StreamInfo,
+} from "../services/debrid/models";
 import {
   TorrentResult,
   VideoCodec,
@@ -26,6 +30,43 @@ import { formatSize } from "../data/debridLibrary";
 import { useAppStore } from "../store/AppStore";
 import { Icon } from "./Icon";
 import "./StreamPicker.css";
+
+/** A cached debrid source should return quickly. Bound the UI wait so a stalled
+ * provider request cannot leave a stream row permanently in Resolving state. */
+export const STREAM_RESOLVE_TIMEOUT_MS = 15_000;
+
+type ResolutionStatus = "resolving" | "failed";
+
+function resolveWithinTimeout<T>(operation: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      reject(new Error("This stream took too long to resolve. Try again or pick another source."));
+    }, STREAM_RESOLVE_TIMEOUT_MS);
+    // Wrap the call so a non-conforming resolver that throws synchronously also
+    // follows the ordinary failure path and clears the pending timer.
+    Promise.resolve()
+      .then(operation)
+      .then(resolve, reject)
+      .finally(() => globalThis.clearTimeout(timer));
+  });
+}
+
+function assertPackEpisodeMatch(
+  row: StreamRow,
+  stream: StreamInfo,
+  episodeContext: { season: number; episode: number } | null,
+): void {
+  if (
+    episodeContext == null ||
+    classifyRowForEpisode(row, episodeContext.season, episodeContext.episode) !== "pack" ||
+    fileMatchesEpisode(stream.fileName, episodeContext)
+  ) {
+    return;
+  }
+  const season = String(episodeContext.season).padStart(2, "0");
+  const episode = String(episodeContext.episode).padStart(2, "0");
+  throw new Error(`Couldn't find S${season}E${episode} in this season pack. Try another source.`);
+}
 
 interface StreamPickerProps {
   state: StreamsState;
@@ -56,7 +97,7 @@ export function StreamPicker({
   const [resFilter, setResFilter] = useState<VideoQuality | null>(null);
   const [codecFilter, setCodecFilter] = useState<VideoCodec | null>(null);
   const [visibleCount, setVisibleCount] = useState(10);
-  const [resolvingHash, setResolvingHash] = useState<string | null>(null);
+  const [resolutionStates, setResolutionStates] = useState<Record<string, ResolutionStatus>>({});
   const [resolveError, setResolveError] = useState<string | null>(null);
 
   // Clear the resolution/codec chips whenever the underlying results change
@@ -68,6 +109,7 @@ export function StreamPicker({
     setResFilter(null);
     setCodecFilter(null);
     setVisibleCount(10);
+    setResolutionStates({});
   }, [state.rows]);
 
   // The data-saver-eligible rows are the basis for both the chips and the list.
@@ -132,15 +174,30 @@ export function StreamPicker({
       );
       return;
     }
+    const hash = row.result.infoHash;
+    if (resolutionStates[hash] === "resolving") return;
     setResolveError(null);
-    setResolvingHash(row.result.infoHash);
+    setResolutionStates((current) => ({ ...current, [hash]: "resolving" }));
     try {
-      const stream = await resolveStream(row);
+      const stream = await resolveWithinTimeout(() => resolveStream(row));
+      // DebridFileSelector normally chooses the hinted file within a pack. A
+      // provider can still return an untagged/default file, so never start the
+      // wrong episode when a season-pack row lacks the requested episode.
+      assertPackEpisodeMatch(row, stream, episodeContext);
       onPlay(stream, row.result);
     } catch (err) {
       setResolveError(err instanceof Error ? err.message : String(err));
+      setResolutionStates((current) => ({ ...current, [hash]: "failed" }));
     } finally {
-      setResolvingHash(null);
+      // A failed resolve stays visibly terminal and retryable. A successful
+      // resolve drops back to its normal Instant/Will cache badge while play
+      // starts; a late completion after the timeout cannot call onPlay.
+      setResolutionStates((current) => {
+        if (current[hash] !== "resolving") return current;
+        const next = { ...current };
+        delete next[hash];
+        return next;
+      });
     }
   }
 
@@ -214,7 +271,7 @@ export function StreamPicker({
         cachedOnly={cachedOnly}
         filteredCount={filteredCount}
         chipFiltersActive={effRes != null || effCodec != null}
-        resolvingHash={resolvingHash}
+        resolutionStates={resolutionStates}
         onSelect={select}
         onShowAll={() => setCachedOnly(false)}
         onClearChips={() => {
@@ -237,7 +294,7 @@ function StreamBody({
   cachedOnly,
   filteredCount,
   chipFiltersActive,
-  resolvingHash,
+  resolutionStates,
   onSelect,
   onShowAll,
   onClearChips,
@@ -252,7 +309,7 @@ function StreamBody({
   cachedOnly: boolean;
   filteredCount: number;
   chipFiltersActive: boolean;
-  resolvingHash: string | null;
+  resolutionStates: Record<string, ResolutionStatus>;
   onSelect: (row: StreamRow) => void;
   onShowAll: () => void;
   onClearChips: () => void;
@@ -430,7 +487,7 @@ function StreamBody({
           <StreamRowItem
             key={row.result.infoHash}
             row={row}
-            resolving={resolvingHash === row.result.infoHash}
+            resolutionStatus={resolutionStates[row.result.infoHash] ?? null}
             onSelect={() => onSelect(row)}
             pack={
               episodeContext != null &&
@@ -453,18 +510,20 @@ function StreamBody({
 
 function StreamRowItem({
   row,
-  resolving,
+  resolutionStatus,
   onSelect,
   pack = false,
 }: {
   row: StreamRow;
-  resolving: boolean;
+  resolutionStatus: ResolutionStatus | null;
   onSelect: () => void;
   /** The release is a whole-season pack (not an exact episode file). */
   pack?: boolean;
 }) {
   const { result, cachedOn } = row;
   const cached = cachedOn != null;
+  const resolving = resolutionStatus === "resolving";
+  const failed = resolutionStatus === "failed";
 
   return (
     <li>
@@ -498,6 +557,8 @@ function StreamRowItem({
             <span className="stream-spin" aria-hidden="true" />
             Resolving…
           </span>
+        ) : failed ? (
+          <span className="stream-badge is-failed">Failed · Retry</span>
         ) : (
           <span className={`stream-badge ${cached ? "is-cached" : "is-cache"}`}>
             {cached ? (
