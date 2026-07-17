@@ -715,3 +715,117 @@ describe("EmbeddedPlayer decode-failure fallback", () => {
     }
   });
 });
+
+describe("EmbeddedPlayer decode-failure fallback", () => {
+  // The window mpv's watchdog uses (mirrors FIRST_FRAME_WATCHDOG_MS).
+  const WATCHDOG_MS = 10_000;
+
+  it("hands off to the webview when mpv reports an end-file decode error", async () => {
+    // The gap this closes: loadfile SUCCEEDS (so the init try/catch sees nothing)
+    // but the file then fails to decode, surfacing asynchronously as an end-file
+    // ERROR event. The Rust core forwards only reason=ERROR, so any end-file with
+    // error:true must trigger the parent's webview fallback.
+    const onPlaybackError = vi.fn(async () => true);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/corrupt.mkv"
+        title="Corrupt"
+        onPlaybackError={onPlaybackError}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+
+    emitProperty("end-file", { error: true, code: -12 });
+    expect(onPlaybackError).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores an end-file that is not a genuine error (normal EOF)", async () => {
+    const onPlaybackError = vi.fn(async () => true);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/movie.mkv"
+        title="Movie"
+        onPlaybackError={onPlaybackError}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+
+    emitProperty("end-file", { error: false });
+    expect(onPlaybackError).not.toHaveBeenCalled();
+  });
+
+  it("requests the webview fallback only once when errors repeat", async () => {
+    const onPlaybackError = vi.fn(async () => true);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/corrupt.mkv"
+        title="Corrupt"
+        onPlaybackError={onPlaybackError}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+
+    emitProperty("end-file", { error: true, code: -12 });
+    emitProperty("end-file", { error: true, code: -12 });
+    expect(onPlaybackError).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands off to the webview when no first frame arrives within the watchdog window", async () => {
+    vi.useFakeTimers();
+    try {
+      const onPlaybackError = vi.fn(async () => true);
+      render(
+        <EmbeddedPlayer
+          url="https://example.test/stalled.mkv"
+          title="Stalled"
+          onPlaybackError={onPlaybackError}
+          onClose={() => {}}
+        />,
+      );
+      // The mocked init chain is microtask-only, so a single async tick arms the
+      // watchdog. No time-pos is ever emitted (mpv accepted the file but never
+      // decodes a frame).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(renderPlayerMock.callback).not.toBeNull();
+      expect(onPlaybackError).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WATCHDOG_MS);
+      });
+      expect(onPlaybackError).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stands the watchdog down once the first frame is shown", async () => {
+    vi.useFakeTimers();
+    try {
+      const onPlaybackError = vi.fn(async () => true);
+      render(
+        <EmbeddedPlayer
+          url="https://example.test/movie.mkv"
+          title="Movie"
+          onPlaybackError={onPlaybackError}
+          onClose={() => {}}
+        />,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // A first time-pos ≈ first frame, well before the window closes.
+      emitProperty("time-pos", 0.5);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WATCHDOG_MS);
+      });
+      expect(onPlaybackError).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
