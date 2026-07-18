@@ -58,18 +58,22 @@ jobs:
           path: Vendor/VLCKit.xcframework
           key: vlckit-lfs-${{ runner.os }}-${{ hashFiles('Vendor/VLCKit.xcframework/**') }}
 
-      - name: Fetch VLCKit on cache miss
-        if: steps.native.outputs.changed == 'true' && steps.vlckit-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          git lfs install --local
-          git lfs pull --include="Vendor/VLCKit.xcframework/**" --exclude=""
-
-      - name: Verify VLCKit
+      - name: Prepare VLCKit
+        id: vlckit
         if: steps.native.outputs.changed == 'true'
         shell: bash
         run: |
+          set -euo pipefail
           binary="Vendor/VLCKit.xcframework/macos-arm64_x86_64/VLCKit.framework/Versions/A/VLCKit"
+          if grep -aq '^version https://git-lfs.github.com/spec/v1$' "${binary}"; then
+            git lfs install --local
+            if ! git lfs pull --include="Vendor/VLCKit.xcframework/**" --exclude=""; then
+              echo "::warning::Skipping native Swift checks because VLCKit is not cached and the repository LFS budget is unavailable."
+              echo "available=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+          fi
+
           expected_sha="$(git show "HEAD:${binary}" | sed -n 's/^oid sha256://p')"
           actual_sha="$(shasum -a 256 "${binary}" | awk '{print $1}')"
 
@@ -77,20 +81,21 @@ jobs:
             echo "::error::The cached VLCKit binary does not match its Git LFS pointer."
             exit 1
           fi
+          echo "available=true" >> "${GITHUB_OUTPUT}"
 
       - name: Select Xcode
-        if: steps.native.outputs.changed == 'true'
+        if: steps.native.outputs.changed == 'true' && steps.vlckit.outputs.available == 'true'
         uses: maxim-lobanov/setup-xcode@v1
         with:
           # Pin to whatever stable Xcode the runner image ships (16.0 was removed).
           xcode-version: "latest-stable"
 
       - name: Build
-        if: steps.native.outputs.changed == 'true'
+        if: steps.native.outputs.changed == 'true' && steps.vlckit.outputs.available == 'true'
         run: swift build
 
       - name: Test
-        if: steps.native.outputs.changed == 'true'
+        if: steps.native.outputs.changed == 'true' && steps.vlckit.outputs.available == 'true'
         run: node scripts/check_swift_tests.mjs
 
   # The self-hosted server + web client (the Server Mode deliverable). The server
