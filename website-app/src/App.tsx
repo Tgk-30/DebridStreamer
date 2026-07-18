@@ -11,7 +11,6 @@ import Download from '@/pages/Download';
 import SelfHost from '@/pages/SelfHost';
 import Devices from '@/pages/Devices';
 import Household from '@/pages/Household';
-import Brand from '@/pages/Brand';
 
 /** Resets scroll to top on route change (through Lenis) and re-measures pins. */
 function ScrollManager() {
@@ -52,7 +51,6 @@ export default function App() {
           <Route path="self-host" element={<SelfHost />} />
           <Route path="devices" element={<Devices />} />
           <Route path="household" element={<Household />} />
-          <Route path="brand" element={<Brand />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

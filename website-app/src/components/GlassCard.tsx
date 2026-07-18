@@ -15,12 +15,11 @@ interface GlassCardProps extends HTMLAttributes<HTMLDivElement> {
  * Hover: lift y -6px, border beam, inner top highlight.
  */
 export default function GlassCard({ children, to, beam = true, className, ...rest }: GlassCardProps) {
+  void beam;
   const classes = cn(
-    'glass-panel group relative block rounded-card p-6',
-    'shadow-[inset_0_1px_0_rgba(255,255,255,0.06),var(--shadow-card)]',
-    'transition-[transform,background-color,border-color] duration-300 ease-expo',
-    'hover:-translate-y-1.5 hover:bg-[var(--surface-glass-2)]',
-    beam && 'border-beam',
+    'group relative block rounded-card border border-line bg-bg-2 p-6',
+    'transition-[background-color,border-color] duration-200',
+    to && 'hover:border-line-strong hover:bg-[color-mix(in_srgb,var(--bg-2)_88%,var(--brand))]',
     className,
   );
 

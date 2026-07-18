@@ -44,11 +44,11 @@
     --font-body: 'Inter', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
 
-    --radius: 20px;
+    --radius: 14px;
     --r-chip: 999px;
     --r-row: 14px;
-    --r-card: 20px;
-    --r-stage: 28px;
+    --r-card: 14px;
+    --r-stage: 18px;
 
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
     --ease-soft: cubic-bezier(0.65, 0, 0.35, 1);
@@ -177,36 +177,32 @@
 @layer components {
   /* ── Typography helpers ─────────────────────────────── */
   .text-gradient {
-    background-image: var(--grad-stream);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    background: none;
+    color: var(--brand);
   }
   /* Character-cascade headlines wrap each glyph in an inline block. Chrome
      does not propagate the parent's background clip into those descendants,
      so give each glyph its own clipped stream gradient. */
   .text-gradient > .char-mask > .char {
-    background-image: var(--grad-stream);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    background: none;
+    color: var(--brand);
   }
 
   .eyebrow {
-    font-family: var(--font-mono);
-    font-weight: 500;
-    font-size: 0.75rem;
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 0.78rem;
     line-height: 1.4;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--brand);
   }
 
   .display-xl {
-    font-weight: 700;
-    font-size: clamp(2.9rem, 7.2vw, 6.2rem);
-    line-height: 0.98;
-    letter-spacing: -0.035em;
+    font-weight: 650;
+    font-size: clamp(2.8rem, 6.4vw, 5.8rem);
+    line-height: 1;
+    letter-spacing: -0.045em;
   }
   .display-l {
     font-weight: 700;
@@ -234,11 +230,9 @@
 
   /* ── Surfaces ───────────────────────────────────────── */
   .glass-panel {
-    background: var(--surface-glass);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    background: var(--bg-2);
     border: 1px solid var(--line);
-    box-shadow: var(--shadow-card);
+    box-shadow: 0 18px 48px -36px rgba(0, 0, 0, 0.9);
   }
 
   /* hairline with a 120px traveling brand glint */
@@ -249,14 +243,7 @@
     overflow: hidden;
   }
   .signal-divider::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 120px;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, var(--brand), transparent);
-    animation: signal-glint 4.2s var(--ease-soft) infinite;
+    display: none;
   }
 
   /* conic comet border on hover (GlassCard / StreamRow / chips) */
@@ -264,23 +251,10 @@
     position: relative;
   }
   .border-beam::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    padding: 1px;
-    background: conic-gradient(from var(--beam-angle), transparent 0%, var(--brand) 18%, transparent 36%);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    opacity: 0;
-    transition: opacity var(--t-micro) ease;
-    pointer-events: none;
+    display: none;
   }
   .border-beam:hover::before {
-    opacity: 1;
-    animation: beam-orbit 2.4s linear infinite;
+    display: none;
   }
 
   /* ── Motion primitives ──────────────────────────────── */
@@ -305,12 +279,7 @@
     box-shadow: var(--glow-accent);
   }
   .pulse-dot::after {
-    content: '';
-    position: absolute;
-    inset: -3px;
-    border-radius: 999px;
-    border: 1px solid var(--accent);
-    animation: pulse-ring 1.8s ease-out infinite;
+    display: none;
   }
 
   .pulse-dot-brand {
