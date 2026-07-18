@@ -489,23 +489,23 @@ export function defaultSettings(): AppSettings {
     ollamaEndpoint: "http://localhost:11434",
     networkMode: "standard",
     theme: env("VITE_THEME") || DEFAULT_THEME_ID,
-    appearanceAccent: "theme",
+    appearanceAccent: "cyan",
     appearanceDensity: "comfortable",
     appearanceTextSize: "m",
     appearanceMotion: "system",
-    appearanceRadius: "round",
-    appearanceBlur: 18,
-    appearanceChrome: "balanced",
-    appearanceBackdrop: "ambient",
-    appearanceHeroScale: "cinematic",
+    appearanceRadius: "default",
+    appearanceBlur: 12,
+    appearanceChrome: "solid",
+    appearanceBackdrop: "subtle",
+    appearanceHeroScale: "standard",
     appearancePanelContrast: "standard",
     appearanceNavLabels: "auto",
     appearanceNavPosition: "side",
     appearanceNavTint: "balanced",
-    appearancePosterSize: "large",
+    appearancePosterSize: "default",
     appearanceDefaultTab: "discover",
     appearanceNavOrder: [],
-    appearanceNavHidden: [],
+    appearanceNavHidden: ["assistant"],
     subtitleFontScale: 1,
     subtitleTextColor: "#ffffff",
     subtitleBgOpacity: 0.55,
@@ -607,7 +607,7 @@ export function loadSettings(): AppSettings {
 /** Per-device marker for the one-time premium-redesign appearance refresh. Bump
  * the VERSION to re-run it on a future redesign. */
 const DESIGN_REFRESH_KEY = "ds_design_refresh";
-const DESIGN_REFRESH_VERSION = "2026-07-premium";
+const DESIGN_REFRESH_VERSION = "2026-07-midnight-studio";
 
 /** True while the one-time design refresh is still pending on this device.
  * False once it has been applied+persisted, or when localStorage is unavailable
@@ -640,13 +640,10 @@ export function markDesignRefreshApplied(): void {
 }
 
 /**
- * One-time redesign refresh: adopt the premium *spatial* appearance defaults
- * (spacing, text size, corner radius, hero scale, poster size, backdrop) for
- * installs that predate the redesign, so the new look isn't hidden behind a
- * saved "compact/small/sharp" profile. Deliberately narrow - it never touches
- * theme, accent, motion, keys, debrid, or sources, and is fully reversible via
- * Settings → Appearance. A no-op on fresh installs (their values already equal
- * the defaults) and once the refresh has been marked applied.
+ * One-time redesign refresh: adopt the Midnight Studio appearance defaults for
+ * installs that predate the redesign. It changes presentation only and remains
+ * fully reversible in Settings. Keys, playback, privacy, debrid, and sources
+ * are never touched.
  *
  * Does NOT record completion - the caller marks it via markDesignRefreshApplied()
  * only after the result is durably persisted, so a failed persist retries next
@@ -658,12 +655,19 @@ export function applyDesignRefresh(loaded: AppSettings): AppSettings {
   const d = defaultSettings();
   return {
     ...loaded,
+    theme: d.theme,
+    appearanceAccent: d.appearanceAccent,
     appearanceDensity: d.appearanceDensity,
     appearanceTextSize: d.appearanceTextSize,
     appearanceRadius: d.appearanceRadius,
+    appearanceBlur: d.appearanceBlur,
+    appearanceChrome: d.appearanceChrome,
     appearanceHeroScale: d.appearanceHeroScale,
     appearancePosterSize: d.appearancePosterSize,
     appearanceBackdrop: d.appearanceBackdrop,
+    appearanceNavHidden: Array.from(
+      new Set([...loaded.appearanceNavHidden, "assistant"]),
+    ),
   };
 }
 

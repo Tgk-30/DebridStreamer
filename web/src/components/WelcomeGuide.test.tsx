@@ -19,7 +19,7 @@ describe("WelcomeGuide", () => {
     expect(
       screen.getByRole("dialog", { name: "Welcome tour" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Welcome to DebridStreamer")).toBeInTheDocument();
+    expect(screen.getByText("Welcome to YAWF Stream")).toBeInTheDocument();
     expect(screen.getByText(`1 / ${TOTAL}`)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Next" })).toBeInTheDocument();

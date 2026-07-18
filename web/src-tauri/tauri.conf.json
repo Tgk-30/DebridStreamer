@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DebridStreamer",
-  "version": "0.9.14",
+  "productName": "YAWF Stream",
+  "version": "0.9.15",
   "identifier": "com.tgk30.debridstreamer",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "DebridStreamer",
+        "title": "YAWF Stream",
         "width": 1280,
         "height": 860,
         "minWidth": 960,
@@ -40,7 +40,7 @@
     "category": "public.app-category.entertainment",
     "copyright": "Copyright © 2026 tgk30. All rights reserved.",
     "shortDescription": "Stream debrid media on your desktop.",
-    "longDescription": "DebridStreamer is a desktop client for streaming media from debrid services. Browse and search indexers, resolve direct links through your debrid provider, and play in-app or hand off MKV/HEVC to a native player (VLC/mpv/IINA).",
+    "longDescription": "YAWF Stream is a private desktop streaming hub for the services you already use. Browse and search, resolve direct links through your debrid provider, and play in-app or hand off MKV/HEVC to a native player (VLC/mpv/IINA).",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

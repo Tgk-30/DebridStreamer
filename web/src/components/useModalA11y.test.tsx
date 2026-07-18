@@ -26,6 +26,21 @@ function InactiveDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
+function SuspendedDialog({
+  onClose,
+  suspended,
+}: {
+  onClose: () => void;
+  suspended: boolean;
+}) {
+  const ref = useModalA11y<HTMLDivElement>(onClose, true, suspended);
+  return (
+    <div ref={ref} role="dialog" aria-label="Suspended test" tabIndex={-1}>
+      <button type="button">Inside</button>
+    </div>
+  );
+}
+
 function key(k: string) {
   window.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
 }
@@ -93,6 +108,17 @@ describe("useModalA11y", () => {
     expect(onClose).not.toHaveBeenCalled();
 
     document.body.removeChild(trigger);
+  });
+
+  it("temporarily yields Escape to a nested modal without resetting focus state", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<SuspendedDialog onClose={onClose} suspended />);
+    key("Escape");
+    expect(onClose).not.toHaveBeenCalled();
+
+    rerender(<SuspendedDialog onClose={onClose} suspended={false} />);
+    key("Escape");
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("restores focus to the trigger on unmount", () => {

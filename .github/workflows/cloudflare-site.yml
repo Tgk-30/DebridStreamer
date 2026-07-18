@@ -6,10 +6,12 @@ on:
       - main
     paths:
       - "website/**"
+      - "website-app/**"
       - "web/public/icons/**"
       - "scripts/check_website_download_logic.mjs"
       - "scripts/check_website_static.mjs"
       - "scripts/check_website_path_mount.mjs"
+      - "scripts/check_website_app.mjs"
       - "scripts/deploy_website_cloudflare.mjs"
       - "scripts/public_repo_preflight.mjs"
       - ".github/workflows/cloudflare-site.yml"
@@ -38,6 +40,13 @@ jobs:
 
       - name: Public repo preflight
         run: node scripts/public_repo_preflight.mjs
+
+      - name: Build YAWF Stream website
+        working-directory: website-app
+        run: npm ci && npm run build
+
+      - name: YAWF Stream website QA
+        run: node scripts/check_website_app.mjs
 
       - name: Website download logic
         run: node scripts/check_website_download_logic.mjs

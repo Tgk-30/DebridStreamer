@@ -38,12 +38,18 @@ export function useModalA11y<T extends HTMLElement>(
   // e.g. FilterSlideover's `open`) drive focus/Escape on each open/close.
   // Mount-based dialogs leave it at the default (active the whole time mounted).
   active = true,
+  // Nested portals can temporarily own the modal interaction without closing
+  // the parent. Suspension keeps the parent's original focus-restore target
+  // alive while disabling its Escape and Tab handlers.
+  suspended = false,
 ) {
   const ref = useRef<T | null>(null);
   // Keep the latest onClose without re-running the effect (and thus re-stealing
   // focus) every render when the caller passes an inline handler.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
 
   useEffect(() => {
     if (!active) return;
@@ -58,6 +64,7 @@ export function useModalA11y<T extends HTMLElement>(
     ref.current?.focus?.();
 
     const onKey = (e: KeyboardEvent) => {
+      if (suspendedRef.current) return;
       if (e.key === "Escape") {
         e.stopPropagation();
         onCloseRef.current();

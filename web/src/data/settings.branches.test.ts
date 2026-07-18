@@ -632,7 +632,7 @@ describe("applyDesignRefresh", () => {
     expect(applyDesignRefresh(cramped).appearanceRadius).toBe("sharp");
   });
 
-  it("never touches theme, accent, keys, or debrid tokens", () => {
+  it("adopts the Studio theme while preserving keys and debrid settings", () => {
     stubLocalStorage();
     const input = settingsWith({
       theme: "light",
@@ -641,8 +641,8 @@ describe("applyDesignRefresh", () => {
       appearanceDensity: "compact",
     });
     const out = applyDesignRefresh(input);
-    expect(out.theme).toBe("light");
-    expect(out.appearanceAccent).toBe("amber");
+    expect(out.theme).toBe(defaultSettings().theme);
+    expect(out.appearanceAccent).toBe(defaultSettings().appearanceAccent);
     expect(out.omdbKey).toBe("SECRET");
     // ...but the spatial lever was still refreshed.
     expect(out.appearanceDensity).toBe(defaultSettings().appearanceDensity);

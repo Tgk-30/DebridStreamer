@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const websiteDir = join(root, "website");
+const websiteSourceDir = join(root, "website-app");
+const websiteDir = join(websiteSourceDir, "dist");
+const deployOnly = process.argv.includes("--deploy-only");
 const requiredTokenScopes = [
   "Account:Cloudflare Pages:Edit",
   "Account:Workers Scripts:Edit",
@@ -37,6 +39,17 @@ function normalizePrefix(value) {
 function runNode(script) {
   execFileSync(process.execPath, [join(root, script)], {
     cwd: root,
+    stdio: "inherit",
+  });
+}
+
+function buildWebsite() {
+  execFileSync("npm", ["ci"], {
+    cwd: websiteSourceDir,
+    stdio: "inherit",
+  });
+  execFileSync("npm", ["run", "build"], {
+    cwd: websiteSourceDir,
     stdio: "inherit",
   });
 }
@@ -178,7 +191,7 @@ async function handleRequest(request) {
   const proxied = new Request(target.toString(), requestInit);
   const response = await fetch(proxied);
   const headers = new Headers(response.headers);
-  headers.set("X-DebridStreamer-Site", "cloudflare-pages");
+  headers.set("X-YAWF-Stream-Site", "cloudflare-pages");
 
   return new Response(response.body, {
     status: response.status,
@@ -218,14 +231,20 @@ async function upsertRoute(zoneId) {
 }
 
 async function main() {
-  if (!existsSync(join(websiteDir, "index.html"))) {
-    throw new Error("website/index.html is missing.");
+  if (!existsSync(join(websiteSourceDir, "index.html"))) {
+    throw new Error("website-app/index.html is missing.");
   }
 
-  runNode("scripts/check_website_download_logic.mjs");
-  runNode("scripts/check_website_static.mjs");
-  runNode("scripts/check_website_path_mount.mjs");
-  runNode("scripts/public_repo_preflight.mjs");
+  if (!deployOnly) {
+    buildWebsite();
+    runNode("scripts/check_website_app.mjs");
+    runNode("scripts/check_website_download_logic.mjs");
+    runNode("scripts/check_website_static.mjs");
+    runNode("scripts/check_website_path_mount.mjs");
+    runNode("scripts/public_repo_preflight.mjs");
+  } else if (!existsSync(join(websiteDir, "index.html"))) {
+    throw new Error("website-app/dist is missing. Build and validate the site before using --deploy-only.");
+  }
 
   // /user/tokens/verify requires a "User → API Tokens → Read" scope that the
   // deploy itself doesn't need, so don't gate on it - the account/zone/Pages/

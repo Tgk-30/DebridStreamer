@@ -298,9 +298,9 @@ export function FirstRunWizard({
       <div className="first-run-card">
         <p className="first-run-eyebrow">
           <Icon name="sparkles" size={13} />
-          Welcome to DebridStreamer
+          Welcome to YAWF Stream
         </p>
-        <h1 className="first-run-title">How do you want to use DebridStreamer?</h1>
+        <h1 className="first-run-title">How do you want to use YAWF Stream?</h1>
         <p className="first-run-sub">
           {forced
             ? "The app needs its keys before it can search or stream - pick a path to set them up."
@@ -989,7 +989,7 @@ function HostStep({ onBack, onContinue }: { onBack: () => void; onContinue: () =
         <h1 className="first-run-title">Host for your household</h1>
         <p className="first-run-sub">
           {desktop
-            ? "This computer can serve DebridStreamer to your other devices. Open Settings → Install & setup to start hosting and get a link + QR code to share."
+            ? "This computer can serve YAWF Stream to your other devices. Open Settings → Install & setup to start hosting and get a link + QR code to share."
             : "Hosting runs in the desktop app (Mac/Windows/Linux) or via Docker on a server. Download the desktop app, or self-host with Docker, then share the link with your household."}
         </p>
         <div className="first-run-actions">

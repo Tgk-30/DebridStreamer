@@ -575,7 +575,7 @@ function DoneStep({ onFinish }: { onFinish: () => void }) {
       </ul>
       <div className="first-run-actions">
         <button type="button" className="first-run-primary" onClick={onFinish}>
-          Open DebridStreamer
+          Open YAWF Stream
         </button>
       </div>
     </>

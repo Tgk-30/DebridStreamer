@@ -33,7 +33,7 @@ struct SetupView: View {
                     Image(systemName: "play.tv.fill")
                         .font(.system(size: 56))
                         .foregroundStyle(AppTheme.heroGradient)
-                    Text("Welcome to DebridStreamer")
+                    Text("Welcome to YAWF Stream")
                         .font(.largeTitle)
                         .fontWeight(.bold)
                     Text("Set up your API keys to get started")

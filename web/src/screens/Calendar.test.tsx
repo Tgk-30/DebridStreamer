@@ -124,28 +124,27 @@ describe("Calendar cadence", () => {
     });
     render(<Calendar />);
 
-    const dateHeading = screen.getByRole("heading", {
-      name: new RegExp(new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+    const dayLabel = new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
         weekday: "long",
         month: "long",
         day: "numeric",
-      })),
-    });
-    const daySection = dateHeading.closest("section");
-    expect(daySection).not.toBeNull();
-    expect(within(daySection as HTMLElement).getByText("Severance")).toBeInTheDocument();
-    expect(within(daySection as HTMLElement).getByText("The Running Man")).toBeInTheDocument();
+      });
+    await userEvent.click(screen.getByRole("gridcell", { name: dayLabel }));
+    const dayPanel = screen.getByRole("heading", { name: dayLabel }).closest("aside");
+    expect(dayPanel).not.toBeNull();
+    expect(within(dayPanel as HTMLElement).getByText("Severance")).toBeInTheDocument();
+    expect(within(dayPanel as HTMLElement).getByText("The Running Man")).toBeInTheDocument();
     expect(screen.getAllByText("Movie release").length).toBeGreaterThan(0);
 
     const openButtons = screen.getAllByTitle("Open Severance");
     await userEvent.click(openButtons[0]!);
     expect(openDetail).toHaveBeenCalledWith(show);
-    expect(within(screen.getAllByTitle("Open Severance")[1]!).getByRole("img", {
+    expect(within(screen.getByTitle("Open Severance")).getByRole("img", {
       name: "Severance",
     })).toHaveAttribute("src", "https://image.tmdb.org/t/p/w342/poster.jpg");
   });
 
-  it("shows a tiny poster on each month-grid event, falling back to a placeholder", () => {
+  it("keeps the month compact and shows artwork in the selected-day panel", async () => {
     const date = localDate(2);
     calendarState = baseState({
       entries: [
@@ -155,16 +154,13 @@ describe("Calendar cadence", () => {
     });
     render(<Calendar />);
 
-    // [0] is the month-grid chip; [1] is the agenda row for the same entry.
-    const chip = screen.getAllByTitle("Open Severance")[0]!;
-    const thumb = chip.querySelector("img.cal-event-thumb");
-    expect(thumb).toHaveAttribute("src", "https://image.tmdb.org/t/p/w342/poster.jpg");
-    // Decorative: the chip's own aria-label already announces the title.
-    expect(thumb).toHaveAttribute("alt", "");
-
-    const bare = screen.getAllByTitle("Open Andor")[0]!;
-    expect(bare.querySelector("img.cal-event-thumb")).toBeNull();
-    expect(bare.querySelector(".cal-event-thumb.is-placeholder")).not.toBeNull();
+    const dayLabel = new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+      weekday: "long", month: "long", day: "numeric",
+    });
+    await userEvent.click(screen.getByRole("gridcell", { name: dayLabel }));
+    const art = within(screen.getByTitle("Open Severance")).getByRole("img", { name: "Severance" });
+    expect(art).toHaveAttribute("src", "https://image.tmdb.org/t/p/w342/poster.jpg");
+    expect(screen.getByTitle("Open Andor").querySelector(".cal-release-poster-ph")).not.toBeNull();
   });
 
   it("marks today's day and labels the agenda group as Today", () => {
@@ -172,7 +168,7 @@ describe("Calendar cadence", () => {
     calendarState = baseState({ entries: [entry(show, localDate())] });
     const { container } = render(<Calendar />);
     expect(screen.getByRole("gridcell", { name: /today$/ })).toHaveClass("is-today");
-    expect(screen.getByRole("heading", { name: /^Today · / })).toBeInTheDocument();
+    expect(screen.getAllByText("Today").length).toBeGreaterThan(0);
     expect(container.querySelector(".cal-release-poster-ph")).toBeInTheDocument();
   });
 
@@ -191,7 +187,7 @@ describe("Calendar cadence", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Next month" }));
     expect(screen.getByRole("heading", { name: next })).toBeInTheDocument();
-    expect(screen.getByText(new RegExp(`No releases scheduled in ${next}`))).toBeInTheDocument();
+    expect(screen.getByText("Nothing scheduled")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Previous month" }));
     await userEvent.click(screen.getByRole("button", { name: "Previous month" }));

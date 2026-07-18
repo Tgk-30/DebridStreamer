@@ -19,7 +19,7 @@ function reportBackgroundFailure(kind: "error" | "unhandledrejection", value: un
   // Keep the last-resort failure visible in production diagnostics without
   // interrupting the current task. React ErrorBoundary cannot observe async
   // promise rejections.
-  console.error(`[DebridStreamer ${kind}]`, value);
+  console.error(`[YAWF Stream ${kind}]`, value);
 }
 
 window.addEventListener("unhandledrejection", (event) => {

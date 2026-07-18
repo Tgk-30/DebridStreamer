@@ -331,7 +331,7 @@ describe("ProfilePicker edit mode", () => {
       profile: {
         id: "p9",
         displayName: "Charlie",
-        avatarColor: "#ec4899",
+        avatarColor: "#3b82f6",
         simpleMode: true,
         isDefault: false,
         isKid: false,
@@ -350,13 +350,13 @@ describe("ProfilePicker edit mode", () => {
     const nameInput = screen.getByLabelText("Name");
     await user.type(nameInput, "Charlie");
     // Pick a color (second dot) to exercise the color handler.
-    await user.click(screen.getByRole("button", { name: "Use color #ec4899" }));
+    await user.click(screen.getByRole("button", { name: "Use blue" }));
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() =>
       expect(createAccountProfile).toHaveBeenCalledWith({
         displayName: "Charlie",
-        avatarColor: "#ec4899",
+        avatarColor: "#3b82f6",
         password: undefined,
       }),
     );

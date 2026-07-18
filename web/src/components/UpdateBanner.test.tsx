@@ -88,7 +88,7 @@ describe("UpdateBanner", () => {
 
     await screen.findByText("Update v1.2.3 available");
     expect(
-      screen.getByText("A new version of DebridStreamer is ready to install."),
+      screen.getByText("A new version of YAWF Stream is ready to install."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Install" })).toBeInTheDocument();
     expect(

@@ -57,7 +57,7 @@ struct BootView: View {
                     .font(.system(size: 54))
                     .foregroundStyle(AppTheme.heroGradient)
                     .shadow(color: AppTheme.accent.opacity(0.6), radius: 18)
-                Text("DebridStreamer")
+                Text("YAWF Stream")
                     .font(.system(size: 40, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.5), radius: 12, y: 4)

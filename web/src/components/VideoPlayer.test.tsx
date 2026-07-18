@@ -432,7 +432,7 @@ describe("WebviewPlayer", () => {
       expect(mediaSession.metadata).toMatchObject({
         title: "The Show",
         artist: "S2 E5 - The Arrival",
-        album: "DebridStreamer",
+        album: "YAWF Stream",
         artwork: [
           {
             src: "https://image.test/poster.png",

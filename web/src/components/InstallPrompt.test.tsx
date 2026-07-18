@@ -80,7 +80,7 @@ describe("InstallPrompt", () => {
   it("shows the Safari Share → Add to Home Screen steps on iOS", () => {
     deviceKindMock.mockReturnValue("ios");
     render(<InstallPrompt onDismiss={() => {}} />);
-    expect(screen.getByText("Install DebridStreamer")).toBeInTheDocument();
+    expect(screen.getByText("Install YAWF Stream")).toBeInTheDocument();
     expect(screen.getByText(/Tap the Share button/)).toBeInTheDocument();
     expect(screen.getByText("Add to Home Screen")).toBeInTheDocument();
     // No one-tap install on iOS - Safari has no beforeinstallprompt.

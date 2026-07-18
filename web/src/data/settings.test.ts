@@ -199,8 +199,13 @@ describe("defaultSettings", () => {
     expect(d.aiProvider).toBe("anthropic");
     expect(d.ollamaEndpoint).toBe("http://localhost:11434");
     expect(d.theme).toBe("midnight");
-    expect(d.appearanceAccent).toBe("theme");
-    expect(d.appearanceBlur).toBe(18);
+    expect(d.appearanceAccent).toBe("cyan");
+    expect(d.appearanceBlur).toBe(12);
+    expect(d.appearanceRadius).toBe("default");
+    expect(d.appearanceBackdrop).toBe("subtle");
+    expect(d.appearanceHeroScale).toBe("standard");
+    expect(d.appearancePosterSize).toBe("default");
+    expect(d.appearanceNavHidden).toContain("assistant");
     expect(d.subtitleFontScale).toBe(1);
     expect(d.subtitleTextColor).toBe("#ffffff");
     expect(d.subtitleBgOpacity).toBe(0.55);

@@ -74,12 +74,11 @@ describe("MoodStrip", () => {
     expect(status).not.toHaveClass("is-error");
   });
 
-  it("shows the filtered-browse subtitle when AI is not available", () => {
+  it("keeps the discovery copy product-focused when AI is not available", () => {
     render(<MoodStrip aiAvailable={false} />);
     expect(
-      screen.getByText(
-        "Try a natural-language browse. Add an AI key in Settings for curated picks.",
-      ),
+      screen.getByText("Search by mood, era, genre, or theme"),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/AI key/i)).not.toBeInTheDocument();
   });
 });

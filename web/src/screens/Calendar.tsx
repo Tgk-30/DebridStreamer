@@ -24,6 +24,30 @@ interface CalendarDay {
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+type CalendarFilter = "all" | CalendarEntry["kind"];
+type CalendarView = "month" | "agenda";
+
+const CALENDAR_FILTER_KEY = "ds_calendar_filter";
+const CALENDAR_VIEW_KEY = "ds_calendar_view";
+
+function savedCalendarFilter(): CalendarFilter {
+  try {
+    const value = globalThis.localStorage?.getItem(CALENDAR_FILTER_KEY);
+    return value === "episode" || value === "movie" ? value : "all";
+  } catch {
+    return "all";
+  }
+}
+
+function savedCalendarView(): CalendarView {
+  try {
+    return globalThis.localStorage?.getItem(CALENDAR_VIEW_KEY) === "agenda"
+      ? "agenda"
+      : "month";
+  } catch {
+    return "month";
+  }
+}
 
 function localISODate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
@@ -185,21 +209,61 @@ export function Calendar() {
     markCalendarSeen();
   }, [markCalendarSeen]);
   const [visibleMonth, setVisibleMonth] = useState(() => monthStart(new Date()));
+  const [filter, setFilter] = useState<CalendarFilter>(savedCalendarFilter);
+  const [view, setView] = useState<CalendarView>(savedCalendarView);
+  const [selectedDate, setSelectedDate] = useState(() => localISODate(new Date()));
+  const filteredEntries = useMemo(
+    () => state.entries.filter((entry) => filter === "all" || entry.kind === filter),
+    [filter, state.entries],
+  );
   const days = useMemo(
-    () => calendarMonthDays(visibleMonth, state.entries),
-    [visibleMonth, state.entries],
+    () => calendarMonthDays(visibleMonth, filteredEntries),
+    [visibleMonth, filteredEntries],
   );
   const agenda = useMemo(() => {
     const grouped = new Map<string, CalendarEntry[]>();
-    for (const entry of state.entries) {
+    for (const entry of filteredEntries) {
       if (!isInMonth(entry.date, visibleMonth)) continue;
       const entries = grouped.get(entry.date) ?? [];
       entries.push(entry);
       grouped.set(entry.date, entries);
     }
     return [...grouped.entries()];
-  }, [visibleMonth, state.entries]);
+  }, [visibleMonth, filteredEntries]);
   const today = localISODate(new Date());
+  const selectedEntries = useMemo(
+    () => filteredEntries.filter((entry) => entry.date === selectedDate),
+    [filteredEntries, selectedDate],
+  );
+  const monthEntries = useMemo(
+    () => filteredEntries.filter((entry) => isInMonth(entry.date, visibleMonth)),
+    [filteredEntries, visibleMonth],
+  );
+
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(CALENDAR_FILTER_KEY, filter);
+    } catch {
+      // A non-persistent preference is fine.
+    }
+  }, [filter]);
+
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(CALENDAR_VIEW_KEY, view);
+    } catch {
+      // A non-persistent preference is fine.
+    }
+  }, [view]);
+
+  useEffect(() => {
+    if (isInMonth(selectedDate, visibleMonth)) return;
+    setSelectedDate(
+      isInMonth(today, visibleMonth)
+        ? today
+        : localISODate(monthStart(visibleMonth)),
+    );
+  }, [selectedDate, today, visibleMonth]);
 
   const openEntry = (entry: CalendarEntry) => openDetail(entry.media);
   const shiftMonth = (delta: number) => {
@@ -266,114 +330,179 @@ export function Calendar() {
         />
       ) : (
         <>
-          <section className="cal-month" aria-label={`${formatMonth(visibleMonth)} release calendar`}>
-            <div className="cal-toolbar">
-              <button
-                type="button"
-                className="cal-month-control"
-                onClick={() => shiftMonth(-1)}
-                aria-label="Previous month"
-              >
-                ‹
-              </button>
-              <h2 className="cal-month-label" aria-live="polite">{formatMonth(visibleMonth)}</h2>
-              <div className="cal-toolbar-actions">
+          <div className="cal-controls" aria-label="Calendar controls">
+            <div className="cal-filter" role="radiogroup" aria-label="Release type">
+              {([
+                ["all", "All"],
+                ["episode", "Episodes"],
+                ["movie", "Movies"],
+              ] as const).map(([value, label]) => (
                 <button
+                  key={value}
                   type="button"
-                  className="cal-today-btn"
-                  onClick={() => setVisibleMonth(monthStart(new Date()))}
-                  disabled={isInMonth(today, visibleMonth)}
+                  role="radio"
+                  aria-checked={filter === value}
+                  className={filter === value ? "is-active" : ""}
+                  onClick={() => setFilter(value)}
                 >
-                  Today
+                  {label}
                 </button>
-                <button
-                  type="button"
-                  className="cal-month-control"
-                  onClick={() => shiftMonth(1)}
-                  aria-label="Next month"
-                >
-                  ›
-                </button>
-              </div>
-            </div>
-            <div className="cal-weekdays" aria-hidden="true">
-              {WEEKDAYS.map((day) => <span key={day}>{day}</span>)}
-            </div>
-            <div className="cal-grid" role="grid" aria-label={`${formatMonth(visibleMonth)} releases`}>
-              {days.map((day) => (
-                <div
-                  key={day.date}
-                  className={`cal-day${day.inMonth ? "" : " is-outside"}${day.isToday ? " is-today" : ""}`}
-                  role="gridcell"
-                  aria-label={`${formatDay(day.date)}${day.isToday ? ", today" : ""}`}
-                >
-                  <span className="cal-day-number">{day.day}</span>
-                  <div className="cal-day-events">
-                    {day.entries.slice(0, 3).map((entry) => {
-                      const thumb = MediaPreviewNS.posterURL(entry.media);
-                      return (
-                        <button
-                          key={entry.id}
-                          type="button"
-                          className={`cal-event cal-event--${entry.kind}`}
-                          onClick={() => openEntry(entry)}
-                          title={`Open ${entry.media.title}`}
-                          aria-label={`${entry.media.title}, ${entry.detail}`}
-                        >
-                          {thumb != null ? (
-                            <ImgWithFallback
-                              className="cal-event-thumb"
-                              src={thumb}
-                              alt=""
-                              loading="lazy"
-                              draggable={false}
-                              fallback={
-                                <span className="cal-event-thumb is-placeholder" aria-hidden="true" />
-                              }
-                            />
-                          ) : (
-                            <span className="cal-event-thumb is-placeholder" aria-hidden />
-                          )}
-                          <span>{entry.media.title}</span>
-                          <small>{entry.kind === "episode" ? entry.detail.split(" · ")[0] : "Movie"}</small>
-                        </button>
-                      );
-                    })}
-                    {day.entries.length > 3 && (
-                      <span className="cal-more">+{day.entries.length - 3} more</span>
-                    )}
-                  </div>
-                </div>
               ))}
             </div>
-          </section>
-
-          <section className="cal-agenda" aria-labelledby="cal-agenda-heading">
-            <div className="cal-agenda-head">
-              <h2 id="cal-agenda-heading">{formatMonth(visibleMonth)} agenda</h2>
-              <span>{agenda.reduce((count, [, entries]) => count + entries.length, 0)} releases</span>
+            <div className="cal-view-toggle" role="radiogroup" aria-label="Calendar view">
+              {(["month", "agenda"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={view === value}
+                  className={view === value ? "is-active" : ""}
+                  onClick={() => setView(value)}
+                >
+                  {value === "month" ? "Month" : "Agenda"}
+                </button>
+              ))}
             </div>
-            {agenda.length === 0 ? (
-              <p className="cal-agenda-empty t-secondary">
-                No releases scheduled in {formatMonth(visibleMonth)}. Use the month controls to explore the current release window.
-              </p>
-            ) : (
-              <div className="cal-agenda-days">
-                {agenda.map(([date, entries]) => (
-                  <section key={date} className="cal-agenda-day" aria-labelledby={`cal-date-${date}`}>
-                    <h3 id={`cal-date-${date}`} className={date === today ? "is-today" : undefined}>
-                      {date === today ? "Today · " : ""}{formatDay(date)}
-                    </h3>
-                    <div className="cal-release-rows">
-                      {entries.map((entry) => (
-                        <ReleaseRow key={entry.id} entry={entry} onOpen={openEntry} />
-                      ))}
+          </div>
+
+          <div className="cal-summary" aria-label={`${formatMonth(visibleMonth)} summary`}>
+            <span><strong>{monthEntries.length}</strong> releases</span>
+            <span><strong>{monthEntries.filter((entry) => entry.kind === "episode").length}</strong> episodes</span>
+            <span><strong>{monthEntries.filter((entry) => entry.kind === "movie").length}</strong> movies</span>
+          </div>
+
+          {view === "month" ? (
+            <div className="cal-month-layout">
+              <section className="cal-month" aria-label={`${formatMonth(visibleMonth)} release calendar`}>
+                <div className="cal-toolbar">
+                  <button
+                    type="button"
+                    className="cal-month-control"
+                    onClick={() => shiftMonth(-1)}
+                    aria-label="Previous month"
+                  >
+                    ‹
+                  </button>
+                  <h2 className="cal-month-label" aria-live="polite">{formatMonth(visibleMonth)}</h2>
+                  <div className="cal-toolbar-actions">
+                    <button
+                      type="button"
+                      className="cal-today-btn"
+                      onClick={() => {
+                        setVisibleMonth(monthStart(new Date()));
+                        setSelectedDate(today);
+                      }}
+                      disabled={isInMonth(today, visibleMonth)}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      className="cal-month-control"
+                      onClick={() => shiftMonth(1)}
+                      aria-label="Next month"
+                    >
+                      ›
+                    </button>
+                  </div>
+                </div>
+                <div className="cal-weekdays" aria-hidden="true">
+                  {WEEKDAYS.map((day) => <span key={day}>{day}</span>)}
+                </div>
+                <div className="cal-grid" role="grid" aria-label={`${formatMonth(visibleMonth)} releases`}>
+                  {days.map((day) => (
+                    <div
+                      key={day.date}
+                      className={`cal-day${day.inMonth ? "" : " is-outside"}${day.isToday ? " is-today" : ""}${selectedDate === day.date ? " is-selected" : ""}`}
+                      role="gridcell"
+                      aria-label={`${formatDay(day.date)}${day.isToday ? ", today" : ""}`}
+                      aria-selected={selectedDate === day.date}
+                      tabIndex={day.inMonth ? 0 : -1}
+                      onClick={() => setSelectedDate(day.date)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedDate(day.date);
+                        }
+                      }}
+                    >
+                      <span className="cal-day-number">{day.day}</span>
+                      <div className="cal-day-events">
+                        {day.entries.slice(0, 2).map((entry) => (
+                          <button
+                            key={entry.id}
+                            type="button"
+                            className={`cal-event cal-event--${entry.kind}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedDate(day.date);
+                              openEntry(entry);
+                            }}
+                            title={`${entry.media.title}, ${entry.detail}`}
+                            aria-label={`${entry.media.title}, ${entry.detail}`}
+                          >
+                            <span>{entry.media.title}</span>
+                            <small>{entry.kind === "episode" ? entry.detail.split(" · ")[0] : "Movie"}</small>
+                          </button>
+                        ))}
+                        {day.entries.length > 2 && (
+                          <span className="cal-more">+{day.entries.length - 2} more</span>
+                        )}
+                      </div>
                     </div>
-                  </section>
-                ))}
+                  ))}
+                </div>
+              </section>
+
+              <aside className="cal-day-panel glass-rest" aria-live="polite">
+                <div className="cal-day-panel-head">
+                  <span>{selectedDate === today ? "Today" : "Selected day"}</span>
+                  <h2>{formatDay(selectedDate)}</h2>
+                  <p>{selectedEntries.length} {selectedEntries.length === 1 ? "release" : "releases"}</p>
+                </div>
+                {selectedEntries.length === 0 ? (
+                  <div className="cal-day-panel-empty">
+                    <Icon name="calendar" size={22} />
+                    <strong>Nothing scheduled</strong>
+                    <span>Choose a highlighted date to see its releases.</span>
+                  </div>
+                ) : (
+                  <div className="cal-release-rows">
+                    {selectedEntries.map((entry) => (
+                      <ReleaseRow key={entry.id} entry={entry} onOpen={openEntry} />
+                    ))}
+                  </div>
+                )}
+              </aside>
+            </div>
+          ) : (
+            <section className="cal-agenda cal-agenda--standalone" aria-labelledby="cal-agenda-heading">
+              <div className="cal-agenda-toolbar">
+                <button type="button" className="cal-month-control" onClick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
+                <h2 id="cal-agenda-heading">{formatMonth(visibleMonth)} agenda</h2>
+                <div className="cal-toolbar-actions">
+                  <button type="button" className="cal-today-btn" onClick={() => setVisibleMonth(monthStart(new Date()))} disabled={isInMonth(today, visibleMonth)}>Today</button>
+                  <button type="button" className="cal-month-control" onClick={() => shiftMonth(1)} aria-label="Next month">›</button>
+                </div>
               </div>
-            )}
-          </section>
+              {agenda.length === 0 ? (
+                <p className="cal-agenda-empty t-secondary">No matching releases in {formatMonth(visibleMonth)}.</p>
+              ) : (
+                <div className="cal-agenda-days">
+                  {agenda.map(([date, entries]) => (
+                    <section key={date} className="cal-agenda-day" aria-labelledby={`cal-date-${date}`}>
+                      <h3 id={`cal-date-${date}`} className={date === today ? "is-today" : undefined}>
+                        {date === today ? "Today: " : ""}{formatDay(date)}
+                      </h3>
+                      <div className="cal-release-rows">
+                        {entries.map((entry) => <ReleaseRow key={entry.id} entry={entry} onOpen={openEntry} />)}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </>
       )}
     </div>

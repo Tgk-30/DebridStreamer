@@ -5,23 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="DebridStreamer is a self-hosted streaming app: discover with TMDB, get AI picks, and play instantly-cached streams from your own Real-Debrid, AllDebrid, Premiumize, or TorBox account in a built-in player - on every screen."
+      content="YAWF Stream is a private streaming hub for the services and accounts you already use. Discover, watch, and pick up anywhere on desktop, phone, and tablet."
     />
     <meta name="theme-color" content="#050505" />
-    <meta property="og:title" content="DebridStreamer - your private streaming app" />
+    <meta property="og:title" content="YAWF Stream - Your Accounts. Watch Freely." />
     <meta
       property="og:description"
-      content="Discover with TMDB, get AI recommendations, and play cached debrid streams in a built-in player that handles MKV, HEVC, and 4K with nothing to install. Self-hosted, with profiles for the whole house and apps for macOS, Windows, Linux, and mobile."
+      content="A private streaming hub for the services you already use, with cinematic discovery, private profiles, instant playback, and apps for every screen."
     />
     <meta property="og:image" content="https://tgk30.com/debridstreamer/media/discover-desktop.png" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <title>DebridStreamer - your private streaming app</title>
+    <title>YAWF Stream - Your Accounts. Watch Freely.</title>
     <link rel="icon" href="./icons/icon-128.png" />
     <!-- JS marker before first paint so the boot sequence never flashes the
          final state first. Everything remains fully visible without JS. -->
     <script>document.documentElement.classList.add("js-boot");</script>
-    <link rel="stylesheet" href="./styles.css?v=2026-07-04" />
+    <link rel="stylesheet" href="./styles.css?v=2026-07-18" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -32,9 +32,9 @@
 
     <header class="site-header">
       <div class="header-inner">
-        <a class="brand" href="#top" aria-label="DebridStreamer home">
+        <a class="brand" href="#top" aria-label="YAWF Stream home">
           <img src="./icons/icon-128.png" alt="" />
-          <span>DebridStreamer</span>
+          <span>YAWF Stream</span>
         </a>
         <button
           class="menu-toggle"
@@ -68,14 +68,13 @@
             <span class="chip">Self-hosted</span>
             <span class="chip chip-mono">MIT · open source</span>
           </div>
-          <h1>Let&rsquo;s get you <em>streaming</em>.</h1>
+          <h1>Your Accounts.<br /><em>Watch Freely.</em></h1>
           <p class="lede">
-            DebridStreamer turns your Real-Debrid, AllDebrid, Premiumize, or
-            TorBox account into a private streaming service: browse with TMDB
-            artwork, get AI picks, and play instantly-cached streams in a
-            built-in player that handles anything - MKV, HEVC, 4K  - 
-            with nothing else to install. On a server you run, with profiles for
-            the whole house.
+            A private streaming hub for the services you already use. Connect
+            your Real-Debrid, AllDebrid, Premiumize, or TorBox account, browse a
+            cinematic catalog, and play instantly cached streams in a built-in
+            player that handles MKV, HEVC, and 4K. Keep separate profiles for
+            everyone at home and take your library to every screen.
           </p>
           <div class="hero-actions" aria-label="Primary actions">
             <a id="smart-download" class="primary-action" href="#download">
@@ -95,14 +94,14 @@
           </p>
         </div>
 
-        <div class="product-stage" aria-label="DebridStreamer app preview">
+        <div class="product-stage" aria-label="YAWF Stream app preview">
           <div class="halo" aria-hidden="true"></div>
           <figure class="app-window app-window-main">
             <div class="window-bar">
               <span></span>
               <span></span>
               <span></span>
-              <strong>DebridStreamer</strong>
+              <strong>YAWF Stream</strong>
             </div>
             <picture>
               <source media="(max-width: 480px)" srcset="./media/settings-mobile.png" />
@@ -112,7 +111,7 @@
                 height="848"
                 fetchpriority="high"
                 decoding="async"
-                alt="DebridStreamer Discover screen with a featured hero title and a mood-based recommendation row"
+                alt="YAWF Stream Discover screen with a featured title and personalized rows"
               />
             </picture>
           </figure>
@@ -125,7 +124,7 @@
         </div>
       </section>
 
-      <div class="proof-strip" aria-label="DebridStreamer at a glance">
+      <div class="proof-strip" aria-label="YAWF Stream at a glance">
         <span><strong>Self-hosted</strong> Your server, your debrid keys, your data</span>
         <span><strong>Instant</strong> Plays already-cached streams - no waiting</span>
         <span><strong>Profiles</strong> Separate libraries per person, optional passwords</span>
@@ -165,9 +164,9 @@
             <p>Multiple people share one device, each with a separate library, history, and watchlist. Add an optional password to keep a profile private.</p>
           </article>
           <article class="rail-card" role="listitem">
-            <span>Assistant</span>
-            <strong>AI picks on demand</strong>
-            <p>Describe a mood and get a curated lineup. Bring your own Anthropic, OpenAI, or local Ollama key.</p>
+            <span>Calendar</span>
+            <strong>Know what is coming next</strong>
+            <p>Follow series and movie releases in a focused calendar with month, agenda, and selected-day views.</p>
           </article>
           <article class="rail-card" role="listitem">
             <span>Playback</span>
@@ -186,8 +185,8 @@
           </article>
           <article class="rail-card" role="listitem">
             <span>Subtitles</span>
-            <strong>Search, style, translate</strong>
-            <p>Pull subtitles from OpenSubtitles, tune their look, and translate them with your AI key - right in the player.</p>
+            <strong>Search and style</strong>
+            <p>Pull subtitles from OpenSubtitles and tune their size, color, and contrast right in the player.</p>
           </article>
           <article class="rail-card" role="listitem">
             <span>Continue</span>
@@ -400,12 +399,12 @@ docker compose -f docker-compose.ghcr.yml up -d</code></pre>
     </main>
 
     <footer class="site-footer">
-      <span>Open-source project, MIT licensed.</span>
+      <span>YAWF Stream. Open source, MIT licensed.</span>
       <a href="https://github.com/Tgk-30/DebridStreamer/releases/latest">Latest release</a>
       <a href="https://github.com/Tgk-30/DebridStreamer">Source</a>
       <a href="https://github.com/Tgk-30/DebridStreamer/issues">Issues</a>
     </footer>
 
-    <script src="./app.js?v=2026-07-04" type="module"></script>
+    <script src="./app.js?v=2026-07-18" type="module"></script>
   </body>
 </html>

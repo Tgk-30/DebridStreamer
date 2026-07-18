@@ -23,6 +23,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import { useAppStore } from "../store/AppStore";
 import {
@@ -73,7 +74,12 @@ import type { StoredIndexerType } from "../storage/models";
 import { Icon } from "../components/Icon";
 import { AvatarPicker } from "../components/AvatarPicker";
 import { SUBTITLE_COLORS } from "../components/player/CaptionsMenu";
-import { isImageAvatar } from "../data/profileAvatars";
+import {
+  DEFAULT_PROFILE_AVATAR,
+  DEFAULT_PROFILE_COLOR,
+  PROFILE_COLORS,
+  isImageAvatar,
+} from "../data/profileAvatars";
 import { InfoTip } from "../components/InfoTip";
 import { AdvancedOnly } from "../components/AdvancedOnly";
 import { SettingsSearch } from "../components/SettingsSearch";
@@ -212,28 +218,26 @@ interface AppearanceProfile {
   >;
 }
 
-const CUSTOM_APPEARANCE_PROFILE = "__custom";
-
 const APPEARANCE_PROFILES: AppearanceProfile[] = [
   {
     id: "default-cinema",
-    label: "Cinema room",
-    description: "Dark Aurora panels, cinematic hero, generous posters.",
+    label: "Midnight Studio",
+    description: "Neutral dark surfaces that keep artwork in focus.",
     settings: {
-      theme: "aurora",
-      appearanceAccent: "theme",
+      theme: "midnight",
+      appearanceAccent: "cyan",
       appearanceDensity: "comfortable",
       appearanceTextSize: "m",
       appearanceMotion: "system",
-      appearanceRadius: "round",
-      appearanceBlur: 18,
-      appearanceChrome: "balanced",
-      appearanceBackdrop: "ambient",
-      appearanceHeroScale: "cinematic",
+      appearanceRadius: "default",
+      appearanceBlur: 12,
+      appearanceChrome: "solid",
+      appearanceBackdrop: "subtle",
+      appearanceHeroScale: "standard",
       appearancePanelContrast: "standard",
       appearanceNavLabels: "auto",
       appearanceNavTint: "balanced",
-      appearancePosterSize: "large",
+      appearancePosterSize: "default",
     },
   },
   {
@@ -275,6 +279,27 @@ const APPEARANCE_PROFILES: AppearanceProfile[] = [
       appearancePanelContrast: "standard",
       appearanceNavLabels: "labels",
       appearanceNavTint: "airy",
+      appearancePosterSize: "large",
+    },
+  },
+  {
+    id: "warm-evening",
+    label: "Warm Rose",
+    description: "Amber and rose tones for a softer evening look.",
+    settings: {
+      theme: "sunset",
+      appearanceAccent: "theme",
+      appearanceDensity: "comfortable",
+      appearanceTextSize: "m",
+      appearanceMotion: "system",
+      appearanceRadius: "round",
+      appearanceBlur: 16,
+      appearanceChrome: "balanced",
+      appearanceBackdrop: "ambient",
+      appearanceHeroScale: "cinematic",
+      appearancePanelContrast: "standard",
+      appearanceNavLabels: "labels",
+      appearanceNavTint: "balanced",
       appearancePosterSize: "large",
     },
   },
@@ -892,17 +917,17 @@ export function Settings() {
       <ResetAndUninstall />
 
       <p className="settings-version t-secondary">
-        DebridStreamer v{appVersion ?? "…"}
+        YAWF Stream v{appVersion ?? "…"}
       </p>
     </div>
   );
 }
 
 // The Debian control file's Package field is the kebab-cased productName
-// ("DebridStreamer" -> "debrid-streamer"). The .deb FILENAME uses the product
-// name verbatim (DebridStreamer_x.y.z_amd64.deb), but apt operates on the
+// ("YAWF Stream" -> "yawf-stream"). The .deb FILENAME uses the product
+// name verbatim (YAWF Stream_x.y.z_amd64.deb), but apt operates on the
 // Package field, so this must stay kebab-cased or the command fails.
-const DEB_REMOVE_COMMAND = "sudo apt remove debrid-streamer";
+const DEB_REMOVE_COMMAND = "sudo apt remove yawf-stream";
 
 function ResetAndUninstall() {
   const desktop = isTauri();
@@ -917,7 +942,7 @@ function ResetAndUninstall() {
   // Escape must go through closeConfirm, not a bare setConfirmOpen(false):
   // closing has to clear the typed ERASE and any stale failure state, or the
   // dialog reopens with the destructive button pre-armed.
-  const dialogRef = useModalA11y<HTMLDivElement>(closeConfirm);
+  const dialogRef = useModalA11y<HTMLDivElement>(closeConfirm, confirmOpen);
 
   useEffect(() => {
     if (!desktop) return;
@@ -988,7 +1013,7 @@ function ResetAndUninstall() {
           </p>
           {installInfo?.format === "windows" && (
             <>
-              <p className="settings-hint t-secondary">Find DebridStreamer in the list and choose Uninstall.</p>
+              <p className="settings-hint t-secondary">Find YAWF Stream in the list and choose Uninstall.</p>
               <button type="button" className="btn" onClick={() => void openExternalURL("ms-settings:appsfeatures")}>
                 Open Windows app settings
               </button>
@@ -999,7 +1024,7 @@ function ResetAndUninstall() {
               <p className="settings-hint t-secondary">Quit the app, then drag it to the Trash.</p>
               {installInfo.appBundlePath != null && (
                 <button type="button" className="btn" onClick={() => void revealInFileManager(installInfo.appBundlePath!)}>
-                  Reveal DebridStreamer in Finder
+                  Reveal YAWF Stream in Finder
                 </button>
               )}
             </>
@@ -1027,13 +1052,13 @@ function ResetAndUninstall() {
             </>
           )}
           {installInfo?.format === "unknown" && (
-            <p className="settings-hint t-secondary">Remove DebridStreamer using this desktop&apos;s normal app management tools.</p>
+            <p className="settings-hint t-secondary">Remove YAWF Stream using this desktop&apos;s normal app management tools.</p>
           )}
           {uninstallError != null && <p className="settings-status is-error">{uninstallError}</p>}
         </div>
       )}
 
-      {confirmOpen && (
+      {confirmOpen && createPortal(
         <div className="settings-reset-backdrop" role="presentation" onMouseDown={closeConfirm}>
           <div
             ref={dialogRef}
@@ -1045,7 +1070,7 @@ function ResetAndUninstall() {
             onMouseDown={(event) => event.stopPropagation()}
           >
             <h2>{resetError == null ? "Erase all data on this device?" : "Reset incomplete"}</h2>
-            <p>Erases everything DebridStreamer stores on this device: settings, library, watch history, API keys, and sign-in. The app restarts in first-run setup.</p>
+            <p>Erases everything YAWF Stream stores on this device: settings, library, watch history, API keys, and sign-in. The app restarts in first-run setup.</p>
             {serverMode && <p>Your household&apos;s data on the server is not touched.</p>}
             <p>Downloaded video files in your downloads folder are NOT deleted.</p>
             {resetError != null && <p className="settings-status is-error" role="alert">{resetError}</p>}
@@ -1060,7 +1085,8 @@ function ResetAndUninstall() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </section>
   );
@@ -1113,14 +1139,34 @@ function ProfilesTab({
     await createProfileRecord({
       id: localProfileId(),
       name,
-      avatar: "😀",
-      color: "#6366f1",
+      avatar: DEFAULT_PROFILE_AVATAR,
+      color: DEFAULT_PROFILE_COLOR,
       isDefault: false,
       isAdmin: false,
       createdAt: Date.now(),
     });
     setNewName("");
     await refresh("Profile added.");
+  }
+
+  function uploadProfilePhoto(profile: LocalProfile, file: File | undefined) {
+    if (file == null) return;
+    if (!file.type.startsWith("image/")) {
+      setMessage("Choose an image file for the profile photo.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage("Profile photos must be smaller than 5 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => setMessage("That profile photo could not be read.");
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+      editProfile(profile, { avatar: reader.result });
+      setMessage("Profile photo updated.");
+    };
+    reader.readAsDataURL(file);
   }
 
   async function savePassword(profile: LocalProfile) {
@@ -1197,7 +1243,7 @@ function ProfilesTab({
           return (
             <div className={`settings-profile-card${isCurrent ? " is-current" : ""}`} key={profile.id}>
               <div className="settings-profile-head">
-                <span className="settings-profile-avatar" style={{ background: profile.color ?? "#475569" }}>
+                <span className="settings-profile-avatar" style={{ background: profile.color ?? DEFAULT_PROFILE_COLOR }}>
                   {photo ? <img src={profile.avatar} alt="" /> : profileGlyph(profile)}
                 </span>
                 <div className="settings-profile-identity">
@@ -1221,16 +1267,58 @@ function ProfilesTab({
                 <div className="settings-profile-edit">
                   <Field label="Name"><input value={profile.name} maxLength={40} onChange={(event) => editProfile(profile, { name: event.target.value })} /></Field>
                   <div className="settings-profile-look">
-                    <span className="settings-label">Avatar &amp; color</span>
-                    <div className="settings-profile-avatars">
+                    <span className="settings-label">Profile look</span>
+                    <div className="settings-profile-avatar-tools">
                       <AvatarPicker
                         value={photo ? "" : (profile.avatar ?? "")}
                         onChange={(emoji) => editProfile(profile, { avatar: emoji })}
                         idPrefix={`profile-${profile.id}`}
                       />
-                      <label className="settings-profile-color" title="Profile color">
-                        <input type="color" value={profile.color ?? "#475569"} onChange={(event) => editProfile(profile, { color: event.target.value })} />
-                      </label>
+                      <div className="settings-profile-photo-row">
+                        <label className="btn settings-profile-photo">
+                          <Icon name="upload" size={15} />
+                          Choose photo
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(event) => {
+                              uploadProfilePhoto(profile, event.target.files?.[0]);
+                              event.target.value = "";
+                            }}
+                          />
+                        </label>
+                        {photo && (
+                          <button type="button" className="chip" onClick={() => editProfile(profile, { avatar: DEFAULT_PROFILE_AVATAR })}>
+                            Use an icon
+                          </button>
+                        )}
+                      </div>
+                      <div className="settings-profile-palette" role="radiogroup" aria-label={`Color for ${profile.name}`}>
+                        {PROFILE_COLORS.map((color) => {
+                          const active = (profile.color ?? DEFAULT_PROFILE_COLOR).toLowerCase() === color.value;
+                          return (
+                            <button
+                              key={color.value}
+                              type="button"
+                              className={active ? "is-active" : ""}
+                              style={{ background: color.value }}
+                              onClick={() => editProfile(profile, { color: color.value })}
+                              role="radio"
+                              aria-checked={active}
+                              aria-label={color.label}
+                              title={color.label}
+                            />
+                          );
+                        })}
+                        <label className="settings-profile-color" title="Custom profile color">
+                          <input
+                            type="color"
+                            value={profile.color ?? DEFAULT_PROFILE_COLOR}
+                            onChange={(event) => editProfile(profile, { color: event.target.value })}
+                            aria-label={`Custom color for ${profile.name}`}
+                          />
+                        </label>
+                      </div>
                     </div>
                   </div>
                   <div className="settings-profile-password">
@@ -1750,7 +1838,7 @@ function InstallTab() {
     {
       id: "connect",
       label: "Connect to server",
-      summary: "Use a hosted DebridStreamer URL for shared profiles and keys.",
+      summary: "Use a hosted YAWF Stream URL for shared profiles and keys.",
     },
     {
       id: "downloads",
@@ -1975,8 +2063,8 @@ function DesktopHostPanel() {
     }
     try {
       await nav.share({
-        title: "DebridStreamer",
-        text: "Open this DebridStreamer server.",
+        title: "YAWF Stream",
+        text: "Open this YAWF Stream server.",
         url: primaryURL,
       });
     } catch (err) {
@@ -2035,7 +2123,7 @@ function DesktopHostPanel() {
             <img
               className="settings-share-qr"
               src={qrDataURL}
-              alt="QR code for the hosted DebridStreamer server"
+              alt="QR code for the hosted YAWF Stream server"
             />
           )}
           <div className="settings-share-copy">
@@ -2158,7 +2246,7 @@ function ServerConnectionPanel() {
         {activeURL != null && <span className="chip is-active">Server Mode</span>}
       </div>
       <p className="settings-hint t-secondary">
-        Paste a DebridStreamer server URL to use shared profiles, shared API
+        Paste a YAWF Stream server URL to use shared profiles, shared API
         keys, and server-side stream forwarding across devices.
       </p>
       <div className="settings-source-row">
@@ -2266,7 +2354,7 @@ function remoteAccessSteps(
             {
               title: "Install Tailscale on the server",
               detail:
-                "Install it on the machine running DebridStreamer, then return here to re-check it.",
+                "Install it on the machine running YAWF Stream, then return here to re-check it.",
             },
           ]),
       {
@@ -2299,7 +2387,7 @@ function remoteAccessSteps(
           {
             title: "Install cloudflared on the server",
             detail:
-              "Install it on the machine running DebridStreamer, then return here to re-check it.",
+              "Install it on the machine running YAWF Stream, then return here to re-check it.",
           },
         ]),
     {
@@ -4102,142 +4190,62 @@ function AppearanceTab({
   const selectedProfile =
     APPEARANCE_PROFILES.find((profile) => appearanceProfileMatches(draft, profile)) ??
     null;
-  const selectedProfileId = selectedProfile?.id ?? CUSTOM_APPEARANCE_PROFILE;
-  const currentTheme = THEMES.find((theme) => theme.id === draft.theme) ?? THEMES[0];
-  const currentAccent =
-    ACCENTS.find((accent) => accent.id === draft.appearanceAccent) ?? ACCENTS[0];
-  // Smart preloading is a per-device preference (localStorage), not a synced
-  // AppSettings field - toggled here with local mirror state.
+  // Smart preloading is a per-device preference, not a synced AppSettings field.
   const [smartPreload, setSmartPreload] = useState(isSmartPreloadEnabled());
 
   return (
     <div className="settings-fields">
-      <SettingsInfo label="About appearance settings">
-        Tune the interface for the device and room you are using. Appearance
-        changes apply instantly and are saved to this profile.
-      </SettingsInfo>
+      <div className="appearance-intro">
+        <div>
+          <span className="settings-sources-title">Choose a style</span>
+          <p className="settings-hint">
+            Start with a complete look. Changes apply instantly to this profile.
+          </p>
+        </div>
+        <span className="appearance-saved-state">
+          {selectedProfile?.label ?? "Custom style"}
+        </span>
+      </div>
 
-      <div className="appearance-profile-card settings-source glass-rest">
-        <div className="appearance-profile-head">
-          <div>
-            <span className="settings-label-line">
-              <span className="settings-label">Quick profile</span>
-              <InfoTip label="About quick profiles">
-              Apply a complete interface setup, then fine tune each control below.
-              </InfoTip>
-            </span>
-          </div>
-          <label className="appearance-profile-picker">
-            <span className="settings-secret-label">Profile</span>
-            <select
-              value={selectedProfileId}
-              onChange={(event) => {
-                const profile = APPEARANCE_PROFILES.find(
-                  (item) => item.id === event.target.value,
-                );
-                if (profile) applyAppearance(profile.settings);
-              }}
+      <div className="appearance-style-grid" aria-label="Appearance styles">
+        {APPEARANCE_PROFILES.map((profile) => {
+          const active = profile.id === selectedProfile?.id;
+          const theme = THEMES.find((item) => item.id === profile.settings.theme) ?? THEMES[0];
+          return (
+            <button
+              key={profile.id}
+              type="button"
+              className={`appearance-style-card${active ? " is-active" : ""}`}
+              onClick={() => applyAppearance(profile.settings)}
+              aria-pressed={active}
+              aria-label={`Apply ${profile.label} style`}
             >
-              {selectedProfile == null && (
-                <option value={CUSTOM_APPEARANCE_PROFILE}>Custom current</option>
+              <span
+                className="appearance-style-preview"
+                style={{
+                  background: `linear-gradient(145deg, ${theme.swatchBg[0]}, ${theme.swatchBg[1]})`,
+                }}
+              >
+                <span style={{ background: theme.swatchAccent }} />
+                <i />
+                <i />
+              </span>
+              <span className="appearance-style-copy">
+                <strong>{profile.label}</strong>
+                <small>{profile.description}</small>
+              </span>
+              {profile.id === "default-cinema" && (
+                <span className="appearance-style-default">Default</span>
               )}
-              {APPEARANCE_PROFILES.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="appearance-profile-summary">
-          {selectedProfile?.description ??
-            "Custom mix saved from the fine-tune controls below."}
-        </div>
-        <div className="appearance-current-chips" aria-label="Current appearance summary">
-          <span>{currentTheme.label}</span>
-          <span>
-            {currentAccent.id === "theme"
-              ? "Theme accent"
-              : `${currentAccent.label} accent`}
-          </span>
-          <span>
-            {draft.appearanceDensity === "compact" ? "Compact spacing" : "Roomy spacing"}
-          </span>
-          <span>
-            {draft.appearanceTextSize === "s"
-              ? "Small type"
-              : draft.appearanceTextSize === "l"
-                ? "Large type"
-                : "Medium type"}
-          </span>
-          <span>
-            {draft.appearanceBlur <= 12
-              ? "Crisp depth"
-              : draft.appearanceBlur >= 18
-                ? "Soft depth"
-                : "Balanced depth"}
-          </span>
-          <span>
-            {draft.appearanceChrome === "solid"
-              ? "Solid panels"
-              : draft.appearanceChrome === "translucent"
-                ? "Translucent panels"
-                : "Balanced panels"}
-          </span>
-          <span>
-            {draft.appearanceBackdrop === "plain"
-              ? "Plain backdrop"
-              : draft.appearanceBackdrop === "subtle"
-                ? "Subtle glow"
-                : "Ambient glow"}
-          </span>
-          <span>
-            {draft.appearanceHeroScale === "compact"
-              ? "Compact hero"
-              : draft.appearanceHeroScale === "cinematic"
-                ? "Cinematic hero"
-                : "Balanced hero"}
-          </span>
-          <span>
-            {draft.appearancePanelContrast === "high"
-              ? "High contrast"
-              : draft.appearancePanelContrast === "soft"
-                ? "Soft contrast"
-                : "Balanced contrast"}
-          </span>
-          <span>
-            {draft.appearanceNavLabels === "icons"
-              ? "Icon nav"
-              : draft.appearanceNavLabels === "labels"
-                ? "Labeled nav"
-                : "Adaptive nav"}
-          </span>
-          <span>
-            {draft.appearanceNavTint === "airy"
-              ? "Airy dock"
-              : draft.appearanceNavTint === "solid"
-                ? "Solid dock"
-                : "Balanced dock"}
-          </span>
-          <span>
-            {draft.appearancePosterSize === "compact"
-              ? "Compact posters"
-              : draft.appearancePosterSize === "large"
-                ? "Large posters"
-                : "Medium posters"}
-          </span>
-        </div>
+              {active && <Icon name="check" size={15} />}
+            </button>
+          );
+        })}
       </div>
 
       <div className="appearance-section-head">
-        <div>
-          <span className="settings-label-line">
-            <span className="settings-sources-title">Display</span>
-            <InfoTip label="About display controls">
-            Device-scale defaults come first; switch only the dimensions that need it.
-            </InfoTip>
-          </span>
-        </div>
+        <span className="settings-sources-title">Everyday controls</span>
+        <span className="settings-hint">The options most people adjust</span>
       </div>
 
       <div className="settings-control-grid">
@@ -4266,18 +4274,6 @@ function AppearanceTab({
           }
         />
         <SegmentedControl
-          label="Motion"
-          value={draft.appearanceMotion}
-          options={[
-            { value: "system", label: "System" },
-            { value: "normal", label: "Normal" },
-            { value: "reduced", label: "Reduced" },
-          ]}
-          onChange={(value) =>
-            applyAppearance({ appearanceMotion: value as AppearanceMotion })
-          }
-        />
-        <SegmentedControl
           label="Corners"
           value={draft.appearanceRadius}
           options={[
@@ -4287,18 +4283,6 @@ function AppearanceTab({
           ]}
           onChange={(value) =>
             applyAppearance({ appearanceRadius: value as AppearanceRadius })
-          }
-        />
-        <SegmentedControl
-          label="Glass depth"
-          value={draft.appearanceChrome}
-          options={[
-            { value: "translucent", label: "Light" },
-            { value: "balanced", label: "Balanced" },
-            { value: "solid", label: "Solid" },
-          ]}
-          onChange={(value) =>
-            applyAppearance({ appearanceChrome: value as AppearanceChrome })
           }
         />
         <SegmentedControl
@@ -4313,137 +4297,12 @@ function AppearanceTab({
             applyAppearance({ appearanceBackdrop: value as AppearanceBackdrop })
           }
         />
-        <SegmentedControl
-          label="Hero scale"
-          value={draft.appearanceHeroScale}
-          options={[
-            { value: "compact", label: "Compact" },
-            { value: "standard", label: "Standard" },
-            { value: "cinematic", label: "Cinema" },
-          ]}
-          onChange={(value) =>
-            applyAppearance({ appearanceHeroScale: value as AppearanceHeroScale })
-          }
-        />
-        <SegmentedControl
-          label="Panel contrast"
-          value={draft.appearancePanelContrast}
-          options={[
-            { value: "soft", label: "Soft" },
-            { value: "standard", label: "Standard" },
-            { value: "high", label: "High" },
-          ]}
-          onChange={(value) =>
-            applyAppearance({
-              appearancePanelContrast: value as AppearancePanelContrast,
-            })
-          }
-        />
       </div>
 
-      <div className="appearance-section-head">
-        <div>
-          <span className="settings-label-line">
-            <span className="settings-sources-title">Navigation and catalog</span>
-            <InfoTip label="About navigation and catalog controls">
-            Tune the dock, rail labels, and poster density for the screen in use.
-            </InfoTip>
-          </span>
-        </div>
-      </div>
-
-      <div className="settings-control-grid">
-        <SegmentedControl
-          label="Nav labels"
-          value={draft.appearanceNavLabels}
-          options={[
-            { value: "auto", label: "Auto" },
-            { value: "labels", label: "Labels" },
-            { value: "icons", label: "Icons" },
-          ]}
-          onChange={(value) =>
-            applyAppearance({ appearanceNavLabels: value as AppearanceNavLabels })
-          }
-        />
-        <SegmentedControl
-          label="Nav position"
-          value={draft.appearanceNavPosition}
-          options={[
-            { value: "side", label: "Side rail" },
-            { value: "bottom", label: "Bottom bar" },
-          ]}
-          onChange={(value) =>
-            applyAppearance({
-              appearanceNavPosition: value as AppearanceNavPosition,
-            })
-          }
-        />
-        <SegmentedControl
-          label="Dock tint"
-          value={draft.appearanceNavTint}
-          options={[
-            { value: "airy", label: "Airy" },
-            { value: "balanced", label: "Balanced" },
-            { value: "solid", label: "Solid" },
-          ]}
-          onChange={(value) =>
-            applyAppearance({ appearanceNavTint: value as AppearanceNavTint })
-          }
-        />
-        <SegmentedControl
-          label="Poster size"
-          value={draft.appearancePosterSize}
-          options={[
-            { value: "compact", label: "Compact" },
-            { value: "default", label: "Default" },
-            { value: "large", label: "Large" },
-          ]}
-          onChange={(value) =>
-            applyAppearance({ appearancePosterSize: value as AppearancePosterSize })
-          }
-        />
-      </div>
-
-      <label className="settings-field">
-        <span className="settings-field-label">
-          <strong>Start on</strong>
-          <span className="t-secondary">
-            {" "}
-            - the screen the app opens to at launch.
-          </span>
-        </span>
-        <select
-          value={draft.appearanceDefaultTab}
-          onChange={(event) =>
-            applyAppearance({
-              appearanceDefaultTab: event.target.value as ScreenId,
-            })
-          }
-        >
-          <option value="discover">Discover</option>
-          <option value="search">Search</option>
-          <option value="library">Library</option>
-          <option value="watchlist">Watchlist</option>
-          <option value="calendar">Calendar</option>
-          <option value="history">History</option>
-        </select>
-      </label>
-
-      <NavCustomizer
-        order={draft.appearanceNavOrder}
-        hidden={draft.appearanceNavHidden}
-        onChange={(next) =>
-          applyAppearance({
-            appearanceNavOrder: next.order,
-            appearanceNavHidden: next.hidden,
-          })
-        }
-      />
-
-      <div className="settings-source glass-rest">
+      <div className="appearance-accent-panel">
         <div className="settings-sources-head">
           <span className="settings-sources-title">Accent</span>
-          <span className="settings-hint t-secondary">Default follows preset</span>
+          <span className="settings-hint t-secondary">Used for selection and focus</span>
         </div>
         <div className="accent-grid" role="radiogroup" aria-label="Accent color">
           {ACCENTS.map((accent) => {
@@ -4471,7 +4330,7 @@ function AppearanceTab({
 
       <Field
         label="Glass blur"
-        hint="Lower values make surfaces more solid; higher values make the app feel more frosted."
+        hint="Lower values keep panels crisp. Higher values add frost."
       >
         <div className="settings-range-shell">
           <div className="settings-range-control">
@@ -4495,142 +4354,173 @@ function AppearanceTab({
         </div>
       </Field>
 
-      <div className="appearance-section-head">
-        <div>
-          <span className="settings-label-line">
-            <span className="settings-sources-title">Subtitles</span>
-            <InfoTip label="About subtitle appearance">
-              Adjust the size, text color, and background of captions in the player.
-            </InfoTip>
+      <details className="appearance-disclosure">
+        <summary>
+          <span>
+            <strong>Layout and navigation</strong>
+            <small>Motion, panels, artwork sizing, and menu setup</small>
           </span>
-        </div>
-      </div>
-
-      <Field
-        label="Font scale"
-        hint="Adjust the size of subtitle text in the player."
-      >
-        <div className="settings-range-shell">
-          <div className="settings-range-control">
-            <input
-              type="range"
-              min={0.7}
-              max={1.8}
-              step={0.1}
-              value={draft.subtitleFontScale}
-              onChange={(event) =>
-                applyAppearance({ subtitleFontScale: Number(event.target.value) })
-              }
-              aria-label="Subtitle font scale"
+          <span className="appearance-disclosure-chevron" aria-hidden>⌄</span>
+        </summary>
+        <div className="appearance-disclosure-body">
+          <div className="settings-control-grid">
+            <SegmentedControl
+              label="Motion"
+              value={draft.appearanceMotion}
+              options={[
+                { value: "system", label: "System" },
+                { value: "normal", label: "Normal" },
+                { value: "reduced", label: "Reduced" },
+              ]}
+              onChange={(value) => applyAppearance({ appearanceMotion: value as AppearanceMotion })}
             />
-            <output aria-live="polite">
-              {Math.round(draft.subtitleFontScale * 100)}%
-            </output>
-          </div>
-          <div className="settings-range-labels" aria-hidden="true">
-            <span>Smaller</span>
-            <span>Larger</span>
-          </div>
-        </div>
-      </Field>
-
-      <div className="settings-source glass-rest">
-        <div className="settings-sources-head">
-          <span className="settings-sources-title">Text color</span>
-          <span className="settings-hint t-secondary">High-legibility presets</span>
-        </div>
-        <div className="accent-grid" role="radiogroup" aria-label="Subtitle text color">
-          {SUBTITLE_COLORS.map((color) => {
-            const active = draft.subtitleTextColor === color;
-            return (
-              <button
-                key={color}
-                type="button"
-                className={`accent-swatch${active ? " is-active" : ""}`}
-                style={{ background: color }}
-                onClick={() => applyAppearance({ subtitleTextColor: color })}
-                role="radio"
-                aria-checked={active}
-                aria-label={`Subtitle color ${color}`}
-              />
-            );
-          })}
-        </div>
-      </div>
-
-      <Field
-        label="Background opacity"
-        hint="Add contrast behind subtitles when the video is bright."
-      >
-        <div className="settings-range-shell">
-          <div className="settings-range-control">
-            <input
-              type="range"
-              min={0}
-              max={0.95}
-              step={0.05}
-              value={draft.subtitleBgOpacity}
-              onChange={(event) =>
-                applyAppearance({ subtitleBgOpacity: Number(event.target.value) })
-              }
-              aria-label="Subtitle background opacity"
+            <SegmentedControl
+              label="Panel depth"
+              value={draft.appearanceChrome}
+              options={[
+                { value: "translucent", label: "Light" },
+                { value: "balanced", label: "Balanced" },
+                { value: "solid", label: "Solid" },
+              ]}
+              onChange={(value) => applyAppearance({ appearanceChrome: value as AppearanceChrome })}
             />
-            <output aria-live="polite">
-              {Math.round(draft.subtitleBgOpacity * 100)}%
-            </output>
+            <SegmentedControl
+              label="Hero size"
+              value={draft.appearanceHeroScale}
+              options={[
+                { value: "compact", label: "Compact" },
+                { value: "standard", label: "Standard" },
+                { value: "cinematic", label: "Cinema" },
+              ]}
+              onChange={(value) => applyAppearance({ appearanceHeroScale: value as AppearanceHeroScale })}
+            />
+            <SegmentedControl
+              label="Panel contrast"
+              value={draft.appearancePanelContrast}
+              options={[
+                { value: "soft", label: "Soft" },
+                { value: "standard", label: "Standard" },
+                { value: "high", label: "High" },
+              ]}
+              onChange={(value) => applyAppearance({ appearancePanelContrast: value as AppearancePanelContrast })}
+            />
+            <SegmentedControl
+              label="Nav labels"
+              value={draft.appearanceNavLabels}
+              options={[
+                { value: "auto", label: "Auto" },
+                { value: "labels", label: "Labels" },
+                { value: "icons", label: "Icons" },
+              ]}
+              onChange={(value) => applyAppearance({ appearanceNavLabels: value as AppearanceNavLabels })}
+            />
+            <SegmentedControl
+              label="Nav position"
+              value={draft.appearanceNavPosition}
+              options={[
+                { value: "side", label: "Side rail" },
+                { value: "bottom", label: "Bottom bar" },
+              ]}
+              onChange={(value) => applyAppearance({ appearanceNavPosition: value as AppearanceNavPosition })}
+            />
+            <SegmentedControl
+              label="Nav surface"
+              value={draft.appearanceNavTint}
+              options={[
+                { value: "airy", label: "Airy" },
+                { value: "balanced", label: "Balanced" },
+                { value: "solid", label: "Solid" },
+              ]}
+              onChange={(value) => applyAppearance({ appearanceNavTint: value as AppearanceNavTint })}
+            />
+            <SegmentedControl
+              label="Poster size"
+              value={draft.appearancePosterSize}
+              options={[
+                { value: "compact", label: "Compact" },
+                { value: "default", label: "Default" },
+                { value: "large", label: "Large" },
+              ]}
+              onChange={(value) => applyAppearance({ appearancePosterSize: value as AppearancePosterSize })}
+            />
           </div>
-          <div className="settings-range-labels" aria-hidden="true">
-            <span>None</span>
-            <span>Solid</span>
-          </div>
-        </div>
-      </Field>
 
-      <div className="settings-divider" />
-
-      <div className="settings-sources-head">
-        <span className="settings-sources-title">Presets</span>
-        <span className="settings-hint t-secondary">One-click theme presets</span>
-      </div>
-      <div className="theme-grid">
-        {THEMES.map((t) => {
-          const active = t.id === draft.theme;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              className={`theme-card${active ? " is-active" : ""}`}
-              onClick={() => applyAppearance({ theme: t.id })}
-              aria-pressed={active}
+          <label className="settings-field">
+            <span className="settings-field-label">
+              <strong>Start on</strong>
+              <span className="t-secondary">: the screen shown at launch.</span>
+            </span>
+            <select
+              value={draft.appearanceDefaultTab}
+              onChange={(event) => applyAppearance({ appearanceDefaultTab: event.target.value as ScreenId })}
             >
-              <span
-                className="theme-swatch"
-                style={{
-                  background: `linear-gradient(135deg, ${t.swatchBg[0]}, ${t.swatchBg[1]})`,
-                }}
-              >
-                <span
-                  className="theme-swatch-dot"
-                  style={{ background: t.swatchAccent }}
-                />
-                {active && (
-                  <span className="theme-swatch-check">
-                    <Icon name="check" size={13} />
-                  </span>
-                )}
-              </span>
-              <span className="theme-card-label">{t.label}</span>
-              <span className="theme-card-desc t-secondary">{t.description}</span>
-              <span className={`theme-card-status${active ? " is-active" : ""}`}>
-                {active ? "Selected" : "Preset"}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+              <option value="discover">Discover</option>
+              <option value="search">Search</option>
+              <option value="library">Library</option>
+              <option value="watchlist">Watchlist</option>
+              <option value="calendar">Calendar</option>
+              <option value="history">History</option>
+            </select>
+          </label>
 
-      <div className="settings-extras">
-        <span className="settings-sources-title">Extras</span>
+          <NavCustomizer
+            order={draft.appearanceNavOrder}
+            hidden={draft.appearanceNavHidden}
+            onChange={(next) => applyAppearance({ appearanceNavOrder: next.order, appearanceNavHidden: next.hidden })}
+          />
+        </div>
+      </details>
+
+      <details className="appearance-disclosure">
+        <summary>
+          <span>
+            <strong>Subtitles</strong>
+            <small>Size, color, and background contrast</small>
+          </span>
+          <span className="appearance-disclosure-chevron" aria-hidden>⌄</span>
+        </summary>
+        <div className="appearance-disclosure-body">
+          <Field label="Font scale" hint="Adjust subtitle text size in the player.">
+            <div className="settings-range-shell">
+              <div className="settings-range-control">
+                <input type="range" min={0.7} max={1.8} step={0.1} value={draft.subtitleFontScale} onChange={(event) => applyAppearance({ subtitleFontScale: Number(event.target.value) })} aria-label="Subtitle font scale" />
+                <output aria-live="polite">{Math.round(draft.subtitleFontScale * 100)}%</output>
+              </div>
+              <div className="settings-range-labels" aria-hidden="true"><span>Smaller</span><span>Larger</span></div>
+            </div>
+          </Field>
+
+          <div className="settings-source glass-rest">
+            <div className="settings-sources-head">
+              <span className="settings-sources-title">Text color</span>
+              <span className="settings-hint t-secondary">High contrast presets</span>
+            </div>
+            <div className="accent-grid" role="radiogroup" aria-label="Subtitle text color">
+              {SUBTITLE_COLORS.map((color) => {
+                const active = draft.subtitleTextColor === color;
+                return <button key={color} type="button" className={`accent-swatch${active ? " is-active" : ""}`} style={{ background: color }} onClick={() => applyAppearance({ subtitleTextColor: color })} role="radio" aria-checked={active} aria-label={`Subtitle color ${color}`} />;
+              })}
+            </div>
+          </div>
+
+          <Field label="Background opacity" hint="Add contrast when the video is bright.">
+            <div className="settings-range-shell">
+              <div className="settings-range-control">
+                <input type="range" min={0} max={0.95} step={0.05} value={draft.subtitleBgOpacity} onChange={(event) => applyAppearance({ subtitleBgOpacity: Number(event.target.value) })} aria-label="Subtitle background opacity" />
+                <output aria-live="polite">{Math.round(draft.subtitleBgOpacity * 100)}%</output>
+              </div>
+              <div className="settings-range-labels" aria-hidden="true"><span>None</span><span>Solid</span></div>
+            </div>
+          </Field>
+        </div>
+      </details>
+
+      <details className="appearance-disclosure">
+        <summary>
+          <span><strong>Extras</strong><small>Preloading, stats, ratings, and guides</small></span>
+          <span className="appearance-disclosure-chevron" aria-hidden>⌄</span>
+        </summary>
+        <div className="appearance-disclosure-body settings-extras">
         <label className="settings-toggle-row">
           <input
             type="checkbox"
@@ -4682,7 +4572,7 @@ function AppearanceTab({
             window.dispatchEvent(new CustomEvent("ds:open-welcome-guide"))
           }
         >
-          <Icon name="sparkles" size={15} />
+          <Icon name="discover" size={15} />
           Replay welcome guide
         </button>
         <button
@@ -4695,7 +4585,8 @@ function AppearanceTab({
           <Icon name="discover" size={15} />
           Replay getting-started
         </button>
-      </div>
+        </div>
+      </details>
     </div>
   );
 }

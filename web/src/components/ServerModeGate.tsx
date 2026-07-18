@@ -224,7 +224,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
     );
   }
   if (state.kind === "loading") {
-    return <GateShell title="Connecting" copy="Checking the DebridStreamer server." baseURL={state.baseURL} />;
+    return <GateShell title="Connecting" copy="Checking the YAWF Stream server." baseURL={state.baseURL} />;
   }
   if (state.kind === "error") {
     return (
@@ -264,7 +264,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
   if (state.kind === "invite") {
     return (
       <AuthForm
-        title="Join DebridStreamer"
+        title="Join YAWF Stream"
         copy="Create your profile from this invite link."
         baseURL={state.baseURL}
         submitLabel="Create profile"
@@ -287,7 +287,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
   return (
     <AuthForm
       title="Sign in"
-      copy="Use your DebridStreamer server profile."
+      copy="Use your YAWF Stream server profile."
       baseURL={state.baseURL}
       submitLabel="Sign in"
       onSubmit={(payload) =>

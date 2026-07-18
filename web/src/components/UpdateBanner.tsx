@@ -162,7 +162,7 @@ export function UpdateBanner({
               Update v{update.version} available
             </span>
             <span className="update-banner-sub t-secondary">
-              A new version of DebridStreamer is ready to install.
+              A new version of YAWF Stream is ready to install.
             </span>
           </>
         )}

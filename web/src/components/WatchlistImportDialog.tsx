@@ -69,7 +69,7 @@ export function WatchlistImportDialog({
     try {
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "debridstreamer-watchlist.csv";
+      anchor.download = "yawf-stream-watchlist.csv";
       anchor.click();
     } finally {
       URL.revokeObjectURL(url);

@@ -29,20 +29,9 @@ import {
   type ServerProfileSummary,
 } from "../lib/ServerSessionContext";
 import { useAppStore } from "../store/AppStore";
+import { PROFILE_COLORS } from "../data/profileAvatars";
 import { useModalA11y } from "./useModalA11y";
 import "./ProfilePicker.css";
-
-// A small palette the "add profile" form offers; any saved hex/keyword renders.
-const AVATAR_COLORS = [
-  "#6366f1",
-  "#ec4899",
-  "#22c55e",
-  "#f59e0b",
-  "#06b6d4",
-  "#ef4444",
-  "#a855f7",
-  "#14b8a6",
-];
 
 function initialOf(name: string): string {
   const trimmed = name.trim();
@@ -900,7 +889,7 @@ function ProfileForm({
 }) {
   const [displayName, setDisplayName] = useState(initial?.displayName ?? "");
   const [avatarColor, setAvatarColor] = useState<string>(
-    initial?.avatarColor ?? AVATAR_COLORS[0]!,
+    initial?.avatarColor ?? PROFILE_COLORS[0]!.value,
   );
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -946,14 +935,15 @@ function ProfileForm({
         <div className="profile-field">
           Color
           <div className="profile-color-row">
-            {AVATAR_COLORS.map((color) => (
+            {PROFILE_COLORS.map((color) => (
               <button
-                key={color}
+                key={color.value}
                 type="button"
-                className={`profile-color-dot${avatarColor === color ? " is-selected" : ""}`}
-                style={{ background: color }}
-                aria-label={`Use color ${color}`}
-                onClick={() => setAvatarColor(color)}
+                className={`profile-color-dot${avatarColor === color.value ? " is-selected" : ""}`}
+                style={{ background: color.value }}
+                aria-label={`Use ${color.label.toLowerCase()}`}
+                title={color.label}
+                onClick={() => setAvatarColor(color.value)}
               />
             ))}
           </div>

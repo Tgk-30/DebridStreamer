@@ -126,7 +126,7 @@ describe("ServerModeGate", () => {
 
     expect(screen.getByText("Connecting")).toBeInTheDocument();
     expect(
-      screen.getByText("Checking the DebridStreamer server."),
+      screen.getByText("Checking the YAWF Stream server."),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("app")).not.toBeInTheDocument();
   });
@@ -408,7 +408,7 @@ describe("ServerModeGate", () => {
 
       render(<ServerModeGate>{CHILD}</ServerModeGate>);
 
-      expect(await screen.findByText("Join DebridStreamer")).toBeInTheDocument();
+      expect(await screen.findByText("Join YAWF Stream")).toBeInTheDocument();
       expect(
         screen.getByText("Create your profile from this invite link."),
       ).toBeInTheDocument();
@@ -435,7 +435,7 @@ describe("ServerModeGate", () => {
       const user = userEvent.setup();
       render(<ServerModeGate>{CHILD}</ServerModeGate>);
 
-      await screen.findByText("Join DebridStreamer");
+      await screen.findByText("Join YAWF Stream");
       await user.type(screen.getByLabelText("Username"), "guest");
       await user.type(screen.getByLabelText("Password"), "guestpass1");
       await user.click(screen.getByRole("button", { name: "Create profile" }));
@@ -464,7 +464,7 @@ describe("ServerModeGate", () => {
 
       expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
       expect(
-        screen.getByText("Use your DebridStreamer server profile."),
+        screen.getByText("Use your YAWF Stream server profile."),
       ).toBeInTheDocument();
       // Login form has no Display name field.
       expect(screen.queryByText("Display name")).not.toBeInTheDocument();

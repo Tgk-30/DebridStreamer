@@ -41,7 +41,7 @@ describe("TierOnboarding - public profile", () => {
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(screen.getByText("Get started")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      "Welcome to DebridStreamer",
+      "Welcome to YAWF Stream",
     );
     expect(ambientName(container)).toBe("aurora");
   });
@@ -118,7 +118,7 @@ describe("TierOnboarding navigation", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      "Welcome to DebridStreamer",
+      "Welcome to YAWF Stream",
     );
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
   });

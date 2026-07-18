@@ -1,0 +1,444 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Design tokens · defaults = `stream-teal` preset, glow 1.0 ──
+       Runtime source of truth: src/theme.config.ts (overwrites these on :root) */
+    --bg-0: #04070a;
+    --bg-1: #070c12;
+    --bg-2: #0a121b;
+    --bg-0-rgb: 4, 7, 10;
+    --surface-glass: rgba(158, 224, 233, 0.045);
+    --surface-glass-2: rgba(158, 224, 233, 0.08);
+    --line: rgba(158, 224, 233, 0.12);
+    --line-strong: rgba(158, 224, 233, 0.22);
+
+    --brand: #2ee6c8;
+    --brand-deep: #0e8c7a;
+    --accent: #3ec9f5;
+    --warm: #ffb454;
+    --ok: #2ee6c8;
+    --brand-rgb: 46, 230, 200;
+    --accent-rgb: 62, 201, 245;
+    --warm-rgb: 255, 180, 84;
+
+    --ink-1: #eaf6f3;
+    --ink-2: #9ab2bc;
+    --ink-3: #5e7683;
+    --ink-1-rgb: 234, 246, 243;
+    --ink-on-brand: #04201b;
+
+    --grad-stream: linear-gradient(100deg, #2ee6c8 0%, #3ec9f5 55%, #8b7cf6 110%);
+    --grad-warm: radial-gradient(closest-side, rgba(255, 180, 84, 0.35), transparent 70%);
+    --grad-hero-scrim: linear-gradient(180deg, rgba(4, 7, 10, 0.55) 0%, rgba(4, 7, 10, 0.25) 40%, #04070a 96%);
+    --grad-ring-conic: conic-gradient(from 0deg, transparent, #2ee6c8 18%, transparent 36%);
+
+    --glow-brand: 0 0 24px rgba(46, 230, 200, 0.35), 0 0 64px rgba(46, 230, 200, 0.12);
+    --glow-accent: 0 0 24px rgba(62, 201, 245, 0.3);
+    --glow-warm: 0 0 32px rgba(255, 180, 84, 0.25);
+    --shadow-card: 0 18px 50px -12px rgba(0, 0, 0, 0.65);
+
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    --radius: 20px;
+    --r-chip: 999px;
+    --r-row: 14px;
+    --r-card: 20px;
+    --r-stage: 28px;
+
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-soft: cubic-bezier(0.65, 0, 0.35, 1);
+    --t-micro: 180ms;
+    --t-std: 500ms;
+    --t-cine: 1100ms;
+    --stagger: 70ms;
+
+    /* fixed floating-pill navbar clearance (owned by Layout) */
+    --nav-offset: 88px;
+
+    /* shadcn/ui tokens (cinematic dark) */
+    --background: 210 43% 3%;
+    --foreground: 160 20% 94%;
+    --card: 213 44% 7%;
+    --card-foreground: 160 20% 94%;
+    --popover: 213 44% 6%;
+    --popover-foreground: 160 20% 94%;
+    --primary: 170 79% 54%;
+    --primary-foreground: 166 63% 7%;
+    --secondary: 210 32% 10%;
+    --secondary-foreground: 160 20% 94%;
+    --muted: 210 28% 12%;
+    --muted-foreground: 197 20% 67%;
+    --accent: 210 32% 12%;
+    --accent-foreground: 170 79% 54%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 200 30% 16%;
+    --input: 200 30% 16%;
+    --ring: 170 79% 54%;
+    --sidebar-background: 213 44% 5%;
+    --sidebar-foreground: 160 20% 94%;
+    --sidebar-primary: 170 79% 54%;
+    --sidebar-primary-foreground: 166 63% 7%;
+    --sidebar-accent: 210 32% 12%;
+    --sidebar-accent-foreground: 160 20% 94%;
+    --sidebar-border: 200 30% 16%;
+    --sidebar-ring: 170 79% 54%;
+  }
+
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    background-color: var(--bg-0);
+    scrollbar-color: var(--bg-2) var(--bg-0);
+  }
+
+  body {
+    background-color: var(--bg-0);
+    color: var(--ink-1);
+    font-family: var(--font-body);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: clip;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    color: var(--ink-1);
+  }
+
+  code, pre, kbd, samp {
+    font-family: var(--font-mono);
+  }
+
+  ::selection {
+    background: rgba(var(--brand-rgb), 0.28);
+    color: var(--ink-1);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--bg-0);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--bg-2);
+    border: 2px solid var(--bg-0);
+    border-radius: 8px;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(var(--brand-rgb), 0.45);
+    border-radius: 4px;
+  }
+
+  /* 400ms preset cross-fade - toggled on <html> while a theme swap applies */
+  html.theme-xfade,
+  html.theme-xfade *,
+  html.theme-xfade *::before,
+  html.theme-xfade *::after {
+    transition:
+      background-color 0.4s,
+      color 0.4s,
+      border-color 0.4s,
+      box-shadow 0.4s !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 200ms !important;
+    }
+  }
+}
+
+@property --beam-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@layer components {
+  /* ── Typography helpers ─────────────────────────────── */
+  .text-gradient {
+    background-image: var(--grad-stream);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* Character-cascade headlines wrap each glyph in an inline block. Chrome
+     does not propagate the parent's background clip into those descendants,
+     so give each glyph its own clipped stream gradient. */
+  .text-gradient > .char-mask > .char {
+    background-image: var(--grad-stream);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--brand);
+  }
+
+  .display-xl {
+    font-weight: 700;
+    font-size: clamp(2.9rem, 7.2vw, 6.2rem);
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+  }
+  .display-l {
+    font-weight: 700;
+    font-size: clamp(2.2rem, 4.6vw, 3.9rem);
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+  }
+  .display-m {
+    font-weight: 500;
+    font-size: clamp(1.5rem, 2.6vw, 2.1rem);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+  .display-s {
+    font-weight: 500;
+    font-size: 1.25rem;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+  }
+  .lede {
+    font-size: clamp(1.05rem, 1.6vw, 1.25rem);
+    line-height: 1.65;
+    color: var(--ink-2);
+  }
+
+  /* ── Surfaces ───────────────────────────────────────── */
+  .glass-panel {
+    background: var(--surface-glass);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* hairline with a 120px traveling brand glint */
+  .signal-divider {
+    position: relative;
+    height: 1px;
+    background: var(--line);
+    overflow: hidden;
+  }
+  .signal-divider::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 120px;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, var(--brand), transparent);
+    animation: signal-glint 4.2s var(--ease-soft) infinite;
+  }
+
+  /* conic comet border on hover (GlassCard / StreamRow / chips) */
+  .border-beam {
+    position: relative;
+  }
+  .border-beam::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(from var(--beam-angle), transparent 0%, var(--brand) 18%, transparent 36%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity var(--t-micro) ease;
+    pointer-events: none;
+  }
+  .border-beam:hover::before {
+    opacity: 1;
+    animation: beam-orbit 2.4s linear infinite;
+  }
+
+  /* ── Motion primitives ──────────────────────────────── */
+  .char-mask {
+    display: inline-block;
+    overflow: hidden;
+    vertical-align: bottom;
+    padding-bottom: 0.08em;
+    margin-bottom: -0.08em;
+  }
+  .char {
+    display: inline-block;
+    will-change: transform;
+  }
+
+  .pulse-dot {
+    position: relative;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: var(--glow-accent);
+  }
+  .pulse-dot::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 999px;
+    border: 1px solid var(--accent);
+    animation: pulse-ring 1.8s ease-out infinite;
+  }
+
+  .pulse-dot-brand {
+    background: var(--brand);
+    box-shadow: var(--glow-brand);
+  }
+  .pulse-dot-brand::after {
+    border-color: var(--brand);
+  }
+
+  /* stream-fill progress bar with glowing head dot */
+  .stream-fill {
+    position: relative;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--line);
+    overflow: visible;
+  }
+  .stream-fill > span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 100%;
+    border-radius: inherit;
+    background: var(--grad-stream);
+    transform-origin: left;
+    transform: scaleX(var(--value, 0));
+  }
+  .stream-fill > span::after {
+    content: '';
+    position: absolute;
+    right: -3px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--brand);
+    box-shadow: var(--glow-brand);
+    transform: translateY(-50%);
+  }
+
+  .scroll-cue-line {
+    position: relative;
+    width: 1px;
+    height: 40px;
+    background: var(--line);
+    overflow: hidden;
+  }
+  .scroll-cue-line::after {
+    content: '';
+    position: absolute;
+    top: -40%;
+    left: 0;
+    width: 100%;
+    height: 40%;
+    background: linear-gradient(180deg, transparent, var(--brand));
+    animation: cue-drop 1.6s var(--ease-soft) infinite;
+  }
+
+  /* one-time sheen sweep for gradient headline words */
+  .sheen-once {
+    background-size: 220% 100%;
+    animation: sheen-pan 0.9s var(--ease-out-expo) 1 both;
+  }
+
+  /* ── PosterMarquee ──────────────────────────────────── */
+  .marquee {
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  }
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee-x var(--marquee-duration, 46s) linear infinite;
+  }
+  .marquee-track-reverse {
+    animation-direction: reverse;
+    animation-duration: var(--marquee-duration-reverse, 62s);
+  }
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
+  }
+
+  .dash-flow {
+    animation: dash-flow 1.1s linear infinite;
+  }
+}
+
+@keyframes signal-glint {
+  0% { transform: translateX(-140px); opacity: 0; }
+  12% { opacity: 1; }
+  60% { opacity: 1; }
+  100% { transform: translateX(calc(100vw + 140px)); opacity: 0; }
+}
+
+@keyframes beam-orbit {
+  to { --beam-angle: 360deg; }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+@keyframes cue-drop {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(350%); }
+}
+
+@keyframes sheen-pan {
+  from { background-position: 120% 0; }
+  to { background-position: -20% 0; }
+}
+
+@keyframes marquee-x {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes dash-flow {
+  to { stroke-dashoffset: -20; }
+}

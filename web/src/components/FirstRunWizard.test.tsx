@@ -100,7 +100,7 @@ describe("FirstRunWizard", () => {
   it("renders the choose step with all four personas and a skip button", () => {
     render(<FirstRunWizard onDone={() => {}} />);
     expect(
-      screen.getByText("How do you want to use DebridStreamer?"),
+      screen.getByText("How do you want to use YAWF Stream?"),
     ).toBeInTheDocument();
     expect(screen.getByText("Just watch on this device")).toBeInTheDocument();
     expect(screen.getByText("Connect to a server")).toBeInTheDocument();
@@ -122,7 +122,7 @@ describe("FirstRunWizard", () => {
     // Go back returns to the persona chooser.
     await user.click(screen.getByRole("button", { name: "Go back" }));
     expect(
-      screen.getByText("How do you want to use DebridStreamer?"),
+      screen.getByText("How do you want to use YAWF Stream?"),
     ).toBeInTheDocument();
     // Skip anyway completes without touching settings.
     await user.click(screen.getByRole("button", { name: "Skip for now" }));
@@ -366,7 +366,7 @@ describe("FirstRunWizard", () => {
     expect(screen.getByText("Server address")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(
-      screen.getByText("How do you want to use DebridStreamer?"),
+      screen.getByText("How do you want to use YAWF Stream?"),
     ).toBeInTheDocument();
   });
 
@@ -461,7 +461,7 @@ describe("FirstRunWizard", () => {
     render(<FirstRunWizard onDone={() => {}} />);
     await user.click(screen.getByRole("button", { name: /Host for my family/i }));
     expect(
-      screen.getByText(/This computer can serve DebridStreamer/),
+      screen.getByText(/This computer can serve YAWF Stream/),
     ).toBeInTheDocument();
   });
 
@@ -497,7 +497,7 @@ describe("FirstRunWizard", () => {
     await user.click(screen.getByRole("button", { name: /Host for my family/i }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(
-      screen.getByText("How do you want to use DebridStreamer?"),
+      screen.getByText("How do you want to use YAWF Stream?"),
     ).toBeInTheDocument();
   });
 });

@@ -105,7 +105,7 @@ export function encodeHashList(entries: HashListEntry[]): string {
 export function decodeHashList(encoded: string): HashListEntry[] {
   const trimmed = encoded.trim();
   if (!trimmed.startsWith(PREFIX)) {
-    throw new Error("Not a DebridStreamer hash list.");
+    throw new Error("Not a YAWF Stream hash list.");
   }
   const b64 = trimmed.slice(PREFIX.length);
   if (b64.length > MAX_COMPRESSED_CHARS) {

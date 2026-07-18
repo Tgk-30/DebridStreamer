@@ -1,0 +1,93 @@
+import { motion, useReducedMotion } from 'framer-motion';
+import { AppWindow, Apple, Smartphone, Terminal } from 'lucide-react';
+import BackgroundVideo from '@/components/BackgroundVideo';
+import SectionHeading from '@/components/SectionHeading';
+import StreamRow from '@/components/StreamRow';
+import { PrimaryButton } from '@/components/Buttons';
+import { GITHUB_RELEASES_LATEST, VERSION } from '@/lib/site';
+
+const EASE_EXPO = [0.16, 1, 0.3, 1] as [number, number, number, number];
+
+const ROWS = [
+  {
+    icon: <Apple className="h-5 w-5" />,
+    title: 'macOS - Apple Silicon',
+    meta: [
+      { label: 'Instant', variant: 'instant' as const },
+      { label: 'notarized', variant: 'dim' as const },
+    ],
+    size: '.dmg',
+  },
+  {
+    icon: <AppWindow className="h-5 w-5" />,
+    title: 'Windows installer',
+    meta: [
+      { label: 'Instant', variant: 'instant' as const },
+      { label: 'signed updater', variant: 'dim' as const },
+    ],
+    size: '.msi',
+  },
+  {
+    icon: <Terminal className="h-5 w-5" />,
+    title: 'Linux - AppImage & .deb',
+    meta: [
+      { label: 'Instant', variant: 'instant' as const },
+      { label: 'signed updater', variant: 'dim' as const },
+    ],
+    size: '.AppImage',
+  },
+  {
+    icon: <Smartphone className="h-5 w-5" />,
+    title: 'Phone & tablet PWA',
+    meta: [{ label: 'from your server', variant: 'dim' as const }],
+  },
+];
+
+/** Section 5 - Download teaser: "Pick a stream" split with cascading StreamRows. */
+export default function DownloadTeaser() {
+  const reduced = useReducedMotion();
+
+  return (
+    <section className="relative overflow-hidden py-[clamp(88px,12vw,152px)]">
+      {/* bonus: sonar rings echoing the logo, low + scrimmed */}
+      <BackgroundVideo src="/debridstreamer/streamrings-loop.mp4" poster="/debridstreamer/streamrings-poster.jpg" opacity={0.22} />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'linear-gradient(180deg, var(--bg-0) 0%, color-mix(in srgb, var(--bg-0) 55%, transparent) 50%, var(--bg-0) 100%)',
+        }}
+      />
+
+      <div className="relative mx-auto grid max-w-content items-center gap-12 px-6 md:px-10 lg:grid-cols-[2fr_3fr]">
+        <SectionHeading
+          eyebrow="// DOWNLOAD"
+          title="Pick a stream."
+          lede="Downloads presented the way the app presents sources: fast, clear, instant."
+        >
+          <div className="mt-8">
+            <PrimaryButton to="/download">All downloads</PrimaryButton>
+          </div>
+          <p className="mt-5 font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">
+            Latest: {VERSION} · GitHub Releases
+          </p>
+        </SectionHeading>
+
+        <div className="flex flex-col gap-3">
+          {ROWS.map((row, i) => (
+            <motion.div
+              key={row.title}
+              initial={reduced ? { opacity: 0 } : { opacity: 0, x: 60 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true, amount: 0.6 }}
+              transition={{ duration: reduced ? 0.2 : 0.55, ease: EASE_EXPO, delay: i * 0.11 }}
+            >
+              <StreamRow icon={row.icon} title={row.title} meta={row.meta} size={row.size} href={GITHUB_RELEASES_LATEST} />
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}

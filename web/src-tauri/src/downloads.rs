@@ -695,7 +695,7 @@ pub async fn downloads_default_dir() -> Result<String, String> {
         .or_else(dirs::download_dir)
         .or_else(dirs::home_dir)
         .ok_or_else(|| "Could not resolve a user downloads directory.".to_string())?;
-    let path = base.join("DebridStreamer");
+    let path = base.join("YAWF Stream");
     tokio::fs::create_dir_all(&path)
         .await
         .map_err(|e| format!("Failed to create downloads directory: {e}"))?;

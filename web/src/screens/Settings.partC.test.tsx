@@ -161,7 +161,7 @@ describe("Settings · Desktop uninstall guidance", () => {
     const user = userEvent.setup();
     renderAt();
 
-    expect(await screen.findByText("Find DebridStreamer in the list and choose Uninstall.")).toBeInTheDocument();
+    expect(await screen.findByText("Find YAWF Stream in the list and choose Uninstall.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open Windows app settings" }));
     expect(openExternalURL).toHaveBeenCalledWith("ms-settings:appsfeatures");
   });
@@ -174,7 +174,7 @@ describe("Settings · Desktop uninstall guidance", () => {
       appimagePath: null,
     });
     const mac = renderAt();
-    expect(await screen.findByRole("button", { name: "Reveal DebridStreamer in Finder" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Reveal YAWF Stream in Finder" })).toBeInTheDocument();
     mac.unmount();
 
     getAppInstallInfo.mockResolvedValueOnce({
@@ -197,7 +197,7 @@ describe("Settings · Desktop uninstall guidance", () => {
     renderAt();
     // Kebab-cased: apt operates on the deb control file's Package field
     // (kebab-cased productName), not the verbatim-name .deb FILENAME.
-    expect(await screen.findByText("sudo apt remove debrid-streamer")).toBeInTheDocument();
+    expect(await screen.findByText("sudo apt remove yawf-stream")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Copy command" })).toBeInTheDocument();
   });
 });
@@ -209,6 +209,7 @@ describe("Settings · Factory reset dialog", () => {
     const serverRender = renderAt();
     await user.click(screen.getByRole("button", { name: "Erase all data on this device" }));
     const dialog = screen.getByRole("dialog", { name: "Erase all data on this device" });
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
     expect(
       within(dialog).getByText("Your household's data on the server is not touched."),
     ).toBeInTheDocument();
@@ -498,7 +499,7 @@ describe("Settings · DesktopHostPanel", () => {
     expect(await screen.findByText("Running")).toBeInTheDocument();
     await waitFor(() => expect(toDataURL).toHaveBeenCalled());
     expect(
-      await screen.findByAltText("QR code for the hosted DebridStreamer server"),
+      await screen.findByAltText("QR code for the hosted YAWF Stream server"),
     ).toBeInTheDocument();
 
     // The multi-URL chip list renders (urls.length > 1).

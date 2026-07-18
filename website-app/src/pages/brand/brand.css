@@ -1,0 +1,57 @@
+/* Brand page - page-scoped helpers + keyframes (all class-scoped, no globals). */
+
+/* slow hue-rotate shimmer on the hero's gradient "yours." - a teaser of the playground */
+.brandpg-shimmer {
+  background-image: var(--grad-stream);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: brandpg-hue-drift 8s linear infinite;
+}
+
+/* gradient token swatches: slow position drift */
+.brandpg-grad-drift {
+  background-size: 220% 220%;
+  animation: brandpg-grad-pan 8s var(--ease-soft) infinite alternate;
+}
+
+/* blueprint grid behind the logo construction stage */
+.brandpg-blueprint {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* clear-space dashed box breathing */
+.brandpg-clearspace {
+  animation: brandpg-dash-breathe 3.2s var(--ease-soft) infinite;
+}
+
+/* "busy light background" demo for the don'ts row */
+.brandpg-busy-bg {
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.16) 0 6px, transparent 6px 12px),
+    linear-gradient(120deg, var(--warm) 0%, var(--ink-2) 45%, var(--accent) 100%);
+}
+
+/* mono status line marker */
+.brandpg-status::before {
+  content: '\25B8\0020';
+  color: var(--brand);
+}
+
+@keyframes brandpg-hue-drift {
+  from { filter: hue-rotate(0deg); }
+  to { filter: hue-rotate(360deg); }
+}
+
+@keyframes brandpg-grad-pan {
+  from { background-position: 0% 40%; }
+  to { background-position: 100% 60%; }
+}
+
+@keyframes brandpg-dash-breathe {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}

@@ -1,9 +1,8 @@
-// Port of Sources/DebridStreamer/Views/Catalog/MoodDiscoveryView.swift (the
-// "Describe a vibe" AI mood strip - the app's differentiator).
+// Port of Sources/DebridStreamer/Views/Catalog/MoodDiscoveryView.swift.
 //
 // Header (wand glyph + "Describe a vibe" + subtitle), a prompt field with a
-// Curate button, and starter suggestion chips. The parent decides whether the
-// vibe is handled by AI recommendations or a regular Browse search fallback.
+// Curate button, and starter suggestion chips. The parent decides which
+// recommendation or browse service handles the request.
 
 import { useState } from "react";
 import { Icon } from "./Icon";
@@ -23,10 +22,7 @@ interface MoodStripProps {
   loading?: boolean;
   status?: string | null;
   error?: string | null;
-  /** Whether real AI curation is available (an AI provider is configured, or
-   *  Server Mode curates server-side). When false the strip is honest up
-   *  front - vibes open a filtered browse - instead of promising AI and
-   *  quietly doing something else. */
+  /** Whether a personalized curation service is available. */
   aiAvailable?: boolean;
   /** Search uses the same controls in a compact inline treatment. */
   variant?: "default" | "search";
@@ -53,13 +49,13 @@ export function MoodStrip({
   return (
     <section className={`mood${variant === "search" ? " mood-search" : ""}`}>
       <div className="mood-header">
-        <Icon name="sparkles" size={19} className="t-accent" />
+        <Icon name="discover" size={19} className="t-accent" />
         <div className="mood-heading">
           <div className="mood-title">Describe a vibe</div>
           <div className="mood-subtitle t-secondary">
             {aiAvailable
-              ? "AI turns your mood into a curated lineup"
-              : "Try a natural-language browse. Add an AI key in Settings for curated picks."}
+              ? "Turn a mood into a curated lineup"
+              : "Search by mood, era, genre, or theme"}
           </div>
         </div>
       </div>

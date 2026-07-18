@@ -31,7 +31,7 @@ const FLOWS: Record<BuildProfile, Step[]> = {
     {
       video: "aurora",
       title: "Your server is ready",
-      body: "You're self-hosting DebridStreamer. This build already has the media keys you were given, encrypted into the server - nothing to paste.",
+      body: "You're self-hosting YAWF Stream. This build already has the media keys you were given, encrypted into the server - nothing to paste.",
     },
     {
       video: "secure",
@@ -47,7 +47,7 @@ const FLOWS: Record<BuildProfile, Step[]> = {
   public: [
     {
       video: "aurora",
-      title: "Welcome to DebridStreamer",
+      title: "Welcome to YAWF Stream",
       body: "A streaming app you run yourself. To get going you'll add a few of your own keys - it only takes a minute.",
     },
     {

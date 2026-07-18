@@ -1,4 +1,4 @@
-# DebridStreamer Website
+# YAWF Stream Website
 
 Static download/marketing site for GitHub Pages or any static host.
 

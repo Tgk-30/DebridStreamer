@@ -36,7 +36,7 @@ export const THEMES: ThemeDef[] = [
   {
     id: "aurora",
     label: "Aurora",
-    description: "The cinematic dark glass default.",
+    description: "Violet glass with a brighter cinematic glow.",
     light: false,
     swatchBg: ["#0d0f1a", "#171729"],
     swatchAccent: "rgb(140,133,250)",
@@ -52,7 +52,7 @@ export const THEMES: ThemeDef[] = [
   {
     id: "midnight",
     label: "Midnight",
-    description: "Near-black, low saturation, minimal glow.",
+    description: "Neutral blue-black with restrained depth.",
     light: false,
     swatchBg: ["#06070a", "#0c0d12"],
     swatchAccent: "rgb(120,176,224)",

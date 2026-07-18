@@ -268,7 +268,7 @@ export function Downloads() {
         <EmptyState
           icon="debrid"
           title="Open the desktop app to download"
-          subtitle="Browser builds can stream but cannot write debrid files to your device. Open DebridStreamer for desktop to queue and manage downloads."
+          subtitle="Browser builds can stream but cannot write debrid files to your device. Open YAWF Stream for desktop to queue and manage downloads."
           actions={
             <a
               className="btn btn-prominent"

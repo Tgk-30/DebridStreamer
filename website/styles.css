@@ -1,4 +1,4 @@
-/* DebridStreamer site - composed from the app's own design system.
+/* YAWF Stream site, composed from the app's own design system.
    Tokens are ported 1:1 from web/src/theme/theme.css (midnight theme): the
    page is built to read as a screen OF the app - the hero is the app's
    Discover spotlight, features are a poster rail, and the download list is
@@ -12,14 +12,14 @@
      aurora reads against (QA-pinned; also the browser theme-color). */
   --site-bg: #050505;
   --bg-0: var(--site-bg);
-  --bg-1: #0d0f1a;
-  --bg-2: #171829;
-  --accent: rgb(140, 133, 250);
-  --accent-rgb: 140, 133, 250;
-  --accent-2: rgb(92, 189, 250);
-  --accent-2-rgb: 92, 189, 250;
-  --accent-3: rgb(250, 117, 189);
-  --accent-3-rgb: 250, 117, 189;
+  --bg-1: #0c0f14;
+  --bg-2: #121722;
+  --accent: rgb(56, 189, 248);
+  --accent-rgb: 56, 189, 248;
+  --accent-2: rgb(96, 165, 250);
+  --accent-2-rgb: 96, 165, 250;
+  --accent-3: rgb(148, 163, 184);
+  --accent-3-rgb: 148, 163, 184;
   --success: rgb(92, 217, 140);
   --success-rgb: 92, 217, 140;
 
@@ -40,7 +40,7 @@
 
   --max: 1180px;
 
-  --focus-ring: 0 0 0 3px rgba(140, 133, 250, 0.5);
+  --focus-ring: 0 0 0 3px rgba(56, 189, 248, 0.5);
 
   /* Type - the app speaks system display; the site adds a mono utility voice
      for the things self-hosters actually read: versions, sizes, commands. */
@@ -100,7 +100,7 @@ body::before {
   height: 66vw;
   left: -26vw;
   top: -30vh;
-  background: rgba(var(--accent-rgb), 0.16);
+  background: rgba(var(--accent-rgb), 0.1);
   filter: blur(150px);
 }
 body::after {
@@ -108,7 +108,7 @@ body::after {
   height: 56vw;
   right: -22vw;
   top: 12vh;
-  background: rgba(var(--accent-2-rgb), 0.10);
+  background: rgba(var(--accent-2-rgb), 0.07);
   filter: blur(160px);
 }
 
@@ -158,7 +158,7 @@ code {
   z-index: 50;
   backdrop-filter: blur(28px) saturate(1.3);
   -webkit-backdrop-filter: blur(28px) saturate(1.3);
-  background: rgba(13, 15, 26, 0.66);
+  background: rgba(8, 11, 16, 0.82);
   border-bottom: 0.75px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -1059,6 +1059,51 @@ code {
 }
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
+
+@media (min-width: 1100px) {
+  .hero {
+    display: grid;
+    min-height: calc(100svh - 64px);
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    align-items: center;
+    gap: clamp(38px, 4vw, 64px);
+    padding-top: clamp(54px, 6vw, 82px);
+    padding-bottom: 62px;
+  }
+
+  .hero-copy {
+    position: relative;
+    z-index: 2;
+  }
+
+  .hero h1 {
+    font-size: clamp(52px, 5.4vw, 76px);
+  }
+
+  .lede {
+    font-size: 16px;
+  }
+
+  .product-stage {
+    margin-top: 0;
+  }
+
+  .app-window-main {
+    width: 100%;
+  }
+
+  .app-window-left {
+    left: -22px;
+  }
+
+  .app-window-right {
+    right: -22px;
+  }
+
+  .proof-strip {
+    margin-top: 24px;
+  }
+}
 
 @media (max-width: 960px) {
   .split {

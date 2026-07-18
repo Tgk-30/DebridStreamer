@@ -253,7 +253,7 @@ export function FirstRunHost() {
           background: "var(--bg-1, #0a0b16)",
         }}
       >
-        <Spinner label="Starting DebridStreamer" />
+        <Spinner label="Starting YAWF Stream" />
       </div>
     );
   }

@@ -68,7 +68,7 @@ export function InstallPrompt({ onDismiss }: { onDismiss: () => void }) {
         <Icon name="upload" size={16} />
       </span>
       <div className="install-prompt-text">
-        <strong>Install DebridStreamer</strong>
+        <strong>Install YAWF Stream</strong>
         {kind === "ios" ? (
           <ol className="install-prompt-steps">
             <li>

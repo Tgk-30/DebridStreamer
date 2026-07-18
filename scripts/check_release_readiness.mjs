@@ -236,6 +236,19 @@ check(
   "website/ must contain the static download site",
 );
 check(
+  "Cinematic YAWF Stream website exists",
+  existsSync(join(root, "website-app/package.json")) &&
+    existsSync(join(root, "website-app/src/pages/home/Hero.tsx")) &&
+    existsSync(join(root, "website-app/public/hero-streams-loop.mp4")),
+  "website-app must contain the cinematic YAWF Stream Sites build and its hero media",
+);
+check(
+  "Release workflow validates the cinematic website",
+  /working-directory:\s*website-app/.test(releaseWorkflow) &&
+    /check_website_app\.mjs/.test(releaseWorkflow),
+  ".github/workflows/web-release.yml must build and validate website-app before packaging",
+);
+check(
   "Website product preview media exists",
   existsSync(join(root, "scripts/generate_website_media.mjs")) &&
     existsSync(join(root, "website/media/discover-desktop.png")) &&

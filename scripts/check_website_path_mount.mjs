@@ -1,13 +1,19 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const website = join(root, "website");
+const website = join(root, "website-app", "dist");
 const mount = "/debridstreamer/";
 const html = readFileSync(join(website, "index.html"), "utf8");
-const css = readFileSync(join(website, "styles.css"), "utf8");
+const assetsDir = join(website, "assets");
+const css = existsSync(assetsDir)
+  ? readdirSync(assetsDir)
+      .filter((name) => name.endsWith(".css"))
+      .map((name) => readFileSync(join(assetsDir, name), "utf8"))
+      .join("\n")
+  : "";
 const deployHelper = readFileSync(join(root, "scripts", "deploy_website_cloudflare.mjs"), "utf8");
 const failures = [];
 
@@ -46,9 +52,12 @@ function isLocalPath(value) {
 
 function assertMountSafe(value, context) {
   if (!isLocalPath(value)) return;
-  check(!value.startsWith("/"), `${context} uses a root-relative URL instead of a mounted-path-safe relative URL: ${value}`);
+  check(
+    !value.startsWith("/") || value.startsWith(mount),
+    `${context} resolves outside the mounted path: ${value}`,
+  );
 
-  const normalizedValue = value.split(/[?#]/)[0];
+  const normalizedValue = (value.startsWith(mount) ? value.slice(mount.length) : value).split(/[?#]/)[0];
   const resolvedFile = normalize(join(website, normalizedValue));
   check(resolvedFile.startsWith(website), `${context} escapes website/: ${value}`);
   check(existsSync(resolvedFile), `${context} missing local file: ${value}`);

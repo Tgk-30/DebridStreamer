@@ -478,12 +478,19 @@ describe("Detail base render", () => {
     // For a series the picker is NOT inline - it lives on its own page.
     expect(screen.queryByTestId("streampicker")).not.toBeInTheDocument();
     // Picking an episode opens the dedicated streams page.
-    await userEvent.click(screen.getByTestId("pick-episode"));
-    expect(screen.getByRole("dialog", { name: /Streams/ })).toBeInTheDocument();
+    const episodeTrigger = screen.getByTestId("pick-episode");
+    await userEvent.click(episodeTrigger);
+    const streamsDialog = screen.getByRole("dialog", { name: /Streams/ });
+    expect(streamsDialog).toBeInTheDocument();
+    expect(streamsDialog.parentElement).toBe(document.body);
+    expect(streamsDialog).toHaveFocus();
     expect(screen.getByTestId("streampicker")).toBeInTheDocument();
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: /Episodes/ })).toHaveFocus();
     // "‹ Episodes" back button returns to the episode list (closes the page).
     await userEvent.click(screen.getByRole("button", { name: /Episodes/ }));
     expect(screen.queryByTestId("streampicker")).not.toBeInTheDocument();
+    expect(episodeTrigger).toHaveFocus();
   });
 
   it("keeps the streams page open while Escape reaches the player", async () => {
@@ -524,17 +531,12 @@ describe("Detail base render", () => {
     expect(screen.getByTestId("analysis")).toBeInTheDocument();
   });
 
-  it("omits the AI analysis but shows an honest Settings hint when no analyzeTitle provider is configured", () => {
+  it("omits AI analysis and its upsell when no analyzeTitle provider is configured", () => {
     mockServices.ai = null;
     render(<Detail />);
     expect(screen.queryByTestId("analysis")).toBeNull();
-    // Never a silently-absent feature: a quiet hint + a link into Settings.
-    expect(
-      screen.getByText(/Add an AI provider in Settings/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Open Settings" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/Add an AI provider/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Settings" })).not.toBeInTheDocument();
   });
 
   it("reflects watchlist membership in the hero", () => {

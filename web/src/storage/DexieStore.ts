@@ -166,7 +166,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     this.on("blocked", () => {
       this.reportStorageIssue({
         kind: "blocked",
-        message: "Local storage upgrade is blocked by another open DebridStreamer tab.",
+        message: "Local storage upgrade is blocked by another open YAWF Stream tab.",
       });
     });
     this.openReady = this.startOpenAttempt();
@@ -250,7 +250,7 @@ export class DexieStore extends Dexie implements Store, SecretStore {
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("debridstreamer:storage-issue", { detail: issue }));
     }
-    console.warn("[DebridStreamer storage]", issue.message, issue.error ?? "");
+    console.warn("[YAWF Stream storage]", issue.message, issue.error ?? "");
   }
 
   private async pruneOldest<T>(table: Table<T, string>, index: string, cap: number): Promise<void> {

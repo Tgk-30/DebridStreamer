@@ -22,7 +22,7 @@ interface Step {
 const STEPS: Step[] = [
   {
     icon: "sparkles",
-    title: "Welcome to DebridStreamer",
+    title: "Welcome to YAWF Stream",
     body: "Your movies and shows, from every source, in one beautiful place. Here's the 60-second tour - including how to get your first stream playing.",
   },
   {

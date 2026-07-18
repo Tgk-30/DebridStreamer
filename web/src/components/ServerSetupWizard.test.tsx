@@ -291,7 +291,7 @@ describe("ServerSetupWizard", () => {
     expect(screen.getByText("You're all set")).toBeInTheDocument();
   });
 
-  it("done step hides Skip, lists the recap, and finishes via Open DebridStreamer", async () => {
+  it("done step hides Skip, lists the recap, and finishes via Open YAWF Stream", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
     render(<ServerSetupWizard onDone={onDone} />);
@@ -304,7 +304,7 @@ describe("ServerSetupWizard", () => {
     expect(
       screen.getByText(/Manage profiles and invites in Settings → Server\./),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Open DebridStreamer" }));
+    await user.click(screen.getByRole("button", { name: "Open YAWF Stream" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(markServerSetupComplete).toHaveBeenCalledTimes(1);
   });

@@ -24,31 +24,64 @@ export interface AvatarGroup {
 
 export const AVATAR_GROUPS: readonly AvatarGroup[] = [
   {
-    label: "Characters",
+    label: "People",
     emoji: [
-      "🧙", "🦸", "🦹", "🧛", "🧟", "🧜", "🧚", "🥷",
-      "🤖", "👽", "👻", "🤡", "🎃", "🐲", "🦄", "🧑‍🚀",
-      "🕵️", "🤠", "👑", "🧝",
+      "😀", "😎", "🤓", "🥳", "😴", "🙃", "🫠", "🤠",
+      "🕵️", "🧑‍🚀", "👩‍🚀", "🧑‍🎤", "👩‍🎨", "🧑‍🍳", "👑", "🥷",
     ],
   },
   {
-    label: "Faces",
-    emoji: ["😀", "😎", "🤓", "🥳", "😴", "🙃", "😈", "🫠"],
+    label: "Characters",
+    emoji: [
+      "🧙", "🦸", "🦹", "🧛", "🧟", "🧜", "🧚", "🧝",
+      "🤖", "👽", "👻", "🤡", "🎃", "🐲", "🦄", "😈",
+    ],
   },
   {
     label: "Animals",
     emoji: [
       "🦊", "🐱", "🐶", "🐼", "🐨", "🦁", "🐯", "🐸",
-      "🐵", "🦉", "🐺", "🦖", "🐙", "🦈",
+      "🐵", "🦉", "🐺", "🦖", "🐙", "🦈", "🐧", "🦝",
     ],
   },
   {
-    label: "Things",
+    label: "Cinema",
     emoji: [
-      "🎬", "🍿", "⭐", "🌙", "🚀", "🎮", "🎧", "🎸",
-      "📺", "🎯", "⚡", "🔥", "🌈", "💎", "🍕", "☕",
+      "🎬", "🍿", "📺", "🎞️", "🎥", "📽️", "🎭", "🎟️",
+      "⭐", "🌟", "🏆", "🚀", "🛸", "🏰", "🗺️", "🔮",
     ],
   },
+  {
+    label: "Symbols",
+    emoji: [
+      "🌙", "☀️", "⚡", "🔥", "🌈", "💎", "🎯", "🎮",
+      "🎧", "🎸", "🍕", "☕", "🌊", "🍀", "🪐", "🧿",
+    ],
+  },
+];
+
+export interface ProfileColor {
+  label: string;
+  value: string;
+}
+
+export const PROFILE_COLORS: readonly ProfileColor[] = [
+  { label: "Sky", value: "#0ea5e9" },
+  { label: "Blue", value: "#3b82f6" },
+  { label: "Indigo", value: "#6366f1" },
+  { label: "Violet", value: "#8b5cf6" },
+  { label: "Purple", value: "#a855f7" },
+  { label: "Rose", value: "#f43f5e" },
+  { label: "Coral", value: "#fb7185" },
+  { label: "Orange", value: "#f97316" },
+  { label: "Amber", value: "#f59e0b" },
+  { label: "Lime", value: "#84cc16" },
+  { label: "Green", value: "#22c55e" },
+  { label: "Emerald", value: "#10b981" },
+  { label: "Teal", value: "#14b8a6" },
+  { label: "Slate", value: "#64748b" },
+  { label: "Graphite", value: "#475569" },
+  { label: "Stone", value: "#78716c" },
 ];
 
 /** Every built-in choice, flattened - for validation and simple pickers. */
@@ -58,6 +91,7 @@ export const PROFILE_AVATARS: readonly string[] = AVATAR_GROUPS.flatMap(
 
 /** The default for a newly created profile. */
 export const DEFAULT_PROFILE_AVATAR = "😀";
+export const DEFAULT_PROFILE_COLOR = "#0ea5e9";
 
 /** A stored avatar can be an emoji OR a user-supplied image URL; only the latter
  * renders as an <img>. Shared so every surface agrees on what counts as a photo

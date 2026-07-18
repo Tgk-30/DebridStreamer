@@ -841,7 +841,7 @@ function WebviewPlayer({
         mediaSession.metadata = new MediaMetadata({
           title,
           artist: mediaArtist,
-          album: "DebridStreamer",
+          album: "YAWF Stream",
           artwork: mediaArtworkUrl
             ? [{ src: mediaArtworkUrl, sizes: "512x512", type: "image/png" }]
             : [],

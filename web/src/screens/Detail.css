@@ -182,11 +182,16 @@
 .episode-streams {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 1000;
   display: flex;
   justify-content: center;
-  padding: clamp(16px, 4vw, 48px) 16px;
+  padding:
+    max(clamp(16px, 4vw, 48px), env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(clamp(16px, 4vw, 48px), env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
   overflow-y: auto;
+  overscroll-behavior: contain;
   /* Opaque base, no full-viewport filter. */
   background: var(--bg-1);
   animation: episode-streams-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
@@ -200,6 +205,7 @@
 }
 .episode-streams-panel {
   width: min(880px, 100%);
+  min-width: 0;
   align-self: flex-start;
 }
 .episode-streams-head {
@@ -211,6 +217,7 @@
   gap: 14px;
   margin-bottom: 18px;
   padding: 6px 0 12px;
+  background: linear-gradient(var(--bg-1) 82%, transparent);
 }
 .episode-streams-back {
   flex: 0 0 auto;

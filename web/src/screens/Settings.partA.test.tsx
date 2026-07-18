@@ -148,7 +148,7 @@ describe("Settings shell", () => {
 
   it("shows the app version on the landing shell", async () => {
     renderAt();
-    expect(await screen.findByText("DebridStreamer vtest-version")).toBeInTheDocument();
+    expect(await screen.findByText("YAWF Stream vtest-version")).toBeInTheDocument();
   });
 
   it("hides the Server tab in Local Mode", () => {
@@ -168,8 +168,8 @@ describe("Settings shell", () => {
       debridTokens: [{ service: "real_debrid", apiToken: "tok" }],
     };
     renderAt();
-    // Appearance is the default tab - its quick-profile card renders.
-    expect(screen.getByText("Quick profile")).toBeInTheDocument();
+    // Appearance is the default tab and starts with visual style choices.
+    expect(screen.getByText("Choose a style")).toBeInTheDocument();
     // Sources tab chip is present in advanced mode.
     expect(document.querySelector('button[data-tab="sources"]')).not.toBeNull();
   });
@@ -178,7 +178,7 @@ describe("Settings shell", () => {
     // Unconfigured (no debrid tokens) → land on the critical path, not the
     // Appearance dial-park.
     renderAt();
-    expect(screen.queryByText("Quick profile")).toBeNull();
+    expect(screen.queryByText("Choose a style")).toBeNull();
     expect(
       document.querySelector('button[data-tab="install"]')?.className ?? "",
     ).toContain("is-active");
@@ -571,8 +571,7 @@ describe("Settings · Appearance", () => {
   it("applies a quick profile through updateSettings (instant apply)", async () => {
     const user = userEvent.setup();
     renderAt("appearance");
-    const picker = screen.getByRole("combobox", { name: /Profile/ });
-    await user.selectOptions(picker, "compact-control");
+    await user.click(screen.getByRole("button", { name: "Apply Compact control style" }));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ theme: "midnight", appearanceDensity: "compact" }),
     );
@@ -610,8 +609,7 @@ describe("Settings · Appearance", () => {
   it("selecting a theme preset applies the theme", async () => {
     const user = userEvent.setup();
     renderAt("appearance");
-    // The Midnight theme card.
-    await user.click(screen.getByRole("button", { name: /Midnight/ }));
+    await user.click(screen.getByRole("button", { name: "Apply Midnight Studio style" }));
     expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ theme: "midnight" }));
   });
 

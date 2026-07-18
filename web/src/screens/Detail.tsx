@@ -12,6 +12,7 @@
 // debrid; without them the picker shows a clear empty state.
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAppStore } from "../store/AppStore";
 import { useDetail } from "../data/detail";
 import { useStreams } from "../data/streams";
@@ -477,28 +478,27 @@ export function Detail() {
     }
   };
   const streamsBackRef = useRef<HTMLButtonElement>(null);
-  // Modal behavior for the episode-streams page: Escape closes it first
-  // (capture phase, before Detail's own Escape), focus moves into the page and
-  // the detail content behind is inerted so keyboard users can't reach covered
-  // controls; focus is restored to the opener on close. While a player is
-  // mounted, Escape belongs to the player and this modal behavior is suspended.
+  // Each portal owns its own modal focus scope. Suspending the outer Detail
+  // scope while the streams page is open prevents its Tab handler from pulling
+  // focus back out of the body-level portal.
+  const rootRef = useModalA11y<HTMLDivElement>(
+    closeDetail,
+    player == null && !trailerOpen,
+    streamsPageOpen,
+  );
+  const streamsPageRef = useModalA11y<HTMLDivElement>(
+    () => setStreamsPageOpen(false),
+    streamsPageOpen && player == null,
+  );
+  // The streams portal is outside .detail in the DOM, so explicitly inert the
+  // covered content. Focus, Escape, Tab containment, and focus restoration are
+  // handled by useModalA11y. While a player is mounted, the player owns Escape.
   useEffect(() => {
     if (!streamsPageOpen || player != null) return;
-    const opener = document.activeElement as HTMLElement | null;
     const inner = rootRef.current?.querySelector<HTMLElement>(".detail-inner");
     inner?.setAttribute("inert", "");
-    streamsBackRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopImmediatePropagation();
-        setStreamsPageOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
     return () => {
-      window.removeEventListener("keydown", onKey, true);
       inner?.removeAttribute("inert");
-      opener?.focus?.();
     };
   }, [player, streamsPageOpen]);
   useEffect(() => {
@@ -544,13 +544,6 @@ export function Detail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPlayPending, streams.loading, streams.rows, selected, settings]);
 
-  // Focus, Escape-to-close, and tab containment are shared by all modal
-  // surfaces. The episode streams page above intercepts Escape first so it can
-  // return to the episode picker rather than closing this overlay.
-  const rootRef = useModalA11y<HTMLDivElement>(
-    closeDetail,
-    player == null && !trailerOpen,
-  );
   // Server Mode "title request" state for this detail. Detail doesn't remount
   // between titles (openDetail just swaps detailItem), so reset on id change.
   const [requestState, setRequestState] = useState<
@@ -1517,29 +1510,10 @@ export function Detail() {
         />
       )}
 
-      {/* AI "Will I like this?" - always present, honestly gated. With a local AI
-          provider it renders the verdict card; without one it shows a quiet hint
-          and a link into Settings rather than silently vanishing. Server-Mode
-          analyzeTitle parity is out of scope (local-Dexie path only). */}
-      {item &&
-        (services.ai?.analyzeTitle != null ? (
-          <DetailAnalysis item={item} provider={services.ai} />
-        ) : (
-          <p className="detail-ai-hint t-secondary">
-            <Icon name="sparkles" size={14} className="t-accent" />
-            Add an AI provider in Settings to get a personal verdict on whether
-            you'd like this.
-            <button
-              type="button"
-              className="detail-ai-hint-link"
-              onClick={() => {
-                navigate("settings");
-              }}
-            >
-              Open Settings
-            </button>
-          </p>
-        ))}
+      {/* Personal analysis stays quiet until the optional provider is ready. */}
+      {item && services.ai?.analyzeTitle != null && (
+        <DetailAnalysis item={item} provider={services.ai} />
+      )}
 
       {/* Season/episode picker (series only). Selecting an episode re-drives
           the stream search below; falls back to a plain stepper without TMDB. */}
@@ -1597,12 +1571,14 @@ export function Detail() {
 
       {/* Series streams live on their own page (opened by picking an episode),
           instead of loading inline at the bottom of Detail. */}
-      {isSeries && streamsPageOpen && selected != null && (
+      {isSeries && streamsPageOpen && selected != null && createPortal(
         <div
+          ref={streamsPageRef}
           className="episode-streams"
           role="dialog"
           aria-modal="true"
           aria-label={`Streams - ${episodeLabel(selected.season, selected.episode)}`}
+          tabIndex={-1}
         >
           <div className="episode-streams-panel">
             <div className="episode-streams-head">
@@ -1632,7 +1608,8 @@ export function Detail() {
               />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {player && (
