@@ -34,6 +34,17 @@
 .cal-dot--episode { background: rgb(var(--accent-rgb)); }
 .cal-dot--movie { background: #d6a85f; }
 
+.cal-error-actions {
+  display: grid;
+  width: min(280px, 100%);
+  gap: 12px;
+}
+
+.cal-error-actions .btn {
+  justify-content: center;
+  width: 100%;
+}
+
 .cal-controls {
   display: flex;
   align-items: center;

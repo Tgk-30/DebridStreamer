@@ -10,6 +10,8 @@ import { SettingsSearch } from "./SettingsSearch";
 const ALL = new Set([
   "appearance",
   "playback",
+  "privacy",
+  "profiles",
   "keys",
   "debrid",
   "sources",
@@ -46,7 +48,8 @@ describe("SettingsSearch", () => {
     );
     // "debrid" lives on the Providers tab, which isn't visible here.
     await user.type(screen.getByLabelText("Search settings"), "debrid");
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Debrid provider/ })).toBeNull();
+    expect(screen.getByText("No settings match “debrid”")).toBeInTheDocument();
   });
 
   it("shows nothing for a query shorter than 2 characters", async () => {
@@ -54,5 +57,29 @@ describe("SettingsSearch", () => {
     render(<SettingsSearch onJump={vi.fn()} visibleTabs={ALL} />);
     await user.type(screen.getByLabelText("Search settings"), "a");
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("searches profile appearance and protection controls", async () => {
+    const onJump = vi.fn();
+    const user = userEvent.setup();
+    render(<SettingsSearch onJump={onJump} visibleTabs={ALL} />);
+
+    await user.type(screen.getByLabelText("Search settings"), "avatar");
+    await user.click(screen.getByRole("button", { name: /Avatar and profile color/ }));
+
+    expect(onJump).toHaveBeenCalledWith("profiles");
+  });
+
+  it("shows a clear action when no settings match", async () => {
+    const user = userEvent.setup();
+    render(<SettingsSearch onJump={vi.fn()} visibleTabs={ALL} />);
+
+    const input = screen.getByLabelText("Search settings");
+    await user.type(input, "definitely missing");
+    expect(screen.getByText("No settings match “definitely missing”")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(input).toHaveValue("");
+    expect(screen.queryByText(/No settings match/)).toBeNull();
   });
 });

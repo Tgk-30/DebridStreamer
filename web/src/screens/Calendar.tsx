@@ -182,13 +182,16 @@ export function Calendar() {
     calendar: episodeCalendar,
     openDetail,
     navigate,
+    openSettingsSection,
     markCalendarSeen,
+    refreshCalendar,
     services,
   } = useAppStore();
+  const [movieRefreshKey, setMovieRefreshKey] = useState(0);
   // Movie release pages are not useful to the NavRail, so load them only after
   // the Calendar screen itself mounts. Episodes remain store-owned for the
   // app-wide new-release badge.
-  const movieCalendar = useMovieReleaseCalendar(services?.tmdb);
+  const movieCalendar = useMovieReleaseCalendar(services?.tmdb, movieRefreshKey);
   const state = useMemo(
     () => ({
       ...episodeCalendar,
@@ -272,6 +275,11 @@ export function Calendar() {
   }, [selectedDate, today, visibleMonth]);
 
   const openEntry = (entry: CalendarEntry) => openDetail(entry.media);
+  const openApiSettings = () => openSettingsSection("keys");
+  const retryCalendar = () => {
+    refreshCalendar();
+    setMovieRefreshKey((current) => current + 1);
+  };
   const shiftMonth = (delta: number) => {
     setVisibleMonth((current) =>
       new Date(current.getFullYear(), current.getMonth() + delta, 1),
@@ -315,8 +323,8 @@ export function Calendar() {
           subtitle="The calendar uses TMDB for episode air dates and movie release dates."
           note="Add a key in Settings, then follow a TV show to track its episodes."
           actions={(
-            <button type="button" className="btn btn-prominent" onClick={() => navigate("settings")}>
-              Open Settings
+            <button type="button" className="btn btn-prominent" onClick={openApiSettings}>
+              API settings
             </button>
           )}
         />
@@ -326,12 +334,27 @@ export function Calendar() {
           title="Couldn't load the release calendar"
           subtitle="We couldn't reach TMDB for release dates. Check your connection and try again."
           note={state.error}
+          actions={(
+            <div className="cal-error-actions">
+              <button type="button" className="btn btn-prominent" onClick={retryCalendar}>
+                Try again
+              </button>
+              <button type="button" className="btn" onClick={openApiSettings}>
+                API settings
+              </button>
+            </div>
+          )}
         />
       ) : state.entries.length === 0 && !state.hasSeries ? (
         <EmptyState
           icon="calendar"
           title="No followed shows yet"
           subtitle="Follow a TV series from its detail page to add its episode schedule here."
+          actions={(
+            <button type="button" className="btn" onClick={() => navigate("discover")}>
+              Browse shows
+            </button>
+          )}
         />
       ) : state.entries.length === 0 ? (
         <EmptyState

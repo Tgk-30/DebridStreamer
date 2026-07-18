@@ -17,12 +17,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { defaultSettings, type AppSettings } from "../data/settings";
+import type { SettingsSection } from "../lib/settingsNavigation";
 
 // --- mutable mock state -----------------------------------------------------
 
 let mockSettings: AppSettings = defaultSettings();
 let mockSimpleMode = false;
+let mockPendingSettingsSection: SettingsSection | null = null;
 const updateSettings = vi.fn();
+const clearPendingSettingsSection = vi.fn(() => {
+  mockPendingSettingsSection = null;
+});
 const getAppVersion = vi.hoisted(() => vi.fn(async () => "test-version"));
 const setSmartPreloadEnabled = vi.fn();
 const isTraktConnected = vi.hoisted(() => vi.fn());
@@ -37,6 +42,8 @@ vi.mock("../store/AppStore", () => ({
     settings: mockSettings,
     updateSettings,
     simpleMode: mockSimpleMode,
+    pendingSettingsSection: mockPendingSettingsSection,
+    clearPendingSettingsSection,
   }),
   useSimpleMode: () => mockSimpleMode,
 }));
@@ -117,8 +124,10 @@ function renderAt(tab?: string, seed?: Partial<AppSettings>) {
 beforeEach(() => {
   mockSettings = defaultSettings();
   mockSimpleMode = false;
+  mockPendingSettingsSection = null;
   smartPreloadOn = false;
   updateSettings.mockClear();
+  clearPendingSettingsSection.mockClear();
   getAppVersion.mockClear();
   setSmartPreloadEnabled.mockClear();
   isTraktConnected.mockReset();
@@ -211,6 +220,17 @@ describe("Settings shell", () => {
     expect(
       document.querySelector('button[data-tab="install"]')?.className ?? "",
     ).toContain("is-active");
+  });
+
+  it("opens a one-time section requested by another screen", () => {
+    mockPendingSettingsSection = "keys";
+
+    renderAt();
+
+    expect(
+      document.querySelector('button[data-tab="keys"]')?.className ?? "",
+    ).toContain("is-active");
+    expect(clearPendingSettingsSection).toHaveBeenCalledTimes(1);
   });
 
   it("collapses to the simple tab set in Simple mode (no Sources/Updates)", () => {

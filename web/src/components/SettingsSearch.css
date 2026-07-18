@@ -67,3 +67,38 @@
   flex: 0 0 auto;
   font-size: 12px;
 }
+
+.settings-search-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.settings-search-empty > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-search-empty button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: rgb(var(--accent-rgb));
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.settings-search-empty button:hover {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  background: rgba(var(--accent-rgb), 0.1);
+}

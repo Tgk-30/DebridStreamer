@@ -19,7 +19,9 @@ interface SearchEntry {
 const TAB_LABEL: Record<string, string> = {
   appearance: "Appearance",
   playback: "Playback",
+  privacy: "Privacy",
   install: "Install & setup",
+  profiles: "Profiles",
   updates: "Updates",
   server: "Server",
   keys: "API keys",
@@ -40,6 +42,10 @@ const SEARCH_INDEX: SearchEntry[] = [
   { label: "External player", tab: "playback", keywords: "vlc iina mpv" },
   { label: "Auto-advance episodes", tab: "playback", keywords: "next up autoplay" },
   { label: "Rating scale", tab: "playback", keywords: "stars ten hundred rate" },
+  { label: "Local data and privacy", tab: "privacy", keywords: "storage network device erase" },
+  { label: "Profile name", tab: "profiles", keywords: "account user household" },
+  { label: "Avatar and profile color", tab: "profiles", keywords: "icon portrait palette" },
+  { label: "Profile password", tab: "profiles", keywords: "pin lock protection sign in" },
   { label: "TMDB key", tab: "keys", keywords: "api metadata catalog" },
   { label: "OMDb key", tab: "keys", keywords: "api ratings" },
   { label: "AI provider", tab: "keys", keywords: "assistant openai anthropic ollama" },
@@ -58,9 +64,10 @@ export function SettingsSearch({
   visibleTabs: Set<string>;
 }) {
   const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim();
 
   const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizedQuery.toLowerCase();
     if (q.length < 2) return [];
     return SEARCH_INDEX.filter(
       (e) =>
@@ -68,7 +75,7 @@ export function SettingsSearch({
         (e.label.toLowerCase().includes(q) ||
           (e.keywords ?? "").toLowerCase().includes(q)),
     ).slice(0, 6);
-  }, [query, visibleTabs]);
+  }, [normalizedQuery, visibleTabs]);
 
   return (
     <div className="settings-search">
@@ -81,25 +88,34 @@ export function SettingsSearch({
         onChange={(e) => setQuery(e.target.value)}
         aria-label="Search settings"
       />
-      {results.length > 0 && (
+      {normalizedQuery.length >= 2 && (
         <ul className="settings-search-results glass-raised">
-          {results.map((r) => (
-            <li key={r.label}>
-              <button
-                type="button"
-                className="settings-search-result"
-                onClick={() => {
-                  onJump(r.tab);
-                  setQuery("");
-                }}
-              >
-                <span className="settings-search-result-label">{r.label}</span>
-                <span className="settings-search-result-tab t-secondary">
-                  {TAB_LABEL[r.tab] ?? r.tab}
-                </span>
+          {results.length > 0 ? (
+            results.map((r) => (
+              <li key={r.label}>
+                <button
+                  type="button"
+                  className="settings-search-result"
+                  onClick={() => {
+                    onJump(r.tab);
+                    setQuery("");
+                  }}
+                >
+                  <span className="settings-search-result-label">{r.label}</span>
+                  <span className="settings-search-result-tab t-secondary">
+                    {TAB_LABEL[r.tab] ?? r.tab}
+                  </span>
+                </button>
+              </li>
+            ))
+          ) : (
+            <li className="settings-search-empty">
+              <span>No settings match “{normalizedQuery}”</span>
+              <button type="button" onClick={() => setQuery("")}>
+                Clear
               </button>
             </li>
-          ))}
+          )}
         </ul>
       )}
     </div>

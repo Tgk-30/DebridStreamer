@@ -120,6 +120,7 @@ import {
 } from "../lib/tauri";
 import { getDownloadsBridge } from "../lib/downloadsBridge";
 import { getAppVersion } from "../lib/appVersion";
+import type { SettingsSection } from "../lib/settingsNavigation";
 import {
   DOWNLOADS_DIRECTORY_SETTING,
   downloadsDirectory,
@@ -387,17 +388,7 @@ function appearanceProfileMatches(
   );
 }
 
-type Tab =
-  | "keys"
-  | "debrid"
-  | "sources"
-  | "appearance"
-  | "playback"
-  | "privacy"
-  | "updates"
-  | "install"
-  | "server"
-  | "profiles";
+type Tab = SettingsSection;
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "appearance", label: "Appearance" },
@@ -689,16 +680,27 @@ async function serverRequest<T>(
 }
 
 export function Settings() {
-  const { settings, updateSettings, simpleMode, activeProfile, profiles, multiUserEnabled, refreshProfiles } = useAppStore();
+  const {
+    settings,
+    updateSettings,
+    simpleMode,
+    activeProfile,
+    profiles,
+    multiUserEnabled,
+    refreshProfiles,
+    pendingSettingsSection,
+    clearPendingSettingsSection,
+  } = useAppStore();
   const serverSession = useServerSession();
   const setServerSession = useSetServerSession();
   // Land where the user's next step is: an unconfigured profile (no debrid
   // token yet) opens on Install & setup - the critical path - instead of the
   // Appearance dial-park. Configured profiles keep the familiar default.
   const [tab, setTab] = useState<Tab>(() =>
-    settings.debridTokens.some((t) => t.apiToken.trim().length > 0)
+    pendingSettingsSection ??
+    (settings.debridTokens.some((t) => t.apiToken.trim().length > 0)
       ? "appearance"
-      : "install",
+      : "install"),
   );
   // Edit a local draft; "Save" commits it through the store.
   const [draft, setDraft] = useState<AppSettings>(settings);
@@ -706,6 +708,10 @@ export function Settings() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const settingsScreenRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (pendingSettingsSection != null) clearPendingSettingsSection();
+  }, [clearPendingSettingsSection, pendingSettingsSection]);
 
   // Every category is its own page-sized task. A long category must not hand
   // its scroll position to the next one, otherwise the next category opens in

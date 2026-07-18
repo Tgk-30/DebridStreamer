@@ -61,6 +61,7 @@ import { isServerMode } from "../lib/serverMode";
 import { setNetworkMode } from "../lib/networkPolicy";
 import { useServerSession } from "../lib/ServerSessionContext";
 import { verifyPassword } from "../lib/passwordHash";
+import type { SettingsSection } from "../lib/settingsNavigation";
 import {
   dbNameForProfile,
   ensureDefaultProfile,
@@ -180,6 +181,9 @@ export interface AppStore {
   // Routing
   route: ScreenId;
   navigate: (route: ScreenId, options?: { replace?: boolean }) => void;
+  pendingSettingsSection: SettingsSection | null;
+  openSettingsSection: (section: SettingsSection) => void;
+  clearPendingSettingsSection: () => void;
 
   // Detail overlay
   detailItem: MediaPreview | null;
@@ -244,6 +248,7 @@ export interface AppStore {
   calendar: CalendarState;
   calendarLastSeenAt: number | null;
   markCalendarSeen: () => void;
+  refreshCalendar: () => void;
 
   // Watchlist + History (storage-port backed)
   watchlist: MediaPreview[];
@@ -438,6 +443,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   // false) isn't racily clobbered by a late hydration setSettings().
   const [hydrated, setHydrated] = useState(false);
   const [calendarLastSeenAt, setCalendarLastSeenAt] = useState<number | null>(null);
+  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
+  const [pendingSettingsSection, setPendingSettingsSection] = useState<SettingsSection | null>(null);
   const [activeProfile, setActiveProfile] = useState<LocalProfile | null>(null);
   const [profiles, setProfiles] = useState<LocalProfile[]>([]);
   const [multiUserEnabled, setMultiUserEnabledState] = useState(true);
@@ -639,7 +646,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         .join(","),
     [watchlist],
   );
-  const calendar = useCalendar(services.tmdb, calendarSeriesSignature);
+  const calendar = useCalendar(services.tmdb, calendarSeriesSignature, calendarRefreshKey);
 
   const openBrowse = useCallback((ctx: BrowseContext) => {
     setBrowseContext(ctx);
@@ -906,6 +913,15 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     if (next === "history") void refreshHistory();
   }, [pushNavigationHistory, refreshHistory]);
 
+  const openSettingsSection = useCallback((section: SettingsSection) => {
+    setPendingSettingsSection(section);
+    navigate("settings");
+  }, [navigate]);
+
+  const clearPendingSettingsSection = useCallback(() => {
+    setPendingSettingsSection(null);
+  }, []);
+
   // Drive the background auto-resolve scheduler. It only does work under Tauri
   // with debrid configured (gated internally); here we (re)start it whenever
   // debrid availability changes and refresh the cached-resolution badge state on
@@ -1040,6 +1056,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       // Best effort: if persistence is unavailable, the current session still
       // clears the in-app indicator and a later Calendar visit can retry.
     });
+  }, []);
+
+  const refreshCalendar = useCallback(() => {
+    setCalendarRefreshKey((current) => current + 1);
   }, []);
 
   // Coalesce concurrent watchlist mutations of the SAME item: each
@@ -1215,6 +1235,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     () => ({
       route,
       navigate,
+      pendingSettingsSection,
+      openSettingsSection,
+      clearPendingSettingsSection,
       detailItem,
       openDetail,
       closeDetail,
@@ -1245,6 +1268,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       calendar,
       calendarLastSeenAt,
       markCalendarSeen,
+      refreshCalendar,
       watchlist,
       history,
       continueWatching,
@@ -1265,6 +1289,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [
       route,
       navigate,
+      pendingSettingsSection,
+      openSettingsSection,
+      clearPendingSettingsSection,
       detailItem,
       openDetail,
       closeDetail,
@@ -1295,6 +1322,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       calendar,
       calendarLastSeenAt,
       markCalendarSeen,
+      refreshCalendar,
       watchlist,
       history,
       continueWatching,

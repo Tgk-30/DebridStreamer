@@ -12,11 +12,20 @@ import type { CalendarEntry, CalendarState } from "../data/calendar";
 
 const openDetail = vi.fn();
 const navigate = vi.fn();
+const openSettingsSection = vi.fn();
 const markCalendarSeen = vi.fn();
+const refreshCalendar = vi.fn();
 let calendarState: CalendarState;
 
 vi.mock("../store/AppStore", () => ({
-  useAppStore: () => ({ calendar: calendarState, openDetail, navigate, markCalendarSeen }),
+  useAppStore: () => ({
+    calendar: calendarState,
+    openDetail,
+    navigate,
+    openSettingsSection,
+    markCalendarSeen,
+    refreshCalendar,
+  }),
 }));
 
 import { Calendar } from "./Calendar";
@@ -71,7 +80,9 @@ beforeEach(() => {
   globalThis.localStorage?.clear();
   openDetail.mockClear();
   navigate.mockClear();
+  openSettingsSection.mockClear();
   markCalendarSeen.mockClear();
+  refreshCalendar.mockClear();
   calendarState = baseState();
 });
 
@@ -114,15 +125,34 @@ describe("Calendar states", () => {
     expect(screen.getByText("TMDB down")).toBeInTheDocument();
   });
 
-  it("opens Settings from the missing TMDB key state", async () => {
+  it("opens the API key section from the missing TMDB key state", async () => {
     // The server can report the metadata capability before the active profile
     // has a usable key, so the explicit setup error must win over hasTMDB.
     calendarState = baseState({ hasTMDB: true, error: "Configure a TMDB API key." });
     render(<Calendar />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Open Settings" }));
-    expect(navigate).toHaveBeenCalledWith("settings");
+    await userEvent.click(screen.getByRole("button", { name: "API settings" }));
+    expect(openSettingsSection).toHaveBeenCalledWith("keys");
     expect(screen.queryByText("Couldn't load the release calendar")).toBeNull();
+  });
+
+  it("offers recovery and API settings when a calendar request fails", async () => {
+    calendarState = baseState({ error: "TMDB down" });
+    render(<Calendar />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refreshCalendar).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "API settings" }));
+    expect(openSettingsSection).toHaveBeenCalledWith("keys");
+  });
+
+  it("links the no-followed-shows state back to Discover", async () => {
+    calendarState = baseState({ hasSeries: false });
+    render(<Calendar />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Browse shows" }));
+    expect(navigate).toHaveBeenCalledWith("discover");
   });
 });
 

@@ -195,6 +195,7 @@ const EMPTY_SERIES_SIGNATURE = "";
 export function useCalendar(
   tmdb: TMDBService | null,
   seriesWatchlistSignature: string = EMPTY_SERIES_SIGNATURE,
+  refreshKey = 0,
 ): CalendarState {
   const serverMode = isServerMode();
   const [state, setState] = useState<CalendarState>({
@@ -267,7 +268,7 @@ export function useCalendar(
     return () => {
       cancelled = true;
     };
-  }, [tmdb, serverMode, seriesWatchlistSignature]);
+  }, [tmdb, serverMode, seriesWatchlistSignature, refreshKey]);
 
   return state;
 }
@@ -275,6 +276,7 @@ export function useCalendar(
 /** Load TMDB movie releases only while the Calendar route is mounted. */
 export function useMovieReleaseCalendar(
   tmdb: TMDBService | null | undefined,
+  refreshKey = 0,
 ): MovieReleaseCalendarState {
   const serverMode = isServerMode();
   const hasTMDB = tmdb != null || serverMode;
@@ -320,7 +322,7 @@ export function useMovieReleaseCalendar(
     return () => {
       cancelled = true;
     };
-  }, [tmdb, serverMode, hasTMDB]);
+  }, [tmdb, serverMode, hasTMDB, refreshKey]);
 
   return state;
 }
