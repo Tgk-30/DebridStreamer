@@ -121,6 +121,15 @@ jobs:
       - name: Website static QA
         run: node scripts/check_website_static.mjs
 
+      - name: Website app - install and build
+        working-directory: website-app
+        run: |
+          npm ci
+          npm run build
+
+      - name: Website app QA
+        run: node scripts/check_website_app.mjs
+
       - name: Website mounted-path QA
         run: node scripts/check_website_path_mount.mjs
 
