@@ -772,6 +772,7 @@ function WebviewPlayer({
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [paused, setPaused] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   // Set when the video reaches its natural end - drives the Up-next card.
   const [ended, setEnded] = useState(false);
@@ -1173,9 +1174,13 @@ function WebviewPlayer({
         scrobblePlaybackStart({ ...scrobbleContext, progressPct: progressPct() });
       }
     };
+    const onVolumeChange = () => {
+      setMuted(video.muted || video.volume === 0);
+    };
     setEnded(false); // a new URL is a new playback - clear any stale end state
     setPaused(false);
     setPlaying(false);
+    onVolumeChange();
     onPausedChange(false);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMeta);
@@ -1184,6 +1189,7 @@ function WebviewPlayer({
     video.addEventListener("ended", onEnded);
     video.addEventListener("pause", onPause);
     video.addEventListener("play", onPlay);
+    video.addEventListener("volumechange", onVolumeChange);
     return () => {
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMeta);
@@ -1192,6 +1198,7 @@ function WebviewPlayer({
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("play", onPlay);
+      video.removeEventListener("volumechange", onVolumeChange);
       if (onProgressRef.current != null && video.currentTime > 0) report();
       if (scrobbleContext != null) scrobblePlaybackStop(scrobbleContext, progressPct());
     };
@@ -1438,6 +1445,20 @@ function WebviewPlayer({
     void videoRef.current?.play();
   }, []);
 
+  const togglePlayback = useCallback(() => {
+    const video = videoRef.current;
+    if (video == null) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  }, []);
+
+  const toggleMuted = useCallback(() => {
+    const video = videoRef.current;
+    if (video == null) return;
+    video.muted = !video.muted;
+    setMuted(video.muted || video.volume === 0);
+  }, []);
+
   return (
     <div
       className={`webview-player${suspended ? " is-casting" : ""}`}
@@ -1447,10 +1468,11 @@ function WebviewPlayer({
         <video
           ref={videoRef}
           className="player-video"
-          controls
           autoPlay
           playsInline
           x-webkit-airplay="allow"
+          onClick={togglePlayback}
+          onDoubleClick={togglePlayerFullscreen}
         >
           {subs.tracks.map((t) => (
             <track
@@ -1501,6 +1523,27 @@ function WebviewPlayer({
           disabled={!chromeVisible}
         />
         <div className="player-osd-row">
+          <button
+            type="button"
+            className="chip player-osd-icon-button"
+            onClick={togglePlayback}
+            aria-label={playing ? "Pause" : "Play"}
+            title={playing ? "Pause" : "Play"}
+            tabIndex={chromeVisible ? undefined : -1}
+          >
+            <Icon name={playing ? "pause" : "play"} size={17} />
+          </button>
+          <button
+            type="button"
+            className="chip player-osd-icon-button"
+            onClick={toggleMuted}
+            aria-label={muted ? "Unmute" : "Mute"}
+            aria-pressed={muted}
+            title={muted ? "Unmute" : "Mute"}
+            tabIndex={chromeVisible ? undefined : -1}
+          >
+            <Icon name={muted ? "volume-muted" : "volume"} size={17} />
+          </button>
           <button
             type="button"
             className={`chip${captionsOpen || subs.activeTrackId != null ? " is-active" : ""}`}

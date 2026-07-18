@@ -26,6 +26,7 @@ export interface ServerStreamRow {
     title: string;
   };
   cachedOn: DebridServiceType | null;
+  cacheStatus?: "cached" | "not_cached" | "unavailable";
 }
 
 export interface ServerStreamsResult {

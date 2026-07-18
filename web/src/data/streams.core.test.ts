@@ -254,6 +254,11 @@ describe("useStreams - Local resolve path (resolveStreams)", () => {
       ["h2", null],
       ["h3", null],
     ]);
+    expect(state.rows.map((r) => r.cacheStatus)).toEqual([
+      "cached",
+      "not_cached",
+      "unavailable",
+    ]);
     expect(state.loading).toBe(false);
     expect(state.error).toBeNull();
   });
@@ -356,7 +361,7 @@ describe("useStreams - Local resolve path (resolveStreams)", () => {
     expect(state.hasDebrid).toBe(false);
   });
 
-  it("swallows a checkCacheAll rejection and returns uncached rows", async () => {
+  it("keeps rows but marks cache status unavailable when the check rejects", async () => {
     const results = [torrent({ infoHash: "h1" }), torrent({ infoHash: "h2" })];
     const checkCacheAll = vi.fn(async () => {
       throw new Error("debrid down");
@@ -364,10 +369,14 @@ describe("useStreams - Local resolve path (resolveStreams)", () => {
     const indexers = fakeIndexers({ searchAll: async () => results });
     const debrid = fakeDebrid({ hasServices: true, checkCacheAll });
     const { state } = await renderStreams("tt1", "movie", indexers, debrid);
-    // The try/catch inside resolveStreams turns the cache failure into "all
-    // uncached" - it is NOT surfaced as a top-level error.
+    // Source discovery succeeded, so the provider failure is not a top-level
+    // search error. It must remain distinct from a confirmed uncached result.
     expect(state.error).toBeNull();
     expect(state.rows.map((r) => r.cachedOn)).toEqual([null, null]);
+    expect(state.rows.map((r) => r.cacheStatus)).toEqual([
+      "unavailable",
+      "unavailable",
+    ]);
   });
 });
 

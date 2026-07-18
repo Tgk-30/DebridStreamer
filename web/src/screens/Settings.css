@@ -1330,6 +1330,26 @@
   color: var(--danger);
 }
 
+.settings-provider-check {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.settings-provider-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.settings-provider-result.is-valid {
+  color: var(--success);
+}
+.settings-provider-result.is-error {
+  color: var(--danger);
+}
+
 .settings-version {
   margin: var(--sp-sm) 0 0;
   font-size: 11px;

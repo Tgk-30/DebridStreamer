@@ -169,8 +169,8 @@
 }
 
 /* ---------------------------------------------------------------------------
- * In-webview player extras: the custom scrub-thumbnail bar (above the native
- * controls) + the captions OSD button + the captions menu popover.
+ * In-webview player controls: one custom control surface for play, audio,
+ * seeking, captions, casting, picture in picture, and fullscreen.
  * ------------------------------------------------------------------------- */
 .webview-player {
   position: absolute;
@@ -206,7 +206,7 @@
 
 .player-osd {
   position: absolute;
-  inset: auto 0 calc(54px + env(safe-area-inset-bottom));
+  inset: auto 0 0;
   z-index: 10;
   display: flex;
   flex-direction: column;

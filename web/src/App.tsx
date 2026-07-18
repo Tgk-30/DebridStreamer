@@ -12,8 +12,9 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { episodesAiredSince } from "./data/calendar";
 import type { TourStep } from "./components/SpotlightTour";
 
-// The point-and-highlight tour shown once after the welcome guide. Each step
-// spotlights a real nav destination by its stable [data-screen] anchor.
+// The optional point-and-highlight tour. Each step spotlights a real nav
+// destination by its stable [data-screen] anchor. It is available on demand
+// without stacking a second tour on top of the first-run welcome guide.
 const TOUR_STEPS: TourStep[] = [
   {
     target: '[data-screen="discover"]',
@@ -40,7 +41,6 @@ const TOUR_STEPS: TourStep[] = [
     placement: "right",
   },
 ];
-const TOUR_SEEN_KEY = "ds_tour_seen";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { ProfileMenu } from "./components/ProfileMenu";
 import { Spinner } from "./components/Spinner";
@@ -391,27 +391,20 @@ export function App() {
     window.addEventListener("ds:open-welcome-guide", reopen);
     return () => window.removeEventListener("ds:open-welcome-guide", reopen);
   }, []);
-  // The point-and-highlight tour runs once, right after the welcome guide.
+  // Keep the shorter point-and-highlight tour available on demand. The welcome
+  // guide already covers the shell, so finishing it must not launch another
+  // sequence immediately afterward.
   const [tourOpen, setTourOpen] = useState(false);
   const closeWelcomeGuide = () => {
     setWelcomeGuideOpen(false);
     try {
       globalThis.localStorage?.setItem("ds_welcome_guide_seen", "1");
-      if (globalThis.localStorage?.getItem(TOUR_SEEN_KEY) !== "1") {
-        // Let the shell paint before the tour measures its targets.
-        setTimeout(() => setTourOpen(true), 350);
-      }
     } catch {
       // ignore (private mode)
     }
   };
   const closeTour = () => {
     setTourOpen(false);
-    try {
-      globalThis.localStorage?.setItem(TOUR_SEEN_KEY, "1");
-    } catch {
-      // ignore (private mode)
-    }
   };
   // Allow re-running the tour on demand (e.g. from a help menu / ⌘K).
   useEffect(() => {

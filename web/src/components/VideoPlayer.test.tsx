@@ -363,14 +363,16 @@ describe("VideoPlayer shell", () => {
 // ---- Webview player: video element + OSD -----------------------------------
 
 describe("WebviewPlayer", () => {
-  it("renders a <video> with native controls and the OSD row", () => {
+  it("renders one custom control surface without duplicate native controls", () => {
     render(
       <VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />,
     );
     const video = document.querySelector("video.player-video") as HTMLVideoElement;
     expect(video).not.toBeNull();
-    expect(video).toHaveAttribute("controls");
+    expect(video).not.toHaveAttribute("controls");
     expect(screen.getByTestId("scrub-bar")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mute" })).toBeInTheDocument();
     // CC button lives in the OSD row.
     expect(screen.getByRole("button", { name: "Subtitles" })).toBeInTheDocument();
   });

@@ -41,7 +41,9 @@ function savedCalendarFilter(): CalendarFilter {
 
 function savedCalendarView(): CalendarView {
   try {
-    return globalThis.localStorage?.getItem(CALENDAR_VIEW_KEY) === "agenda"
+    const saved = globalThis.localStorage?.getItem(CALENDAR_VIEW_KEY);
+    if (saved === "agenda" || saved === "month") return saved;
+    return globalThis.matchMedia?.("(max-width: 560px)").matches
       ? "agenda"
       : "month";
   } catch {
@@ -179,6 +181,7 @@ export function Calendar() {
   const {
     calendar: episodeCalendar,
     openDetail,
+    navigate,
     markCalendarSeen,
     services,
   } = useAppStore();
@@ -239,6 +242,9 @@ export function Calendar() {
     () => filteredEntries.filter((entry) => isInMonth(entry.date, visibleMonth)),
     [filteredEntries, visibleMonth],
   );
+  const needsTMDBSetup =
+    !state.hasTMDB ||
+    /(?:tmdb.*api key|api key.*tmdb)/i.test(state.error ?? "");
 
   useEffect(() => {
     try {
@@ -302,19 +308,24 @@ export function Calendar() {
             ))}
           </div>
         </div>
+      ) : needsTMDBSetup ? (
+        <EmptyState
+          icon="calendar"
+          title="Add a TMDB key to see release dates"
+          subtitle="The calendar uses TMDB for episode air dates and movie release dates."
+          note="Add a key in Settings, then follow a TV show to track its episodes."
+          actions={(
+            <button type="button" className="btn btn-prominent" onClick={() => navigate("settings")}>
+              Open Settings
+            </button>
+          )}
+        />
       ) : state.error ? (
         <EmptyState
           icon="calendar"
           title="Couldn't load the release calendar"
           subtitle="We couldn't reach TMDB for release dates. Check your connection and try again."
           note={state.error}
-        />
-      ) : !state.hasTMDB ? (
-        <EmptyState
-          icon="calendar"
-          title="Add a TMDB key to see release dates"
-          subtitle="The calendar uses TMDB for episode air dates and movie release dates."
-          note="Add a key in Settings, then follow a TV show to track its episodes."
         />
       ) : state.entries.length === 0 && !state.hasSeries ? (
         <EmptyState

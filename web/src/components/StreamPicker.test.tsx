@@ -61,6 +61,7 @@ function makeRow(opts: {
   seeders?: number;
   indexerName?: string;
   cachedOn?: DebridServiceType | null;
+  cacheStatus?: StreamRow["cacheStatus"];
 }): StreamRow {
   const result = TorrentResult.fromSearch({
     infoHash: opts.hash,
@@ -70,7 +71,11 @@ function makeRow(opts: {
     leechers: 1,
     indexerName: opts.indexerName ?? "Jackett",
   });
-  return { result, cachedOn: opts.cachedOn ?? null };
+  return {
+    result,
+    cachedOn: opts.cachedOn ?? null,
+    ...(opts.cacheStatus == null ? {} : { cacheStatus: opts.cacheStatus }),
+  };
 }
 
 function baseState(over: Partial<StreamsState> = {}): StreamsState {
@@ -306,6 +311,32 @@ describe("StreamPicker", () => {
       <StreamPicker state={baseState({ rows })} resolveStream={neverResolve} onPlay={noop} />,
     );
     expect(screen.getByText("-")).toBeInTheDocument();
+  });
+
+  it("does not label a failed provider check as Will cache", () => {
+    const onOpenSettings = vi.fn();
+    const rows = [
+      makeRow({
+        hash: "UNKNOWN",
+        title: "Provider status unavailable",
+        cacheStatus: "unavailable",
+      }),
+    ];
+    render(
+      <StreamPicker
+        state={baseState({ rows })}
+        resolveStream={neverResolve}
+        onPlay={noop}
+        onOpenSettings={onOpenSettings}
+      />,
+    );
+
+    expect(screen.getByText("Cache unknown")).toBeInTheDocument();
+    expect(screen.queryByText("Will cache")).toBeNull();
+    expect(screen.getByText(/provider did not return cache status/i)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Cached only/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Check provider" }));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 
   it("uses whole-number formatting when values are large enough", () => {

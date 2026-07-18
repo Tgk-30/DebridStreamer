@@ -9,7 +9,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { MediaType } from "../models/media";
-import type { DebridManager } from "../services/debrid/DebridManager";
+import type {
+  DebridManager,
+  MergedCacheEntry,
+} from "../services/debrid/DebridManager";
 import type { DebridServiceType } from "../services/debrid/models";
 import { CacheStatus, matchEpisodeTag } from "../services/debrid/models";
 import type {
@@ -36,6 +39,10 @@ export interface StreamRow {
   result: TorrentResult;
   /** Which debrid service has it cached (null when not cached / no debrid). */
   cachedOn: DebridServiceType | null;
+  /** Whether the configured debrid service positively confirmed the hash.
+   * Optional for compatibility with older self-hosted servers. A missing value
+   * keeps the former cachedOn-only behavior in the UI. */
+  cacheStatus?: "cached" | "not_cached" | "unavailable";
 }
 
 export interface StreamsState {
@@ -265,7 +272,7 @@ async function resolveStreams(
   if (results.length === 0) return [];
 
   // Check cache across all configured debrid services for every infoHash.
-  let cacheByHash: Record<string, DebridServiceType> = {};
+  let cacheByHash: Record<string, MergedCacheEntry> = {};
   if (debrid != null && debrid.hasServices) {
     const hashes = results.map((r) => r.infoHash);
     try {
@@ -273,11 +280,7 @@ async function resolveStreams(
         hashes: string[],
         signal?: AbortSignal,
       ) => ReturnType<DebridManager["checkCacheAll"]>)(hashes, signal);
-      cacheByHash = Object.fromEntries(
-        Object.entries(merged)
-          .filter(([, entry]) => CacheStatus.isCached(entry.status))
-          .map(([hash, entry]) => [hash, entry.service]),
-      );
+      cacheByHash = merged;
     } catch {
       cacheByHash = {};
     }
@@ -285,13 +288,24 @@ async function resolveStreams(
 
   return filterAndRankForEpisode(
     dedupeStreamRows(
-      results.map((result) => ({
-        result,
+      results.map((result) => {
         // checkCacheAll canonicalizes to lowercase; match it so a case
         // difference between the indexer hash and the provider's echo can't
         // make a cached torrent read as uncached.
-        cachedOn: cacheByHash[result.infoHash.toLowerCase()] ?? null,
-      })),
+        const entry = cacheByHash[result.infoHash.toLowerCase()];
+        const cached = entry != null && CacheStatus.isCached(entry.status);
+        return {
+          result,
+          cachedOn: cached ? entry.service : null,
+          // A missing/unknown entry means the provider did not answer the
+          // cache question. Do not mislabel that failure as confirmed uncached.
+          cacheStatus: cached
+            ? "cached" as const
+            : entry?.status.kind === "notCached"
+              ? "not_cached" as const
+              : "unavailable" as const,
+        };
+      }),
     ),
     season,
     episode,

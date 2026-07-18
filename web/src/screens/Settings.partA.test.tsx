@@ -29,6 +29,7 @@ const isTraktConnected = vi.hoisted(() => vi.fn());
 const loadTraktConnection = vi.hoisted(() => vi.fn());
 const clearTraktConnection = vi.hoisted(() => vi.fn());
 const factoryReset = vi.hoisted(() => vi.fn());
+const testDebridToken = vi.hoisted(() => vi.fn());
 let smartPreloadOn = false;
 
 vi.mock("../store/AppStore", () => ({
@@ -86,6 +87,8 @@ vi.mock("../lib/smartPreload", () => ({
   },
 }));
 
+vi.mock("../lib/onboardingValidation", () => ({ testDebridToken }));
+
 vi.mock("../data/traktConnection", () => ({
   isTraktConnected,
   loadTraktConnection,
@@ -122,10 +125,12 @@ beforeEach(() => {
   loadTraktConnection.mockReset();
   clearTraktConnection.mockReset();
   factoryReset.mockReset();
+  testDebridToken.mockReset();
   factoryReset.mockResolvedValue(undefined);
   isTraktConnected.mockResolvedValue(false);
   loadTraktConnection.mockResolvedValue(null);
   clearTraktConnection.mockResolvedValue(undefined);
+  testDebridToken.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -149,6 +154,30 @@ describe("Settings shell", () => {
   it("shows the app version on the landing shell", async () => {
     renderAt();
     expect(await screen.findByText("YAWF Stream vtest-version")).toBeInTheDocument();
+  });
+
+  it("returns to the top when the settings category changes", () => {
+    const { container } = render(
+      <div className="app-content">
+        <Settings />
+      </div>,
+    );
+    const scroller = container.querySelector(".app-content") as HTMLElement;
+    scroller.scrollTop = 900;
+
+    fireEvent.click(container.querySelector('button[data-tab="appearance"]')!);
+    expect(scroller.scrollTop).toBe(0);
+  });
+
+  it("gives playback selects stable accessible names", () => {
+    mockSettings = {
+      ...defaultSettings(),
+      debridTokens: [{ service: "real_debrid", apiToken: "tok" }],
+    };
+    renderAt("playback");
+
+    expect(screen.getByRole("combobox", { name: "Maximum quality" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Maximum file size" })).toBeInTheDocument();
   });
 
   it("hides the Server tab in Local Mode", () => {
@@ -421,6 +450,24 @@ describe("Settings · Providers (debrid)", () => {
     // Still #1 Real-Debrid, #2 TorBox (no demotion).
     expect(screen.getByRole("button", { name: /1\. Real-Debrid/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /2\. TorBox/ })).toBeInTheDocument();
+  });
+
+  it("tests the selected provider token and reports a failed connection", async () => {
+    const user = userEvent.setup();
+    testDebridToken.mockResolvedValue(false);
+    renderAt("debrid", {
+      debridTokens: [{ service: "torbox", apiToken: "tb-token" }],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+
+    expect(testDebridToken).toHaveBeenCalledWith({
+      service: "torbox",
+      apiToken: "tb-token",
+    });
+    expect(
+      await screen.findByText("Connection failed. Refresh the token or try again."),
+    ).toBeInTheDocument();
   });
 });
 

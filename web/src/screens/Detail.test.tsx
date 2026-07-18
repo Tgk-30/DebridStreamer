@@ -354,7 +354,15 @@ function detailState(over: Partial<DetailState["data"]> = {}): DetailState {
 }
 
 function streamsState(): StreamsState {
-  return { rows: [], loading: false, error: null } as unknown as StreamsState;
+  return {
+    rows: [],
+    loading: false,
+    error: null,
+    hasIndexers: true,
+    hasDebrid: true,
+    missingImdbId: false,
+    sourceErrors: [],
+  };
 }
 
 function downloadRow(title: string, sizeBytes: number) {
@@ -637,6 +645,14 @@ describe("Detail actions", () => {
 });
 
 describe("Detail play", () => {
+  it("opens Settings when the title cannot be resolved to a searchable id", async () => {
+    mockStreams = { ...streamsState(), missingImdbId: true };
+    render(<Detail />);
+
+    await userEvent.click(screen.getByText("play"));
+    expect(navigate).toHaveBeenCalledWith("settings");
+  });
+
   it("scrolls to the stream picker when there is no cached resolution", async () => {
     const scrollIntoView = vi.fn();
     const orig = document.getElementById.bind(document);

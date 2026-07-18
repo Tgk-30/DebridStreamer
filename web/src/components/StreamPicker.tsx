@@ -38,6 +38,13 @@ export const STREAM_RESOLVE_TIMEOUT_MS = 15_000;
 
 type ResolutionStatus = "resolving" | "failed";
 
+function cacheStatusFor(row: StreamRow): NonNullable<StreamRow["cacheStatus"]> {
+  if (row.cachedOn != null) return "cached";
+  // Older self-hosted servers only send cachedOn. Keep their established
+  // uncached behavior until they begin sending the explicit status field.
+  return row.cacheStatus ?? "not_cached";
+}
+
 function resolveWithinTimeout<T>(operation: () => Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = globalThis.setTimeout(() => {
@@ -118,6 +125,16 @@ export function StreamPicker({
     () => filterStreamRows(state.rows, { ...settings, streamCachedOnly: false }),
     [state.rows, settings],
   );
+  const cacheCheckUnavailable =
+    state.hasDebrid &&
+    baseRows.length > 0 &&
+    baseRows.every((row) => cacheStatusFor(row) === "unavailable");
+
+  // A saved Cached-only preference must not hide every indexed release when
+  // the provider check itself failed. Show the sources and explain the issue.
+  useEffect(() => {
+    if (cacheCheckUnavailable) setCachedOnly(false);
+  }, [cacheCheckUnavailable]);
 
   // Resolution + codec chips, shown ONLY for the values that actually appear in
   // this title's results (so we never offer a "4K" chip that filters to nothing).
@@ -219,13 +236,16 @@ export function StreamPicker({
         {state.hasIndexers && state.rows.length > 0 && (
           <div className="streams-controls">
             <span className="streams-count t-secondary">
-              {cachedCount} instant · {state.rows.length} total
+              {cacheCheckUnavailable
+                ? `Cache check unavailable · ${state.rows.length} total`
+                : `${cachedCount} instant · ${state.rows.length} total`}
               {visibleRows.length < rows.length ? ` · ${visibleRows.length} shown` : ""}
             </span>
             <label className="streams-toggle">
               <input
                 type="checkbox"
                 checked={cachedOnly}
+                disabled={cacheCheckUnavailable}
                 onChange={(e) => setCachedOnly(e.target.checked)}
               />
               Cached only
@@ -267,6 +287,21 @@ export function StreamPicker({
         <ErrorNote as="div" className="streams-error">
           {resolveError}
         </ErrorNote>
+      )}
+
+      {cacheCheckUnavailable && (
+        <div className="streams-cache-warning" role="status">
+          <Icon name="info" size={16} />
+          <span>
+            Your provider did not return cache status. The releases are still
+            available, but instant availability could not be verified.
+          </span>
+          {onOpenSettings && (
+            <button type="button" className="btn" onClick={onOpenSettings}>
+              Check provider
+            </button>
+          )}
+        </div>
       )}
 
       <StreamBody
@@ -527,6 +562,7 @@ function StreamRowItem({
 }) {
   const { result, cachedOn } = row;
   const cached = cachedOn != null;
+  const cacheUnavailable = cacheStatusFor(row) === "unavailable";
   const resolving = resolutionStatus === "resolving";
   const failed = resolutionStatus === "failed";
 
@@ -565,12 +601,18 @@ function StreamRowItem({
         ) : failed ? (
           <span className="stream-badge is-failed">Failed · Retry</span>
         ) : (
-          <span className={`stream-badge ${cached ? "is-cached" : "is-cache"}`}>
+          <span
+            className={`stream-badge ${
+              cached ? "is-cached" : cacheUnavailable ? "is-unknown" : "is-cache"
+            }`}
+          >
             {cached ? (
               <>
                 <Icon name="play" size={11} />
                 Instant · {DebridServiceType.shortCode(cachedOn!)}
               </>
+            ) : cacheUnavailable ? (
+              "Cache unknown"
             ) : (
               "Will cache"
             )}

@@ -324,26 +324,39 @@ export async function searchServerStreams(db, config, profileId, input) {
   let cacheByHash = {};
   if (debrid != null) {
     try {
-      const merged = await debrid.checkCacheAll(results.map((r) => r.infoHash));
-      cacheByHash = Object.fromEntries(
-        Object.entries(merged)
-          .filter(([, entry]) => CacheStatus.isCached(entry.status))
-          .map(([hash, entry]) => [hash, entry.service]),
-      );
+      cacheByHash = await debrid.checkCacheAll(results.map((r) => r.infoHash));
     } catch {
       cacheByHash = {};
     }
   }
 
   const filters = profileStreamFilters(db, profileId);
-  const allRows = results.map((result) => ({
-    result,
+  const allRows = results.map((result) => {
     // checkCacheAll canonicalizes to lowercase; match it so a case difference
     // between the indexer hash and the provider's echo can't make a cached
     // torrent read as uncached (mirrors Local Mode's data/streams.ts).
-    cachedOn: cacheByHash[result.infoHash.toLowerCase()] ?? null,
-  }));
-  const rows = allRows.filter((row) => rowMatchesStreamFilters(row, filters));
+    const entry = cacheByHash[result.infoHash.toLowerCase()];
+    const cached = entry != null && CacheStatus.isCached(entry.status);
+    return {
+      result,
+      cachedOn: cached ? entry.service : null,
+      cacheStatus: cached
+        ? "cached"
+        : entry?.status?.kind === "notCached"
+          ? "not_cached"
+          : "unavailable",
+    };
+  });
+  // Cached-only cannot be evaluated when every provider cache lookup failed.
+  // Return the releases with an explicit unavailable status instead of an
+  // empty list that falsely claims there are no matching streams.
+  const cacheCheckAvailable = allRows.some(
+    (row) => row.cacheStatus !== "unavailable",
+  );
+  const effectiveFilters = cacheCheckAvailable
+    ? filters
+    : { ...filters, cachedOnly: false };
+  const rows = allRows.filter((row) => rowMatchesStreamFilters(row, effectiveFilters));
 
   return {
     rows,

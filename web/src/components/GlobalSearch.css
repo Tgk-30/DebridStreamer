@@ -47,7 +47,13 @@
     right: auto;
     z-index: 8;
     width: auto;
-    margin: var(--sp-md) var(--sp-lg) 0;
+    /* Reserve a real touch target for the profile avatar. Without this inset,
+       the search input covers the avatar and captures every tap. */
+    margin:
+      var(--sp-md)
+      calc(var(--sp-lg) + 44px + var(--sp-sm))
+      0
+      var(--sp-lg);
   }
 }
 

@@ -41,11 +41,18 @@
 /* Route transition - a brief lift + fade on each screen mount. The keyed
    .route-frame in App.tsx remounts per navigation, restarting this animation.
    Fill-mode `backwards` (not `both`) is deliberate: the frame's RESTING state is
-   the element's own styles (fully visible), so the screen can never be stranded
-   invisible if the animation is skipped or its clock is paused - the animation is
-   a pure enhancement that settles back to opacity 1 / no transform. */
+   the element's own styles (fully visible). The attention overrides below remove
+   the animation while the window is hidden or unfocused so a paused first frame
+   can never leave the actual screen transparent. */
 .route-frame {
   animation: routeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+:root[data-suspended] .route-frame,
+:root[data-unfocused] .route-frame {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
 }
 @keyframes routeIn {
   from {

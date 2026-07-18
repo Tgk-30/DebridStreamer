@@ -15,6 +15,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -59,6 +60,7 @@ import { AIProviderKind } from "../services/ai/models";
 import { fetchAvailableModels } from "../services/ai/ModelCatalog";
 import { readModelCache, writeModelCache } from "../services/ai/ModelCache";
 import { appFetch } from "../lib/http";
+import { testDebridToken } from "../lib/onboardingValidation";
 import { getStore } from "../storage";
 import {
   createProfileRecord,
@@ -410,6 +412,19 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "sources", label: "Sources" },
 ];
 
+const TAB_DESCRIPTIONS: Record<Tab, string> = {
+  appearance: "Themes, layout, and visual comfort for this profile.",
+  playback: "Player behavior, captions, quality, and handoff preferences.",
+  privacy: "Network access, local storage, and data controls for this device.",
+  install: "Install YAWF Stream and finish setup on this device.",
+  profiles: "Names, avatars, colors, and sign-in protection for this device.",
+  updates: "Version checks, update channels, and release status.",
+  server: "Hosting, remote access, and shared server settings.",
+  keys: "Metadata, subtitle, and optional service credentials.",
+  debrid: "Connect and verify the streaming accounts you already use.",
+  sources: "Indexer order, add-ons, and source matching.",
+};
+
 // Tabs visible in Simple mode (progressive disclosure). Advanced unlocks the
 // rest (Updates, Server, Sources). Server is also hidden in Local Mode.
 const SIMPLE_TABS = new Set<Tab>([
@@ -690,6 +705,15 @@ export function Settings() {
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const settingsScreenRef = useRef<HTMLDivElement>(null);
+
+  // Every category is its own page-sized task. A long category must not hand
+  // its scroll position to the next one, otherwise the next category opens in
+  // the middle with its title and primary controls off screen.
+  useLayoutEffect(() => {
+    const scroller = settingsScreenRef.current?.closest(".app-content");
+    if (scroller instanceof HTMLElement) scroller.scrollTop = 0;
+  }, [tab]);
 
   // Switching profiles swaps the settings under us. The draft was seeded once at
   // mount, so without this it would still hold the PREVIOUS profile's values and
@@ -811,12 +835,12 @@ export function Settings() {
       : "Profile saved · credentials protected";
 
   return (
-    <div className="settings-screen">
+    <div className="settings-screen" ref={settingsScreenRef}>
       <header className="settings-header settings-hero glass-raised glass-lit">
         <div className="settings-title-block">
           <h1 className="settings-h1">Settings</h1>
           <p className="settings-subtitle t-secondary">
-            {selectedTab.label} controls for this profile, device, and server session.
+            {TAB_DESCRIPTIONS[selectedTab.id]}
           </p>
         </div>
 
@@ -1218,6 +1242,7 @@ function ProfilesTab({
             </InfoTip>
           </span>
           <select
+            aria-label="Start as profile"
             value={autoEnterId ?? ""}
             onChange={(event) => {
               const next = event.target.value === "" ? null : event.target.value;
@@ -1549,6 +1574,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
             </span>
           </span>
           <select
+            aria-label="External player"
             value={draft.preferredExternalPlayer}
             onChange={(event) =>
               patch({ preferredExternalPlayer: event.target.value })
@@ -1651,6 +1677,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
           hint="Higher-quality torrents are hidden from stream results."
         >
           <select
+            aria-label="Maximum quality"
             value={draft.streamMaxQuality}
             onChange={(event) =>
               patch({ streamMaxQuality: event.target.value as StreamMaxQuality })
@@ -1672,6 +1699,7 @@ function PlaybackTab({ draft, patch }: TabProps) {
       >
         <div className="settings-size-cap">
           <select
+            aria-label="Maximum file size"
             value={sizeCapValue}
             onChange={(event) => {
               if (event.target.value === CUSTOM_STREAM_SIZE_CAP) {
@@ -3132,6 +3160,7 @@ function ServerTab() {
                 placeholder="Label, e.g. Family"
               />
               <select
+                aria-label="Invite role"
                 value={inviteDraft.role}
                 onChange={(event) =>
                   setInviteDraft((current) => ({
@@ -3272,6 +3301,7 @@ function ServerTab() {
                 placeholder="Password"
               />
               <select
+                aria-label="New profile role"
                 value={newProfile.role}
                 onChange={(event) =>
                   setNewProfile((current) => ({
@@ -3310,6 +3340,7 @@ function ServerTab() {
           <div className="settings-source glass-rest">
             <div className="settings-source-row">
               <select
+                aria-label="Shared credential provider"
                 value={sharedCredential.provider}
                 onChange={(event) =>
                   setSharedCredential((current) => ({
@@ -3903,6 +3934,7 @@ function ProfileCredentialPanel({
 
       <div className="settings-source-row">
         <select
+          aria-label="Profile credential provider"
           value={draft.provider}
           onChange={(event) =>
             onDraftChange((current) => ({
@@ -4451,6 +4483,7 @@ function AppearanceTab({
               <span className="t-secondary">: the screen shown at launch.</span>
             </span>
             <select
+              aria-label="Start screen"
               value={draft.appearanceDefaultTab}
               onChange={(event) => applyAppearance({ appearanceDefaultTab: event.target.value as ScreenId })}
             >
@@ -4764,6 +4797,7 @@ function ModelSelectField({ draft, patch }: TabProps) {
     <Field label="Model" hint="Updates automatically from your provider's live catalog.">
       <div className="settings-model-row">
         <select
+          aria-label="AI model"
           value={draft.aiModel.trim().length === 0 ? "__default" : draft.aiModel}
           onChange={(event) =>
             patch({
@@ -4920,6 +4954,7 @@ function KeysTab({ draft, patch }: TabProps) {
                 hint="Ollama runs locally (no key); the rest need an API key below."
               >
                 <select
+                  aria-label="AI provider"
                   value={draft.aiProvider}
                   onChange={(e) =>
                     // Reset the model override too: a model id from the old
@@ -5209,6 +5244,13 @@ function DebridTab({ draft, patch }: TabProps) {
   const [selectedService, setSelectedService] = useState<
     AppSettings["debridTokens"][number]["service"]
   >(serviceOptions[0]);
+  const [connectionState, setConnectionState] = useState<
+    "idle" | "testing" | "valid" | "failed"
+  >("idle");
+
+  useEffect(() => {
+    setConnectionState("idle");
+  }, [selectedService, draft.debridTokens]);
 
   function tokenFor(service: AppSettings["debridTokens"][number]["service"]) {
     return draft.debridTokens.find((t) => t.service === service)?.apiToken ?? "";
@@ -5235,6 +5277,14 @@ function DebridTab({ draft, patch }: TabProps) {
     patch({ debridTokens: next });
   }
 
+  async function testConnection() {
+    const apiToken = tokenFor(selectedService).trim();
+    if (apiToken.length === 0 || connectionState === "testing") return;
+    setConnectionState("testing");
+    const valid = await testDebridToken({ service: selectedService, apiToken });
+    setConnectionState(valid ? "valid" : "failed");
+  }
+
   return (
     <div className="settings-fields">
       <SettingsInfo label={`About ${CONCEPTS.debrid.term}`}>
@@ -5246,6 +5296,7 @@ function DebridTab({ draft, patch }: TabProps) {
 
       <Field label="Provider" hint="Real-Debrid is selected first by default.">
         <select
+          aria-label="Debrid provider"
           value={selectedService}
           onChange={(event) =>
             setSelectedService(
@@ -5273,6 +5324,30 @@ function DebridTab({ draft, patch }: TabProps) {
           placeholder="API token"
         />
       </Field>
+
+      <div className="settings-provider-check" aria-live="polite">
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void testConnection()}
+          disabled={
+            tokenFor(selectedService).trim().length === 0 ||
+            connectionState === "testing"
+          }
+        >
+          {connectionState === "testing" ? "Checking…" : "Test connection"}
+        </button>
+        {connectionState === "valid" && (
+          <span className="settings-provider-result is-valid">
+            <Icon name="check" size={14} /> Connected
+          </span>
+        )}
+        {connectionState === "failed" && (
+          <span className="settings-provider-result is-error">
+            Connection failed. Refresh the token or try again.
+          </span>
+        )}
+      </div>
 
       {draft.debridTokens.length > 0 && (
         <div className="settings-url-list">

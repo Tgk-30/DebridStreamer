@@ -83,6 +83,25 @@
   border: 0.75px solid rgba(250, 115, 115, 0.3);
 }
 
+.streams-cache-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) var(--sp-md);
+  border: 0.75px solid rgba(var(--warning-rgb), 0.28);
+  border-radius: var(--r-sm);
+  background: rgba(var(--warning-rgb), 0.08);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.streams-cache-warning > span {
+  flex: 1;
+}
+.streams-cache-warning .btn {
+  flex: 0 0 auto;
+}
+
 .streams-list {
   list-style: none;
   margin: 0;
@@ -266,6 +285,21 @@
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.05);
   border: 0.75px solid var(--glass-border);
+}
+.stream-badge.is-unknown {
+  color: var(--warning);
+  background: rgba(var(--warning-rgb), 0.1);
+  border: 0.75px solid rgba(var(--warning-rgb), 0.3);
+}
+
+@media (max-width: 620px) {
+  .streams-cache-warning {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .streams-cache-warning .btn {
+    margin-left: 24px;
+  }
 }
 
 /* Resolving state - a small spinner + label replaces the badge while we ask the

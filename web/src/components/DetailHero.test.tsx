@@ -105,6 +105,23 @@ describe("DetailHero backdrop", () => {
     expect(container.querySelector(".detail-hero-backdrop.hero-gradient")).not.toBeNull();
   });
 
+  it("supports an actionable setup label for the primary playback control", () => {
+    const onPlay = vi.fn();
+    render(
+      <DetailHero
+        item={makeItem()}
+        inWatchlist={false}
+        onPlay={onPlay}
+        playLabel="Set up streaming"
+        onToggleWatchlist={noop}
+        onClose={noop}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Set up streaming" }));
+    expect(onPlay).toHaveBeenCalledTimes(1);
+  });
+
   it("replays the CSS animation layers when the detail title changes", () => {
     const { container, rerender } = render(
       <DetailHero

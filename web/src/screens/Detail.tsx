@@ -1245,10 +1245,10 @@ export function Detail() {
               ? recordTasteSignal
               : undefined
           }
-          playDisabledReason={
-            !streams.hasDebrid
-              ? "Add a debrid service in Settings to play"
-              : null
+          playLabel={
+            !streams.hasDebrid || streams.missingImdbId
+              ? "Set up streaming"
+              : "Play"
           }
           onDownload={
             isTauri() && !isServerMode()
@@ -1276,6 +1276,10 @@ export function Detail() {
                 : null
           }
           onPlay={() => {
+            if (!streams.hasDebrid || streams.missingImdbId) {
+              navigate("settings");
+              return;
+            }
             // Instant play: if the auto-resolve job pre-cached a ready stream
             // for this title, play it immediately instead of re-walking the
             // indexers + debrid.

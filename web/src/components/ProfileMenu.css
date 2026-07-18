@@ -194,6 +194,10 @@
   border-color: rgb(var(--accent-rgb));
 }
 @media (max-width: 480px) {
+  .profile-menu {
+    z-index: 9;
+  }
+
   .profile-menu-presets-grid {
     grid-template-columns: repeat(4, 1fr);
   }

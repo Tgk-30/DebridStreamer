@@ -28,8 +28,7 @@
 
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const VERSION = 1;
 const KEY_LEN = 32; // AES-256
@@ -152,8 +151,14 @@ function resolvePassphrase(): string | null {
 function blobPath(): string {
   const env = process.env.DS_EMBED_SECRETS_FILE?.trim();
   if (env != null && env.length > 0) return env;
-  const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "..", "embedded-secrets.json");
+  // This source is bundled to CommonJS for production. import.meta.url becomes
+  // undefined in that output, while argv[1] remains the actual source or bundle
+  // entry in development, npm start, and the packaged server host.
+  const entry = process.argv[1]?.trim();
+  if (entry != null && entry.length > 0) {
+    return join(dirname(resolve(entry)), "..", "embedded-secrets.json");
+  }
+  return join(process.cwd(), "embedded-secrets.json");
 }
 
 let cache: { secrets: Record<string, string>; profile: string } | null | undefined;

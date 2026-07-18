@@ -53,6 +53,7 @@ const cloudflareDeployHelper = read("scripts/deploy_website_cloudflare.mjs");
 const swiftTestVerifier = read("scripts/check_swift_tests.mjs");
 const nodeRuntimeDownloader = read("scripts/download_tauri_node_runtime.mjs");
 const serverResourcePrep = read("scripts/prepare_tauri_server_resources.mjs");
+const desktopServerSmoke = read("scripts/smoke_tauri_server_bundle.mjs");
 check(
   "Release workflow emits updater JSON",
   /includeUpdaterJson:\s*true/.test(releaseWorkflow),
@@ -475,6 +476,12 @@ check(
   "Local package script smokes packaged app",
   /smoke_tauri_server_bundle\.mjs/.test(read("scripts/package_tauri_local.mjs")),
   "scripts/package_tauri_local.mjs must smoke the packaged app after local Tauri packaging",
+);
+check(
+  "Desktop server smoke follows the branded app name",
+  /tauriConfig\.productName/.test(desktopServerSmoke) &&
+    !/macos",\s*"DebridStreamer\.app"/.test(desktopServerSmoke),
+  "scripts/smoke_tauri_server_bundle.mjs must resolve the macOS app from tauri.conf.json productName",
 );
 check(
   "OSS support docs exist",

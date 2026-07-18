@@ -19,6 +19,9 @@ interface DetailHeroProps {
   item: MediaItem;
   inWatchlist: boolean;
   onPlay: () => void;
+  /** Primary action copy. Detail uses a setup label when playback prerequisites
+   * are missing so phone users get an actionable control instead of a no-op. */
+  playLabel?: string;
   onToggleWatchlist: () => void;
   onClose: () => void;
   /** Server Mode only - file a title request for this item. Omitted (and the
@@ -52,6 +55,7 @@ export function DetailHero({
   item,
   inWatchlist,
   onPlay,
+  playLabel = "Play",
   onToggleWatchlist,
   onClose,
   onRequest,
@@ -185,7 +189,7 @@ export function DetailHero({
               title={playDisabledReason ?? "Play"}
             >
               <Icon name="play" size={16} />
-              Play
+              {playLabel}
             </button>
             {onDownload && (
               <button

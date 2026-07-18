@@ -11,11 +11,12 @@ import type { MediaPreview } from "../models/media";
 import type { CalendarEntry, CalendarState } from "../data/calendar";
 
 const openDetail = vi.fn();
+const navigate = vi.fn();
 const markCalendarSeen = vi.fn();
 let calendarState: CalendarState;
 
 vi.mock("../store/AppStore", () => ({
-  useAppStore: () => ({ calendar: calendarState, openDetail, markCalendarSeen }),
+  useAppStore: () => ({ calendar: calendarState, openDetail, navigate, markCalendarSeen }),
 }));
 
 import { Calendar } from "./Calendar";
@@ -68,11 +69,13 @@ function baseState(over: Partial<CalendarState> = {}): CalendarState {
 
 beforeEach(() => {
   openDetail.mockClear();
+  navigate.mockClear();
   markCalendarSeen.mockClear();
   calendarState = baseState();
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -109,9 +112,36 @@ describe("Calendar states", () => {
     expect(screen.getByText("Couldn't load the release calendar")).toBeInTheDocument();
     expect(screen.getByText("TMDB down")).toBeInTheDocument();
   });
+
+  it("opens Settings from the missing TMDB key state", async () => {
+    // The server can report the metadata capability before the active profile
+    // has a usable key, so the explicit setup error must win over hasTMDB.
+    calendarState = baseState({ hasTMDB: true, error: "Configure a TMDB API key." });
+    render(<Calendar />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Open Settings" }));
+    expect(navigate).toHaveBeenCalledWith("settings");
+    expect(screen.queryByText("Couldn't load the release calendar")).toBeNull();
+  });
 });
 
 describe("Calendar cadence", () => {
+  it("starts new phone sessions in the more readable agenda view", () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    calendarState = baseState({
+      entries: [entry(preview("phone-show", "Severance"), localDate(2))],
+    });
+
+    render(<Calendar />);
+
+    expect(screen.getByRole("radio", { name: "Agenda" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("heading", { name: /agenda$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+  });
+
   it("places mocked followed-show and TMDB movie entries on one date and groups them in the agenda", async () => {
     const show = preview("show-1", "Severance");
     const movie = preview("movie-1", "The Running Man", "movie");

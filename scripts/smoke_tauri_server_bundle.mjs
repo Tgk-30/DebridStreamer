@@ -4,6 +4,7 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  readFileSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -15,11 +16,24 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const tauriConfig = JSON.parse(
+  readFileSync(join(root, "web", "src-tauri", "tauri.conf.json"), "utf8"),
+);
+const productName = tauriConfig.productName ?? "DebridStreamer";
 const target = resolve(process.argv[2] ?? defaultTarget());
 
 function defaultTarget() {
   if (process.platform === "darwin") {
-    return join(root, "web", "src-tauri", "target", "release", "bundle", "macos", "DebridStreamer.app");
+    return join(
+      root,
+      "web",
+      "src-tauri",
+      "target",
+      "release",
+      "bundle",
+      "macos",
+      `${productName}.app`,
+    );
   }
   return join(root, "web", "src-tauri", "resources", "server");
 }
