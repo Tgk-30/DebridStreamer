@@ -1,5 +1,9 @@
 # Feature-gap audit
 
+> Historical planning snapshot from v0.9.3. It is retained for decision history
+> and does not describe the current release. Use the latest verification log for
+> current behavior.
+
 Product audit of what DebridStreamer lacks and could do with, as of v0.9.3
 (2026-07-17). Method: full code inventory of what exists today, live-web
 research of the competitive landscape (Stremio + addon ecosystem, Plex and

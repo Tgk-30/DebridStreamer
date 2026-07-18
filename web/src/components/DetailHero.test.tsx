@@ -352,6 +352,7 @@ describe("DetailHero primary actions", () => {
     );
     const btn = screen.getByRole("button", { name: /Watchlist/ });
     expect(btn.className).not.toContain("is-on");
+    expect(btn).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(btn);
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
@@ -368,6 +369,7 @@ describe("DetailHero primary actions", () => {
     );
     const btn = screen.getByRole("button", { name: /In watchlist/ });
     expect(btn.className).toContain("is-on");
+    expect(btn).toHaveAttribute("aria-pressed", "true");
   });
 });
 

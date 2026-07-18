@@ -21,6 +21,10 @@ describe("SetupNudge", () => {
     );
 
     expect(screen.getByText("Let's get you streaming")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Streaming setup reminder" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByRole("button", { name: "Start guided setup" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Start guided setup" }));
@@ -32,4 +36,3 @@ describe("SetupNudge", () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
-

@@ -201,6 +201,7 @@ describe("appearance controls (persisted)", () => {
     mockSettings = { ...baseSettings(), subtitleTextColor: "#ffe066" };
     renderMenu(makeSubs());
     const active = screen.getByRole("button", { name: "Subtitle color #ffe066" });
+    expect(active).toHaveAttribute("aria-pressed", "true");
     expect(active.className).toContain("is-active");
     await user.click(screen.getByRole("button", { name: "Subtitle color #9be7ff" }));
     expect(updateSettings).toHaveBeenLastCalledWith(
@@ -377,6 +378,8 @@ describe("OpenSubtitles search (gated)", () => {
 
   it("renders a search error message", () => {
     renderMenu(makeSubs({ canSearch: true, searchError: "No subtitles found." }));
+    expect(screen.getByLabelText("Subtitle title search")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("No subtitles found.");
     expect(screen.getByText("No subtitles found.")).toBeInTheDocument();
   });
 

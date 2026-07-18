@@ -1362,6 +1362,46 @@
   color: var(--danger);
 }
 
+.settings-diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding-top: var(--sp-lg);
+  border-top: 1px solid var(--glass-border);
+}
+
+.settings-diagnostics h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.settings-diagnostic-results {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-diagnostic-results li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  padding: 10px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 13px;
+}
+
+.settings-diagnostic-results .is-valid {
+  color: var(--success);
+}
+
+.settings-diagnostic-results .is-error {
+  color: var(--danger);
+}
+
 .settings-version {
   margin: var(--sp-sm) 0 0;
   font-size: 11px;

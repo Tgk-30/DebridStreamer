@@ -3,6 +3,7 @@ import type { PixelSize, PlaybackEngine } from "../../lib/playbackEngine";
 import { PLAYBACK_ENGINE_LABEL } from "../../lib/playbackEngine";
 import { getAppVersion } from "../../lib/appVersion";
 import { Icon } from "../Icon";
+import { useModalA11y } from "../useModalA11y";
 import "./PlayerInfoPopover.css";
 
 interface Props {
@@ -35,6 +36,7 @@ export function PlayerInfoPopover({
   onClose,
 }: Props) {
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const dialogRef = useModalA11y<HTMLElement>(onClose);
 
   useEffect(() => {
     let mounted = true;
@@ -48,9 +50,12 @@ export function PlayerInfoPopover({
 
   return (
     <section
+      ref={dialogRef}
       className="player-info-popover"
       role="dialog"
+      aria-modal="true"
       aria-label="Player details and shortcuts"
+      tabIndex={-1}
     >
       <div className="player-info-head">
         <strong>Player details</strong>

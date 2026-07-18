@@ -62,8 +62,8 @@ export class PremiumizeService implements DebridService {
 
     const results: Record<string, CacheStatus> = {};
     for (const chunk of chunked(hashes, 100)) {
-      const itemsParam = chunk.map((h) => `items[]=${h}`).join("&");
-      const data = await this.requestRaw("/cache/check", "GET", itemsParam);
+      const body = chunk.map((h) => `items[]=${formValueEncode(h)}`).join("&");
+      const data = await this.requestRaw("/cache/check", "POST", undefined, body);
 
       const json = parseJSONObject(data);
       const response = json && Array.isArray(json.response) ? json.response : null;

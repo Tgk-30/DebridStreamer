@@ -145,4 +145,5 @@ Pin versions + verify downloads (size/sha) like the Node runtime script does.
 1. Bundle the dylibs (above) and confirm a **clean-machine** build renders video.
 2. Flip `builtInPlayer` default to `true` in `web/src/data/settings.ts` and the
    `useBuiltInPlayer` prop default in `VideoPlayer.tsx`.
-3. Drop the "experimental" wording in `Settings.tsx`.
+3. Completed: the built-in player is the default desktop path and no longer
+   carries experimental wording.

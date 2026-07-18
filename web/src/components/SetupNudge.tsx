@@ -19,7 +19,10 @@ export function SetupNudge({
   onDismiss: () => void;
 }) {
   return (
-    <div className="setup-nudge glass-hero glass-lit" role="status">
+    <section
+      className="setup-nudge glass-hero glass-lit"
+      aria-label="Streaming setup reminder"
+    >
       <span className="setup-nudge-icon" aria-hidden>
         <Icon name="play" size={16} />
       </span>
@@ -50,6 +53,6 @@ export function SetupNudge({
       >
         <Icon name="xmark" size={16} />
       </button>
-    </div>
+    </section>
   );
 }

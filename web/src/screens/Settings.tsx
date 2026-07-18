@@ -120,6 +120,15 @@ import {
 } from "../lib/tauri";
 import { getDownloadsBridge } from "../lib/downloadsBridge";
 import { getAppVersion } from "../lib/appVersion";
+import {
+  buildDiagnosticsReport,
+  downloadDiagnosticsReport,
+  recordDiagnostic,
+} from "../lib/diagnostics";
+import type {
+  DebridManager,
+  ProviderSmokeResult,
+} from "../services/debrid/DebridManager";
 import type { SettingsSection } from "../lib/settingsNavigation";
 import {
   DOWNLOADS_DIRECTORY_SETTING,
@@ -682,6 +691,7 @@ async function serverRequest<T>(
 export function Settings() {
   const {
     settings,
+    services,
     updateSettings,
     simpleMode,
     activeProfile,
@@ -914,7 +924,14 @@ export function Settings() {
         {tab === "install" && <InstallTab />}
         {tab === "playback" && <PlaybackTab draft={draft} patch={patch} />}
         {tab === "privacy" && <PrivacyTab draft={draft} patch={patch} />}
-        {tab === "updates" && <UpdatesTab draft={draft} patch={patch} />}
+        {tab === "updates" && (
+          <UpdatesTab
+            draft={draft}
+            patch={patch}
+            debrid={services?.debrid ?? null}
+            appVersion={appVersion ?? __APP_VERSION__}
+          />
+        )}
         {tab === "server" && <ServerTab />}
         {tab === "keys" && <KeysTab draft={draft} patch={patch} />}
         {tab === "debrid" && <DebridTab draft={draft} patch={patch} />}
@@ -1380,7 +1397,50 @@ function profileGlyph(profile: LocalProfile): string {
   return profile.name.trim().charAt(0).toUpperCase() || "?";
 }
 
-function UpdatesTab({ draft, patch }: TabProps) {
+function UpdatesTab({
+  draft,
+  patch,
+  debrid,
+  appVersion,
+}: TabProps & { debrid: DebridManager | null; appVersion: string }) {
+  const [smokeResults, setSmokeResults] = useState<ProviderSmokeResult[] | null>(null);
+  const [smokeRunning, setSmokeRunning] = useState(false);
+  const [diagnosticsStatus, setDiagnosticsStatus] = useState<string | null>(null);
+  const desktop = isTauri();
+
+  async function runProviderChecks() {
+    if (debrid == null || smokeRunning) return;
+    setSmokeRunning(true);
+    setSmokeResults(null);
+    try {
+      const results = await debrid.smokeTestProviders();
+      setSmokeResults(results);
+      for (const result of results) {
+        const healthy = result.accountReachable && result.cacheReachable;
+        recordDiagnostic(
+          "provider",
+          `smoke.${result.service}.${healthy ? "passed" : "failed"}`,
+          healthy ? "info" : "error",
+          `${result.durationMs}ms`,
+        );
+      }
+    } finally {
+      setSmokeRunning(false);
+    }
+  }
+
+  function exportDiagnostics() {
+    const report = buildDiagnosticsReport({
+      appVersion,
+      runtime: desktop ? "desktop" : "browser",
+      platform: deviceKind(),
+      serverMode: isServerMode(),
+      settings: draft,
+    });
+    downloadDiagnosticsReport(report);
+    setDiagnosticsStatus("Diagnostics saved. Credentials and private URLs were excluded.");
+  }
+
   return (
     <div className="settings-fields">
       <SettingsInfo label="About desktop updates">
@@ -1421,6 +1481,62 @@ function UpdatesTab({ draft, patch }: TabProps) {
           <span className="t-secondary"> Downloads, applies, and relaunches the app.</span>
         </span>
       </label>
+
+      <section className="settings-diagnostics" aria-labelledby="settings-diagnostics-title">
+        <div>
+          <h2 id="settings-diagnostics-title">Troubleshooting</h2>
+          <p className="settings-hint">
+            Run read-only checks for saved providers, then export a redacted
+            support file with configuration state and recent player events.
+          </p>
+        </div>
+
+        <div className="settings-provider-check">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void runProviderChecks()}
+            disabled={!desktop || debrid == null || smokeRunning}
+          >
+            {smokeRunning ? "Checking providers…" : "Run provider smoke tests"}
+          </button>
+          <button type="button" className="btn" onClick={exportDiagnostics}>
+            Export diagnostics
+          </button>
+        </div>
+
+        {!desktop && (
+          <p className="settings-hint">
+            Provider checks run in the desktop app because browsers block direct
+            provider API requests.
+          </p>
+        )}
+        {desktop && debrid == null && (
+          <p className="settings-hint">Save a provider before running checks.</p>
+        )}
+        {smokeResults != null && (
+          <ul className="settings-diagnostic-results" aria-label="Provider smoke test results">
+            {smokeResults.map((result) => {
+              const healthy = result.accountReachable && result.cacheReachable;
+              return (
+                <li key={result.service}>
+                  <strong>{DebridServiceType.displayName(result.service)}</strong>
+                  <span className={healthy ? "is-valid" : "is-error"}>
+                    {healthy
+                      ? `Account and cache checks passed in ${result.durationMs}ms`
+                      : !result.accountReachable
+                        ? "Account check failed"
+                        : "Cache check failed"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="settings-status" aria-live="polite">
+          {diagnosticsStatus ?? ""}
+        </p>
+      </section>
     </div>
   );
 }

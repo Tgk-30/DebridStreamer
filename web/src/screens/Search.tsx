@@ -328,13 +328,14 @@ export function Search() {
           )}
         </div>
 
-        <div className="search-filters">
+        <div className="search-filters" aria-label="Search result type">
           {FILTERS.map((f) => (
             <button
               key={f.id}
               type="button"
               className={`chip${filter === f.id ? " is-active" : ""}`}
               onClick={() => setFilter(f.id)}
+              aria-pressed={filter === f.id}
             >
               {f.label}
             </button>

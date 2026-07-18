@@ -219,6 +219,7 @@ export function DetailHero({
               type="button"
               className={`btn detail-watch${inWatchlist ? " is-on" : ""}`}
               onClick={onToggleWatchlist}
+              aria-pressed={inWatchlist}
             >
               <Icon name="watchlist" size={16} filled={inWatchlist} />
               {inWatchlist ? "In watchlist" : "Watchlist"}

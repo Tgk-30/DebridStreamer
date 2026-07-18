@@ -187,6 +187,8 @@ function BrowseInner({
             type="button"
             className={`btn browse-filter-btn${filtersActive ? " browse-filter-on" : ""}`}
             onClick={onOpenFilters}
+            aria-expanded={filtersOpen}
+            aria-haspopup="dialog"
           >
             <Icon name="sliders" size={15} />
             Filters

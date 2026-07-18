@@ -545,7 +545,7 @@ describe("PremiumizeService checkCache edge cases", () => {
     const itemsPerRequest: number[] = [];
     const mock = makeMockFetch((req) => {
       requestCount += 1;
-      const items = req.url.searchParams.getAll("items[]");
+      const items = new URLSearchParams(req.body).getAll("items[]");
       itemsPerRequest.push(items.length);
       return ok(
         JSON.stringify({
@@ -564,16 +564,23 @@ describe("PremiumizeService checkCache edge cases", () => {
     expect(result.hash0).toEqual({ kind: "notCached" });
   });
 
-  it("does not leak the apikey into the cache/check query string", async () => {
+  it("posts cache hashes in the form body without leaking the apikey into the query", async () => {
     let query = "";
+    let method = "";
+    let body = "";
     const mock = makeMockFetch((req) => {
       query = req.url.search;
+      method = req.method;
+      body = req.body;
       return ok(JSON.stringify({ response: [false], filename: [null], filesize: [null] }));
     });
     const service = new PremiumizeService("pm-token", mock.fetchImpl);
     await service.checkCache(["HASHX"]);
+    expect(method).toBe("POST");
     expect(query.includes("apikey=")).toBe(false);
-    expect(query).toContain("items[]=HASHX");
+    expect(query).toBe("");
+    expect(new URLSearchParams(body).getAll("items[]")).toEqual(["HASHX"]);
+    expect(new URLSearchParams(body).get("apikey")).toBe("pm-token");
   });
 });
 

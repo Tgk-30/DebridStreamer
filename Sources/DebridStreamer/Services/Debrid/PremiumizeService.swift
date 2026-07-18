@@ -20,8 +20,11 @@ actor PremiumizeService: DebridServiceProtocol {
         let chunks = hashes.chunked(into: 100)
 
         for chunk in chunks {
-            let itemsParam = chunk.map { "items[]=\($0)" }.joined(separator: "&")
-            let data = try await requestRaw(path: "/cache/check", method: "GET", queryParams: itemsParam)
+            let itemsBody: String = chunk.map { hash -> String in
+                let encodedHash = hash.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? hash
+                return "items[]=\(encodedHash)"
+            }.joined(separator: "&")
+            let data = try await requestRaw(path: "/cache/check", method: "POST", body: itemsBody)
 
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                let response = json["response"] as? [Bool],

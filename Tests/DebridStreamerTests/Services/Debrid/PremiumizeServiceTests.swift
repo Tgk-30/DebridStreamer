@@ -92,8 +92,14 @@ struct PremiumizeServiceTests {
     func checkCacheMapsResponseArrays() async throws {
         let sessionID = UUID().uuidString
         let session = makeMockSession(sessionID: sessionID)
+        var capturedMethod: String?
+        var capturedBody = ""
+        var capturedQuery: String?
 
         MockURLProtocol.setHandler({ request in
+            capturedMethod = request.httpMethod
+            capturedBody = pmRequestBody(from: request)
+            capturedQuery = request.url?.query
             let body = """
             {"response":[true,false],
              "filename":["Cached.Movie.mkv",null],
@@ -110,6 +116,11 @@ struct PremiumizeServiceTests {
         #expect(result["hashcached"]?.isCached == true)
         #expect(result["hashmiss"] == .notCached)
         #expect(result["hashmiss"]?.isCached == false)
+        #expect(capturedMethod == "POST")
+        #expect(capturedQuery == nil)
+        #expect(capturedBody.contains("items[]=HASHCACHED"))
+        #expect(capturedBody.contains("items[]=HASHMISS"))
+        #expect(capturedBody.contains("apikey=pm-token"))
     }
 
     @Test("checkCache short-circuits to empty for empty input without hitting network")

@@ -94,6 +94,9 @@ describe("HeroSpotlight empty / single-item guards", () => {
     expect(container.querySelector(".hero-dot.is-active")).toBe(
       container.querySelectorAll(".hero-dot")[0],
     );
+    expect(
+      screen.getByRole("tab", { name: "Alpha, featured 1 of 3" }),
+    ).toHaveAttribute("aria-selected", "true");
   });
 
   it("caps the rotation list at 6 items", () => {

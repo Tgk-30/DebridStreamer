@@ -3,7 +3,7 @@
 // Control-UI + effect tests for the in-app VideoPlayer. Real playback (codec
 // decode, HLS networking, native mpv hand-off) is mocked away; we exercise the
 // branch selection (webview vs external), the CC popover toggle, the OSD row,
-// the HLS source-attach / onHlsUnsupported path, and the mpv lifecycle effect.
+// the HLS source attach and recovery paths, and the mpv lifecycle effect.
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
@@ -20,6 +20,9 @@ const { hlsInstances, hlsIsSupported } = vi.hoisted(() => ({
     loadSource: ReturnType<typeof vi.fn>;
     attachMedia: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
+    on: ReturnType<typeof vi.fn>;
+    startLoad: ReturnType<typeof vi.fn>;
+    recoverMediaError: ReturnType<typeof vi.fn>;
   }>,
   hlsIsSupported: vi.fn(() => true),
 }));
@@ -30,9 +33,14 @@ const iconMock = vi.hoisted(() => vi.fn(({ name }: { name: string }) => <span da
 vi.mock("hls.js", () => {
   class FakeHls {
     static isSupported = hlsIsSupported;
+    static Events = { ERROR: "hlsError" };
+    static ErrorTypes = { NETWORK_ERROR: "networkError" };
     loadSource = vi.fn();
     attachMedia = vi.fn();
     destroy = vi.fn();
+    on = vi.fn();
+    startLoad = vi.fn();
+    recoverMediaError = vi.fn();
     constructor() {
       hlsInstances.push(this);
     }
@@ -981,6 +989,53 @@ describe("HLS source attach", () => {
     expect(hlsInstances[0].attachMedia).toHaveBeenCalled();
   });
 
+  it("retries bounded fatal HLS network errors before surfacing recovery UI", async () => {
+    vi.useFakeTimers();
+    try {
+      (HTMLMediaElement.prototype.canPlayType as ReturnType<typeof vi.fn>) = vi.fn(
+        () => "",
+      );
+      render(<VideoPlayer url="https://x/stream.m3u8" title="T" onClose={() => {}} />);
+      await act(async () => Promise.resolve());
+      expect(hlsInstances).toHaveLength(1);
+      const handler = hlsInstances[0].on.mock.calls[0]?.[1] as (
+        event: string,
+        data: { fatal: boolean; type: string },
+      ) => void;
+
+      act(() => handler("hlsError", { fatal: true, type: "networkError" }));
+      act(() => vi.advanceTimersByTime(500));
+      expect(hlsInstances[0].startLoad).toHaveBeenCalledTimes(1);
+
+      act(() => handler("hlsError", { fatal: true, type: "networkError" }));
+      act(() => vi.advanceTimersByTime(1000));
+      expect(hlsInstances[0].startLoad).toHaveBeenCalledTimes(2);
+
+      act(() => handler("hlsError", { fatal: true, type: "networkError" }));
+      expect(screen.getByRole("button", { name: "Retry playback" })).toBeInTheDocument();
+      expect(screen.getByText(/after two retries/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("attempts one HLS media recovery before failing", async () => {
+    (HTMLMediaElement.prototype.canPlayType as ReturnType<typeof vi.fn>) = vi.fn(
+      () => "",
+    );
+    render(<VideoPlayer url="https://x/stream.m3u8" title="T" onClose={() => {}} />);
+    await waitFor(() => expect(hlsInstances).toHaveLength(1));
+    const handler = hlsInstances[0].on.mock.calls[0]?.[1] as (
+      event: string,
+      data: { fatal: boolean; type: string },
+    ) => void;
+
+    act(() => handler("hlsError", { fatal: true, type: "mediaError" }));
+    expect(hlsInstances[0].recoverMediaError).toHaveBeenCalledTimes(1);
+    act(() => handler("hlsError", { fatal: true, type: "mediaError" }));
+    expect(screen.getByRole("button", { name: "Retry playback" })).toBeInTheDocument();
+  });
+
   it("uses native HLS (no hls.js) when canPlayType reports support", () => {
     (HTMLMediaElement.prototype.canPlayType as ReturnType<typeof vi.fn>) = vi.fn(
       () => "maybe",
@@ -1013,15 +1068,32 @@ describe("HLS source attach", () => {
     render(
       <VideoPlayer url="https://x/stream.m3u8" title="T" onClose={() => {}} />,
     );
-    // onHlsUnsupported sets externalError → the parent flips to ExternalPanel.
-    // Reached only after the on-demand hls.js chunk resolves.
+    // The unsupported callback flips the parent to the recovery panel. Reached
+    // only after the on-demand hls.js chunk resolves.
     await waitFor(() =>
       expect(document.querySelector(".player-external")).not.toBeNull(),
     );
     expect(hlsInstances).toHaveLength(0);
     expect(
-      screen.getByText("This browser can't play HLS. Try the desktop app."),
+      screen.getByText("This browser cannot play HLS. Try the desktop app."),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the retry recovery panel visible in the desktop app", async () => {
+    isTauriMock.mockReturnValue(true);
+    (HTMLMediaElement.prototype.canPlayType as ReturnType<typeof vi.fn>) = vi.fn(
+      () => "",
+    );
+    hlsIsSupported.mockReturnValue(false);
+    render(
+      <VideoPlayer url="https://x/stream.m3u8" title="T" onClose={() => {}} />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Playback interrupted")).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Retry playback" })).toBeInTheDocument();
+    expect(screen.queryByText("Opening in the bundled player")).toBeNull();
   });
 });
 

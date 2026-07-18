@@ -1,5 +1,9 @@
 # DebridStreamer feature-gap audit
 
+> Historical audit snapshot from v0.9.3. It is retained for decision history and
+> does not describe the current release. Use the latest verification log for
+> current behavior.
+
 Date: 2026-07-17 (against v0.9.3). Method: three parallel passes - a code inventory of what ships today, live web research on comparable apps (Stremio, Plex/Jellyfin, Infuse/VidHub, the debrid-native tool ecosystem), and a jobs-to-be-done gap analysis across four personas. This is a product document, not a work order: nothing here is committed to a release.
 
 ## The headline: you have built more than you ship

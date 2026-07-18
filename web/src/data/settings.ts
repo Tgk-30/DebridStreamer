@@ -1380,11 +1380,9 @@ export interface AppServices {
 }
 
 /** Module-level cache for the built DebridManager, keyed by a signature of the
- * debrid config (service types + tokens). The manager's identity must stay
- * stable across UNRELATED settings edits (e.g. the instant theme save) so that
- * useDebridLibrary's effect - which depends on `services.debrid` identity - 
- * doesn't re-fetch the whole account on every save. Only when the debrid config
- * actually changes do we rebuild. */
+ * debrid config (service types + tokens). Its identity stays stable across
+ * unrelated settings edits so useDebridLibrary does not refetch the whole
+ * account on every save. Only a debrid config change rebuilds it. */
 let debridManagerCache: { signature: string; manager: DebridManager } | null =
   null;
 let indexerManagerCache: { signature: string; manager: IndexerManager } | null =

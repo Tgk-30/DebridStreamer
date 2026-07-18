@@ -112,6 +112,9 @@ jobs:
       - name: Public repo preflight
         run: node scripts/public_repo_preflight.mjs
 
+      - name: Provider smoke contract tests
+        run: node --test scripts/provider_smoke.test.mjs
+
       - name: Release readiness
         run: node scripts/check_release_readiness.mjs
 

@@ -53,6 +53,7 @@ const SEARCH_INDEX: SearchEntry[] = [
   { label: "Debrid provider", tab: "debrid", keywords: "real-debrid torbox alldebrid premiumize" },
   { label: "Sources / indexers", tab: "sources", keywords: "torrent addon jackett" },
   { label: "Auto-update", tab: "updates", keywords: "version install release" },
+  { label: "Diagnostics", tab: "updates", keywords: "support logs provider smoke test troubleshooting" },
 ];
 
 export function SettingsSearch({

@@ -18,6 +18,13 @@ export interface MergedCacheEntry {
   status: CacheStatus;
 }
 
+export interface ProviderSmokeResult {
+  service: DebridServiceType;
+  accountReachable: boolean;
+  cacheReachable: boolean;
+  durationMs: number;
+}
+
 /** Maximum time a single provider may hold up a cache lookup. A provider that
  * exceeds this budget contributes no answer, while healthy providers continue
  * to determine the result. */
@@ -305,5 +312,62 @@ export class DebridManager {
     return collected
       .sort((a, b) => a.index - b.index)
       .map((c) => [c.serviceType, c.valid] as [DebridServiceType, boolean]);
+  }
+
+  /** Read-only provider smoke check used by diagnostics and release validation.
+   * It verifies both the account endpoint and cache lookup contract without
+   * adding, selecting, or deleting a torrent. */
+  async smokeTestProviders(
+    hash = "0000000000000000000000000000000000000000",
+  ): Promise<ProviderSmokeResult[]> {
+    const normalizedHash = hash.trim().toLowerCase();
+    if (!/^[a-f0-9]{40}$/.test(normalizedHash)) {
+      throw new Error("Provider smoke hash must be a 40-character info hash");
+    }
+
+    const collected = await Promise.all(
+      this.services.map(async (service, index) => {
+        const startedAt = Date.now();
+        let accountReachable = false;
+        let cacheReachable = false;
+        try {
+          accountReachable = await withTimeout(
+            service.validateToken(),
+            DEBRID_CACHE_TIMEOUT_MS,
+            DebridServiceTypeNS.displayName(service.serviceType),
+          );
+        } catch {
+          accountReachable = false;
+        }
+        if (accountReachable) {
+          try {
+            const cache = await withTimeout(
+              service.checkCache([normalizedHash]),
+              DEBRID_CACHE_TIMEOUT_MS,
+              DebridServiceTypeNS.displayName(service.serviceType),
+            );
+            cacheReachable = Object.prototype.hasOwnProperty.call(
+              cache,
+              normalizedHash,
+            );
+          } catch {
+            cacheReachable = false;
+          }
+        }
+        return {
+          index,
+          result: {
+            service: service.serviceType,
+            accountReachable,
+            cacheReachable,
+            durationMs: Math.max(0, Date.now() - startedAt),
+          },
+        };
+      }),
+    );
+
+    return collected
+      .sort((left, right) => left.index - right.index)
+      .map((entry) => entry.result);
   }
 }

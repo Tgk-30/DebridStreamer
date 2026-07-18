@@ -253,6 +253,7 @@ export function DebridLibrary() {
               type="button"
               className={`chip${filter === f ? " is-active dl-chip-active" : ""}`}
               onClick={() => setFilter(f)}
+              aria-pressed={filter === f}
             >
               {f === "all" ? "All" : f === "ready" ? "Ready" : "Duplicates"}
             </button>

@@ -209,6 +209,7 @@ export function CaptionsMenu({
                 style={{ background: c }}
                 onClick={() => patchSub({ subtitleTextColor: c })}
                 aria-label={`Subtitle color ${c}`}
+                aria-pressed={settings.subtitleTextColor === c}
               />
             ))}
           </div>
@@ -290,6 +291,7 @@ export function CaptionsMenu({
               onChange={(e) => setQuery(e.target.value)}
               placeholder={seedImdbId ? "Searching by IMDb id" : "Search title…"}
               disabled={seedImdbId != null}
+              aria-label="Subtitle title search"
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
               }}
@@ -319,7 +321,9 @@ export function CaptionsMenu({
           </div>
 
           {subs.searchError && (
-            <p className="captions-error t-secondary">{subs.searchError}</p>
+            <p className="captions-error t-secondary" role="alert">
+              {subs.searchError}
+            </p>
           )}
 
           <div className="captions-results">

@@ -54,6 +54,9 @@ import {
   type NowPlayingMetadata,
 } from "./player/PlayerPauseOverlay";
 import { registerPlayerMount } from "../lib/attention";
+import { recordDiagnostic } from "../lib/diagnostics";
+import { mediaErrorMessage, nextHlsRecovery } from "../lib/playerReliability";
+import { useModalA11y } from "./useModalA11y";
 import {
   scrobblePlaybackPause,
   scrobblePlaybackStart,
@@ -120,10 +123,8 @@ interface VideoPlayerProps {
   /** Chosen external player name (Settings). Passed to the VLC/IINA/mpv hand-off
    *  so it opens the user's preferred app first. "" / undefined = auto order. */
   preferredPlayer?: string;
-  /** Desktop only (EXPERIMENTAL): use the in-window libmpv player for containers
-   *  the webview can't decode (MKV/HEVC) instead of handing off to an external
-   *  app. When false the external hand-off (bundled mpv / VLC) is used. Opt-in
-   *  (default false) until native bundling is verified. */
+  /** Desktop only: use the in-window libmpv player for containers the webview
+   *  cannot decode. When false, use the bundled mpv or an external player. */
   useBuiltInPlayer?: boolean;
 }
 
@@ -376,14 +377,21 @@ export function VideoPlayer({
   const [webviewPaused, setWebviewPaused] = useState(false);
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [castSuspended, setCastSuspended] = useState(false);
+  const [playbackAttempt, setPlaybackAttempt] = useState(0);
   const [activeSubtitleUrl, setActiveSubtitleUrl] = useState<string | null>(null);
   const [chromeHovered, setChromeHovered] = useState(false);
   const [chromeFocused, setChromeFocused] = useState(false);
   const chromeHideTimer = useRef<number | undefined>(undefined);
+  const lastChromeNudgeAt = useRef(Number.NEGATIVE_INFINITY);
   const chromePinned =
     webviewPaused || captionsOpen || detailsSection != null || chromeHovered || chromeFocused;
   const chromePinnedRef = useRef(chromePinned);
   chromePinnedRef.current = chromePinned;
+  const playerDialogRef = useModalA11y<HTMLDivElement>(
+    onClose,
+    !useEmbedded,
+    captionsOpen || detailsSection != null,
+  );
 
   const clearChromeTimer = useCallback(() => {
     window.clearTimeout(chromeHideTimer.current);
@@ -391,6 +399,17 @@ export function VideoPlayer({
   }, []);
   const nudgeChrome = useCallback(() => {
     if (mode !== "webview") return;
+    // Pointermove can fire hundreds of times per second. Coalesce timer resets
+    // so showing the controls stays immediate without making playback compete
+    // with constant timeout allocation and cleanup.
+    const now = performance.now();
+    if (
+      chromeHideTimer.current != null &&
+      now - lastChromeNudgeAt.current < 100
+    ) {
+      return;
+    }
+    lastChromeNudgeAt.current = now;
     setWebChromeVisible(true);
     clearChromeTimer();
     chromeHideTimer.current = window.setTimeout(() => {
@@ -421,7 +440,14 @@ export function VideoPlayer({
     [nudgeChrome],
   );
 
-  useEffect(() => registerPlayerMount(), []);
+  useEffect(() => {
+    recordDiagnostic("player", "session.started", "info", requestedEngine);
+    const unregister = registerPlayerMount();
+    return () => {
+      recordDiagnostic("player", "session.closed");
+      unregister();
+    };
+  }, [requestedEngine]);
   useEffect(() => {
     if (mode !== "webview") {
       clearChromeTimer();
@@ -449,39 +475,45 @@ export function VideoPlayer({
   }, [effectiveUrl]);
 
   useEffect(() => {
-    const measure = () => setDisplaySize(currentViewportPixelSize());
+    let frame: number | undefined;
+    const measure = () => {
+      frame = undefined;
+      setDisplaySize(currentViewportPixelSize());
+    };
+    const scheduleMeasure = () => {
+      if (frame != null) return;
+      frame = window.requestAnimationFrame(measure);
+    };
     measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    window.addEventListener("resize", scheduleMeasure);
+    return () => {
+      window.removeEventListener("resize", scheduleMeasure);
+      if (frame != null) window.cancelAnimationFrame(frame);
+    };
   }, []);
 
-  // A single top-right panel owns both playback information and the keymap.
-  // Escape dismisses it before any lower-level player action can run.
-  useEffect(() => {
-    if (detailsSection == null) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setDetailsSection(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [detailsSection]);
-
   const recoverNativeInWebview = useCallback(async (): Promise<boolean> => {
-    if (requestWebviewFallback == null) return false;
+    if (requestWebviewFallback == null) {
+      recordDiagnostic("player", "native.fallback_unavailable", "warning");
+      return false;
+    }
+    recordDiagnostic("player", "native.fallback_started");
     let hlsUrl: string | null = null;
     try {
       hlsUrl = await requestWebviewFallback();
     } catch {
       hlsUrl = null;
     }
-    if (hlsUrl == null || hlsUrl.length === 0) return false;
+    if (hlsUrl == null || hlsUrl.length === 0) {
+      recordDiagnostic("player", "native.fallback_failed", "error");
+      return false;
+    }
     setFallbackSource({
       originUrl: url,
       originEngine: requestedEngine,
       url: hlsUrl,
     });
+    recordDiagnostic("player", "native.fallback_ready");
     return true;
   }, [requestWebviewFallback, requestedEngine, url]);
 
@@ -512,17 +544,23 @@ export function VideoPlayer({
             ? "Playing in the bundled mpv (in-window embedding attempted)."
             : "Playing in the bundled mpv player.",
         );
+        recordDiagnostic("player", "mpv.started");
       })
       .catch(() => {
         // mpv missing / failed to spawn - fall back to the VLC/IINA hand-off.
         if (cancelled) return;
+        recordDiagnostic("player", "mpv.start_failed", "warning");
         openInExternalPlayer(effectiveUrl, preferredPlayer)
           .then((status) => {
-            if (!cancelled) setExternalStatus(status);
+            if (!cancelled) {
+              setExternalStatus(status);
+              recordDiagnostic("player", "external.started");
+            }
           })
           .catch((err) => {
             if (!cancelled) {
               setExternalError(err instanceof Error ? err.message : String(err));
+              recordDiagnostic("player", "external.start_failed", "error");
             }
           });
       });
@@ -581,7 +619,12 @@ export function VideoPlayer({
   return createPortal(
     <div className="player-backdrop" onClick={onClose}>
       <div
+        ref={playerDialogRef}
         className="player"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Playing ${title}`}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         onPointerMove={mode === "webview" ? nudgeChrome : undefined}
       >
@@ -650,6 +693,7 @@ export function VideoPlayer({
 
         {mode === "webview" && externalError == null ? (
           <WebviewPlayer
+            key={`${effectiveUrl}:${playbackAttempt}`}
             url={effectiveUrl}
             title={title}
             subtitle={subtitle}
@@ -670,9 +714,10 @@ export function VideoPlayer({
             onSourceSize={setSourceSize}
             onProgress={onProgress}
             startPositionSeconds={startPositionSeconds}
-            onHlsUnsupported={() =>
-              setExternalError("This browser can't play HLS. Try the desktop app.")
-            }
+            onPlaybackError={(message) => {
+              recordDiagnostic("player", "webview.playback_failed", "error", message);
+              setExternalError(message);
+            }}
             subtitleClient={subtitleClient ?? null}
             translator={translator ?? null}
             imdbId={imdbId ?? null}
@@ -689,6 +734,15 @@ export function VideoPlayer({
             url={effectiveUrl}
             status={externalStatus}
             error={externalError}
+            onRetry={
+              mode === "webview" && externalError != null
+                ? () => {
+                    recordDiagnostic("player", "webview.retry_requested");
+                    setExternalError(null);
+                    setPlaybackAttempt((attempt) => attempt + 1);
+                  }
+                : undefined
+            }
           />
         )}
       </div>
@@ -721,7 +775,7 @@ function WebviewPlayer({
   onSourceSize,
   onProgress,
   startPositionSeconds,
-  onHlsUnsupported,
+  onPlaybackError,
   subtitleClient,
   translator,
   imdbId,
@@ -752,7 +806,7 @@ function WebviewPlayer({
   onSourceSize: (size: PixelSize | null) => void;
   onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
   startPositionSeconds?: number;
-  onHlsUnsupported: () => void;
+  onPlaybackError: (message: string) => void;
   subtitleClient: SubtitleClient | null;
   translator: Translator | null;
   imdbId: string | null;
@@ -1081,8 +1135,8 @@ function WebviewPlayer({
   // progress → recordResume → refreshHistory loop), and a changing callback
   // identity would otherwise re-run that effect and reload video.src - restarting
   // playback from 0 every few seconds.
-  const onHlsUnsupportedRef = useRef(onHlsUnsupported);
-  onHlsUnsupportedRef.current = onHlsUnsupported;
+  const onPlaybackErrorRef = useRef(onPlaybackError);
+  onPlaybackErrorRef.current = onPlaybackError;
   // Resume position is captured in a ref + a one-shot guard so we seek exactly
   // once, when metadata first loads, without re-subscribing the effect.
   const startPositionRef = useRef(startPositionSeconds);
@@ -1226,6 +1280,8 @@ function WebviewPlayer({
     // that return above and never touch it. Fetch it on demand instead.
     let cancelled = false;
     let instance: HlsInstance | null = null;
+    let retryTimer: number | undefined;
+    const recovery = { networkRetries: 0, mediaRecoveries: 0 };
     void import("hls.js").then(({ default: Hls }) => {
       // The effect can be torn down (or the URL swapped) while the chunk is in
       // flight; without this we would attach a player to a stale <video>.
@@ -1233,7 +1289,9 @@ function WebviewPlayer({
       const element = videoRef.current;
       if (element == null) return;
       if (!Hls.isSupported()) {
-        onHlsUnsupportedRef.current();
+        onPlaybackErrorRef.current(
+          "This browser cannot play HLS. Try the desktop app.",
+        );
         return;
       }
       // Bound the media buffers - hls.js defaults to backBufferLength: Infinity,
@@ -1241,11 +1299,43 @@ function WebviewPlayer({
       // WebContent process. 60s behind + 30s (up to 120s) ahead keeps seeks snappy
       // without the balloon.
       instance = new Hls({ backBufferLength: 60, maxBufferLength: 30, maxMaxBufferLength: 120 });
+      instance.on(Hls.Events.ERROR, (_event, data) => {
+        if (cancelled || !data.fatal || instance == null) return;
+        const action = nextHlsRecovery(data.type, recovery);
+        if (action === "retry-network") {
+          recovery.networkRetries += 1;
+          recordDiagnostic("player", "hls.network_recovery", "warning");
+          window.clearTimeout(retryTimer);
+          retryTimer = window.setTimeout(
+            () => {
+              retryTimer = undefined;
+              instance?.startLoad();
+            },
+            recovery.networkRetries * 500,
+          );
+          return;
+        }
+        window.clearTimeout(retryTimer);
+        retryTimer = undefined;
+        if (action === "recover-media") {
+          recovery.mediaRecoveries += 1;
+          recordDiagnostic("player", "hls.media_recovery", "warning");
+          instance.recoverMediaError();
+          return;
+        }
+        recordDiagnostic("player", "hls.fatal", "error", data.type);
+        onPlaybackErrorRef.current(
+          data.type === Hls.ErrorTypes.NETWORK_ERROR
+            ? "The stream stopped responding after two retries. Try again or choose another stream."
+            : "The stream could not be decoded. Try again or choose another stream.",
+        );
+      });
       instance.loadSource(url);
       instance.attachMedia(element);
     });
     return () => {
       cancelled = true;
+      window.clearTimeout(retryTimer);
       instance?.destroy();
     };
   }, [url, isHls]);
@@ -1473,6 +1563,17 @@ function WebviewPlayer({
           x-webkit-airplay="allow"
           onClick={togglePlayback}
           onDoubleClick={togglePlayerFullscreen}
+          onError={(event) => {
+            // hls.js owns its media errors and bounded recovery. Native HLS and
+            // direct files still surface the media element's error here.
+            if (
+              isHls &&
+              !event.currentTarget.canPlayType("application/vnd.apple.mpegurl")
+            ) {
+              return;
+            }
+            onPlaybackErrorRef.current(mediaErrorMessage(event.currentTarget.error));
+          }}
         >
           {subs.tracks.map((t) => (
             <track
@@ -1690,7 +1791,7 @@ function UpNextOverlay({
         <span className="player-upnext-title t-secondary">Up next</span>
         <span className="player-upnext-label">{label}</span>
         {auto && (
-          <span className="player-upnext-count t-secondary" aria-live="polite">
+          <span className="player-upnext-count t-secondary">
             Playing in {remaining}s
           </span>
         )}
@@ -1713,12 +1814,29 @@ function ExternalPanel({
   url,
   status,
   error,
+  onRetry,
 }: {
   underTauri: boolean;
   url: string;
   status: string | null;
   error: string | null;
+  onRetry?: () => void;
 }) {
+  if (onRetry != null) {
+    return (
+      <div className="player-external">
+        <Icon name="info" size={36} className="t-warning" />
+        <h3 className="player-external-title">Playback interrupted</h3>
+        <p className="player-external-err" role="alert">
+          {error ?? "Playback could not continue."}
+        </p>
+        <button type="button" className="btn btn-prominent" onClick={onRetry}>
+          Retry playback
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="player-external">
       <Icon name="play" size={36} className="t-accent" />
@@ -1729,7 +1847,7 @@ function ExternalPanel({
             {status ??
               "This file (MKV/HEVC) plays in the bundled mpv player. Starting…"}
           </p>
-          {error && <p className="player-external-err">{error}</p>}
+          {error && <p className="player-external-err" role="alert">{error}</p>}
         </>
       ) : (
         <>

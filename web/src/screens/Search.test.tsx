@@ -234,7 +234,10 @@ describe("Search - running a search", () => {
 
   it("passes the active type filter and filters mixed results", async () => {
     render(<Search />);
-    await userEvent.click(screen.getByRole("button", { name: "Movies" }));
+    const movies = screen.getByRole("button", { name: "Movies" });
+    expect(movies).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(movies);
+    expect(movies).toHaveAttribute("aria-pressed", "true");
     const input = fieldInput();
     await userEvent.type(input, "dune");
     fireEvent.keyDown(input, { key: "Enter" });

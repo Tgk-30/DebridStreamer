@@ -301,7 +301,7 @@ export function HeroSpotlight({
               role="tab"
               aria-selected={i === index}
               className={"hero-dot" + (i === index ? " is-active" : "")}
-              aria-label={`Featured ${i + 1} of ${list.length}`}
+              aria-label={`${it.title}, featured ${i + 1} of ${list.length}`}
               onClick={() => setIndex(i)}
             />
           ))}

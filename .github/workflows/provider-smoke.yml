@@ -1,0 +1,29 @@
+name: Provider smoke tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provider-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Run read-only provider checks
+        env:
+          DS_SMOKE_REAL_DEBRID_TOKEN: ${{ secrets.DS_SMOKE_REAL_DEBRID_TOKEN }}
+          DS_SMOKE_ALLDEBRID_TOKEN: ${{ secrets.DS_SMOKE_ALLDEBRID_TOKEN }}
+          DS_SMOKE_PREMIUMIZE_TOKEN: ${{ secrets.DS_SMOKE_PREMIUMIZE_TOKEN }}
+          DS_SMOKE_TORBOX_TOKEN: ${{ secrets.DS_SMOKE_TORBOX_TOKEN }}
+          DS_SMOKE_INFO_HASH: ${{ secrets.DS_SMOKE_INFO_HASH }}
+        run: node scripts/provider_smoke.mjs
