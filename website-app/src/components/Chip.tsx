@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type ChipVariant = 'default' | 'featured' | 'instant' | 'warm' | 'outline';
@@ -11,18 +12,19 @@ interface ChipProps {
 
 /**
  * Chip / Badge - pill, mono 0.75rem, --line border, glass.
- * featured: brand dot · instant: accent pulsing dot · warm: amber star · outline.
+ * warm adds an amber star. Other variants use text color only.
  */
 export default function Chip({ children, variant = 'default', className }: ChipProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-[0.75rem] font-medium leading-none',
-        variant === 'outline' ? 'border-line-strong bg-transparent' : 'border-line bg-bg-2',
+        'inline-flex items-center gap-2 rounded-chip border px-3 py-1 font-mono text-[0.75rem] leading-none tracking-[0.04em]',
+        variant === 'outline' ? 'border-line-strong bg-transparent' : 'border-line bg-[var(--surface-glass)] backdrop-blur-sm',
         variant === 'instant' ? 'text-accent2' : variant === 'warm' ? 'text-warm' : 'text-ink-2',
         className,
       )}
     >
+      {variant === 'warm' && <Star className="h-3 w-3 fill-current" strokeWidth={0} />}
       {children}
     </span>
   );

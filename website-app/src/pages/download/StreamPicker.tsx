@@ -195,8 +195,7 @@ export default function StreamPicker() {
           transition={{ duration: reduced ? 0.2 : 0.5, ease: EASE_EXPO }}
           className="glass-panel flex items-center justify-between gap-3 rounded-row px-4 py-3"
         >
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className={done ? 'pulse-dot pulse-dot-brand' : 'pulse-dot'} />
+          <div className="flex min-w-0 items-center">
             <span className="truncate font-mono text-[0.8125rem] tracking-[0.04em]">
               <span className={done ? 'text-brand' : 'text-ink-2'}>{done ? FOUND : typed}</span>
               {!done && <span aria-hidden="true" className="ml-0.5 inline-block h-[1em] w-[7px] translate-y-[2px] animate-caret-blink bg-brand" />}

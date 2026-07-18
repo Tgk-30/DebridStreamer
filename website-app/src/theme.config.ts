@@ -22,8 +22,8 @@ const theme = {
     body: "'Inter', sans-serif",
     mono: "'JetBrains Mono', monospace",
   },
-  radius: '14px', // card corner radius scale base
-  glow: 0.15, // restrained depth without decorative bloom
+  radius: '20px', // card corner radius scale base
+  glow: 1.0, // global glow intensity multiplier (0 = flat)
 };
 
 export default theme;
@@ -198,12 +198,15 @@ export function applyPreset(presetName: ThemePresetName, opts?: { xfade?: boolea
   emit();
 }
 
-/** Call once before first paint with the fixed public-site appearance. */
+/** Call once before first paint: stored preset + tweaks win, else config defaults. */
 export function initTheme() {
-  currentTweaks = { ...DEFAULT_TWEAKS };
-  currentPreset = theme.preset;
+  const stored = readStoredTweaks();
+  if (stored) currentTweaks = stored;
+  ensurePairingFonts(currentTweaks.fontPairing);
+
+  currentPreset = getStoredPreset() ?? theme.preset;
   writeVars(currentPreset);
-  applyWordmarkOverride(null);
+  applyWordmarkOverride(currentTweaks.productName);
 }
 
 function subscribe(fn: () => void) {
@@ -397,6 +400,23 @@ function persistTweaks(): void {
     window.localStorage.setItem(TWEAKS_KEY, JSON.stringify(currentTweaks));
   } catch {
     /* private mode */
+  }
+}
+
+function readStoredTweaks(): ThemeTweaks | null {
+  try {
+    const raw = window.localStorage.getItem(TWEAKS_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<ThemeTweaks>;
+    return {
+      brandHex: typeof v.brandHex === 'string' && /^#[0-9a-f]{6}$/i.test(v.brandHex) ? v.brandHex.toUpperCase() : null,
+      radiusPx: typeof v.radiusPx === 'number' && v.radiusPx >= 8 && v.radiusPx <= 28 ? v.radiusPx : null,
+      glow: typeof v.glow === 'number' && v.glow >= 0 && v.glow <= 1.5 ? v.glow : null,
+      fontPairing: v.fontPairing && v.fontPairing in FONT_PAIRINGS ? v.fontPairing : null,
+      productName: typeof v.productName === 'string' && v.productName.trim() ? v.productName.slice(0, 24) : null,
+    };
+  } catch {
+    return null;
   }
 }
 

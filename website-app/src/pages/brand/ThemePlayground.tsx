@@ -255,7 +255,6 @@ export default function ThemePlayground({ highlight, onHighlight }: PlaygroundPr
                           </span>
                           <span className="block font-mono text-[0.625rem] tracking-[0.04em] text-ink-3">{name}</span>
                         </span>
-                        {active && <span className="pulse-dot pulse-dot-brand shrink-0" />}
                       </button>
                     );
                   })}
@@ -407,7 +406,6 @@ export default function ThemePlayground({ highlight, onHighlight }: PlaygroundPr
             {/* ── live preview (60%) ── */}
             <div className="relative rounded-stage border border-line bg-bg-1 p-3 md:p-4">
               <div className="flex items-center gap-2 px-1 pb-3">
-                <span className="pulse-dot pulse-dot-brand" />
                 <span className="font-mono text-[0.6875rem] tracking-[0.22em] text-ink-3">
                   LIVE PREVIEW - WHOLE SITE FOLLOWS
                 </span>

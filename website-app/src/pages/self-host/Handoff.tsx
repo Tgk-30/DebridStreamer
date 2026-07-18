@@ -132,7 +132,6 @@ export default function Handoff() {
               transition={{ duration: reduced ? 0.2 : 0.6, ease: EASE_EXPO, delay: 0.5 }}
             >
               <Smartphone className="h-4 w-4 text-brand" />
-              <span className="pulse-dot pulse-dot-brand scale-75" />
             </motion.div>
           </motion.div>
         </div>

@@ -47,8 +47,7 @@ const Sparkline = memo(function Sparkline() {
 
 function StatChip({ label, children, tone = 'accent' }: { label: string; children?: React.ReactNode; tone?: 'accent' | 'ok' }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-chip border border-line bg-[var(--surface-glass)] px-2.5 py-1 font-mono text-[0.6875rem] tracking-[0.04em] text-ink-2">
-      <span className={cn('h-1.5 w-1.5 rounded-full', tone === 'ok' ? 'bg-brand shadow-glow-brand' : 'bg-accent2 shadow-glow-accent')} />
+    <span className="inline-flex items-center rounded-chip border border-line bg-[var(--surface-glass)] px-2.5 py-1 font-mono text-[0.6875rem] tracking-[0.04em] text-ink-2">
       {label}:{' '}
       <span className={tone === 'ok' ? 'text-brand' : 'text-accent2'}>{children}</span>
     </span>

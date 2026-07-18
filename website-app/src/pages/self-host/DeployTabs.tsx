@@ -90,10 +90,7 @@ function ServerToggleMock() {
       <div className="mt-3 border-t border-line pt-3">
         <p className={cn('font-mono text-[0.75rem] tracking-[0.04em] transition-colors duration-300', on ? 'text-accent2' : 'text-ink-3')}>
           {on ? (
-            <span className="inline-flex items-center gap-2">
-              <span className="pulse-dot scale-75" />
-              on - handing phones a hosted PWA · setup URL + QR ready
-            </span>
+            'on - handing phones a hosted PWA · setup URL + QR ready'
           ) : (
             'off - flip to start serving the house'
           )}

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 
 export interface StreamRowMeta {
   label: string;
-  /** instant: accent + pulsing dot · dim: ink-3 · warm: amber */
+  /** instant: accent text · dim: ink-3 · warm: amber */
   variant?: 'instant' | 'dim' | 'warm';
 }
 
@@ -47,7 +47,6 @@ export default function StreamRow({ icon, title, meta, size, href, className }: 
                 m.variant === 'instant' ? 'text-accent2' : m.variant === 'warm' ? 'text-warm' : 'text-ink-3',
               )}
             >
-              {m.variant === 'instant' && <span className="pulse-dot scale-[0.7]" />}
               {m.label}
             </span>
           ))}

@@ -34,10 +34,7 @@ export default function ProofStrip() {
                 className="h-6 w-6 text-brand transition-[filter] duration-200 group-hover:[filter:drop-shadow(0_0_8px_rgba(var(--brand-rgb),0.55))]"
                 strokeWidth={1.5}
               />
-              <p className="mt-4 flex items-center font-body text-[1rem] font-semibold leading-[1.6] text-ink-1">
-                {item.title}
-                {item.instant && <span className="pulse-dot ml-2 inline-block" />}
-              </p>
+              <p className="mt-4 font-body text-[1rem] font-semibold leading-[1.6] text-ink-1">{item.title}</p>
               <p className="mt-1 font-body text-[0.95rem] text-ink-2">{item.text}</p>
             </motion.div>
           );

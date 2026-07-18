@@ -250,9 +250,8 @@ export default function PrivacyDemo() {
             ))}
           </div>
 
-          {/* retyping status line + mode dot */}
-          <div className="flex min-h-[24px] items-center gap-2.5">
-            <span className={cn('pulse-dot', mode !== 'cloud' && 'pulse-dot-brand')} />
+          {/* retyping status line */}
+          <div className="flex min-h-[24px] items-center">
             <p className="font-mono text-[0.75rem] tracking-[0.04em] text-ink-2">
               {typedStatus}
               <span className="ml-0.5 inline-block h-3 w-[7px] animate-caret-blink bg-brand align-[-2px]" />

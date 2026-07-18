@@ -109,12 +109,7 @@ export default function Updates() {
             <AutoCheckToggle on={auto} onChange={setAuto} />
             <span className="font-body text-[0.95rem] font-semibold text-ink-1">Auto-check for updates</span>
           </motion.div>
-          <p className="mt-3 flex items-center gap-2 font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">
-            {auto ? (
-              <span className="pulse-dot pulse-dot-brand scale-75" />
-            ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-ink-3" />
-            )}
+          <p className="mt-3 font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">
             <span aria-live="polite">{status}</span>
           </p>
         </div>
