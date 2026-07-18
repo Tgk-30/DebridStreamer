@@ -5,7 +5,7 @@ export const GITHUB_RELEASES_LATEST = `${GITHUB_RELEASES}/latest`;
 export const GITHUB_ISSUES = `${GITHUB_REPO}/issues`;
 export const GITHUB_DOCKER = `${GITHUB_REPO}/tree/main/deploy/compose`;
 
-export const VERSION = 'v0.9.16-web';
+export const VERSION = 'v0.9.17-web';
 
 export const DOWNLOAD_LINKS = {
   macos: GITHUB_RELEASES_LATEST,

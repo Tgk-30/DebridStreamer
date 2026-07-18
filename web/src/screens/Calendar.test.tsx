@@ -68,6 +68,7 @@ function baseState(over: Partial<CalendarState> = {}): CalendarState {
 }
 
 beforeEach(() => {
+  globalThis.localStorage?.clear();
   openDetail.mockClear();
   navigate.mockClear();
   markCalendarSeen.mockClear();

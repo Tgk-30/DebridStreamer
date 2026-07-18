@@ -190,7 +190,7 @@ export default function DeployTabs() {
                       </p>
                       <StreamRow
                         icon={<Package className="h-5 w-5" strokeWidth={1.75} />}
-                        title="YAWF Stream_0.9.16_amd64.deb"
+                        title="YAWF Stream_0.9.17_amd64.deb"
                         meta={[
                           { label: 'latest', variant: 'instant' },
                           { label: 'signed updater', variant: 'dim' },
@@ -200,7 +200,7 @@ export default function DeployTabs() {
                         href={GITHUB_RELEASES_LATEST}
                       />
                       <div className="mt-4 flex flex-wrap gap-2.5">
-                        <Chip variant="outline">apt install ./YAWF Stream_0.9.16_amd64.deb</Chip>
+                        <Chip variant="outline">apt install ./YAWF Stream_0.9.17_amd64.deb</Chip>
                         <Chip variant="outline">auto-starts the server on login</Chip>
                       </div>
                     </div>
