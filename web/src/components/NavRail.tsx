@@ -161,6 +161,8 @@ export const NAV_RAIL_GROUPS: readonly NavGroup[] = GROUPS;
 interface NavRailProps {
   selected: ScreenId;
   onSelect: (id: ScreenId) => void;
+  /** Prevent background navigation while a higher app overlay is active. */
+  inert?: boolean;
   /** Opens the "who's watching" picker (Server Mode only). When absent or when
    *  the account has a single profile, the switch entry is not shown. */
   onSwitchProfile?: () => void;
@@ -212,6 +214,7 @@ export function NavRail({
   navOrder = EMPTY_NAV_IDS,
   navHidden = EMPTY_NAV_IDS,
   calendarBadgeCount = 0,
+  inert = false,
 }: NavRailProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreSheetRef = useModalA11y<HTMLDivElement>(
@@ -276,7 +279,11 @@ export function NavRail({
   }
 
   return (
-    <nav className="nav-rail" aria-label="Primary">
+    <nav
+      className="nav-rail"
+      aria-label="Primary"
+      ref={(element) => element?.toggleAttribute("inert", inert)}
+    >
       <button
         type="button"
         className="nav-rail-collapse"

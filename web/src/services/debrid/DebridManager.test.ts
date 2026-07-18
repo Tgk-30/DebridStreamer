@@ -4,8 +4,11 @@
 // fault tolerance, deleteTorrent routing, addMagnet preference, getTranscodeHLS
 // branches, and empty-provider states.
 
-import { describe, expect, it } from "vitest";
-import { DebridManager } from "./DebridManager";
+import { describe, expect, it, vi } from "vitest";
+import {
+  DEBRID_CACHE_TIMEOUT_MS,
+  DebridManager,
+} from "./DebridManager";
 import { RealDebridService } from "./RealDebridService";
 import {
   CacheStatus,
@@ -465,6 +468,32 @@ describe("DebridManager checkCacheAll aggregation", () => {
     const merged = await manager.checkCacheAll(["h"]);
     expect(merged.h.service).toBe(DebridServiceTypeNS.premiumize);
     expect(merged.h.status.kind).toBe("cached");
+  });
+
+  it("bounds a hung service while preserving a healthy service result", async () => {
+    vi.useFakeTimers();
+    try {
+      const hung = new StubDebridService({
+        serviceType: DebridServiceTypeNS.allDebrid,
+      });
+      hung.checkCache = async () => new Promise<never>(() => {});
+      const healthy = new StubDebridService({
+        serviceType: DebridServiceTypeNS.premiumize,
+        cache: { h: cached() },
+      });
+      const manager = new DebridManager();
+      manager.addService(hung);
+      manager.addService(healthy);
+
+      const pending = manager.checkCacheAll(["h"]);
+      await vi.advanceTimersByTimeAsync(DEBRID_CACHE_TIMEOUT_MS + 1);
+      const merged = await pending;
+
+      expect(merged.h.service).toBe(DebridServiceTypeNS.premiumize);
+      expect(merged.h.status.kind).toBe("cached");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("returns {} when every service fails", async () => {

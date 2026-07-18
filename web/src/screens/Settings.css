@@ -440,6 +440,18 @@
   font-size: 14px;
   cursor: pointer;
 }
+.settings-toggle-row > span,
+.settings-field-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-toggle-row .t-secondary,
+.settings-field-label .t-secondary {
+  font-size: 12px;
+  line-height: 1.45;
+}
 .settings-toggle-row input[type="checkbox"],
 .settings-source-active input[type="checkbox"] {
   appearance: none;

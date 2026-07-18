@@ -72,6 +72,15 @@ export class IndexerManager {
     this.indexers = newIndexers;
   }
 
+  /** Create an independent search context that shares the configured indexer
+   * clients but owns its own diagnostic state. Complementary searches can run
+   * concurrently without racing on lastSearchErrors. */
+  fork(): IndexerManager {
+    const fork = new IndexerManager();
+    fork.setIndexers([...this.indexers]);
+    return fork;
+  }
+
   configure(configs: IndexerConfig[], fetchImpl: FetchImpl = defaultFetchImpl): void {
     this.indexers = IndexerFactory.buildIndexers(configs, fetchImpl);
   }

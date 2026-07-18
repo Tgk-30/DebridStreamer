@@ -43,7 +43,7 @@ jobs:
 
       - name: Build YAWF Stream website
         working-directory: website-app
-        run: npm ci && npm run build
+        run: npm ci && npm run lint && npm run build
 
       - name: YAWF Stream website QA
         run: node scripts/check_website_app.mjs

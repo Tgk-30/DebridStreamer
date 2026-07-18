@@ -17,6 +17,7 @@ function check(label, condition, fix) {
 
 const appCss = read("web/src/App.css");
 const navCss = read("web/src/components/NavRail.css");
+const heroCss = read("web/src/components/HeroSpotlight.css");
 const moodCss = read("web/src/components/MoodStrip.css");
 const settingsCss = read("web/src/screens/Settings.css");
 const setupCredentials = read("web/src/lib/serverSetupCredentials.ts");
@@ -60,6 +61,13 @@ check(
   /max-height:\s*min\(430px,\s*calc\(100dvh - var\(--mobile-nav-height\) - var\(--mobile-nav-bottom\) - 42px\)\)/.test(navCss) &&
     /overflow-y:\s*auto/.test(navCss),
   "The mobile More sheet must be viewport-constrained and scrollable.",
+);
+
+check(
+  "hero remains visible when window animations are suspended",
+  /:root\[data-suspended\][\s\S]*:root\[data-unfocused\][\s\S]*\.hero-backdrop-layer[\s\S]*animation:\s*none\s*!important[\s\S]*opacity:\s*1\s*!important/.test(heroCss) &&
+    /:root\[data-input-idle\][\s\S]*\.hero-content[\s\S]*animation:\s*none\s*!important[\s\S]*opacity:\s*1\s*!important/.test(heroCss),
+  "HeroSpotlight.css must settle animated hero layers into a visible state when the window is suspended, unfocused, or idle.",
 );
 
 check(

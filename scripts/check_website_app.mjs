@@ -23,6 +23,9 @@ const features = read("src/pages/features/shared.tsx");
 const footer = read("src/components/Footer.tsx");
 const styles = read("src/index.css");
 const site = read("src/lib/site.ts");
+const streamPicker = read("src/pages/download/StreamPicker.tsx");
+const deployTabs = read("src/pages/self-host/DeployTabs.tsx");
+const packageJson = JSON.parse(read("package.json"));
 const tauri = JSON.parse(readFileSync(join(root, "web/src-tauri/tauri.conf.json"), "utf8"));
 
 check(app.includes('basename="/debridstreamer"'), "BrowserRouter must use the /debridstreamer basename");
@@ -31,7 +34,22 @@ check(hero.includes("A private streaming hub for the services you already use.")
 check(!features.includes("id: 'assistant'"), "features must not expose the Assistant chapter by default");
 check(footer.includes("YAWF Group. All rights reserved."), "footer must include the YAWF Group copyright");
 check(styles.includes(".char-space") && styles.includes("white-space: pre"), "animated headlines must preserve word spacing");
-check(site.includes(`v${tauri.version}-web`), "website version must match the Tauri release version");
+check(packageJson.version === tauri.version, "website package version must match the Tauri release version");
+check(site.includes(`APP_VERSION = '${tauri.version}'`), "website release constants must match the Tauri release version");
+
+for (const assetTemplate of [
+  "YAWF.Stream_${APP_VERSION}_aarch64.dmg",
+  "YAWF.Stream_${APP_VERSION}_x64.dmg",
+  "YAWF.Stream_${APP_VERSION}_x64_en-US.msi",
+  "YAWF.Stream_${APP_VERSION}_amd64.AppImage",
+  "debridstreamer-server_${APP_VERSION}_all.deb",
+]) {
+  check(site.includes(assetTemplate), `direct release link missing: ${assetTemplate}`);
+}
+
+check(!/checking caches|sources found|sort: instant/i.test(streamPicker), "download picker must not simulate cache or source status");
+check(streamPicker.includes("Choose your platform"), "download picker must explain the platform choice directly");
+check(deployTabs.includes("debridstreamer-server_${APP_VERSION}_all.deb"), "self-host page must use the published server package name");
 
 for (const asset of [
   "hero-streams-loop.mp4",
@@ -70,6 +88,14 @@ if (existsSync(join(dist, "index.html"))) {
   const html = readFileSync(join(dist, "index.html"), "utf8");
   check(html.includes("/debridstreamer/assets/"), "built assets must stay under /debridstreamer/");
   check(html.includes("YAWF Stream"), "built metadata must use YAWF Stream");
+
+  const distFiles = [];
+  collect(dist);
+  for (const file of sourceFiles.filter((path) => path.startsWith(dist))) distFiles.push(file);
+  check(
+    distFiles.every((file) => !readFileSync(file, "utf8").includes("code-path")),
+    "production website must not expose source inspection attributes",
+  );
 }
 
 if (failures.length > 0) {

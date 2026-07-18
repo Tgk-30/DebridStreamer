@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { applyPreset, THEME_PRESETS, THEME_PRESET_NAMES, useThemePreset } from '@/theme.config';
@@ -12,6 +12,9 @@ export default function ThemePicker({ className }: { className?: string }) {
   const preset = useThemePreset();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const reduced = useReducedMotion();
 
   useEffect(() => {
     if (!open) return;
@@ -19,7 +22,10 @@ export default function ThemePicker({ className }: { className?: string }) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('keydown', onKey);
@@ -32,9 +38,12 @@ export default function ThemePicker({ className }: { className?: string }) {
   return (
     <div ref={ref} className={cn('relative', className)}>
       <button
+        ref={triggerRef}
         type="button"
         aria-label="Switch theme preset"
         aria-expanded={open}
+        aria-haspopup="menu"
+        aria-controls="theme-preset-menu"
         onClick={() => setOpen((v) => !v)}
         className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-[var(--surface-glass)] transition-colors duration-150 hover:border-line-strong hover:bg-[var(--surface-glass-2)]"
       >
@@ -49,10 +58,14 @@ export default function ThemePicker({ className }: { className?: string }) {
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: -6, scale: 0.96 }}
+            ref={menuRef}
+            id="theme-preset-menu"
+            role="menu"
+            aria-label="Theme preset"
+            initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.96 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.96 }}
+            transition={{ duration: reduced ? 0.1 : 0.18, ease: [0.16, 1, 0.3, 1] }}
             className="glass-panel absolute right-0 top-12 z-50 w-56 rounded-card p-2"
           >
             <p className="px-3 pb-1.5 pt-2 font-mono text-[0.6875rem] uppercase tracking-[0.22em] text-ink-3">
@@ -65,9 +78,12 @@ export default function ThemePicker({ className }: { className?: string }) {
                 <button
                   key={name}
                   type="button"
+                  role="menuitemradio"
+                  aria-checked={active}
                   onClick={() => {
                     applyPreset(name);
                     setOpen(false);
+                    triggerRef.current?.focus();
                   }}
                   className={cn(
                     'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-150',

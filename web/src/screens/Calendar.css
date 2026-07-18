@@ -328,9 +328,12 @@
 }
 .cal-event:hover,
 .cal-event:focus-visible {
-  outline: none;
   filter: brightness(1.22);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+.cal-event:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb));
+  outline-offset: 1px;
 }
 
 .cal-agenda {
@@ -412,6 +415,10 @@
 .cal-release-row:hover {
   transform: translateY(-1px);
   border-color: rgba(var(--accent-rgb), 0.4);
+}
+.cal-release-row:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb));
+  outline-offset: 2px;
 }
 .cal-release-poster {
   flex: 0 0 auto;

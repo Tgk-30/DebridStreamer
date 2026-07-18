@@ -119,7 +119,7 @@ function fakeIndexers(opts: {
   ) => Promise<TorrentResult[]>;
   searchByQuery?: (query: string, type: MediaType, signal?: AbortSignal) => Promise<TorrentResult[]>;
 }): IndexerManager {
-  return {
+  const build = (): IndexerManager => ({
     get activeIndexers() {
       return opts.active ?? ["jackett"];
     },
@@ -130,7 +130,9 @@ function fakeIndexers(opts: {
     },
     searchAll: opts.searchAll ?? (async () => [] as TorrentResult[]),
     searchByQuery: opts.searchByQuery ?? (async () => [] as TorrentResult[]),
-  } as unknown as IndexerManager;
+    fork: build,
+  } as unknown as IndexerManager);
+  return build();
 }
 
 /** Minimal DebridManager stand-in: only hasServices + checkCacheAll are read. */

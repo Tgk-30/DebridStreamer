@@ -1404,8 +1404,7 @@ function UpdatesTab({ draft, patch }: TabProps) {
         <span>
           <strong>Check for desktop updates automatically</strong>
           <span className="t-secondary">
-            {" "}
-            - on launch and weekly; shows a signed update prompt.
+            Checks on launch and weekly, then shows a signed update prompt.
           </span>
         </span>
       </label>
@@ -1419,7 +1418,7 @@ function UpdatesTab({ draft, patch }: TabProps) {
         />
         <span>
           <strong>Install signed desktop updates automatically</strong>
-          <span className="t-secondary"> - downloads, applies, and relaunches.</span>
+          <span className="t-secondary"> Downloads, applies, and relaunches the app.</span>
         </span>
       </label>
     </div>
@@ -1775,8 +1774,7 @@ function DownloadsFolderSetting() {
       <span className="settings-field-label">
         <strong>Downloads folder</strong>
         <span className="t-secondary">
-          {" "}
-          - full-size and optimized downloads are organized here on this desktop.
+          Full-size and optimized downloads are organized here on this desktop.
         </span>
       </span>
       <input

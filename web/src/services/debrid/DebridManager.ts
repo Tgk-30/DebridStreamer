@@ -18,6 +18,45 @@ export interface MergedCacheEntry {
   status: CacheStatus;
 }
 
+/** Maximum time a single provider may hold up a cache lookup. A provider that
+ * exceeds this budget contributes no answer, while healthy providers continue
+ * to determine the result. */
+export const DEBRID_CACHE_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (signal?.aborted) {
+    return Promise.reject(new Error(`${label} cache check aborted`));
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const onAbort = () => {
+      finish(() => reject(new Error(`${label} cache check aborted`)));
+    };
+    const timer = setTimeout(() => {
+      finish(() => reject(new Error(`${label} cache check timed out after ${ms}ms`)));
+    }, ms);
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    );
+  });
+}
+
 export class DebridManager {
   private services: DebridService[] = [];
 
@@ -43,6 +82,7 @@ export class DebridManager {
    * order. Mirrors Swift `checkCacheAll`. */
   async checkCacheAll(
     hashes: string[],
+    signal?: AbortSignal,
   ): Promise<Record<string, MergedCacheEntry>> {
     if (hashes.length === 0) return {};
 
@@ -51,7 +91,12 @@ export class DebridManager {
       this.services.map(async (service, index) => {
         let cache: Record<string, CacheStatus> = {};
         try {
-          cache = await service.checkCache(hashes);
+          cache = await withTimeout(
+            service.checkCache(hashes),
+            DEBRID_CACHE_TIMEOUT_MS,
+            DebridServiceTypeNS.displayName(service.serviceType),
+            signal,
+          );
         } catch {
           cache = {};
         }

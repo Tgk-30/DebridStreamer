@@ -10,6 +10,10 @@
   background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
   border: 0.75px solid var(--glass-border, rgba(255, 255, 255, 0.14));
 }
+.settings-search:focus-within {
+  border-color: rgba(var(--accent-rgb), 0.72);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.28);
+}
 .settings-search-icon {
   flex: 0 0 auto;
   color: var(--text-secondary, rgba(255, 255, 255, 0.6));
@@ -22,7 +26,6 @@
   color: var(--text-primary);
   font: inherit;
   font-size: 14px;
-  outline: none;
 }
 
 .settings-search-results {
@@ -57,7 +60,10 @@
 .settings-search-result:hover,
 .settings-search-result:focus-visible {
   background: rgba(var(--accent-rgb), 0.14);
-  outline: none;
+}
+.settings-search-result:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb));
+  outline-offset: -2px;
 }
 .settings-search-result-label {
   font-size: 14px;

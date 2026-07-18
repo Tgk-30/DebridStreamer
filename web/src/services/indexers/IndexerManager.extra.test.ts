@@ -84,6 +84,39 @@ describe("IndexerManager.addIndexer / configure", () => {
     ]);
     expect(manager.activeIndexers).toEqual(["Fresh"]);
   });
+
+  it("fork shares configured indexers but isolates search diagnostics", async () => {
+    let rejectImdb!: (error: Error) => void;
+    let resolveTitle!: () => void;
+    const controlled: TorrentIndexer = {
+      name: "Controlled",
+      search: () =>
+        new Promise<never>((_resolve, reject) => {
+          rejectImdb = reject;
+        }),
+      searchByQuery: () =>
+        new Promise((resolve) => {
+          resolveTitle = () => resolve([]);
+        }),
+    };
+    const imdbManager = new IndexerManager();
+    imdbManager.setIndexers([controlled]);
+    const titleManager = imdbManager.fork();
+
+    const imdbSearch = imdbManager.searchAll("tt0001", "movie");
+    const titleSearch = titleManager.searchByQuery("Example", "movie");
+    resolveTitle();
+    await titleSearch;
+    rejectImdb(new Error("IMDb path failed"));
+    await imdbSearch;
+
+    expect(imdbManager.activeIndexers).toEqual(["Controlled"]);
+    expect(titleManager.activeIndexers).toEqual(["Controlled"]);
+    expect(imdbManager.lastSearchErrors).toEqual([
+      { indexer: "Controlled", error: "IMDb path failed" },
+    ]);
+    expect(titleManager.lastSearchErrors).toEqual([]);
+  });
 });
 
 describe("IndexerManager errorMessage branches", () => {

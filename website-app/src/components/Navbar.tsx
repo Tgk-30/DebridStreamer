@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { Link, NavLink } from 'react-router';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Github, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GITHUB_REPO } from '@/lib/site';
@@ -25,14 +25,10 @@ const LINKS = [
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const location = useLocation();
-
-  // close the mobile menu on navigation (state adjusted during render)
-  const [prevPath, setPrevPath] = useState(location.pathname);
-  if (prevPath !== location.pathname) {
-    setPrevPath(location.pathname);
-    setMenuOpen(false);
-  }
+  const reduced = useReducedMotion();
+  const headerRef = useRef<HTMLElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -42,18 +38,60 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
-    document.body.style.overflow = menuOpen ? 'hidden' : '';
+    if (!menuOpen) return;
+
+    const menuButton = menuButtonRef.current;
+    const background = [headerRef.current, document.querySelector('main'), document.querySelector('footer')].filter(
+      (element): element is HTMLElement => element instanceof HTMLElement,
+    );
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    background.forEach((element) => element.toggleAttribute('inert', true));
+
+    const frame = window.requestAnimationFrame(() => {
+      menuRef.current?.querySelector<HTMLElement>('[data-menu-close]')?.focus();
+    });
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMenuOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !menuRef.current) return;
+
+      const focusable = Array.from(
+        menuRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
     return () => {
-      document.body.style.overflow = '';
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', onKeyDown);
+      background.forEach((element) => element.toggleAttribute('inert', false));
+      document.body.style.overflow = previousOverflow;
+      menuButton?.focus();
     };
   }, [menuOpen]);
 
   return (
     <>
       <motion.header
-        initial={{ y: -24, opacity: 0 }}
+        ref={headerRef}
+        initial={reduced ? { opacity: 0 } : { y: -24, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, ease: EASE_EXPO, delay: 0.2 }}
+        transition={{ duration: reduced ? 0.15 : 0.5, ease: EASE_EXPO, delay: reduced ? 0 : 0.2 }}
         className="fixed inset-x-0 top-4 z-50 flex justify-center px-4"
       >
         <nav
@@ -110,9 +148,11 @@ export default function Navbar() {
               Get the app
             </PrimaryButton>
             <button
+              ref={menuButtonRef}
               type="button"
               aria-label={menuOpen ? 'Close menu' : 'Open menu'}
               aria-expanded={menuOpen}
+              aria-controls="mobile-navigation-dialog"
               onClick={() => setMenuOpen((v) => !v)}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-[var(--surface-glass)] text-ink-1 lg:hidden"
             >
@@ -122,16 +162,30 @@ export default function Navbar() {
         </nav>
       </motion.header>
 
-      {/* mobile full-screen overlay - clip-path circle expand */}
+      {/* Mobile navigation dialog. */}
       <AnimatePresence>
         {menuOpen && (
           <motion.div
-            initial={{ clipPath: 'circle(0% at calc(100% - 48px) 44px)' }}
-            animate={{ clipPath: 'circle(150% at calc(100% - 48px) 44px)' }}
-            exit={{ clipPath: 'circle(0% at calc(100% - 48px) 44px)' }}
-            transition={{ duration: 0.45, ease: EASE_EXPO }}
-            className="fixed inset-0 z-40 flex flex-col justify-center bg-[rgba(var(--bg-0-rgb),0.95)] px-8 backdrop-blur-xl lg:hidden"
+            ref={menuRef}
+            id="mobile-navigation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            initial={reduced ? { opacity: 0 } : { clipPath: 'circle(0% at calc(100% - 48px) 44px)' }}
+            animate={reduced ? { opacity: 1 } : { clipPath: 'circle(150% at calc(100% - 48px) 44px)' }}
+            exit={reduced ? { opacity: 0 } : { clipPath: 'circle(0% at calc(100% - 48px) 44px)' }}
+            transition={{ duration: reduced ? 0.15 : 0.45, ease: EASE_EXPO }}
+            className="fixed inset-0 z-[60] flex flex-col justify-center bg-[rgba(var(--bg-0-rgb),0.95)] px-8 backdrop-blur-xl lg:hidden"
           >
+            <button
+              type="button"
+              data-menu-close
+              aria-label="Close menu"
+              onClick={() => setMenuOpen(false)}
+              className="absolute right-6 top-6 flex h-11 w-11 items-center justify-center rounded-full border border-line bg-[var(--surface-glass)] text-ink-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            >
+              <X className="h-5 w-5" />
+            </button>
             <nav aria-label="Mobile navigation" className="flex flex-col gap-2">
               {[...LINKS, { to: '/brand', label: 'Brand' }].map((link, i) => (
                 <motion.div
@@ -142,6 +196,7 @@ export default function Navbar() {
                 >
                   <NavLink
                     to={link.to}
+                    onClick={() => setMenuOpen(false)}
                     className={({ isActive }) =>
                       cn('display-m block py-2 font-display', isActive ? 'text-brand' : 'text-ink-1')
                     }
@@ -156,7 +211,7 @@ export default function Navbar() {
                 transition={{ duration: 0.45, ease: EASE_EXPO, delay: 0.12 + 6 * 0.06 }}
                 className="mt-6"
               >
-                <PrimaryButton to="/download">Get the app</PrimaryButton>
+                <PrimaryButton to="/download" onClick={() => setMenuOpen(false)}>Get the app</PrimaryButton>
               </motion.div>
             </nav>
           </motion.div>

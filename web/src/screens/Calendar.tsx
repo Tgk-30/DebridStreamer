@@ -1,7 +1,7 @@
 // Release calendar - scheduled episodes from followed series plus TMDB movie
 // release dates, rendered as a navigable month cadence with a readable agenda.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { ImgWithFallback } from "../components/ImgWithFallback";
@@ -43,7 +43,7 @@ function savedCalendarView(): CalendarView {
   try {
     const saved = globalThis.localStorage?.getItem(CALENDAR_VIEW_KEY);
     if (saved === "agenda" || saved === "month") return saved;
-    return globalThis.matchMedia?.("(max-width: 560px)").matches
+    return globalThis.matchMedia?.("(max-width: 767px)").matches
       ? "agenda"
       : "month";
   } catch {
@@ -218,6 +218,8 @@ export function Calendar() {
   const [filter, setFilter] = useState<CalendarFilter>(savedCalendarFilter);
   const [view, setView] = useState<CalendarView>(savedCalendarView);
   const [selectedDate, setSelectedDate] = useState(() => localISODate(new Date()));
+  const dayRefs = useRef(new Map<string, HTMLDivElement>());
+  const pendingFocusDate = useRef<string | null>(null);
   const filteredEntries = useMemo(
     () => state.entries.filter((entry) => filter === "all" || entry.kind === filter),
     [filter, state.entries],
@@ -274,6 +276,15 @@ export function Calendar() {
     );
   }, [selectedDate, today, visibleMonth]);
 
+  useEffect(() => {
+    const date = pendingFocusDate.current;
+    if (date == null) return;
+    const day = dayRefs.current.get(date);
+    if (day == null) return;
+    pendingFocusDate.current = null;
+    day.focus();
+  }, [days, selectedDate]);
+
   const openEntry = (entry: CalendarEntry) => openDetail(entry.media);
   const openApiSettings = () => openSettingsSection("keys");
   const retryCalendar = () => {
@@ -284,6 +295,67 @@ export function Calendar() {
     setVisibleMonth((current) =>
       new Date(current.getFullYear(), current.getMonth() + delta, 1),
     );
+  };
+  const focusDate = (date: Date) => {
+    const iso = localISODate(date);
+    pendingFocusDate.current = iso;
+    setSelectedDate(iso);
+    if (!isInMonth(iso, visibleMonth)) {
+      setVisibleMonth(monthStart(date));
+    }
+  };
+  const moveCalendarFocus = (
+    from: string,
+    key: string,
+    shiftKey: boolean,
+  ): boolean => {
+    const current = new Date(`${from}T00:00:00`);
+    if (Number.isNaN(current.getTime())) return false;
+    const next = new Date(current);
+    switch (key) {
+      case "ArrowLeft":
+        next.setDate(current.getDate() - 1);
+        break;
+      case "ArrowRight":
+        next.setDate(current.getDate() + 1);
+        break;
+      case "ArrowUp":
+        next.setDate(current.getDate() - 7);
+        break;
+      case "ArrowDown":
+        next.setDate(current.getDate() + 7);
+        break;
+      case "Home":
+        next.setDate(current.getDate() - current.getDay());
+        break;
+      case "End":
+        next.setDate(current.getDate() + (6 - current.getDay()));
+        break;
+      case "PageUp":
+      case "PageDown": {
+        const monthDelta = (key === "PageUp" ? -1 : 1) * (shiftKey ? 12 : 1);
+        const month = new Date(
+          current.getFullYear(),
+          current.getMonth() + monthDelta,
+          1,
+        );
+        const lastDay = new Date(
+          month.getFullYear(),
+          month.getMonth() + 1,
+          0,
+        ).getDate();
+        next.setFullYear(month.getFullYear(), month.getMonth(), Math.min(current.getDate(), lastDay));
+        break;
+      }
+      case "t":
+      case "T":
+        focusDate(new Date());
+        return true;
+      default:
+        return false;
+    }
+    focusDate(next);
+    return true;
   };
 
   return (
@@ -447,16 +519,28 @@ export function Calendar() {
                   {days.map((day) => (
                     <div
                       key={day.date}
+                      ref={(element) => {
+                        if (element == null) dayRefs.current.delete(day.date);
+                        else dayRefs.current.set(day.date, element);
+                      }}
                       className={`cal-day${day.inMonth ? "" : " is-outside"}${day.isToday ? " is-today" : ""}${selectedDate === day.date ? " is-selected" : ""}`}
                       role="gridcell"
-                      aria-label={`${formatDay(day.date)}${day.isToday ? ", today" : ""}`}
+                      aria-label={`${formatDay(day.date)}${day.isToday ? ", today" : ""}, ${day.entries.length} ${day.entries.length === 1 ? "release" : "releases"}`}
+                      aria-current={day.isToday ? "date" : undefined}
                       aria-selected={selectedDate === day.date}
-                      tabIndex={day.inMonth ? 0 : -1}
+                      tabIndex={day.inMonth && selectedDate === day.date ? 0 : -1}
                       onClick={() => setSelectedDate(day.date)}
+                      onFocus={() => {
+                        if (day.inMonth) setSelectedDate(day.date);
+                      }}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
                           setSelectedDate(day.date);
+                          return;
+                        }
+                        if (moveCalendarFocus(day.date, event.key, event.shiftKey)) {
+                          event.preventDefault();
                         }
                       }}
                     >

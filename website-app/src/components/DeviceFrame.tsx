@@ -45,7 +45,7 @@ export default function DeviceFrame({
           <div className="flex h-10 items-center gap-2 border-b border-line px-4">
             <span className="w-10" />
             <span className="mx-auto flex h-6 w-1/2 items-center justify-center rounded-md bg-bg-0 font-mono text-[0.6875rem] tracking-[0.04em] text-ink-3">
-              debridstreamer.local
+              yawf.com/stream
             </span>
             <span className="w-10" />
           </div>

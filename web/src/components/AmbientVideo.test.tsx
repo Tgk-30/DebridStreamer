@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { AmbientVideo } from "./AmbientVideo";
 
 describe("AmbientVideo", () => {
+  afterEach(() => {
+    delete document.documentElement.dataset.motion;
+  });
+
   it("renders a decorative, muted, looping autoplay video for the named loop", () => {
     const { container } = render(<AmbientVideo name="aurora" />);
     const video = container.querySelector("video") as HTMLVideoElement;
@@ -32,5 +36,11 @@ describe("AmbientVideo", () => {
     const { container } = render(<AmbientVideo name="secure" opacity={0.8} />);
     const video = container.querySelector("video") as HTMLVideoElement;
     expect(video.style.opacity).toBe("0.8");
+  });
+
+  it("does not mount decorative video when reduced motion is enabled", () => {
+    document.documentElement.dataset.motion = "reduced";
+    const { container } = render(<AmbientVideo name="aurora" />);
+    expect(container.querySelector("video")).toBeNull();
   });
 });

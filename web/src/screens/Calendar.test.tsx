@@ -190,7 +190,7 @@ describe("Calendar cadence", () => {
         month: "long",
         day: "numeric",
       });
-    await userEvent.click(screen.getByRole("gridcell", { name: dayLabel }));
+    await userEvent.click(screen.getByRole("gridcell", { name: `${dayLabel}, 2 releases` }));
     const dayPanel = screen.getByRole("heading", { name: dayLabel }).closest("aside");
     expect(dayPanel).not.toBeNull();
     expect(within(dayPanel as HTMLElement).getByText("Severance")).toBeInTheDocument();
@@ -218,7 +218,7 @@ describe("Calendar cadence", () => {
     const dayLabel = new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
       weekday: "long", month: "long", day: "numeric",
     });
-    await userEvent.click(screen.getByRole("gridcell", { name: dayLabel }));
+    await userEvent.click(screen.getByRole("gridcell", { name: `${dayLabel}, 2 releases` }));
     const art = within(screen.getByTitle("Open Severance")).getByRole("img", { name: "Severance" });
     expect(art).toHaveAttribute("src", "https://image.tmdb.org/t/p/w342/poster.jpg");
     expect(screen.getByTitle("Open Andor").querySelector(".cal-release-poster-ph")).not.toBeNull();
@@ -228,9 +228,38 @@ describe("Calendar cadence", () => {
     const show = preview("show-today", "Andor", "series", null);
     calendarState = baseState({ entries: [entry(show, localDate())] });
     const { container } = render(<Calendar />);
-    expect(screen.getByRole("gridcell", { name: /today$/ })).toHaveClass("is-today");
+    expect(screen.getByRole("gridcell", { name: /today/ })).toHaveClass("is-today");
     expect(screen.getAllByText("Today").length).toBeGreaterThan(0);
     expect(container.querySelector(".cal-release-poster-ph")).toBeInTheDocument();
+  });
+
+  it("uses one roving calendar tab stop and supports arrow-key day navigation", async () => {
+    calendarState = baseState({
+      entries: [entry(preview("keyboard-show", "Andor"), localDate())],
+    });
+    const user = userEvent.setup();
+    render(<Calendar />);
+
+    const todayCell = screen.getByRole("gridcell", { name: /today/ });
+    expect(todayCell).toHaveAttribute("tabindex", "0");
+    expect(todayCell).toHaveAttribute("aria-current", "date");
+    expect(screen.getAllByRole("gridcell", { hidden: true }).filter((cell) => cell.tabIndex === 0)).toHaveLength(1);
+
+    todayCell.focus();
+    await user.keyboard("{ArrowRight}");
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowLabel = tomorrow.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+    const nextCell = screen.getByRole("gridcell", {
+      name: `${tomorrowLabel}, 0 releases`,
+    });
+    expect(nextCell).toHaveFocus();
+    expect(nextCell).toHaveAttribute("tabindex", "0");
+    expect(todayCell).toHaveAttribute("tabindex", "-1");
   });
 
   it("navigates backward and forward between months", async () => {

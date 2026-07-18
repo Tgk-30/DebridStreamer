@@ -5,7 +5,7 @@ import { ArrowUpRight, Package, Power } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { GITHUB_RELEASES_LATEST, VERSION } from '@/lib/site';
+import { APP_VERSION, DOWNLOAD_LINKS, VERSION } from '@/lib/site';
 import SectionHeading from '@/components/SectionHeading';
 import TerminalBlock from '@/components/TerminalBlock';
 import StreamRow from '@/components/StreamRow';
@@ -190,17 +190,17 @@ export default function DeployTabs() {
                       </p>
                       <StreamRow
                         icon={<Package className="h-5 w-5" strokeWidth={1.75} />}
-                        title="YAWF Stream_0.9.17_amd64.deb"
+                        title={`debridstreamer-server_${APP_VERSION}_all.deb`}
                         meta={[
                           { label: 'latest', variant: 'instant' },
                           { label: 'signed updater', variant: 'dim' },
                           { label: VERSION, variant: 'dim' },
                         ]}
-                        size="24 MB"
-                        href={GITHUB_RELEASES_LATEST}
+                        size="3.8 MB"
+                        href={DOWNLOAD_LINKS.serverDeb}
                       />
                       <div className="mt-4 flex flex-wrap gap-2.5">
-                        <Chip variant="outline">apt install ./YAWF Stream_0.9.17_amd64.deb</Chip>
+                        <Chip variant="outline">apt install ./debridstreamer-server_{APP_VERSION}_all.deb</Chip>
                         <Chip variant="outline">auto-starts the server on login</Chip>
                       </div>
                     </div>

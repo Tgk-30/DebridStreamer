@@ -81,12 +81,26 @@
   opacity: 0;
   transition: opacity 0.16s;
 }
-.lib-removable:hover .lib-remove {
+.lib-removable:hover .lib-remove,
+.lib-removable:focus-within .lib-remove,
+.lib-remove:focus-visible {
   opacity: 1;
 }
 .lib-remove:hover {
   border-color: rgba(250, 115, 115, 0.6);
   color: var(--danger);
+}
+.lib-remove:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb));
+  outline-offset: 2px;
+}
+
+@media (hover: none), (any-pointer: coarse) {
+  .lib-remove {
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+  }
 }
 
 @media (max-width: 699px) {

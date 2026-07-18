@@ -144,13 +144,20 @@ vi.mock("./components/NavRail", async () => {
       onSelect,
       onSwitchProfile,
       calendarBadgeCount = 0,
+      inert = false,
     }: {
       selected: string;
       onSelect: (s: string) => void;
       onSwitchProfile: () => void;
       calendarBadgeCount?: number;
+      inert?: boolean;
     }) => (
-      <nav data-testid="nav-rail" data-selected={selected} data-calendar-badge={calendarBadgeCount}>
+      <nav
+        data-testid="nav-rail"
+        data-selected={selected}
+        data-calendar-badge={calendarBadgeCount}
+        ref={(element) => element?.toggleAttribute("inert", inert)}
+      >
         <button data-testid="nav-go-library" onClick={() => onSelect("library")}>
           go-library
         </button>
@@ -460,6 +467,7 @@ describe("Browse + Detail overlays", () => {
     render(<App />);
     expect(screen.queryByTestId("overlay-browse")).not.toBeInTheDocument();
     expect(screen.queryByTestId("overlay-detail")).not.toBeInTheDocument();
+    expect(screen.getByTestId("nav-rail")).not.toHaveAttribute("inert");
   });
 
   it("mounts the Browse overlay when browseContext is set", async () => {
@@ -467,12 +475,14 @@ describe("Browse + Detail overlays", () => {
     render(<App />);
     expect(await screen.findByTestId("overlay-browse")).toBeInTheDocument();
     expect(screen.queryByTestId("overlay-detail")).not.toBeInTheDocument();
+    expect(screen.getByTestId("nav-rail")).toHaveAttribute("inert");
   });
 
   it("mounts the Detail overlay when detailItem is set", async () => {
     store = makeStore({ detailItem: { id: "a" } });
     render(<App />);
     expect(await screen.findByTestId("overlay-detail")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-rail")).toHaveAttribute("inert");
   });
 
   it("mirrors overlay state to the document root and removes it on close", () => {

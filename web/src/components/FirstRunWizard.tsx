@@ -44,7 +44,7 @@ const PERSONAS: Persona[] = [
   {
     id: "device",
     title: "Just watch on this device",
-    copy: "A quick two-step setup - a catalog key and your debrid service - and you're streaming. No account needed.",
+    copy: "Start with a catalog key and your debrid service. No account needed.",
     icon: "play",
     badge: "Most popular",
   },
@@ -63,7 +63,7 @@ const PERSONAS: Persona[] = [
   {
     id: "advanced",
     title: "Advanced setup",
-    copy: "Skip the wizard and open full settings - every provider, source, and dial.",
+    copy: "Set up the core keys, then open full settings for every provider, source, and dial.",
     icon: "sliders",
   },
 ];

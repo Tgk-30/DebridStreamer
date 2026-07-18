@@ -6,6 +6,7 @@
 // underneath is unchanged, so nothing depends on it.
 
 import { useEffect, useRef } from "react";
+import { prefersReducedMotion } from "../lib/reducedMotion";
 import "./AmbientVideo.css";
 
 export type AmbientVideoName = "aurora" | "cinema" | "secure";
@@ -19,8 +20,10 @@ interface Props {
 
 export function AmbientVideo({ name, opacity = 0.35, className }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const reducedMotion = prefersReducedMotion();
 
   useEffect(() => {
+    if (reducedMotion) return;
     let suspended = false;
     const syncPlayback = () => {
       const video = videoRef.current;
@@ -51,7 +54,9 @@ export function AmbientVideo({ name, opacity = 0.35, className }: Props) {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       observer?.disconnect();
     };
-  }, []);
+  }, [reducedMotion]);
+
+  if (reducedMotion) return null;
 
   return (
     <video

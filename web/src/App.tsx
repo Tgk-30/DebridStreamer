@@ -577,6 +577,7 @@ export function App() {
       <NavRail
         selected={route}
         onSelect={navigate}
+        inert={detailItem != null || browseContext != null}
         onSwitchProfile={() => setProfilePickerOpen(true)}
         localProfile={activeProfile}
         localProfileCount={profiles.length}

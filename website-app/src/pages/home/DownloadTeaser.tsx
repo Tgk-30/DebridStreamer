@@ -4,7 +4,7 @@ import BackgroundVideo from '@/components/BackgroundVideo';
 import SectionHeading from '@/components/SectionHeading';
 import StreamRow from '@/components/StreamRow';
 import { PrimaryButton } from '@/components/Buttons';
-import { GITHUB_RELEASES_LATEST, VERSION } from '@/lib/site';
+import { DOWNLOAD_LINKS, VERSION } from '@/lib/site';
 
 const EASE_EXPO = [0.16, 1, 0.3, 1] as [number, number, number, number];
 
@@ -13,33 +13,37 @@ const ROWS = [
     icon: <Apple className="h-5 w-5" />,
     title: 'macOS - Apple Silicon',
     meta: [
-      { label: 'Instant', variant: 'instant' as const },
+      { label: 'Direct download', variant: 'instant' as const },
       { label: 'notarized', variant: 'dim' as const },
     ],
     size: '.dmg',
+    href: DOWNLOAD_LINKS.macosArm,
   },
   {
     icon: <AppWindow className="h-5 w-5" />,
     title: 'Windows installer',
     meta: [
-      { label: 'Instant', variant: 'instant' as const },
+      { label: 'Direct download', variant: 'instant' as const },
       { label: 'signed updater', variant: 'dim' as const },
     ],
     size: '.msi',
+    href: DOWNLOAD_LINKS.windowsMsi,
   },
   {
     icon: <Terminal className="h-5 w-5" />,
-    title: 'Linux - AppImage & .deb',
+    title: 'Linux - AppImage',
     meta: [
-      { label: 'Instant', variant: 'instant' as const },
-      { label: 'signed updater', variant: 'dim' as const },
+      { label: 'Direct download', variant: 'instant' as const },
+      { label: 'portable', variant: 'dim' as const },
     ],
     size: '.AppImage',
+    href: DOWNLOAD_LINKS.linuxAppImage,
   },
   {
     icon: <Smartphone className="h-5 w-5" />,
     title: 'Phone & tablet PWA',
     meta: [{ label: 'from your server', variant: 'dim' as const }],
+    href: '/devices',
   },
 ];
 
@@ -83,7 +87,7 @@ export default function DownloadTeaser() {
               viewport={{ once: true, amount: 0.6 }}
               transition={{ duration: reduced ? 0.2 : 0.55, ease: EASE_EXPO, delay: i * 0.11 }}
             >
-              <StreamRow icon={row.icon} title={row.title} meta={row.meta} size={row.size} href={GITHUB_RELEASES_LATEST} />
+              <StreamRow icon={row.icon} title={row.title} meta={row.meta} size={row.size} href={row.href} />
             </motion.div>
           ))}
         </div>

@@ -5,10 +5,17 @@ export const GITHUB_RELEASES_LATEST = `${GITHUB_RELEASES}/latest`;
 export const GITHUB_ISSUES = `${GITHUB_REPO}/issues`;
 export const GITHUB_DOCKER = `${GITHUB_REPO}/tree/main/deploy/compose`;
 
-export const VERSION = 'v0.9.17-web';
+export const APP_VERSION = '0.9.18';
+export const VERSION = `v${APP_VERSION}-web`;
+export const RELEASE_ASSET_BASE = `${GITHUB_RELEASES}/download/${VERSION}`;
 
 export const DOWNLOAD_LINKS = {
-  macos: GITHUB_RELEASES_LATEST,
-  windows: GITHUB_RELEASES_LATEST,
-  linux: GITHUB_RELEASES_LATEST,
+  macosArm: `${RELEASE_ASSET_BASE}/YAWF.Stream_${APP_VERSION}_aarch64.dmg`,
+  macosIntel: `${RELEASE_ASSET_BASE}/YAWF.Stream_${APP_VERSION}_x64.dmg`,
+  windowsMsi: `${RELEASE_ASSET_BASE}/YAWF.Stream_${APP_VERSION}_x64_en-US.msi`,
+  linuxAppImage: `${RELEASE_ASSET_BASE}/YAWF.Stream_${APP_VERSION}_amd64.AppImage`,
+  serverDeb: `${RELEASE_ASSET_BASE}/debridstreamer-server_${APP_VERSION}_all.deb`,
+  macos: `${RELEASE_ASSET_BASE}/YAWF.Stream_${APP_VERSION}_aarch64.dmg`,
+  windows: `${RELEASE_ASSET_BASE}/YAWF.Stream_${APP_VERSION}_x64_en-US.msi`,
+  linux: `${RELEASE_ASSET_BASE}/YAWF.Stream_${APP_VERSION}_amd64.AppImage`,
 } as const;
