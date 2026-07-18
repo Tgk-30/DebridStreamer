@@ -97,7 +97,9 @@ export default function Footer() {
         </div>
 
         <div className="mt-14 flex flex-col items-start justify-between gap-5 border-t border-line pt-6 sm:flex-row sm:items-center">
-          <p className="font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">© YAWF Stream</p>
+          <p className="font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">
+            © {new Date().getFullYear()} YAWF Group. All rights reserved.
+          </p>
           <p className="font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">Made for the whole house</p>
           <div className="flex items-center gap-2.5" role="group" aria-label="Theme presets">
             {THEME_PRESET_NAMES.map((name) => (

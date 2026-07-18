@@ -9,7 +9,7 @@ function CascadeChars({ text }: { text: string }) {
     <>
       {[...text].map((c, i) => (
         <span key={i} className="char-mask" aria-hidden="true">
-          <span className="char">{c === ' ' ? ' ' : c}</span>
+          <span className={c === ' ' ? 'char char-space' : 'char'}>{c === ' ' ? '\u00a0' : c}</span>
         </span>
       ))}
     </>

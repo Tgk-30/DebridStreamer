@@ -20,6 +20,8 @@ function check(condition, message) {
 const app = read("src/App.tsx");
 const hero = read("src/pages/home/Hero.tsx");
 const features = read("src/pages/features/shared.tsx");
+const footer = read("src/components/Footer.tsx");
+const styles = read("src/index.css");
 const site = read("src/lib/site.ts");
 const tauri = JSON.parse(readFileSync(join(root, "web/src-tauri/tauri.conf.json"), "utf8"));
 
@@ -27,6 +29,8 @@ check(app.includes('basename="/debridstreamer"'), "BrowserRouter must use the /d
 check(hero.includes("Your Accounts. Watch Freely."), "home hero must use the YAWF Stream headline");
 check(hero.includes("A private streaming hub for the services you already use."), "home hero must use the private-hub positioning");
 check(!features.includes("id: 'assistant'"), "features must not expose the Assistant chapter by default");
+check(footer.includes("YAWF Group. All rights reserved."), "footer must include the YAWF Group copyright");
+check(styles.includes(".char-space") && styles.includes("white-space: pre"), "animated headlines must preserve word spacing");
 check(site.includes(`v${tauri.version}-web`), "website version must match the Tauri release version");
 
 for (const asset of [

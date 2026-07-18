@@ -294,6 +294,10 @@
   .char {
     display: inline-block;
     will-change: transform;
+    white-space: pre;
+  }
+  .char-space {
+    width: 0.28em;
   }
 
   /* stream-fill progress bar with glowing head dot */

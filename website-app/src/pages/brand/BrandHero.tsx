@@ -13,7 +13,7 @@ function CascadeChars({ text, delay = 0 }: { text: string; delay?: number }) {
       {[...text].map((c, i) => (
         <span key={i} className="char-mask" aria-hidden="true">
           <motion.span
-            className="char"
+            className={c === ' ' ? 'char char-space' : 'char'}
             initial={reduced ? { opacity: 0 } : { y: '110%', rotate: 4 }}
             animate={reduced ? { opacity: 1 } : { y: '0%', rotate: 0 }}
             transition={
@@ -22,7 +22,7 @@ function CascadeChars({ text, delay = 0 }: { text: string; delay?: number }) {
                 : { duration: 1.1, ease: EASE_EXPO, delay: delay + i * 0.022 }
             }
           >
-            {c === ' ' ? ' ' : c}
+            {c === ' ' ? '\u00a0' : c}
           </motion.span>
         </span>
       ))}
