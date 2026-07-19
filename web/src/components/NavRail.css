@@ -1,5 +1,11 @@
 /* NavRail - breakpoint-specific primary navigation. */
 
+/* Detail/Browse overlays render the rail inert while open (App.tsx). A visible
+   but dead rail reads as broken, so hide it until the overlay closes. */
+:root[data-overlay-open] .nav-rail {
+  visibility: hidden;
+}
+
 /* Floating glass rail (Apple TV-style): a detached, rounded panel that hovers
    over full-bleed content. Its backdrop-filter frosts whatever scrolls behind it
    - most visibly the hero banner - so the rail reads as a translucent reflection

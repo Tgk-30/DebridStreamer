@@ -8,6 +8,20 @@ import { installSuspendOnHidden } from "./lib/suspendOnHidden";
 import { installAttentionGate } from "./lib/attention";
 import { initInstallPromptCapture } from "./lib/installPrompt";
 import { installExternalLinkHandler } from "./lib/externalLinks";
+import { followServerURL } from "./lib/serverMode";
+
+// A first-run "Connect to a server" hands the whole window to the server
+// origin. Follow that choice across launches: when the app boots back on its
+// own origin (tauri://localhost, dev server, the local install), go straight to
+// the remembered server instead of asking for the address every launch.
+try {
+  const follow = followServerURL();
+  if (follow != null && new URL(follow).origin !== window.location.origin) {
+    window.location.replace(follow);
+  }
+} catch {
+  // A malformed stored URL must never block the normal boot.
+}
 
 const failureLog: string[] = [];
 const MAX_FAILURE_LOG = 50;

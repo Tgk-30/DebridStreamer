@@ -36,7 +36,8 @@ vi.mock("../lib/firstRun", () => ({
 
 const saveServerURL = vi.fn();
 vi.mock("../lib/serverMode", () => ({
-  saveServerURL: (url: string | null) => saveServerURL(url),
+  saveServerURL: (url: string | null, options?: { follow?: boolean }) =>
+    saveServerURL(url, options),
 }));
 
 const isTauriMock = vi.fn(() => false);
@@ -387,7 +388,7 @@ describe("FirstRunWizard", () => {
     vi.unstubAllGlobals();
   });
 
-  it("connect step normalizes a bare host and navigates without fetching or saving", async () => {
+  it("connect step normalizes a bare host, navigates, and remembers the server", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -410,7 +411,9 @@ describe("FirstRunWizard", () => {
       assign.mock.invocationCallOrder[0]!,
     );
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(saveServerURL).not.toHaveBeenCalled();
+    expect(saveServerURL).toHaveBeenCalledWith("https://stream.example.com", {
+      follow: true,
+    });
     expect(screen.getByRole("button", { name: "Opening…" })).toBeDisabled();
     vi.unstubAllGlobals();
   });
@@ -432,7 +435,10 @@ describe("FirstRunWizard", () => {
     await waitFor(() => expect(assign).toHaveBeenCalledWith(inviteURL));
     expect(markOnboardingComplete).toHaveBeenCalledTimes(1);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(saveServerURL).not.toHaveBeenCalled();
+    // The follow bookmark is the ORIGIN, not the single-use invite URL.
+    expect(saveServerURL).toHaveBeenCalledWith("https://stream.example.com", {
+      follow: true,
+    });
     vi.unstubAllGlobals();
   });
 
@@ -485,7 +491,10 @@ describe("FirstRunWizard", () => {
     expect(markOnboardingComplete).toHaveBeenCalledTimes(1);
     expect(assign).toHaveBeenCalledWith("https://stream.example.com");
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(saveServerURL).not.toHaveBeenCalled();
+    // The address validated, so it is still remembered for the next launch.
+    expect(saveServerURL).toHaveBeenCalledWith("https://stream.example.com", {
+      follow: true,
+    });
     expect(screen.getByRole("button", { name: "Open server" })).toBeEnabled();
     vi.unstubAllGlobals();
   });

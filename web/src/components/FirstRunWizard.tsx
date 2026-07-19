@@ -9,6 +9,7 @@
 import { useState, type FormEvent } from "react";
 import { useAppStore } from "../store/AppStore";
 import { markOnboardingComplete } from "../lib/firstRun";
+import { saveServerURL } from "../lib/serverMode";
 import { isTauri } from "../lib/tauri";
 import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
@@ -957,8 +958,16 @@ function ConnectStep({ onBack }: { onBack: () => void }) {
     setError(null);
     try {
       // Mark complete before leaving so returning to Local Mode later does not
-      // re-trigger the wizard.
+      // re-trigger the wizard. Persist the destination ORIGIN as the followed
+      // server too, so the next cold boot goes straight back to it instead of
+      // asking for the address again. (Origin only: an invite URL's token is
+      // single-use, so following the full URL would loop on a dead link.)
       await markOnboardingComplete();
+      try {
+        saveServerURL(new URL(destination).origin, { follow: true });
+      } catch {
+        saveServerURL(destination, { follow: true });
+      }
       globalThis.location.assign(destination);
     } catch {
       setError("Couldn't open that server. Check the address and try again.");
