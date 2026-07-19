@@ -1,8 +1,15 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { AppDatabase } from "../src/db.js";
+import { AppDatabase, migrateDatabase } from "../src/db.js";
+import {
+  createLegacyServerFixture,
+  LEGACY_SERVER_FIXTURES,
+  migrationHashes,
+  RELEASED_MIGRATION_HASHES,
+} from "./fixtures/migrationFixtures.js";
 
 describe("AppDatabase", () => {
   const tempDirs: string[] = [];
@@ -45,6 +52,89 @@ describe("AppDatabase", () => {
       ).toBe(1);
     } finally {
       db.close();
+    }
+  });
+
+  it("keeps every released migration immutable", () => {
+    expect(migrationHashes()).toEqual(RELEASED_MIGRATION_HASHES);
+  });
+
+  for (const fixture of LEGACY_SERVER_FIXTURES) {
+    it(`upgrades the ${fixture.name} fixture without losing data`, () => {
+      const path = temporaryDatabasePath(tempDirs);
+      createLegacyServerFixture(path, fixture.version);
+
+      const db = new AppDatabase(path);
+      try {
+        const versions = db.sqlite
+          .prepare("SELECT version FROM schema_migrations ORDER BY version")
+          .all() as Array<{ version: number }>;
+        expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+        expect(
+          db.sqlite.prepare("SELECT value FROM profile_settings WHERE key = 'ui_theme'").get(),
+        ).toEqual({ value: "midnight" });
+        expect(
+          db.sqlite.prepare("SELECT encrypted_value FROM credential_secrets WHERE id = 'credential-fixture'").get(),
+        ).toEqual({ encrypted_value: "v1:fixture:encrypted:value" });
+        expect(
+          db.sqlite.prepare("SELECT preview_json FROM watchlist WHERE media_id = 'tt-fixture'").get(),
+        ).toEqual({ preview_json: '{"id":"tt-fixture","title":"Fixture Film"}' });
+        expect(
+          db.sqlite.prepare("SELECT progress_seconds FROM watch_history WHERE media_id = 'series-fixture'").get(),
+        ).toEqual({ progress_seconds: 420 });
+        expect(
+          db.sqlite.prepare("SELECT folder_id FROM user_library WHERE id = 'library-fixture'").get(),
+        ).toEqual({ folder_id: "folder-fixture" });
+        expect(
+          db.sqlite.prepare("SELECT is_kid, maturity_max FROM profiles WHERE id = 'profile-fixture'").get(),
+        ).toEqual({ is_kid: 0, maturity_max: null });
+        expect(
+          db.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'metadata_cache'").get(),
+        ).toEqual({ name: "metadata_cache" });
+      } finally {
+        db.close();
+      }
+
+      const reopened = new AppDatabase(path);
+      try {
+        expect(
+          reopened.sqlite.prepare("SELECT COUNT(*) AS count FROM watchlist WHERE media_id = 'tt-fixture'").get(),
+        ).toEqual({ count: 1 });
+      } finally {
+        reopened.close();
+      }
+    });
+  }
+
+  it("rolls back a migration and its marker when a schema change fails", () => {
+    const path = temporaryDatabasePath(tempDirs);
+    createLegacyServerFixture(path, 1);
+    const sqlite = new DatabaseSync(path);
+    try {
+      sqlite.exec("ALTER TABLE stream_sessions ADD COLUMN last_accessed_at TEXT;");
+      expect(() => migrateDatabase(sqlite)).toThrow("Database migration 2 failed.");
+      const columns = sqlite.prepare("PRAGMA table_info(stream_sessions)").all() as Array<{ name: string }>;
+      expect(columns.some((column) => column.name === "bytes_served")).toBe(false);
+      expect(
+        sqlite.prepare("SELECT MAX(version) AS version FROM schema_migrations").get(),
+      ).toEqual({ version: 1 });
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  it("refuses to open a database created by a newer app", () => {
+    const path = temporaryDatabasePath(tempDirs);
+    createLegacyServerFixture(path, 7);
+    const sqlite = new DatabaseSync(path);
+    try {
+      sqlite.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (99, ?)")
+        .run("2035-01-01T00:00:00.000Z");
+      expect(() => migrateDatabase(sqlite)).toThrow(
+        "Database schema version 99 is newer than supported version 8.",
+      );
+    } finally {
+      sqlite.close();
     }
   });
 });

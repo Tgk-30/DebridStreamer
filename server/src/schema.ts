@@ -251,3 +251,17 @@ CREATE TABLE metadata_cache (
 CREATE INDEX metadata_cache_expires_idx
   ON metadata_cache(provider, expires_at);
 `;
+
+/** Ordered, append-only database migrations. Never edit a released migration.
+ * Add the next numbered entry so existing databases and fixture snapshots keep
+ * a deterministic upgrade path. */
+export const MIGRATIONS: ReadonlyArray<readonly [version: number, sql: string]> = [
+  [1, MIGRATION_001],
+  [2, MIGRATION_002],
+  [3, MIGRATION_003],
+  [4, MIGRATION_004],
+  [5, MIGRATION_005],
+  [6, MIGRATION_006],
+  [7, MIGRATION_007],
+  [8, MIGRATION_008],
+];

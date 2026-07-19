@@ -117,6 +117,9 @@ jobs:
       - name: Public repo preflight
         run: node scripts/public_repo_preflight.mjs
 
+      - name: Security decisions
+        run: node scripts/check_security_decisions.mjs
+
       - name: Provider smoke contract tests
         run: node --test scripts/provider_smoke.test.mjs
 

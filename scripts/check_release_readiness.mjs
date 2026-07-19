@@ -44,6 +44,7 @@ check(
 );
 
 const releaseWorkflow = read(".github/workflows/web-release.yml");
+const cleanInstallWorkflow = read(".github/workflows/clean-install.yml");
 const dockerWorkflow = read(".github/workflows/docker-image.yml");
 const ciWorkflow = read(".github/workflows/ci.yml");
 const cloudflareSiteWorkflow = read(".github/workflows/cloudflare-site.yml");
@@ -54,6 +55,7 @@ const swiftTestVerifier = read("scripts/check_swift_tests.mjs");
 const nodeRuntimeDownloader = read("scripts/download_tauri_node_runtime.mjs");
 const serverResourcePrep = read("scripts/prepare_tauri_server_resources.mjs");
 const desktopServerSmoke = read("scripts/smoke_tauri_server_bundle.mjs");
+const securityDecisionCheck = read("scripts/check_security_decisions.mjs");
 check(
   "Release workflow emits updater JSON",
   /includeUpdaterJson:\s*true/.test(releaseWorkflow),
@@ -116,6 +118,37 @@ check(
   /working-directory:\s*web[\s\S]*?run:\s*npm test/.test(releaseWorkflow) &&
     /working-directory:\s*server[\s\S]*?run:\s*npm test/.test(releaseWorkflow),
   ".github/workflows/web-release.yml must run the web and server unit suites before publishing release assets",
+);
+check(
+  "Release workflow runs security decisions",
+  /check_security_decisions\.mjs/.test(releaseWorkflow),
+  ".github/workflows/web-release.yml must enforce the recorded security decisions before packaging",
+);
+check(
+  "Release workflow gates drafts on clean installs",
+  /needs:\s*release/.test(releaseWorkflow) &&
+    /uses:\s*\.\/\.github\/workflows\/clean-install\.yml/.test(releaseWorkflow) &&
+    /tag:\s*\$\{\{\s*github\.ref_name\s*\}\}/.test(releaseWorkflow),
+  ".github/workflows/web-release.yml must run the reusable clean-install workflow against tag assets",
+);
+check(
+  "Clean-install workflow covers release packages",
+  existsSync(join(root, ".github/workflows/clean-install.yml")) &&
+    /macos-15/.test(cleanInstallWorkflow) &&
+    /macos-15-intel/.test(cleanInstallWorkflow) &&
+    /x64_en-US\.msi/.test(cleanInstallWorkflow) &&
+    /amd64\.AppImage/.test(cleanInstallWorkflow) &&
+    /amd64\.deb/.test(cleanInstallWorkflow),
+  ".github/workflows/clean-install.yml must install both macOS architectures, Windows MSI, Linux AppImage, and Linux deb assets",
+);
+check(
+  "Clean-install workflow verifies trust and first launch",
+  /codesign --verify --deep --strict/.test(cleanInstallWorkflow) &&
+    /spctl --assess/.test(cleanInstallWorkflow) &&
+    /Get-AuthenticodeSignature/.test(cleanInstallWorkflow) &&
+    /smoke_tauri_server_bundle\.mjs/.test(cleanInstallWorkflow) &&
+    /clean profile/i.test(cleanInstallWorkflow),
+  ".github/workflows/clean-install.yml must verify package trust, bundled server boot, and a clean-profile desktop launch",
 );
 check(
   "Swift test verifier handles local VLCKit runtime",
@@ -438,6 +471,20 @@ check(
     /check_website_static\.mjs/.test(ciWorkflow) &&
     /check_website_path_mount\.mjs/.test(ciWorkflow),
   ".github/workflows/ci.yml must run public repo, release readiness, website download, static website, and mounted-path checks",
+);
+check(
+  "CI runs security decisions",
+  /check_security_decisions\.mjs/.test(ciWorkflow),
+  ".github/workflows/ci.yml must enforce scripts/check_security_decisions.mjs",
+);
+check(
+  "Security decision gate exists",
+  existsSync(join(root, "docs/SECURITY_DECISIONS.md")) &&
+    existsSync(join(root, "scripts/check_security_decisions.mjs")) &&
+    /SEC-010/.test(read("docs/SECURITY_DECISIONS.md")) &&
+    /opener:default/.test(securityDecisionCheck) &&
+    /BEGIN IMMEDIATE/.test(securityDecisionCheck),
+  "The decision log and executable gate must cover desktop permissions and transactional migrations",
 );
 check(
   "CI public preflight uses full Git history",

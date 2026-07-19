@@ -5,7 +5,8 @@ DebridStreamer ships three public-facing artifacts:
 - Desktop app bundles from the Tauri project in `web/`, including the local
   Server Mode supervisor resources.
 - Server Mode Docker image from the root `Dockerfile`.
-- Static download website from `website/`, deployed by GitHub Pages.
+- Static download website from `website/`, deployed at
+  `https://tgk30.com/debridstreamer/` through Cloudflare.
 
 ## Desktop OTA Updates
 
@@ -57,6 +58,7 @@ artifacts will be produced until that is resolved.
    node scripts/public_repo_preflight.mjs
    node scripts/public_repo_preflight.mjs --all-refs
    node scripts/check_release_readiness.mjs
+   node scripts/check_security_decisions.mjs
    node scripts/check_swift_tests.mjs
    node scripts/check_local_package_artifact.mjs --require-current
    cd server && npm run typecheck && npm run build
@@ -83,8 +85,23 @@ artifacts will be produced until that is resolved.
    git push origin v0.1.0-web
    ```
 
-4. Review the draft GitHub Release created by `web-release`.
-5. Publish the release. The latest published release becomes the OTA target.
+4. Wait for the `Verify clean installs` job. It downloads the completed draft
+   assets on fresh GitHub runners, installs both macOS DMGs, the Windows MSI,
+   the Linux AppImage, and the Linux deb package, boots the bundled server, and
+   launches each installed app with an empty profile.
+5. Review the draft GitHub Release created by `web-release`.
+6. Publish only after all build and clean-install jobs pass. The latest
+   published release becomes the OTA target.
+
+To repeat installer verification without rebuilding the release:
+
+```sh
+gh workflow run clean-install.yml -f tag=v0.9.20-web
+```
+
+The accepted trust boundaries and beta risks are recorded in
+`docs/SECURITY_DECISIONS.md`. The Windows unknown-publisher warning remains an
+explicit v0.9 beta risk and a v1 blocker.
 
 ## Download Website
 
@@ -94,7 +111,7 @@ It detects macOS, Windows, and Linux in the browser, fetches the latest GitHub
 Release via the public GitHub API, and points users to the best matching asset.
 If the API fails, it falls back to the latest release page.
 
-GitHub Pages deployment is handled by `.github/workflows/site.yml`.
+Cloudflare deployment is handled by `.github/workflows/cloudflare-site.yml`.
 
 For the public `tgk30.com/debridstreamer` path, deploy with:
 

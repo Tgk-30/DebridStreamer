@@ -94,6 +94,9 @@ jobs:
       - name: Release readiness
         run: node scripts/check_release_readiness.mjs
 
+      - name: Security decisions
+        run: node scripts/check_security_decisions.mjs
+
       - name: Build YAWF Stream website
         working-directory: website-app
         run: npm ci && npm run lint && npm run build
@@ -371,3 +374,13 @@ jobs:
             tag="v$(node -p "require('./web/src-tauri/tauri.conf.json').version")-web"
           fi
           gh release upload "$tag" "$dmg" --clobber --repo "$GITHUB_REPOSITORY"
+
+  clean-install:
+    name: Verify clean installs
+    needs: release
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/clean-install.yml
+    with:
+      tag: ${{ github.ref_name }}

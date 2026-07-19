@@ -1,0 +1,297 @@
+name: clean-install
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag whose draft assets should be installed
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose assets should be installed
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }} clean install
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            asset_arch: aarch64
+          - runner: macos-15-intel
+            arch: x86_64
+            asset_arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download DMG
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          ASSET_ARCH: ${{ matrix.asset_arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "YAWF.Stream_*_${ASSET_ARCH}.dmg" \
+            --dir "$RUNNER_TEMP/release-assets"
+          test "$(find "$RUNNER_TEMP/release-assets" -name '*.dmg' | wc -l | tr -d ' ')" = "1"
+
+      - name: Install and verify DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg="$(find "$RUNNER_TEMP/release-assets" -name '*.dmg' -print -quit)"
+          mount="$RUNNER_TEMP/yawf-dmg"
+          install_root="$RUNNER_TEMP/Applications"
+          mkdir -p "$mount" "$install_root"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
+          cleanup() { hdiutil detach "$mount" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          source_app="$(find "$mount" -maxdepth 2 -name 'YAWF Stream.app' -print -quit)"
+          test -n "$source_app"
+          ditto "$source_app" "$install_root/YAWF Stream.app"
+          app="$install_root/YAWF Stream.app"
+          exe="$app/Contents/MacOS/debridstreamer"
+
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$dmg"
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          test -x "$exe"
+          test -n "$(find "$app/Contents/Frameworks" -name 'libmpv*.dylib' -print -quit)"
+          test -z "$(otool -L "$exe" | grep -E '/opt/homebrew|/usr/local' || true)"
+          if find "$app/Contents/Frameworks" -name '*.dylib' -print0 | \
+            xargs -0 otool -L | grep -E '/opt/homebrew|/usr/local'; then
+            echo "Bundled player dependency still points at a build-machine path" >&2
+            exit 1
+          fi
+
+          node scripts/smoke_tauri_server_bundle.mjs "$app"
+
+          clean_home="$RUNNER_TEMP/clean-home"
+          mkdir -p "$clean_home"
+          HOME="$clean_home" "$exe" >"$RUNNER_TEMP/yawf-launch.log" 2>&1 &
+          pid=$!
+          sleep 10
+          if ! kill -0 "$pid" 2>/dev/null; then
+            cat "$RUNNER_TEMP/yawf-launch.log"
+            echo "Installed app exited during first launch" >&2
+            exit 1
+          fi
+          kill "$pid"
+          wait "$pid" 2>/dev/null || true
+          echo "ok   Signed DMG installed and launched with a clean profile"
+
+  windows:
+    name: Windows MSI clean install
+    runs-on: windows-latest
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download MSI
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\release-assets" | Out-Null
+          gh release download $env:RELEASE_TAG `
+            --repo $env:GITHUB_REPOSITORY `
+            --pattern "YAWF.Stream_*_x64_en-US.msi" `
+            --dir "$env:RUNNER_TEMP\release-assets"
+          $assets = @(Get-ChildItem "$env:RUNNER_TEMP\release-assets" -Filter *.msi)
+          if ($assets.Count -ne 1) { throw "Expected one MSI, found $($assets.Count)" }
+
+      - name: Install and verify MSI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msi = (Get-ChildItem "$env:RUNNER_TEMP\release-assets" -Filter *.msi | Select-Object -First 1).FullName
+          $installerSignature = Get-AuthenticodeSignature $msi
+          Write-Host "MSI Authenticode status: $($installerSignature.Status)"
+          if ($installerSignature.Status -ne "Valid") {
+            Write-Warning "Unsigned Windows installer is an accepted v0.9 beta risk tracked as SEC-008."
+          }
+
+          $install = Start-Process msiexec.exe `
+            -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart') `
+            -Wait -PassThru
+          if ($install.ExitCode -notin @(0, 3010)) {
+            throw "MSI installation failed with exit code $($install.ExitCode)"
+          }
+
+          $roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA) |
+            Where-Object { $_ -and (Test-Path $_) }
+          $serverEntry = Get-ChildItem -Path $roots -Filter index.cjs -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'YAWF Stream.*resources[\\/]server[\\/]index\.cjs$' } |
+            Select-Object -First 1
+          if (-not $serverEntry) { throw "Installed server resources were not found" }
+          $serverDir = Split-Path $serverEntry.FullName -Parent
+          $resourcesDir = Split-Path $serverDir -Parent
+          $appRoot = Split-Path $resourcesDir -Parent
+          node scripts/smoke_tauri_server_bundle.mjs $appRoot
+
+          $exe = Get-ChildItem -Path $appRoot -Filter debridstreamer.exe -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $exe) { throw "Installed desktop executable was not found" }
+          if (-not (Test-Path (Join-Path $appRoot 'resources\lib\libmpv-2.dll'))) {
+            throw "Bundled libmpv-2.dll was not installed"
+          }
+
+          $cleanProfile = "$env:RUNNER_TEMP\clean-profile"
+          $env:APPDATA = "$cleanProfile\Roaming"
+          $env:LOCALAPPDATA = "$cleanProfile\Local"
+          New-Item -ItemType Directory -Force -Path $env:APPDATA, $env:LOCALAPPDATA | Out-Null
+          $process = Start-Process $exe.FullName -PassThru
+          Start-Sleep -Seconds 10
+          $process.Refresh()
+          if ($process.HasExited) { throw "Installed app exited during first launch" }
+          Stop-Process -Id $process.Id -Force
+          Write-Host "ok   MSI installed and launched with a clean profile"
+
+  linux:
+    name: Linux AppImage and deb clean install
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download Linux packages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'YAWF.Stream_*_amd64.AppImage' \
+            --pattern 'YAWF.Stream_*_amd64.deb' \
+            --dir "$RUNNER_TEMP/release-assets"
+          test "$(find "$RUNNER_TEMP/release-assets" -name '*.AppImage' | wc -l | tr -d ' ')" = "1"
+          test "$(find "$RUNNER_TEMP/release-assets" -name '*.deb' | wc -l | tr -d ' ')" = "1"
+
+      - name: Install runtime prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            libwebkit2gtk-4.1-0 \
+            libgtk-3-0 \
+            libayatana-appindicator3-1 \
+            librsvg2-2
+
+      - name: Verify AppImage on a clean profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          appimage="$(find "$RUNNER_TEMP/release-assets" -name '*.AppImage' -print -quit)"
+          chmod +x "$appimage"
+          extract="$RUNNER_TEMP/appimage-extract"
+          mkdir -p "$extract"
+          (
+            cd "$extract"
+            "$appimage" --appimage-extract >/dev/null
+          )
+          extracted_root="$extract/squashfs-root"
+          test -n "$(find "$extracted_root" -name 'libmpv.so*' -print -quit)"
+          entry="$(find "$extracted_root" -path '*/resources/server/index.cjs' -print -quit)"
+          test -n "$entry"
+          server_dir="$(dirname "$entry")"
+          resources_dir="$(dirname "$server_dir")"
+          app_root="$(dirname "$resources_dir")"
+          node scripts/smoke_tauri_server_bundle.mjs "$app_root"
+
+          profile="$RUNNER_TEMP/appimage-profile"
+          mkdir -p "$profile/config" "$profile/data" "$profile/cache"
+          setsid env \
+            HOME="$profile" \
+            XDG_CONFIG_HOME="$profile/config" \
+            XDG_DATA_HOME="$profile/data" \
+            XDG_CACHE_HOME="$profile/cache" \
+            APPIMAGE_EXTRACT_AND_RUN=1 \
+            xvfb-run -a "$appimage" >"$RUNNER_TEMP/appimage-launch.log" 2>&1 &
+          pid=$!
+          sleep 10
+          if ! kill -0 "$pid" 2>/dev/null; then
+            cat "$RUNNER_TEMP/appimage-launch.log"
+            echo "AppImage exited during first launch" >&2
+            exit 1
+          fi
+          kill -- -"$pid"
+          wait "$pid" 2>/dev/null || true
+          echo "ok   AppImage launched with bundled libmpv and a clean profile"
+
+      - name: Install and verify deb
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(find "$RUNNER_TEMP/release-assets" -name '*.deb' -print -quit)"
+          sudo apt-get install -y "$deb"
+          package="$(dpkg-deb -f "$deb" Package)"
+          entry="$(dpkg -L "$package" | grep '/resources/server/index.cjs$' | head -1)"
+          test -n "$entry"
+          server_dir="$(dirname "$entry")"
+          resources_dir="$(dirname "$server_dir")"
+          app_root="$(dirname "$resources_dir")"
+          node scripts/smoke_tauri_server_bundle.mjs "$app_root"
+
+          exe="$(dpkg -L "$package" | grep -E '/(debridstreamer|yawf-stream)$' | head -1)"
+          test -x "$exe"
+          profile="$RUNNER_TEMP/deb-profile"
+          mkdir -p "$profile/config" "$profile/data" "$profile/cache"
+          setsid env \
+            HOME="$profile" \
+            XDG_CONFIG_HOME="$profile/config" \
+            XDG_DATA_HOME="$profile/data" \
+            XDG_CACHE_HOME="$profile/cache" \
+            xvfb-run -a "$exe" >"$RUNNER_TEMP/deb-launch.log" 2>&1 &
+          pid=$!
+          sleep 10
+          if ! kill -0 "$pid" 2>/dev/null; then
+            cat "$RUNNER_TEMP/deb-launch.log"
+            echo "Installed deb app exited during first launch" >&2
+            exit 1
+          fi
+          kill -- -"$pid"
+          wait "$pid" 2>/dev/null || true
+          echo "ok   deb installed and launched with a clean profile"

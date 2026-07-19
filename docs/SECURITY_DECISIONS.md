@@ -1,0 +1,49 @@
+# Security Decisions
+
+This log records the supported trust boundaries for YAWF Stream. It is the
+release reference for security behavior that is intentional, including risks
+that are accepted during the v0.9 beta.
+
+## Supported threat model
+
+YAWF Stream protects accounts and provider credentials from remote users who do
+not have an authenticated session. It isolates account and profile data on the
+server, limits desktop webview privileges, redacts support diagnostics, and
+requires signed desktop updates.
+
+The project does not claim to protect secrets after an attacker controls the
+host OS, the browser profile, the YAWF Stream data directory, or the server
+encryption key. Public multi-tenant hosting is not supported.
+
+## Decision log
+
+| ID | Status | Decision | Enforcement |
+| --- | --- | --- | --- |
+| SEC-001 | Accepted | Server Mode is private and self-hosted. Internet exposure requires HTTPS plus a trusted access layer or reverse proxy. | `SECURITY.md`, deployment guides, secure-cookie production default |
+| SEC-002 | Accepted | Browser sessions use an httpOnly session cookie and a separate CSRF token. Every unsafe authenticated route requires the CSRF token. | server route tests and the security decision check |
+| SEC-003 | Accepted | Server provider credentials and upstream stream URLs are encrypted with AES-256-GCM. The key is supplied by the operator or generated with mode `0600`. Database and key backups must remain together. | crypto tests, config tests, server schema |
+| SEC-004 | Accepted | Desktop credentials are app-local data. They are not claimed to resist a compromised local account. The browser and desktop stores must scrub older plaintext migration sources after a durable move. | settings, IndexedDB, and keychain migration tests |
+| SEC-005 | Accepted | Diagnostics contain capability state and bounded event codes, never configured secrets, provider URLs, raw stream URLs, cookies, or CSRF tokens. | diagnostics redaction tests |
+| SEC-006 | Accepted | The desktop webview may contact user-configured HTTP and HTTPS providers, but it receives no shell or filesystem plugin permission. External URL opening is scoped to HTTP, HTTPS, and the Windows installed-app settings page. Process control is limited to restart for the signed updater. | Tauri capability file and the security decision check |
+| SEC-007 | Accepted | Desktop updates require the configured Tauri public key. Public macOS builds also require Developer ID signing and notarization. | release readiness and release workflow secret gates |
+| SEC-008 | Beta risk accepted | Windows installers are updater-signed but not yet Authenticode-signed. This is allowed for v0.9 packages and is a v1 release blocker because it can cause an unknown-publisher warning. | v1 release checklist |
+| SEC-009 | Accepted | macOS disables library validation and allows JIT only because the built-in libmpv player loads a bundled signed dependency graph and compiles GPU shaders. No additional entitlement is granted. | `entitlements.plist`, notarization, clean-install verification |
+| SEC-010 | Accepted | Released database migrations are append-only, transactional, fixture-tested, and refuse databases created by a newer unsupported app. | migration hashes and server migration tests |
+
+## Release rules
+
+1. `node scripts/check_security_decisions.mjs` must pass in CI and the desktop
+   release workflow.
+2. A released migration string must never be edited. Add the next numbered
+   migration instead.
+3. Clean-install jobs must pass for both macOS architectures, the Windows MSI,
+   the Linux AppImage, and the Linux deb package before a draft release is
+   published.
+4. Any change to cookie flags, CSRF enforcement, CSP, Tauri capabilities,
+   updater keys, encryption, diagnostics export, or install verification needs
+   a matching test and a decision-log update.
+
+## v1 security blocker
+
+- Configure Windows Authenticode signing and make signature verification a hard
+  failure in the clean-install workflow.

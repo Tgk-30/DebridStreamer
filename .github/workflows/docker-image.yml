@@ -11,6 +11,7 @@ on:
       - ".dockerignore"
       - ".github/workflows/docker-image.yml"
       - "scripts/check_release_readiness.mjs"
+      - "scripts/check_security_decisions.mjs"
       - "scripts/public_repo_preflight.mjs"
       - "server/**"
       - "web/**"
@@ -40,6 +41,9 @@ jobs:
 
       - name: Release readiness
         run: node scripts/check_release_readiness.mjs
+
+      - name: Security decisions
+        run: node scripts/check_security_decisions.mjs
 
       - name: Resolve image name
         id: image

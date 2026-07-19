@@ -8,13 +8,16 @@
     "core:default",
     "core:window:allow-is-fullscreen",
     "core:window:allow-set-fullscreen",
-    "opener:default",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "ms-settings:appsfeatures" }]
+      "allow": [
+        { "url": "https://*" },
+        { "url": "http://*" },
+        { "url": "ms-settings:appsfeatures" }
+      ]
     },
     "updater:default",
-    "process:default",
+    "process:allow-restart",
     {
       "identifier": "http:default",
       "allow": [

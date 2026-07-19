@@ -26,6 +26,9 @@ advisory for the repository. Include:
 
 ## Security Model
 
+The accepted trust boundaries and beta risks are recorded in
+[`docs/SECURITY_DECISIONS.md`](docs/SECURITY_DECISIONS.md).
+
 - Browser/PWA auth uses httpOnly session cookies plus CSRF tokens.
 - Every personal record must be profile-scoped.
 - Server credentials are admin-managed and encrypted at rest.

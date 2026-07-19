@@ -269,6 +269,43 @@ describe("DebridStreamer server", () => {
     expect(revoked.statusCode).toBe(401);
   });
 
+  it("sets hardened session cookies while keeping only the CSRF token readable", async () => {
+    const hardened = await buildApp({
+      config: {
+        databasePath: ":memory:",
+        dataDir: ".test-data",
+        secretKey: randomBytes(32),
+        cookieSecure: true,
+        cookieSameSite: "strict",
+        logger: false,
+      },
+    });
+    try {
+      const response = await hardened.inject({
+        method: "POST",
+        url: "/api/auth/setup-owner",
+        payload: {
+          username: "secure-owner",
+          password: "secure-owner-password",
+          displayName: "Secure Owner",
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      const raw = response.headers["set-cookie"];
+      const cookies = Array.isArray(raw) ? raw : raw ? [raw] : [];
+      const session = cookies.find((line) => line.startsWith("ds_session="));
+      const csrf = cookies.find((line) => line.startsWith("ds_csrf="));
+      expect(session).toMatch(/; HttpOnly/i);
+      expect(session).toMatch(/; Secure/i);
+      expect(session).toMatch(/; SameSite=Strict/i);
+      expect(csrf).not.toMatch(/; HttpOnly/i);
+      expect(csrf).toMatch(/; Secure/i);
+      expect(csrf).toMatch(/; SameSite=Strict/i);
+    } finally {
+      await hardened.close();
+    }
+  });
+
   it("requires a configured setup token before creating the first owner", async () => {
     const protectedApp = await protectedTestApp("setup-token-for-tests");
     try {
