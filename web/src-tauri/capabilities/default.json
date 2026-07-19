@@ -4,6 +4,9 @@
   "description": "Capability for the main window",
   "windows": ["main"],
   "platforms": ["macOS", "windows", "linux"],
+  "remote": {
+    "urls": ["https://*", "http://*"]
+  },
   "permissions": [
     "core:default",
     "core:window:allow-is-fullscreen",
