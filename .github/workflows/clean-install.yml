@@ -14,8 +14,10 @@ on:
         required: true
         type: string
 
+# Draft releases are visible only to tokens with push access. The release stays
+# draft until this workflow has installed and verified every platform package.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   macos:
