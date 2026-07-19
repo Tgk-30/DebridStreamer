@@ -319,6 +319,14 @@ describe("watch history", () => {
       completed: true, // finished → excluded
       lastWatched: "2024-03-01T00:00:00.000Z",
     });
+    await db.recordHistory({
+      mediaId: "tt5",
+      preview: preview("tt5"),
+      progressSeconds: 500,
+      durationSeconds: 1000,
+      completed: true,
+      lastWatched: "2024-03-15T00:00:00.000Z",
+    });
     // A plain "viewed" row (opening Detail): zero progress → must NOT crowd out
     // the resumable rows above (regression for round-2 bug #2).
     await db.recordHistory({
@@ -408,6 +416,51 @@ describe("watch history", () => {
       "resumable-old",
     ]);
     expect(cursorVisits).toBeLessThan(200);
+  });
+
+  it("continueWatching rejects finite nonpositive limits without scanning", async () => {
+    await db.getSetting("open-database");
+    const historyTable = Reflect.get(db, "watchHistory") as {
+      core: { openCursor(...args: unknown[]): Promise<unknown> };
+    };
+    const openCursor = vi.spyOn(historyTable.core, "openCursor");
+
+    await expect(db.continueWatching(0)).resolves.toEqual([]);
+    await expect(db.continueWatching(-1)).resolves.toEqual([]);
+    await expect(db.continueWatching(-0.5)).resolves.toEqual([]);
+    expect(openCursor).not.toHaveBeenCalled();
+  });
+
+  it.each([NaN, Infinity, -Infinity])(
+    "continueWatching bounds non-finite limit %s to 20 rows",
+    async (limit) => {
+      for (let i = 0; i < 25; i += 1) {
+        await db.recordHistory({
+          mediaId: `limit-${i}`,
+          preview: preview(`limit-${i}`),
+          progressSeconds: 100,
+          durationSeconds: 1_000,
+          lastWatched: `2025-01-01T00:00:${String(i).padStart(2, "0")}.000Z`,
+        });
+      }
+
+      const rows = await db.continueWatching(limit);
+      expect(rows).toHaveLength(20);
+    },
+  );
+
+  it("continueWatching caps finite limits at 20 rows", async () => {
+    for (let i = 0; i < 25; i += 1) {
+      await db.recordHistory({
+        mediaId: `cap-${i}`,
+        preview: preview(`cap-${i}`),
+        progressSeconds: 100,
+        durationSeconds: 1_000,
+        lastWatched: `2025-01-01T00:00:${String(i).padStart(2, "0")}.000Z`,
+      });
+    }
+
+    await expect(db.continueWatching(200)).resolves.toHaveLength(20);
   });
 
   it("listHistory orders newest-first", async () => {

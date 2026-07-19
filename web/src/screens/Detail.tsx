@@ -13,7 +13,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useAppStore } from "../store/AppStore";
+import { useAppStore, useCachedResolutions } from "../store/AppStore";
 import { useDetail } from "../data/detail";
 import { useStreams } from "../data/streams";
 import {
@@ -240,7 +240,6 @@ export function Detail() {
     recordResume,
     continueWatching,
     refreshContinueWatching,
-    cachedResolutions,
     trailerOpen,
     openTrailer,
     closeTrailer,
@@ -248,6 +247,7 @@ export function Detail() {
     openDetailPlayer,
     closeDetailPlayer,
   } = useAppStore();
+  const cachedResolutions = useCachedResolutions();
   configureTraktScrobble({
     enabled: settings.traktScrobbleEnabled,
     clientId: settings.traktClientId,

@@ -30,6 +30,7 @@ import {
   getServerMovieReleaseCalendar,
   getServerSeasons,
   getServerUpcomingEpisodes,
+  MAX_CALENDAR_SERIES,
   searchServerMedia,
   titleCertification,
 } from "./metadata-runtime.js";
@@ -69,6 +70,9 @@ import {
 
 const SESSION_COOKIE = "ds_session";
 const CSRF_COOKIE = "ds_csrf";
+const CONTINUE_WATCHING_VIEW = "continue-watching";
+const CONTINUE_WATCHING_MAX_ROWS = 20;
+const CONTINUE_WATCHING_MAX_RESPONSE_BYTES = 65_536;
 
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -408,7 +412,7 @@ const mediaPreviewSchema = z.object({
 });
 
 const upcomingEpisodesBodySchema = z.object({
-  series: z.array(mediaPreviewSchema).max(200),
+  series: z.array(mediaPreviewSchema).max(MAX_CALENDAR_SERIES),
 });
 
 type MediaPreviewInput = z.infer<typeof mediaPreviewSchema>;
@@ -3162,7 +3166,45 @@ function registerRoutes(
 
   app.get("/api/history", async (request) => {
     const auth = requireAuth(db, request);
-    const query = request.query as { limit?: string };
+    const query = request.query as { limit?: string; view?: string };
+    if (query.view === CONTINUE_WATCHING_VIEW) {
+      const limit = parseLimit(
+        query.limit,
+        CONTINUE_WATCHING_MAX_ROWS,
+        CONTINUE_WATCHING_MAX_ROWS,
+      );
+      const rows = db.sqlite
+        .prepare(
+          `SELECT media_id, episode_id, progress_seconds, duration_seconds,
+                  completed, last_watched, stream_quality, preview_json
+           FROM watch_history
+           WHERE profile_id = ?
+             AND completed = 0
+             AND duration_seconds > 0
+             AND progress_seconds / duration_seconds > 0.02
+             AND progress_seconds / duration_seconds < 0.95
+           ORDER BY last_watched DESC
+           LIMIT ?`,
+        )
+        .all(auth.profileId, limit) as Parameters<typeof mapWatchHistoryRow>[0][];
+      const items: ReturnType<typeof mapWatchHistoryRow>[] = [];
+      for (const row of rows) {
+        const item = mapWatchHistoryRow(row);
+        const candidate = {
+          view: CONTINUE_WATCHING_VIEW,
+          items: [...items, item],
+        };
+        if (
+          Buffer.byteLength(JSON.stringify(candidate), "utf8") >
+          CONTINUE_WATCHING_MAX_RESPONSE_BYTES
+        ) {
+          break;
+        }
+        items.push(item);
+      }
+      return { view: CONTINUE_WATCHING_VIEW, items };
+    }
+
     const limit = parseLimit(query.limit, 100, 500);
     const rows = db.sqlite
       .prepare(

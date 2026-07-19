@@ -18,6 +18,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -258,10 +259,6 @@ export interface AppStore {
   /** Re-read only Continue Watching after a playback session closes. Waits for
    * any final progress write already in flight before loading the slice. */
   refreshContinueWatching: () => Promise<void>;
-  /** Cached, ready-to-play resolutions keyed by mediaId (the watchlist
-   * "Ready to play" badge + instant playback). Populated by the background
-   * auto-resolve job; empty in a plain browser. */
-  cachedResolutions: Record<string, CachedResolutionRecord>;
   /** Re-read the cached-resolution table from the Store (after a pass). */
   refreshCachedResolutions: () => void;
   toggleWatchlist: (item: MediaPreview) => void;
@@ -324,6 +321,10 @@ export interface AppActions {
 
 const AppStoreContext = createContext<AppStore | null>(null);
 const AppActionsContext = createContext<AppActions | null>(null);
+const CachedResolutionsContext = createContext<Record<
+  string,
+  CachedResolutionRecord
+> | null>(null);
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [route, setRoute] = useState<ScreenId>("discover");
@@ -1179,53 +1180,59 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     ? (serverSession?.simpleMode ?? false)
     : settings.simpleMode;
 
-  // Every command below is useCallback-stable and getServices reads a ref, so
-  // this provider value stays identical after mount. It lets memoized shell
-  // controls avoid unrelated AppStore context fan-out without making services
-  // stale inside an event handler.
-  const actionsValue: AppActions = useMemo(
-    () => ({
-      getServices: () => servicesRef.current,
-      navigate,
-      openDetail,
-      closeDetail,
-      openBrowse,
-      updateBrowseContext,
-      closeBrowse,
-      search,
-      consumePendingSearch,
-      updateSettings,
-      refreshContinueWatching,
-      refreshCachedResolutions,
-      toggleWatchlist,
-      removeFromWatchlist,
-      importToWatchlist,
-      reloadProfileData,
-      refreshProfiles,
-      switchLocalProfile,
-      recordResume,
-    }),
-    [
-      navigate,
-      openDetail,
-      closeDetail,
-      openBrowse,
-      updateBrowseContext,
-      closeBrowse,
-      search,
-      consumePendingSearch,
-      updateSettings,
-      refreshContinueWatching,
-      refreshCachedResolutions,
-      toggleWatchlist,
-      removeFromWatchlist,
-      importToWatchlist,
-      reloadProfileData,
-      refreshProfiles,
-      switchLocalProfile,
-      recordResume,
-    ],
-  );
+  const currentActions: AppActions = {
+    getServices: () => servicesRef.current,
+    navigate,
+    openDetail,
+    closeDetail,
+    openBrowse,
+    updateBrowseContext,
+    closeBrowse,
+    search,
+    consumePendingSearch,
+    updateSettings,
+    refreshContinueWatching,
+    refreshCachedResolutions,
+    toggleWatchlist,
+    removeFromWatchlist,
+    importToWatchlist,
+    reloadProfileData,
+    refreshProfiles,
+    switchLocalProfile,
+    recordResume,
+  };
+  const currentActionsRef = useRef(currentActions);
+  useLayoutEffect(() => {
+    currentActionsRef.current = currentActions;
+  });
+
+  // Action-only consumers keep one context identity for the provider lifetime.
+  // Each forwarding method reads the callbacks from the latest committed render,
+  // so route-dependent handlers stay current without notifying shell controls.
+  const actionsValue: AppActions = useMemo(() => {
+    const live = () => currentActionsRef.current;
+    return {
+      getServices: () => live().getServices(),
+      navigate: (...args) => live().navigate(...args),
+      openDetail: (...args) => live().openDetail(...args),
+      closeDetail: () => live().closeDetail(),
+      openBrowse: (...args) => live().openBrowse(...args),
+      updateBrowseContext: (...args) => live().updateBrowseContext(...args),
+      closeBrowse: () => live().closeBrowse(),
+      search: (...args) => live().search(...args),
+      consumePendingSearch: () => live().consumePendingSearch(),
+      updateSettings: (...args) => live().updateSettings(...args),
+      refreshContinueWatching: () => live().refreshContinueWatching(),
+      refreshCachedResolutions: () => live().refreshCachedResolutions(),
+      toggleWatchlist: (...args) => live().toggleWatchlist(...args),
+      removeFromWatchlist: (...args) => live().removeFromWatchlist(...args),
+      importToWatchlist: (...args) => live().importToWatchlist(...args),
+      reloadProfileData: () => live().reloadProfileData(),
+      refreshProfiles: () => live().refreshProfiles(),
+      switchLocalProfile: (...args) => live().switchLocalProfile(...args),
+      recordResume: (...args) => live().recordResume(...args),
+    };
+  }, []);
 
   // PERF: memoize the context value. Every member below is already referentially
   // stable between unrelated updates (useCallback/useState); without useMemo the
@@ -1273,7 +1280,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       history,
       continueWatching,
       refreshContinueWatching,
-      cachedResolutions,
       refreshCachedResolutions,
       toggleWatchlist,
       removeFromWatchlist,
@@ -1327,7 +1333,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       history,
       continueWatching,
       refreshContinueWatching,
-      cachedResolutions,
       refreshCachedResolutions,
       toggleWatchlist,
       removeFromWatchlist,
@@ -1344,9 +1349,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppActionsContext.Provider value={actionsValue}>
-      <AppStoreContext.Provider value={value}>
-        {children}
-      </AppStoreContext.Provider>
+      <CachedResolutionsContext.Provider value={cachedResolutions}>
+        <AppStoreContext.Provider value={value}>
+          {children}
+        </AppStoreContext.Provider>
+      </CachedResolutionsContext.Provider>
     </AppActionsContext.Provider>
   );
 }
@@ -1367,6 +1374,16 @@ export function useAppActions(): AppActions {
     throw new Error("useAppActions must be used within an <AppStoreProvider>");
   }
   return actions;
+}
+
+/** Subscribe only to ready-to-play cache badges. The 30 second resolution poll
+ * can update this map without re-rendering every general AppStore consumer. */
+export function useCachedResolutions(): Record<string, CachedResolutionRecord> {
+  const resolutions = useContext(CachedResolutionsContext);
+  if (resolutions == null) {
+    throw new Error("useCachedResolutions must be used within an <AppStoreProvider>");
+  }
+  return resolutions;
 }
 
 /** Convenience hook for the effective Simple/Advanced experience tier. */

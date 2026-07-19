@@ -889,6 +889,91 @@ describe("saveSettingsToStore", () => {
     expect(scalarWrites).toEqual([["simple_mode", "false"]]);
   });
 
+  it("keeps an appearance-only save to one scalar write and zero secret or config operations", async () => {
+    const previous = settingsWith({
+      tmdbKey: "tmdb",
+      traktClientId: "trakt-client",
+      traktClientSecret: "trakt-secret",
+      omdbKey: "omdb",
+      aiApiKey: "ai",
+      openSubtitlesApiKey: "subtitles",
+      debridTokens: [{ service: "real_debrid", apiToken: "rd" }],
+      sources: [
+        {
+          id: "source",
+          type: "torznab",
+          baseURL: "http://indexer",
+          apiKey: "indexer-key",
+          isActive: true,
+          displayName: "Indexer",
+          priority: 2,
+        },
+      ],
+      builtInIndexersEnabled: false,
+      appearanceBlur: 12,
+    });
+    const next = {
+      ...previous,
+      appearanceBlur: 14,
+      // Equal cloned arrays prove the budget does not depend on reference identity.
+      debridTokens: previous.debridTokens.map((entry) => ({ ...entry })),
+      sources: previous.sources.map((entry) => ({ ...entry })),
+    };
+
+    await saveSettingsToStore(next, { previous });
+
+    expect(fakeStore.setSetting.mock.calls).toEqual([["appearance_blur", "14"]]);
+    expect(fakeSecrets.getSecret).not.toHaveBeenCalled();
+    expect(fakeSecrets.setSecret).not.toHaveBeenCalled();
+    expect(fakeSecrets.deleteSecret).not.toHaveBeenCalled();
+    expect(fakeStore.listDebridConfigs).not.toHaveBeenCalled();
+    expect(fakeStore.saveDebridConfig).not.toHaveBeenCalled();
+    expect(fakeStore.deleteDebridConfig).not.toHaveBeenCalled();
+    expect(fakeStore.listIndexerConfigs).not.toHaveBeenCalled();
+    expect(fakeStore.saveIndexerConfig).not.toHaveBeenCalled();
+    expect(fakeStore.deleteIndexerConfig).not.toHaveBeenCalled();
+  });
+
+  it("persists all six credential fields when they changed from the prior settings", async () => {
+    const previous = settingsWith({
+      tmdbKey: "old-tmdb",
+      traktClientId: "old-trakt-client",
+      traktClientSecret: "old-trakt-secret",
+      omdbKey: "old-omdb",
+      aiApiKey: "old-ai",
+      openSubtitlesApiKey: "old-subtitles",
+    });
+    const next = {
+      ...previous,
+      tmdbKey: "new-tmdb",
+      traktClientId: "new-trakt-client",
+      traktClientSecret: "new-trakt-secret",
+      omdbKey: "new-omdb",
+      aiApiKey: "new-ai",
+      openSubtitlesApiKey: "new-subtitles",
+    };
+
+    await saveSettingsToStore(next, { previous });
+
+    const expectedSecrets = [
+      ["tmdb_api_key", "new-tmdb"],
+      ["trakt_client_id", "new-trakt-client"],
+      ["trakt_client_secret", "new-trakt-secret"],
+      ["omdb_api_key", "new-omdb"],
+      ["ai_api_key", "new-ai"],
+      ["opensubtitles_api_key", "new-subtitles"],
+    ];
+    expect(fakeSecrets.setSecret).toHaveBeenCalledTimes(expectedSecrets.length);
+    for (const [key, value] of expectedSecrets) {
+      expect(fakeSecrets.setSecret).toHaveBeenCalledWith(key, value);
+      expect(fakeStore.setSetting).toHaveBeenCalledWith(key, `secret:${key}`);
+    }
+    expect(fakeStore.setSetting).toHaveBeenCalledTimes(expectedSecrets.length);
+    expect(fakeSecrets.deleteSecret).not.toHaveBeenCalled();
+    expect(fakeStore.listDebridConfigs).not.toHaveBeenCalled();
+    expect(fakeStore.listIndexerConfigs).not.toHaveBeenCalled();
+  });
+
   it("writes zero scalars when the next settings equal the supplied prior settings", async () => {
     const current = settingsWith({ theme: "aurora" });
 

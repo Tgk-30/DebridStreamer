@@ -344,6 +344,9 @@ export async function getServerGenres(db, config, profileId, input) {
   return { genres: await service.getGenres(input.type) };
 }
 
+export const MAX_CALENDAR_SERIES = 30;
+const MAX_CALENDAR_SERIES_CONCURRENCY = 6;
+
 async function getUpcomingEpisodes(series, service, now = Date.now()) {
   if (series.type !== "series") return [];
   const tmdbId = tmdbIdOf(series);
@@ -379,21 +382,35 @@ async function getUpcomingEpisodes(series, service, now = Date.now()) {
   }
 }
 
+export async function getUpcomingEpisodesForSeries(seriesList, service, now = Date.now()) {
+  const seen = new Set();
+  const series = seriesList
+    .filter((item) => {
+      if (item.type !== "series") return false;
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    })
+    .slice(0, MAX_CALENDAR_SERIES);
+  const all = new Array(series.length);
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(MAX_CALENDAR_SERIES_CONCURRENCY, series.length) },
+    async () => {
+      while (nextIndex < series.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        all[index] = await getUpcomingEpisodes(series[index], service, now);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return all.flat().sort((a, b) => a.airDate.localeCompare(b.airDate));
+}
+
 export async function getServerUpcomingEpisodes(db, config, profileId, input) {
   const service = tmdbService(db, config, profileId);
-  const seen = new Set();
-  const series = input.series.filter((item) => {
-    if (item.type !== "series") return false;
-    if (seen.has(item.id)) return false;
-    seen.add(item.id);
-    return true;
-  });
-  const all = await Promise.all(
-    series.map((item) => getUpcomingEpisodes(item, service)),
-  );
-  return {
-    episodes: all.flat().sort((a, b) => a.airDate.localeCompare(b.airDate)),
-  };
+  return { episodes: await getUpcomingEpisodesForSeries(input.series, service) };
 }
 
 /** Release-dated movie rows for Server Mode's calendar. The TMDB service uses

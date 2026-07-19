@@ -4,6 +4,9 @@ import { pathToFileURL } from "node:url";
 
 const DEFAULT_HASH = "0000000000000000000000000000000000000000";
 const DEFAULT_TIMEOUT_MS = 15_000;
+const MAX_RETRY_AFTER_MS = 5_000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const PROVIDERS = [
   {
@@ -14,6 +17,10 @@ export const PROVIDERS = [
       url: "https://api.real-debrid.com/rest/1.0/user",
       valid: (json) => typeof json?.username === "string",
     },
+    torrents: {
+      url: "https://api.real-debrid.com/rest/1.0/torrents?limit=1",
+      valid: (json) => Array.isArray(json),
+    },
     cache: null,
   },
   {
@@ -22,12 +29,16 @@ export const PROVIDERS = [
     env: "DS_SMOKE_ALLDEBRID_TOKEN",
     account: {
       url: "https://api.alldebrid.com/v4/user?agent=YAWFStream",
-      valid: (json) => typeof json?.data?.user === "object" && json.data.user !== null,
+      valid: (json) =>
+        json?.status === "success" &&
+        typeof json?.data?.user === "object" &&
+        json.data.user !== null,
     },
     cache: {
       url: (hash) =>
         `https://api.alldebrid.com/v4/magnet/instant?agent=YAWFStream&magnets[]=${hash}`,
-      valid: (json) => Array.isArray(json?.data?.magnets),
+      valid: (json) =>
+        json?.status === "success" && Array.isArray(json?.data?.magnets),
     },
   },
   {
@@ -36,14 +47,17 @@ export const PROVIDERS = [
     env: "DS_SMOKE_PREMIUMIZE_TOKEN",
     account: {
       url: "https://www.premiumize.me/api/account/info",
-      valid: (json) =>
-        typeof json?.customer_id === "string" || typeof json?.status === "string",
+      valid: (json) => json?.status === "success",
     },
     cache: {
       url: "https://www.premiumize.me/api/cache/check",
       method: "POST",
       body: (hash) => `items[]=${encodeURIComponent(hash)}`,
-      valid: (json) => Array.isArray(json?.response),
+      valid: (json) =>
+        json?.status === "success" &&
+        Array.isArray(json?.response) &&
+        json.response.length === 1 &&
+        typeof json.response[0] === "boolean",
     },
   },
   {
@@ -52,26 +66,41 @@ export const PROVIDERS = [
     env: "DS_SMOKE_TORBOX_TOKEN",
     account: {
       url: "https://api.torbox.app/v1/api/user/me",
-      valid: (json) => typeof json?.data === "object" && json.data !== null,
+      valid: (json) =>
+        json?.success === true && typeof json?.data === "object" && json.data !== null,
     },
     cache: {
       url: (hash) =>
         `https://api.torbox.app/v1/api/torrents/checkcached?hash=${hash}&format=object`,
-      valid: (json) => typeof json?.data === "object" && json.data !== null,
+      valid: (json) =>
+        json?.success === true && typeof json?.data === "object" && json.data !== null,
     },
   },
 ];
 
-function authHeaders(provider, token) {
+function authHeaders(token) {
   return {
     Authorization: `Bearer ${token}`,
-    ...(provider.id === "all_debrid" || provider.id === "premiumize"
-      ? { "X-API-Key": token }
-      : {}),
   };
 }
 
-async function checkEndpoint(
+function retryAfterMs(response, now = Date.now()) {
+  const raw = response.headers?.get?.("retry-after")?.trim();
+  if (!raw) return 0;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(MAX_RETRY_AFTER_MS, Math.round(seconds * 1_000));
+  }
+  const at = Date.parse(raw);
+  if (!Number.isFinite(at)) return 0;
+  return Math.min(MAX_RETRY_AFTER_MS, Math.max(0, at - now));
+}
+
+function isRetryableStatus(status) {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+async function checkEndpointAttempt(
   { url, valid, method = "GET", body },
   headers,
   fetchImpl,
@@ -79,7 +108,6 @@ async function checkEndpoint(
 ) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const startedAt = Date.now();
   try {
     const response = await fetchImpl(url, {
       method,
@@ -91,28 +119,61 @@ async function checkEndpoint(
       signal: controller.signal,
     });
     if (!response.ok) {
-      return { ok: false, durationMs: Date.now() - startedAt, status: response.status };
+      return {
+        ok: false,
+        reason: "http-error",
+        status: response.status,
+        retryAfterMs: retryAfterMs(response),
+      };
     }
     let json;
     try {
       json = await response.json();
     } catch {
-      return { ok: false, durationMs: Date.now() - startedAt, reason: "invalid-json" };
+      return { ok: false, reason: "invalid-json" };
     }
+    const isValid = Boolean(valid(json));
     return {
-      ok: Boolean(valid(json)),
-      durationMs: Date.now() - startedAt,
-      ...(!valid(json) ? { reason: "unexpected-shape" } : {}),
+      ok: isValid,
+      ...(!isValid ? { reason: "unexpected-shape" } : {}),
     };
   } catch (error) {
     return {
       ok: false,
-      durationMs: Date.now() - startedAt,
       reason: error?.name === "AbortError" ? "timeout" : "network-error",
     };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function checkEndpoint(
+  { url, valid, method = "GET", body },
+  headers,
+  fetchImpl,
+  timeoutMs,
+  sleepImpl,
+) {
+  const startedAt = Date.now();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await checkEndpointAttempt(
+      { url, valid, method, body },
+      headers,
+      fetchImpl,
+      timeoutMs,
+    );
+    const shouldRetry =
+      attempt === 0 &&
+      result.status != null &&
+      isRetryableStatus(result.status);
+    if (shouldRetry) {
+      await sleepImpl(result.retryAfterMs ?? 0);
+      continue;
+    }
+    const { retryAfterMs: _retryAfterMs, ...publicResult } = result;
+    return { ...publicResult, durationMs: Date.now() - startedAt };
+  }
+  throw new Error("unreachable provider smoke retry state");
 }
 
 export async function smokeProvider(
@@ -122,18 +183,32 @@ export async function smokeProvider(
     hash = DEFAULT_HASH,
     fetchImpl = fetch,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    sleepImpl = sleep,
   } = {},
 ) {
   if (!/^[a-f0-9]{40}$/i.test(hash)) {
     throw new Error("DS_SMOKE_INFO_HASH must be a 40-character hexadecimal info hash");
   }
-  const headers = authHeaders(provider, token);
+  const headers = authHeaders(token);
   const account = await checkEndpoint(
     provider.account,
     headers,
     fetchImpl,
     timeoutMs,
+    sleepImpl,
   );
+  const torrents =
+    provider.torrents == null
+      ? null
+      : account.ok
+        ? await checkEndpoint(
+            provider.torrents,
+            headers,
+            fetchImpl,
+            timeoutMs,
+            sleepImpl,
+          )
+        : { ok: false, durationMs: 0, reason: "account-failed" };
   const cache =
     account.ok && provider.cache != null
       ? await checkEndpoint(
@@ -151,15 +226,17 @@ export async function smokeProvider(
           headers,
           fetchImpl,
           timeoutMs,
+          sleepImpl,
         )
       : provider.cache == null
-        ? { ok: true, durationMs: 0, reason: "not-applicable" }
+        ? { ok: null, durationMs: 0, reason: "unsupported" }
         : { ok: false, durationMs: 0, reason: "account-failed" };
   return {
     id: provider.id,
     label: provider.label,
-    ok: account.ok && cache.ok,
+    ok: account.ok && (torrents == null || torrents.ok) && cache.ok !== false,
     account,
+    ...(torrents != null ? { torrents } : {}),
     cache,
   };
 }
@@ -168,6 +245,7 @@ export async function runProviderSmoke({
   env = process.env,
   fetchImpl = fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  sleepImpl = sleep,
 } = {}) {
   const hash = env.DS_SMOKE_INFO_HASH?.trim() || DEFAULT_HASH;
   const configured = PROVIDERS.flatMap((provider) => {
@@ -176,9 +254,36 @@ export async function runProviderSmoke({
   });
   const results = [];
   for (const { provider, token } of configured) {
-    results.push(await smokeProvider(provider, token, { hash, fetchImpl, timeoutMs }));
+    results.push(
+      await smokeProvider(provider, token, {
+        hash,
+        fetchImpl,
+        timeoutMs,
+        sleepImpl,
+      }),
+    );
   }
   return { configured: configured.length, results };
+}
+
+function formatCheck(label, check) {
+  if (check.ok === null) {
+    return `${label} unavailable (reason ${check.reason ?? "skipped"})`;
+  }
+  if (check.ok) return `${label} passed (${check.durationMs}ms)`;
+  const details = [
+    check.status != null ? `status ${check.status}` : null,
+    check.reason != null ? `reason ${check.reason}` : null,
+    `${check.durationMs}ms`,
+  ].filter(Boolean);
+  return `${label} failed (${details.join(", ")})`;
+}
+
+export function formatProviderResult(result) {
+  const checks = [formatCheck("account", result.account)];
+  if (result.torrents != null) checks.push(formatCheck("torrents", result.torrents));
+  checks.push(formatCheck("cache", result.cache));
+  return `${result.ok ? "PASS" : "FAIL"} ${result.label}: ${checks.join(", ")}`;
 }
 
 async function main() {
@@ -189,9 +294,7 @@ async function main() {
     return;
   }
   for (const result of report.results) {
-    const account = result.account.ok ? "account passed" : "account failed";
-    const cache = result.cache.ok ? "cache passed" : "cache failed";
-    console.log(`${result.ok ? "PASS" : "FAIL"} ${result.label}: ${account}, ${cache}`);
+    console.log(formatProviderResult(result));
   }
   if (report.results.some((result) => !result.ok)) process.exitCode = 1;
 }

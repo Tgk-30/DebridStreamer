@@ -52,7 +52,6 @@ vi.mock("../store/AppStore", () => ({
     watchlist: mockWatchlist,
     openDetail,
     removeFromWatchlist,
-    cachedResolutions: mockCachedResolutions,
     continueWatching: mockContinueWatching,
     openBrowse,
     navigate,
@@ -62,6 +61,7 @@ vi.mock("../store/AppStore", () => ({
     settings,
     importToWatchlist,
   }),
+  useCachedResolutions: () => mockCachedResolutions,
 }));
 
 vi.mock("../lib/serverMode", () => ({ isServerMode: () => serverMode }));

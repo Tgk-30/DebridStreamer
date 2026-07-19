@@ -479,6 +479,104 @@ describe("DebridStreamer server", () => {
     expect(bobHist.items[0]).toMatchObject({ progressSeconds: 90, completed: true });
   });
 
+  it("returns the newest 20 continue-watching rows at the strict resume boundaries", async () => {
+    const owner = await setupOwner(app);
+    const saveHistory = async (
+      mediaId: string,
+      progressSeconds: number,
+      durationSeconds: number | null,
+      minute: number,
+      completed = false,
+    ) => {
+      const response = await request(owner, {
+        method: "PUT",
+        url: `/api/history/${mediaId}`,
+        csrf: true,
+        payload: {
+          progressSeconds,
+          durationSeconds,
+          completed,
+          lastWatched: new Date(Date.UTC(2026, 0, 1, 0, minute)).toISOString(),
+          preview: { id: mediaId, type: "movie", title: mediaId },
+        },
+      });
+      expect(response.statusCode).toBe(200);
+    };
+
+    for (let index = 0; index < 25; index += 1) {
+      await saveHistory(`resume-${index}`, 50, 100, index);
+    }
+    await saveHistory("under-95", 94.9999, 100, 25);
+    await saveHistory("over-2", 2.0001, 100, 26);
+    await saveHistory("at-2", 2, 100, 27);
+    await saveHistory("at-95", 95, 100, 28);
+    await saveHistory("viewed-only", 0, null, 29);
+    await saveHistory("completed-midway", 50, 100, 30, true);
+
+    const response = await request(owner, {
+      method: "GET",
+      url: "/api/history?view=continue-watching&limit=200",
+    });
+    expect(response.statusCode).toBe(200);
+    const body = json<{
+      view: string;
+      items: Array<{ mediaId: string }>;
+    }>(response);
+    expect(body.view).toBe("continue-watching");
+    expect(body.items.map((item) => item.mediaId)).toEqual([
+      "over-2",
+      "under-95",
+      ...Array.from({ length: 18 }, (_, index) => `resume-${24 - index}`),
+    ]);
+    expect(body.items).toHaveLength(20);
+    expect(Buffer.byteLength(response.body, "utf8")).toBeLessThanOrEqual(65_536);
+
+    const normal = json<{ view?: string; items: Array<{ mediaId: string }> }>(
+      await request(owner, { method: "GET", url: "/api/history?limit=3" }),
+    );
+    expect(normal.view).toBeUndefined();
+    expect(normal.items.map((item) => item.mediaId)).toEqual([
+      "completed-midway",
+      "viewed-only",
+      "at-95",
+    ]);
+  });
+
+  it("keeps the continue-watching response within 64 KiB as a newest prefix", async () => {
+    const owner = await setupOwner(app);
+    const newestFirst = Array.from({ length: 20 }, (_, index) => `large-${19 - index}`);
+    for (let index = 0; index < 20; index += 1) {
+      const mediaId = `large-${index}`;
+      const response = await request(owner, {
+        method: "PUT",
+        url: `/api/history/${mediaId}`,
+        csrf: true,
+        payload: {
+          progressSeconds: 50,
+          durationSeconds: 100,
+          completed: false,
+          lastWatched: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+          preview: { id: mediaId, type: "movie", title: "x".repeat(6_000) },
+        },
+      });
+      expect(response.statusCode).toBe(200);
+    }
+
+    const response = await request(owner, {
+      method: "GET",
+      url: "/api/history?view=continue-watching&limit=20",
+    });
+    const body = json<{ view: string; items: Array<{ mediaId: string }> }>(response);
+    const ids = body.items.map((item) => item.mediaId);
+
+    expect(response.statusCode).toBe(200);
+    expect(body.view).toBe("continue-watching");
+    expect(Buffer.byteLength(response.body, "utf8")).toBeLessThanOrEqual(65_536);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.length).toBeLessThan(20);
+    expect(ids).toEqual(newestFirst.slice(0, ids.length));
+  });
+
   it("does not audit routine resume-position updates", async () => {
     const owner = await setupOwner(app);
     const before = json<{ events: Array<{ action: string }> }>(
@@ -993,6 +1091,25 @@ describe("DebridStreamer server", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it("server calendar: rejects more than 30 series", async () => {
+    const owner = await setupOwner(app);
+    const response = await request(owner, {
+      method: "POST",
+      url: "/api/calendar/upcoming",
+      csrf: true,
+      payload: {
+        series: Array.from({ length: 31 }, (_, index) => ({
+          id: `series-${index + 1}`,
+          type: "series",
+          title: `Series ${index + 1}`,
+          tmdbId: index + 1,
+        })),
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
   });
 
   it("server AI recommend: enforces the count bounds (1..20)", async () => {

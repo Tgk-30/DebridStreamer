@@ -50,7 +50,7 @@ vi.mock("../lib/ServerSessionContext", () => ({
 // ---- AppStore mock ----------------------------------------------------------
 const reloadProfileData = vi.fn();
 vi.mock("../store/AppStore", () => ({
-  useAppStore: () => ({ reloadProfileData }),
+  useAppActions: () => ({ reloadProfileData }),
 }));
 
 import { ProfilePicker } from "./ProfilePicker";

@@ -24,13 +24,13 @@ export async function loadWatchlist(): Promise<MediaPreview[]> {
 
 /** Load the watch history from the Store, most-recently-watched first. */
 export async function loadHistory(): Promise<MediaPreview[]> {
-  const rows = await getStore().listHistory();
+  const rows = await getStore().listHistory(100);
   return rows.map((r) => r.preview);
 }
 
 /** Load the "continue watching" rows (incomplete, with resume positions). */
 export async function loadContinueWatching(): Promise<WatchHistoryRecord[]> {
-  return getStore().continueWatching();
+  return getStore().continueWatching(20);
 }
 
 /** Toggle an item in the watchlist; returns the refreshed list. */

@@ -22,6 +22,7 @@ import { render, renderHook, act, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import type { MediaPreview } from "../models/media";
 import type { AppServices, AppSettings } from "../data/settings";
+import type { CachedResolutionRecord } from "../storage/models";
 
 // ---- Mockable collaborators ------------------------------------------------
 
@@ -157,7 +158,13 @@ vi.mock("../lib/serverMode", () => ({
 }));
 
 // Imported AFTER mocks (vi.mock is hoisted).
-import { AppStoreProvider, useAppActions, useAppStore, useSimpleMode } from "./AppStore";
+import {
+  AppStoreProvider,
+  useAppActions,
+  useAppStore,
+  useCachedResolutions,
+  useSimpleMode,
+} from "./AppStore";
 import {
   ServerSessionProvider,
   type ServerSession,
@@ -245,9 +252,10 @@ async function renderStore(session: ServerSession | null = null) {
   // renderHook returns { result, rerender, unmount } where `result` is the ref
   // whose `.current` holds the latest hook value. Tests destructure the outer
   // `{ result }` and read `result.current`.
-  const rendered = renderHook(() => useAppStore(), {
-    wrapper: makeWrapper(session),
-  });
+  const rendered = renderHook(
+    () => ({ ...useAppStore(), cachedResolutions: useCachedResolutions() }),
+    { wrapper: makeWrapper(session) },
+  );
   await waitFor(() => expect(rendered.result.current.hydrated).toBe(true));
   return rendered;
 }
@@ -333,6 +341,94 @@ describe("useAppActions", () => {
     act(() => openDetail(media("detail-item")));
 
     expect(actionRenders).toBe(beforeDetailOpen);
+  });
+
+  it("keeps its object and consumers stable when route-dependent callbacks change", async () => {
+    let actionRenders = 0;
+    let actions!: ReturnType<typeof useAppActions>;
+    let route = "";
+    function ActionProbe() {
+      actions = useAppActions();
+      actionRenders += 1;
+      return null;
+    }
+    function RouteProbe() {
+      route = useAppStore().route;
+      return null;
+    }
+
+    render(
+      <ServerSessionProvider initial={null}>
+        <AppStoreProvider>
+          <ActionProbe />
+          <RouteProbe />
+        </AppStoreProvider>
+      </ServerSessionProvider>,
+    );
+    await waitFor(() => expect(route).toBe("discover"));
+    const actionsBeforeNavigation = actions;
+    const rendersBeforeNavigation = actionRenders;
+
+    act(() => actions.navigate("settings"));
+
+    await waitFor(() => expect(route).toBe("settings"));
+    expect(actions).toBe(actionsBeforeNavigation);
+    expect(actionRenders).toBe(rendersBeforeNavigation);
+  });
+});
+
+describe("useCachedResolutions", () => {
+  it("updates cache subscribers without re-rendering AppStore-only consumers", async () => {
+    let appStoreRenders = 0;
+    let actionRenders = 0;
+    let cacheRenders = 0;
+    let hydrated = false;
+    let refresh!: () => void;
+    let latestCache: Record<string, CachedResolutionRecord> = {};
+
+    function AppStoreProbe() {
+      const store = useAppStore();
+      hydrated = store.hydrated;
+      appStoreRenders += 1;
+      return null;
+    }
+    function ActionProbe() {
+      refresh = useAppActions().refreshCachedResolutions;
+      actionRenders += 1;
+      return null;
+    }
+    function CacheProbe() {
+      latestCache = useCachedResolutions();
+      cacheRenders += 1;
+      return null;
+    }
+
+    render(
+      <ServerSessionProvider initial={null}>
+        <AppStoreProvider>
+          <AppStoreProbe />
+          <ActionProbe />
+          <CacheProbe />
+        </AppStoreProvider>
+      </ServerSessionProvider>,
+    );
+    await waitFor(() => expect(refresh).toBeTypeOf("function"));
+    await waitFor(() => expect(hydrated).toBe(true));
+    const appRendersBeforeCacheUpdate = appStoreRenders;
+    const actionRendersBeforeCacheUpdate = actionRenders;
+    const cacheRendersBeforeCacheUpdate = cacheRenders;
+    const refreshBeforeCacheUpdate = refresh;
+    getCachedResolutions.mockResolvedValue([{ mediaId: "resolved" }]);
+
+    await act(async () => {
+      await refresh();
+    });
+
+    await waitFor(() => expect(latestCache.resolved).toBeDefined());
+    expect(appStoreRenders).toBe(appRendersBeforeCacheUpdate);
+    expect(actionRenders).toBe(actionRendersBeforeCacheUpdate);
+    expect(refresh).toBe(refreshBeforeCacheUpdate);
+    expect(cacheRenders).toBe(cacheRendersBeforeCacheUpdate + 1);
   });
 });
 

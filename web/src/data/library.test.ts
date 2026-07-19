@@ -18,12 +18,12 @@ const { store, calls } = vi.hoisted(() => {
           preview: { id, type: "movie", title: id },
         }));
       },
-      async listHistory() {
-        calls.push("listHistory");
+      async listHistory(limit?: number) {
+        calls.push(`listHistory:${limit ?? "default"}`);
         return [{ preview: { id: "h1", type: "movie", title: "Hist" } }];
       },
-      async continueWatching() {
-        calls.push("continueWatching");
+      async continueWatching(limit?: number) {
+        calls.push(`continueWatching:${limit ?? "default"}`);
         return [{ mediaId: "cw1", progressSeconds: 60, durationSeconds: 600 }];
       },
       async isInWatchlist(id: string) {
@@ -80,6 +80,7 @@ describe("loadWatchlist / loadHistory", () => {
 
     const hist = await loadHistory();
     expect(hist).toEqual([{ id: "h1", type: "movie", title: "Hist" }]);
+    expect(calls).toContain("listHistory:100");
   });
 });
 
@@ -88,7 +89,7 @@ describe("loadContinueWatching", () => {
     const rows = await loadContinueWatching();
     expect(rows).toHaveLength(1);
     expect(rows[0].mediaId).toBe("cw1");
-    expect(calls).toContain("continueWatching");
+    expect(calls).toContain("continueWatching:20");
   });
 });
 

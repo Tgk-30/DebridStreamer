@@ -5,7 +5,7 @@
 // added / already-there / not-found summary. Parsing + matching are pure (see
 // data/importWatchlist.ts); this only drives the flow + UI.
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useAppStore } from "../store/AppStore";
 import { useModalA11y } from "./useModalA11y";
 import { Icon } from "./Icon";
@@ -58,9 +58,18 @@ export function WatchlistImportDialog({
 
   const serverMode = isServerMode();
   const canResolve = serverMode || services.tmdb != null;
-  const parsed = parseWatchlistImport(text, fileName);
-  const entries = parsed.entries.slice(0, MAX_ENTRIES);
-  const missingIMDbCount = watchlist.filter((item) => item.id.startsWith("tmdb-")).length;
+  const parsed = useMemo(
+    () => parseWatchlistImport(text, fileName),
+    [fileName, text],
+  );
+  const entries = useMemo(
+    () => parsed.entries.slice(0, MAX_ENTRIES),
+    [parsed.entries],
+  );
+  const missingIMDbCount = useMemo(
+    () => watchlist.filter((item) => item.id.startsWith("tmdb-")).length,
+    [watchlist],
+  );
 
   function exportWatchlist() {
     const csv = new IMDbCSVSyncService().exportCSV(watchlist);

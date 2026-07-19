@@ -77,16 +77,48 @@ export function getServerGenres(
   },
 ): Promise<unknown>;
 
+export const MAX_CALENDAR_SERIES: 30;
+
+export interface UpcomingEpisodeSeries {
+  id: string;
+  type: "series";
+  title: string;
+  tmdbId?: number | null;
+}
+
+export interface UpcomingEpisodeService {
+  getSeasons(tmdbId: number): Promise<Array<{ seasonNumber: number }>>;
+  getEpisodes(
+    tmdbId: number,
+    seasonNumber: number,
+  ): Promise<Array<{
+    seasonNumber: number;
+    episodeNumber: number;
+    title?: string | null;
+    airDate?: string | null;
+  }>>;
+}
+
+export interface UpcomingEpisode<TSeries extends UpcomingEpisodeSeries = UpcomingEpisodeSeries> {
+  series: TSeries;
+  seasonNumber: number;
+  episodeNumber: number;
+  title: string | null;
+  airDate: string;
+}
+
+export function getUpcomingEpisodesForSeries<TSeries extends UpcomingEpisodeSeries>(
+  seriesList: readonly TSeries[],
+  service: UpcomingEpisodeService,
+  now?: number,
+): Promise<Array<UpcomingEpisode<TSeries>>>;
+
 export function getServerUpcomingEpisodes(
   db: AppDatabase,
   config: ServerConfig,
   profileId: string,
   input: {
-    series: Array<Record<string, unknown> & {
-      id: string;
-      type: "series";
-      title: string;
-    }>;
+    series: UpcomingEpisodeSeries[];
   },
 ): Promise<unknown>;
 

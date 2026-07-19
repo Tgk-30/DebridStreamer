@@ -832,6 +832,56 @@ function scalarSettingEntries(settings: AppSettings): Array<[string, string]> {
   ];
 }
 
+/** Credential-valued KV entries. Keeping this list beside the scalar entry list
+ * lets steady-state saves diff every secret without changing first-run writes. */
+function secretSettingEntries(settings: AppSettings): Array<[string, string]> {
+  return [
+    [SettingsKeys.tmdbApiKey, settings.tmdbKey],
+    [SettingsKeys.traktClientId, settings.traktClientId],
+    [SettingsKeys.traktClientSecret, settings.traktClientSecret],
+    [SettingsKeys.omdbApiKey, settings.omdbKey],
+    [SettingsKeys.aiApiKey, settings.aiApiKey],
+    [SettingsKeys.openSubtitlesApiKey, settings.openSubtitlesApiKey],
+  ];
+}
+
+/** Config order is significant because it supplies persisted priority. */
+function sameDebridTokens(
+  left: readonly DebridTokenEntry[],
+  right: readonly DebridTokenEntry[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (entry, index) =>
+        entry.service === right[index].service &&
+        entry.apiToken === right[index].apiToken,
+    )
+  );
+}
+
+/** Compare every SourceEntry field consumed by makeIndexerConfigRecord. */
+function sameSources(
+  left: readonly SourceEntry[],
+  right: readonly SourceEntry[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => {
+      const other = right[index];
+      return (
+        entry.id === other.id &&
+        entry.type === other.type &&
+        entry.baseURL === other.baseURL &&
+        (entry.apiKey ?? null) === (other.apiKey ?? null) &&
+        entry.isActive === other.isActive &&
+        (entry.displayName ?? null) === (other.displayName ?? null) &&
+        entry.priority === other.priority
+      );
+    })
+  );
+}
+
 /** Best-effort secret deletion for the REMOVAL path. On the Tauri desktop build
  * `deleteSecret` fails CLOSED - it rejects if the OS keychain is locked/denied
  * (see KeychainSecretStore). But by the time we call this we have already
@@ -1199,21 +1249,13 @@ export async function saveSettingsToStore(
   const changedScalarWrites = scalarSettingEntries(settings).filter(
     ([key, value]) => mergeOnly || previousScalars == null || previousScalars.get(key) !== value,
   );
+  const previousSecrets =
+    previous == null ? null : new Map(secretSettingEntries(previous));
+  const changedSecretWrites = secretSettingEntries(settings).filter(
+    ([key, value]) => mergeOnly || previousSecrets == null || previousSecrets.get(key) !== value,
+  );
   const kvResults = await Promise.allSettled([
-    setStoredValue(SettingsKeys.tmdbApiKey, settings.tmdbKey, mergeOnly),
-    setStoredValue(SettingsKeys.traktClientId, settings.traktClientId, mergeOnly),
-    setStoredValue(
-      SettingsKeys.traktClientSecret,
-      settings.traktClientSecret,
-      mergeOnly,
-    ),
-    setStoredValue(SettingsKeys.omdbApiKey, settings.omdbKey, mergeOnly),
-    setStoredValue(SettingsKeys.aiApiKey, settings.aiApiKey, mergeOnly),
-    setStoredValue(
-      SettingsKeys.openSubtitlesApiKey,
-      settings.openSubtitlesApiKey,
-      mergeOnly,
-    ),
+    ...changedSecretWrites.map(([key, value]) => setStoredValue(key, value, mergeOnly)),
     ...changedScalarWrites.map(([key, value]) => store.setSetting(key, value)),
   ]);
   for (const r of kvResults) {
@@ -1222,86 +1264,99 @@ export async function saveSettingsToStore(
 
   // Debrid configs: reconcile the table to the current token set. Tokens go in
   // SecretStore under `debrid.<id>`; the config row carries a secret marker.
-  const existingDebrid = await store.listDebridConfigs();
-  const keptDebridIds = new Set<string>();
-  let priority = 0;
-  for (const entry of settings.debridTokens) {
-    if (entry.apiToken.trim().length === 0) continue;
-    // Stable id per service so re-saving updates rather than duplicates.
-    const id = `debrid-${entry.service}`;
-    keptDebridIds.add(id);
-    try {
-      // Write the secret BEFORE the marker'd row. If the keychain write fails
-      // closed (desktop), skip the row so we never persist a config pointing at
-      // a secret we couldn't store (load would surface an empty token). Any
-      // existing row for this id stays put - id is already in keptDebridIds, so
-      // the removal sweep below won't delete it - and we record the failure so
-      // the whole Save still completes and then reports it.
-      await secrets.setSecret(debridSecretKey(id), entry.apiToken);
-    } catch (err) {
-      writeFailures.push(err);
-      continue;
+  const reconcileDebrid =
+    mergeOnly ||
+    previous == null ||
+    !sameDebridTokens(settings.debridTokens, previous.debridTokens);
+  if (reconcileDebrid) {
+    const existingDebrid = await store.listDebridConfigs();
+    const keptDebridIds = new Set<string>();
+    let priority = 0;
+    for (const entry of settings.debridTokens) {
+      if (entry.apiToken.trim().length === 0) continue;
+      // Stable id per service so re-saving updates rather than duplicates.
+      const id = `debrid-${entry.service}`;
+      keptDebridIds.add(id);
+      try {
+        // Write the secret BEFORE the marker'd row. If the keychain write fails
+        // closed (desktop), skip the row so we never persist a config pointing at
+        // a secret we couldn't store (load would surface an empty token). Any
+        // existing row for this id stays put - id is already in keptDebridIds, so
+        // the removal sweep below won't delete it - and we record the failure so
+        // the whole Save still completes and then reports it.
+        await secrets.setSecret(debridSecretKey(id), entry.apiToken);
+      } catch (err) {
+        writeFailures.push(err);
+        continue;
+      }
+      await store.saveDebridConfig({
+        id,
+        service: entry.service,
+        apiToken: `${SECRET_MARKER}${debridSecretKey(id)}`,
+        isActive: true,
+        priority: priority++,
+      });
     }
-    await store.saveDebridConfig({
-      id,
-      service: entry.service,
-      apiToken: `${SECRET_MARKER}${debridSecretKey(id)}`,
-      isActive: true,
-      priority: priority++,
-    });
-  }
-  // Skip removals under mergeOnly (first-run migration): a stale/partial legacy
-  // blob must not delete debrid rows the Store gained after an interrupted run.
-  if (!mergeOnly) {
-    for (const c of existingDebrid) {
-      if (!keptDebridIds.has(c.id)) {
-        // Delete the config row FIRST so the removal is honored even if the
-        // keychain purge fails closed (desktop); the secret delete is best-effort
-        // cleanup. Doing it the other way round would, on a keychain failure,
-        // orphan a config row whose marker points at a (maybe still-present)
-        // keychain entry AND abort the rest of this reconciliation.
-        await store.deleteDebridConfig(c.id);
-        await deleteSecretBestEffort(secrets, debridSecretKey(c.id));
+    // Skip removals under mergeOnly (first-run migration): a stale/partial legacy
+    // blob must not delete debrid rows the Store gained after an interrupted run.
+    if (!mergeOnly) {
+      for (const c of existingDebrid) {
+        if (!keptDebridIds.has(c.id)) {
+          // Delete the config row FIRST so the removal is honored even if the
+          // keychain purge fails closed (desktop); the secret delete is best-effort
+          // cleanup. Doing it the other way round would, on a keychain failure,
+          // orphan a config row whose marker points at a (maybe still-present)
+          // keychain entry AND abort the rest of this reconciliation.
+          await store.deleteDebridConfig(c.id);
+          await deleteSecretBestEffort(secrets, debridSecretKey(c.id));
+        }
       }
     }
   }
 
   // Indexer configs: reconcile to the current sources list (preserve order as
   // priority). A `built_in` row is written only to DISABLE the scrapers.
-  const existingIndexers = await store.listIndexerConfigs();
-  const keptIndexerIds = new Set<string>();
-  // Await each write (not fire-and-forget): saveSettingsToStore() must not
-  // resolve until the indexer rows are actually persisted, or a reload/app quit
-  // immediately after Save could lose newly-added or edited sources.
-  for (const [i, s] of settings.sources.entries()) {
-    keptIndexerIds.add(s.id);
-    const record: IndexerConfigRecord = makeIndexerConfigRecord({
-      id: s.id,
-      type: s.type,
-      baseURL: s.baseURL,
-      apiKey: s.apiKey ?? null,
-      isActive: s.isActive,
-      displayName: s.displayName ?? null,
-      providerSubtype: providerSubtypeFor(s.type),
-      priority: s.priority ?? i,
-    });
-    await store.saveIndexerConfig(record);
-  }
-  if (!settings.builtInIndexersEnabled) {
-    keptIndexerIds.add("built-in");
-    await store.saveIndexerConfig(
-      makeIndexerConfigRecord({
-        id: "built-in",
-        type: "built_in",
-        baseURL: "",
-        isActive: false,
-      }),
-    );
-  }
-  if (!mergeOnly) {
-    for (const c of existingIndexers) {
-      if (!keptIndexerIds.has(c.id)) {
-        await store.deleteIndexerConfig(c.id);
+  const reconcileIndexers =
+    mergeOnly ||
+    previous == null ||
+    settings.builtInIndexersEnabled !== previous.builtInIndexersEnabled ||
+    !sameSources(settings.sources, previous.sources);
+  if (reconcileIndexers) {
+    const existingIndexers = await store.listIndexerConfigs();
+    const keptIndexerIds = new Set<string>();
+    // Await each write (not fire-and-forget): saveSettingsToStore() must not
+    // resolve until the indexer rows are actually persisted, or a reload/app quit
+    // immediately after Save could lose newly-added or edited sources.
+    for (const [i, s] of settings.sources.entries()) {
+      keptIndexerIds.add(s.id);
+      const record: IndexerConfigRecord = makeIndexerConfigRecord({
+        id: s.id,
+        type: s.type,
+        baseURL: s.baseURL,
+        apiKey: s.apiKey ?? null,
+        isActive: s.isActive,
+        displayName: s.displayName ?? null,
+        providerSubtype: providerSubtypeFor(s.type),
+        priority: s.priority ?? i,
+      });
+      await store.saveIndexerConfig(record);
+    }
+    if (!settings.builtInIndexersEnabled) {
+      keptIndexerIds.add("built-in");
+      await store.saveIndexerConfig(
+        makeIndexerConfigRecord({
+          id: "built-in",
+          type: "built_in",
+          baseURL: "",
+          isActive: false,
+        }),
+      );
+    }
+    if (!mergeOnly) {
+      for (const c of existingIndexers) {
+        if (!keptIndexerIds.has(c.id)) {
+          await store.deleteIndexerConfig(c.id);
+        }
       }
     }
   }

@@ -6,7 +6,7 @@
 // in Local Mode when the user has connected Trakt in Settings.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAppStore } from "../store/AppStore";
+import { useAppStore, useCachedResolutions } from "../store/AppStore";
 import { MediaCard } from "../components/MediaCard";
 import { VirtualMediaGrid } from "../components/MediaGrid";
 import { EmptyState } from "../components/EmptyState";
@@ -65,7 +65,6 @@ export function Watchlist() {
     watchlist,
     openDetail,
     removeFromWatchlist,
-    cachedResolutions,
     continueWatching,
     openBrowse,
     navigate,
@@ -73,6 +72,7 @@ export function Watchlist() {
     settings,
     importToWatchlist,
   } = useAppStore();
+  const cachedResolutions = useCachedResolutions();
   const [importing, setImporting] = useState(false);
   const [folders, setFolders] = useState<WatchlistFolderRecord[]>([]);
   const [folderIds, setFolderIds] = useState<Record<string, string | null>>({});

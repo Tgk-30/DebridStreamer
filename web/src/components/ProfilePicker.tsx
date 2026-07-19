@@ -28,7 +28,7 @@ import {
   useSetServerSession,
   type ServerProfileSummary,
 } from "../lib/ServerSessionContext";
-import { useAppStore } from "../store/AppStore";
+import { useAppActions } from "../store/AppStore";
 import { PROFILE_COLORS } from "../data/profileAvatars";
 import { useModalA11y } from "./useModalA11y";
 import "./ProfilePicker.css";
@@ -77,7 +77,7 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
   const profiles = useServerProfiles();
   const setSession = useSetServerSession();
   const setProfiles = useSetServerProfiles();
-  const { reloadProfileData } = useAppStore();
+  const { reloadProfileData } = useAppActions();
   const pickerRef = useModalA11y<HTMLDivElement>(onClose);
 
   const [editing, setEditing] = useState(false);

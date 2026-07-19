@@ -11,8 +11,20 @@ const importToWatchlist =
   vi.fn<(p: MediaPreview[]) => Promise<{ added: number; skipped: number }>>();
 const createWatchlistFolder = vi.fn();
 const assignWatchlistFolder = vi.fn();
+const importPerformance = vi.hoisted(() => ({ parseCalls: 0 }));
 let serverMode = false;
 let tmdb: { search: typeof search } | null = { search };
+
+vi.mock("../data/importWatchlist", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../data/importWatchlist")>();
+  return {
+    ...actual,
+    parseWatchlistImport: (...args: Parameters<typeof actual.parseWatchlistImport>) => {
+      importPerformance.parseCalls += 1;
+      return actual.parseWatchlistImport(...args);
+    },
+  };
+});
 
 vi.mock("../store/AppStore", () => ({
   useAppStore: () => ({ services: { tmdb }, importToWatchlist }),
@@ -41,6 +53,7 @@ afterEach(() => {
   tmdb = { search };
   createWatchlistFolder.mockResolvedValue({ id: "folder-imdb", name: "IMDb import" });
   assignWatchlistFolder.mockResolvedValue(undefined);
+  importPerformance.parseCalls = 0;
 });
 
 describe("WatchlistImportDialog", () => {
@@ -58,6 +71,24 @@ describe("WatchlistImportDialog", () => {
       target: { value: "The Matrix (1999)\nDune" },
     });
     expect(screen.getByText("2 titles detected")).toBeInTheDocument();
+  });
+
+  it("does not reparse an unchanged import across unrelated renders", () => {
+    const view = render(
+      <WatchlistImportDialog onClose={() => {}} watchlist={[]} />,
+    );
+    expect(importPerformance.parseCalls).toBe(1);
+    fireEvent.change(screen.getByLabelText("Titles or CSV to import"), {
+      target: { value: "The Matrix (1999)\nDune" },
+    });
+    expect(importPerformance.parseCalls).toBe(2);
+
+    for (let index = 0; index < 20; index += 1) {
+      view.rerender(
+        <WatchlistImportDialog onClose={() => {}} watchlist={[]} />,
+      );
+    }
+    expect(importPerformance.parseCalls).toBe(2);
   });
 
   it("resolves entries, imports the matches, and reports the summary", async () => {

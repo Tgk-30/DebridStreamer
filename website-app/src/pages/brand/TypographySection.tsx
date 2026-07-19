@@ -4,6 +4,7 @@ import { Copy } from 'lucide-react';
 import { FONT_PAIRINGS, useThemeTweaks } from '@/theme.config';
 import SectionHeading from '@/components/SectionHeading';
 import GlassCard from '@/components/GlassCard';
+import { VERSION } from '@/lib/site';
 import { copyWithToast, EASE_EXPO } from '@/pages/brand/utils';
 
 const SCALE_ROWS = [
@@ -57,7 +58,7 @@ export default function TypographySection() {
     {
       key: 'caption',
       shorthand: 'font: 400 0.8125rem/1.5 var(--font-mono); letter-spacing: 0.04em; color: var(--ink-3);',
-      node: <p className="font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">v0.9.21-web · MIT · build 45</p>,
+      node: <p className="font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">{VERSION} · MIT</p>,
     },
   ];
 

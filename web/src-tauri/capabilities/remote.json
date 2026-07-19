@@ -1,11 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "Capability for the main window",
+  "identifier": "remote-follow-mode",
+  "description": "Capability for the main window while following a configured server",
+  "local": false,
   "windows": ["main"],
   "platforms": ["macOS", "windows", "linux"],
+  "remote": {
+    "urls": ["https://*:*", "http://*:*"]
+  },
   "permissions": [
-    "desktop-commands",
+    "remote-desktop-commands",
     "core:default",
     "core:window:allow-is-fullscreen",
     "core:window:allow-set-fullscreen",

@@ -121,6 +121,7 @@ interface ServerWatchlistResponse {
 }
 
 interface ServerHistoryResponse {
+  view?: string;
   items: Array<{
     mediaId: string;
     episodeId: string | null;
@@ -419,12 +420,26 @@ export class RemoteStore implements Store, SecretStore {
   }
 
   async continueWatching(limit = 20): Promise<WatchHistoryRecord[]> {
-    // Widen the fetch window (the server caps at 500), then filter to resumable
-    // rows BEFORE slicing - both so completed titles don't push older resumables
-    // out of the window, AND so zero-progress "viewed" rows don't fill the limit
-    // and crowd genuinely resumable titles out (parity with DexieStore).
-    const rows = await this.listHistory(Math.max(limit, 500));
-    return rows.filter((row) => hasResumePoint(row)).slice(0, limit);
+    const normalizedLimit = Number.isFinite(limit)
+      ? Math.min(Math.trunc(limit), 20)
+      : 20;
+    if (normalizedLimit <= 0) return [];
+    const response = await this.api.get<ServerHistoryResponse>(
+      `/api/history?view=continue-watching&limit=${encodeURIComponent(String(normalizedLimit))}`,
+    );
+    if (response.view === "continue-watching") {
+      const rows = response.items.slice(0, 20).map(mapHistory);
+      return rows
+        .filter((row) => !row.completed && hasResumePoint(row))
+        .slice(0, normalizedLimit);
+    }
+
+    // An older server ignores the view query. Keep the wide legacy scan in
+    // that mixed-version case so recent viewed-only rows cannot hide a resume.
+    const rows = await this.listHistory(500);
+    return rows
+      .filter((row) => !row.completed && hasResumePoint(row))
+      .slice(0, normalizedLimit);
   }
 
   async addToLibrary(entry: LibraryEntryUpsert): Promise<LibraryEntryRecord> {

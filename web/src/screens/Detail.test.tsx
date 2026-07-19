@@ -73,10 +73,9 @@ vi.mock("../store/AppStore", () => ({
     trailerOpen: false,
     openTrailer,
     closeTrailer,
-    cachedResolutions: mockCached
-      ? { [mockDetailItem?.id ?? "x"]: mockCached }
-      : {},
   }),
+  useCachedResolutions: () =>
+    mockCached ? { [mockDetailItem?.id ?? "x"]: mockCached } : {},
 }));
 
 vi.mock("../data/detail", () => ({

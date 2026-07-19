@@ -73,12 +73,13 @@ describe("RemoteStore", () => {
     it("keeps only resumable rows (drops viewed-only + completed), preserving order", async () => {
       fetchMock.mockResolvedValue(
         jsonResponse({
+          view: "continue-watching",
           items: [
             histItem({ mediaId: "a", progressSeconds: 0, durationSeconds: null }), // viewed-only
             histItem({ mediaId: "b", progressSeconds: 300, durationSeconds: 600 }), // resumable
             histItem({
               mediaId: "c",
-              progressSeconds: 990,
+              progressSeconds: 500,
               durationSeconds: 1000,
               completed: true,
             }), // finished
@@ -88,23 +89,96 @@ describe("RemoteStore", () => {
       );
       const r = await store().continueWatching(20);
       expect(r.map((x) => x.mediaId)).toEqual(["b", "d"]);
-    });
-
-    it("requests a wide window so older resumables aren't dropped, then slices", async () => {
-      fetchMock.mockResolvedValue(
-        jsonResponse({
-          items: Array.from({ length: 5 }, (_, i) =>
-            histItem({ mediaId: `m${i}`, progressSeconds: 100, durationSeconds: 1000 }),
-          ),
-        }),
-      );
-      const r = await store().continueWatching(2);
       expect(fetchMock).toHaveBeenCalledWith(
-        "http://srv/api/history?limit=500",
+        "http://srv/api/history?view=continue-watching&limit=20",
         expect.anything(),
       );
-      expect(r).toHaveLength(2);
     });
+
+    it("caps the fast response at 20 rows before mapping", async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({
+          view: "continue-watching",
+          items: [
+            ...Array.from({ length: 20 }, (_, i) =>
+              histItem({ mediaId: `m${i}`, progressSeconds: 100, durationSeconds: 1000 }),
+            ),
+            null,
+          ],
+        }),
+      );
+      const r = await store().continueWatching(200);
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://srv/api/history?view=continue-watching&limit=20",
+        expect.anything(),
+      );
+      expect(r.map((row) => row.mediaId)).toEqual(
+        Array.from({ length: 20 }, (_, i) => `m${i}`),
+      );
+    });
+
+    it("caps the legacy fallback at 20 and excludes completed mid-progress rows", async () => {
+      const legacyRows = [
+        histItem({
+          mediaId: "completed-midway",
+          progressSeconds: 500,
+          durationSeconds: 1000,
+          completed: true,
+        }),
+        ...Array.from({ length: 25 }, (_, index) =>
+          histItem({
+            mediaId: `resume-${index}`,
+            progressSeconds: 100,
+            durationSeconds: 1000,
+          }),
+        ),
+      ];
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse({ items: [] }))
+        .mockResolvedValueOnce(jsonResponse({ items: legacyRows }));
+
+      const r = await store().continueWatching(200);
+
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+        "http://srv/api/history?view=continue-watching&limit=20",
+        "http://srv/api/history?limit=500",
+      ]);
+      expect(r.map((row) => row.mediaId)).toEqual(
+        Array.from({ length: 20 }, (_, index) => `resume-${index}`),
+      );
+    });
+
+    it("returns no rows or network work for finite nonpositive limits", async () => {
+      const remote = store();
+      expect(await remote.continueWatching(0)).toEqual([]);
+      expect(await remote.continueWatching(-1)).toEqual([]);
+      expect(await remote.continueWatching(-0.5)).toEqual([]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it.each([NaN, Infinity, -Infinity])(
+      "uses the default 20-row legacy fallback for non-finite limit %s",
+      async (limit) => {
+        const legacyRows = Array.from({ length: 25 }, (_, index) =>
+          histItem({
+            mediaId: `fallback-${index}`,
+            progressSeconds: 100,
+            durationSeconds: 1000,
+          }),
+        );
+        fetchMock
+          .mockResolvedValueOnce(jsonResponse({ items: [] }))
+          .mockResolvedValueOnce(jsonResponse({ items: legacyRows }));
+
+        const r = await store().continueWatching(limit);
+
+        expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+          "http://srv/api/history?view=continue-watching&limit=20",
+          "http://srv/api/history?limit=500",
+        ]);
+        expect(r).toHaveLength(20);
+      },
+    );
   });
 
   describe("history writes", () => {

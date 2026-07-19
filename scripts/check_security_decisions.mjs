@@ -26,9 +26,83 @@ for (let id = 1; id <= 10; id += 1) {
 }
 
 const capability = JSON.parse(read("web/src-tauri/capabilities/default.json"));
+const remoteCapability = JSON.parse(
+  read("web/src-tauri/capabilities/remote.json"),
+);
 const permissions = capability.permissions ?? [];
+const remotePermissions = remoteCapability.permissions ?? [];
 const permissionIds = permissions.map((entry) =>
   typeof entry === "string" ? entry : entry.identifier,
+);
+const remotePermissionIds = remotePermissions.map((entry) =>
+  typeof entry === "string" ? entry : entry.identifier,
+);
+const remoteUrls = remoteCapability.remote?.urls ?? [];
+check(capability.remote == null, "Local desktop capability has no remote scope");
+check(
+  remoteCapability.local === false &&
+    ["https://*:*", "http://*:*"].every((url) => remoteUrls.includes(url)),
+  "Follow-mode HTTP and HTTPS origins on custom ports receive the desktop capability",
+);
+check(
+  permissionIds.includes("desktop-commands") &&
+    remotePermissionIds.includes("remote-desktop-commands"),
+  "Local and follow-mode desktop commands have separate app ACL permissions",
+);
+const desktopPermission = read("web/src-tauri/permissions/desktop-commands.toml");
+const remoteDesktopPermission = read(
+  "web/src-tauri/permissions/remote-desktop-commands.toml",
+);
+const desktopCommandNames = new Set(
+  [...desktopPermission.matchAll(/^\s*"([a-z][a-z0-9_]*)",?\s*$/gm)].map(
+    (match) => match[1],
+  ),
+);
+const remoteDesktopCommandNames = new Set(
+  [
+    ...remoteDesktopPermission.matchAll(
+      /^\s*"([a-z][a-z0-9_]*)",?\s*$/gm,
+    ),
+  ].map((match) => match[1]),
+);
+const tauriLib = read("web/src-tauri/src/lib.rs");
+const handlerBlock = tauriLib.match(
+  /\.invoke_handler\(tauri::generate_handler!\[([\s\S]*?)\]\)/,
+)?.[1];
+const registeredDesktopCommands = new Set(
+  [
+    ...(handlerBlock ?? "").matchAll(
+      /^\s*(?:[a-z][a-z0-9_]*::)?([a-z][a-z0-9_]*),\s*$/gm,
+    ),
+  ].map((match) => match[1]),
+);
+check(handlerBlock != null, "Desktop invoke handler command list is readable");
+check(
+  registeredDesktopCommands.size > 0 &&
+    [...registeredDesktopCommands].every((command) =>
+      desktopCommandNames.has(command),
+    ) &&
+    [...desktopCommandNames].every((command) => registeredDesktopCommands.has(command)),
+  "Desktop app ACL stays in sync with every registered command",
+);
+check(
+  [
+    "player_init",
+    "player_load",
+    "player_command",
+    "player_set_property",
+    "player_get_property",
+    "player_set_video_margin",
+    "player_set_rect",
+    "player_destroy",
+  ].every((command) => remoteDesktopCommandNames.has(command)),
+  "Built-in player commands are allowed for follow-mode playback",
+);
+check(
+  !["keychain_get", "keychain_set", "keychain_delete"].some((command) =>
+    remoteDesktopCommandNames.has(command),
+  ),
+  "Follow-mode pages cannot access desktop keychain commands",
 );
 check(!permissionIds.includes("opener:default"), "Desktop opener does not grant the default reveal permission");
 check(!permissionIds.includes("process:default"), "Desktop process plugin does not grant exit permission");
@@ -43,6 +117,10 @@ check(
 );
 check(!permissionIds.some((id) => id.startsWith("shell:")), "Desktop webview has no shell permission");
 check(!permissionIds.some((id) => id.startsWith("fs:")), "Desktop webview has no filesystem permission");
+check(
+  !remotePermissionIds.some((id) => id.startsWith("shell:") || id.startsWith("fs:")),
+  "Follow-mode webview has no shell or filesystem permission",
+);
 
 const tauri = JSON.parse(read("web/src-tauri/tauri.conf.json"));
 const csp = tauri.app?.security?.csp ?? "";
