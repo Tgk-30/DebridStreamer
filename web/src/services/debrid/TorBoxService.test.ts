@@ -98,7 +98,7 @@ describe("TorBoxService checkCache", () => {
 
     const req = mock.byPath("/v1/api/torrents/checkcached")!;
     expect(req.method).toBe("GET");
-    expect(req.url.searchParams.get("hash")).toBe("AABB,CCDD");
+    expect(req.url.searchParams.get("hash")).toBe("aabb,ccdd");
     expect(req.url.searchParams.get("format")).toBe("object");
     expect(req.headers.Authorization).toBe("Bearer tb-token");
   });
@@ -112,19 +112,61 @@ describe("TorBoxService checkCache", () => {
     expect(result.bbb).toEqual({ kind: "notCached" });
   });
 
-  it("leaves the chunk's results unwritten when data is [] (asObject returns null)", async () => {
-    // TorBox can return `data: []` (an array) when nothing is cached. asObject
-    // returns null for an array, so the inner loop never runs and no keys are
-    // written for that chunk - the returned map is empty.
+  it("returns notCached for every hash when data is [] (nothing cached)", async () => {
+    // TorBox returns `data: []` (an array) when nothing in the batch is cached.
+    // That is a definitive answer, not an unknown: every hash must be written
+    // as notCached so cached-only filtering and badges work.
     const mock = makeMockFetch(() => ok(JSON.stringify({ data: [] })));
     const service = new TorBoxService("tb-token", mock.fetchImpl);
     const result = await service.checkCache(["aaa", "bbb"]);
 
-    expect(Object.keys(result)).toEqual([]);
+    expect(result.aaa).toEqual({ kind: "notCached" });
+    expect(result.bbb).toEqual({ kind: "notCached" });
   });
 
-  it("leaves results unwritten when data is missing entirely", async () => {
+  it("returns notCached for every hash when data is null (nothing cached)", async () => {
+    const mock = makeMockFetch(() =>
+      ok(JSON.stringify({ success: true, error: null, data: null })),
+    );
+    const service = new TorBoxService("tb-token", mock.fetchImpl);
+    const result = await service.checkCache(["aaa", "bbb"]);
+
+    expect(result.aaa).toEqual({ kind: "notCached" });
+    expect(result.bbb).toEqual({ kind: "notCached" });
+  });
+
+  it("returns notCached for every hash when data is missing under success:true", async () => {
     const mock = makeMockFetch(() => ok(JSON.stringify({ success: true })));
+    const service = new TorBoxService("tb-token", mock.fetchImpl);
+    const result = await service.checkCache(["aaa"]);
+
+    expect(result.aaa).toEqual({ kind: "notCached" });
+  });
+
+  it("matches cached hashes even when the response keys are uppercased", async () => {
+    // Defensive: if TorBox ever echoes keys in a different case, the lookup
+    // must not misread a cached torrent as uncached.
+    const mock = makeMockFetch(() =>
+      ok(JSON.stringify({ data: { ABCDEF: { name: "Movie" } } })),
+    );
+    const service = new TorBoxService("tb-token", mock.fetchImpl);
+    const result = await service.checkCache(["abcdef", "123456"]);
+
+    expect(result.abcdef).toEqual({
+      kind: "cached",
+      fileId: null,
+      fileName: null,
+      fileSize: null,
+    });
+    expect(result["123456"]).toEqual({ kind: "notCached" });
+  });
+
+  it("leaves results unwritten when the envelope reports failure", async () => {
+    // success:false (rate limit, bad request) is NOT a definitive answer -
+    // omit the hashes so callers render "unavailable" instead of lying.
+    const mock = makeMockFetch(() =>
+      ok(JSON.stringify({ success: false, error: "RATE_LIMIT", data: null })),
+    );
     const service = new TorBoxService("tb-token", mock.fetchImpl);
     const result = await service.checkCache(["aaa"]);
 

@@ -71,7 +71,9 @@ export class TorBoxService implements DebridService {
 
     const results: Record<string, CacheStatus> = {};
     for (const chunk of chunked(hashes, 100)) {
-      const hashParam = chunk.join(",");
+      // Send lowercase: TorBox keys its response by lowercased hash, so an
+      // uppercase-sent echo can never come back in a case we fail to match.
+      const hashParam = chunk.map((h) => h.toLowerCase()).join(",");
       const data = await this.requestRaw(
         "/torrents/checkcached",
         "GET",
@@ -79,16 +81,25 @@ export class TorBoxService implements DebridService {
       );
 
       const json = parseJSONObject(data);
-      const dataObj = json && asObject(json.data);
+      // Unparseable body or an explicit failure envelope (rate limit, bad
+      // request): leave the chunk unwritten so callers see "unavailable"
+      // instead of a lying "not cached".
+      if (json == null || json.success === false) continue;
+
+      // `data` is a hash-keyed object when anything is cached, but TorBox
+      // returns null or [] when NOTHING in the batch is cached. All three
+      // shapes are a definitive answer for every hash in the chunk, and the
+      // response keys are normalized defensively in case the echo case differs.
+      const dataObj = asObject(json.data);
+      const lowerKeyed = new Set<string>();
       if (dataObj) {
-        for (const hash of chunk) {
-          const lowerHash = hash.toLowerCase();
-          if (Object.prototype.hasOwnProperty.call(dataObj, lowerHash)) {
-            results[lowerHash] = CacheStatus.cached(null, null, null);
-          } else {
-            results[lowerHash] = CacheStatus.notCached;
-          }
-        }
+        for (const key of Object.keys(dataObj)) lowerKeyed.add(key.toLowerCase());
+      }
+      for (const hash of chunk) {
+        const lowerHash = hash.toLowerCase();
+        results[lowerHash] = lowerKeyed.has(lowerHash)
+          ? CacheStatus.cached(null, null, null)
+          : CacheStatus.notCached;
       }
     }
 

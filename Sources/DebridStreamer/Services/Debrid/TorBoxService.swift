@@ -34,22 +34,39 @@ actor TorBoxService: DebridServiceProtocol {
         let chunks = hashes.chunked(into: 100)
 
         for chunk in chunks {
-            let hashParam = chunk.joined(separator: ",")
+            // Send lowercase: TorBox keys its response by lowercased hash, so
+            // an uppercase-sent echo can never come back in a case we fail to
+            // match.
+            let hashParam = chunk.map { $0.lowercased() }.joined(separator: ",")
             let data = try await requestRaw(
                 path: "/torrents/checkcached",
                 method: "GET",
                 queryParams: "hash=\(hashParam)&format=object"
             )
 
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let dataObj = json["data"] as? [String: Any] {
-                for hash in chunk {
-                    let lowerHash = hash.lowercased()
-                    if let _ = dataObj[lowerHash] {
-                        results[lowerHash] = .cached(fileId: nil, fileName: nil, fileSize: nil)
-                    } else {
-                        results[lowerHash] = .notCached
-                    }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+            // An explicit failure envelope (rate limit, bad request): leave the
+            // chunk unwritten so callers see "unavailable" instead of a lying
+            // "not cached".
+            if let success = json["success"] as? Bool, !success { continue }
+
+            // `data` is a hash-keyed object when anything is cached, but TorBox
+            // returns null or [] when NOTHING in the batch is cached. All three
+            // shapes are a definitive answer for every hash in the chunk, and
+            // the response keys are normalized defensively in case the echo
+            // case differs.
+            var lowerKeyed = Set<String>()
+            if let dataObj = json["data"] as? [String: Any] {
+                for key in dataObj.keys { lowerKeyed.insert(key.lowercased()) }
+            }
+            for hash in chunk {
+                let lowerHash = hash.lowercased()
+                if lowerKeyed.contains(lowerHash) {
+                    results[lowerHash] = .cached(fileId: nil, fileName: nil, fileSize: nil)
+                } else {
+                    results[lowerHash] = .notCached
                 }
             }
         }
