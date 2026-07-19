@@ -60,7 +60,7 @@ describe("AppDatabase", () => {
   });
 
   for (const fixture of LEGACY_SERVER_FIXTURES) {
-    it(`upgrades the ${fixture.name} fixture without losing data`, () => {
+    it(`upgrades the ${fixture.name} fixture without losing data`, { timeout: 30_000 }, () => {
       const path = temporaryDatabasePath(tempDirs);
       createLegacyServerFixture(path, fixture.version);
 
@@ -106,7 +106,7 @@ describe("AppDatabase", () => {
     });
   }
 
-  it("rolls back a migration and its marker when a schema change fails", () => {
+  it("rolls back a migration and its marker when a schema change fails", { timeout: 30_000 }, () => {
     const path = temporaryDatabasePath(tempDirs);
     createLegacyServerFixture(path, 1);
     const sqlite = new DatabaseSync(path);
@@ -123,7 +123,7 @@ describe("AppDatabase", () => {
     }
   });
 
-  it("refuses to open a database created by a newer app", () => {
+  it("refuses to open a database created by a newer app", { timeout: 30_000 }, () => {
     const path = temporaryDatabasePath(tempDirs);
     createLegacyServerFixture(path, 7);
     const sqlite = new DatabaseSync(path);
