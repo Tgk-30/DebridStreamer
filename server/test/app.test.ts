@@ -1830,6 +1830,60 @@ describe("DebridStreamer server", () => {
     }
   });
 
+  it("debrid token test validates server-side (the CORS-blocked-provider path)", async () => {
+    const owner = await setupOwner(app);
+
+    const originalFetch = globalThis.fetch;
+    let lastAuth = "";
+    globalThis.fetch = (async (url, init) => {
+      const parsed = new URL(String(url));
+      if (parsed.hostname === "api.torbox.app" && parsed.pathname.endsWith("/user/me")) {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        lastAuth = headers.Authorization ?? headers.authorization ?? "";
+        const good = lastAuth === "Bearer tb-good";
+        return new Response(
+          JSON.stringify(
+            good
+              ? { success: true, error: null, data: { email: "u@example.com", plan: 1 } }
+              : { success: false, error: "BAD_TOKEN", data: null },
+          ),
+          { status: good ? 200 : 401 },
+        );
+      }
+      return originalFetch(url, init);
+    }) as typeof fetch;
+    try {
+      const good = await request(owner, {
+        method: "POST",
+        url: "/api/debrid/test",
+        csrf: true,
+        payload: { service: "torbox", apiToken: "tb-good" },
+      });
+      expect(good.statusCode).toBe(200);
+      expect(json<{ valid: boolean }>(good).valid).toBe(true);
+
+      const bad = await request(owner, {
+        method: "POST",
+        url: "/api/debrid/test",
+        csrf: true,
+        payload: { service: "torbox", apiToken: "tb-bad" },
+      });
+      expect(bad.statusCode).toBe(200);
+      expect(json<{ valid: boolean }>(bad).valid).toBe(false);
+      expect(lastAuth).toBe("Bearer tb-bad");
+
+      const anonymous: TestClient = { app, cookies: new Map() };
+      const rejected = await request(anonymous, {
+        method: "POST",
+        url: "/api/debrid/test",
+        payload: { service: "torbox", apiToken: "tb-good" },
+      });
+      expect(rejected.statusCode).toBe(401);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("proxies stream sessions with Range support and rejects another profile", async () => {
     upstream = createServer((req, res) => {
       const body = Buffer.from("abcdefghij");

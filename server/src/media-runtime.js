@@ -230,6 +230,7 @@ function buildDebridService(provider, token) {
       return null;
   }
 }
+export { buildDebridService };
 
 export function buildDebridManager(db, config, profileId) {
   const selected = DEBRID_PROVIDERS.map((provider, index) => ({

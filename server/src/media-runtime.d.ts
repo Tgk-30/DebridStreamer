@@ -117,3 +117,10 @@ export function titleHasInfoHash(
   mediaType: MediaType,
   infoHash: string,
 ): Promise<boolean>;
+
+/** Builds a single provider client for the server-side token check
+ *  (/api/debrid/test). Null for an empty token or unknown provider. */
+export function buildDebridService(
+  provider: DebridServiceType,
+  token: string,
+): { validateToken(): Promise<boolean> } | null;

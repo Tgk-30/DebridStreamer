@@ -15,6 +15,7 @@ import { loadConfig } from "./config.js";
 // browser service graph; esbuild bundles it and tests cover the runtime route.
 // @ts-ignore JS module intentionally has no declaration file.
 import {
+  buildDebridService,
   resolveServerStream,
   searchServerStreams,
   titleHasInfoHash,
@@ -88,6 +89,10 @@ const debridServiceSchema = z.enum([
   "premiumize",
   "torbox",
 ]);
+const debridTestSchema = z.object({
+  service: debridServiceSchema,
+  apiToken: z.string().trim().min(1).max(500),
+});
 
 const setupOwnerSchema = z.object({
   username: usernameSchema,
@@ -3902,6 +3907,20 @@ function registerRoutes(
       // imdb-exact results (wrong-year noise sinks), it never widens the set.
       year: query.year ?? null,
     });
+  });
+
+  // Validates a candidate debrid token SERVER-side. Debrid hosts (TorBox in
+  // particular) send no CORS headers and reject preflight, so the client-side
+  // "Test connection" always fails in a webview/browser even with a perfect
+  // token; in server mode the authoritative check has to run here.
+  app.post("/api/debrid/test", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    rateLimit(request, `debrid:test:${auth.profileId}`, 30, 60 * 1000);
+    const body = parseBody(debridTestSchema, request.body);
+    const service = buildDebridService(body.service, body.apiToken);
+    if (service == null) return { valid: false };
+    return { valid: await service.validateToken() };
   });
 
   app.post("/api/streams/resolve", async (request) => {

@@ -56,6 +56,7 @@ import type {
   StreamMaxQuality,
 } from "../data/settings";
 import { DebridServiceType } from "../services/debrid/models";
+import { testServerDebridToken } from "../lib/serverApi";
 import { AIProviderKind } from "../services/ai/models";
 import { fetchAvailableModels } from "../services/ai/ModelCatalog";
 import { readModelCache, writeModelCache } from "../services/ai/ModelCache";
@@ -5401,7 +5402,17 @@ function DebridTab({ draft, patch }: TabProps) {
     const apiToken = tokenFor(selectedService).trim();
     if (apiToken.length === 0 || connectionState === "testing") return;
     setConnectionState("testing");
-    const valid = await testDebridToken({ service: selectedService, apiToken });
+    // In server mode the token check must run ON the server: debrid hosts
+    // (TorBox in particular) send no CORS headers, so a webview/browser-side
+    // test fails even for a perfect token.
+    let valid = false;
+    try {
+      valid = isServerMode()
+        ? await testServerDebridToken({ service: selectedService, apiToken })
+        : await testDebridToken({ service: selectedService, apiToken });
+    } catch {
+      valid = false;
+    }
     setConnectionState(valid ? "valid" : "failed");
   }
 

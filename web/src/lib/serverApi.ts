@@ -1,7 +1,7 @@
 import type { MediaType } from "../models/media";
 import type { CastMember, Episode, MediaItem, MediaPreview, Season } from "../models/media";
 import type { AIMovieRecommendation, AIUsageMetrics } from "../services/ai/models";
-import type { StreamInfo } from "../services/debrid/models";
+import type { DebridServiceType, StreamInfo } from "../services/debrid/models";
 import type {
   SubtitleSearchParams,
   SubtitleSearchResult,
@@ -113,6 +113,22 @@ export async function fetchServerStreams(input: {
     hasIndexers: response.hasIndexers,
     hasDebrid: response.hasDebrid,
   };
+}
+
+/** Validates a candidate debrid token against the provider SERVER-side.
+ * Debrid hosts (TorBox in particular) send no CORS headers, so the client-side
+ * check is meaningless in a webview/browser: in server mode the server is the
+ * only party that can reach the provider API. */
+export async function testServerDebridToken(input: {
+  service: DebridServiceType;
+  apiToken: string;
+}): Promise<boolean> {
+  const response = await serverRequest<{ valid: boolean }>(
+    "POST",
+    "/api/debrid/test",
+    { service: input.service, apiToken: input.apiToken },
+  );
+  return response.valid === true;
 }
 
 export async function resolveServerStream(
