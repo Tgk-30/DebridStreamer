@@ -167,7 +167,9 @@ jobs:
           $exe = Get-ChildItem -Path $appRoot -Filter debridstreamer.exe -File -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if (-not $exe) { throw "Installed desktop executable was not found" }
-          if (-not (Test-Path (Join-Path $appRoot 'resources\lib\libmpv-2.dll'))) {
+          $mpvDll = Get-ChildItem -Path $appRoot -Filter libmpv-2.dll -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $mpvDll) {
             throw "Bundled libmpv-2.dll was not installed"
           }
 
@@ -220,6 +222,7 @@ jobs:
             libwebkit2gtk-4.1-0 \
             libgtk-3-0 \
             libayatana-appindicator3-1 \
+            libjack-jackd2-0 \
             librsvg2-2
 
       - name: Verify AppImage on a clean profile
