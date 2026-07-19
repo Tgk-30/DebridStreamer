@@ -123,9 +123,16 @@
   }
 }
 
-/* Desktop "bottom bar" nav position: no left gutter, reserve room at the bottom
-   for the floating bar (the rail's own layout lives in NavRail.css). */
+/* While a Detail/Browse overlay is up the rail is hidden (NavRail.css), so
+   overlays reclaim the gutter instead of leaving a dead strip on the left. */
 @media (min-width: 700px) {
+  :root[data-overlay-open] .app {
+    --nav-safe-left: 0px;
+  }
+}
+
+/* Desktop "bottom bar" nav position: no left gutter, reserve room at the bottom
+   for the floating bar (the rail's own layout lives in NavRail.css). */@media (min-width: 700px) {
   :root[data-nav-position="bottom"] .app {
     --nav-safe-left: 0px;
   }
