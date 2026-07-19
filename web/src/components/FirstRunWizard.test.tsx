@@ -4,7 +4,7 @@
 // choose step renders all four personas, each persona routes correctly (device =
 // forced catalog→streaming key steps, advanced = finish + navigate to settings,
 // connect/host = sub steps), skip requires a confirm step, the connect-step
-// fetch/validation/submit flow, and the host-step desktop-vs-web copy.
+// validation/direct-navigation flow, and the host-step desktop-vs-web copy.
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -370,24 +370,29 @@ describe("FirstRunWizard", () => {
     ).toBeInTheDocument();
   });
 
-  it("connect step validates an empty address before fetching", async () => {
+  it("connect step validates an empty address before navigating", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
     render(<FirstRunWizard onDone={() => {}} />);
     await user.click(screen.getByText("Connect to a server"));
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(screen.getByRole("button", { name: "Open server" }));
     expect(screen.getByText("Enter your server address.")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(saveServerURL).not.toHaveBeenCalled();
+    expect(markOnboardingComplete).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 
-  it("connect step normalizes a bare host, hits /api/health, saves and reloads on success", async () => {
+  it("connect step normalizes a bare host and navigates without fetching or saving", async () => {
     const user = userEvent.setup();
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const reload = vi.fn();
-    vi.stubGlobal("location", { ...window.location, reload, origin: "http://x" });
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
 
     render(<FirstRunWizard onDone={() => {}} />);
     await user.click(screen.getByText("Connect to a server"));
@@ -395,52 +400,93 @@ describe("FirstRunWizard", () => {
       screen.getByLabelText("Server address"),
       "stream.example.com",
     );
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(screen.getByRole("button", { name: "Open server" }));
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "https://stream.example.com/api/health",
-        { credentials: "include" },
-      ),
+      expect(assign).toHaveBeenCalledWith("https://stream.example.com"),
     );
     expect(markOnboardingComplete).toHaveBeenCalledTimes(1);
-    expect(saveServerURL).toHaveBeenCalledWith("https://stream.example.com");
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(markOnboardingComplete.mock.invocationCallOrder[0]).toBeLessThan(
+      assign.mock.invocationCallOrder[0]!,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(saveServerURL).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Opening…" })).toBeDisabled();
     vi.unstubAllGlobals();
   });
 
-  it("connect step surfaces an error when the server responds non-ok", async () => {
+  it("connect step preserves the full invite path, query, and fragment", async () => {
     const user = userEvent.setup();
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503 });
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    const inviteURL =
+      "https://stream.example.com/invite/accept?token=abc%2Fdef&profile=kids#join";
 
     render(<FirstRunWizard onDone={() => {}} />);
     await user.click(screen.getByText("Connect to a server"));
-    await user.type(screen.getByLabelText("Server address"), "https://stream.example.com");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.type(screen.getByLabelText("Server address"), inviteURL);
+    await user.click(screen.getByRole("button", { name: "Open server" }));
 
-    expect(
-      await screen.findByText(/Couldn't reach that server \(Server responded 503\.\)/),
-    ).toBeInTheDocument();
-    // On failure it must NOT save or reload.
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(inviteURL));
+    expect(markOnboardingComplete).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(saveServerURL).not.toHaveBeenCalled();
-    // Connect button re-enabled after failure.
-    expect(screen.getByRole("button", { name: "Connect" })).toBeEnabled();
     vi.unstubAllGlobals();
   });
 
-  it("connect step surfaces the fallback error message when fetch throws a non-Error", async () => {
+  it("connect step rejects non-HTTP schemes without completing onboarding", async () => {
     const user = userEvent.setup();
-    const fetchMock = vi.fn().mockRejectedValue("network failed");
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+
+    render(<FirstRunWizard onDone={() => {}} />);
+    await user.click(screen.getByText("Connect to a server"));
+    await user.type(
+      screen.getByLabelText("Server address"),
+      "ftp://stream.example.com/invite?token=abc",
+    );
+    await user.click(screen.getByRole("button", { name: "Open server" }));
+
+    expect(
+      screen.getByText(
+        "Enter a valid server address or invite link. Only HTTP and HTTPS are supported.",
+      ),
+    ).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(saveServerURL).not.toHaveBeenCalled();
+    expect(markOnboardingComplete).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("connect step reports a navigation error and re-enables the button", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const assign = vi.fn(() => {
+      throw new Error("navigation blocked");
+    });
+    vi.stubGlobal("location", { assign });
 
     render(<FirstRunWizard onDone={() => {}} />);
     await user.click(screen.getByText("Connect to a server"));
     await user.type(screen.getByLabelText("Server address"), "stream.example.com");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(screen.getByRole("button", { name: "Open server" }));
 
-    expect(await screen.findByText("Couldn't reach that server.")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Couldn't open that server. Check the address and try again.",
+      ),
+    ).toBeInTheDocument();
+    expect(markOnboardingComplete).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith("https://stream.example.com");
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(saveServerURL).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Open server" })).toBeEnabled();
     vi.unstubAllGlobals();
   });
 

@@ -9,7 +9,6 @@
 import { useState, type FormEvent } from "react";
 import { useAppStore } from "../store/AppStore";
 import { markOnboardingComplete } from "../lib/firstRun";
-import { saveServerURL } from "../lib/serverMode";
 import { isTauri } from "../lib/tauri";
 import { DebridServiceType } from "../services/debrid/models";
 import { AIProviderKind } from "../services/ai/models";
@@ -68,12 +67,37 @@ const PERSONAS: Persona[] = [
   },
 ];
 
-/** Add a scheme if the user typed a bare host, and drop a trailing slash. */
-function normalizeURL(raw: string): string {
-  let value = raw.trim();
-  if (value.length === 0) return "";
-  if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
-  return value.replace(/\/+$/, "");
+/** Validate a web destination and add HTTPS when the user typed a bare host. */
+function normalizeServerDestination(raw: string): string | null {
+  const value = raw.trim();
+  if (value.length === 0) return null;
+
+  const schemeMatch = value.match(/^([a-z][a-z\d+.-]*):/i);
+  if (schemeMatch != null) {
+    const scheme = schemeMatch[1]?.toLowerCase();
+    const remainder = value.slice(schemeMatch[0].length);
+    const looksLikeHostPort = /^\d+(?:[/?#]|$)/.test(remainder);
+    if (scheme !== "http" && scheme !== "https" && !looksLikeHostPort) {
+      return null;
+    }
+    if ((scheme === "http" || scheme === "https") && !/^https?:\/\//i.test(value)) {
+      return null;
+    }
+  }
+
+  const destination = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  try {
+    const parsed = new URL(destination);
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      parsed.hostname.length === 0
+    ) {
+      return null;
+    }
+    return destination;
+  } catch {
+    return null;
+  }
 }
 
 /** The catalog step's validated result: exactly one key, or null when the
@@ -918,27 +942,26 @@ function ConnectStep({ onBack }: { onBack: () => void }) {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const normalized = normalizeURL(url);
-    if (normalized.length === 0) {
+    if (url.trim().length === 0) {
       setError("Enter your server address.");
+      return;
+    }
+    const destination = normalizeServerDestination(url);
+    if (destination == null) {
+      setError(
+        "Enter a valid server address or invite link. Only HTTP and HTTPS are supported.",
+      );
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${normalized}/api/health`, { credentials: "include" });
-      if (!res.ok) throw new Error(`Server responded ${res.status}.`);
-      // Mark complete BEFORE reloading so disconnecting back to Local Mode later
-      // doesn't re-trigger the wizard.
+      // Mark complete before leaving so returning to Local Mode later does not
+      // re-trigger the wizard.
       await markOnboardingComplete();
-      saveServerURL(normalized);
-      window.location.reload();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? `Couldn't reach that server (${err.message})`
-          : "Couldn't reach that server.",
-      );
+      globalThis.location.assign(destination);
+    } catch {
+      setError("Couldn't open that server. Check the address and try again.");
       setBusy(false);
     }
   }
@@ -948,7 +971,8 @@ function ConnectStep({ onBack }: { onBack: () => void }) {
       <div className="first-run-card">
         <h1 className="first-run-title">Connect to a server</h1>
         <p className="first-run-sub">
-          Paste the address your server admin gave you (or from your invite link).
+          Paste the server address or full invite link. It will open here so you
+          can sign in on the server.
         </p>
         <form className="first-run-form" onSubmit={submit}>
           <label className="first-run-field">
@@ -972,7 +996,7 @@ function ConnectStep({ onBack }: { onBack: () => void }) {
               Back
             </button>
             <button type="submit" className="first-run-primary" disabled={busy}>
-              {busy ? "Connecting…" : "Connect"}
+              {busy ? "Opening…" : "Open server"}
             </button>
           </div>
         </form>
