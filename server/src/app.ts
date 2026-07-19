@@ -4257,8 +4257,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const statusCode = zodError ? 400 : ((error as { statusCode?: number }).statusCode ?? 500);
     const message = error instanceof Error ? error.message : "Request failed.";
     if (statusCode >= 500) app.log.error(error);
+    // Debrid provider failures (invalid token, upstream 5xx) used to collapse
+    // into "Internal server error.", leaving users with no hint that the fix
+    // is re-entering a token in Settings. DebridError messages are static,
+    // credential-free strings, so pass them through; everything else stays
+    // generic.
+    const isDebridError =
+      error != null &&
+      typeof error === "object" &&
+      (error as { name?: string }).name === "DebridError";
     reply.status(statusCode).send({
-      error: statusCode >= 500 ? "Internal server error." : message,
+      error: statusCode >= 500 && !isDebridError ? "Internal server error." : message,
       issues: zodError ? error.issues : undefined,
     });
   });

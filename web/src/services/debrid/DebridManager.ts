@@ -104,7 +104,15 @@ export class DebridManager {
             DebridServiceTypeNS.displayName(service.serviceType),
             signal,
           );
-        } catch {
+        } catch (error) {
+          // Swallowing per-service cache failures keeps one dead provider from
+          // blanking the others, but a silent swallow made "invalid token on
+          // the server" indistinguishable from "nothing is cached". Log the
+          // reason so it is visible in docker logs / the browser console.
+          console.warn(
+            `[debrid] cache check failed for ${DebridServiceTypeNS.displayName(service.serviceType)}:`,
+            error instanceof Error ? error.message : String(error),
+          );
           cache = {};
         }
         return { index, serviceType: service.serviceType, cache };

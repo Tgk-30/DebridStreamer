@@ -325,7 +325,11 @@ export async function searchServerStreams(db, config, profileId, input) {
   if (debrid != null) {
     try {
       cacheByHash = await debrid.checkCacheAll(results.map((r) => r.infoHash));
-    } catch {
+    } catch (error) {
+      console.warn(
+        "[streams] debrid cache check failed:",
+        error instanceof Error ? error.message : String(error),
+      );
       cacheByHash = {};
     }
   }
