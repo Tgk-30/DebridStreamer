@@ -145,8 +145,12 @@ const VIDEO_MARGIN_BOTTOM = 0;
  *  build can't handle. The initial spinner would then spin forever with no error
  *  and no fallback. If we're still pre-first-frame this long after loadfile, we
  *  treat it as a native failure and hand off to the webview HLS transcode. This
- *  is the backstop; an mpv end-file ERROR event closes the common case faster. */
-const FIRST_FRAME_WATCHDOG_MS = 10_000;
+ *  is the backstop; an mpv end-file ERROR event closes the common case faster.
+ *  25s (not 10): a high-bitrate 4K debrid stream through a home-server proxy
+ *  legitimately needs longer to probe and fill before the first frame, and the
+ *  timer is re-armed whenever demuxer data is still flowing, so this only ever
+ *  fires for genuinely dead streams. */
+const FIRST_FRAME_WATCHDOG_MS = 25_000;
 /** The native event stream may run at display cadence. The seek UI does not
  * need that precision, and keeping it at 5Hz leaves the rest of the chrome
  * completely out of the playback hot path. */
@@ -584,6 +588,19 @@ export function EmbeddedPlayer({
       if (!cancelled && !recovered) setError(err.message);
     };
 
+    // (Re-)arm the first-frame watchdog. Called after loadfile and again on
+    // every demuxer-progress event, so only a genuinely stalled stream trips
+    // it - slow-but-flowing 4K debrid links keep resetting the clock.
+    const armWatchdog = (): void => {
+      window.clearTimeout(watchdog);
+      watchdog = window.setTimeout(() => {
+        if (cancelled || firstFrameRef.current) return;
+        void triggerNativeFallback(
+          new Error("Native playback produced no frame in time"),
+        );
+      }, FIRST_FRAME_WATCHDOG_MS);
+    };
+
     void (async () => {
       try {
         await init(MPV_CONFIG);
@@ -691,6 +708,10 @@ export function EmbeddedPlayer({
                   scrubberRef.current?.updatePlayback({
                     bufferedTo: Math.max(0, ev.data),
                   });
+                  // Data is still flowing: the stream is alive, just slow.
+                  // Re-arm the first-frame watchdog so big debrid remuxes get
+                  // their full probe time instead of a false failure.
+                  if (!firstFrameRef.current) armWatchdog();
                 }
                 break;
               case "aid":
@@ -751,12 +772,23 @@ export function EmbeddedPlayer({
         // mpv 0.38 inserted a playlist-index argument before the per-file options
         // argument. Even with `replace`, the ignored index slot must be present or
         // `start=+N` is parsed as an integer index and rejected with Raw(-4).
-        await command(
-          "loadfile",
-          resumeSeconds == null
-            ? [url]
-            : [url, "replace", "-1", `start=+${resumeSeconds}`],
-        );
+        const loadOnce = () =>
+          command(
+            "loadfile",
+            resumeSeconds == null
+              ? [url]
+              : [url, "replace", "-1", `start=+${resumeSeconds}`],
+          );
+        try {
+          await loadOnce();
+        } catch {
+          // One silent retry: debrid CDNs and proxies throw transient errors on
+          // first touch (cold cache, 502s) that a fresh attempt clears, and
+          // these used to count as instant player failures.
+          await new Promise((r) => setTimeout(r, 800));
+          if (cancelled) return;
+          await loadOnce();
+        }
         await setProperty("pause", false);
         if (castSuspendedRef.current) {
           await setProperty("pause", true);
@@ -764,13 +796,9 @@ export function EmbeddedPlayer({
         startedRef.current = true;
         // Arm the first-frame watchdog. loadfile has been accepted, but mpv can
         // still stall forever without ever decoding a frame; if we're still
-        // pre-first-frame after the window, hand off to the webview transcode.
-        watchdog = window.setTimeout(() => {
-          if (cancelled || firstFrameRef.current) return;
-          void triggerNativeFallback(
-            new Error("Native playback produced no frame in time"),
-          );
-        }, FIRST_FRAME_WATCHDOG_MS);
+        // pre-first-frame after the window (and no demuxer progress re-arms
+        // it), hand off to the webview transcode.
+        armWatchdog();
         // Tracks/chapters populate a beat after the file loads.
         window.setTimeout(() => {
           if (!cancelled) {

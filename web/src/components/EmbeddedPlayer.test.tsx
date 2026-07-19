@@ -561,7 +561,7 @@ describe("window-anchored controls and playback diagnostics", () => {
 
 describe("EmbeddedPlayer decode-failure fallback", () => {
   // The window mpv's watchdog uses (mirrors FIRST_FRAME_WATCHDOG_MS).
-  const WATCHDOG_MS = 10_000;
+  const WATCHDOG_MS = 25_000;
 
   it("puts resume options after the mpv 0.38 playlist-index slot", async () => {
     render(
@@ -583,8 +583,9 @@ describe("EmbeddedPlayer decode-failure fallback", () => {
     );
   });
 
-  it("routes a synchronous loadfile rejection through native fallback", async () => {
-    renderPlayerMock.command.mockRejectedValueOnce(
+  it("routes a persistent loadfile rejection through native fallback", async () => {
+    // Both the first attempt AND the one silent retry fail.
+    renderPlayerMock.command.mockRejectedValue(
       new Error("mpv command failed: Raw(-4)"),
     );
     const onPlaybackError = vi.fn(async () => true);
@@ -598,11 +599,43 @@ describe("EmbeddedPlayer decode-failure fallback", () => {
       />,
     );
 
-    await waitFor(() =>
-      expect(onPlaybackError).toHaveBeenCalledWith(
-        expect.objectContaining({ message: "mpv command failed: Raw(-4)" }),
-      ),
+    await waitFor(
+      () =>
+        expect(onPlaybackError).toHaveBeenCalledWith(
+          expect.objectContaining({ message: "mpv command failed: Raw(-4)" }),
+        ),
+      { timeout: 4000 },
     );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("recovers from a transient loadfile rejection with one silent retry", async () => {
+    renderPlayerMock.command.mockRejectedValueOnce(
+      new Error("mpv command failed: Raw(-1)"),
+    );
+    const onPlaybackError = vi.fn(async () => true);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/hiccup.mkv"
+        title="Hiccup"
+        onPlaybackError={onPlaybackError}
+        onClose={() => {}}
+      />,
+    );
+
+    // The retry (after an ~800ms wait) issues loadfile a second time and
+    // playback proceeds without ever surfacing an error.
+    await waitFor(
+      () => {
+        const loadfileCalls = renderPlayerMock.command.mock.calls.filter(
+          (c) => c[0] === "loadfile",
+        );
+        expect(loadfileCalls.length).toBe(2);
+      },
+      { timeout: 4000 },
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    expect(onPlaybackError).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -675,9 +708,12 @@ describe("EmbeddedPlayer decode-failure fallback", () => {
       // watchdog. No time-pos is ever emitted (mpv accepted the file but never
       // decodes a frame).
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(1);
+        await vi.advanceTimersByTimeAsync(1);
       });
-      expect(renderPlayerMock.callback).not.toBeNull();
+      // The init chain is fully done once the unpause lands (the watchdog arms
+      // right after it); asserting on the callback alone raced the 25s window.
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("pause", false);
       expect(onPlaybackError).not.toHaveBeenCalled();
 
       await act(async () => {
@@ -718,7 +754,7 @@ describe("EmbeddedPlayer decode-failure fallback", () => {
 
 describe("EmbeddedPlayer decode-failure fallback", () => {
   // The window mpv's watchdog uses (mirrors FIRST_FRAME_WATCHDOG_MS).
-  const WATCHDOG_MS = 10_000;
+  const WATCHDOG_MS = 25_000;
 
   it("hands off to the webview when mpv reports an end-file decode error", async () => {
     // The gap this closes: loadfile SUCCEEDS (so the init try/catch sees nothing)
@@ -789,9 +825,12 @@ describe("EmbeddedPlayer decode-failure fallback", () => {
       // watchdog. No time-pos is ever emitted (mpv accepted the file but never
       // decodes a frame).
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(1);
+        await vi.advanceTimersByTimeAsync(1);
       });
-      expect(renderPlayerMock.callback).not.toBeNull();
+      // The init chain is fully done once the unpause lands (the watchdog arms
+      // right after it); asserting on the callback alone raced the 25s window.
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("pause", false);
       expect(onPlaybackError).not.toHaveBeenCalled();
 
       await act(async () => {
