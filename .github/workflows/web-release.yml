@@ -380,7 +380,9 @@ jobs:
     needs: release
     if: github.ref_type == 'tag'
     permissions:
-      contents: read
+      # Draft release assets require push-level repository access. Reusable
+      # workflows cannot elevate beyond the permission granted by this caller.
+      contents: write
     uses: ./.github/workflows/clean-install.yml
     with:
       tag: ${{ github.ref_name }}
