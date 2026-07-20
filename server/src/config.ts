@@ -75,12 +75,20 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       overrides.setupToken !== undefined
         ? overrides.setupToken
         : stringEnv("DS_SERVER_SETUP_TOKEN"),
+    publicMode:
+      overrides.publicMode ?? boolEnv("DS_SERVER_PUBLIC_MODE", false),
     cookieSecure:
       overrides.cookieSecure ?? boolEnv("DS_SERVER_COOKIE_SECURE", process.env.NODE_ENV === "production"),
     cookieSameSite:
       overrides.cookieSameSite ?? sameSiteEnv("DS_SERVER_COOKIE_SAMESITE", "lax"),
     sessionTtlSeconds:
       overrides.sessionTtlSeconds ?? numberEnv("DS_SERVER_SESSION_TTL_SECONDS", 60 * 60 * 24 * 30),
+    bindSessionUserAgent:
+      overrides.bindSessionUserAgent ?? boolEnv("DS_SERVER_BIND_SESSION_USER_AGENT", false),
+    allowInsecurePublic:
+      overrides.allowInsecurePublic ?? boolEnv("DS_SERVER_ALLOW_INSECURE_PUBLIC", false),
+    updateCheck:
+      overrides.updateCheck ?? boolEnv("DS_SERVER_UPDATE_CHECK", process.env.NODE_ENV === "production"),
     allowRawStreamUrls:
       overrides.allowRawStreamUrls ??
       boolEnv("DS_SERVER_ALLOW_RAW_STREAM_URLS", process.env.NODE_ENV !== "production"),

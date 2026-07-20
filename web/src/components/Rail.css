@@ -15,7 +15,7 @@
 
 .rail-title {
   margin: 0;
-  font-size: 23px;
+  font-size: 1.4375rem;
   font-weight: 800;
   letter-spacing: -0.015em;
 }
@@ -24,7 +24,7 @@
 .rail-see-all {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: calc(4px * var(--density-scale));
   flex-shrink: 0;
   min-width: 64px;
   min-height: 44px;
@@ -34,10 +34,10 @@
   background: transparent;
   cursor: pointer;
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   font-family: inherit;
-  padding: 8px 12px;
+  padding: calc(8px * var(--density-scale)) calc(12px * var(--density-scale));
   border-radius: var(--r-pill);
   transition:
     color 0.16s,
@@ -53,8 +53,8 @@
   background: rgba(var(--accent-rgb), 0.1);
 }
 .rail-see-all-arrow {
-  margin-left: 1px;
-  font-size: 15px;
+  margin-left: calc(1px * var(--density-scale));
+  font-size: 0.9375rem;
   line-height: 1;
 }
 
@@ -65,8 +65,8 @@
      overflow-y: hidden (needed alongside overflow-x: auto) doesn't clip that
      expansion, and pull the box back with a negative margin so the rows keep
      their vertical rhythm. */
-  padding: 30px 0 22px;
-  margin: -16px 0 -12px;
+  padding: calc(30px * var(--density-scale)) 0 calc(22px * var(--density-scale));
+  margin: calc(-16px * var(--density-scale)) 0 calc(-12px * var(--density-scale));
   scroll-padding-inline: var(--sp-md);
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
@@ -88,7 +88,7 @@
   gap: var(--sp-lg);
   width: max-content;
   /* trailing breathing room so the last card isn't flush to the edge */
-  padding-right: clamp(var(--sp-xl), 8vw, 88px);
+  padding-right: clamp(var(--sp-xl), 8vw, calc(88px * var(--density-scale)));
 }
 
 .rail-track .media-card {
@@ -100,5 +100,5 @@
    against the scroll edge. */
 .rail-ranked .rail-track {
   gap: var(--sp-md);
-  padding-left: 6px;
+  padding-left: calc(6px * var(--density-scale));
 }

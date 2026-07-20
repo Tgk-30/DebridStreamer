@@ -69,7 +69,7 @@ describe("AppDatabase", () => {
         const versions = db.sqlite
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .all() as Array<{ version: number }>;
-        expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+        expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
         expect(
           db.sqlite.prepare("SELECT value FROM profile_settings WHERE key = 'ui_theme'").get(),
         ).toEqual({ value: "midnight" });
@@ -91,6 +91,9 @@ describe("AppDatabase", () => {
         expect(
           db.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'metadata_cache'").get(),
         ).toEqual({ name: "metadata_cache" });
+        expect(
+          db.sqlite.prepare("SELECT totp_enabled FROM users WHERE id = 'user-fixture'").get(),
+        ).toEqual({ totp_enabled: 0 });
       } finally {
         db.close();
       }
@@ -131,7 +134,7 @@ describe("AppDatabase", () => {
       sqlite.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (99, ?)")
         .run("2035-01-01T00:00:00.000Z");
       expect(() => migrateDatabase(sqlite)).toThrow(
-        "Database schema version 99 is newer than supported version 8.",
+        "Database schema version 99 is newer than supported version 9.",
       );
     } finally {
       sqlite.close();

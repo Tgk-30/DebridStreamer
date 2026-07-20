@@ -86,21 +86,21 @@ html.mpv-active .embed-player * {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: calc(12px * var(--density-scale));
   max-width: 440px;
-  padding: 30px 34px;
+  padding: calc(30px * var(--density-scale)) calc(34px * var(--density-scale));
   text-align: center;
-  border-radius: var(--r-lg, 18px);
+  border-radius: var(--r-lg, calc(18px * var(--radius-scale)));
   background: rgba(14, 16, 26, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 .embed-error p {
   margin: 0;
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
 }
 .embed-error-detail {
-  font-size: 12.5px !important;
+  font-size: 0.78125rem !important;
   font-weight: 500 !important;
   color: rgba(255, 255, 255, 0.62);
   word-break: break-word;
@@ -108,19 +108,19 @@ html.mpv-active .embed-player * {
 .embed-error-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
   justify-content: center;
-  margin-top: 4px;
+  margin-top: calc(4px * var(--density-scale));
 }
 .embed-endcard-eyebrow {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: rgb(var(--accent-rgb));
 }
 .embed-endcard-title {
-  font-size: 19px;
+  font-size: 1.1875rem;
   font-weight: 750;
 }
 
@@ -150,8 +150,8 @@ html.mpv-active .embed-player * {
 .embed-top {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 20px 28px 56px;
+  gap: calc(12px * var(--density-scale));
+  padding: calc(20px * var(--density-scale)) calc(28px * var(--density-scale)) calc(56px * var(--density-scale));
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.76), transparent);
 }
 .embed-titles {
@@ -159,10 +159,10 @@ html.mpv-active .embed-player * {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(2px * var(--density-scale));
 }
 .embed-title {
-  font-size: 17px;
+  font-size: 1.0625rem;
   font-weight: 750;
   letter-spacing: -0.01em;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
@@ -171,7 +171,7 @@ html.mpv-active .embed-player * {
   white-space: nowrap;
 }
 .embed-subtitle {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.7);
   overflow: hidden;
@@ -182,7 +182,7 @@ html.mpv-active .embed-player * {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
 }
 
 .embed-fullscreen-error {
@@ -191,13 +191,13 @@ html.mpv-active .embed-player * {
   right: 28px;
   z-index: 7;
   max-width: min(420px, calc(100vw - 56px));
-  padding: 9px 12px;
+  padding: calc(9px * var(--density-scale)) calc(12px * var(--density-scale));
   border: 1px solid rgba(255, 187, 80, 0.4);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   background: rgba(59, 35, 13, 0.92);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
   color: rgba(255, 239, 205, 0.96);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
   line-height: 1.35;
 }
@@ -206,8 +206,8 @@ html.mpv-active .embed-player * {
 .embed-bottom {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 52px 28px 24px;
+  gap: calc(12px * var(--density-scale));
+  padding: calc(52px * var(--density-scale)) calc(28px * var(--density-scale)) calc(24px * var(--density-scale));
   /* No frosted bar: just a soft scrim that fades to fully transparent so the
      video shows through. The controls carry their own pill backgrounds and
      text shadows for legibility. */
@@ -223,14 +223,14 @@ html.mpv-active .embed-player * {
 .embed-scrub-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: calc(14px * var(--density-scale));
 }
 .embed-time {
   min-width: 58px;
   padding: 0;
   border: 0;
   background: transparent;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.92);
@@ -238,7 +238,7 @@ html.mpv-active .embed-player * {
 }
 .embed-time-toggle {
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
 }
 .embed-time-toggle:hover {
   color: #fff;
@@ -257,7 +257,7 @@ html.mpv-active .embed-player * {
   position: relative;
   width: 100%;
   height: 5px;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--radius-scale));
   background: rgba(255, 255, 255, 0.24);
   transition: height 0.14s ease;
 }
@@ -269,7 +269,7 @@ html.mpv-active .embed-player * {
   left: 0;
   top: 0;
   bottom: 0;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--radius-scale));
   background: rgba(255, 255, 255, 0.34);
   transition: width 0.2s linear;
 }
@@ -278,7 +278,7 @@ html.mpv-active .embed-player * {
   left: 0;
   top: 0;
   bottom: 0;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--radius-scale));
   background: rgb(var(--accent-rgb));
   box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.5);
   transition: width 0.12s linear;
@@ -290,7 +290,7 @@ html.mpv-active .embed-player * {
   height: 10px;
   transform: translate(-50%, -50%);
   background: rgba(255, 255, 255, 0.85);
-  border-radius: 1px;
+  border-radius: calc(1px * var(--radius-scale));
   pointer-events: none;
 }
 .embed-scrub-thumb {
@@ -313,10 +313,10 @@ html.mpv-active .embed-player * {
   position: absolute;
   bottom: 20px;
   transform: translateX(-50%);
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: calc(3px * var(--density-scale)) calc(8px * var(--density-scale));
+  border-radius: calc(6px * var(--radius-scale));
   background: rgba(10, 12, 20, 0.92);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -329,14 +329,14 @@ html.mpv-active .embed-player * {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 20px;
+  gap: calc(20px * var(--density-scale));
 }
 .embed-buttons-left,
 .embed-buttons-center,
 .embed-buttons-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
   min-width: 0;
 }
 .embed-buttons-left {
@@ -356,7 +356,7 @@ html.mpv-active .embed-player * {
   width: 44px;
   height: 44px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
+  border-radius: calc(14px * var(--radius-scale));
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.055));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 5px 16px rgba(0, 0, 0, 0.16);
   color: #fff;
@@ -392,7 +392,7 @@ html.mpv-active .embed-player * {
   position: absolute;
   bottom: 5px;
   right: 5px;
-  font-size: 8px;
+  font-size: 0.5rem;
   font-weight: 800;
 }
 .embed-play-btn {
@@ -418,23 +418,23 @@ html.mpv-active .embed-player * {
 }
 .embed-pause-glyph {
   display: inline-flex;
-  gap: 5px;
+  gap: calc(5px * var(--density-scale));
 }
 .embed-pause-glyph i {
   display: block;
   width: 5px;
   height: 22px;
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
   background: currentColor;
 }
 
 .embed-volume {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 10px 0 0;
+  gap: calc(4px * var(--density-scale));
+  padding: 0 calc(10px * var(--density-scale)) 0 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 15px;
+  border-radius: calc(15px * var(--radius-scale));
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.04));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
@@ -443,7 +443,7 @@ html.mpv-active .embed-player * {
   -webkit-appearance: none;
   appearance: none;
   height: 5px;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--radius-scale));
   cursor: pointer;
   background: rgba(255, 255, 255, 0.25);
 }
@@ -469,11 +469,11 @@ html.mpv-active .embed-player * {
 .embed-menu-btn {
   width: auto;
   min-width: 44px;
-  padding: 0 6px;
-  gap: 4px;
+  padding: 0 calc(6px * var(--density-scale));
+  gap: calc(4px * var(--density-scale));
 }
 .embed-menu-badge {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
   color: rgb(var(--accent-rgb));
 }
@@ -481,16 +481,16 @@ html.mpv-active .embed-player * {
 .embed-next-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: calc(5px * var(--density-scale));
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0 calc(12px * var(--density-scale));
   border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 14px;
+  border-radius: calc(14px * var(--radius-scale));
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.065));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 5px 16px rgba(0, 0, 0, 0.14);
   color: #fff;
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 750;
   cursor: pointer;
   transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
@@ -523,8 +523,8 @@ html.mpv-active .embed-player * {
   max-width: 320px;
   max-height: 46vh;
   overflow-y: auto;
-  padding: 8px;
-  border-radius: var(--r-lg, 16px);
+  padding: calc(8px * var(--density-scale));
+  border-radius: var(--r-lg, calc(16px * var(--radius-scale)));
   color: #fff;
   background: rgba(12, 14, 22, 1);
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -533,8 +533,8 @@ html.mpv-active .embed-player * {
      no longer applies that class, and this opaque base blocks live video. */
 }
 .embed-menu-title {
-  padding: 6px 12px 8px;
-  font-size: 11px;
+  padding: calc(6px * var(--density-scale)) calc(12px * var(--density-scale)) calc(8px * var(--density-scale));
+  font-size: 0.6875rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -544,15 +544,15 @@ html.mpv-active .embed-player * {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: calc(12px * var(--density-scale));
   width: 100%;
-  padding: 9px 12px;
+  padding: calc(9px * var(--density-scale)) calc(12px * var(--density-scale));
   border: 0;
-  border-radius: var(--r-sm, 10px);
+  border-radius: var(--r-sm, calc(10px * var(--radius-scale)));
   background: transparent;
   color: #fff;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
@@ -568,12 +568,12 @@ html.mpv-active .embed-player * {
   color: rgb(var(--accent-rgb));
 }
 .embed-menu-empty {
-  padding: 9px 12px;
-  font-size: 13px;
+  padding: calc(9px * var(--density-scale)) calc(12px * var(--density-scale));
+  font-size: 0.8125rem;
   color: rgba(255, 255, 255, 0.55);
 }
 .embed-chapter-item {
-  gap: 16px;
+  gap: calc(16px * var(--density-scale));
 }
 .embed-chapter-name {
   overflow: hidden;
@@ -584,20 +584,20 @@ html.mpv-active .embed-player * {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.55);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 /* Settings sliders */
 .embed-setting {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px 12px;
+  gap: calc(6px * var(--density-scale));
+  padding: calc(8px * var(--density-scale)) calc(12px * var(--density-scale)) calc(12px * var(--density-scale));
 }
 .embed-setting-head {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 .embed-setting-val {

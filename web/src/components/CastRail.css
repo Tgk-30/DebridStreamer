@@ -7,7 +7,7 @@
 }
 .cast-title {
   margin: 0;
-  font-size: 21px;
+  font-size: 1.3125rem;
   font-weight: 700;
   letter-spacing: 0;
 }
@@ -35,7 +35,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
   padding: 0;
   border: none;
   background: transparent;
@@ -98,7 +98,7 @@ button.cast-card:hover .cast-photo {
 }
 
 .cast-name {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.2;
   display: -webkit-box;
@@ -107,7 +107,7 @@ button.cast-card:hover .cast-photo {
   overflow: hidden;
 }
 .cast-character {
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.2;
   display: -webkit-box;
   -webkit-line-clamp: 1;

@@ -52,7 +52,7 @@
 .player-pause-content {
   position: relative;
   width: min(760px, calc(100vw - 96px));
-  margin: 0 0 clamp(40px, 7vh, 88px) clamp(40px, 6vw, 88px);
+  margin: 0 0 clamp(calc(40px * var(--density-scale)), 7vh, calc(88px * var(--density-scale))) clamp(calc(40px * var(--density-scale)), 6vw, calc(88px * var(--density-scale)));
   text-align: left;
   animation: playerPauseContentIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both;
 }
@@ -71,10 +71,10 @@
 .player-pause-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  margin-bottom: 16px;
+  gap: calc(9px * var(--density-scale));
+  margin-bottom: calc(16px * var(--density-scale));
   color: rgba(255, 255, 255, 0.82);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 750;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -102,7 +102,7 @@
 }
 
 .player-pause-content h2 {
-  font-size: clamp(38px, 6vw, 68px);
+  font-size: clamp(2.375rem, calc(6vw * var(--text-scale)), 4.25rem);
   font-weight: 800;
   letter-spacing: -0.045em;
   line-height: 0.98;
@@ -113,20 +113,20 @@
 .player-pause-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 20px;
+  gap: calc(8px * var(--density-scale));
+  margin-top: calc(20px * var(--density-scale));
 }
 
 .player-pause-meta-item {
   display: inline-flex;
   align-items: center;
   min-height: 27px;
-  padding: 0 11px;
+  padding: 0 calc(11px * var(--density-scale));
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
+  border-radius: calc(999px * var(--radius-scale));
   background: rgba(0, 0, 0, 0.32);
   color: rgba(255, 255, 255, 0.86);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 680;
   letter-spacing: 0.01em;
   line-height: 1;
@@ -143,10 +143,10 @@
 .player-pause-overview {
   display: -webkit-box;
   max-width: 58ch;
-  margin: 20px 0 0;
+  margin: calc(20px * var(--density-scale)) 0 0;
   overflow: hidden;
   color: rgba(255, 255, 255, 0.82);
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 450;
   line-height: 1.6;
   text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
@@ -161,10 +161,10 @@
 @media (max-width: 640px) {
   .player-pause-content {
     width: calc(100vw - 44px);
-    margin: 0 0 clamp(28px, 6vh, 56px) 22px;
+    margin: 0 0 clamp(calc(28px * var(--density-scale)), 6vh, calc(56px * var(--density-scale))) calc(22px * var(--density-scale));
   }
   .player-pause-content h2 {
-    font-size: clamp(30px, 10vw, 46px);
+    font-size: clamp(1.875rem, calc(10vw * var(--text-scale)), 2.875rem);
   }
 }
 

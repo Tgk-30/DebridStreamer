@@ -39,9 +39,13 @@ ENV DS_WEB_DIST=/app/web-dist
 ENV DS_SERVER_ENABLE_TRANSCODE=true
 WORKDIR /app
 
-COPY --from=server-build /repo/server/dist ./server/dist
-COPY --from=web-build /repo/web/dist ./web-dist
+RUN mkdir -p /data /app/server /app/web-dist \
+  && chown -R node:node /data /app
+
+COPY --chown=node:node --from=server-build /repo/server/dist ./server/dist
+COPY --chown=node:node --from=web-build /repo/web/dist ./web-dist
 
 VOLUME ["/data"]
 EXPOSE 43110
+USER node
 CMD ["node", "server/dist/index.cjs"]

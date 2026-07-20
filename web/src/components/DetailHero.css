@@ -77,8 +77,8 @@
   inset: auto 0 0 0;
   display: flex;
   align-items: flex-end;
-  gap: clamp(var(--sp-lg), 2.8vw, 40px);
-  padding: clamp(var(--sp-xl), 4vw, 60px);
+  gap: clamp(var(--sp-lg), 2.8vw, calc(40px * var(--density-scale)));
+  padding: clamp(var(--sp-xl), 4vw, calc(60px * var(--density-scale)));
   will-change: transform, opacity;
   animation: detailHeroContentIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
 }
@@ -133,7 +133,7 @@
 
 .detail-hero-title {
   margin: 0;
-  font-size: clamp(38px, 4.6vw, 66px);
+  font-size: clamp(2.375rem, calc(4.6vw * var(--text-scale)), 4.125rem);
   font-weight: 800;
   line-height: 0.99;
   letter-spacing: -0.022em;
@@ -149,14 +149,14 @@
 .detail-hero-completion {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: calc(5px * var(--density-scale));
   flex: 0 0 auto;
-  padding: 6px 10px;
+  padding: calc(6px * var(--density-scale)) calc(10px * var(--density-scale));
   border: 1px solid rgba(126, 234, 171, 0.5);
   border-radius: var(--r-pill);
   background: rgba(52, 199, 120, 0.2);
   color: rgb(174, 245, 199);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 750;
   letter-spacing: 0.01em;
   box-shadow: 0 5px 18px -8px rgba(52, 199, 120, 0.7);
@@ -167,7 +167,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
 }
 .detail-hero-ratings {
   min-height: 0;
@@ -176,20 +176,20 @@
   display: none;
 }
 .detail-hero-meta {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.84);
 }
 .detail-hero-rating {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: calc(4px * var(--density-scale));
   font-weight: 700;
 }
 .detail-hero-metabit {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
 }
 .detail-hero-dot {
   color: rgba(255, 255, 255, 0.4);
@@ -199,32 +199,32 @@
    the TMDB score and gain the external scores without shifting the hero's
    content hierarchy. */
 .detail-hero-ratings .omdb-ratings {
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
   margin: 0;
 }
 .detail-hero-ratings .omdb-rating {
-  gap: 4px;
-  padding: 3px 8px;
+  gap: calc(4px * var(--density-scale));
+  padding: calc(3px * var(--density-scale)) calc(8px * var(--density-scale));
   background: rgba(8, 9, 18, 0.32);
   border-color: rgba(255, 255, 255, 0.2);
 }
 .detail-hero-ratings .omdb-rating-value {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .detail-hero-ratings .omdb-rating-label {
-  font-size: 9.5px;
+  font-size: 0.59375rem;
 }
 
 .detail-hero-genres {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: calc(7px * var(--density-scale));
 }
 .detail-genre-chip {
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   font-weight: 600;
   letter-spacing: 0;
-  padding: 5px 12px;
+  padding: calc(5px * var(--density-scale)) calc(12px * var(--density-scale));
   border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.09);
   border: 0.75px solid rgba(255, 255, 255, 0.16);
@@ -234,7 +234,7 @@
 
 .detail-hero-overview {
   margin: 0;
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.82);
   max-width: 640px;
@@ -250,15 +250,15 @@
   margin-top: var(--sp-xs);
 }
 .detail-play {
-  padding: 15px 34px;
-  font-size: 16px;
+  padding: calc(15px * var(--density-scale)) calc(34px * var(--density-scale));
+  font-size: 1rem;
   font-weight: 700;
 }
 .detail-watch,
 .detail-request,
 .detail-watched {
-  padding: 15px 26px;
-  font-size: 16px;
+  padding: calc(15px * var(--density-scale)) calc(26px * var(--density-scale));
+  font-size: 1rem;
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(12px);
@@ -283,8 +283,8 @@
 .detail-taste {
   display: inline-flex;
   align-items: stretch;
-  gap: 2px;
-  padding: 4px;
+  gap: calc(2px * var(--density-scale));
+  padding: calc(4px * var(--density-scale));
   border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -328,7 +328,7 @@
     flex-direction: column;
     align-items: flex-start;
     gap: var(--sp-md);
-    padding: 84px var(--sp-lg) var(--sp-lg);
+    padding: calc(84px * var(--density-scale)) var(--sp-lg) var(--sp-lg);
   }
 
   .detail-hero-backdrop-layer,
@@ -342,7 +342,7 @@
   }
 
   .detail-hero-title {
-    font-size: clamp(30px, 9vw, 42px);
+    font-size: clamp(1.875rem, calc(9vw * var(--text-scale)), 2.625rem);
   }
 
   .detail-hero-overview {
@@ -360,6 +360,6 @@
   .detail-request {
     flex: 1 1 130px;
     justify-content: center;
-    padding: 12px 16px;
+    padding: calc(12px * var(--density-scale)) calc(16px * var(--density-scale));
   }
 }

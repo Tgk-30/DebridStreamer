@@ -12,7 +12,7 @@
   gap: var(--sp-md);
   width: min(560px, calc(100% - var(--sp-xl)));
   padding: var(--sp-md) var(--sp-lg);
-  border-radius: var(--r-lg, 18px);
+  border-radius: var(--r-lg, calc(18px * var(--radius-scale)));
 }
 .install-prompt-icon {
   display: grid;
@@ -27,24 +27,24 @@
 .install-prompt-text {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(4px * var(--density-scale));
   min-width: 0;
   /* basis 0 so long copy never drives a wrap - the text column shrinks and
      wraps internally instead of pushing the icon/dismiss onto their own rows */
   flex: 1 1 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.45;
 }
 .install-prompt-text strong {
-  font-size: 13.5px;
+  font-size: 0.84375rem;
 }
 .install-prompt-steps {
-  margin: 2px 0 0;
+  margin: calc(2px * var(--density-scale)) 0 0;
   padding-left: 1.2em;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: 12.5px;
+  gap: calc(3px * var(--density-scale));
+  font-size: 0.78125rem;
   color: var(--text-secondary);
 }
 .install-prompt-steps svg {

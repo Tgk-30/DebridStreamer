@@ -43,7 +43,8 @@ http://localhost:43110
 For non-Docker Ubuntu installs (native Node + systemd, or the `.deb` package),
 see [`../ubuntu/README.md`](../ubuntu/README.md).
 
-First launch creates the owner account. Phone and tablet users can open the same
+First launch requires the one-time owner setup token from
+`docker compose logs debridstreamer`. Phone and tablet users can open the same
 URL and install it to their home screen.
 
 Server-forwarded playback records per-profile bandwidth. Owners and admins can
@@ -72,6 +73,27 @@ http://machine-name:43110
 For a public or semi-public deployment, put HTTPS and an auth wall in front of
 the service before sharing it outside your private network.
 
+## Public HTTPS with Caddy
+
+The included Caddy stack obtains and renews a Let's Encrypt certificate. Point
+the DNS record in `YAWF_DOMAIN` at the server, make ports 80 and 443 reachable,
+then run:
+
+```sh
+cp .env.example .env
+# Set YAWF_DOMAIN and DS_SERVER_SECRET_KEY in .env first.
+docker compose -f docker-compose.caddy.yml up -d
+```
+
+This profile does not publish port 43110. It enables secure cookies, trusted
+proxy handling, public mode profile passwords, and optional User-Agent session
+binding. The application container runs as an unprivileged user with a
+read-only root filesystem, all Linux capabilities dropped, and only `/data`
+and `/tmp` writable.
+
+On bind-mounted storage, make the data directory writable by container UID
+1000 before starting. Named volumes need no permission changes.
+
 ## Cloudflare Access
 
 Use Cloudflare Tunnel or another reverse proxy to expose port `43110`, then set:
@@ -83,6 +105,37 @@ DS_SERVER_TRUST_PROXY=true
 
 Cloudflare Access is an outer protection layer. DebridStreamer profiles and
 sessions still provide the in-app boundary.
+
+External players cannot present Cloudflare Access browser cookies. To keep VLC,
+IINA, mpv, and device-player handoff working, add a Cloudflare Access bypass
+policy for the exact path `/api/external-stream/*`. Do not bypass `/api/*` or
+the site as a whole. That route still requires a short-lived, stream-scoped
+capability tied to the profile, session expiry, and server-side revocation.
+
+## Public deployment security settings
+
+Recommended values behind any HTTPS reverse proxy:
+
+```env
+DS_SERVER_COOKIE_SECURE=true
+DS_SERVER_TRUST_PROXY=true
+DS_SERVER_PUBLIC_MODE=true
+DS_SERVER_BIND_SESSION_USER_AGENT=true
+DS_SERVER_SESSION_TTL_SECONDS=604800
+DS_SERVER_ALLOW_RAW_STREAM_URLS=false
+```
+
+Fresh installs always require a one-time owner setup token. If
+`DS_SERVER_SETUP_TOKEN` is blank, the server generates one and prints it once
+to the container log while setup is required:
+
+```sh
+docker compose logs debridstreamer
+```
+
+The default compose profiles also run the application container as non-root,
+with a read-only root filesystem, dropped capabilities, and
+`no-new-privileges`. Keep those controls when adapting the stack.
 
 ## Desktop App Connected to This Server
 

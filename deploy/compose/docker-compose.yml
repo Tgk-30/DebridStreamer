@@ -5,6 +5,13 @@ services:
       dockerfile: Dockerfile
     image: debridstreamer:local
     restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
     env_file:
       - .env
     environment:

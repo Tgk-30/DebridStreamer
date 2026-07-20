@@ -8,19 +8,19 @@
 }
 .avatar-picker-tabs {
   display: flex;
-  gap: 4px;
+  gap: calc(4px * var(--density-scale));
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: calc(2px * var(--density-scale));
 }
 .avatar-picker-tabs button {
   min-height: 30px;
-  padding: 0 10px;
+  padding: 0 calc(10px * var(--density-scale));
   border: 1px solid transparent;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 650;
   white-space: nowrap;
   cursor: pointer;
@@ -37,14 +37,14 @@
 .avatar-picker-grid {
   display: grid;
   grid-template-columns: repeat(8, minmax(36px, 1fr));
-  gap: 5px;
+  gap: calc(5px * var(--density-scale));
 }
 .avatar-picker-cell {
   display: grid;
   place-items: center;
   aspect-ratio: 1;
   padding: 0;
-  font-size: 20px;
+  font-size: 1.25rem;
   line-height: 1;
   border: 1px solid transparent;
   border-radius: var(--r-sm);

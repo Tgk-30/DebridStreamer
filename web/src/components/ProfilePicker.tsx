@@ -17,6 +17,7 @@ import {
   fetchAccountProfiles,
   setProfileBandwidthQuota,
   setProfilePin,
+  setProfilePassword,
   switchAccountProfile,
   updateAccountProfile,
   type AccountProfile,
@@ -84,6 +85,7 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [publicMode, setPublicMode] = useState(false);
   const [renaming, setRenaming] = useState<AccountProfile | null>(null);
   // The profile id awaiting delete confirmation (two-step: Delete → Confirm).
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -94,6 +96,7 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
   // this is the PIN on the profile the viewer is ENTERING.
   const [pinUnlocking, setPinUnlocking] = useState<ServerProfileSummary | null>(null);
   const [pinFor, setPinFor] = useState<ServerProfileSummary | null>(null);
+  const [passwordFor, setPasswordFor] = useState<ServerProfileSummary | null>(null);
   const [quotaFor, setQuotaFor] = useState<ServerProfileSummary | null>(null);
 
   const activeId = session?.profileId ?? null;
@@ -159,7 +162,10 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
     let cancelled = false;
     void fetchAccountProfiles()
       .then((state) => {
-        if (!cancelled) setProfiles(state.profiles);
+        if (!cancelled) {
+          setProfiles(state.profiles);
+          setPublicMode(state.publicMode === true);
+        }
       })
       .catch(() => {
         /* keep the in-memory list */
@@ -178,6 +184,11 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
     }
     // A PIN on the TARGET profile is a household gate for entering it. Prompt
     // before switching so a 403 can be retried without closing the picker.
+    if (profile.hasPin === true && profile.gateType === "password") {
+      setError(null);
+      setUnlocking(profile);
+      return;
+    }
     if (profile.hasPin === true) {
       setError(null);
       setPinUnlocking(profile);
@@ -240,6 +251,7 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
       <ProfileForm
         title="Add profile"
         submitLabel="Create"
+        requirePassword={publicMode}
         onCancel={() => setAdding(false)}
         onSubmit={async (values) => {
           const res = await createAccountProfile(values);
@@ -253,7 +265,8 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
               simpleMode: res.profile.simpleMode,
               isDefault: res.profile.isDefault,
               isKid: res.profile.isKid,
-              hasPin: false,
+              hasPin: res.profile.hasPin,
+              gateType: res.profile.gateType,
               bandwidthCapBytes: null,
               bandwidthUsageBytes: 0,
               bandwidthStatus: "ok",
@@ -315,6 +328,20 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
           const result = await setProfilePin(pinFor.id, pin);
           await refreshAfterMutation(result.profiles.profiles);
           setPinFor(null);
+        }}
+      />
+    );
+  }
+
+  if (passwordFor != null) {
+    return (
+      <PasswordSettingsForm
+        target={passwordFor}
+        onCancel={() => setPasswordFor(null)}
+        onSubmit={async (password) => {
+          const result = await setProfilePassword(passwordFor.id, password);
+          await refreshAfterMutation(result.profiles.profiles);
+          setPasswordFor(null);
         }}
       />
     );
@@ -412,6 +439,14 @@ export function ProfilePicker({ onClose }: { onClose: () => void }) {
                   )}
                   {isHouseholdManager && (
                     <>
+                      <button
+                        type="button"
+                        className="profile-mini-btn"
+                        onClick={() => setPasswordFor(profile)}
+                        disabled={busyId != null}
+                      >
+                        {profile.gateType === "password" ? "Change password" : "Set password"}
+                      </button>
                       <button
                         type="button"
                         className="profile-mini-btn"
@@ -533,6 +568,7 @@ function profileToAccount(p: ServerProfileSummary): AccountProfile {
     // form this feeds doesn't touch maturity, so null is a safe placeholder.
     maturityMax: null,
     hasPin: p.hasPin,
+    gateType: p.gateType,
     bandwidthCapBytes: p.bandwidthCapBytes,
     bandwidthUsageBytes: p.bandwidthUsageBytes,
     bandwidthStatus: p.bandwidthStatus,
@@ -707,6 +743,86 @@ function PinSettingsForm({
   );
 }
 
+function PasswordSettingsForm({
+  target,
+  onCancel,
+  onSubmit,
+}: {
+  target: ServerProfileSummary;
+  onCancel: () => void;
+  onSubmit: (password: string) => Promise<void>;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const formRef = useModalA11y<HTMLDivElement>(onCancel);
+  const canSubmit = password.length >= 8 && password === confirm && !busy;
+
+  function submit() {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    void onSubmit(password)
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not save password."))
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <div
+      ref={formRef}
+      className="profile-picker"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Set password for ${target.displayName}`}
+      tabIndex={-1}
+    >
+      <div className="profile-picker-inner profile-form">
+        <h1 className="profile-picker-title">Set profile password</h1>
+        <p className="profile-unlock-copy">
+          This password will be required before switching into <strong>{target.displayName}</strong>.
+        </p>
+        <label className="profile-field">
+          New password
+          <input
+            type="password"
+            minLength={8}
+            autoComplete="new-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoFocus
+          />
+        </label>
+        <label className="profile-field">
+          Confirm password
+          <input
+            type="password"
+            minLength={8}
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(event) => setConfirm(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit();
+            }}
+          />
+        </label>
+        {confirm.length > 0 && confirm !== password && (
+          <p className="profile-picker-error">Passwords do not match.</p>
+        )}
+        {error != null && <p className="profile-picker-error">{error}</p>}
+        <div className="profile-picker-foot">
+          <button type="button" className="profile-text-btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" className="profile-solid-btn" onClick={submit} disabled={!canSubmit}>
+            {busy ? "Please wait" : "Save password"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function QuotaSettingsForm({
   target,
   onCancel,
@@ -791,6 +907,7 @@ function UnlockPrompt({
   onCancel: () => void;
   onSubmit: (password: string) => Promise<void>;
 }) {
+  const enteringProtectedProfile = target.gateType === "password";
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -822,18 +939,21 @@ function UnlockPrompt({
       className="profile-picker"
       role="dialog"
       aria-modal="true"
-      aria-label="Enter account password"
+      aria-label={enteringProtectedProfile ? "Enter profile password" : "Enter account password"}
       tabIndex={-1}
     >
       <div className="profile-picker-inner profile-form">
-        <h1 className="profile-picker-title">Enter account password</h1>
+        <h1 className="profile-picker-title">
+          {enteringProtectedProfile ? "Enter profile password" : "Enter account password"}
+        </h1>
         <p className="profile-unlock-copy">
-          The account password is required to leave a kids profile and switch to{" "}
-          <strong>{target.displayName}</strong>.
+          {enteringProtectedProfile
+            ? <>Enter the password for <strong>{target.displayName}</strong>.</>
+            : <>The account password is required to leave a kids profile and switch to <strong>{target.displayName}</strong>.</>}
         </p>
 
         <label className="profile-field">
-          Account password
+          {enteringProtectedProfile ? "Profile password" : "Account password"}
           <input
             type="password"
             value={password}
@@ -877,6 +997,7 @@ function ProfileForm({
   submitLabel,
   initial,
   hidePassword = false,
+  requirePassword = false,
   onCancel,
   onSubmit,
 }: {
@@ -884,6 +1005,7 @@ function ProfileForm({
   submitLabel: string;
   initial?: { displayName: string; avatarColor: string | null };
   hidePassword?: boolean;
+  requirePassword?: boolean;
   onCancel: () => void;
   onSubmit: (values: ProfileFormValues) => Promise<void>;
 }) {
@@ -894,7 +1016,10 @@ function ProfileForm({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const canSubmit = useMemo(() => displayName.trim().length > 0, [displayName]);
+  const canSubmit = useMemo(
+    () => displayName.trim().length > 0 && (!requirePassword || password.length >= 8),
+    [displayName, password, requirePassword],
+  );
   const formRef = useModalA11y<HTMLDivElement>(onCancel);
 
   function submit() {
@@ -951,13 +1076,15 @@ function ProfileForm({
 
         {!hidePassword && (
           <label className="profile-field">
-            Password (optional)
+            {requirePassword ? "Password" : "Password (optional)"}
             <input
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="new-password"
-              placeholder="Leave blank for a quick-switch profile"
+              placeholder={requirePassword ? "At least 8 characters" : "Leave blank for a quick-switch profile"}
+              required={requirePassword}
+              minLength={requirePassword ? 8 : undefined}
             />
           </label>
         )}

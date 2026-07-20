@@ -1,5 +1,5 @@
 import { Readable, Transform } from "node:stream";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import cookie from "@fastify/cookie";
@@ -59,6 +59,7 @@ import { bandwidthCapStatus, type BandwidthCapStatus } from "./bandwidth.js";
 import { readFile } from "node:fs/promises";
 import { realTranscoder } from "./transcode.js";
 import { MANIFEST_NAME, TranscodeRegistry } from "./transcodeSession.js";
+import { SERVER_VERSION } from "./version.js";
 import {
   CREDENTIAL_PROVIDERS,
   type AuthContext,
@@ -108,6 +109,17 @@ const setupOwnerSchema = z.object({
 const loginSchema = z.object({
   username: usernameSchema,
   password: z.string().min(1).max(512),
+  totpCode: z.string().trim().regex(/^\d{6}$/).optional(),
+});
+
+const totpCodeSchema = z.string().trim().regex(/^\d{6}$/);
+const disableTotpSchema = z.object({
+  currentPassword: z.string().min(1).max(512),
+  code: totpCodeSchema,
+});
+
+const revokeAllSessionsSchema = z.object({
+  includeCurrent: z.boolean().default(true),
 });
 
 const changePasswordSchema = z.object({
@@ -160,6 +172,7 @@ const createAccountProfileSchema = z.object({
   displayName: z.string().trim().min(1).max(100),
   avatarColor: avatarColorSchema.nullish(),
   simpleMode: z.boolean().default(true),
+  password: passwordSchema.optional(),
 });
 
 const patchAccountProfileSchema = z
@@ -193,6 +206,11 @@ const setProfilePinSchema = z.object({
     .string()
     .regex(/^\d{4,6}$/, "PIN must be 4 to 6 digits.")
     .nullable(),
+});
+
+const setProfilePasswordSchema = z.object({
+  profileId: z.string().trim().min(1).max(128),
+  password: passwordSchema,
 });
 
 // Household bandwidth is warn-only. The cap is represented as an exact byte
@@ -454,6 +472,7 @@ const profileSettingSchema = z.object({
 // have their own owner/admin endpoint, so neither can be clobbered by settings.
 const PROTECTED_PROFILE_SETTING_KEYS: ReadonlySet<string> = new Set([
   "profile_password_hash",
+  "profile_gate_kind",
   "bandwidth_cap_bytes",
 ]);
 
@@ -488,6 +507,17 @@ function createRateLimiter() {
     const key = `${bucket}:${request.ip}`;
     const current = buckets.get(key);
     if (current == null || current.resetAt <= now) {
+      if (current == null && buckets.size >= 20_000) {
+        // Keep spoofed usernames, invite tokens, and profile IDs from turning
+        // rate limiting itself into an unbounded memory sink. Entries are
+        // insertion ordered, so removing the oldest 10% is bounded and cheap.
+        let remove = 2_000;
+        for (const oldestKey of buckets.keys()) {
+          buckets.delete(oldestKey);
+          remove -= 1;
+          if (remove === 0) break;
+        }
+      }
       buckets.set(key, { count: 1, resetAt: now + windowMs });
       return;
     }
@@ -783,6 +813,7 @@ function createUserAndProfile(
     username: string;
     displayName: string;
     passwordHash: string;
+    profilePasswordHash?: string;
     role: UserRole;
     simpleMode?: boolean;
   },
@@ -820,6 +851,20 @@ function createUserAndProfile(
       now,
       now,
     );
+  if (input.profilePasswordHash != null) {
+    db.sqlite
+      .prepare(
+        `INSERT INTO profile_settings (profile_id, key, value)
+         VALUES (?, 'profile_password_hash', ?)`,
+      )
+      .run(profileId, input.profilePasswordHash);
+    db.sqlite
+      .prepare(
+        `INSERT INTO profile_settings (profile_id, key, value)
+         VALUES (?, 'profile_gate_kind', 'password')`,
+      )
+      .run(profileId);
+  }
   return { userId, profileId };
 }
 
@@ -1213,6 +1258,7 @@ interface AccountProfileRow {
   is_kid: number;
   maturity_max: string | null;
   has_pin: number;
+  profile_gate_kind: string | null;
   bandwidth_cap_bytes: string | null;
   bandwidth_usage_bytes: number;
 }
@@ -1253,6 +1299,12 @@ function mapAccountProfile(row: AccountProfileRow) {
     // stays server-side and write-only; the client only learns that a PIN
     // exists, so it can prompt on switch and show the lock affordance.
     hasPin: row.has_pin === 1,
+    gateType:
+      row.has_pin !== 1
+        ? "none"
+        : row.profile_gate_kind === "password"
+          ? "password"
+          : "pin",
     // A rolling 30-day household signal only. This is intentionally advisory:
     // no streaming route reads this status or uses it to cut playback off.
     ...bandwidthProfileState(capBytes, row.bandwidth_usage_bytes),
@@ -1273,6 +1325,11 @@ function listAccountProfiles(db: AppDatabase, userId: string) {
                 WHERE ps.profile_id = profiles.id
                   AND ps.key = 'profile_password_hash'
               ) AS has_pin,
+              (
+                SELECT value FROM profile_settings ps
+                WHERE ps.profile_id = profiles.id
+                  AND ps.key = 'profile_gate_kind'
+              ) AS profile_gate_kind,
               (
                 SELECT value FROM profile_settings ps
                 WHERE ps.profile_id = profiles.id
@@ -1954,6 +2011,17 @@ function adminHealthSummary(db: AppDatabase, config: ServerConfig) {
          AND created_at >= ?`,
       addSecondsISO(-60 * 60 * 24),
     ),
+    passwordlessProfiles: countScalar(
+      db,
+      `SELECT COUNT(*) AS count
+       FROM profiles
+       WHERE disabled_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM profile_settings
+           WHERE profile_settings.profile_id = profiles.id
+             AND profile_settings.key = 'profile_password_hash'
+         )`,
+    ),
   };
 
   const warnings: string[] = [];
@@ -1969,6 +2037,9 @@ function adminHealthSummary(db: AppDatabase, config: ServerConfig) {
   if (config.webDistPath == null) {
     warnings.push("Hosted PWA assets are not configured; API-only mode is active.");
   }
+  if (config.publicMode && counts.passwordlessProfiles > 0) {
+    warnings.push(`${counts.passwordlessProfiles} active viewer profile(s) do not have a password. Public mode requires every profile to be protected.`);
+  }
 
   return {
     ok: true,
@@ -1983,6 +2054,8 @@ function adminHealthSummary(db: AppDatabase, config: ServerConfig) {
       rawStreamUrlsEnabled: config.allowRawStreamUrls,
       webDistConfigured: config.webDistPath != null,
       sessionTtlSeconds: config.sessionTtlSeconds,
+      bindSessionUserAgent: config.bindSessionUserAgent,
+      publicMode: config.publicMode,
       setupTokenRequired: userCount(db) === 0 && config.setupToken != null,
     },
     warnings,
@@ -1999,6 +2072,132 @@ function setupTokenMatches(expected: string, provided: string | undefined): bool
   );
 }
 
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function base32Encode(input: Buffer): string {
+  let bits = 0;
+  let value = 0;
+  let output = "";
+  for (const byte of input) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
+  return output;
+}
+
+function base32Decode(input: string): Buffer {
+  let bits = 0;
+  let value = 0;
+  const bytes: number[] = [];
+  for (const char of input.toUpperCase().replace(/=+$/g, "")) {
+    const index = BASE32_ALPHABET.indexOf(char);
+    if (index < 0) throw new Error("Invalid TOTP secret.");
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+function totpCode(secret: string, timestamp = Date.now()): string {
+  const counter = Math.floor(timestamp / 30_000);
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac("sha1", base32Decode(secret)).update(message).digest();
+  const offset = digest[digest.length - 1]! & 0x0f;
+  const value =
+    (((digest[offset]! & 0x7f) << 24) |
+      (digest[offset + 1]! << 16) |
+      (digest[offset + 2]! << 8) |
+      digest[offset + 3]!) % 1_000_000;
+  return String(value).padStart(6, "0");
+}
+
+function verifyTotp(secret: string, provided: string, now = Date.now()): boolean {
+  const providedBuffer = Buffer.from(provided);
+  for (const offset of [-30_000, 0, 30_000]) {
+    const expected = Buffer.from(totpCode(secret, now + offset));
+    if (
+      expected.length === providedBuffer.length &&
+      timingSafeEqual(expected, providedBuffer)
+    ) return true;
+  }
+  return false;
+}
+
+interface LoginFailureState {
+  failures: number;
+  lastFailureAt: number;
+  blockedUntil: number;
+}
+
+function loginFailureKey(request: FastifyRequest, username: string): string {
+  return `${request.ip}:${username.trim().toLowerCase()}`;
+}
+
+function nextLoginBackoffMs(failures: number): number {
+  if (failures < 5) return 0;
+  return Math.min(15 * 60_000, 2_000 * 2 ** Math.min(9, failures - 5));
+}
+
+let releaseCache:
+  | { expiresAt: number; value: { currentVersion: string; latestVersion: string | null; available: boolean; url: string } }
+  | null = null;
+
+function versionParts(version: string): number[] {
+  return version.replace(/^v/, "").split(/[.-]/).slice(0, 3).map((part) => Number(part) || 0);
+}
+
+function newerVersion(latest: string, current: string): boolean {
+  const left = versionParts(latest);
+  const right = versionParts(current);
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index]! > right[index]!) return true;
+    if (left[index]! < right[index]!) return false;
+  }
+  return false;
+}
+
+async function serverUpdateStatus(enabled: boolean) {
+  const url = "https://github.com/TGK-30/DebridStreamer/releases/latest";
+  if (!enabled) {
+    return { currentVersion: SERVER_VERSION, latestVersion: null, available: false, url };
+  }
+  if (releaseCache != null && releaseCache.expiresAt > Date.now()) return releaseCache.value;
+  let latestVersion: string | null = null;
+  try {
+    const response = await fetch(
+      "https://api.github.com/repos/TGK-30/DebridStreamer/releases/latest",
+      {
+        headers: { accept: "application/vnd.github+json", "user-agent": "YAWF-Stream-Server" },
+        signal: AbortSignal.timeout(3_000),
+      },
+    );
+    if (response.ok) {
+      const body = await response.json() as { tag_name?: unknown };
+      if (typeof body.tag_name === "string") latestVersion = body.tag_name.replace(/^v/, "").replace(/-web$/, "");
+    }
+  } catch {
+    latestVersion = null;
+  }
+  const value = {
+    currentVersion: SERVER_VERSION,
+    latestVersion,
+    available: latestVersion != null && newerVersion(latestVersion, SERVER_VERSION),
+    url,
+  };
+  releaseCache = { expiresAt: Date.now() + 6 * 60 * 60_000, value };
+  return value;
+}
+
 function streamContentType(fileName: string): string | null {
   const ext = extname(fileName.toLowerCase());
   return MIME_TYPES[ext] ?? null;
@@ -2011,6 +2210,7 @@ function registerRoutes(
   transcode: { ready: boolean; registry: TranscodeRegistry },
 ): void {
   const rateLimit = createRateLimiter();
+  const loginFailures = new Map<string, LoginFailureState>();
 
   app.get("/api/health", async () => ({
     ok: true,
@@ -2047,7 +2247,10 @@ function registerRoutes(
   app.get("/api/admin/health", async (request) => {
     const auth = requireAuth(db, request);
     requireAdmin(auth);
-    return adminHealthSummary(db, config);
+    return {
+      ...adminHealthSummary(db, config),
+      update: await serverUpdateStatus(config.updateCheck),
+    };
   });
 
   app.post("/api/auth/setup-owner", async (request, reply) => {
@@ -2068,6 +2271,7 @@ function registerRoutes(
         username: body.username,
         displayName: body.displayName,
         passwordHash,
+        profilePasswordHash: config.publicMode ? passwordHash : undefined,
         role: "owner",
         simpleMode: false,
       });
@@ -2103,9 +2307,22 @@ function registerRoutes(
       10,
       15 * 60 * 1000,
     );
+    const failureKey = loginFailureKey(request, body.username);
+    const failureState = loginFailures.get(failureKey);
+    if (failureState != null && failureState.blockedUntil > Date.now()) {
+      const retryAfter = Math.max(1, Math.ceil((failureState.blockedUntil - Date.now()) / 1_000));
+      reply.header("retry-after", String(retryAfter));
+      audit(db, null, "auth.login.blocked", "user", undefined, {
+        attemptedUsername: body.username.toLowerCase(),
+        ipHash: hashOptional(request.ip),
+        retryAfterSeconds: retryAfter,
+      });
+      throw httpError(429, "Too many failed login attempts. Try again later.");
+    }
     const row = db.sqlite
       .prepare(
-        `SELECT id, username, display_name, password_hash, role
+        `SELECT id, username, display_name, password_hash, role,
+                totp_secret_encrypted, totp_enabled
          FROM users
          WHERE username = ? AND disabled_at IS NULL`,
       )
@@ -2116,18 +2333,60 @@ function registerRoutes(
           display_name: string;
           password_hash: string;
           role: UserRole;
+          totp_secret_encrypted: string | null;
+          totp_enabled: number;
         }
       | undefined;
+
+    const recordFailure = (reason: "credentials" | "totp") => {
+      const now = Date.now();
+      if (loginFailures.size >= 5_000) {
+        for (const [key, state] of loginFailures) {
+          if (now - state.lastFailureAt > 60 * 60_000) loginFailures.delete(key);
+        }
+        if (loginFailures.size >= 5_000) {
+          const oldest = [...loginFailures.entries()]
+            .sort((left, right) => left[1].lastFailureAt - right[1].lastFailureAt)
+            .slice(0, 500);
+          for (const [key] of oldest) loginFailures.delete(key);
+        }
+      }
+      const previous = loginFailures.get(failureKey);
+      const failures = previous != null && now - previous.lastFailureAt < 60 * 60_000
+        ? previous.failures + 1
+        : 1;
+      const blockedUntil = now + nextLoginBackoffMs(failures);
+      loginFailures.set(failureKey, { failures, lastFailureAt: now, blockedUntil });
+      audit(db, null, "auth.login.failed", "user", row?.id, {
+        attemptedUsername: body.username.toLowerCase(),
+        ipHash: hashOptional(request.ip),
+        reason,
+        failures,
+        blockedUntil: blockedUntil > now ? new Date(blockedUntil).toISOString() : null,
+      });
+    };
 
     if (row == null) {
       // Run a dummy verify so an unknown username takes the same time as a known
       // one - otherwise response timing reveals which usernames exist.
       await verifyDummyPassword(body.password);
+      recordFailure("credentials");
       throw httpError(401, "Invalid username or password.");
     }
     if (!(await verifyPassword(row.password_hash, body.password))) {
+      recordFailure("credentials");
       throw httpError(401, "Invalid username or password.");
     }
+    if (row.totp_enabled === 1) {
+      const secret = row.totp_secret_encrypted == null
+        ? null
+        : decryptSecret(row.totp_secret_encrypted, config.secretKey);
+      if (secret == null || body.totpCode == null || !verifyTotp(secret, body.totpCode)) {
+        recordFailure("totp");
+        throw httpError(401, body.totpCode == null ? "Two-factor code required." : "Invalid two-factor code.");
+      }
+    }
+    loginFailures.delete(failureKey);
 
     const profile = db.sqlite
       .prepare(
@@ -2219,6 +2478,7 @@ function registerRoutes(
         username: body.username,
         displayName: body.displayName ?? body.username,
         passwordHash,
+        profilePasswordHash: config.publicMode ? passwordHash : undefined,
         role: invite.role,
         simpleMode: invite.simple_mode === 1,
       });
@@ -2263,6 +2523,88 @@ function registerRoutes(
     return { session: auth, profiles: accountProfileState(db, auth) };
   });
 
+  app.get("/api/auth/totp", async (request) => {
+    const auth = requireAuth(db, request);
+    if (!isAdmin(auth.role)) throw httpError(403, "Two-factor authentication is available to owners and admins.");
+    const row = db.sqlite
+      .prepare("SELECT totp_enabled, totp_pending_secret_encrypted FROM users WHERE id = ?")
+      .get(auth.userId) as { totp_enabled: number; totp_pending_secret_encrypted: string | null } | undefined;
+    return { enabled: row?.totp_enabled === 1, enrollmentPending: row?.totp_pending_secret_encrypted != null };
+  });
+
+  app.post("/api/auth/totp/enroll", async (request) => {
+    const auth = requireAuth(db, request);
+    requireAdmin(auth);
+    requireCsrf(request);
+    const secret = base32Encode(randomBytes(20));
+    db.sqlite
+      .prepare("UPDATE users SET totp_pending_secret_encrypted = ? WHERE id = ?")
+      .run(encryptSecret(secret, config.secretKey), auth.userId);
+    audit(db, auth, "auth.totp.enroll", "user", auth.userId);
+    const label = encodeURIComponent(`YAWF Stream:${auth.username}`);
+    const issuer = encodeURIComponent("YAWF Stream");
+    return {
+      secret,
+      otpauthUrl: `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`,
+    };
+  });
+
+  app.post("/api/auth/totp/confirm", async (request) => {
+    const auth = requireAuth(db, request);
+    requireAdmin(auth);
+    requireCsrf(request);
+    const body = parseBody(z.object({ code: totpCodeSchema }), request.body);
+    const row = db.sqlite
+      .prepare("SELECT totp_pending_secret_encrypted FROM users WHERE id = ?")
+      .get(auth.userId) as { totp_pending_secret_encrypted: string | null } | undefined;
+    if (row?.totp_pending_secret_encrypted == null) throw httpError(409, "Start two-factor enrollment first.");
+    const secret = decryptSecret(row.totp_pending_secret_encrypted, config.secretKey);
+    if (!verifyTotp(secret, body.code)) throw httpError(400, "Invalid authenticator code.");
+    db.sqlite
+      .prepare(
+        `UPDATE users
+         SET totp_secret_encrypted = totp_pending_secret_encrypted,
+             totp_pending_secret_encrypted = NULL,
+             totp_enabled = 1
+         WHERE id = ?`,
+      )
+      .run(auth.userId);
+    audit(db, auth, "auth.totp.enable", "user", auth.userId);
+    return { ok: true, enabled: true };
+  });
+
+  app.post("/api/auth/totp/disable", async (request) => {
+    const auth = requireAuth(db, request);
+    requireAdmin(auth);
+    requireCsrf(request);
+    const body = parseBody(disableTotpSchema, request.body);
+    const row = db.sqlite
+      .prepare("SELECT password_hash, totp_secret_encrypted, totp_enabled FROM users WHERE id = ?")
+      .get(auth.userId) as {
+        password_hash: string;
+        totp_secret_encrypted: string | null;
+        totp_enabled: number;
+      } | undefined;
+    const passwordOk = row != null && await verifyPassword(row.password_hash, body.currentPassword);
+    const secret = row?.totp_secret_encrypted == null
+      ? null
+      : decryptSecret(row.totp_secret_encrypted, config.secretKey);
+    if (!passwordOk || secret == null || !verifyTotp(secret, body.code)) {
+      throw httpError(401, "Password or authenticator code is incorrect.");
+    }
+    db.sqlite
+      .prepare(
+        `UPDATE users
+         SET totp_secret_encrypted = NULL,
+             totp_pending_secret_encrypted = NULL,
+             totp_enabled = 0
+         WHERE id = ?`,
+      )
+      .run(auth.userId);
+    audit(db, auth, "auth.totp.disable", "user", auth.userId);
+    return { ok: true, enabled: false };
+  });
+
   app.get("/api/auth/sessions", async (request) => {
     const auth = requireAuth(db, request);
     const rows = db.sqlite
@@ -2296,6 +2638,26 @@ function registerRoutes(
       current: id === auth.sessionId,
     });
     return { ok: true };
+  });
+
+  app.post("/api/auth/sessions/revoke-all", async (request, reply) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(revokeAllSessionsSchema, request.body ?? {});
+    const now = nowISO();
+    const result = body.includeCurrent
+      ? db.sqlite
+          .prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+          .run(now, auth.userId)
+      : db.sqlite
+          .prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND id <> ? AND revoked_at IS NULL")
+          .run(now, auth.userId, auth.sessionId);
+    audit(db, auth, "auth.session.revoke_all", "user", auth.userId, {
+      includeCurrent: body.includeCurrent,
+      revoked: result.changes,
+    });
+    if (body.includeCurrent) clearSessionCookies(reply, config);
+    return { ok: true, revoked: result.changes };
   });
 
   app.post("/api/auth/change-password", async (request) => {
@@ -2435,6 +2797,7 @@ function registerRoutes(
         username: body.username,
         displayName: body.displayName,
         passwordHash,
+        profilePasswordHash: config.publicMode ? passwordHash : undefined,
         role: body.role,
         simpleMode: body.simpleMode,
       });
@@ -2600,7 +2963,7 @@ function registerRoutes(
 
   app.get("/api/account/profiles", async (request) => {
     const auth = requireAuth(db, request);
-    return accountProfileState(db, auth);
+    return { ...accountProfileState(db, auth), publicMode: config.publicMode };
   });
 
   app.post("/api/account/profiles", async (request) => {
@@ -2608,15 +2971,10 @@ function registerRoutes(
     requireCsrf(request);
     requireNotRestricted(auth);
     const body = parseBody(createAccountProfileSchema, request.body);
-    // A household viewer profile is NOT a login: it has no username and its
-    // password is optional (kid/guest profiles switch without one). When a
-    // password is supplied we hash it for parity with accounts, but it is not
-    // used as a credential yet - switching is gated by account ownership, not a
-    // per-profile password. Profile data is isolated by profile_id as usual.
-    const password = (request.body as { password?: unknown })?.password;
-    if (password != null) passwordSchema.parse(password);
-    const passwordHash =
-      typeof password === "string" ? await hashPassword(password) : null;
+    if (config.publicMode && body.password == null) {
+      throw httpError(400, "Public mode requires a password for every viewer profile.");
+    }
+    const passwordHash = body.password != null ? await hashPassword(body.password) : null;
 
     const created = db.transaction(() => {
       // Cap the number of profiles per account (defense-in-depth against a
@@ -2655,6 +3013,13 @@ function registerRoutes(
              ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
           )
           .run(profileId, passwordHash);
+        db.sqlite
+          .prepare(
+            `INSERT INTO profile_settings (profile_id, key, value)
+             VALUES (?, 'profile_gate_kind', 'password')
+             ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
+          )
+          .run(profileId);
       }
       audit(db, auth, "account.profile.create", "profile", profileId, {
         displayName: body.displayName,
@@ -2669,6 +3034,10 @@ function registerRoutes(
         avatarColor: body.avatarColor ?? null,
         simpleMode: body.simpleMode,
         isDefault: false,
+        isKid: false,
+        maturityMax: null,
+        hasPin: passwordHash != null,
+        gateType: passwordHash != null ? "password" : "none",
       },
     };
   });
@@ -2787,6 +3156,7 @@ function registerRoutes(
     // the entire maturity lockdown. LEAVING a kid profile (switching to any other
     // profile) requires the ACCOUNT password. Entering a kid profile, and no-op
     // re-selects of the same profile, stay free.
+    let accountUnlocked = false;
     if (auth.isKid && body.profileId !== auth.profileId) {
       const row = db.sqlite
         .prepare("SELECT password_hash FROM users WHERE id = ?")
@@ -2802,6 +3172,7 @@ function registerRoutes(
         audit(db, auth, "account.profile.switch.locked", "profile", body.profileId);
         throw httpError(403, "The account password is required to leave a kid profile.");
       }
+      accountUnlocked = true;
     }
     // Per-profile PIN: a household gate, NOT encryption. ENTERING a profile that
     // has a PIN requires it (a no-op re-select of the currently-active profile is
@@ -2815,14 +3186,14 @@ function registerRoutes(
            WHERE profile_id = ? AND key = 'profile_password_hash'`,
         )
         .get(body.profileId) as { value: string } | undefined;
-      if (pinRow != null) {
+      if (pinRow != null && !accountUnlocked) {
         const ok =
           body.password != null &&
           (await verifyPassword(pinRow.value, body.password));
         if (!ok) {
           rateLimit(request, `profile:pin:${body.profileId}`, 10, 60 * 1000);
           audit(db, auth, "account.profile.switch.locked", "profile", body.profileId);
-          throw httpError(403, "This profile is protected by a PIN.");
+          throw httpError(403, "This profile is password protected.");
         }
       }
     }
@@ -2843,6 +3214,39 @@ function registerRoutes(
   // PIN; a member sets only their own. The PIN gates switching INTO the profile
   // (see /api/profiles/switch). It is a household gate, not encryption - local
   // data is not encrypted at rest and the copy must not over-promise.
+  app.post("/api/profiles/password", async (request) => {
+    const auth = requireAuth(db, request);
+    requireCsrf(request);
+    const body = parseBody(setProfilePasswordSchema, request.body);
+    if (ownedLiveProfile(auth.userId, body.profileId) == null) {
+      throw httpError(404, "Profile not found.");
+    }
+    const isSelf = body.profileId === auth.profileId;
+    const isManager = auth.role === "owner" || auth.role === "admin";
+    if (!isSelf && !isManager) {
+      throw httpError(403, "You can only change your own profile password.");
+    }
+    const passwordHash = await hashPassword(body.password);
+    db.transaction(() => {
+      db.sqlite
+        .prepare(
+          `INSERT INTO profile_settings (profile_id, key, value)
+           VALUES (?, 'profile_password_hash', ?)
+           ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
+        )
+        .run(body.profileId, passwordHash);
+      db.sqlite
+        .prepare(
+          `INSERT INTO profile_settings (profile_id, key, value)
+           VALUES (?, 'profile_gate_kind', 'password')
+           ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
+        )
+        .run(body.profileId);
+      audit(db, auth, "account.profile.password.set", "profile", body.profileId);
+    });
+    return { profiles: accountProfileState(db, auth) };
+  });
+
   app.post("/api/profiles/pin", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
@@ -2860,10 +3264,19 @@ function registerRoutes(
       throw httpError(403, "You can only change your own profile PIN.");
     }
     if (body.pin == null) {
+      if (config.publicMode) {
+        throw httpError(400, "Public mode does not allow passwordless viewer profiles.");
+      }
       db.sqlite
         .prepare(
           `DELETE FROM profile_settings
            WHERE profile_id = ? AND key = 'profile_password_hash'`,
+        )
+        .run(body.profileId);
+      db.sqlite
+        .prepare(
+          `DELETE FROM profile_settings
+           WHERE profile_id = ? AND key = 'profile_gate_kind'`,
         )
         .run(body.profileId);
       audit(db, auth, "account.profile.pin.clear", "profile", body.profileId);
@@ -2876,6 +3289,13 @@ function registerRoutes(
            ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
         )
         .run(body.profileId, pinHash);
+      db.sqlite
+        .prepare(
+          `INSERT INTO profile_settings (profile_id, key, value)
+           VALUES (?, 'profile_gate_kind', 'pin')
+           ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value`,
+        )
+        .run(body.profileId);
       audit(db, auth, "account.profile.pin.set", "profile", body.profileId);
     }
     // Echo the refreshed picker so the client updates the lock affordance.
@@ -3634,6 +4054,7 @@ function registerRoutes(
 
   app.get("/api/search", async (request) => {
     const auth = requireAuth(db, request);
+    rateLimit(request, `media:search:${auth.profileId}`, 60, 60 * 1000);
     // Kid profiles have no free-text search - only the curated, cert-capped
     // browse surfaces. Blocking here keeps a kid from typing past the cap.
     if (auth.isKid) throw httpError(403, "Search is disabled on this profile.");
@@ -3647,17 +4068,20 @@ function registerRoutes(
 
   app.get("/api/discover/home", async (request) => {
     const auth = requireAuth(db, request);
+    rateLimit(request, `media:home:${auth.profileId}`, 60, 60 * 1000);
     return getServerDiscoverHome(db, config, auth.profileId, maturityAudience(auth));
   });
 
   app.get("/api/catalog/category", async (request) => {
     const auth = requireAuth(db, request);
+    rateLimit(request, `media:category:${auth.profileId}`, 120, 60 * 1000);
     const query = parseBody(mediaCategoryQuerySchema, request.query);
     return getServerCategory(db, config, auth.profileId, query, maturityAudience(auth));
   });
 
   app.get("/api/catalog/discover", async (request) => {
     const auth = requireAuth(db, request);
+    rateLimit(request, `media:discover:${auth.profileId}`, 120, 60 * 1000);
     const rawQuery = (request.query ?? {}) as Record<string, unknown>;
     const query = parseBody(mediaDiscoverBaseQuerySchema, rawQuery);
     const params = stringQueryParams(rawQuery, new Set(["type"]));
@@ -3685,6 +4109,7 @@ function registerRoutes(
   app.post("/api/calendar/upcoming", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
+    rateLimit(request, `calendar:upcoming:${auth.profileId}`, 30, 60 * 1000);
     // Series-only feature; kid browse is movie-only, so a kid has no business
     // enumerating arbitrary (uncurated) series air dates here. Block outright.
     if (auth.isKid) {
@@ -3698,6 +4123,7 @@ function registerRoutes(
 
   app.get("/api/calendar/movies", async (request) => {
     const auth = requireAuth(db, request);
+    rateLimit(request, `calendar:movies:${auth.profileId}`, 30, 60 * 1000);
     // TMDB category endpoints cannot be certification-capped. Preserve kid
     // profile safety instead of proxying an uncapped movie catalog.
     if (auth.isKid) return { releases: [] };
@@ -3709,6 +4135,7 @@ function registerRoutes(
   app.post("/api/ai/recommend", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
+    rateLimit(request, `ai:recommend:${auth.profileId}`, 10, 60 * 1000);
     // AI discovery is a free-text recommendation surface that can name over-cap
     // titles - the same class as /api/search. Kids get curated browse only.
     if (auth.isKid) throw httpError(403, "AI discovery is not available on this profile.");
@@ -3728,6 +4155,7 @@ function registerRoutes(
   app.post("/api/ai/curate", async (request) => {
     const auth = requireAuth(db, request);
     requireCsrf(request);
+    rateLimit(request, `ai:curate:${auth.profileId}`, 10, 60 * 1000);
     if (auth.isKid) throw httpError(403, "AI discovery is not available on this profile.");
     const body = parseBody(aiRecommendBodySchema, request.body);
     const out = await curateServerAI(db, config, auth.profileId, body);
@@ -3828,6 +4256,7 @@ function registerRoutes(
 
   app.get("/api/media/detail", async (request) => {
     const auth = requireAuth(db, request);
+    rateLimit(request, `media:detail:${auth.profileId}`, 120, 60 * 1000);
     const query = parseBody(mediaDetailQuerySchema, request.query);
     await requireTitleWithinCap(auth, query.id, query.type);
     return getServerDetail(db, config, auth.profileId, {
@@ -3965,6 +4394,7 @@ function registerRoutes(
 
   app.get("/api/streams/:imdbId", async (request) => {
     const auth = requireAuth(db, request);
+    rateLimit(request, `streams:search:${auth.profileId}`, 60, 60 * 1000);
     const imdbId = z
       .string()
       .trim()
@@ -4259,6 +4689,106 @@ function registerRoutes(
     },
   });
 
+  // Cookie-free external-player bridge. The capability is the same HMAC grant
+  // returned with this one stream session, not an account-wide credential. It
+  // remains bound to the session profile, expiry, and revocation row. Keeping
+  // the token in a dedicated path lets Cloudflare Access users bypass ONLY
+  // `/api/external-stream/*` while every account and API route stays behind
+  // Access. Disable automatic request logging so the capability is not written
+  // to the application log by Fastify/Pino.
+  app.route({
+    method: ["GET", "HEAD"],
+    url: "/api/external-stream/:id/:token",
+    logLevel: "silent",
+    handler: async (request, reply) => {
+      const params = request.params as { id: string; token: string };
+      const id = sessionIdParamSchema.parse(params.id);
+      const bearer = z.string().trim().min(32).max(128).parse(params.token);
+      const row = db.sqlite
+        .prepare(
+          `SELECT id, profile_id, encrypted_upstream_url, content_type, expires_at
+           FROM stream_sessions
+           WHERE id = ?
+             AND revoked_at IS NULL
+             AND expires_at > ?
+           LIMIT 1`,
+        )
+        .get(id, nowISO()) as
+        | {
+            id: string;
+            profile_id: string;
+            encrypted_upstream_url: string;
+            content_type: string | null;
+            expires_at: string;
+          }
+        | undefined;
+      if (
+        row == null ||
+        !streamPlaybackTokenMatches(
+          config,
+          { id: row.id, profileId: row.profile_id, expiresAt: row.expires_at },
+          bearer,
+        )
+      ) {
+        throw httpError(404, "Stream session not found.");
+      }
+
+      const upstreamUrl = decryptSecret(row.encrypted_upstream_url, config.secretKey);
+      const headers: Record<string, string> = {};
+      const range = request.headers.range;
+      if (typeof range === "string") headers.range = range;
+
+      const controller = new AbortController();
+      request.raw.once("close", () => controller.abort());
+      const upstream = await fetchUpstreamSafely(
+        upstreamUrl,
+        {
+          method: request.method,
+          headers,
+          signal: controller.signal,
+        },
+        config.allowRawStreamUrls,
+      );
+
+      reply.header("cache-control", "private, no-store");
+      reply.header("referrer-policy", "no-referrer");
+      reply.status(upstream.status);
+      for (const header of [
+        "accept-ranges",
+        "content-length",
+        "content-range",
+        "content-type",
+        "etag",
+        "last-modified",
+      ]) {
+        const value = upstream.headers.get(header);
+        if (value != null) reply.header(header, value);
+      }
+      if (row.content_type != null && upstream.headers.get("content-type") == null) {
+        reply.header("content-type", row.content_type);
+      }
+
+      if (request.method === "HEAD" || upstream.body == null) {
+        recordStreamTransfer(db, {
+          sessionId: row.id,
+          profileId: row.profile_id,
+          bytes: 0,
+          status: upstream.status,
+          completed: true,
+        });
+        return reply.send();
+      }
+      return reply.send(
+        countedStream(db, {
+          sessionId: row.id,
+          profileId: row.profile_id,
+          status: upstream.status,
+          body: upstream.body as ReadableStream<Uint8Array>,
+        }),
+      );
+    },
+  });
+
   // --- Server-side transcoding (Phase 3b, opt-in) ----------------------------
   // When transcoding isn't available (flag off OR ffmpeg absent), both routes
   // 404 - indistinguishable from "not found" - and nothing above changes.
@@ -4349,6 +4879,43 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(cookie);
 
   app.addHook("onRequest", async (request, reply) => {
+    reply.header(
+      "content-security-policy",
+      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https: wss:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'",
+    );
+    reply.header("x-frame-options", "DENY");
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("referrer-policy", "no-referrer");
+    reply.header(
+      "permissions-policy",
+      "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    );
+    const forwardedProto = Array.isArray(request.headers["x-forwarded-proto"])
+      ? request.headers["x-forwarded-proto"][0]
+      : request.headers["x-forwarded-proto"];
+    if (request.protocol === "https" || (config.trustProxy && forwardedProto === "https")) {
+      reply.header("strict-transport-security", "max-age=31536000; includeSubDomains");
+    }
+
+    if (config.bindSessionUserAgent) {
+      const cookieValue = readSessionCookie(request);
+      if (cookieValue != null) {
+        const row = db.sqlite
+          .prepare("SELECT user_agent FROM sessions WHERE id = ? AND token_hash = ? AND revoked_at IS NULL")
+          .get(cookieValue.sessionId, sha256(cookieValue.rawToken)) as { user_agent: string | null } | undefined;
+        const presented = request.headers["user-agent"] ?? null;
+        if (row != null && row.user_agent !== presented) {
+          db.sqlite
+            .prepare("UPDATE sessions SET revoked_at = ? WHERE id = ?")
+            .run(nowISO(), cookieValue.sessionId);
+          clearSessionCookies(reply, config);
+          audit(db, null, "auth.session.user_agent_mismatch", "session", cookieValue.sessionId, {
+            ipHash: hashOptional(request.ip),
+          });
+        }
+      }
+    }
+
     const origin = Array.isArray(request.headers.origin)
       ? request.headers.origin[0]
       : request.headers.origin;

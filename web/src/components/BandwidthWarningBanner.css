@@ -26,7 +26,7 @@
 }
 
 .bandwidth-warning p {
-  margin: 3px 0 0;
+  margin: calc(3px * var(--density-scale)) 0 0;
   color: var(--text-secondary);
   font-size: 0.82rem;
   line-height: 1.35;
@@ -36,7 +36,7 @@
   flex: 0 0 auto;
   border: 1px solid currentColor;
   border-radius: var(--r-sm);
-  padding: 6px 10px;
+  padding: calc(6px * var(--density-scale)) calc(10px * var(--density-scale));
   color: inherit;
   background: transparent;
   font: inherit;

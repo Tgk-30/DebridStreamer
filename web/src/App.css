@@ -7,8 +7,8 @@
      window edges, --nav-content-gap the breathing room between rail and content,
      and --nav-safe-left the total horizontal space the floating rail reserves so
      text/interactive content never hides under it. 0 on mobile (bottom bar). */
-  --nav-gap: 14px;
-  --nav-content-gap: 22px;
+  --nav-gap: calc(14px * var(--density-scale));
+  --nav-content-gap: calc(22px * var(--density-scale));
   --nav-safe-left: 0px;
   --mobile-nav-height: clamp(72px, 15.5vw, 78px);
   --mobile-nav-bottom: max(12px, env(safe-area-inset-bottom));
@@ -34,8 +34,8 @@
    shows (App.tsx sets data-setup-nudge only while the card is mounted - zero
    cost once dismissed or configured). */
 .app[data-setup-nudge] .app-content {
-  padding-bottom: calc(96px + var(--sp-lg));
-  scroll-padding-bottom: calc(96px + var(--sp-lg));
+  padding-bottom: calc(96px * var(--density-scale) + var(--sp-lg));
+  scroll-padding-bottom: calc(96px * var(--density-scale) + var(--sp-lg));
 }
 
 /* Route transition - a brief lift + fade on each screen mount. The keyed
@@ -87,8 +87,8 @@
 
   /* On mobile the nudge wraps its action row, so reserve more. */
   .app[data-setup-nudge] .app-content {
-    padding-bottom: calc(var(--mobile-nav-reserve) + 128px);
-    scroll-padding-bottom: calc(var(--mobile-nav-reserve) + 128px);
+    padding-bottom: calc(var(--mobile-nav-reserve) + calc(128px * var(--density-scale)));
+    scroll-padding-bottom: calc(var(--mobile-nav-reserve) + calc(128px * var(--density-scale)));
   }
 }
 
@@ -137,8 +137,8 @@
     --nav-safe-left: 0px;
   }
   :root[data-nav-position="bottom"] .app-content {
-    padding-bottom: calc(58px + var(--nav-gap, 14px) + var(--sp-lg));
-    scroll-padding-bottom: calc(58px + var(--nav-gap, 14px) + var(--sp-lg));
+    padding-bottom: calc(58px * var(--density-scale) + var(--nav-gap, calc(14px * var(--density-scale))) + var(--sp-lg));
+    scroll-padding-bottom: calc(58px * var(--density-scale) + var(--nav-gap, calc(14px * var(--density-scale))) + var(--sp-lg));
   }
 }
 

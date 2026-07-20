@@ -43,6 +43,7 @@ import {
   ServerHealthPanel,
   ServerUsagePanel,
   SessionsPanel,
+  TotpPanel,
   formatShortDate,
   type ActiveStreamSession,
   type CredentialProvider,
@@ -51,6 +52,7 @@ import {
   type ServerHealth,
   type ServerRole,
   type ServerSessionEntry,
+  type ServerTotpStatus,
   type ServerUsage,
 } from "./settings/ServerStatusPanels";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
@@ -2432,6 +2434,17 @@ function ServerTab() {
   const [activeStreams, setActiveStreams] = useState<ActiveStreamSession[]>([]);
   const [pendingRequests, setPendingRequests] = useState<RequestRecord[]>([]);
   const [sessions, setSessions] = useState<ServerSessionEntry[]>([]);
+  const [totpStatus, setTotpStatus] = useState<ServerTotpStatus>({
+    enabled: false,
+    enrollmentPending: false,
+  });
+  const [totpEnrollment, setTotpEnrollment] = useState<{
+    secret: string;
+    otpauthUrl: string;
+  } | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [totpCurrentPassword, setTotpCurrentPassword] = useState("");
+  const [totpBusy, setTotpBusy] = useState(false);
   const [invites, setInvites] = useState<ServerInvite[]>([]);
   const [auditEvents, setAuditEvents] = useState<ServerAuditEvent[]>([]);
   const [inviteDraft, setInviteDraft] = useState({
@@ -2498,6 +2511,7 @@ function ServerTab() {
         activeStreamsResponse,
         requestsResponse,
         sessionsResponse,
+        totpResponse,
         invitesResponse,
         credentialsResponse,
         auditResponse,
@@ -2527,6 +2541,12 @@ function ServerTab() {
           "/api/auth/sessions",
         ),
         admin
+          ? serverRequest<ServerTotpStatus>("GET", "/api/auth/totp").catch(() => ({
+              enabled: false,
+              enrollmentPending: false,
+            }))
+          : Promise.resolve({ enabled: false, enrollmentPending: false }),
+        admin
           ? serverRequest<{ invites: ServerInvite[] }>("GET", "/api/admin/invites")
           : Promise.resolve({ invites: [] }),
         serverRequest<{ credentials: EffectiveCredential[] }>(
@@ -2548,6 +2568,7 @@ function ServerTab() {
       setActiveStreams(activeStreamsResponse.streams);
       setPendingRequests(requestsResponse.requests);
       setSessions(sessionsResponse.sessions);
+      setTotpStatus(totpResponse);
       setInvites(invitesResponse.invites);
       setEffectiveCredentials(credentialsResponse.credentials);
       setAuditEvents(auditResponse.events);
@@ -2679,6 +2700,72 @@ function ServerTab() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function revokeAllSessions() {
+    setMessage(null);
+    setError(null);
+    try {
+      await serverRequest("POST", "/api/auth/sessions/revoke-all", {
+        includeCurrent: true,
+      });
+      notifyUnauthorized();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function enrollTotp() {
+    setTotpBusy(true);
+    setError(null);
+    try {
+      const enrollment = await serverRequest<{ secret: string; otpauthUrl: string }>(
+        "POST",
+        "/api/auth/totp/enroll",
+      );
+      setTotpEnrollment(enrollment);
+      setTotpStatus({ enabled: false, enrollmentPending: true });
+      setTotpCode("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTotpBusy(false);
+    }
+  }
+
+  async function confirmTotp() {
+    setTotpBusy(true);
+    setError(null);
+    try {
+      await serverRequest("POST", "/api/auth/totp/confirm", { code: totpCode });
+      setTotpStatus({ enabled: true, enrollmentPending: false });
+      setTotpEnrollment(null);
+      setTotpCode("");
+      setMessage("Two-factor authentication enabled.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTotpBusy(false);
+    }
+  }
+
+  async function disableTotp() {
+    setTotpBusy(true);
+    setError(null);
+    try {
+      await serverRequest("POST", "/api/auth/totp/disable", {
+        currentPassword: totpCurrentPassword,
+        code: totpCode,
+      });
+      setTotpStatus({ enabled: false, enrollmentPending: false });
+      setTotpCurrentPassword("");
+      setTotpCode("");
+      setMessage("Two-factor authentication disabled.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTotpBusy(false);
     }
   }
 
@@ -2870,9 +2957,25 @@ function ServerTab() {
         saving={saving === "password"}
       />
 
+      {canAdmin && (
+        <TotpPanel
+          status={totpStatus}
+          enrollment={totpEnrollment}
+          code={totpCode}
+          currentPassword={totpCurrentPassword}
+          busy={totpBusy}
+          onCodeChange={setTotpCode}
+          onCurrentPasswordChange={setTotpCurrentPassword}
+          onEnroll={() => void enrollTotp()}
+          onConfirm={() => void confirmTotp()}
+          onDisable={() => void disableTotp()}
+        />
+      )}
+
       <SessionsPanel
         sessions={sessions}
         onRevoke={(id) => void revokeSession(id)}
+        onRevokeAll={() => void revokeAllSessions()}
       />
 
       {!isRestricted && (

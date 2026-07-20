@@ -29,7 +29,7 @@
 }
 .ksh-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 700;
 }
 .ksh-close {
@@ -56,7 +56,7 @@
 }
 .ksh-group-title {
   margin: 0 0 var(--sp-sm);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -67,24 +67,24 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
 }
 .ksh-row {
   display: grid;
   grid-template-columns: 110px 1fr;
   align-items: center;
   gap: var(--sp-sm);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .ksh-keys {
   justify-self: start;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: calc(3px * var(--density-scale)) calc(8px * var(--density-scale));
+  border-radius: calc(6px * var(--radius-scale));
   border: 1px solid var(--glass-border);
   background: var(--glass-tint-control);
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 .ksh-label {

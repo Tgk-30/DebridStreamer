@@ -12,7 +12,7 @@
   gap: var(--sp-md);
   width: min(680px, calc(100% - var(--sp-xl)));
   padding: var(--sp-md) var(--sp-lg);
-  border-radius: var(--r-lg, 18px);
+  border-radius: var(--r-lg, calc(18px * var(--radius-scale)));
 }
 .setup-nudge-actions {
   display: flex;
@@ -33,15 +33,15 @@
 .setup-nudge-text {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: calc(1px * var(--density-scale));
   min-width: 0;
   flex: 1 1 auto;
 }
 .setup-nudge-text strong {
-  font-size: 13.5px;
+  font-size: 0.84375rem;
 }
 .setup-nudge-text span {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .setup-nudge-cta {
   flex: 0 0 auto;

@@ -1,6 +1,6 @@
 .downloads-note {
   margin: var(--sp-sm) 0 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .downloads-table {
@@ -39,15 +39,15 @@
   color: var(--text-primary);
 }
 .downloads-section-heading {
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 700;
 }
 .downloads-show-heading {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
 }
 .downloads-season-heading {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--text-secondary);
   letter-spacing: 0.04em;
@@ -61,14 +61,14 @@
   gap: var(--sp-sm);
   padding: var(--sp-sm);
   border-radius: var(--r-sm);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .downloads-row:not(.downloads-row-head):hover {
   background: var(--glass-tint-control-hover);
 }
 .downloads-row-head {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
 }
@@ -77,7 +77,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 5px;
+  gap: calc(5px * var(--density-scale));
 }
 .downloads-title strong,
 .downloads-progress small {
@@ -88,13 +88,13 @@
 .downloads-progress small,
 .downloads-mode {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
 }
 .downloads-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 2px;
+  gap: calc(2px * var(--density-scale));
 }
 .downloads-cancel:hover {
   background: rgba(var(--danger-rgb), 0.12);

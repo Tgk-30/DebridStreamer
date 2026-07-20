@@ -30,11 +30,11 @@
 /* No-TMDB-key hint under the hero: why the page looks sparse + the fix. */
 .detail-nokey-hint {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   line-height: 1.5;
 }
 .detail-nokey-link {
-  margin-left: 6px;
+  margin-left: calc(6px * var(--density-scale));
   border: none;
   background: none;
   padding: 0;
@@ -78,8 +78,8 @@
 .detail-download-menu-head p,
 .detail-download-track-note,
 .detail-download-notice {
-  margin: 4px 0 0;
-  font-size: 12px;
+  margin: calc(4px * var(--density-scale)) 0 0;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 .detail-download-modes,
@@ -91,8 +91,8 @@
 .detail-download-field {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  font-size: 12px;
+  gap: calc(5px * var(--density-scale));
+  font-size: 0.75rem;
   font-weight: 650;
   color: var(--text-secondary);
 }
@@ -107,7 +107,7 @@
 .detail-download-field input {
   min-width: 0;
   min-height: 34px;
-  padding: 7px 9px;
+  padding: calc(7px * var(--density-scale)) calc(9px * var(--density-scale));
   font: inherit;
   font-weight: 500;
   color: var(--text-primary);
@@ -138,18 +138,18 @@
 .detail-download-estimate {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: calc(3px * var(--density-scale));
   padding: var(--sp-sm) var(--sp-md);
   border: 0.75px solid rgba(var(--accent-rgb), 0.35);
   border-radius: var(--r-sm);
   color: var(--text-secondary);
   background: rgba(var(--accent-rgb), 0.09);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 .detail-download-estimate strong {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .detail-download-source {
   overflow: hidden;
@@ -186,10 +186,10 @@
   display: flex;
   justify-content: center;
   padding:
-    max(clamp(16px, 4vw, 48px), env(safe-area-inset-top))
-    max(16px, env(safe-area-inset-right))
-    max(clamp(16px, 4vw, 48px), env(safe-area-inset-bottom))
-    max(16px, env(safe-area-inset-left));
+    max(clamp(calc(16px * var(--density-scale)), 4vw, calc(48px * var(--density-scale))), env(safe-area-inset-top))
+    max(calc(16px * var(--density-scale)), env(safe-area-inset-right))
+    max(clamp(calc(16px * var(--density-scale)), 4vw, calc(48px * var(--density-scale))), env(safe-area-inset-bottom))
+    max(calc(16px * var(--density-scale)), env(safe-area-inset-left));
   overflow-y: auto;
   overscroll-behavior: contain;
   /* Opaque base, no full-viewport filter. */
@@ -214,24 +214,24 @@
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 18px;
-  padding: 6px 0 12px;
+  gap: calc(14px * var(--density-scale));
+  margin-bottom: calc(18px * var(--density-scale));
+  padding: calc(6px * var(--density-scale)) 0 calc(12px * var(--density-scale));
   background: linear-gradient(var(--bg-1) 82%, transparent);
 }
 .episode-streams-back {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 14px;
+  gap: calc(4px * var(--density-scale));
+  font-size: 0.875rem;
   font-weight: 600;
   font-family: inherit;
   color: var(--text-primary, #fff);
   background: var(--glass-tint-control, rgba(255, 255, 255, 0.07));
   border: 0.75px solid var(--glass-border, rgba(255, 255, 255, 0.14));
-  border-radius: var(--r-pill, 999px);
-  padding: 9px 16px 9px 12px;
+  border-radius: var(--r-pill, calc(999px * var(--radius-scale)));
+  padding: calc(9px * var(--density-scale)) calc(16px * var(--density-scale)) calc(9px * var(--density-scale)) calc(12px * var(--density-scale));
   cursor: pointer;
   transition: background 0.16s, border-color 0.16s;
 }
@@ -241,7 +241,7 @@
 }
 .episode-streams-title {
   min-width: 0;
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   overflow: hidden;
@@ -253,8 +253,8 @@
 .detail-trailer-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  margin: 4px 0 10px;
+  gap: calc(8px * var(--density-scale));
+  margin: calc(4px * var(--density-scale)) 0 calc(10px * var(--density-scale));
 }
 
 /* Rate control - the stars sit behind an explicit "Rate" button until revealed. */
@@ -270,7 +270,7 @@
   gap: var(--sp-md);
 }
 .detail-rate-title {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -278,13 +278,13 @@
 }
 .detail-rate-done {
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
   color: var(--accent);
   border: 0;
   border-radius: var(--r-pill);
   background: var(--glass-tint-control, rgba(255, 255, 255, 0.08));
-  padding: 4px 9px;
+  padding: calc(4px * var(--density-scale)) calc(9px * var(--density-scale));
   cursor: pointer;
 }
 .detail-rate-done:hover {
@@ -297,9 +297,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
   margin: 0;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   line-height: 1.5;
 }
 .detail-ai-hint-link {

@@ -34,9 +34,13 @@ export function useTheme(settings: AppSettings): void {
     if (accent.id === "theme") {
       root.style.removeProperty("--accent");
       root.style.removeProperty("--accent-rgb");
+      root.style.removeProperty("--accent-secondary");
+      root.style.removeProperty("--accent-secondary-rgb");
     } else {
       root.style.setProperty("--accent", accent.color);
       root.style.setProperty("--accent-rgb", accent.rgb);
+      root.style.setProperty("--accent-secondary", accent.secondaryColor);
+      root.style.setProperty("--accent-secondary-rgb", accent.secondaryRgb);
     }
 
     const blur = Math.round(settings.appearanceBlur);

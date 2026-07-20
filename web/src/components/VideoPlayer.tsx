@@ -88,6 +88,10 @@ interface VideoPlayerProps {
   /** Native built-in failure fallback. Called only after libmpv fails, never on
    * the normal native path, so lossless playback starts without transcode delay. */
   requestWebviewFallback?: () => Promise<string | null>;
+  /** Cookie-free, stream-scoped URL for a native player launched by the hosted
+   * web app. Server Mode uses `/api/external-stream/*`; local mode may pass the
+   * resolved source directly. */
+  externalPlaybackUrl?: string | null;
   onClose: () => void;
   /** Reports playback progress (seconds watched + total duration) so the store
    * can persist a resume position. Called periodically and on close. */
@@ -264,6 +268,36 @@ function inferEngine(url: string, kind?: Playability): PlaybackEngine {
     : "webview-direct";
 }
 
+function clockLabel(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const whole = Math.floor(seconds);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const secs = String(whole % 60).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${secs}`
+    : `${minutes}:${secs}`;
+}
+
+/** Browsers cannot spawn arbitrary local executables. A tiny M3U file is the
+ * interoperable handoff understood by VLC, IINA, mpv frontends, and the OS
+ * "open with" picker. Its URL is a stream-scoped capability, never a session
+ * cookie or debrid credential. */
+function downloadExternalPlaylist(url: string, title: string): void {
+  const safeTitle = title.replace(/[\r\n]+/g, " ").trim() || "YAWF Stream";
+  const body = `#EXTM3U\n#EXTINF:-1,${safeTitle}\n${url}\n`;
+  const blob = new Blob([body], { type: "audio/x-mpegurl" });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = `${safeTitle.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "") || "yawf-stream"}.m3u`;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+}
+
 /** Return the Trakt percentage at a lifecycle event, never a progress-tick. */
 function playbackProgressPct(current: number, duration: number): number {
   if (!Number.isFinite(current) || !Number.isFinite(duration) || duration <= 0) {
@@ -274,6 +308,16 @@ function playbackProgressPct(current: number, duration: number): number {
 
 interface WebviewScrubberHandle {
   setCurrentTime(time: number): void;
+}
+
+interface HlsLevelChoice {
+  index: number;
+  label: string;
+}
+
+interface HlsAudioChoice {
+  index: number;
+  label: string;
 }
 
 /** Keep media-clock updates local to the scrub bar. Browser `timeupdate` fires
@@ -323,6 +367,7 @@ export function VideoPlayer({
   kind,
   engine,
   requestWebviewFallback,
+  externalPlaybackUrl,
   onClose,
   onProgress,
   startPositionSeconds,
@@ -380,6 +425,9 @@ export function VideoPlayer({
   const [webviewPaused, setWebviewPaused] = useState(false);
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [castSuspended, setCastSuspended] = useState(false);
+  const [webMenuOpen, setWebMenuOpen] = useState(false);
+  const [webRecoveryPending, setWebRecoveryPending] = useState(false);
+  const [externalActionStatus, setExternalActionStatus] = useState<string | null>(null);
   const [playbackAttempt, setPlaybackAttempt] = useState(0);
   const [activeSubtitleUrl, setActiveSubtitleUrl] = useState<string | null>(null);
   const [chromeHovered, setChromeHovered] = useState(false);
@@ -387,7 +435,7 @@ export function VideoPlayer({
   const chromeHideTimer = useRef<number | undefined>(undefined);
   const lastChromeNudgeAt = useRef(Number.NEGATIVE_INFINITY);
   const chromePinned =
-    webviewPaused || captionsOpen || detailsSection != null || chromeHovered || chromeFocused;
+    webviewPaused || captionsOpen || webMenuOpen || detailsSection != null || chromeHovered || chromeFocused;
   const chromePinnedRef = useRef(chromePinned);
   chromePinnedRef.current = chromePinned;
   const playerDialogRef = useModalA11y<HTMLDivElement>(
@@ -519,6 +567,63 @@ export function VideoPlayer({
     recordDiagnostic("player", "native.fallback_ready");
     return true;
   }, [requestWebviewFallback, requestedEngine, url]);
+
+  const recoveryPendingRef = useRef(false);
+  const handleWebviewPlaybackError = useCallback(
+    async (message: string) => {
+      recordDiagnostic("player", "webview.playback_failed", "error", message);
+      if (
+        effectiveEngine === "webview-direct" &&
+        activeFallback == null &&
+        requestWebviewFallback != null &&
+        !recoveryPendingRef.current
+      ) {
+        recoveryPendingRef.current = true;
+        setWebRecoveryPending(true);
+        setExternalActionStatus("Preparing a browser-compatible stream…");
+        const recovered = await recoverNativeInWebview();
+        recoveryPendingRef.current = false;
+        setWebRecoveryPending(false);
+        setExternalActionStatus(null);
+        if (recovered) return;
+      }
+      setExternalError(message);
+    }, [
+      activeFallback,
+      effectiveEngine,
+      recoverNativeInWebview,
+      requestWebviewFallback,
+    ],
+  );
+
+  const externalTarget = externalPlaybackUrl?.trim() || effectiveUrl;
+  const openExternalPlayback = useCallback(async () => {
+    setExternalActionStatus(null);
+    try {
+      if (underTauri) {
+        const status = await openInExternalPlayer(
+          externalTarget,
+          preferredPlayer,
+          playbackAuthorization,
+        );
+        setExternalActionStatus(status);
+      } else {
+        downloadExternalPlaylist(externalTarget, title);
+        setExternalActionStatus("Player file downloaded. Open it with VLC, IINA, or mpv.");
+      }
+      recordDiagnostic("player", "external.started");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setExternalActionStatus(message);
+      recordDiagnostic("player", "external.start_failed", "error");
+    }
+  }, [
+    externalTarget,
+    playbackAuthorization,
+    preferredPlayer,
+    title,
+    underTauri,
+  ]);
 
   // Native hand-off when running under Tauri and the in-window player is off.
   // Primary path is the BUNDLED mpv sidecar (shipped + app-controlled over IPC);
@@ -722,6 +827,7 @@ export function VideoPlayer({
             onActivity={nudgeChrome}
             onPausedChange={setWebviewPaused}
             onCaptionsOpenChange={setCaptionsOpen}
+            onMenuOpenChange={setWebMenuOpen}
             onCastLocalPlaybackChange={setCastSuspended}
             suspended={castSuspended}
             onActiveSubtitleUrlChange={setActiveSubtitleUrl}
@@ -730,10 +836,9 @@ export function VideoPlayer({
             onProgress={onProgress}
             savedPrefs={savedPrefs}
             startPositionSeconds={startPositionSeconds}
-            onPlaybackError={(message) => {
-              recordDiagnostic("player", "webview.playback_failed", "error", message);
-              setExternalError(message);
-            }}
+            onPlaybackError={(message) => void handleWebviewPlaybackError(message)}
+            onOpenExternalPlayer={() => void openExternalPlayback()}
+            externalActionStatus={externalActionStatus}
             subtitleClient={subtitleClient ?? null}
             translator={translator ?? null}
             imdbId={imdbId ?? null}
@@ -750,6 +855,8 @@ export function VideoPlayer({
             url={effectiveUrl}
             status={externalStatus}
             error={externalError}
+            externalStatus={externalActionStatus}
+            onOpenExternal={() => void openExternalPlayback()}
             onRetry={
               mode === "webview" && externalError != null
                 ? () => {
@@ -760,6 +867,12 @@ export function VideoPlayer({
                 : undefined
             }
           />
+        )}
+        {webRecoveryPending && (
+          <div className="player-compatibility-status" role="status">
+            <Icon name="refresh" size={22} />
+            <span>Preparing a browser-compatible stream…</span>
+          </div>
         )}
       </div>
     </div>,
@@ -784,6 +897,7 @@ function WebviewPlayer({
   onActivity,
   onPausedChange,
   onCaptionsOpenChange,
+  onMenuOpenChange,
   onCastLocalPlaybackChange,
   suspended,
   onActiveSubtitleUrlChange,
@@ -793,6 +907,8 @@ function WebviewPlayer({
   savedPrefs,
   startPositionSeconds,
   onPlaybackError,
+  onOpenExternalPlayer,
+  externalActionStatus,
   subtitleClient,
   translator,
   imdbId,
@@ -816,6 +932,7 @@ function WebviewPlayer({
   onActivity: () => void;
   onPausedChange: (paused: boolean) => void;
   onCaptionsOpenChange: (open: boolean) => void;
+  onMenuOpenChange: (open: boolean) => void;
   onCastLocalPlaybackChange: (suspended: boolean) => void;
   suspended: boolean;
   onActiveSubtitleUrlChange: (url: string | null) => void;
@@ -829,6 +946,8 @@ function WebviewPlayer({
   savedPrefs?: PlaybackPrefs | null;
   startPositionSeconds?: number;
   onPlaybackError: (message: string) => void;
+  onOpenExternalPlayer: () => void;
+  externalActionStatus: string | null;
   subtitleClient: SubtitleClient | null;
   translator: Translator | null;
   imdbId: string | null;
@@ -840,13 +959,18 @@ function WebviewPlayer({
   autoCountdown?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<HlsInstance | null>(null);
   const autoplayAttemptedRef = useRef(false);
   const pausedForCastRef = useRef(false);
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
   const scrubberRef = useRef<WebviewScrubberHandle | null>(null);
+  const lastClockSecondRef = useRef(-1);
+  const clockRef = useRef<HTMLSpanElement | null>(null);
   const [duration, setDuration] = useState(0);
   const [captionsOpen, setCaptionsOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [videoFit, setVideoFit] = useState<"contain" | "cover" | "fill">("contain");
   const [paused, setPaused] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -866,6 +990,10 @@ function WebviewPlayer({
   const [isPictureInPicture, setIsPictureInPicture] = useState(false);
   const [airPlayAvailable, setAirPlayAvailable] = useState(false);
   const [remotePlaybackAvailable, setRemotePlaybackAvailable] = useState(false);
+  const [hlsLevels, setHlsLevels] = useState<HlsLevelChoice[]>([]);
+  const [hlsLevel, setHlsLevel] = useState(-1);
+  const [hlsAudioTracks, setHlsAudioTracks] = useState<HlsAudioChoice[]>([]);
+  const [hlsAudioTrack, setHlsAudioTrack] = useState(-1);
   const underTauri = isTauri();
   const mediaArtist = nowPlaying?.episodeLabel ?? subtitle ?? "";
   const mediaArtworkUrl = nowPlaying?.posterUrl ?? "";
@@ -877,6 +1005,10 @@ function WebviewPlayer({
   useEffect(() => {
     onCaptionsOpenChange(captionsOpen);
   }, [captionsOpen, onCaptionsOpenChange]);
+
+  useEffect(() => {
+    onMenuOpenChange(optionsOpen);
+  }, [onMenuOpenChange, optionsOpen]);
 
   const subs = useSubtitleTracks(subtitleClient, translator);
   useEffect(() => {
@@ -1189,6 +1321,13 @@ function WebviewPlayer({
     };
     const onTimeUpdate = () => {
       scrubberRef.current?.setCurrentTime(video.currentTime);
+      const wholeSecond = Math.floor(video.currentTime);
+      if (wholeSecond !== lastClockSecondRef.current) {
+        lastClockSecondRef.current = wholeSecond;
+        if (clockRef.current != null) {
+          clockRef.current.textContent = `${clockLabel(video.currentTime)} / ${clockLabel(video.duration)}`;
+        }
+      }
       const now = Date.now();
       if (onProgressRef.current != null && now - lastReportRef.current >= 5000) {
         lastReportRef.current = now;
@@ -1226,6 +1365,9 @@ function WebviewPlayer({
     };
     const onLoadedMeta = () => {
       if (Number.isFinite(video.duration)) setDuration(video.duration);
+      if (clockRef.current != null) {
+        clockRef.current.textContent = `${clockLabel(video.currentTime)} / ${clockLabel(video.duration)}`;
+      }
       const width = video.videoWidth;
       const height = video.videoHeight;
       onSourceSizeRef.current(
@@ -1292,6 +1434,7 @@ function WebviewPlayer({
       }
     };
     setEnded(false); // a new URL is a new playback - clear any stale end state
+    lastClockSecondRef.current = -1;
     setPaused(false);
     setPlaying(false);
     onVolumeChange();
@@ -1362,7 +1505,18 @@ function WebviewPlayer({
       // which retains every played segment: a 2h stream grows to GBs in the
       // WebContent process. 60s behind + 30s (up to 120s) ahead keeps seeks snappy
       // without the balloon.
-      instance = new Hls({ backBufferLength: 60, maxBufferLength: 30, maxMaxBufferLength: 120 });
+      instance = new Hls({
+        backBufferLength: 60,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 120,
+        // Server Mode may be a different HTTPS origin from the installed app.
+        // Manifest and segment requests must carry the app session and, when
+        // present, the Cloudflare Access browser cookie.
+        xhrSetup: (xhr) => {
+          xhr.withCredentials = true;
+        },
+      });
+      hlsRef.current = instance;
       instance.on(Hls.Events.ERROR, (_event, data) => {
         if (cancelled || !data.fatal || instance == null) return;
         const action = nextHlsRecovery(data.type, recovery);
@@ -1394,6 +1548,40 @@ function WebviewPlayer({
             : "The stream could not be decoded. Try again or choose another stream.",
         );
       });
+      instance.on(Hls.Events.MANIFEST_PARSED, () => {
+        setHlsLevels(
+          instance?.levels.map((level, index) => ({
+            index,
+            label: level.height > 0
+              ? `${level.height}p`
+              : level.bitrate > 0
+                ? `${Math.round(level.bitrate / 1000)} kbps`
+                : `Quality ${index + 1}`,
+          })) ?? [],
+        );
+        setHlsAudioTracks(
+          instance?.audioTracks.map((track, index) => ({
+            index,
+            label: track.name || track.lang || `Audio ${index + 1}`,
+          })) ?? [],
+        );
+        setHlsLevel(instance?.currentLevel ?? -1);
+        setHlsAudioTrack(instance?.audioTrack ?? -1);
+      });
+      instance.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+        setHlsLevel(data.level);
+      });
+      instance.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
+        setHlsAudioTracks(
+          instance?.audioTracks.map((track, index) => ({
+            index,
+            label: track.name || track.lang || `Audio ${index + 1}`,
+          })) ?? [],
+        );
+      });
+      instance.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
+        setHlsAudioTrack(data.id);
+      });
       instance.loadSource(url);
       instance.attachMedia(element);
     });
@@ -1401,6 +1589,9 @@ function WebviewPlayer({
       cancelled = true;
       window.clearTimeout(retryTimer);
       instance?.destroy();
+      if (hlsRef.current === instance) hlsRef.current = null;
+      setHlsLevels([]);
+      setHlsAudioTracks([]);
     };
   }, [url, isHls]);
 
@@ -1428,6 +1619,20 @@ function WebviewPlayer({
       video.currentTime = t;
       scrubberRef.current?.setCurrentTime(t);
     }
+  };
+
+  const relativeSeek = (delta: number) => {
+    const video = videoRef.current;
+    if (video == null) return;
+    const limit = Number.isFinite(video.duration) && video.duration > 0
+      ? video.duration
+      : Number.POSITIVE_INFINITY;
+    seek(Math.min(limit, Math.max(0, video.currentTime + delta)));
+  };
+
+  const toggleOptions = () => {
+    setCaptionsOpen(false);
+    setOptionsOpen((open) => !open);
   };
 
   const togglePlayerFullscreen = () => {
@@ -1564,6 +1769,29 @@ function WebviewPlayer({
           e.preventDefault();
           video.muted = !video.muted;
           break;
+        case "c":
+        case "C": {
+          e.preventDefault();
+          const ids = [null, ...subs.tracks.map((track) => track.id)];
+          const current = ids.indexOf(subs.activeTrackId);
+          subs.setActiveTrack(ids[(current + 1) % ids.length] ?? null);
+          break;
+        }
+        case "<":
+          e.preventDefault();
+          video.playbackRate = Math.max(0.5, video.playbackRate - 0.25);
+          break;
+        case ">":
+          e.preventDefault();
+          video.playbackRate = Math.min(2, video.playbackRate + 0.25);
+          break;
+        case "n":
+        case "N":
+          if (onPlayNext != null) {
+            e.preventDefault();
+            onPlayNext();
+          }
+          break;
         case "f":
         case "F": {
           e.preventDefault();
@@ -1592,7 +1820,14 @@ function WebviewPlayer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onActivity, onOpenShortcuts]);
+  }, [
+    onActivity,
+    onOpenShortcuts,
+    onPlayNext,
+    subs.activeTrackId,
+    subs.setActiveTrack,
+    subs.tracks,
+  ]);
 
   const resumePlayback = useCallback(() => {
     setPaused(false);
@@ -1630,6 +1865,20 @@ function WebviewPlayer({
     setPlaybackRate(next);
   }, []);
 
+  const changeHlsLevel = (next: number) => {
+    const hls = hlsRef.current;
+    if (hls == null) return;
+    hls.currentLevel = next;
+    setHlsLevel(next);
+  };
+
+  const changeHlsAudioTrack = (next: number) => {
+    const hls = hlsRef.current;
+    if (hls == null) return;
+    hls.audioTrack = next;
+    setHlsAudioTrack(next);
+  };
+
   return (
     <div
       className={`webview-player${suspended ? " is-casting" : ""}`}
@@ -1639,8 +1888,10 @@ function WebviewPlayer({
         <video
           ref={videoRef}
           className="player-video"
+          style={{ objectFit: videoFit }}
           autoPlay
           playsInline
+          crossOrigin={url.includes("/api/stream/") ? "use-credentials" : undefined}
           x-webkit-airplay="allow"
           onClick={togglePlayback}
           onDoubleClick={togglePlayerFullscreen}
@@ -1676,7 +1927,7 @@ function WebviewPlayer({
         </div>
       )}
 
-      {paused && !ended && !captionsOpen && !detailsOpen && !scrubbing && (
+      {paused && !ended && !captionsOpen && !optionsOpen && !detailsOpen && !scrubbing && (
         <PlayerPauseOverlay
           title={title}
           nowPlaying={nowPlaying}
@@ -1705,115 +1956,276 @@ function WebviewPlayer({
           disabled={!chromeVisible}
         />
         <div className="player-osd-row">
-          <button
-            type="button"
-            className="chip player-osd-icon-button"
-            onClick={togglePlayback}
-            aria-label={playing ? "Pause" : "Play"}
-            title={playing ? "Pause" : "Play"}
-            tabIndex={chromeVisible ? undefined : -1}
-          >
-            <Icon name={playing ? "pause" : "play"} size={17} />
-          </button>
-          <button
-            type="button"
-            className="chip player-osd-icon-button"
-            onClick={toggleMuted}
-            aria-label={muted ? "Unmute" : "Mute"}
-            aria-pressed={muted}
-            title={muted ? "Unmute" : "Mute"}
-            tabIndex={chromeVisible ? undefined : -1}
-          >
-            <Icon name={muted ? "volume-muted" : "volume"} size={17} />
-          </button>
-          <label className="player-volume-control" aria-label="Volume">
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={muted ? 0 : volume}
-              onChange={(event) => changeVolume(Number(event.target.value))}
-              tabIndex={chromeVisible ? undefined : -1}
-            />
-          </label>
-          <label className="player-speed-control">
-            <span className="sr-only">Playback speed</span>
-            <select
-              aria-label="Playback speed"
-              value={playbackRate}
-              onChange={(event) => changePlaybackRate(Number(event.target.value))}
-              tabIndex={chromeVisible ? undefined : -1}
-            >
-              {[0.5, 0.75, 1, 1.25, 1.5, 2].map((speed) => (
-                <option value={speed} key={speed}>
-                  {speed}×
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className={`chip${captionsOpen || subs.activeTrackId != null ? " is-active" : ""}`}
-            onClick={() => setCaptionsOpen((o) => !o)}
-            aria-label="Subtitles"
-            aria-haspopup="dialog"
-            aria-expanded={captionsOpen}
-            title="Subtitles"
-            tabIndex={chromeVisible ? undefined : -1}
-          >
-            <Icon name="captions" size={14} />
-            CC
-            {subs.activeTrackId != null && (
-              <span className="captions-active-dot" />
-            )}
-          </button>
-          {underTauri ? (
-            <CastControls
-              media={{ url, title, subtitleUrl: castSubtitleUrl }}
-              buttonClassName="chip player-osd-icon-button"
-              onLocalPlaybackChange={onCastLocalPlaybackChange}
-            />
-          ) : browserCastAvailable ? (
+          <div className="player-osd-group player-osd-audio">
             <button
               type="button"
               className="chip player-osd-icon-button"
-              onClick={showBrowserCastPicker}
-              aria-label="Cast to a device"
-              title={airPlayAvailable ? "AirPlay" : "Cast to a device"}
+              onClick={toggleMuted}
+              aria-label={muted ? "Unmute" : "Mute"}
+              aria-pressed={muted}
+              title={muted ? "Unmute" : "Mute"}
               tabIndex={chromeVisible ? undefined : -1}
             >
-              <Icon name="cast" size={17} />
+              <Icon name={muted ? "volume-muted" : "volume"} size={17} />
             </button>
-          ) : null}
-          {pictureInPictureSupported && (
+            <label className="player-volume-control" aria-label="Volume">
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={muted ? 0 : volume}
+                onChange={(event) => changeVolume(Number(event.target.value))}
+                tabIndex={chromeVisible ? undefined : -1}
+              />
+            </label>
+            <span ref={clockRef} className="player-time" aria-label="Playback time">
+              0:00 / {clockLabel(duration)}
+            </span>
+          </div>
+
+          <div className="player-osd-group player-osd-transport">
             <button
               type="button"
-              className={`chip player-osd-icon-button${isPictureInPicture ? " is-active" : ""}`}
-              onClick={togglePictureInPicture}
-              aria-label={isPictureInPicture ? "Exit picture in picture" : "Picture in picture"}
-              aria-pressed={isPictureInPicture}
-              title={isPictureInPicture ? "Exit picture in picture" : "Picture in picture"}
+              className="chip player-osd-icon-button player-skip-button"
+              onClick={() => relativeSeek(-10)}
+              aria-label="Back 10 seconds"
+              title="Back 10 seconds"
               tabIndex={chromeVisible ? undefined : -1}
             >
-              <Icon name="picture-in-picture" size={17} />
+              <Icon name="rewind" size={18} />
+              <span aria-hidden="true">10</span>
             </button>
-          )}
-          {fullscreenSupported && (
             <button
               type="button"
-              className={`chip player-osd-icon-button${isFullscreen ? " is-active" : ""}`}
-              onClick={togglePlayerFullscreen}
-              aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-              aria-pressed={isFullscreen}
-              title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              className="chip player-osd-icon-button player-primary-play"
+              onClick={togglePlayback}
+              aria-label={playing ? "Pause" : "Play"}
+              title={playing ? "Pause" : "Play"}
               tabIndex={chromeVisible ? undefined : -1}
             >
-              <Icon name={isFullscreen ? "fullscreen-exit" : "fullscreen"} size={17} />
+              <Icon name={playing ? "pause" : "play"} size={19} />
             </button>
-          )}
+            <button
+              type="button"
+              className="chip player-osd-icon-button player-skip-button"
+              onClick={() => relativeSeek(10)}
+              aria-label="Forward 10 seconds"
+              title="Forward 10 seconds"
+              tabIndex={chromeVisible ? undefined : -1}
+            >
+              <Icon name="forward" size={18} />
+              <span aria-hidden="true">10</span>
+            </button>
+          </div>
+
+          <div className="player-osd-group player-osd-actions">
+            {onPlayNext != null && (
+              <button
+                type="button"
+                className="chip player-osd-icon-button"
+                onClick={onPlayNext}
+                aria-label="Next episode"
+                title={upNext?.label ? `Next episode: ${upNext.label}` : "Next episode"}
+                tabIndex={chromeVisible ? undefined : -1}
+              >
+                <Icon name="skip-next" size={18} />
+              </button>
+            )}
+            <label className="player-speed-control">
+              <span className="sr-only">Playback speed</span>
+              <select
+                aria-label="Playback speed"
+                value={playbackRate}
+                onChange={(event) => changePlaybackRate(Number(event.target.value))}
+                tabIndex={chromeVisible ? undefined : -1}
+              >
+                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((speed) => (
+                  <option value={speed} key={speed}>
+                    {speed}×
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className={`chip player-osd-icon-button${captionsOpen || subs.activeTrackId != null ? " is-active" : ""}`}
+              onClick={() => {
+                setOptionsOpen(false);
+                setCaptionsOpen((open) => !open);
+              }}
+              aria-label="Subtitles"
+              aria-haspopup="dialog"
+              aria-expanded={captionsOpen}
+              title="Subtitles"
+              tabIndex={chromeVisible ? undefined : -1}
+            >
+              <Icon name="captions" size={17} />
+              {subs.activeTrackId != null && <span className="captions-active-dot" />}
+            </button>
+            {underTauri ? (
+              <CastControls
+                media={{ url, title, subtitleUrl: castSubtitleUrl }}
+                buttonClassName="chip player-osd-icon-button player-mobile-optional"
+                onLocalPlaybackChange={onCastLocalPlaybackChange}
+              />
+            ) : browserCastAvailable ? (
+              <button
+                type="button"
+                className="chip player-osd-icon-button player-mobile-optional"
+                onClick={showBrowserCastPicker}
+                aria-label="Cast to a device"
+                title={airPlayAvailable ? "AirPlay" : "Cast to a device"}
+                tabIndex={chromeVisible ? undefined : -1}
+              >
+                <Icon name="cast" size={17} />
+              </button>
+            ) : null}
+            {pictureInPictureSupported && (
+              <button
+                type="button"
+                className={`chip player-osd-icon-button player-mobile-optional${isPictureInPicture ? " is-active" : ""}`}
+                onClick={togglePictureInPicture}
+                aria-label={isPictureInPicture ? "Exit picture in picture" : "Picture in picture"}
+                aria-pressed={isPictureInPicture}
+                title={isPictureInPicture ? "Exit picture in picture" : "Picture in picture"}
+                tabIndex={chromeVisible ? undefined : -1}
+              >
+                <Icon name="picture-in-picture" size={17} />
+              </button>
+            )}
+            <button
+              type="button"
+              className={`chip player-osd-icon-button${optionsOpen ? " is-active" : ""}`}
+              onClick={toggleOptions}
+              aria-label="Playback settings"
+              aria-haspopup="dialog"
+              aria-expanded={optionsOpen}
+              title="Playback settings"
+              tabIndex={chromeVisible ? undefined : -1}
+            >
+              <Icon name="sliders" size={17} />
+            </button>
+            {fullscreenSupported && (
+              <button
+                type="button"
+                className={`chip player-osd-icon-button${isFullscreen ? " is-active" : ""}`}
+                onClick={togglePlayerFullscreen}
+                aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                aria-pressed={isFullscreen}
+                title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                tabIndex={chromeVisible ? undefined : -1}
+              >
+                <Icon name={isFullscreen ? "fullscreen-exit" : "fullscreen"} size={17} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {optionsOpen && (
+        <div className="player-options-menu glass-lit" role="dialog" aria-label="Playback settings">
+          <div className="player-options-head">
+            <strong>Playback settings</strong>
+            <button
+              type="button"
+              className="player-close"
+              onClick={() => setOptionsOpen(false)}
+              aria-label="Close playback settings"
+            >
+              <Icon name="xmark" size={15} />
+            </button>
+          </div>
+          <div className="player-options-section">
+            <span className="t-secondary">Video fit</span>
+            <div className="player-options-choice-row">
+              {(["contain", "cover", "fill"] as const).map((fit) => (
+                <button
+                  type="button"
+                  className={`chip${videoFit === fit ? " is-active" : ""}`}
+                  aria-pressed={videoFit === fit}
+                  onClick={() => setVideoFit(fit)}
+                  key={fit}
+                >
+                  {fit === "contain" ? "Fit" : fit === "cover" ? "Fill screen" : "Stretch"}
+                </button>
+              ))}
+            </div>
+          </div>
+          {hlsLevels.length > 1 && (
+            <div className="player-options-section">
+              <span className="t-secondary">Quality</span>
+              <div className="player-options-choice-row">
+                <button
+                  type="button"
+                  className={`chip${hlsLevel === -1 ? " is-active" : ""}`}
+                  aria-pressed={hlsLevel === -1}
+                  onClick={() => changeHlsLevel(-1)}
+                >
+                  Auto
+                </button>
+                {hlsLevels.map((level) => (
+                  <button
+                    type="button"
+                    className={`chip${hlsLevel === level.index ? " is-active" : ""}`}
+                    aria-pressed={hlsLevel === level.index}
+                    onClick={() => changeHlsLevel(level.index)}
+                    key={level.index}
+                  >
+                    {level.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {hlsAudioTracks.length > 1 && (
+            <div className="player-options-section">
+              <span className="t-secondary">Audio track</span>
+              <div className="player-options-choice-row">
+                {hlsAudioTracks.map((track) => (
+                  <button
+                    type="button"
+                    className={`chip${hlsAudioTrack === track.index ? " is-active" : ""}`}
+                    aria-pressed={hlsAudioTrack === track.index}
+                    onClick={() => changeHlsAudioTrack(track.index)}
+                    key={track.index}
+                  >
+                    {track.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            className="player-options-action"
+            onClick={onOpenExternalPlayer}
+          >
+            <Icon name="play" size={17} />
+            <span>
+              <strong>Open in external player</strong>
+              <small>VLC, IINA, mpv, or your device player</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="player-options-action"
+            onClick={() => {
+              setOptionsOpen(false);
+              onOpenShortcuts();
+            }}
+          >
+            <Icon name="help" size={17} />
+            <span>
+              <strong>Keyboard shortcuts</strong>
+              <small>Transport, seeking, volume, and fullscreen</small>
+            </span>
+          </button>
+          {externalActionStatus && (
+            <p className="player-options-status" role="status">{externalActionStatus}</p>
+          )}
+        </div>
+      )}
 
       {ended && upNext != null && onPlayNext != null && (
         <UpNextOverlay
@@ -1845,6 +2257,9 @@ const WEBVIEW_SHORTCUTS: Array<[string, string]> = [
   ["J / L", "Back / forward 10s"],
   ["↑ / ↓", "Volume up / down"],
   ["M", "Mute"],
+  ["C", "Cycle subtitles"],
+  ["< / >", "Speed down / up"],
+  ["N", "Next episode"],
   ["F", "Fullscreen"],
   ["0 – 9", "Jump to 0–90%"],
   ["Home / End", "Start / end"],
@@ -1921,12 +2336,16 @@ function ExternalPanel({
   url,
   status,
   error,
+  externalStatus,
+  onOpenExternal,
   onRetry,
 }: {
   underTauri: boolean;
   url: string;
   status: string | null;
   error: string | null;
+  externalStatus: string | null;
+  onOpenExternal: () => void;
   onRetry?: () => void;
 }) {
   if (onRetry != null) {
@@ -1941,17 +2360,11 @@ function ExternalPanel({
           <button type="button" className="btn btn-prominent" onClick={onRetry}>
             Retry playback
           </button>
-          {!underTauri && (
-            <a
-              className="btn"
-              href={url}
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              Open direct link
-            </a>
-          )}
+          <button type="button" className="btn" onClick={onOpenExternal}>
+            Open in external player
+          </button>
         </div>
+        {externalStatus && <p className="player-external-sub" role="status">{externalStatus}</p>}
       </div>
     );
   }
@@ -1975,14 +2388,13 @@ function ExternalPanel({
             {error ??
               "This file (MKV/HEVC) needs a native player. In the desktop app it opens in VLC/mpv automatically; in the browser, copy the link into your player."}
           </p>
-          <a
-            className="btn"
-            href={url}
-            target="_blank"
-            rel="noreferrer noopener"
-          >
+          <button type="button" className="btn" onClick={onOpenExternal}>
+            Open in external player
+          </button>
+          <a className="btn player-direct-link" href={url} target="_blank" rel="noreferrer noopener">
             Open direct link
           </a>
+          {externalStatus && <p className="player-external-sub" role="status">{externalStatus}</p>}
         </>
       )}
     </div>

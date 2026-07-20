@@ -51,6 +51,7 @@ export interface ServerHealth {
     activeInvites: number;
     auditEvents: number;
     recentStreamErrors: number;
+    passwordlessProfiles: number;
   };
   config: {
     cookieSecure: boolean;
@@ -60,6 +61,14 @@ export interface ServerHealth {
     rawStreamUrlsEnabled: boolean;
     webDistConfigured: boolean;
     sessionTtlSeconds: number;
+    bindSessionUserAgent: boolean;
+    publicMode: boolean;
+  };
+  update?: {
+    currentVersion: string;
+    latestVersion: string | null;
+    available: boolean;
+    url: string;
   };
   warnings: string[];
 }
@@ -223,6 +232,25 @@ interface PasswordPanelProps {
 interface SessionsPanelProps {
   sessions: ServerSessionEntry[];
   onRevoke: (id: string) => void;
+  onRevokeAll: () => void;
+}
+
+export interface ServerTotpStatus {
+  enabled: boolean;
+  enrollmentPending: boolean;
+}
+
+interface TotpPanelProps {
+  status: ServerTotpStatus;
+  enrollment: { secret: string; otpauthUrl: string } | null;
+  code: string;
+  currentPassword: string;
+  busy: boolean;
+  onCodeChange: (value: string) => void;
+  onCurrentPasswordChange: (value: string) => void;
+  onEnroll: () => void;
+  onConfirm: () => void;
+  onDisable: () => void;
 }
 
 interface ProfileCredentialDraft {
@@ -288,6 +316,8 @@ export function ServerHealthPanel({ health }: ServerHealthPanelProps) {
     health.config.trustProxy ? "Proxy trusted" : "Proxy not trusted",
     health.config.webDistConfigured ? "Hosted PWA ready" : "API only",
     health.config.rawStreamUrlsEnabled ? "Raw stream sessions on" : "Raw stream sessions off",
+    health.config.publicMode ? "Public mode on" : "Private mode",
+    health.config.bindSessionUserAgent ? "Sessions bound to device" : "Device binding off",
   ];
 
   return (
@@ -342,6 +372,13 @@ export function ServerHealthPanel({ health }: ServerHealthPanelProps) {
             </div>
           ))}
         </div>
+      )}
+
+      {health.update?.available && (
+        <p className="settings-status">
+          Server {health.update.latestVersion} is available. Running {health.update.currentVersion}.{" "}
+          <a href={health.update.url} target="_blank" rel="noreferrer">View update</a>
+        </p>
       )}
 
       <p className="settings-hint t-secondary">
@@ -524,13 +561,21 @@ export function PasswordPanel({
 export function SessionsPanel({
   sessions,
   onRevoke,
+  onRevokeAll,
 }: SessionsPanelProps) {
   const activeSessions = sessions.filter((session) => session.active);
   return (
     <div className="settings-source glass-rest">
       <div className="settings-sources-head">
         <span className="settings-sources-title">Signed-in devices</span>
-        <span className="chip">{activeSessions.length} active</span>
+        <span className="settings-profile-meta">
+          <span className="chip">{activeSessions.length} active</span>
+          {activeSessions.length > 0 && (
+            <button type="button" className="chip" onClick={onRevokeAll}>
+              Sign out all devices
+            </button>
+          )}
+        </span>
       </div>
       {sessions.length === 0 ? (
         <p className="settings-hint t-secondary">No sessions found.</p>
@@ -565,6 +610,81 @@ export function SessionsPanel({
               </span>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function TotpPanel({
+  status,
+  enrollment,
+  code,
+  currentPassword,
+  busy,
+  onCodeChange,
+  onCurrentPasswordChange,
+  onEnroll,
+  onConfirm,
+  onDisable,
+}: TotpPanelProps) {
+  return (
+    <div className="settings-source glass-rest">
+      <div className="settings-sources-head">
+        <span className="settings-sources-title">Two-factor authentication</span>
+        <span className={`chip${status.enabled ? " is-active" : ""}`}>
+          {status.enabled ? "Enabled" : "Off"}
+        </span>
+      </div>
+      {!status.enabled && enrollment == null && (
+        <>
+          <p className="settings-hint t-secondary">
+            Protect owner and admin sign-ins with a six-digit authenticator code.
+          </p>
+          <button type="button" className="btn" onClick={onEnroll} disabled={busy}>
+            Set up authenticator
+          </button>
+        </>
+      )}
+      {!status.enabled && enrollment != null && (
+        <div className="settings-fields">
+          <p className="settings-hint t-secondary">
+            Add this key to your authenticator app, then enter its current code.
+          </p>
+          <code className="settings-server-code">{enrollment.secret}</code>
+          <a className="chip" href={enrollment.otpauthUrl}>Open authenticator app</a>
+          <input
+            inputMode="numeric"
+            maxLength={6}
+            value={code}
+            onChange={(event) => onCodeChange(event.target.value.replace(/\D/g, ""))}
+            placeholder="6-digit code"
+            aria-label="Authenticator code"
+          />
+          <button type="button" className="btn" onClick={onConfirm} disabled={busy || code.length !== 6}>
+            Confirm and enable
+          </button>
+        </div>
+      )}
+      {status.enabled && (
+        <div className="settings-source-row">
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(event) => onCurrentPasswordChange(event.target.value)}
+            placeholder="Current password"
+          />
+          <input
+            inputMode="numeric"
+            maxLength={6}
+            value={code}
+            onChange={(event) => onCodeChange(event.target.value.replace(/\D/g, ""))}
+            placeholder="6-digit code"
+            aria-label="Authenticator code"
+          />
+          <button type="button" className="btn" onClick={onDisable} disabled={busy || currentPassword.length === 0 || code.length !== 6}>
+            Disable 2FA
+          </button>
         </div>
       )}
     </div>

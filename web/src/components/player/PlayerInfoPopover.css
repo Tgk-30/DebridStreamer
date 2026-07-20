@@ -4,8 +4,8 @@
   right: 24px;
   z-index: 14;
   width: min(330px, calc(100vw - 48px));
-  padding: 14px;
-  border-radius: var(--r-lg, 16px);
+  padding: calc(14px * var(--density-scale));
+  border-radius: var(--r-lg, calc(16px * var(--radius-scale)));
   color: #fff;
   background: rgba(12, 14, 22, 1);
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -16,29 +16,29 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-  font-size: 14px;
+  gap: calc(12px * var(--density-scale));
+  margin-bottom: calc(12px * var(--density-scale));
+  font-size: 0.875rem;
 }
 
 .player-info-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  margin: 0 0 14px;
-  padding: 3px;
-  border-radius: 10px;
+  gap: calc(4px * var(--density-scale));
+  margin: 0 0 calc(14px * var(--density-scale));
+  padding: calc(3px * var(--density-scale));
+  border-radius: calc(10px * var(--radius-scale));
   background: rgba(255, 255, 255, 0.06);
 }
 
 .player-info-tabs button {
   min-height: 30px;
   border: 0;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale));
   background: transparent;
   color: rgba(255, 255, 255, 0.66);
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -70,9 +70,9 @@
 .player-info-grid {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px 16px;
+  gap: calc(8px * var(--density-scale)) calc(16px * var(--density-scale));
   margin: 0;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 
 .player-info-grid dt {
@@ -88,20 +88,20 @@
 }
 
 .player-info-version {
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 
 .player-info-file {
   color: rgba(255, 255, 255, 0.76) !important;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   line-height: 1.4;
 }
 
 .player-info-shortcuts {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px 16px;
+  gap: calc(8px * var(--density-scale)) calc(16px * var(--density-scale));
   list-style: none;
   margin: 0;
   padding: 0;
@@ -110,21 +110,21 @@
 .player-info-shortcuts li {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
   min-width: 0;
   color: rgba(255, 255, 255, 0.8);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 
 .player-info-shortcuts kbd {
   flex: 0 0 auto;
   min-width: 52px;
-  padding: 3px 5px;
+  padding: calc(3px * var(--density-scale)) calc(5px * var(--density-scale));
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 5px;
+  border-radius: calc(5px * var(--radius-scale));
   background: rgba(255, 255, 255, 0.08);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10px;
+  font-size: 0.625rem;
   text-align: center;
 }
 

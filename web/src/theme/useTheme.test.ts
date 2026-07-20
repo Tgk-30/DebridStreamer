@@ -122,11 +122,15 @@ describe("useTheme", () => {
     // Pre-seed accent vars so we can observe their removal.
     root.style.setProperty("--accent", "rgb(1, 2, 3)");
     root.style.setProperty("--accent-rgb", "1, 2, 3");
+    root.style.setProperty("--accent-secondary", "rgb(4, 5, 6)");
+    root.style.setProperty("--accent-secondary-rgb", "4, 5, 6");
 
     renderHook(() => useTheme(settings({ appearanceAccent: "theme" })));
 
     expect(root.style.getPropertyValue("--accent")).toBe("");
     expect(root.style.getPropertyValue("--accent-rgb")).toBe("");
+    expect(root.style.getPropertyValue("--accent-secondary")).toBe("");
+    expect(root.style.getPropertyValue("--accent-secondary-rgb")).toBe("");
   });
 
   it("sets the --accent custom properties for a named accent", () => {
@@ -134,6 +138,8 @@ describe("useTheme", () => {
     const root = document.documentElement;
     expect(root.style.getPropertyValue("--accent")).toBe("rgb(92, 189, 250)");
     expect(root.style.getPropertyValue("--accent-rgb")).toBe("92, 189, 250");
+    expect(root.style.getPropertyValue("--accent-secondary")).toBe("rgb(140, 133, 250)");
+    expect(root.style.getPropertyValue("--accent-secondary-rgb")).toBe("140, 133, 250");
   });
 
   it("computes the three glass-blur vars from appearanceBlur (clamped)", () => {

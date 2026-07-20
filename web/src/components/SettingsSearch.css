@@ -2,11 +2,11 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: var(--sp-md, 16px);
-  padding: 0 12px;
+  gap: calc(8px * var(--density-scale));
+  margin-bottom: var(--sp-md, calc(16px * var(--density-scale)));
+  padding: 0 calc(12px * var(--density-scale));
   min-height: 42px;
-  border-radius: var(--r-pill, 999px);
+  border-radius: var(--r-pill, calc(999px * var(--radius-scale)));
   background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
   border: 0.75px solid var(--glass-border, rgba(255, 255, 255, 0.14));
 }
@@ -25,7 +25,7 @@
   background: transparent;
   color: var(--text-primary);
   font: inherit;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .settings-search-results {
@@ -35,9 +35,9 @@
   right: 0;
   z-index: 20;
   margin: 0;
-  padding: 6px;
+  padding: calc(6px * var(--density-scale));
   list-style: none;
-  border-radius: var(--r-lg, 16px);
+  border-radius: var(--r-lg, calc(16px * var(--radius-scale)));
   max-height: 320px;
   overflow-y: auto;
 }
@@ -45,11 +45,11 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: calc(12px * var(--density-scale));
   width: 100%;
-  padding: 9px 12px;
+  padding: calc(9px * var(--density-scale)) calc(12px * var(--density-scale));
   border: 0;
-  border-radius: var(--r-sm, 10px);
+  border-radius: var(--r-sm, calc(10px * var(--radius-scale)));
   background: transparent;
   color: var(--text-primary);
   font: inherit;
@@ -66,22 +66,22 @@
   outline-offset: -2px;
 }
 .settings-search-result-label {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 .settings-search-result-tab {
   flex: 0 0 auto;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .settings-search-empty {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: calc(12px * var(--density-scale));
+  padding: calc(10px * var(--density-scale)) calc(12px * var(--density-scale));
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .settings-search-empty > span {
@@ -94,7 +94,7 @@
 .settings-search-empty button {
   flex: 0 0 auto;
   min-height: 30px;
-  padding: 0 10px;
+  padding: 0 calc(10px * var(--density-scale));
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-pill);
   background: transparent;

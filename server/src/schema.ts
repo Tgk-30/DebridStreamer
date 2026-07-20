@@ -252,6 +252,15 @@ CREATE INDEX metadata_cache_expires_idx
   ON metadata_cache(provider, expires_at);
 `;
 
+// Optional TOTP is account-scoped. Pending enrollment remains separate from
+// the active secret so scanning an authenticator never enables 2FA until a
+// valid code is confirmed. Both secrets are encrypted with the server key.
+export const MIGRATION_009 = `
+ALTER TABLE users ADD COLUMN totp_secret_encrypted TEXT;
+ALTER TABLE users ADD COLUMN totp_pending_secret_encrypted TEXT;
+ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0;
+`;
+
 /** Ordered, append-only database migrations. Never edit a released migration.
  * Add the next numbered entry so existing databases and fixture snapshots keep
  * a deterministic upgrade path. */
@@ -264,4 +273,5 @@ export const MIGRATIONS: ReadonlyArray<readonly [version: number, sql: string]> 
   [6, MIGRATION_006],
   [7, MIGRATION_007],
   [8, MIGRATION_008],
+  [9, MIGRATION_009],
 ];

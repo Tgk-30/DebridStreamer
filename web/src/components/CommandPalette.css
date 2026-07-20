@@ -7,7 +7,7 @@
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 12vh 16px 16px;
+  padding: 12vh calc(16px * var(--density-scale)) calc(16px * var(--density-scale));
   background: rgba(4, 6, 12, 0.5);
   backdrop-filter: blur(8px) saturate(1.1);
   -webkit-backdrop-filter: blur(8px) saturate(1.1);
@@ -49,7 +49,7 @@
   background: transparent;
   color: var(--text-primary);
   font: inherit;
-  font-size: 16px;
+  font-size: 1rem;
   outline: none;
 }
 .cmdk-input::placeholder {
@@ -66,14 +66,14 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(2px * var(--density-scale));
 }
 
 .cmdk-item {
   display: flex;
   align-items: center;
   gap: var(--sp-sm);
-  padding: 10px var(--sp-sm);
+  padding: calc(10px * var(--density-scale)) var(--sp-sm);
   border-radius: var(--r-sm);
   cursor: pointer;
   color: var(--text-secondary);
@@ -95,12 +95,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 550;
 }
 .cmdk-item-hint {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -110,7 +110,7 @@
   padding: var(--sp-lg);
   text-align: center;
   color: var(--text-tertiary);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .cmdk-foot {
@@ -120,12 +120,12 @@
   padding: var(--sp-sm) var(--sp-md);
   border-top: 1px solid var(--glass-border);
   color: var(--text-tertiary);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 .cmdk-foot span {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: calc(5px * var(--density-scale));
 }
 
 kbd,
@@ -134,13 +134,13 @@ kbd,
   place-items: center;
   min-width: 18px;
   height: 18px;
-  padding: 0 5px;
+  padding: 0 calc(5px * var(--density-scale));
   border: 1px solid var(--glass-border);
-  border-radius: 5px;
+  border-radius: calc(5px * var(--radius-scale));
   background: var(--glass-tint-control);
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1;
 }

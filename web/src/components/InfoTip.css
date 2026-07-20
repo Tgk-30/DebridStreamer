@@ -30,13 +30,13 @@
   position: fixed;
   z-index: 1000;
   width: min(300px, calc(100vw - 24px));
-  padding: 10px 12px;
+  padding: calc(10px * var(--density-scale)) calc(12px * var(--density-scale));
   border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--bg-2) 94%, transparent);
   box-shadow: var(--shadow-lg);
   color: var(--text-primary);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   line-height: 1.45;
   pointer-events: auto;
 }

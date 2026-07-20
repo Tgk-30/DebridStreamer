@@ -32,6 +32,7 @@ export interface ServerProfileSummary {
   isKid: boolean;
   /** Server-side household PIN set flag. The PIN itself is never exposed. */
   hasPin?: boolean;
+  gateType?: "none" | "pin" | "password";
   /** Warn-only rolling 30-day household bandwidth status. */
   bandwidthCapBytes?: number | null;
   bandwidthUsageBytes?: number;

@@ -38,9 +38,17 @@ export interface ServerConfig {
   /** Optional one-time owner-setup token. When configured, the first owner
    *  account cannot be created without this out-of-band token. */
   setupToken: string | null;
+  /** Require every household viewer profile to have a password gate. */
+  publicMode: boolean;
   cookieSecure: boolean;
   cookieSameSite: CookieSameSite;
   sessionTtlSeconds: number;
+  /** Reject a session cookie when its User-Agent changes. */
+  bindSessionUserAgent: boolean;
+  /** Acknowledge an intentionally plain-HTTP public bind. */
+  allowInsecurePublic: boolean;
+  /** Check GitHub releases for a newer server container version. */
+  updateCheck: boolean;
   allowRawStreamUrls: boolean;
   /** Operator opt-in for server-side HLS transcoding (Phase 3b). Default false.
    *  When false - or when ffmpeg is absent at boot - the transcode routes 404 and

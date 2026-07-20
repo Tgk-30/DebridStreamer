@@ -29,7 +29,7 @@
 }
 .hl-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0;
 }
@@ -67,13 +67,13 @@
 
 .hl-note {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 .hl-note code {
-  font-size: 12px;
+  font-size: 0.75rem;
   background: var(--glass-tint-control);
-  padding: 1px 5px;
+  padding: calc(1px * var(--density-scale)) calc(5px * var(--density-scale));
   border-radius: var(--r-xs);
 }
 
@@ -86,7 +86,7 @@
   background: var(--glass-tint-control);
   color: var(--text-primary);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
   outline: none;
 }
@@ -105,7 +105,7 @@
   gap: var(--sp-md);
 }
 .hl-count {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .hl-prompt {
@@ -116,16 +116,16 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-sm);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .hl-count-input input {
   width: 56px;
-  padding: 6px 8px;
+  padding: calc(6px * var(--density-scale)) calc(8px * var(--density-scale));
   border-radius: var(--r-sm);
   border: 0.75px solid var(--glass-border);
   background: var(--glass-tint-control);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 0.8125rem;
   outline: none;
 }
 .hl-count-input input:focus {
@@ -134,14 +134,14 @@
 
 .hl-error {
   color: var(--danger);
-  font-size: 13px;
+  font-size: 0.8125rem;
   margin: 0;
 }
 
 .hl-summary {
   padding: var(--sp-md);
   border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .hl-summary p {
   margin: 0;

@@ -14,7 +14,7 @@
    steps so the spotlight glides to the next target. */
 .tour-cutout {
   position: fixed;
-  border-radius: 14px;
+  border-radius: calc(14px * var(--radius-scale));
   pointer-events: none;
   box-shadow:
     0 0 0 9999px rgba(4, 5, 12, 0.74),
@@ -40,8 +40,8 @@
   z-index: 1;
   pointer-events: auto;
   outline: none;
-  padding: 18px;
-  border-radius: 16px;
+  padding: calc(18px * var(--density-scale));
+  border-radius: calc(16px * var(--radius-scale));
   background: var(--glass-strong, rgba(20, 22, 38, 0.97));
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.14));
   box-shadow: 0 26px 64px rgba(0, 0, 0, 0.58);
@@ -52,22 +52,22 @@
 }
 
 .tour-step-count {
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--accent);
 }
 .tour-title {
-  margin: 6px 0;
-  font-size: 18px;
+  margin: calc(6px * var(--density-scale)) 0;
+  font-size: 1.125rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text-primary, #fff);
 }
 .tour-body {
-  margin: 0 0 16px;
-  font-size: 14px;
+  margin: 0 0 calc(16px * var(--density-scale));
+  font-size: 0.875rem;
   line-height: 1.5;
   color: var(--text-secondary, rgba(255, 255, 255, 0.75));
 }
@@ -76,18 +76,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: calc(12px * var(--density-scale));
 }
 .tour-nav {
   display: flex;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
 }
 .tour-skip {
   background: none;
   border: none;
-  padding: 6px 2px;
+  padding: calc(6px * var(--density-scale)) calc(2px * var(--density-scale));
   font-family: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text-tertiary, rgba(255, 255, 255, 0.55));
   cursor: pointer;
 }
@@ -97,10 +97,10 @@
 .tour-back,
 .tour-next {
   font-family: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
-  border-radius: 10px;
-  padding: 8px 16px;
+  border-radius: calc(10px * var(--radius-scale));
+  padding: calc(8px * var(--density-scale)) calc(16px * var(--density-scale));
   cursor: pointer;
 }
 .tour-back {

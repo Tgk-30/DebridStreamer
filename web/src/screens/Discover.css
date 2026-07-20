@@ -37,7 +37,7 @@
 /* Without a hero above it (cold start / no artwork), the first block must still
    clear the floating global search field. */
 .discover > .discover-body:first-child {
-  padding-top: 64px;
+  padding-top: calc(64px * var(--density-scale));
 }
 
 /* Full-bleed cinematic billboard: slides left UNDER the floating glass rail
@@ -147,6 +147,6 @@
 
 @media (max-width: 380px) and (max-height: 620px) {
   .discover {
-    gap: 4px;
+    gap: calc(4px * var(--density-scale));
   }
 }

@@ -53,6 +53,7 @@ import {
   createRequest,
   fetchServerEpisodes,
   resolveServerStream,
+  serverExternalPlaybackURL,
 } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 import { isTauri } from "../lib/tauri";
@@ -130,8 +131,8 @@ interface ActivePlayer {
   /** Exact renderer selected for this source. Never infer this from the URL in
    * diagnostics: a debrid direct link often has no useful extension. */
   engine: PlaybackEngine;
-  /** Original unsupported source used only if native libmpv fails and asks for
-   * the safe RD HLS fallback. Null for direct/HLS playback. */
+  /** Original Server Mode source. It supplies the stream-scoped external-player
+   * capability and, when transcoding is available, the safe HLS fallback. */
   fallbackStream: StreamInfo | null;
   /** Saved resume position (seconds) to seek to on load; 0 starts fresh. */
   startPositionSeconds: number;
@@ -994,11 +995,17 @@ export function Detail() {
         return;
       }
     }
+    // Keep the original Server Mode proxy session with every hosted playback.
+    // File names and torrent metadata are only hints, so a stream classified as
+    // browser-compatible can still contain a codec that the media element rejects.
+    // VideoPlayer can then retry this exact session through its HLS manifest,
+    // and its External Player action can mint a cookie-free capability URL.
+    const serverSource = isServerMode() ? stream : null;
     if (!needsTranscodeOrExternal(stream, source)) {
       const engine = stream.streamURL.split("?")[0].toLowerCase().endsWith(".m3u8")
         ? "webview-hls-transcode"
         : "webview-direct";
-      openPlayer(stream.streamURL, sourceFileName, engine);
+      openPlayer(stream.streamURL, sourceFileName, engine, serverSource);
       return;
     }
 
@@ -1009,13 +1016,13 @@ export function Detail() {
 
     const hlsUrl = await services.debrid?.getTranscodeHLS(stream).catch(() => null);
     if (hlsUrl != null) {
-      openPlayer(hlsUrl, sourceFileName, "webview-hls-transcode");
+      openPlayer(hlsUrl, sourceFileName, "webview-hls-transcode", serverSource);
       return;
     }
     // No compatibility transcode is available. Still enter the custom web
     // player and let the browser attempt the source; a decode failure remains
     // inside the player with Retry/direct-link fallbacks.
-    openPlayer(stream.streamURL, sourceFileName, "webview-direct");
+    openPlayer(stream.streamURL, sourceFileName, "webview-direct", serverSource);
   }
 
   /** Play an already-resolved StreamInfo (the instant-play path). */
@@ -1653,9 +1660,16 @@ export function Detail() {
             playbackAuthorization={player.fallbackStream?.playbackAuthorization}
             engine={player.engine}
             requestWebviewFallback={
-              player.fallbackStream != null && services.debrid != null
+              player.fallbackStream != null &&
+              services.debrid != null &&
+              (!isServerMode() || transcodeAvailable)
                 ? () => services.debrid!.getTranscodeHLS(player.fallbackStream!)
                 : undefined
+            }
+            externalPlaybackUrl={
+              player.fallbackStream != null
+                ? serverExternalPlaybackURL(player.fallbackStream) ?? player.url
+                : player.url
             }
             preferredPlayer={settings.preferredExternalPlayer}
             useBuiltInPlayer={settings.builtInPlayer}

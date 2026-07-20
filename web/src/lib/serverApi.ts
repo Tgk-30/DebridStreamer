@@ -180,6 +180,35 @@ export function asServerTranscodeStream(stream: StreamInfo): StreamInfo {
   return { ...stream, streamURL: `${base}/index.m3u8${suffix}` };
 }
 
+/** Build the capability URL consumed by native players launched from a hosted
+ * browser. External players cannot inherit either the app's HttpOnly session
+ * cookie or a Cloudflare Access browser cookie, so the server exposes one
+ * narrowly scoped route authenticated by the stream session's existing bearer
+ * capability. Operators using Cloudflare Access can bypass only
+ * `/api/external-stream/*`; the capability remains bound to this stream,
+ * profile, expiry, and server-side revocation state. */
+export function serverExternalPlaybackURL(stream: StreamInfo): string | null {
+  const authorization = stream.playbackAuthorization?.trim() ?? "";
+  const match = /^Bearer\s+([A-Za-z0-9_-]{32,128})$/i.exec(authorization);
+  if (match == null) return null;
+
+  let streamUrl: URL;
+  try {
+    streamUrl = new URL(stream.streamURL);
+  } catch {
+    return null;
+  }
+  const pathMatch = /\/api\/stream\/([^/?#]+)/i.exec(streamUrl.pathname);
+  if (pathMatch == null) return null;
+  let sessionId: string;
+  try {
+    sessionId = decodeURIComponent(pathMatch[1]);
+  } catch {
+    return null;
+  }
+  return `${streamUrl.origin}/api/external-stream/${encodeURIComponent(sessionId)}/${encodeURIComponent(match[1])}`;
+}
+
 export async function searchServerMedia(input: {
   query: string;
   type: MediaType | null;
@@ -344,6 +373,8 @@ export interface AccountProfile {
   maturityMax: string | null;
   /** A server-side household PIN is set. The PIN hash never leaves the server. */
   hasPin?: boolean;
+  /** Kind of switch gate configured for this profile. */
+  gateType?: "none" | "pin" | "password";
   /** Warn-only rolling 30-day household bandwidth data. */
   bandwidthCapBytes?: number | null;
   bandwidthUsageBytes?: number;
@@ -353,6 +384,7 @@ export interface AccountProfile {
 export interface AccountProfileState {
   profiles: AccountProfile[];
   activeProfileId: string;
+  publicMode?: boolean;
 }
 
 export async function fetchAccountProfiles(): Promise<AccountProfileState> {
@@ -432,6 +464,13 @@ export async function setProfilePin(
   pin: string | null,
 ): Promise<{ profiles: AccountProfileState }> {
   return serverRequest("POST", "/api/profiles/pin", { profileId, pin });
+}
+
+export async function setProfilePassword(
+  profileId: string,
+  password: string,
+): Promise<{ profiles: AccountProfileState }> {
+  return serverRequest("POST", "/api/profiles/password", { profileId, password });
 }
 
 /** Owner/admin only. A rolling monthly household warning cap, never playback

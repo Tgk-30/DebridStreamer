@@ -102,6 +102,8 @@ or putting an auth wall (Cloudflare Access) in front.
    ```
 
    (In Docker, add these to your `.env` and restart.)
+   For an internet-facing household server, also enable the public deployment
+   protections documented in [Self-hosting](self-hosting.md#public-server-security).
 4. Open your public URL:
 
    ```text
@@ -123,6 +125,13 @@ the Access redirect and offers **Sign in to Cloudflare Access**. Complete that
 sign-in in the desktop window, close it after the server loads, then select
 **Retry** in the main app. Opening the URL in an external browser does not sign
 in the desktop app because the two applications do not share cookies.
+
+VLC, IINA, mpv, and operating-system players also cannot present Cloudflare
+Access browser cookies. YAWF Stream's **Open in external player** action uses a
+short-lived, stream-scoped capability URL instead. Add a Cloudflare Access
+bypass policy for the exact path `/api/external-stream/*` so the selected
+player can fetch it. Do not bypass `/api/*` or the whole site. The capability is
+tied to the current profile and session expiry and can be revoked server-side.
 
 > **Important:** Cloudflare Access and Tailscale are *outer* protection layers.
 > They control who can reach the server. They do **not** replace DebridStreamer's

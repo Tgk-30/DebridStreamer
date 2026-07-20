@@ -17,6 +17,11 @@ import { readFileSync } from "node:fs";
 // it without a temporal-dead-zone error.
 const { hlsInstances, hlsIsSupported } = vi.hoisted(() => ({
   hlsInstances: [] as Array<{
+    config: { xhrSetup?: (xhr: XMLHttpRequest) => void };
+    levels: Array<{ height?: number; bitrate?: number; name?: string }>;
+    audioTracks: Array<{ name?: string; lang?: string }>;
+    currentLevel: number;
+    audioTrack: number;
     loadSource: ReturnType<typeof vi.fn>;
     attachMedia: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
@@ -33,15 +38,27 @@ const iconMock = vi.hoisted(() => vi.fn(({ name }: { name: string }) => <span da
 vi.mock("hls.js", () => {
   class FakeHls {
     static isSupported = hlsIsSupported;
-    static Events = { ERROR: "hlsError" };
+    static Events = {
+      ERROR: "hlsError",
+      MANIFEST_PARSED: "manifestParsed",
+      LEVEL_SWITCHED: "levelSwitched",
+      AUDIO_TRACKS_UPDATED: "audioTracksUpdated",
+      AUDIO_TRACK_SWITCHED: "audioTrackSwitched",
+    };
     static ErrorTypes = { NETWORK_ERROR: "networkError" };
+    config: { xhrSetup?: (xhr: XMLHttpRequest) => void };
+    levels: Array<{ height?: number; bitrate?: number; name?: string }> = [];
+    audioTracks: Array<{ name?: string; lang?: string }> = [];
+    currentLevel = -1;
+    audioTrack = 0;
     loadSource = vi.fn();
     attachMedia = vi.fn();
     destroy = vi.fn();
     on = vi.fn();
     startLoad = vi.fn();
     recoverMediaError = vi.fn();
-    constructor() {
+    constructor(config: { xhrSetup?: (xhr: XMLHttpRequest) => void }) {
+      this.config = config;
       hlsInstances.push(this);
     }
   }
@@ -452,10 +469,59 @@ describe("WebviewPlayer", () => {
 
     expect(screen.getByText("Playback interrupted")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry playback" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open direct link" })).toHaveAttribute(
-      "href",
-      "https://x/test.mp4",
+    expect(screen.getByRole("button", { name: "Open in external player" })).toBeInTheDocument();
+  });
+
+  it("automatically switches a failed direct source to its browser-compatible HLS fallback", async () => {
+    const requestWebviewFallback = vi.fn().mockResolvedValue("https://x/stream/index.m3u8");
+    render(
+      <VideoPlayer
+        url="https://x/test.mp4"
+        title="T"
+        requestWebviewFallback={requestWebviewFallback}
+        onClose={() => {}}
+      />,
     );
+    const video = document.querySelector("video.player-video") as HTMLVideoElement;
+
+    fireEvent.error(video);
+
+    await waitFor(() => expect(requestWebviewFallback).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(hlsInstances).toHaveLength(1));
+    expect(hlsInstances[0].loadSource).toHaveBeenCalledWith("https://x/stream/index.m3u8");
+    expect(screen.queryByText("Playback interrupted")).toBeNull();
+  });
+
+  it("offers the stream-scoped external handoff in the playback settings menu", async () => {
+    const createObjectURL = vi.fn((_blob: Blob) => "blob:player-list");
+    const revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const restoreCreate = replaceProperty(URL, "createObjectURL", createObjectURL);
+    const restoreRevoke = replaceProperty(URL, "revokeObjectURL", revokeObjectURL);
+    try {
+      render(
+        <VideoPlayer
+          url="https://server.example/api/stream/session-1"
+          externalPlaybackUrl="https://server.example/api/external-stream/session-1/capability"
+          title="Example Movie"
+          onClose={() => {}}
+        />,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Playback settings" }));
+      await userEvent.click(screen.getByRole("button", { name: /Open in external player/ }));
+
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      const playlist = createObjectURL.mock.calls[0][0] as Blob;
+      await expect(playlist.text()).resolves.toContain(
+        "https://server.example/api/external-stream/session-1/capability",
+      );
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("status")).toHaveTextContent("Player file downloaded");
+    } finally {
+      click.mockRestore();
+      restoreCreate();
+      restoreRevoke();
+    }
   });
 
   it("syncs Media Session metadata, transport handlers, and playback position", () => {
@@ -1060,6 +1126,9 @@ describe("HLS source attach", () => {
       "https://x/stream.m3u8",
     );
     expect(hlsInstances[0].attachMedia).toHaveBeenCalled();
+    const xhr = { withCredentials: false } as XMLHttpRequest;
+    hlsInstances[0].config.xhrSetup?.(xhr);
+    expect(xhr.withCredentials).toBe(true);
   });
 
   it("retries bounded fatal HLS network errors before surfacing recovery UI", async () => {

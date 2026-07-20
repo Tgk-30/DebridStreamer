@@ -13,7 +13,7 @@
 }
 
 .global-search input {
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .global-search input::placeholder {
@@ -51,7 +51,7 @@
        the search input covers the avatar and captures every tap. */
     margin:
       var(--sp-md)
-      calc(var(--sp-lg) + 44px + var(--sp-sm))
+      calc(var(--sp-lg) + calc(44px * var(--density-scale)) + var(--sp-sm))
       0
       var(--sp-lg);
   }

@@ -4,7 +4,7 @@
   z-index: 140;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: calc(24px * var(--density-scale));
   background: rgba(1, 2, 7, 0.72);
   backdrop-filter: blur(14px);
 }
@@ -13,9 +13,9 @@
   width: min(440px, calc(100vw - 32px));
   max-height: min(620px, calc(100vh - 48px));
   overflow: auto;
-  padding: 22px;
+  padding: calc(22px * var(--density-scale));
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 22px;
+  border-radius: calc(22px * var(--radius-scale));
   background: rgba(15, 18, 30, 0.96);
   color: #fff;
 }
@@ -24,20 +24,20 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
+  gap: calc(16px * var(--density-scale));
+  margin-bottom: calc(18px * var(--density-scale));
 }
 
 .cast-picker-heading h2 {
-  margin: 3px 0 0;
-  font-size: 20px;
+  margin: calc(3px * var(--density-scale)) 0 0;
+  font-size: 1.25rem;
 }
 
 .cast-eyebrow,
 .casting-device strong {
   display: block;
   color: rgb(var(--accent-rgb));
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
   letter-spacing: 0.14em;
 }
@@ -49,7 +49,7 @@
   height: 38px;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale));
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
   cursor: pointer;
@@ -68,7 +68,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: calc(14px * var(--density-scale));
   color: rgba(255, 255, 255, 0.72);
   text-align: center;
 }
@@ -93,7 +93,7 @@
 .cast-device-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
 }
 
 .cast-device-row {
@@ -102,10 +102,10 @@
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 12px;
-  padding: 10px 13px;
+  gap: calc(12px * var(--density-scale));
+  padding: calc(10px * var(--density-scale)) calc(13px * var(--density-scale));
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 15px;
+  border-radius: calc(15px * var(--radius-scale));
   background: rgba(255, 255, 255, 0.055);
   color: #fff;
   text-align: left;
@@ -118,7 +118,7 @@
   place-items: center;
   width: 36px;
   height: 36px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale));
   background: rgba(var(--accent-rgb), 0.2);
   color: rgb(var(--accent-rgb));
 }
@@ -133,11 +133,11 @@
   display: grid;
   grid-template-columns: minmax(160px, auto) minmax(240px, 1fr) auto;
   align-items: center;
-  gap: 18px;
-  padding: 12px 14px;
+  gap: calc(18px * var(--density-scale));
+  padding: calc(12px * var(--density-scale)) calc(14px * var(--density-scale));
   transform: translateX(-50%);
   border: 1px solid rgba(var(--accent-rgb), 0.38);
-  border-radius: 20px;
+  border-radius: calc(20px * var(--radius-scale));
   background: rgba(13, 16, 27, 0.96);
   box-shadow: 0 20px 70px rgba(0, 0, 0, 0.48);
   backdrop-filter: blur(18px);
@@ -155,7 +155,7 @@
 
 .casting-device {
   min-width: 0;
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
 }
 
 .casting-device > span:last-child {
@@ -169,12 +169,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
 }
 
 .casting-transport {
-  gap: 9px;
+  gap: calc(9px * var(--density-scale));
 }
 
 .casting-transport input,
@@ -190,17 +190,17 @@
 .casting-time {
   width: 42px;
   color: rgba(255, 255, 255, 0.68);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
 
 .casting-actions {
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
 }
 
 .casting-volume {
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
 }
 
 .casting-volume input {
@@ -216,17 +216,17 @@
   right: 16px;
   bottom: calc(100% + 8px);
   max-width: min(480px, calc(100vw - 40px));
-  padding: 7px 10px;
-  border-radius: 9px;
+  padding: calc(7px * var(--density-scale)) calc(10px * var(--density-scale));
+  border-radius: calc(9px * var(--radius-scale));
   background: rgba(93, 24, 30, 0.94);
   color: #fff;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 @media (max-width: 760px) {
   .casting-bar {
     grid-template-columns: 1fr auto;
-    gap: 10px;
+    gap: calc(10px * var(--density-scale));
   }
   .casting-transport {
     grid-column: 1 / -1;

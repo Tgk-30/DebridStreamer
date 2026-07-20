@@ -4,7 +4,7 @@
   z-index: 50;
   display: grid;
   place-items: center;
-  padding: var(--sp-xl, 32px);
+  padding: var(--sp-xl, calc(32px * var(--density-scale)));
 }
 
 /* Overlay variant (Browse / Detail). Those overlays are themselves fixed (see
@@ -22,24 +22,24 @@
 .error-boundary-card {
   max-width: 440px;
   width: 100%;
-  padding: 28px 30px;
-  border-radius: var(--r-lg, 18px);
+  padding: calc(28px * var(--density-scale)) calc(30px * var(--density-scale));
+  border-radius: var(--r-lg, calc(18px * var(--radius-scale)));
   text-align: center;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: calc(12px * var(--density-scale));
 }
 
 .error-boundary-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 750;
   letter-spacing: -0.01em;
 }
 
 .error-boundary-msg {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.5;
   color: var(--text-secondary, rgba(255, 255, 255, 0.66));
   word-break: break-word;
@@ -47,7 +47,7 @@
 
 .error-boundary-actions {
   display: flex;
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
   justify-content: center;
-  margin-top: 8px;
+  margin-top: calc(8px * var(--density-scale));
 }

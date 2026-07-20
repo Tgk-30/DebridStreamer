@@ -13,20 +13,20 @@
 .mood-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
 }
 .mood-heading {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: calc(1px * var(--density-scale));
 }
 .mood-title {
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 700;
 }
 .mood-subtitle {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .mood-prompt {
@@ -42,15 +42,15 @@
 }
 .mood-prompt input {
   min-width: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .mood-curate {
   justify-content: center;
   min-width: 88px;
   min-height: 40px;
-  padding: 7px 16px;
-  font-size: 13px;
+  padding: calc(7px * var(--density-scale)) calc(16px * var(--density-scale));
+  font-size: 0.8125rem;
   color: #fff;
 }
 .mood-curate:disabled {
@@ -65,11 +65,11 @@
 .mood-chips {
   display: flex;
   flex-wrap: nowrap;
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-bottom: 2px;
+  padding-bottom: calc(2px * var(--density-scale));
   scroll-padding-inline: var(--sp-md);
   scroll-snap-type: x proximity;
   scrollbar-width: none;
@@ -99,7 +99,7 @@
 .mood-status {
   margin: calc(-1 * var(--sp-xs)) 0 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.45;
 }
 
@@ -115,13 +115,13 @@
   border-top: 1px solid var(--glass-border);
 }
 .mood-search .mood-header {
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
 }
 .mood-search .mood-title {
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .mood-search .mood-subtitle {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .mood-search {
   /* Span the full search content width, edge to edge, rather than the narrow
@@ -136,12 +136,12 @@
 }
 .mood-search .mood-chips {
   max-width: none;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
 }
 .mood-search .mood-chips .chip {
   min-height: 36px;
-  padding: 6px 11px;
-  font-size: 12px;
+  padding: calc(6px * var(--density-scale)) calc(11px * var(--density-scale));
+  font-size: 0.75rem;
 }
 
 @media (max-width: 560px) {
@@ -153,7 +153,7 @@
 
 @media (max-width: 560px) {
   .mood {
-    gap: 10px;
+    gap: calc(10px * var(--density-scale));
     padding: var(--sp-md);
     width: 100%;
     max-width: none;
@@ -165,27 +165,27 @@
     align-items: center;
     min-height: 0;
     border-radius: var(--r-md);
-    padding: 9px;
-    gap: 8px;
+    padding: calc(9px * var(--density-scale));
+    gap: calc(8px * var(--density-scale));
   }
 
   .mood-prompt input {
     min-height: 44px;
-    font-size: 14px;
+    font-size: 0.875rem;
   }
 
   .mood-curate {
     min-width: 76px;
     width: auto;
     min-height: 44px;
-    padding: 7px 12px;
-    font-size: 12px;
+    padding: calc(7px * var(--density-scale)) calc(12px * var(--density-scale));
+    font-size: 0.75rem;
   }
 
   .mood-chips {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: calc(8px * var(--density-scale));
     overflow: visible;
     padding-bottom: 0;
     scroll-snap-type: none;
@@ -199,9 +199,9 @@
     max-width: none;
     min-height: 44px;
     overflow: hidden;
-    padding: 8px 14px;
+    padding: calc(8px * var(--density-scale)) calc(14px * var(--density-scale));
     text-align: center;
-    font-size: 12px;
+    font-size: 0.75rem;
     line-height: 1.15;
   }
 
@@ -215,11 +215,11 @@
 
   .mood-header {
     align-items: flex-start;
-    gap: 7px;
+    gap: calc(7px * var(--density-scale));
   }
 
   .mood-title {
-    font-size: 17px;
+    font-size: 1.0625rem;
   }
 
   .mood-subtitle {
@@ -227,20 +227,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
 
   .mood-prompt {
     grid-template-columns: 18px minmax(0, 1fr);
-    gap: 7px 8px;
+    gap: calc(7px * var(--density-scale)) calc(8px * var(--density-scale));
     min-height: 0;
-    padding: 8px;
+    padding: calc(8px * var(--density-scale));
     border-radius: var(--r-md);
   }
 
   .mood-prompt input {
     min-height: 40px;
-    font-size: 13px;
+    font-size: 0.8125rem;
   }
 
   .mood-curate {
@@ -248,26 +248,26 @@
     width: 100%;
     min-width: 0;
     min-height: 44px;
-    padding: 8px 12px;
-    font-size: 12px;
+    padding: calc(8px * var(--density-scale)) calc(12px * var(--density-scale));
+    font-size: 0.75rem;
   }
 
   .mood-chips {
-    gap: 7px;
+    gap: calc(7px * var(--density-scale));
   }
 
   .mood-chips .chip {
     min-height: 44px;
     min-width: 0;
     max-width: none;
-    padding: 8px;
-    font-size: 11px;
+    padding: calc(8px * var(--density-scale));
+    font-size: 0.6875rem;
   }
 }
 
 @media (max-width: 380px) and (max-height: 620px) {
   .mood {
-    gap: 7px;
+    gap: calc(7px * var(--density-scale));
   }
 
   .mood-header {
@@ -280,7 +280,7 @@
 
   .mood-prompt {
     min-height: 0;
-    padding-block: 5px;
+    padding-block: calc(5px * var(--density-scale));
   }
 
   .mood-prompt input {
@@ -294,12 +294,12 @@
   .mood-chips {
     display: flex;
     flex-wrap: nowrap;
-    gap: 7px;
+    gap: calc(7px * var(--density-scale));
     max-width: calc(100% + 4px);
-    margin-inline: -2px;
+    margin-inline: calc(-2px * var(--density-scale));
     overflow-x: auto;
     overflow-y: hidden;
-    padding: 0 24px 1px 2px;
+    padding: 0 calc(24px * var(--density-scale)) calc(1px * var(--density-scale)) calc(2px * var(--density-scale));
     scroll-snap-type: x proximity;
     -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
     mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
@@ -314,7 +314,7 @@
 
 @media (max-width: 380px) and (max-height: 760px) {
   .mood {
-    gap: 7px;
+    gap: calc(7px * var(--density-scale));
   }
 
   .mood-header {
@@ -327,8 +327,8 @@
 
   .mood-prompt {
     grid-template-columns: 18px minmax(0, 1fr) 72px;
-    gap: 7px;
-    padding: 7px 8px;
+    gap: calc(7px * var(--density-scale));
+    padding: calc(7px * var(--density-scale)) calc(8px * var(--density-scale));
   }
 
   .mood-prompt input {
@@ -339,19 +339,19 @@
     grid-column: auto;
     width: auto;
     min-height: 44px;
-    padding: 6px 8px;
-    font-size: 11.5px;
+    padding: calc(6px * var(--density-scale)) calc(8px * var(--density-scale));
+    font-size: 0.71875rem;
   }
 
   .mood-chips {
     display: flex;
     flex-wrap: nowrap;
-    gap: 7px;
+    gap: calc(7px * var(--density-scale));
     max-width: calc(100% + 4px);
-    margin-inline: -2px;
+    margin-inline: calc(-2px * var(--density-scale));
     overflow-x: auto;
     overflow-y: hidden;
-    padding: 0 24px 1px 2px;
+    padding: 0 calc(24px * var(--density-scale)) calc(1px * var(--density-scale)) calc(2px * var(--density-scale));
     scroll-snap-type: x proximity;
     -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
     mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
@@ -389,7 +389,7 @@
   .mood-chips {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    gap: calc(10px * var(--density-scale));
     overflow: visible;
     padding-bottom: 0;
     scroll-snap-type: none;

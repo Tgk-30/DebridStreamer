@@ -49,7 +49,7 @@
   gap: var(--sp-md);
   padding: var(--sp-sm) var(--sp-md);
   margin-top: var(--sp-sm);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .dl-delete:hover {
   border-color: rgba(var(--danger-rgb), 0.6);
@@ -57,12 +57,12 @@
 }
 
 .dl-status {
-  font-size: 14px;
+  font-size: 0.875rem;
   margin-top: var(--sp-md);
 }
 .dl-error {
   color: var(--danger);
-  font-size: 13px;
+  font-size: 0.8125rem;
   margin: var(--sp-sm) 0 0;
 }
 
@@ -86,13 +86,13 @@
   gap: var(--sp-sm);
   padding: var(--sp-sm);
   border-radius: var(--r-sm);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .dl-row:not(.dl-row-head):hover {
   background: var(--glass-tint-control-hover);
 }
 .dl-row-head {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -114,7 +114,7 @@
 .dl-col-name {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: calc(3px * var(--density-scale));
   min-width: 0;
 }
 .dl-name-text {
@@ -125,12 +125,12 @@
 }
 .dl-badges {
   display: flex;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
 }
 .dl-badge {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
-  padding: 1px 6px;
+  padding: calc(1px * var(--density-scale)) calc(6px * var(--density-scale));
   border-radius: var(--r-pill);
   letter-spacing: 0;
 }
@@ -155,8 +155,8 @@
 
 .dl-status-pill {
   display: inline-block;
-  font-size: 11px;
-  padding: 2px 8px;
+  font-size: 0.6875rem;
+  padding: calc(2px * var(--density-scale)) calc(8px * var(--density-scale));
   border-radius: var(--r-pill);
   background: var(--glass-tint-control);
   color: var(--text-secondary);

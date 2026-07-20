@@ -5,13 +5,13 @@
   flex-direction: column;
   gap: var(--sp-lg);
   padding: var(--sp-xl);
-  padding-top: 64px;
+  padding-top: calc(64px * var(--density-scale));
   max-width: 1280px;
 }
 
 .search-h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: 0;
 }
@@ -29,7 +29,7 @@
   padding: 0 var(--sp-md);
 }
 .search-field input {
-  font-size: 15px;
+  font-size: 0.9375rem;
   min-height: 42px;
   line-height: 42px;
 }
@@ -66,7 +66,7 @@
 }
 
 .search-status {
-  font-size: 14px;
+  font-size: 0.875rem;
   margin: 0;
 }
 .search-error {
@@ -103,11 +103,11 @@
 }
 .search-section-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 700;
 }
 .search-section-title-spaced {
-  margin-top: var(--sp-lg, 16px);
+  margin-top: var(--sp-lg, calc(16px * var(--density-scale)));
 }
 
 .search-screen .media-card-reveal {
@@ -143,23 +143,23 @@
 .search-see-all {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: calc(2px * var(--density-scale));
   flex-shrink: 0;
   border: none;
   background: none;
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   font-family: inherit;
-  padding: 4px 2px;
+  padding: calc(4px * var(--density-scale)) calc(2px * var(--density-scale));
   transition: color 0.16s;
 }
 .search-see-all:hover {
   color: var(--accent);
 }
 .search-see-all-arrow {
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1;
 }
 
@@ -192,7 +192,7 @@
 
   .search-filters {
     overflow-x: auto;
-    padding-bottom: 2px;
+    padding-bottom: calc(2px * var(--density-scale));
     scrollbar-width: none;
   }
 
@@ -210,17 +210,17 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
 }
 .search-sort-chip {
   min-height: 30px;
-  padding: 4px 12px;
+  padding: calc(4px * var(--density-scale)) calc(12px * var(--density-scale));
   border: 1px solid var(--glass-border);
   border-radius: var(--r-pill);
   color: var(--text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 550;
   cursor: pointer;
   transition: color 0.14s, background 0.14s, border-color 0.14s;

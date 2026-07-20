@@ -5,7 +5,7 @@
   flex-direction: column;
   gap: var(--sp-md);
   padding: var(--sp-xl);
-  padding-top: 64px;
+  padding-top: calc(64px * var(--density-scale));
   max-width: 880px;
 }
 
@@ -18,13 +18,13 @@
 
 .assistant-h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: 0;
 }
 .assistant-sub {
   margin: 0 0 var(--sp-sm);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .assistant-prompt {
@@ -32,7 +32,7 @@
   padding: var(--sp-sm) var(--sp-sm) var(--sp-sm) var(--sp-md);
 }
 .assistant-prompt input {
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 
 .assistant-chips {
@@ -48,7 +48,7 @@
 
 .assistant-error {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--danger);
 }
 
@@ -81,21 +81,21 @@
   gap: var(--sp-sm);
 }
 .assistant-rec-title {
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 600;
 }
 .assistant-rec-year {
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .assistant-rec-score {
   margin-left: auto;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--accent);
 }
 .assistant-rec-reason {
-  margin: 4px 0 0;
-  font-size: 13px;
+  margin: calc(4px * var(--density-scale)) 0 0;
+  font-size: 0.8125rem;
   line-height: 1.45;
 }
 

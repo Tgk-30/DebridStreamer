@@ -11,16 +11,16 @@
   padding: var(--sp-xxl) var(--sp-xl);
   border-radius: var(--r-lg);
   max-width: 460px;
-  margin: clamp(var(--sp-xl), 9vh, 88px) auto var(--sp-xl);
+  margin: clamp(var(--sp-xl), 9vh, calc(88px * var(--density-scale))) auto var(--sp-xl);
 }
 .empty-state-title {
   margin: var(--sp-xs) 0 0;
-  font-size: 19px;
+  font-size: 1.1875rem;
   font-weight: 700;
 }
 .empty-state-sub {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.5;
   max-width: 360px;
 }

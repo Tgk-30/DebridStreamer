@@ -12,6 +12,9 @@
 
 :root {
   color-scheme: dark;
+  /* Component typography uses rem so this one dial scales the full type ramp,
+     including responsive clamp endpoints. */
+  font-size: calc(16px * var(--text-scale));
 
   /* ---- Brand + semantic colors (Midnight default) ---- */
   --accent: rgb(120, 176, 224);
@@ -66,6 +69,8 @@
   --glass-blur-raised: 28px;
   --glass-blur-hero: 40px;
   --text-scale: 1;
+  --density-scale: 1;
+  --radius-scale: 1;
   --poster-card-width: 168px;
   --poster-grid-min: 184px;
   --hero-min-height: 420px;
@@ -92,13 +97,13 @@
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
 
   /* ---- Type scale (editorial ramp) + display tracking ---- */
-  --fs-display: clamp(34px, 4.4vw, 58px);
-  --fs-title: clamp(28px, 3vw, 34px);
-  --fs-section: 21px;
-  --fs-subsection: 17px;
-  --fs-body: 15px;
-  --fs-meta: 13px;
-  --fs-caption: 11.5px;
+  --fs-display: clamp(2.125rem, calc(4.4vw * var(--text-scale)), 3.625rem);
+  --fs-title: clamp(1.75rem, calc(3vw * var(--text-scale)), 2.125rem);
+  --fs-section: 1.3125rem;
+  --fs-subsection: 1.0625rem;
+  --fs-body: 0.9375rem;
+  --fs-meta: 0.8125rem;
+  --fs-caption: 0.71875rem;
   --tracking-display: clamp(-0.022em, -0.4vw, -0.01em);
   --lh-heading: 1.08;
   --lh-body: 1.5;
@@ -115,6 +120,7 @@
 }
 
 :root[data-density="compact"] {
+  --density-scale: 0.84;
   --sp-sm: 6px;
   --sp-md: 10px;
   --sp-lg: 14px;
@@ -161,6 +167,7 @@
 }
 
 :root[data-radius="sharp"] {
+  --radius-scale: 0.58;
   --r-xs: 3px;
   --r-sm: 6px;
   --r-md: 8px;
@@ -170,6 +177,7 @@
 }
 
 :root[data-radius="round"] {
+  --radius-scale: 1.35;
   --r-xs: 8px;
   --r-sm: 14px;
   --r-md: 20px;
@@ -576,7 +584,7 @@ html {
 
 body {
   color: var(--text-primary);
-  font-size: calc(16px * var(--text-scale));
+  font-size: 1rem;
   line-height: var(--lh-body);
   /* AppTheme.background - diagonal aurora gradient (topLeading→bottomTrailing). */
   background: linear-gradient(
@@ -671,9 +679,9 @@ textarea::placeholder {
 @media (prefers-reduced-motion: reduce) {
   /* Honor the OS preference app-wide (CSS layer) without needing the in-app
      toggle. The JS/motion layer is handled by <MotionConfig reducedMotion="user">. */
-  *,
-  *::before,
-  *::after {
+  :root:not([data-motion="normal"]) *,
+  :root:not([data-motion="normal"]) *::before,
+  :root:not([data-motion="normal"]) *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
@@ -756,7 +764,7 @@ textarea::placeholder {
   align-items: center;
   gap: var(--sp-sm);
   min-height: 44px;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   padding: var(--sp-sm) var(--sp-lg);
   border-radius: var(--r-pill);
@@ -820,11 +828,11 @@ textarea::placeholder {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
   min-height: 32px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 500;
-  padding: 7px 13px;
+  padding: calc(7px * var(--density-scale)) calc(13px * var(--density-scale));
   border-radius: var(--r-pill);
   background: var(--glass-tint-control);
   backdrop-filter: blur(16px);
@@ -844,7 +852,7 @@ textarea::placeholder {
 @media (max-width: 860px) {
   .chip {
     min-height: 36px;
-    padding: 8px 14px;
+    padding: calc(8px * var(--density-scale)) calc(14px * var(--density-scale));
   }
 }
 
@@ -864,7 +872,7 @@ textarea::placeholder {
   border: none;
   outline: none;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-family: inherit;
 }
 .field input::placeholder {
@@ -937,7 +945,7 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 *::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   border: 3px solid transparent;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--radius-scale));
   background-clip: padding-box;
 }
 *::-webkit-scrollbar-thumb:hover {

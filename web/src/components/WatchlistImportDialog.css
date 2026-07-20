@@ -29,7 +29,7 @@
 }
 .wli-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 700;
 }
 .wli-close {
@@ -56,7 +56,7 @@
 }
 .wli-note {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 
@@ -68,7 +68,7 @@
   border: 0.75px solid var(--glass-border);
   background: var(--glass-tint-control);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
   outline: none;
 }
@@ -89,7 +89,7 @@
   flex-wrap: wrap;
 }
 .wli-count {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .wli-actions {
   display: flex;
@@ -98,17 +98,17 @@
 
 .wli-error {
   color: var(--danger);
-  font-size: 13px;
+  font-size: 0.8125rem;
   margin: 0;
 }
 
 .wli-summary {
   padding: var(--sp-md);
   border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: 0.8125rem;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(4px * var(--density-scale));
 }
 .wli-summary p {
   margin: 0;
@@ -117,5 +117,5 @@
   gap: var(--sp-sm);
 }
 .wli-summary-sub {
-  font-size: 12px;
+  font-size: 0.75rem;
 }

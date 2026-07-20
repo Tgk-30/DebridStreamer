@@ -50,7 +50,7 @@
 /* Clarifier shown when a keyless fallback can't actually filter by genre. */
 .browse-fixture-note {
   margin: calc(-1 * var(--sp-sm)) 0 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.45;
 }
 
@@ -64,7 +64,7 @@
   border: 0.75px solid var(--glass-border);
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
   transition: color 0.16s, border-color 0.16s;
@@ -74,7 +74,7 @@
   border-color: rgba(var(--accent-rgb), 0.5);
 }
 .browse-back-arrow {
-  font-size: 18px;
+  font-size: 1.125rem;
   line-height: 1;
 }
 
@@ -87,12 +87,12 @@
 }
 .browse-h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: 1.625rem;
   font-weight: 700;
   letter-spacing: 0;
 }
 .browse-count {
-  font-size: 13px;
+  font-size: 0.8125rem;
   white-space: nowrap;
 }
 
@@ -124,12 +124,12 @@
   background: rgba(var(--accent-rgb), 0.22);
 }
 .browse-chip-clear {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px 8px;
+  padding: calc(6px * var(--density-scale)) calc(8px * var(--density-scale));
 }
 .browse-chip-clear:hover {
   color: var(--text-primary);
@@ -181,7 +181,7 @@
 }
 .browse-loading {
   text-align: center;
-  font-size: 13px;
+  font-size: 0.8125rem;
   margin: 0 0 var(--sp-md);
 }
 
@@ -205,7 +205,7 @@
   }
 
   .browse-h1 {
-    font-size: 25px;
+    font-size: 1.5625rem;
     line-height: 1.08;
   }
 

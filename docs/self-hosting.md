@@ -65,6 +65,19 @@ image: ghcr.io/tgk-30/debridstreamer:latest
 
 See [`DOCKER.md`](DOCKER.md) for the full Docker reference.
 
+For a public server with automatic HTTPS, use the included Caddy stack instead:
+
+```sh
+cd deploy/compose
+cp .env.example .env
+# Set YAWF_DOMAIN and DS_SERVER_SECRET_KEY in .env.
+docker compose -f docker-compose.caddy.yml up -d
+docker compose -f docker-compose.caddy.yml logs debridstreamer
+```
+
+The final command shows the one-time setup token for a fresh server. The Caddy
+profile does not publish the application port directly.
+
 ### 3. Raspberry Pi
 
 A Raspberry Pi (ARM64, e.g. Pi 4 / Pi 5 running 64-bit Raspberry Pi OS) works
@@ -121,11 +134,42 @@ environment variables (or in your Docker `.env`).
 | `DS_SERVER_COOKIE_SECURE` | on in production | Marks session cookies HTTPS-only. Set `true` behind HTTPS. |
 | `DS_SERVER_COOKIE_SAMESITE` | `lax` | Cookie SameSite policy (`lax`, `strict`, `none`). |
 | `DS_SERVER_SESSION_TTL_SECONDS` | 30 days | How long a sign-in lasts. |
+| `DS_SERVER_BIND_SESSION_USER_AGENT` | `false` | Revoke a session if its browser or app User-Agent changes. Recommended for public deployments. |
 | `DS_SERVER_TRUST_PROXY` | `false` | Set `true` behind a trusted reverse proxy / tunnel. |
+| `DS_SERVER_PUBLIC_MODE` | `false` | Require passwords on every profile and show public deployment warnings. |
+| `DS_SERVER_ALLOW_INSECURE_PUBLIC` | `false` | Explicitly acknowledge a public bind without secure proxy settings. Use only on a protected private network. |
+| `DS_SERVER_UPDATE_CHECK` | `true` | Let admins see whether a newer published server version is available. |
 | `DS_SERVER_CORS_ORIGIN` | unset | Comma-separated browser origins allowed to call the API with cookies. Usually leave blank when the server also serves the web app. |
 | `DS_SERVER_ALLOW_RAW_STREAM_URLS` | off in production | Lets the server fetch raw upstream URLs, **including private/LAN/loopback addresses**. Keep **disabled** on any public deployment - see warning below. |
 | `DS_SERVER_ENABLE_TRANSCODE` | `true` in official deployments, otherwise `false` | Enables FFmpeg HLS fallback for browser-incompatible streams. Set `false` on CPU-constrained hosts. |
 | `DS_SERVER_MAX_TRANSCODES` | `1` | Maximum simultaneous FFmpeg HLS jobs. |
+
+## Public server security
+
+For an internet-facing deployment behind an HTTPS reverse proxy, use:
+
+```env
+DS_SERVER_COOKIE_SECURE=true
+DS_SERVER_TRUST_PROXY=true
+DS_SERVER_PUBLIC_MODE=true
+DS_SERVER_BIND_SESSION_USER_AGENT=true
+DS_SERVER_SESSION_TTL_SECONDS=604800
+DS_SERVER_ALLOW_RAW_STREAM_URLS=false
+```
+
+Fresh production installs require a one-time owner setup token. If
+`DS_SERVER_SETUP_TOKEN` is blank, the server generates it and prints it once to
+the server or container log while setup is required.
+
+The included compose profiles run the service as a non-root user with a
+read-only root filesystem, dropped Linux capabilities, and
+`no-new-privileges`. The application also applies security headers, progressive
+login lockout, rate limits on expensive routes, account-wide session revocation,
+and optional authenticator-app two-factor authentication for owners and admins.
+
+If Cloudflare Access protects the site, external media players need a bypass
+policy for the exact path `/api/external-stream/*`. Do not bypass all API
+routes. See [Remote access](remote-access.md#optional-cloudflare-access-auth-wall).
 
 ### About `DS_SERVER_SECRET_KEY`
 

@@ -1,30 +1,30 @@
 .omdb-ratings {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-sm, 8px);
-  margin: var(--sp-md, 12px) 0 0;
+  gap: var(--sp-sm, calc(8px * var(--density-scale)));
+  margin: var(--sp-md, calc(12px * var(--density-scale))) 0 0;
 }
 
 .omdb-rating {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: var(--r-pill, 999px);
+  gap: calc(6px * var(--density-scale));
+  padding: calc(6px * var(--density-scale)) calc(12px * var(--density-scale));
+  border-radius: var(--r-pill, calc(999px * var(--radius-scale)));
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.14));
   background: var(--glass-tint-control);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .omdb-rating-value {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary, rgba(255, 255, 255, 0.94));
 }
 
 .omdb-rating-label {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;

@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -106,6 +106,36 @@ async function request(
 
 function json<T = unknown>(response: LightMyRequestResponse): T {
   return JSON.parse(response.body) as T;
+}
+
+function decodeBase32(value: string): Buffer {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0;
+  let buffer = 0;
+  const output: number[] = [];
+  for (const char of value) {
+    buffer = (buffer << 5) | alphabet.indexOf(char);
+    bits += 5;
+    if (bits >= 8) {
+      output.push((buffer >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(output);
+}
+
+function currentTotp(secret: string): string {
+  const counter = Math.floor(Date.now() / 30_000);
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac("sha1", decodeBase32(secret)).update(message).digest();
+  const offset = digest.at(-1)! & 0x0f;
+  const value =
+    (((digest[offset]! & 0x7f) << 24) |
+      (digest[offset + 1]! << 16) |
+      (digest[offset + 2]! << 8) |
+      digest[offset + 3]!) % 1_000_000;
+  return String(value).padStart(6, "0");
 }
 
 async function setupOwner(app: FastifyInstance): Promise<TestClient> {
@@ -356,6 +386,189 @@ describe("DebridStreamer server", () => {
     }
   });
 
+  it("adds browser security headers and HSTS on trusted HTTPS requests", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/health" });
+    expect(response.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(response.headers["x-frame-options"]).toBe("DENY");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["referrer-policy"]).toBe("no-referrer");
+    expect(response.headers["strict-transport-security"]).toBeUndefined();
+
+    const secureApp = await buildApp({
+      config: {
+        databasePath: ":memory:",
+        dataDir: ".test-data",
+        secretKey: randomBytes(32),
+        cookieSecure: true,
+        trustProxy: true,
+        logger: false,
+        updateCheck: false,
+      },
+    });
+    try {
+      const secure = await secureApp.inject({
+        method: "GET",
+        url: "/api/health",
+        headers: { "x-forwarded-proto": "https" },
+      });
+      expect(secure.headers["strict-transport-security"]).toBe(
+        "max-age=31536000; includeSubDomains",
+      );
+    } finally {
+      await secureApp.close();
+    }
+  });
+
+  it("applies progressive login backoff and exposes failed attempts in the audit log", async () => {
+    const owner = await setupOwner(app);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { username: "owner", password: "wrong-password" },
+      });
+      expect(response.statusCode).toBe(401);
+    }
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "owner", password: "owner-password" },
+    });
+    expect(blocked.statusCode).toBe(429);
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+
+    const auditResponse = await request(owner, {
+      method: "GET",
+      url: "/api/admin/audit-log?limit=20",
+    });
+    const actions = json<{ events: Array<{ action: string }> }>(auditResponse).events.map(
+      (event) => event.action,
+    );
+    expect(actions).toContain("auth.login.failed");
+    expect(actions).toContain("auth.login.blocked");
+  });
+
+  it("supports TOTP enrollment and requires the authenticator code on login", async () => {
+    const owner = await setupOwner(app);
+    const enrollmentResponse = await request(owner, {
+      method: "POST",
+      url: "/api/auth/totp/enroll",
+      csrf: true,
+    });
+    expect(enrollmentResponse.statusCode).toBe(200);
+    const enrollment = json<{ secret: string; otpauthUrl: string }>(enrollmentResponse);
+    expect(enrollment.otpauthUrl).toContain("otpauth://totp/");
+    const code = currentTotp(enrollment.secret);
+    const confirmed = await request(owner, {
+      method: "POST",
+      url: "/api/auth/totp/confirm",
+      csrf: true,
+      payload: { code },
+    });
+    expect(confirmed.statusCode).toBe(200);
+
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "owner", password: "owner-password" },
+    });
+    expect(missing.statusCode).toBe(401);
+    expect(json<{ error: string }>(missing).error).toBe("Two-factor code required.");
+
+    const signedIn = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "owner", password: "owner-password", totpCode: currentTotp(enrollment.secret) },
+    });
+    expect(signedIn.statusCode).toBe(200);
+  });
+
+  it("revokes every account session with one sign-out-all action", async () => {
+    const owner = await setupOwner(app);
+    const second = await login(app, "owner", "owner-password");
+    const revoked = await request(owner, {
+      method: "POST",
+      url: "/api/auth/sessions/revoke-all",
+      csrf: true,
+      payload: { includeCurrent: true },
+    });
+    expect(revoked.statusCode).toBe(200);
+    expect(json<{ revoked: number }>(revoked).revoked).toBe(2);
+    expect((await request(owner, { method: "GET", url: "/api/auth/session" })).statusCode).toBe(401);
+    expect((await request(second, { method: "GET", url: "/api/auth/session" })).statusCode).toBe(401);
+  });
+
+  it("optionally binds sessions to the User-Agent that created them", async () => {
+    const boundApp = await buildApp({
+      config: {
+        databasePath: ":memory:",
+        dataDir: ".test-data",
+        secretKey: randomBytes(32),
+        setupToken: null,
+        cookieSecure: false,
+        bindSessionUserAgent: true,
+        logger: false,
+        updateCheck: false,
+      },
+    });
+    const client: TestClient = { app: boundApp, cookies: new Map() };
+    try {
+      const created = await request(client, {
+        method: "POST",
+        url: "/api/auth/setup-owner",
+        headers: { "user-agent": "Browser A" },
+        payload: { username: "owner", password: "owner-password", displayName: "Owner" },
+      });
+      expect(created.statusCode).toBe(200);
+      const changed = await request(client, {
+        method: "GET",
+        url: "/api/auth/session",
+        headers: { "user-agent": "Browser B" },
+      });
+      expect(changed.statusCode).toBe(401);
+    } finally {
+      await boundApp.close();
+    }
+  });
+
+  it("requires every viewer profile to have a password in public mode", async () => {
+    const publicApp = await buildApp({
+      config: {
+        databasePath: ":memory:",
+        dataDir: ".test-data",
+        secretKey: randomBytes(32),
+        setupToken: null,
+        cookieSecure: false,
+        publicMode: true,
+        logger: false,
+        updateCheck: false,
+      },
+    });
+    try {
+      const owner = await setupOwner(publicApp);
+      const missing = await request(owner, {
+        method: "POST",
+        url: "/api/account/profiles",
+        csrf: true,
+        payload: { displayName: "Guest", simpleMode: true },
+      });
+      expect(missing.statusCode).toBe(400);
+      const created = await request(owner, {
+        method: "POST",
+        url: "/api/account/profiles",
+        csrf: true,
+        payload: { displayName: "Guest", password: "guest-password", simpleMode: true },
+      });
+      expect(created.statusCode).toBe(200);
+      const state = await request(owner, { method: "GET", url: "/api/account/profiles" });
+      const guest = json<{ profiles: Array<{ displayName: string; gateType: string }> }>(state)
+        .profiles.find((profile) => profile.displayName === "Guest");
+      expect(guest?.gateType).toBe("password");
+    } finally {
+      await publicApp.close();
+    }
+  });
+
   it("exposes profile simpleMode (as a boolean) and lets a profile flip it", async () => {
     const owner = await setupOwner(app);
 
@@ -387,7 +600,7 @@ describe("DebridStreamer server", () => {
   it("rate-limits repeated login attempts for the same account and IP", async () => {
     await setupOwner(app);
 
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       const response = await app.inject({
         method: "POST",
         url: "/api/auth/login",
@@ -408,7 +621,7 @@ describe("DebridStreamer server", () => {
       },
     });
     expect(limited.statusCode).toBe(429);
-    expect(json<{ error: string }>(limited).error).toMatch(/too many requests/i);
+    expect(json<{ error: string }>(limited).error).toMatch(/too many failed login attempts/i);
   });
 
   it("keeps watchlist and history isolated per profile", async () => {
@@ -2089,6 +2302,25 @@ describe("DebridStreamer server", () => {
     expect(bearerStream.statusCode).toBe(206);
     expect(bearerStream.body).toBe("abcd");
 
+    const capability = streamSession.playbackAuthorization.replace(/^Bearer\s+/, "");
+    const sessionId = playbackUrl.split("/").pop();
+    const externalUrl = `/api/external-stream/${sessionId}/${capability}`;
+    const externalStream = await request({ app, cookies: new Map() }, {
+      method: "GET",
+      url: externalUrl,
+      headers: { range: "bytes=0-3" },
+    });
+    expect(externalStream.statusCode).toBe(206);
+    expect(externalStream.headers["cache-control"]).toBe("private, no-store");
+    expect(externalStream.headers["referrer-policy"]).toBe("no-referrer");
+    expect(externalStream.body).toBe("abcd");
+
+    const invalidExternal = await request({ app, cookies: new Map() }, {
+      method: "GET",
+      url: `/api/external-stream/${sessionId}/${"A".repeat(43)}`,
+    });
+    expect(invalidExternal.statusCode).toBe(404);
+
     const secondCreated = await request(owner, {
       method: "POST",
       url: "/api/streams/sessions/raw",
@@ -2186,6 +2418,12 @@ describe("DebridStreamer server", () => {
       headers: { authorization: session.playbackAuthorization },
     });
     expect(bearerAfter.statusCode).toBe(404);
+    const capability = session.playbackAuthorization.replace(/^Bearer\s+/, "");
+    const externalAfter = await request({ app, cookies: new Map() }, {
+      method: "GET",
+      url: `/api/external-stream/${session.id}/${capability}`,
+    });
+    expect(externalAfter.statusCode).toBe(404);
 
     // Revoking again (already revoked) reports not-found.
     const again = await request(owner, {
@@ -2941,6 +3179,7 @@ describe("DebridStreamer server", () => {
       await request(owner, { method: "GET", url: "/api/settings/profile" }),
     ).settings;
     expect(settings.profile_password_hash).toBeUndefined(); // not leaked on read
+    expect(settings.profile_gate_kind).toBeUndefined();
     // And the generic settings PUT cannot overwrite/delete the protected key.
     expect(
       (await request(owner, {
@@ -2948,6 +3187,14 @@ describe("DebridStreamer server", () => {
         url: "/api/settings/profile",
         csrf: true,
         payload: { key: "profile_password_hash", value: "attacker" },
+      })).statusCode,
+    ).toBe(403);
+    expect(
+      (await request(owner, {
+        method: "PUT",
+        url: "/api/settings/profile",
+        csrf: true,
+        payload: { key: "profile_gate_kind", value: "none" },
       })).statusCode,
     ).toBe(403);
   });

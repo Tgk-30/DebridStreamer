@@ -93,6 +93,26 @@ DS_SERVER_COOKIE_SECURE=true
 DS_SERVER_TRUST_PROXY=true
 ```
 
+For an internet-facing deployment, start the included hardened Caddy profile:
+
+```sh
+cd deploy/compose
+cp .env.example .env
+# Set YAWF_DOMAIN and DS_SERVER_SECRET_KEY.
+docker compose -f docker-compose.caddy.yml up -d
+docker compose -f docker-compose.caddy.yml logs debridstreamer
+```
+
+Caddy obtains and renews HTTPS certificates, and this profile does not publish
+port `43110`. The log command shows the one-time setup token on a fresh server.
+See [`deploy/compose/README.md`](../deploy/compose/README.md) for all public-mode
+security settings.
+
+When Cloudflare Access protects the site, add a bypass policy only for
+`/api/external-stream/*`. External media players cannot send Access browser
+cookies. This path still requires YAWF Stream's short-lived, stream-scoped
+capability and remains subject to profile and session revocation.
+
 Use DebridStreamer profiles even when Cloudflare Access or Tailscale protects
 the outer network. Those layers are additional protection, not a replacement for
 per-profile history, credentials, and session boundaries.

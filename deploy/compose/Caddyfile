@@ -1,0 +1,4 @@
+{$YAWF_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy debridstreamer:43110
+}

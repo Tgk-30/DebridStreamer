@@ -49,7 +49,7 @@
 }
 .fs-title {
   margin: 0;
-  font-size: 19px;
+  font-size: 1.1875rem;
   font-weight: 700;
   letter-spacing: 0;
 }
@@ -86,7 +86,7 @@
 }
 .fs-group-label {
   margin: 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0;
@@ -121,7 +121,7 @@
   padding: var(--sp-sm) var(--sp-md);
   border-radius: var(--r-sm);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-family: inherit;
   outline: none;
 }
@@ -186,7 +186,7 @@
   }
 
   .fs-title {
-    font-size: 18px;
+    font-size: 1.125rem;
   }
 
   .fs-close {
@@ -202,16 +202,16 @@
   }
 
   .fs-group {
-    gap: 6px;
+    gap: calc(6px * var(--density-scale));
   }
 
   .fs-row {
-    gap: 6px;
+    gap: calc(6px * var(--density-scale));
   }
 
   .fs-language-group .chip {
     min-width: 62px;
-    padding-inline: 10px;
+    padding-inline: calc(10px * var(--density-scale));
   }
 
   .fs-foot {

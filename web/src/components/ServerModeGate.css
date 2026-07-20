@@ -4,7 +4,7 @@
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 32px;
+  padding: calc(32px * var(--density-scale));
   background:
     radial-gradient(circle at 20% 15%, rgba(82, 113, 255, 0.24), transparent 32%),
     radial-gradient(circle at 85% 20%, rgba(32, 201, 151, 0.18), transparent 28%),
@@ -17,33 +17,33 @@
   z-index: 1;
   width: min(440px, 100%);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   background: rgba(11, 18, 32, 0.78);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
-  padding: 24px;
+  padding: calc(24px * var(--density-scale));
   backdrop-filter: blur(18px);
 }
 
 .server-gate-title {
-  margin: 0 0 8px;
+  margin: 0 0 calc(8px * var(--density-scale));
   font-size: 1.35rem;
   line-height: 1.2;
 }
 
 .server-gate-copy {
-  margin: 0 0 20px;
+  margin: 0 0 calc(20px * var(--density-scale));
   color: rgba(248, 250, 252, 0.72);
   line-height: 1.5;
 }
 
 .server-gate-form {
   display: grid;
-  gap: 14px;
+  gap: calc(14px * var(--density-scale));
 }
 
 .server-gate-field {
   display: grid;
-  gap: 7px;
+  gap: calc(7px * var(--density-scale));
   color: rgba(248, 250, 252, 0.78);
   font-size: 0.84rem;
 }
@@ -51,10 +51,10 @@
 .server-gate-field input {
   min-height: 42px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   background: rgba(255, 255, 255, 0.08);
   color: #f8fafc;
-  padding: 0 12px;
+  padding: 0 calc(12px * var(--density-scale));
   font: inherit;
 }
 
@@ -66,7 +66,7 @@
 .server-gate-button {
   min-height: 42px;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   background: #e5f0ff;
   color: #08111f;
   font-weight: 700;
@@ -80,7 +80,7 @@
 
 .server-gate-actions {
   display: grid;
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
 }
 
 .server-gate-button-secondary {
@@ -90,13 +90,13 @@
 }
 
 .server-gate-error {
-  margin: 2px 0 0;
+  margin: calc(2px * var(--density-scale)) 0 0;
   color: #fecaca;
   font-size: 0.9rem;
 }
 
 .server-gate-meta {
-  margin-top: 18px;
+  margin-top: calc(18px * var(--density-scale));
   word-break: break-all;
   color: rgba(248, 250, 252, 0.54);
   font-size: 0.78rem;

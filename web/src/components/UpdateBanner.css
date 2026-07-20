@@ -64,17 +64,17 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: calc(3px * var(--density-scale));
 }
 .update-banner-title {
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .update-banner-sub {
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
 }
 
@@ -85,8 +85,8 @@
   gap: var(--sp-xs);
 }
 .update-banner-install {
-  font-size: 13px;
-  padding: 6px 14px;
+  font-size: 0.8125rem;
+  padding: calc(6px * var(--density-scale)) calc(14px * var(--density-scale));
 }
 
 .update-banner-dismiss {
@@ -110,7 +110,7 @@
 
 /* Determinate / indeterminate install progress bar. */
 .update-banner-progress {
-  margin-top: 5px;
+  margin-top: calc(5px * var(--density-scale));
   height: 4px;
   border-radius: var(--r-pill);
   background: var(--glass-tint-control);

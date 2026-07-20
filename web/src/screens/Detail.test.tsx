@@ -120,6 +120,7 @@ vi.mock("../lib/serverApi", () => ({
     ...stream,
     streamURL: `${stream.streamURL.replace(/\/+$/, "")}/index.m3u8`,
   }),
+  serverExternalPlaybackURL: (stream: any) => `${stream.streamURL}/external-test`,
   createRequest: (...a: unknown[]) => createRequest(...a),
   fetchServerEpisodes: (...a: unknown[]) => fetchServerEpisodes(...a),
   resolveServerStream: (...a: unknown[]) => resolveServerStream(...a),

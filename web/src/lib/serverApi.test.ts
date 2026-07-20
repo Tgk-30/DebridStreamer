@@ -316,6 +316,26 @@ describe("resolveServerStream", () => {
     );
   });
 
+  it("builds a cookie-free external-player capability URL", () => {
+    const token = "A".repeat(43);
+    expect(api.serverExternalPlaybackURL({
+      streamURL: "https://server.example/api/stream/session-1",
+      playbackAuthorization: `Bearer ${token}`,
+    } as never)).toBe(
+      `https://server.example/api/external-stream/session-1/${token}`,
+    );
+  });
+
+  it("refuses to expose an external URL without a scoped playback capability", () => {
+    expect(api.serverExternalPlaybackURL({
+      streamURL: "https://server.example/api/stream/session-1",
+    } as never)).toBeNull();
+    expect(api.serverExternalPlaybackURL({
+      streamURL: "https://server.example/not-a-stream/session-1",
+      playbackAuthorization: `Bearer ${"A".repeat(43)}`,
+    } as never)).toBeNull();
+  });
+
   it("preserves an already-absolute streamURL (absoluteServerURL passthrough)", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({

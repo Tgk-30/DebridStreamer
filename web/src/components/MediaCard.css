@@ -71,7 +71,7 @@
   z-index: 2;
   font-family: var(--font-display, ui-sans-serif, system-ui, sans-serif);
   font-weight: 800;
-  font-size: clamp(24px, calc(var(--poster-w) * 0.25), 40px);
+  font-size: clamp(1.5rem, calc(var(--poster-w) * 0.25), 2.5rem);
   line-height: 1;
   letter-spacing: -0.03em;
   background: linear-gradient(
@@ -127,7 +127,7 @@
 .media-card-progress-fill {
   height: 100%;
   min-width: 3px;
-  border-radius: 0 2px 2px 0;
+  border-radius: 0 calc(2px * var(--radius-scale)) calc(2px * var(--radius-scale)) 0;
   background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
   box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6);
 }
@@ -180,7 +180,7 @@
   padding: var(--sp-md) var(--sp-md) var(--sp-md);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
   opacity: 0;
   transform: translateY(10px);
   transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
@@ -192,7 +192,7 @@
   transform: translateY(0);
 }
 .media-card-reveal-title {
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   font-weight: 650;
   line-height: 1.2;
   letter-spacing: 0;
@@ -206,21 +206,21 @@
 .media-card-reveal-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 11.5px;
+  gap: calc(10px * var(--density-scale));
+  font-size: 0.71875rem;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.82);
 }
 .media-card-reveal-rating {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: calc(3px * var(--density-scale));
 }
 .media-card-reveal-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 4px;
+  gap: calc(8px * var(--density-scale));
+  margin-top: calc(4px * var(--density-scale));
 }
 .media-card-play,
 .media-card-more {
@@ -261,9 +261,9 @@
   top: 7px;
   right: 7px;
   z-index: 2;
-  padding: 2px 7px;
+  padding: calc(2px * var(--density-scale)) calc(7px * var(--density-scale));
   border-radius: var(--r-pill);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: rgba(255, 255, 255, 0.96);
@@ -295,10 +295,10 @@
   z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 7px 2px 6px;
+  gap: calc(3px * var(--density-scale));
+  padding: calc(2px * var(--density-scale)) calc(7px * var(--density-scale)) calc(2px * var(--density-scale)) calc(6px * var(--density-scale));
   border-radius: var(--r-pill);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0;
   color: #07210f;
@@ -316,15 +316,15 @@
   z-index: 3;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 7px 2px 6px;
+  gap: calc(3px * var(--density-scale));
+  padding: calc(2px * var(--density-scale)) calc(7px * var(--density-scale)) calc(2px * var(--density-scale)) calc(6px * var(--density-scale));
   border: 0.75px solid var(--glass-border);
   border-radius: var(--r-pill);
   color: rgba(255, 255, 255, 0.96);
   background: linear-gradient(135deg, rgba(6, 8, 16, 0.92), rgba(6, 8, 16, 0.82));
   border-color: rgba(255, 255, 255, 0.22);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.25;
@@ -348,7 +348,7 @@
    it on hover, but keep it for at-a-glance scanning + accessibility). */
 .media-card-title {
   width: var(--poster-w);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.25;
   height: calc(1.25em * 2);
@@ -367,7 +367,7 @@
   align-items: center;
   justify-content: space-between;
   width: var(--poster-w);
-  font-size: 12px;
+  font-size: 0.75rem;
   min-height: 18px;
 }
 .media-card-year {
@@ -376,7 +376,7 @@
 .media-card-rating {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: calc(3px * var(--density-scale));
   color: var(--text-secondary);
   font-weight: 650;
 }
@@ -397,7 +397,7 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 .media-card-fallback-initial {
-  font-size: clamp(28px, 3.4vw, 52px);
+  font-size: clamp(1.75rem, calc(3.4vw * var(--text-scale)), 3.25rem);
   font-weight: 800;
   letter-spacing: -0.03em;
   color: rgba(255, 255, 255, 0.92);

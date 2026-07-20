@@ -5,19 +5,19 @@
   flex-direction: column;
   gap: var(--sp-md);
   padding: var(--sp-xl);
-  padding-top: 64px;
+  padding-top: calc(64px * var(--density-scale));
   max-width: 1280px;
 }
 
 .lib-h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: 0;
 }
 .lib-sub {
   margin: 0 0 var(--sp-sm);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .lib-head-row {
   display: flex;
@@ -44,7 +44,7 @@
 }
 
 .lib-screen .empty-state {
-  margin-top: clamp(var(--sp-lg), 6vh, 58px);
+  margin-top: clamp(var(--sp-lg), 6vh, calc(58px * var(--density-scale)));
 }
 
 .lib-screen .empty-state > svg {
@@ -107,28 +107,28 @@
   .lib-screen {
     padding: var(--sp-lg);
     padding-top: var(--sp-lg);
-    padding-bottom: calc(132px + env(safe-area-inset-bottom));
+    padding-bottom: calc(132px * var(--density-scale) + env(safe-area-inset-bottom));
     max-width: none;
   }
 
   .lib-screen .empty-state {
-    gap: 7px;
+    gap: calc(7px * var(--density-scale));
     margin-top: var(--sp-md);
     padding: var(--sp-lg) var(--sp-md);
   }
 
   .lib-screen .empty-state-title {
     margin-top: 0;
-    font-size: 17px;
+    font-size: 1.0625rem;
   }
 
   .lib-screen .empty-state-sub {
-    font-size: 13px;
+    font-size: 0.8125rem;
     line-height: 1.42;
   }
 
   .lib-screen .empty-state-actions {
-    margin-top: 2px;
+    margin-top: calc(2px * var(--density-scale));
   }
 }
 
@@ -142,11 +142,11 @@
 
 /* Compact + destructive button variants (base .btn lives in theme.css). */
 .btn-sm {
-  padding: 6px 12px;
-  font-size: 13px;
+  padding: calc(6px * var(--density-scale)) calc(12px * var(--density-scale));
+  font-size: 0.8125rem;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
 }
 .btn-danger {
   background: var(--danger, #e5484d);
@@ -170,17 +170,17 @@
 .lib-folder-new {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
 }
 .lib-folder-input {
   min-width: 140px;
-  padding: 7px 11px;
+  padding: calc(7px * var(--density-scale)) calc(11px * var(--density-scale));
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text-primary);
   background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
   border: 0.75px solid var(--glass-border, rgba(255, 255, 255, 0.16));
-  border-radius: var(--r-sm, 9px);
+  border-radius: var(--r-sm, calc(9px * var(--radius-scale)));
 }
 .lib-folder-input:focus-visible {
   outline: none;
@@ -202,14 +202,14 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
 }
 .lib-org-row {
   display: flex;
   align-items: center;
   gap: var(--sp-md);
-  padding: 10px 12px;
-  border-radius: var(--r-card, 14px);
+  padding: calc(10px * var(--density-scale)) calc(12px * var(--density-scale));
+  border-radius: var(--r-card, calc(14px * var(--radius-scale)));
   border: 0.75px solid var(--glass-border, rgba(255, 255, 255, 0.12));
   content-visibility: auto;
   contain-intrinsic-size: auto 90px;
@@ -218,7 +218,7 @@
   flex: 0 0 auto;
   width: 46px;
   height: 69px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   overflow: hidden;
   border: 0;
   padding: 0;
@@ -242,11 +242,11 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
 }
 .lib-org-title {
   font-weight: 650;
-  font-size: 14px;
+  font-size: 0.875rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -254,17 +254,17 @@
 .lib-org-move {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: calc(8px * var(--density-scale));
+  font-size: 0.75rem;
 }
 .lib-org-move select {
   font: inherit;
-  font-size: 13px;
-  padding: 5px 9px;
+  font-size: 0.8125rem;
+  padding: calc(5px * var(--density-scale)) calc(9px * var(--density-scale));
   color: var(--text-primary);
   background: var(--glass-tint-control, rgba(255, 255, 255, 0.06));
   border: 0.75px solid var(--glass-border, rgba(255, 255, 255, 0.16));
-  border-radius: var(--r-sm, 9px);
+  border-radius: var(--r-sm, calc(9px * var(--radius-scale)));
 }
 .lib-org-remove {
   flex: 0 0 auto;

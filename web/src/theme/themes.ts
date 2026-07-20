@@ -29,6 +29,8 @@ export interface AccentDef {
   label: string;
   color: string;
   rgb: string;
+  secondaryColor: string;
+  secondaryRgb: string;
 }
 
 /** The shipped themes. Order = display order in the picker. */
@@ -68,12 +70,30 @@ export const THEMES: ThemeDef[] = [
 ];
 
 export const ACCENTS: AccentDef[] = [
-  { id: "theme", label: "Theme", color: "var(--accent)", rgb: "" },
-  { id: "violet", label: "Violet", color: "rgb(140, 133, 250)", rgb: "140, 133, 250" },
-  { id: "cyan", label: "Cyan", color: "rgb(92, 189, 250)", rgb: "92, 189, 250" },
-  { id: "rose", label: "Rose", color: "rgb(250, 117, 189)", rgb: "250, 117, 189" },
-  { id: "green", label: "Green", color: "rgb(92, 217, 140)", rgb: "92, 217, 140" },
-  { id: "amber", label: "Amber", color: "rgb(250, 184, 92)", rgb: "250, 184, 92" },
+  {
+    id: "theme", label: "Theme", color: "var(--accent)", rgb: "",
+    secondaryColor: "var(--accent-secondary)", secondaryRgb: "",
+  },
+  {
+    id: "violet", label: "Violet", color: "rgb(140, 133, 250)", rgb: "140, 133, 250",
+    secondaryColor: "rgb(92, 189, 250)", secondaryRgb: "92, 189, 250",
+  },
+  {
+    id: "cyan", label: "Cyan", color: "rgb(92, 189, 250)", rgb: "92, 189, 250",
+    secondaryColor: "rgb(140, 133, 250)", secondaryRgb: "140, 133, 250",
+  },
+  {
+    id: "rose", label: "Rose", color: "rgb(250, 117, 189)", rgb: "250, 117, 189",
+    secondaryColor: "rgb(250, 184, 92)", secondaryRgb: "250, 184, 92",
+  },
+  {
+    id: "green", label: "Green", color: "rgb(92, 217, 140)", rgb: "92, 217, 140",
+    secondaryColor: "rgb(92, 189, 250)", secondaryRgb: "92, 189, 250",
+  },
+  {
+    id: "amber", label: "Amber", color: "rgb(250, 184, 92)", rgb: "250, 184, 92",
+    secondaryColor: "rgb(250, 117, 189)", secondaryRgb: "250, 117, 189",
+  },
 ];
 
 export function accentById(id: string | null | undefined): AccentDef {

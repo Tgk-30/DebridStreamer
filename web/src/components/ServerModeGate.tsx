@@ -311,6 +311,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
       copy="Use your YAWF Stream server profile."
       baseURL={state.baseURL}
       submitLabel="Sign in"
+      includeTotp
       onSubmit={(payload) =>
         jsonFetch<AuthResponse>(state.baseURL, "/api/auth/login", payload).then(async (res) => {
           setCsrfToken(res.csrfToken);
@@ -397,6 +398,7 @@ function AuthForm({
   submitLabel,
   includeDisplayName = false,
   includeSetupToken = false,
+  includeTotp = false,
   setupToken: initialSetupToken = null,
   onSubmit,
 }: {
@@ -406,18 +408,21 @@ function AuthForm({
   submitLabel: string;
   includeDisplayName?: boolean;
   includeSetupToken?: boolean;
+  includeTotp?: boolean;
   setupToken?: string | null;
   onSubmit: (payload: {
     username: string;
     password: string;
     displayName?: string;
     setupToken?: string;
+    totpCode?: string;
   }) => Promise<unknown>;
 }) {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [setupToken, setSetupToken] = useState(initialSetupToken ?? "");
+  const [totpCode, setTotpCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -431,6 +436,9 @@ function AuthForm({
       displayName: includeDisplayName ? displayName.trim() || username.trim() : undefined,
       ...(includeSetupToken || setupToken.trim().length > 0
         ? { setupToken: setupToken.trim() }
+        : {}),
+      ...(includeTotp && totpCode.trim().length > 0
+        ? { totpCode: totpCode.trim() }
         : {}),
     })
       .catch((err) => {
@@ -486,6 +494,20 @@ function AuthForm({
                 onChange={(event) => setSetupToken(event.target.value)}
                 autoComplete="one-time-code"
                 required
+              />
+            </label>
+          )}
+          {includeTotp && (
+            <label className="server-gate-field">
+              Authenticator code (if enabled)
+              <input
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={totpCode}
+                onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ""))}
+                autoComplete="one-time-code"
+                placeholder="6-digit code"
               />
             </label>
           )}

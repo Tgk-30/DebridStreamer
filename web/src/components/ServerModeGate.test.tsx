@@ -512,6 +512,7 @@ describe("ServerModeGate", () => {
       ).toBeInTheDocument();
       // Login form has no Display name field.
       expect(screen.queryByText("Display name")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Authenticator code (if enabled)")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
     });
 
@@ -533,12 +534,18 @@ describe("ServerModeGate", () => {
       await screen.findByRole("heading", { name: "Sign in" });
       await user.type(screen.getByLabelText("Username"), "user1");
       await user.type(screen.getByLabelText("Password"), "password1");
+      await user.type(screen.getByLabelText("Authenticator code (if enabled)"), "123456");
       await user.click(screen.getByRole("button", { name: "Sign in" }));
 
       expect(await screen.findByTestId("app")).toBeInTheDocument();
       expect(setCsrfToken).toHaveBeenCalledWith("csrf-login");
       const provider = screen.getByTestId("session-provider");
       expect(JSON.parse(provider.dataset.session!)).toEqual(session);
+      const loginCall = fetchMock.mock.calls.find(
+        ([url]) => url === "https://srv.test/api/auth/login",
+      );
+      const loginBody = JSON.parse((loginCall![1] as RequestInit).body as string);
+      expect(loginBody.totpCode).toBe("123456");
     });
 
     it("disables the submit button while a login request is in flight", async () => {

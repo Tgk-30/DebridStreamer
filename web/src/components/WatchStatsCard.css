@@ -1,5 +1,5 @@
 .watch-stats {
-  border-radius: var(--radius-lg, 14px);
+  border-radius: var(--radius-lg, calc(14px * var(--radius-scale)));
   padding: var(--sp-md);
   display: flex;
   flex-direction: column;
@@ -8,10 +8,10 @@
 .watch-stats-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
 }
 .watch-stats-title {
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 600;
   margin: 0;
 }
@@ -24,14 +24,14 @@
 .watch-stats-tile {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(2px * var(--density-scale));
   padding: var(--sp-sm);
-  border-radius: var(--radius-md, 10px);
+  border-radius: var(--radius-md, calc(10px * var(--radius-scale)));
   background: var(--glass-rest, rgba(255, 255, 255, 0.05));
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
 }
 .watch-stats-tile-value {
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 700;
   line-height: 1.1;
 }
@@ -39,16 +39,16 @@
   color: var(--accent);
 }
 .watch-stats-tile-label {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .watch-stats-genres {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
 }
 .watch-stats-genres-label {
-  font-size: 12px;
+  font-size: 0.75rem;
   margin: 0;
 }
 .watch-stats-bars {
@@ -57,14 +57,14 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
 }
 .watch-stats-bar-row {
   display: grid;
   grid-template-columns: 88px 1fr 28px;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: calc(8px * var(--density-scale));
+  font-size: 0.8125rem;
 }
 .watch-stats-bar-name {
   overflow: hidden;
@@ -73,18 +73,18 @@
 }
 .watch-stats-bar-track {
   height: 8px;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--radius-scale));
   background: var(--glass-rest, rgba(255, 255, 255, 0.08));
   overflow: hidden;
 }
 .watch-stats-bar-fill {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--radius-scale));
   background: var(--accent);
   min-width: 4px;
 }
 .watch-stats-bar-count {
-  font-size: 12px;
+  font-size: 0.75rem;
   text-align: right;
 }
