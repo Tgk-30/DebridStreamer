@@ -583,6 +583,27 @@ describe("EmbeddedPlayer decode-failure fallback", () => {
     );
   });
 
+  it("passes the stream-scoped bearer separately from the playback URL", async () => {
+    const authorization = `Bearer ${"A".repeat(43)}`;
+    render(
+      <EmbeddedPlayer
+        url="https://stream.example/api/stream/stream_123"
+        title="Server stream"
+        playbackAuthorization={authorization}
+        onClose={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(renderPlayerMock.command).toHaveBeenCalledWith(
+        "loadfile",
+        ["https://stream.example/api/stream/stream_123"],
+        authorization,
+      ),
+    );
+    expect("https://stream.example/api/stream/stream_123").not.toContain(authorization);
+  });
+
   it("routes a persistent loadfile rejection through native fallback", async () => {
     // Both the first attempt AND the one silent retry fail.
     renderPlayerMock.command.mockRejectedValue(

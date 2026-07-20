@@ -33,7 +33,11 @@ pub fn player_load<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn player_command(_state: State<'_, PlayerState>, _args: Vec<String>) -> Result<(), String> {
+pub fn player_command(
+    _state: State<'_, PlayerState>,
+    _args: Vec<String>,
+    _stream_authorization: Option<String>,
+) -> Result<(), String> {
     Err(UNSUPPORTED.into())
 }
 

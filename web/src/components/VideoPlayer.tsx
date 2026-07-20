@@ -78,6 +78,8 @@ interface VideoPlayerProps {
   nowPlaying?: NowPlayingMetadata | null;
   /** Raw resolved filename, confined to Playback information. */
   sourceFileName?: string | null;
+  /** Short-lived server stream capability for native playback only. */
+  playbackAuthorization?: string;
   /** Force a path; when omitted it's sniffed from the URL extension. */
   kind?: Playability;
   /** Explicit renderer identity. Detail always supplies this; inference remains
@@ -317,6 +319,7 @@ export function VideoPlayer({
   subtitle,
   nowPlaying,
   sourceFileName,
+  playbackAuthorization,
   kind,
   engine,
   requestWebviewFallback,
@@ -598,6 +601,7 @@ export function VideoPlayer({
         subtitle={subtitle ?? epLabel}
         nowPlaying={nowPlaying}
         sourceFileName={sourceFileName}
+        playbackAuthorization={playbackAuthorization}
         engine={effectiveEngine}
         onPlaybackError={recoverNativeInWebview}
         startPositionSeconds={startPositionSeconds}

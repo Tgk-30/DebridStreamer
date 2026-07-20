@@ -1624,6 +1624,7 @@ export function Detail() {
             subtitle={player.subtitle}
             nowPlaying={player.nowPlaying}
             sourceFileName={player.sourceFileName}
+            playbackAuthorization={player.fallbackStream?.playbackAuthorization}
             engine={player.engine}
             requestWebviewFallback={
               player.fallbackStream != null && services.debrid != null

@@ -15,6 +15,7 @@ import type { PendingUpdate } from "../lib/updater";
 // so the weekly-poll gate behaves as in production; WEEKLY_UPDATE_CHECK_MS is the
 // real constant.
 const checkForUpdates = vi.fn<() => Promise<PendingUpdate | null>>();
+const getNativeAppVersion = vi.fn<() => Promise<string | null>>();
 
 vi.mock("../lib/updater", async () => {
   const actual = await vi.importActual<typeof import("../lib/updater")>(
@@ -23,6 +24,16 @@ vi.mock("../lib/updater", async () => {
   return {
     ...actual,
     checkForUpdates: () => checkForUpdates(),
+  };
+});
+
+vi.mock("../lib/appVersion", async () => {
+  const actual = await vi.importActual<typeof import("../lib/appVersion")>(
+    "../lib/appVersion",
+  );
+  return {
+    ...actual,
+    getNativeAppVersion: () => getNativeAppVersion(),
   };
 });
 
@@ -45,6 +56,8 @@ function makeUpdate(
 
 beforeEach(() => {
   checkForUpdates.mockReset();
+  getNativeAppVersion.mockReset();
+  getNativeAppVersion.mockResolvedValue(null);
   // A working in-memory localStorage so the weekly-check gate (markUpdateChecked
   // / updateCheckAgeMs) actually persists - the default test stub no-ops setItem.
   const store = new Map<string, string>();
@@ -69,6 +82,82 @@ describe("UpdateBanner", () => {
     );
     // Give any effect a chance to (not) run.
     await Promise.resolve();
+    expect(checkForUpdates).not.toHaveBeenCalled();
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("automatically installs a mandatory server compatibility update", async () => {
+    const install = vi.fn(() => new Promise<void>(() => {}));
+    getNativeAppVersion.mockResolvedValue("0.9.21");
+    checkForUpdates.mockResolvedValue(makeUpdate("0.9.24", install));
+
+    render(
+      <UpdateBanner
+        autoCheck={false}
+        autoInstall={false}
+        requiredVersion="0.9.24"
+      />,
+    );
+
+    await screen.findByText("Installing… 0%");
+    expect(checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(install).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alertdialog")).toHaveAccessibleName(
+      "Desktop update required",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Dismiss update notification" }),
+    ).toBeNull();
+  });
+
+  it("blocks an incompatible desktop client when the update cannot be found", async () => {
+    getNativeAppVersion.mockResolvedValue("0.9.21");
+    checkForUpdates.mockResolvedValue(null);
+
+    render(
+      <UpdateBanner
+        autoCheck={false}
+        autoInstall={false}
+        requiredVersion="0.9.24"
+      />,
+    );
+
+    await screen.findByText("Desktop update required");
+    expect(
+      screen.getByText(/Desktop v0\.9\.21 cannot run the server v0\.9\.24/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("does not override a network privacy mode for a compatibility update", async () => {
+    getNativeAppVersion.mockResolvedValue("0.9.21");
+
+    render(
+      <UpdateBanner
+        autoCheck={false}
+        autoInstall={false}
+        networkMode="fullLocal"
+        requiredVersion="0.9.24"
+      />,
+    );
+
+    await screen.findByText("Desktop update required");
+    expect(checkForUpdates).not.toHaveBeenCalled();
+  });
+
+  it("does not force an update when the desktop is as new as the server", async () => {
+    getNativeAppVersion.mockResolvedValue("0.10.0");
+    checkForUpdates.mockResolvedValue(makeUpdate("0.10.1", vi.fn()));
+
+    const { container } = render(
+      <UpdateBanner
+        autoCheck={false}
+        autoInstall={false}
+        requiredVersion="0.9.24"
+      />,
+    );
+
+    await waitFor(() => expect(getNativeAppVersion).toHaveBeenCalledTimes(1));
     expect(checkForUpdates).not.toHaveBeenCalled();
     expect(container.firstChild).toBeNull();
   });
@@ -262,9 +351,9 @@ describe("UpdateBanner", () => {
     checkForUpdates.mockReturnValue(pending);
 
     const { unmount } = render(<UpdateBanner autoCheck autoInstall={false} />);
+    await waitFor(() => expect(checkForUpdates).toHaveBeenCalledTimes(1));
     unmount();
 
-    expect(checkForUpdates).toHaveBeenCalledTimes(1);
     resolve?.(makeUpdate("9.9.9", install));
 
     await pending;

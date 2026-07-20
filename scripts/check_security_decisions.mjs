@@ -21,7 +21,7 @@ function check(condition, message) {
 const decisionsPath = "docs/SECURITY_DECISIONS.md";
 check(existsSync(join(root, decisionsPath)), "Security decision log exists");
 const decisions = read(decisionsPath);
-for (let id = 1; id <= 10; id += 1) {
+for (let id = 1; id <= 11; id += 1) {
   check(decisions.includes(`SEC-${String(id).padStart(3, "0")}`), `Security decision SEC-${String(id).padStart(3, "0")} is recorded`);
 }
 
@@ -88,7 +88,6 @@ check(
 check(
   [
     "player_init",
-    "player_load",
     "player_command",
     "player_set_property",
     "player_get_property",
@@ -97,6 +96,10 @@ check(
     "player_destroy",
   ].every((command) => remoteDesktopCommandNames.has(command)),
   "Built-in player commands are allowed for follow-mode playback",
+);
+check(
+  !remoteDesktopCommandNames.has("player_load"),
+  "Follow-mode pages cannot use the legacy unvalidated player loader",
 );
 check(
   !["keychain_get", "keychain_set", "keychain_delete"].some((command) =>
@@ -136,6 +139,7 @@ const serverCrypto = read("server/src/crypto.ts");
 const serverApp = read("server/src/app.ts");
 const database = read("server/src/db.ts");
 const diagnostics = read("web/src/lib/diagnostics.ts");
+const nativePlayer = read("web/src-tauri/src/render_player/core.rs");
 check(
   /allowRawStreamUrls:[\s\S]{0,160}process\.env\.NODE_ENV !== "production"/.test(serverConfig),
   "Production raw stream URL creation defaults off",
@@ -147,6 +151,17 @@ check(/requireCsrf\(request\)/.test(serverApp), "Unsafe authenticated routes enf
 check(/BEGIN IMMEDIATE/.test(database) && /ROLLBACK/.test(database), "Database migrations are transactional");
 check(/newer than supported version/.test(database), "Newer database versions fail closed");
 check(/redactDiagnosticText/.test(diagnostics) && /LONG_CREDENTIAL/.test(diagnostics), "Diagnostics redact credential-shaped values");
+check(
+  /createHmac\("sha256", config\.secretKey\)/.test(serverApp) &&
+    /streamPlaybackTokenMatches/.test(serverApp),
+  "Server playback bearer is stream-scoped and authenticated",
+);
+check(
+  /_ => return Err\("command is not allowed"\.to_string\(\)\)/.test(nativePlayer) &&
+    /_ => Err\("property is not allowed"\.to_string\(\)\)/.test(nativePlayer) &&
+    /stream-lavf-o=max_redirects=0/.test(nativePlayer),
+  "Native player bridge is allowlisted and keeps playback authorization file-local",
+);
 
 if (failures.length > 0) {
   console.error(`\n${failures.length} security decision check(s) failed.`);

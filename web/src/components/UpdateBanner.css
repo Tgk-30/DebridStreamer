@@ -1,4 +1,5 @@
-/* UpdateBanner - a small non-blocking glass toast pinned bottom-right. */
+/* Optional updates use a small toast. Required server compatibility updates
+   use the full-screen blocking treatment below. */
 
 .update-banner {
   position: fixed;
@@ -13,6 +14,28 @@
   padding: var(--sp-md) var(--sp-lg);
   border-radius: var(--r-md);
   animation: update-banner-in 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.update-compatibility-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-xl);
+  background: rgba(4, 7, 14, 0.78);
+  backdrop-filter: blur(14px);
+}
+
+.update-compatibility-backdrop .update-banner.is-compatibility {
+  position: static;
+  width: min(520px, calc(100vw - 2 * var(--sp-xl)));
+  max-width: 100%;
+  padding: var(--sp-xl);
+}
+
+.update-banner.is-compatibility .update-banner-title {
+  white-space: normal;
 }
 
 @keyframes update-banner-in {

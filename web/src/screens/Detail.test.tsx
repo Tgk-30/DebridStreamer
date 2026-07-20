@@ -276,6 +276,7 @@ vi.mock("../components/VideoPlayer", () => ({
     subtitle,
     nowPlaying,
     sourceFileName,
+    playbackAuthorization,
     engine,
     requestWebviewFallback,
     upNext,
@@ -288,6 +289,7 @@ vi.mock("../components/VideoPlayer", () => ({
       data-title={title}
       data-subtitle={subtitle ?? ""}
       data-source-file={sourceFileName ?? ""}
+      data-has-playback-authorization={String(playbackAuthorization != null)}
       data-engine={engine}
       data-pause-year={nowPlaying?.year ?? ""}
       data-pause-runtime={nowPlaying?.runtimeMinutes ?? ""}
@@ -806,6 +808,7 @@ describe("Detail play", () => {
         // Route defensively from the filename even if cached metadata is stale.
         codec: "Unknown",
         restrictedId: "rd-id",
+        playbackAuthorization: `Bearer ${"A".repeat(43)}`,
       },
     };
 
@@ -815,6 +818,7 @@ describe("Detail play", () => {
 
     expect(player).toHaveAttribute("data-engine", "native-mpv");
     expect(player).toHaveAttribute("data-has-fallback", "true");
+    expect(player).toHaveAttribute("data-has-playback-authorization", "true");
     // RD HLS is lazy recovery only. It must not run before native has failed.
     expect(getTranscodeHLS).not.toHaveBeenCalled();
   });

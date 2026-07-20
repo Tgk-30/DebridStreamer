@@ -62,6 +62,8 @@ interface Props {
   /** Raw resolved source name. Keep it in Playback information, not the title
    * bar, so human media metadata remains the playback context. */
   sourceFileName?: string | null;
+  /** Short-lived server stream capability, passed outside the media URL. */
+  playbackAuthorization?: string;
   startPositionSeconds?: number;
   /** Remembered audio/subtitle/speed for this title, restored after load. */
   savedPrefs?: PlaybackPrefs | null;
@@ -412,6 +414,7 @@ export function EmbeddedPlayer({
   subtitle,
   nowPlaying,
   sourceFileName,
+  playbackAuthorization,
   startPositionSeconds = 0,
   savedPrefs,
   onProgress,
@@ -772,13 +775,14 @@ export function EmbeddedPlayer({
         // mpv 0.38 inserted a playlist-index argument before the per-file options
         // argument. Even with `replace`, the ignored index slot must be present or
         // `start=+N` is parsed as an integer index and rejected with Raw(-4).
+        const loadArgs =
+          resumeSeconds == null
+            ? [url]
+            : [url, "replace", "-1", `start=+${resumeSeconds}`];
         const loadOnce = () =>
-          command(
-            "loadfile",
-            resumeSeconds == null
-              ? [url]
-              : [url, "replace", "-1", `start=+${resumeSeconds}`],
-          );
+          playbackAuthorization == null
+            ? command("loadfile", loadArgs)
+            : command("loadfile", loadArgs, playbackAuthorization);
         try {
           await loadOnce();
         } catch {
@@ -823,7 +827,14 @@ export function EmbeddedPlayer({
         );
       }
     };
-  }, [url, startPositionSeconds, refreshTracks, refreshChapters, scrobbleContext]);
+  }, [
+    url,
+    playbackAuthorization,
+    startPositionSeconds,
+    refreshTracks,
+    refreshChapters,
+    scrobbleContext,
+  ]);
 
   // Keep the current player prefs in a ref so the throttled/unmount progress
   // writes can persist them without re-subscribing on every track/speed change.

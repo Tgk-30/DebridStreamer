@@ -260,7 +260,11 @@ describe("resolveServerStream", () => {
   it("posts infoHash + preferredService and returns an absolute streamURL", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
-        stream: { streamURL: "/play/abc", title: "x" },
+        stream: {
+          streamURL: "/play/abc",
+          title: "x",
+          playbackAuthorization: `Bearer ${"A".repeat(43)}`,
+        },
       }) as never,
     );
     const info = await api.resolveServerStream(row);
@@ -272,6 +276,7 @@ describe("resolveServerStream", () => {
     });
     // relative path → resolved against base URL
     expect(info.streamURL).toBe("https://server.example/play/abc");
+    expect(info.playbackAuthorization).toBe(`Bearer ${"A".repeat(43)}`);
   });
 
   it("includes media context and appends index.m3u8 when transcoding", async () => {

@@ -57,8 +57,12 @@ export async function destroy(): Promise<void> {
 export async function command(
   name: string,
   args: ReadonlyArray<string | number> = [],
+  streamAuthorization?: string,
 ): Promise<void> {
-  await invoke("player_command", { args: [name, ...args.map(String)] });
+  await invoke("player_command", {
+    args: [name, ...args.map(String)],
+    streamAuthorization,
+  });
 }
 
 /** Set an mpv property. Booleans become yes/no; numbers are stringified. */
@@ -72,8 +76,8 @@ export async function setProperty(
 }
 
 /**
- * Get an mpv property. `format` is accepted for API parity; `track-list` and
- * `chapter-list` come back as JSON arrays, everything else as a string.
+ * Get an mpv property. `format` is accepted for API parity; only `track-list`
+ * and `chapter-list` are supported, and both come back as JSON arrays.
  */
 export async function getProperty(
   name: string,

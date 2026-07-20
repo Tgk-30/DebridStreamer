@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { getAppVersion } from "./appVersion";
+import {
+  compareAppVersions,
+  getAppVersion,
+  getNativeAppVersion,
+} from "./appVersion";
 
 const browser = () => "browser-version";
 
@@ -30,5 +34,29 @@ describe("getAppVersion", () => {
     await expect(
       getAppVersion({ isTauri: () => true, native, browser }),
     ).resolves.toBe("browser-version");
+  });
+});
+
+describe("getNativeAppVersion", () => {
+  it("does not hide a failed native lookup behind the hosted web version", async () => {
+    const native = vi.fn(async () => {
+      throw new Error("native API unavailable");
+    });
+
+    await expect(
+      getNativeAppVersion({ isTauri: () => true, native, browser }),
+    ).resolves.toBeNull();
+  });
+});
+
+describe("compareAppVersions", () => {
+  it.each([
+    ["0.9.21", "0.9.24", -1],
+    ["0.10.0", "0.9.24", 1],
+    ["v1.2.3", "1.2.3", 0],
+    ["1.2.3-beta.2", "1.2.3-beta.10", -1],
+    ["1.2.3-beta", "1.2.3", -1],
+  ])("compares %s with %s", (left, right, direction) => {
+    expect(Math.sign(compareAppVersions(left, right))).toBe(direction);
   });
 });

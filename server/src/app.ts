@@ -1,5 +1,5 @@
 import { Readable, Transform } from "node:stream";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import cookie from "@fastify/cookie";
@@ -1574,8 +1574,51 @@ function createStreamSession(
   return {
     id,
     playbackUrl: `/api/stream/${id}`,
+    playbackAuthorization: `Bearer ${streamPlaybackToken(config, {
+      id,
+      profileId: auth.profileId,
+      expiresAt,
+    })}`,
     expiresAt,
   };
+}
+
+interface StreamPlaybackGrant {
+  id: string;
+  profileId: string;
+  expiresAt: string;
+}
+
+/** A capability scoped to one stream row and its existing expiry/revocation
+ * boundary. Native players cannot inherit the webview's HttpOnly login cookie,
+ * and must never receive that account-wide credential as a generic HTTP header. */
+function streamPlaybackToken(config: ServerConfig, grant: StreamPlaybackGrant): string {
+  return createHmac("sha256", config.secretKey)
+    .update("debridstreamer:stream-playback:v1\0")
+    .update(grant.id)
+    .update("\0")
+    .update(grant.profileId)
+    .update("\0")
+    .update(grant.expiresAt)
+    .digest("base64url");
+}
+
+function readBearerToken(request: FastifyRequest): string | null {
+  const authorization = request.headers.authorization;
+  if (typeof authorization !== "string" || !authorization.startsWith("Bearer ")) return null;
+  const token = authorization.slice("Bearer ".length).trim();
+  return /^[A-Za-z0-9_-]{43}$/.test(token) ? token : null;
+}
+
+function streamPlaybackTokenMatches(
+  config: ServerConfig,
+  grant: StreamPlaybackGrant,
+  provided: string | null,
+): boolean {
+  if (provided == null) return false;
+  const expected = Buffer.from(streamPlaybackToken(config, grant));
+  const actual = Buffer.from(provided);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
 function usageSinceISO(days: number): string {
@@ -4041,6 +4084,7 @@ function registerRoutes(
       stream: {
         ...directStream,
         streamURL: session.playbackUrl,
+        playbackAuthorization: session.playbackAuthorization,
       },
       session,
     };
@@ -4120,26 +4164,40 @@ function registerRoutes(
     method: ["GET", "HEAD"],
     url: "/api/stream/:id",
     handler: async (request, reply) => {
-      const auth = requireAuth(db, request);
+      const auth = readAuth(db, request);
+      const bearer = readBearerToken(request);
+      if (auth == null && bearer == null) {
+        throw httpError(401, "Authentication required.");
+      }
       const id = (request.params as { id: string }).id;
       const row = db.sqlite
         .prepare(
-          `SELECT id, encrypted_upstream_url, content_type
+          `SELECT id, profile_id, encrypted_upstream_url, content_type, expires_at
            FROM stream_sessions
            WHERE id = ?
-             AND profile_id = ?
              AND revoked_at IS NULL
              AND expires_at > ?
            LIMIT 1`,
         )
-        .get(id, auth.profileId, nowISO()) as
+        .get(id, nowISO()) as
         | {
             id: string;
+            profile_id: string;
             encrypted_upstream_url: string;
             content_type: string | null;
+            expires_at: string;
           }
         | undefined;
       if (row == null) throw httpError(404, "Stream session not found.");
+      const cookieAuthorized = auth?.profileId === row.profile_id;
+      const bearerAuthorized = streamPlaybackTokenMatches(
+        config,
+        { id: row.id, profileId: row.profile_id, expiresAt: row.expires_at },
+        bearer,
+      );
+      if (!cookieAuthorized && !bearerAuthorized) {
+        throw httpError(404, "Stream session not found.");
+      }
 
       const upstreamUrl = decryptSecret(row.encrypted_upstream_url, config.secretKey);
       const headers: Record<string, string> = {};
@@ -4182,7 +4240,7 @@ function registerRoutes(
       if (request.method === "HEAD" || upstream.body == null) {
         recordStreamTransfer(db, {
           sessionId: row.id,
-          profileId: auth.profileId,
+          profileId: row.profile_id,
           bytes: 0,
           status: upstream.status,
           completed: true,
@@ -4193,7 +4251,7 @@ function registerRoutes(
       return reply.send(
         countedStream(db, {
           sessionId: row.id,
-          profileId: auth.profileId,
+          profileId: row.profile_id,
           status: upstream.status,
           body: upstream.body as ReadableStream<Uint8Array>,
         }),

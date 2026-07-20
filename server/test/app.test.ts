@@ -1928,12 +1928,21 @@ describe("DebridStreamer server", () => {
       });
       expect(resolved.statusCode).toBe(200);
       const resolvedBody = json<{
-        stream: { streamURL: string; debridService: string };
-        session: { playbackUrl: string };
+        stream: {
+          streamURL: string;
+          debridService: string;
+          playbackAuthorization: string;
+        };
+        session: { playbackUrl: string; playbackAuthorization: string };
       }>(resolved);
       expect(resolvedBody.stream.debridService).toBe("RD");
       expect(resolvedBody.stream.streamURL).toBe(resolvedBody.session.playbackUrl);
       expect(resolvedBody.stream.streamURL).toMatch(/^\/api\/stream\/stream_/);
+      expect(resolvedBody.stream.playbackAuthorization).toBe(
+        resolvedBody.session.playbackAuthorization,
+      );
+      expect(resolvedBody.stream.playbackAuthorization).toMatch(/^Bearer [A-Za-z0-9_-]{43}$/);
+      expect(resolvedBody.stream.streamURL).not.toContain(resolvedBody.stream.playbackAuthorization);
 
       const playback = await request(owner, {
         method: "GET",
@@ -1942,6 +1951,21 @@ describe("DebridStreamer server", () => {
       expect(playback.statusCode).toBe(200);
       expect(playback.headers["content-type"]).toBe("video/mp4");
       expect(playback.body).toBe("server-stream");
+
+      const nativePlayback = await request({ app, cookies: new Map() }, {
+        method: "GET",
+        url: resolvedBody.stream.streamURL,
+        headers: { authorization: resolvedBody.stream.playbackAuthorization },
+      });
+      expect(nativePlayback.statusCode).toBe(200);
+      expect(nativePlayback.body).toBe("server-stream");
+
+      const rejectedBearer = await request({ app, cookies: new Map() }, {
+        method: "GET",
+        url: resolvedBody.stream.streamURL,
+        headers: { authorization: `Bearer ${"A".repeat(43)}` },
+      });
+      expect(rejectedBearer.statusCode).toBe(404);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -2040,7 +2064,10 @@ describe("DebridStreamer server", () => {
       },
     });
     expect(created.statusCode).toBe(200);
-    const playbackUrl = json<{ session: { playbackUrl: string } }>(created).session.playbackUrl;
+    const streamSession = json<{
+      session: { playbackUrl: string; playbackAuthorization: string };
+    }>(created).session;
+    const playbackUrl = streamSession.playbackUrl;
 
     const ownerStream = await request(owner, {
       method: "GET",
@@ -2050,6 +2077,32 @@ describe("DebridStreamer server", () => {
     expect(ownerStream.statusCode).toBe(206);
     expect(ownerStream.headers["content-range"]).toBe("bytes 0-3/10");
     expect(ownerStream.body).toBe("abcd");
+
+    const bearerStream = await request({ app, cookies: new Map() }, {
+      method: "GET",
+      url: playbackUrl,
+      headers: {
+        range: "bytes=0-3",
+        authorization: streamSession.playbackAuthorization,
+      },
+    });
+    expect(bearerStream.statusCode).toBe(206);
+    expect(bearerStream.body).toBe("abcd");
+
+    const secondCreated = await request(owner, {
+      method: "POST",
+      url: "/api/streams/sessions/raw",
+      csrf: true,
+      payload: { upstreamUrl, contentType: "text/plain" },
+    });
+    const secondPlaybackUrl = json<{ session: { playbackUrl: string } }>(secondCreated).session
+      .playbackUrl;
+    const wrongStreamBearer = await request({ app, cookies: new Map() }, {
+      method: "GET",
+      url: secondPlaybackUrl,
+      headers: { authorization: streamSession.playbackAuthorization },
+    });
+    expect(wrongStreamBearer.statusCode).toBe(404);
 
     const bobStream = await request(bob, {
       method: "GET",
@@ -2085,7 +2138,9 @@ describe("DebridStreamer server", () => {
       payload: { upstreamUrl, contentType: "text/plain" },
     });
     expect(created.statusCode).toBe(200);
-    const session = json<{ session: { id: string; playbackUrl: string } }>(created).session;
+    const session = json<{
+      session: { id: string; playbackUrl: string; playbackAuthorization: string };
+    }>(created).session;
 
     // The fresh session shows up in the admin active-streams list (a full GET
     // would mark it completed and drop it from the list, so check it first).
@@ -2125,6 +2180,12 @@ describe("DebridStreamer server", () => {
     // The proxy now refuses the revoked session for its owner.
     const after = await request(carol, { method: "GET", url: session.playbackUrl });
     expect(after.statusCode).toBe(404);
+    const bearerAfter = await request({ app, cookies: new Map() }, {
+      method: "GET",
+      url: session.playbackUrl,
+      headers: { authorization: session.playbackAuthorization },
+    });
+    expect(bearerAfter.statusCode).toBe(404);
 
     // Revoking again (already revoked) reports not-found.
     const again = await request(owner, {

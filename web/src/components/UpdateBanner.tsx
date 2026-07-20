@@ -4,8 +4,10 @@
 // (checkForUpdates), which is a no-op in a plain browser (isTauri-gated inside
 // updater.ts) - so in the browser this component renders nothing and has no
 // effect. Under the desktop Tauri shell, when a newer signed release is
-// available it slides a small non-blocking glass toast in from the bottom-right
-// ("Update vX.Y available - Install"). Installing downloads + applies the update
+// available it slides a small non-blocking glass toast in from the bottom-right.
+// A hosted server bundle newer than the native package instead gets a blocking,
+// non-dismissible compatibility update so native commands cannot drift behind
+// the UI that invokes them. Installing downloads + applies the update
 // (showing a determinate progress bar, or an indeterminate one when the server
 // didn't send a content length) and then relaunches the app. Failures surface a
 // dismissible "Update failed" state; the user can dismiss at any point.
@@ -20,10 +22,19 @@ import {
 } from "../lib/updater";
 import { isNetworkAllowed } from "../lib/networkPolicy";
 import type { NetworkMode } from "../lib/networkPolicy";
+import {
+  compareAppVersions,
+  getNativeAppVersion,
+} from "../lib/appVersion";
 import { Icon } from "./Icon";
 import "./UpdateBanner.css";
 
-type Phase = "idle" | "installing" | "error";
+type Phase = "checking" | "idle" | "installing" | "error";
+
+type CompatibilityRequirement = {
+  currentVersion: string;
+  requiredVersion: string;
+};
 
 // How often the running app re-evaluates whether a weekly check is due. The
 // actual network check is gated on WEEKLY_UPDATE_CHECK_MS having elapsed, so
@@ -35,13 +46,20 @@ export function UpdateBanner({
   autoCheck,
   autoInstall,
   networkMode = "standard",
+  requiredVersion = __APP_VERSION__,
 }: {
   autoCheck: boolean;
   autoInstall: boolean;
   networkMode?: NetworkMode;
+  /** Version of the currently rendered UI bundle. On a server-hosted page this
+   * is the server release, while getNativeAppVersion reads the laptop binary. */
+  requiredVersion?: string;
 }) {
   const [update, setUpdate] = useState<PendingUpdate | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
+  const [compatibility, setCompatibility] =
+    useState<CompatibilityRequirement | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   /** 0..1 install fraction, or null for an indeterminate (unknown-size) bar. */
   const [progress, setProgress] = useState<number | null>(0);
 
@@ -53,32 +71,81 @@ export function UpdateBanner({
   // doesn't re-check over the top of it. Cleared on dismiss so the poll resumes.
   const pendingRef = useRef(false);
 
-  // Check on launch, then re-check weekly for long-running instances. No-op
-  // (resolves null) in the browser.
+  // Check on launch, then re-check weekly for long-running instances. A hosted
+  // server bundle newer than the native package is a mandatory compatibility
+  // update: it checks and installs even when optional automatic checks or
+  // installs are disabled. The active network privacy mode is still honored.
   useEffect(() => {
-    if (!autoCheck || networkMode !== "standard" || !isNetworkAllowed("updates")) return;
     let cancelled = false;
 
-    const runCheck = () => {
-      markUpdateChecked();
-      void checkForUpdates().then((u) => {
-        if (cancelled || u == null) return;
-        // Don't re-surface a version the user already dismissed this session; a
-        // newer version still gets through (and leaves the poll free to re-check).
-        if (u.version === dismissedVersionRef.current) return;
-        pendingRef.current = true;
-        setUpdate(u);
-        if (autoInstall) {
-          setPhase("installing");
-          setProgress(0);
-          void u.install((fraction) => setProgress(fraction)).catch(() => {
-            setPhase("error");
-          });
+    const beginInstall = (
+      pending: PendingUpdate,
+      requirement: CompatibilityRequirement | null,
+    ) => {
+      setPhase("installing");
+      setProgress(0);
+      void pending.install((fraction) => setProgress(fraction)).catch(() => {
+        if (!cancelled) {
+          setCompatibility(requirement);
+          setPhase("error");
         }
       });
     };
 
-    runCheck(); // launch check
+    const runCheck = async (
+      requirement: CompatibilityRequirement | null = null,
+    ) => {
+      const updateNetworkAllowed = isNetworkAllowed("updates", networkMode);
+      if (requirement == null && (!autoCheck || !updateNetworkAllowed)) return;
+      if (requirement != null) {
+        setCompatibility(requirement);
+        setPhase(updateNetworkAllowed ? "checking" : "error");
+        if (!updateNetworkAllowed) return;
+      }
+      markUpdateChecked();
+      const pending = await checkForUpdates();
+      if (cancelled) return;
+      if (pending == null) {
+        if (requirement != null) setPhase("error");
+        return;
+      }
+      // A release older than the server bundle cannot satisfy its native
+      // command contract. Keep the blocking recovery UI instead of relaunching
+      // into another known-incompatible package.
+      if (
+        requirement != null &&
+        compareAppVersions(pending.version, requirement.requiredVersion) < 0
+      ) {
+        setPhase("error");
+        return;
+      }
+      // Don't re-surface a version the user already dismissed this session; a
+      // newer version still gets through. Compatibility updates are never
+      // dismissible, so they deliberately ignore this optional-update state.
+      if (
+        requirement == null &&
+        pending.version === dismissedVersionRef.current
+      ) {
+        return;
+      }
+      pendingRef.current = true;
+      setUpdate(pending);
+      if (requirement != null || autoInstall) {
+        beginInstall(pending, requirement);
+      } else {
+        setPhase("idle");
+      }
+    };
+
+    void getNativeAppVersion().then((nativeVersion) => {
+      if (cancelled) return;
+      const requirement =
+        nativeVersion != null &&
+        compareAppVersions(nativeVersion, requiredVersion) < 0
+          ? { currentVersion: nativeVersion, requiredVersion }
+          : null;
+      void runCheck(requirement);
+    });
 
     // Weekly cadence: poll periodically but only actually hit the network when
     // the window is visible, nothing is already pending, and a week has elapsed
@@ -86,11 +153,13 @@ export function UpdateBanner({
     // gate is the real control, not the interval.
     const poll = setInterval(() => {
       if (
+        autoCheck &&
         !document.hidden &&
         !pendingRef.current &&
+        isNetworkAllowed("updates", networkMode) &&
         updateCheckAgeMs() >= WEEKLY_UPDATE_CHECK_MS
       ) {
-        runCheck();
+        void runCheck();
       }
     }, UPDATE_POLL_MS);
 
@@ -98,9 +167,9 @@ export function UpdateBanner({
       cancelled = true;
       clearInterval(poll);
     };
-  }, [autoCheck, autoInstall, networkMode]);
+  }, [autoCheck, autoInstall, networkMode, requiredVersion, retryNonce]);
 
-  if (update == null) return null;
+  if (update == null && compatibility == null) return null;
 
   async function install() {
     if (update == null) return;
@@ -114,16 +183,19 @@ export function UpdateBanner({
     }
   }
 
+  const checking = phase === "checking";
   const installing = phase === "installing";
   const errored = phase === "error";
   // A determinate bar when we have a fraction; otherwise an indeterminate sweep.
   const pct =
     progress != null ? Math.round(Math.min(1, Math.max(0, progress)) * 100) : null;
 
-  return (
+  const banner = (
     <div
-      className="update-banner glass-raised glass-lit"
-      role="status"
+      className={`update-banner glass-raised glass-lit${compatibility != null ? " is-compatibility" : ""}`}
+      role={compatibility != null ? "alertdialog" : "status"}
+      aria-modal={compatibility != null ? true : undefined}
+      aria-label={compatibility != null ? "Desktop update required" : undefined}
       aria-live="polite"
     >
       <div className="update-banner-icon">
@@ -131,11 +203,22 @@ export function UpdateBanner({
       </div>
 
       <div className="update-banner-body">
-        {errored ? (
+        {checking ? (
           <>
-            <span className="update-banner-title">Update failed</span>
+            <span className="update-banner-title">Checking desktop update…</span>
             <span className="update-banner-sub t-secondary">
-              Couldn't install v{update.version}. Try again later.
+              Server v{compatibility?.requiredVersion} requires a newer desktop app.
+            </span>
+          </>
+        ) : errored ? (
+          <>
+            <span className="update-banner-title">
+              {compatibility != null ? "Desktop update required" : "Update failed"}
+            </span>
+            <span className="update-banner-sub t-secondary">
+              {compatibility != null
+                ? `Desktop v${compatibility.currentVersion} cannot run the server v${compatibility.requiredVersion} native features. Check your connection or network privacy mode, then retry.`
+                : `Couldn't install v${update?.version}. Try again later.`}
             </span>
           </>
         ) : installing ? (
@@ -159,7 +242,7 @@ export function UpdateBanner({
         ) : (
           <>
             <span className="update-banner-title">
-              Update v{update.version} available
+              Update v{update?.version} available
             </span>
             <span className="update-banner-sub t-secondary">
               A new version of YAWF Stream is ready to install.
@@ -173,12 +256,18 @@ export function UpdateBanner({
           <button
             type="button"
             className="btn btn-prominent update-banner-install"
-            onClick={() => void install()}
+            onClick={() => {
+              if (update != null) {
+                void install();
+              } else {
+                setRetryNonce((value) => value + 1);
+              }
+            }}
           >
             Retry
           </button>
         ) : (
-          !installing && (
+          !checking && !installing && (
             <button
               type="button"
               className="btn btn-prominent update-banner-install"
@@ -189,14 +278,14 @@ export function UpdateBanner({
           )
         )}
 
-        {!installing && (
+        {!checking && !installing && compatibility == null && (
           <button
             type="button"
             className="update-banner-dismiss"
             onClick={() => {
               // Remember this version so the weekly poll won't re-surface it, and
               // free the poll to look for a later one.
-              dismissedVersionRef.current = update.version;
+              dismissedVersionRef.current = update?.version ?? null;
               pendingRef.current = false;
               setUpdate(null);
             }}
@@ -208,5 +297,11 @@ export function UpdateBanner({
         )}
       </div>
     </div>
+  );
+
+  return compatibility != null ? (
+    <div className="update-compatibility-backdrop">{banner}</div>
+  ) : (
+    banner
   );
 }

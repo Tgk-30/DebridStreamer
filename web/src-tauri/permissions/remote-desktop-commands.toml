@@ -14,7 +14,6 @@ commands.allow = [
   "mpv_get_position",
   "mpv_stop",
   "player_init",
-  "player_load",
   "player_command",
   "player_set_property",
   "player_get_property",

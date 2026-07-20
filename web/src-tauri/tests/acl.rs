@@ -24,3 +24,16 @@ fn follow_mode_capability_covers_dynamic_server_ports() {
         );
     }
 }
+
+#[test]
+fn follow_mode_does_not_expose_the_legacy_unvalidated_player_loader() {
+    let permissions = include_str!("../permissions/remote-desktop-commands.toml");
+    let allowed = permissions
+        .lines()
+        .map(str::trim)
+        .filter_map(|line| line.strip_prefix('"')?.strip_suffix("\","))
+        .collect::<Vec<_>>();
+
+    assert!(!allowed.contains(&"player_load"));
+    assert!(allowed.contains(&"player_command"));
+}

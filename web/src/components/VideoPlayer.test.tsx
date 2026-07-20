@@ -143,12 +143,14 @@ vi.mock("./EmbeddedPlayer", () => ({
     title: string;
     url: string;
     engine: string;
+    playbackAuthorization?: string;
     onPlaybackError?: (error: Error) => boolean | Promise<boolean>;
   }) => (
     <div
       data-testid="embedded-player"
       data-url={props.url}
       data-engine={props.engine}
+      data-has-playback-authorization={String(props.playbackAuthorization != null)}
     >
       {props.title}
       <button
@@ -1122,6 +1124,7 @@ describe("Built-in player (Tauri)", () => {
       <VideoPlayer
         url="https://x/movie.mkv"
         title="T"
+        playbackAuthorization={`Bearer ${"A".repeat(43)}`}
         onClose={() => {}}
         useBuiltInPlayer
       />,
@@ -1130,6 +1133,10 @@ describe("Built-in player (Tauri)", () => {
     expect(screen.getByTestId("embedded-player")).toHaveAttribute(
       "data-url",
       "https://x/movie.mkv",
+    );
+    expect(screen.getByTestId("embedded-player")).toHaveAttribute(
+      "data-has-playback-authorization",
+      "true",
     );
     expect(playWithMpvMock).not.toHaveBeenCalled();
     expect(openInExternalPlayerMock).not.toHaveBeenCalled();

@@ -692,9 +692,9 @@ fn validate_nonempty_mpv_value(label: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validate the string command surface before libmpv sees it. The frontend only
-/// uses loadfile, seek, and cycle today, but the generic checks protect future
-/// commands from empty string arguments and embedded NULs as well.
+/// Validate the complete string command surface before libmpv sees it. Follow
+/// mode loads remote web content, so this must stay an explicit allowlist rather
+/// than exposing libmpv commands such as `run` to the webview.
 fn validate_mpv_command(name: &str, args: &[&str]) -> Result<(), String> {
     validate_nonempty_mpv_value("command name", name)?;
     for (index, arg) in args.iter().enumerate() {
@@ -703,36 +703,20 @@ fn validate_mpv_command(name: &str, args: &[&str]) -> Result<(), String> {
 
     match name {
         "loadfile" => {
-            if args.is_empty() {
-                return Err("loadfile URL is missing".to_string());
-            }
-            if args.len() > 4 {
-                return Err("loadfile has more than four arguments".to_string());
+            if !matches!(args.len(), 1 | 4) {
+                return Err("loadfile requires a URL, optionally with resume options".to_string());
             }
             // url, flags, index, options. mpv 0.38 inserted the integer index
             // before options; accepting a key=value string here recreates Raw(-4).
             if let Some(flags) = args.get(1) {
-                let known = flags.split('+').all(|flag| {
-                    matches!(
-                        flag,
-                        "replace"
-                            | "append"
-                            | "play"
-                            | "append-play"
-                            | "insert-next"
-                            | "insert-next-play"
-                            | "insert-at"
-                            | "insert-at-play"
-                    )
-                });
-                if !known {
-                    return Err("loadfile flags are invalid".to_string());
+                if *flags != "replace" {
+                    return Err("loadfile only supports replace".to_string());
                 }
             }
             if let Some(index) = args.get(2) {
-                index
-                    .parse::<i64>()
-                    .map_err(|_| "loadfile index is not an integer".to_string())?;
+                if *index != "-1" {
+                    return Err("loadfile index must be -1".to_string());
+                }
             }
             if let Some(options) = args.get(3) {
                 for option in options.split(',') {
@@ -742,10 +726,19 @@ fn validate_mpv_command(name: &str, args: &[&str]) -> Result<(), String> {
                     if key.trim().is_empty() || value.trim().is_empty() {
                         return Err("loadfile option has an empty key or value".to_string());
                     }
+                    if key != "start"
+                        || !value.starts_with('+')
+                        || value[1..].parse::<u64>().is_err()
+                    {
+                        return Err("loadfile option is not allowed".to_string());
+                    }
                 }
             }
         }
         "seek" => {
+            if args.len() != 2 || !matches!(args[1], "absolute" | "relative") {
+                return Err("seek requires an amount and absolute or relative mode".to_string());
+            }
             let amount = args
                 .first()
                 .ok_or_else(|| "seek amount is missing".to_string())?
@@ -755,7 +748,12 @@ fn validate_mpv_command(name: &str, args: &[&str]) -> Result<(), String> {
                 return Err("seek amount is not finite".to_string());
             }
         }
-        _ => {}
+        "cycle" => {
+            if args != ["sub"] {
+                return Err("cycle only supports the subtitle track".to_string());
+            }
+        }
+        _ => return Err("command is not allowed".to_string()),
     }
     Ok(())
 }
@@ -799,11 +797,19 @@ pub fn run_mpv_command(mpv: &Mpv, name: &str, args: &[&str]) -> Result<(), Strin
     if let Err(reason) = validate_mpv_command(name, args) {
         rp_log(&format!(
             "RPGEO event=command-reject engine=native-mpv command={} reason={reason}",
-            if name.trim().is_empty() { "<empty>" } else { name }
+            if name.trim().is_empty() {
+                "<empty>"
+            } else {
+                name
+            }
         ));
         return Err(format!("mpv command rejected: {reason}"));
     }
 
+    run_validated_mpv_command(mpv, name, args)
+}
+
+fn run_validated_mpv_command(mpv: &Mpv, name: &str, args: &[&str]) -> Result<(), String> {
     let version = if name == "loadfile" && args.len() == 4 {
         mpv.get_property::<String>("mpv-version").ok()
     } else {
@@ -811,9 +817,7 @@ pub fn run_mpv_command(mpv: &Mpv, name: &str, args: &[&str]) -> Result<(), Strin
     };
     let runtime_args = command_args_for_runtime(name, args, version.as_deref());
     if runtime_args.len() != args.len() {
-        rp_log(
-            "RPGEO event=loadfile-compat engine=native-mpv runtime=pre-0.38 options-slot=third",
-        );
+        rp_log("RPGEO event=loadfile-compat engine=native-mpv runtime=pre-0.38 options-slot=third");
     }
     mpv.command(name, &runtime_args)
         .map_err(|e| format!("mpv command failed: {e}"))
@@ -823,14 +827,19 @@ fn validate_mpv_property(name: &str, value: &str) -> Result<(), String> {
     validate_nonempty_mpv_value("property name", name)?;
     validate_nonempty_mpv_value("property value", value)?;
     match name {
-        "pause" | "mute" if !matches!(value, "yes" | "no") => {
-            Err(format!("{name} must be yes or no"))
+        "pause" | "mute" => {
+            if matches!(value, "yes" | "no") {
+                Ok(())
+            } else {
+                Err(format!("{name} must be yes or no"))
+            }
         }
-        "aid" | "sid"
-            if !matches!(value, "auto" | "no")
-                && value.parse::<u64>().is_err() =>
-        {
-            Err(format!("{name} must be auto, no, or a numeric track id"))
+        "aid" | "sid" => {
+            if matches!(value, "auto" | "no") || value.parse::<u64>().is_ok() {
+                Ok(())
+            } else {
+                Err(format!("{name} must be auto, no, or a numeric track id"))
+            }
         }
         "volume" | "speed" | "sub-delay" | "audio-delay" | "sub-scale" => {
             let number = value
@@ -844,8 +853,103 @@ fn validate_mpv_property(name: &str, value: &str) -> Result<(), String> {
             }
             Ok(())
         }
-        _ => Ok(()),
+        _ => Err("property is not allowed".to_string()),
     }
+}
+
+fn validate_mpv_observation(spec: &ObserveSpec) -> Result<(), String> {
+    let expected = match spec.name.as_str() {
+        "pause" | "paused-for-cache" | "mute" | "eof-reached" => "flag",
+        "time-pos" | "duration" | "volume" | "speed" | "demuxer-cache-time" => "double",
+        "aid" | "sid" => "string",
+        "video-params/w" | "video-params/h" | "dwidth" | "dheight" => "int64",
+        _ => return Err(format!("observation {} is not allowed", spec.name)),
+    };
+    if spec.format != expected {
+        return Err(format!("observation {} must use {expected}", spec.name));
+    }
+    Ok(())
+}
+
+fn validate_mpv_init_options(options: &HashMap<String, String>) -> Result<(), String> {
+    for (name, value) in options {
+        match name.as_str() {
+            "keep-open" if matches!(value.as_str(), "yes" | "no") => {}
+            "terminal" if value == "no" => {}
+            "sub-font-size" => {
+                let size = value
+                    .parse::<u16>()
+                    .map_err(|_| "sub-font-size must be an integer".to_string())?;
+                if !(8..=160).contains(&size) {
+                    return Err("sub-font-size must be between 8 and 160".to_string());
+                }
+            }
+            _ => return Err(format!("initial option {name} is not allowed")),
+        }
+    }
+    Ok(())
+}
+
+fn is_server_playback_path(path: &str) -> bool {
+    let segments: Vec<&str> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    matches!(
+        segments.as_slice(),
+        [.., "api", "stream", stream_id] if !stream_id.is_empty()
+    )
+}
+
+fn validate_stream_authorization(
+    url: &str,
+    authorization: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some(authorization) = authorization else {
+        return Ok(None);
+    };
+    let parsed = url
+        .parse::<tauri::Url>()
+        .map_err(|_| "authenticated stream URL is invalid".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !is_server_playback_path(parsed.path())
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return Err("stream authorization is only allowed for server playback URLs".to_string());
+    }
+    let Some(token) = authorization.strip_prefix("Bearer ") else {
+        return Err("stream authorization must use Bearer".to_string());
+    };
+    if token.len() != 43
+        || !token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        return Err("stream authorization token is malformed".to_string());
+    }
+    Ok(Some(authorization.to_string()))
+}
+
+fn loadfile_args_with_authorization(args: &[&str], authorization: Option<&str>) -> Vec<String> {
+    let Some(authorization) = authorization else {
+        return args.iter().map(|arg| (*arg).to_string()).collect();
+    };
+    let mut options = args.get(3).copied().unwrap_or_default().to_string();
+    if !options.is_empty() {
+        options.push(',');
+    }
+    options.push_str("http-header-fields=Authorization: ");
+    options.push_str(authorization);
+    // FFmpeg forwards custom headers across redirects. Keep the bearer on the
+    // exact server URL that minted it by disabling redirects for this file.
+    options.push_str(",stream-lavf-o=max_redirects=0");
+    vec![
+        args[0].to_string(),
+        args.get(1).copied().unwrap_or("replace").to_string(),
+        args.get(2).copied().unwrap_or("-1").to_string(),
+        options,
+    ]
 }
 
 // ---- Tauri commands ------------------------------------------------------
@@ -863,6 +967,10 @@ pub async fn player_init<R: Runtime>(
     options: HashMap<String, String>,
     observed: Vec<ObserveSpec>,
 ) -> Result<(), String> {
+    validate_mpv_init_options(&options)?;
+    for spec in &observed {
+        validate_mpv_observation(spec)?;
+    }
     create_player(app, options, observed)
 }
 
@@ -882,10 +990,34 @@ pub async fn player_load<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn player_command(state: State<'_, PlayerState>, args: Vec<String>) -> Result<(), String> {
+pub fn player_command(
+    state: State<'_, PlayerState>,
+    args: Vec<String>,
+    stream_authorization: Option<String>,
+) -> Result<(), String> {
+    let authorization = match args.as_slice() {
+        [name, url, ..] if name == "loadfile" => {
+            validate_stream_authorization(url, stream_authorization.as_deref())?
+        }
+        _ if stream_authorization.is_some() => {
+            return Err("stream authorization is only valid with loadfile".to_string())
+        }
+        _ => None,
+    };
     with_player(&state, |p| {
         let (name, rest) = args.split_first().ok_or("empty command")?;
         let rest_refs: Vec<&str> = rest.iter().map(|s| s.as_str()).collect();
+        if let Err(reason) = validate_mpv_command(name, &rest_refs) {
+            rp_log(&format!(
+                "RPGEO event=command-reject engine=native-mpv command={} reason={reason}",
+                if name.trim().is_empty() {
+                    "<empty>"
+                } else {
+                    name
+                }
+            ));
+            return Err(format!("mpv command rejected: {reason}"));
+        }
         if name == "loadfile" {
             // Do not include the URL: debrid links commonly contain credentials.
             let flags = match rest.get(1).map(String::as_str) {
@@ -910,8 +1042,17 @@ pub fn player_command(state: State<'_, PlayerState>, args: Vec<String>) -> Resul
                 "RPGEO event=loadfile-command engine=native-mpv path=player_command argc={} flags={flags} index={index} options={options}",
                 rest.len()
             ));
+            if authorization.is_some() {
+                rp_log("RPGEO event=stream-auth engine=native-mpv source=stream-capability");
+            }
         }
-        let r = run_mpv_command(&p.mpv, name, &rest_refs);
+        let runtime_owned = if name == "loadfile" {
+            loadfile_args_with_authorization(&rest_refs, authorization.as_deref())
+        } else {
+            rest.to_vec()
+        };
+        let runtime_refs: Vec<&str> = runtime_owned.iter().map(String::as_str).collect();
+        let r = run_validated_mpv_command(&p.mpv, name, &runtime_refs);
         if name == "loadfile" {
             rp_log(&format!("cmd loadfile [url redacted] -> {r:?}"));
         } else {
@@ -943,14 +1084,15 @@ pub fn player_set_property(
     })
 }
 
-/// Get a property as JSON. `track-list`/`chapter-list` are assembled from mpv
-/// sub-properties (avoids raw mpv_node FFI); everything else returns a string.
+/// Get a property as JSON. Only the two frontend-required aggregate properties
+/// are exposed. They are assembled from mpv sub-properties to avoid raw
+/// `mpv_node` FFI.
 #[tauri::command]
 pub fn player_get_property(state: State<'_, PlayerState>, name: String) -> Result<Value, String> {
     with_player(&state, |p| match name.as_str() {
         "track-list" => Ok(build_track_list(&p.mpv)),
         "chapter-list" => Ok(build_chapter_list(&p.mpv)),
-        _ => Ok(json!(p.mpv.get_property::<String>(&name).unwrap_or_default())),
+        _ => Err("property is not allowed".to_string()),
     })
 }
 
@@ -1042,10 +1184,50 @@ mod tests {
     use super::best_in_class_options;
     use super::command_args_for_runtime;
     use super::is_forced_mpv_option;
+    use super::loadfile_args_with_authorization;
     use super::mpv_supports_loadfile_index;
     use super::validate_mpv_command;
+    use super::validate_mpv_init_options;
+    use super::validate_mpv_observation;
     use super::validate_mpv_property;
+    use super::validate_stream_authorization;
+    use super::ObserveSpec;
     use std::collections::HashMap;
+
+    #[test]
+    fn stream_authorization_is_scoped_and_file_local() {
+        let token = "A".repeat(43);
+        let authorization = format!("Bearer {token}");
+        let url = "https://stream.example/yawf/api/stream/stream_123";
+        assert_eq!(
+            validate_stream_authorization(url, Some(&authorization)),
+            Ok(Some(authorization.clone()))
+        );
+        for rejected in [
+            "https://stream.example/api/streams/resolve",
+            "https://stream.example/api/stream/",
+            "https://user@stream.example/api/stream/stream_123",
+            "file:///api/stream/stream_123",
+        ] {
+            assert!(validate_stream_authorization(rejected, Some(&authorization)).is_err());
+        }
+        assert!(validate_stream_authorization(url, Some("Bearer bad\r\nX-Leak: yes")).is_err());
+
+        let fresh = loadfile_args_with_authorization(&[url], Some(&authorization));
+        assert_eq!(fresh[0], url);
+        assert_eq!(fresh[1], "replace");
+        assert_eq!(fresh[2], "-1");
+        assert!(fresh[3].contains("http-header-fields=Authorization: Bearer "));
+        assert!(fresh[3].contains("stream-lavf-o=max_redirects=0"));
+
+        let resumed = loadfile_args_with_authorization(
+            &[url, "replace", "-1", "start=+125"],
+            Some(&authorization),
+        );
+        assert!(resumed[3].starts_with("start=+125,"));
+        let no_auth = loadfile_args_with_authorization(&[url], None);
+        assert_eq!(no_auth, vec![url.to_string()]);
+    }
 
     #[test]
     fn resumed_loadfile_uses_the_version_correct_options_slot() {
@@ -1089,6 +1271,19 @@ mod tests {
         )
         .is_err());
         assert!(validate_mpv_command("seek", &["NaN", "absolute"]).is_err());
+        assert!(validate_mpv_command("seek", &["10", "unsafe-mode"]).is_err());
+        assert!(validate_mpv_command("cycle", &["audio"]).is_err());
+        assert!(validate_mpv_command("run", &["open", "https://example.test"]).is_err());
+        assert!(validate_mpv_command(
+            "loadfile",
+            &[
+                "https://example.test/episode.mkv",
+                "replace",
+                "-1",
+                "http-header-fields=Cookie: secret"
+            ]
+        )
+        .is_err());
     }
 
     #[test]
@@ -1096,9 +1291,39 @@ mod tests {
         assert_eq!(validate_mpv_property("aid", "2"), Ok(()));
         assert_eq!(validate_mpv_property("sid", "no"), Ok(()));
         assert_eq!(validate_mpv_property("sid", "auto"), Ok(()));
+        assert_eq!(validate_mpv_property("pause", "yes"), Ok(()));
+        assert_eq!(validate_mpv_property("mute", "no"), Ok(()));
         assert!(validate_mpv_property("aid", "none").is_err());
         assert!(validate_mpv_property("speed", "NaN").is_err());
         assert!(validate_mpv_property("pause", "false").is_err());
+        assert!(validate_mpv_property("http-header-fields", "X-Test: value").is_err());
+    }
+
+    #[test]
+    fn init_surface_rejects_arbitrary_options_and_observations() {
+        let options = HashMap::from([
+            ("keep-open".to_string(), "yes".to_string()),
+            ("sub-font-size".to_string(), "44".to_string()),
+            ("terminal".to_string(), "no".to_string()),
+        ]);
+        assert_eq!(validate_mpv_init_options(&options), Ok(()));
+        assert!(validate_mpv_init_options(&HashMap::from([(
+            "script".to_string(),
+            "/tmp/unsafe.lua".to_string()
+        )]))
+        .is_err());
+        assert_eq!(
+            validate_mpv_observation(&ObserveSpec {
+                name: "time-pos".to_string(),
+                format: "double".to_string(),
+            }),
+            Ok(())
+        );
+        assert!(validate_mpv_observation(&ObserveSpec {
+            name: "http-header-fields".to_string(),
+            format: "string".to_string(),
+        })
+        .is_err());
     }
 
     /// A frontend option must never be able to re-enable the renderer-owned safety

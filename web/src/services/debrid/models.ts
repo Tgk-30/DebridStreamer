@@ -221,6 +221,10 @@ export interface StreamInfo {
   sizeBytes: number;
   fileName: string;
   debridService: string; // Which debrid resolved it (short code RD/AD/PM/TB or name)
+  /** Stream-scoped bearer issued by a YAWF Stream server. It grants access only
+   * to this short-lived proxy session, so native players never receive the
+   * account-wide HttpOnly login cookie. Local debrid services leave it unset. */
+  playbackAuthorization?: string;
   /** Real-Debrid unrestrict id, when known. Real-Debrid returns this alongside
    * the direct `download` URL; it's the key for the `/streaming/transcode/{id}`
    * and `/streaming/mediaInfos/{id}` endpoints, which let the app transcode an

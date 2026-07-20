@@ -29,6 +29,7 @@ encryption key. Public multi-tenant hosting is not supported.
 | SEC-008 | Beta risk accepted | Windows installers are updater-signed but not yet Authenticode-signed. This is allowed for v0.9 packages and is a v1 release blocker because it can cause an unknown-publisher warning. | v1 release checklist |
 | SEC-009 | Accepted | macOS disables library validation and allows JIT only because the built-in libmpv player loads a bundled signed dependency graph and compiles GPU shaders. No additional entitlement is granted. | `entitlements.plist`, notarization, clean-install verification |
 | SEC-010 | Accepted | Released database migrations are append-only, transactional, fixture-tested, and refuse databases created by a newer unsupported app. | migration hashes and server migration tests |
+| SEC-011 | Accepted | Native playback of Server Mode proxy URLs uses a short-lived bearer capability bound to one stream session. The bearer is attached as a file-local libmpv header with redirects disabled, never placed in the URL or stored as a global player property. Follow-mode pages can use only the explicitly allowlisted player commands, properties, observations, and initialization options. | server route tests, native player unit tests, Tauri ACL test, and the security decision check |
 
 ## Release rules
 
