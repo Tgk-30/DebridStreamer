@@ -825,9 +825,9 @@ describe("taste events", () => {
     expect(
       await table.where("eventType").noneOf(["rated", "liked", "disliked"]).count(),
     ).toBe(1_000);
-    // Heavier fake-IndexedDB seed (1000+ rows) than the default
-    // 5s test timeout comfortably covers on a slow CI runner.
-  }, 20000);
+    // Heavier fake-IndexedDB seed (1000+ rows) can exceed 20 seconds on
+    // the shared Intel macOS release runner after dependency provisioning.
+  }, 60000);
 });
 
 describe("v4 to v5 migration", () => {
