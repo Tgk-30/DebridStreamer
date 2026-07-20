@@ -100,7 +100,7 @@ export default function Footer() {
           <p className="font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">
             © {new Date().getFullYear()} YAWF Group. All rights reserved.
           </p>
-          <p className="font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">Made for the whole house</p>
+          <p className="font-mono text-[0.8125rem] tracking-[0.04em] text-ink-3">{theme.brandMeaning}</p>
           <div className="flex items-center gap-2.5" role="group" aria-label="Theme presets">
             {THEME_PRESET_NAMES.map((name) => (
               <button

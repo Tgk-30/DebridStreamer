@@ -51,16 +51,24 @@ vi.mock("hls.js", () => {
 // Tauri bridge - start in the browser (not under Tauri) by default; individual
 // tests flip isTauri.
 const isTauriMock = vi.fn(() => false);
-const playWithMpvMock = vi.fn(async (_url: string) => ({
+const playWithMpvMock = vi.fn(async (_url: string, _authorization?: string) => ({
   embedded: false,
   status: "ok",
 }));
-const openInExternalPlayerMock = vi.fn(async (_url: string) => "VLC hand-off");
+const openInExternalPlayerMock = vi.fn(
+  async (_url: string, _preferred?: string, _authorization?: string) =>
+    "VLC hand-off",
+);
 const mpvStopMock = vi.fn(async () => {});
 vi.mock("../lib/tauri", () => ({
   isTauri: () => isTauriMock(),
-  playWithMpv: (url: string) => playWithMpvMock(url),
-  openInExternalPlayer: (url: string) => openInExternalPlayerMock(url),
+  playWithMpv: (url: string, authorization?: string) =>
+    playWithMpvMock(url, authorization),
+  openInExternalPlayer: (
+    url: string,
+    preferred?: string,
+    authorization?: string,
+  ) => openInExternalPlayerMock(url, preferred, authorization),
   mpvStop: () => mpvStopMock(),
 }));
 
@@ -1253,7 +1261,10 @@ describe("ExternalPanel (Tauri)", () => {
     );
     expect(screen.getByText("Opening in the bundled player")).toBeInTheDocument();
     await waitFor(() =>
-      expect(playWithMpvMock).toHaveBeenCalledWith("https://x/movie.mkv"),
+      expect(playWithMpvMock).toHaveBeenCalledWith(
+        "https://x/movie.mkv",
+        undefined,
+      ),
     );
     await waitFor(() =>
       expect(
@@ -1286,17 +1297,27 @@ describe("ExternalPanel (Tauri)", () => {
     isTauriMock.mockReturnValue(true);
     playWithMpvMock.mockRejectedValue(new Error("no mpv"));
     openInExternalPlayerMock.mockResolvedValue("Opened in VLC");
+    const authorization = `Bearer ${"A".repeat(43)}`;
     render(
       <VideoPlayer
         url="https://x/movie.mkv"
         title="T"
         onClose={() => {}}
         useBuiltInPlayer={false}
+        playbackAuthorization={authorization}
       />,
+    );
+    await waitFor(() =>
+      expect(playWithMpvMock).toHaveBeenCalledWith(
+        "https://x/movie.mkv",
+        authorization,
+      ),
     );
     await waitFor(() =>
       expect(openInExternalPlayerMock).toHaveBeenCalledWith(
         "https://x/movie.mkv",
+        undefined,
+        authorization,
       ),
     );
     await waitFor(() =>

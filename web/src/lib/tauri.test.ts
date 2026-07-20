@@ -145,6 +145,7 @@ describe("openInExternalPlayer", () => {
     expect(invokeMock).toHaveBeenCalledWith("open_in_external_player", {
       url: "http://x/file.mkv",
       preferred: null,
+      streamAuthorization: null,
     });
   });
 
@@ -155,6 +156,19 @@ describe("openInExternalPlayer", () => {
     expect(invokeMock).toHaveBeenCalledWith("open_in_external_player", {
       url: "http://x/file.mkv",
       preferred: "IINA",
+      streamAuthorization: null,
+    });
+  });
+
+  it("passes playback authorization separately from the URL", async () => {
+    enterTauri();
+    invokeMock.mockResolvedValue("opened");
+    const authorization = `Bearer ${"A".repeat(43)}`;
+    await openInExternalPlayer("https://x/stream", "VLC", authorization);
+    expect(invokeMock).toHaveBeenCalledWith("open_in_external_player", {
+      url: "https://x/stream",
+      preferred: "VLC",
+      streamAuthorization: authorization,
     });
   });
 });
@@ -174,6 +188,18 @@ describe("playWithMpv", () => {
     await expect(playWithMpv("http://x/file.mkv")).resolves.toEqual(result);
     expect(invokeMock).toHaveBeenCalledWith("mpv_play", {
       url: "http://x/file.mkv",
+      streamAuthorization: null,
+    });
+  });
+
+  it("passes playback authorization separately from the URL", async () => {
+    enterTauri();
+    invokeMock.mockResolvedValue({ embedded: false, status: "playing" });
+    const authorization = `Bearer ${"A".repeat(43)}`;
+    await playWithMpv("https://x/stream", authorization);
+    expect(invokeMock).toHaveBeenCalledWith("mpv_play", {
+      url: "https://x/stream",
+      streamAuthorization: authorization,
     });
   });
 });

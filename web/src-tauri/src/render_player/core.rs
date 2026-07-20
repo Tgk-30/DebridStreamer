@@ -20,7 +20,17 @@ use libmpv2::{Format, Mpv};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager, Runtime, State, Window};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State, WebviewWindow, Window};
+
+#[cfg(test)]
+use crate::playback_auth::{
+    cloudflare_access_cookie_header, cookie_path_matches, same_http_origin,
+    MAX_ACCESS_COOKIE_VALUE_BYTES,
+};
+use crate::playback_auth::{
+    cloudflare_access_cookie_header_for_stream, legacy_playback_for_window,
+    validate_stream_authorization,
+};
 
 /// Trace log, OFF unless `DS_MPV_DEBUG` is set. GUI-app stderr is unreliable under
 /// `tauri dev`, so when enabled this appends to a file. Shared by core + surfaces.
@@ -86,6 +96,7 @@ pub struct Player {
     surface: Arc<dyn VideoSurface>,
     event_stop: Arc<AtomicBool>,
     event_thread: Option<JoinHandle<()>>,
+    legacy_proxy_lease: Option<crate::playback_proxy::ProxyLease>,
 }
 
 impl Player {
@@ -263,7 +274,8 @@ fn spawn_event_thread<R: Runtime>(
                                 // Replay after keep-open does not necessarily emit a
                                 // fresh START_FILE/dwidth pair. Re-apply the retained
                                 // dimensions when EOF clears.
-                                if let (Some(width), Some(height)) = (display_width, display_height) {
+                                if let (Some(width), Some(height)) = (display_width, display_height)
+                                {
                                     surface.video_dimensions_changed(width, height);
                                 }
                             }
@@ -474,12 +486,12 @@ pub(crate) fn best_in_class_options() -> Vec<(&'static str, &'static str)> {
     #[cfg(target_os = "macos")]
     {
         o.push(("vo", "libmpv")); // render API requires vo=libmpv
-        // ZERO-COPY VideoToolbox: the IOSurface stays on the GPU and is sampled
-        // directly by mpv's GL renderer (no GPU→CPU→GPU round-trip) - ~2x the
-        // throughput and a fraction of the memory of copy mode on 4K HEVC/AV1
-        // 10-bit, with no green/black-frame issues under this OpenGL render path.
-        // hwdec is single-sourced HERE (the webview no longer overrides it).
-        // Software decode remains the automatic fallback if VT can't handle a codec.
+                                  // ZERO-COPY VideoToolbox: the IOSurface stays on the GPU and is sampled
+                                  // directly by mpv's GL renderer (no GPU→CPU→GPU round-trip) - ~2x the
+                                  // throughput and a fraction of the memory of copy mode on 4K HEVC/AV1
+                                  // 10-bit, with no green/black-frame issues under this OpenGL render path.
+                                  // hwdec is single-sourced HERE (the webview no longer overrides it).
+                                  // Software decode remains the automatic fallback if VT can't handle a codec.
         o.push(("hwdec", "videotoolbox"));
         o.push(("ao", "coreaudio"));
         // The full-window CAOpenGLLayer is marked opaque. Explicitly make mpv
@@ -548,8 +560,13 @@ fn ensure_libmpv_loaded<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         // LOAD_WITH_ALTERED_SEARCH_PATH also resolves the DLL's own deps from its
         // dir. A non-null handle means every export is now resolvable, so the
         // delay-load stubs bind on first use.
-        let h =
-            unsafe { LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), LOAD_WITH_ALTERED_SEARCH_PATH) };
+        let h = unsafe {
+            LoadLibraryExW(
+                wide.as_ptr(),
+                std::ptr::null_mut(),
+                LOAD_WITH_ALTERED_SEARCH_PATH,
+            )
+        };
         !h.is_null()
     });
     if ok {
@@ -571,11 +588,12 @@ pub fn create_player<R: Runtime>(
     ensure_libmpv_loaded(&app)?;
 
     let state = app.state::<PlayerState>();
-    {
+    let old = {
         let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
-        if let Some(mut old) = guard.take() {
-            old.shutdown();
-        }
+        guard.take()
+    };
+    if let Some(mut old) = old {
+        old.shutdown();
     }
 
     // Phase 1: let the surface create any native handle it needs before mpv
@@ -656,6 +674,7 @@ pub fn create_player<R: Runtime>(
         surface,
         event_stop,
         event_thread,
+        legacy_proxy_lease: None,
     };
     let mut guard = match state.0.lock() {
         Ok(guard) => guard,
@@ -675,10 +694,10 @@ pub fn create_player<R: Runtime>(
 
 fn with_player<T>(
     state: &State<'_, PlayerState>,
-    f: impl FnOnce(&Player) -> Result<T, String>,
+    f: impl FnOnce(&mut Player) -> Result<T, String>,
 ) -> Result<T, String> {
-    let guard = state.0.lock().map_err(|_| "player state poisoned")?;
-    let p = guard.as_ref().ok_or("no player running")?;
+    let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
+    let p = guard.as_mut().ok_or("no player running")?;
     f(p)
 }
 
@@ -890,48 +909,29 @@ fn validate_mpv_init_options(options: &HashMap<String, String>) -> Result<(), St
     Ok(())
 }
 
-fn is_server_playback_path(path: &str) -> bool {
-    let segments: Vec<&str> = path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
-    matches!(
-        segments.as_slice(),
-        [.., "api", "stream", stream_id] if !stream_id.is_empty()
-    )
+fn validate_player_command_request<'a>(
+    args: &'a [String],
+    stream_authorization: Option<&str>,
+) -> Result<(&'a str, Vec<&'a str>, Option<String>), String> {
+    let (name, rest) = args.split_first().ok_or("empty command")?;
+    let rest_refs: Vec<&str> = rest.iter().map(String::as_str).collect();
+    validate_mpv_command(name, &rest_refs)
+        .map_err(|reason| format!("mpv command rejected: {reason}"))?;
+    let authorization = if name == "loadfile" {
+        validate_stream_authorization(rest_refs[0], stream_authorization)?
+    } else if stream_authorization.is_some() {
+        return Err("stream authorization is only valid with loadfile".to_string());
+    } else {
+        None
+    };
+    Ok((name, rest_refs, authorization))
 }
 
-fn validate_stream_authorization(
-    url: &str,
+fn loadfile_args_with_authorization(
+    args: &[&str],
     authorization: Option<&str>,
-) -> Result<Option<String>, String> {
-    let Some(authorization) = authorization else {
-        return Ok(None);
-    };
-    let parsed = url
-        .parse::<tauri::Url>()
-        .map_err(|_| "authenticated stream URL is invalid".to_string())?;
-    if !matches!(parsed.scheme(), "http" | "https")
-        || !is_server_playback_path(parsed.path())
-        || !parsed.username().is_empty()
-        || parsed.password().is_some()
-    {
-        return Err("stream authorization is only allowed for server playback URLs".to_string());
-    }
-    let Some(token) = authorization.strip_prefix("Bearer ") else {
-        return Err("stream authorization must use Bearer".to_string());
-    };
-    if token.len() != 43
-        || !token
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-    {
-        return Err("stream authorization token is malformed".to_string());
-    }
-    Ok(Some(authorization.to_string()))
-}
-
-fn loadfile_args_with_authorization(args: &[&str], authorization: Option<&str>) -> Vec<String> {
+    cookie_header: Option<&str>,
+) -> Vec<String> {
     let Some(authorization) = authorization else {
         return args.iter().map(|arg| (*arg).to_string()).collect();
     };
@@ -941,8 +941,13 @@ fn loadfile_args_with_authorization(args: &[&str], authorization: Option<&str>) 
     }
     options.push_str("http-header-fields=Authorization: ");
     options.push_str(authorization);
+    if let Some(cookie_header) = cookie_header {
+        options.push_str(",http-header-fields-append=Cookie: ");
+        options.push_str(cookie_header);
+    }
     // FFmpeg forwards custom headers across redirects. Keep the bearer on the
-    // exact server URL that minted it by disabling redirects for this file.
+    // exact server URL that minted it (and any same-origin Access cookies) by
+    // disabling redirects for this file.
     options.push_str(",stream-lavf-o=max_redirects=0");
     vec![
         args[0].to_string(),
@@ -950,6 +955,12 @@ fn loadfile_args_with_authorization(args: &[&str], authorization: Option<&str>) 
         args.get(2).copied().unwrap_or("-1").to_string(),
         options,
     ]
+}
+
+fn loadfile_args_with_proxy(args: &[&str], proxy_url: &str) -> Vec<String> {
+    let mut rewritten: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
+    rewritten[0] = proxy_url.to_string();
+    rewritten
 }
 
 // ---- Tauri commands ------------------------------------------------------
@@ -990,48 +1001,59 @@ pub async fn player_load<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn player_command(
+pub async fn player_command<R: Runtime>(
+    window: WebviewWindow<R>,
     state: State<'_, PlayerState>,
     args: Vec<String>,
     stream_authorization: Option<String>,
 ) -> Result<(), String> {
-    let authorization = match args.as_slice() {
-        [name, url, ..] if name == "loadfile" => {
-            validate_stream_authorization(url, stream_authorization.as_deref())?
-        }
-        _ if stream_authorization.is_some() => {
-            return Err("stream authorization is only valid with loadfile".to_string())
-        }
+    // Complete command validation must precede cookie-store access. In
+    // particular, malformed loadfile option shapes cannot use this command as a
+    // browser-cookie query primitive.
+    let (name, rest_refs, authorization) =
+        match validate_player_command_request(&args, stream_authorization.as_deref()) {
+            Ok(validated) => validated,
+            Err(reason) => {
+                rp_log(&format!(
+                    "RPGEO event=command-reject engine=native-mpv command={} reason={reason}",
+                    args.first()
+                        .filter(|name| !name.trim().is_empty())
+                        .map(String::as_str)
+                        .unwrap_or("<empty>")
+                ));
+                return Err(reason);
+            }
+        };
+    // Only consult the invoking webview's cookie store for an authenticated
+    // server stream on that webview's exact HTTP(S) origin. Local tauri:// UI
+    // and remote cross-origin pages therefore cannot export browser cookies.
+    let cookie_header = match (name, authorization.as_ref()) {
+        ("loadfile", Some(_)) => cloudflare_access_cookie_header_for_stream(&window, rest_refs[0]),
         _ => None,
     };
-    with_player(&state, |p| {
-        let (name, rest) = args.split_first().ok_or("empty command")?;
-        let rest_refs: Vec<&str> = rest.iter().map(|s| s.as_str()).collect();
-        if let Err(reason) = validate_mpv_command(name, &rest_refs) {
-            rp_log(&format!(
-                "RPGEO event=command-reject engine=native-mpv command={} reason={reason}",
-                if name.trim().is_empty() {
-                    "<empty>"
-                } else {
-                    name
-                }
-            ));
-            return Err(format!("mpv command rejected: {reason}"));
-        }
+    let mut legacy_proxy_lease = if name == "loadfile" && authorization.is_none() {
+        legacy_playback_for_window(&window, rest_refs[0])?
+            .map(crate::playback_proxy::start)
+            .transpose()?
+    } else {
+        None
+    };
+    let mut retired_lease = None;
+    let result = with_player(&state, |p| {
         if name == "loadfile" {
             // Do not include the URL: debrid links commonly contain credentials.
-            let flags = match rest.get(1).map(String::as_str) {
+            let flags = match rest_refs.get(1).copied() {
                 Some("replace") => "replace",
                 Some(_) => "present",
                 None => "default",
             };
-            let index = match rest.get(2).map(String::as_str) {
+            let index = match rest_refs.get(2).copied() {
                 Some("-1") => "-1",
                 Some(value) if value.parse::<i64>().is_ok() => "integer",
                 Some(_) => "invalid",
                 None => "absent",
             };
-            let options = match rest.get(3).map(String::as_str) {
+            let options = match rest_refs.get(3).copied() {
                 Some(value) if value.split(',').any(|option| option.starts_with("start=")) => {
                     "start"
                 }
@@ -1040,26 +1062,38 @@ pub fn player_command(
             };
             rp_log(&format!(
                 "RPGEO event=loadfile-command engine=native-mpv path=player_command argc={} flags={flags} index={index} options={options}",
-                rest.len()
+                rest_refs.len()
             ));
             if authorization.is_some() {
                 rp_log("RPGEO event=stream-auth engine=native-mpv source=stream-capability");
             }
         }
-        let runtime_owned = if name == "loadfile" {
-            loadfile_args_with_authorization(&rest_refs, authorization.as_deref())
+        let runtime_owned = if let Some(lease) = legacy_proxy_lease.as_ref() {
+            loadfile_args_with_proxy(&rest_refs, lease.url())
+        } else if name == "loadfile" {
+            loadfile_args_with_authorization(
+                &rest_refs,
+                authorization.as_deref(),
+                cookie_header.as_deref(),
+            )
         } else {
-            rest.to_vec()
+            rest_refs.iter().map(|arg| (*arg).to_string()).collect()
         };
         let runtime_refs: Vec<&str> = runtime_owned.iter().map(String::as_str).collect();
         let r = run_validated_mpv_command(&p.mpv, name, &runtime_refs);
         if name == "loadfile" {
             rp_log(&format!("cmd loadfile [url redacted] -> {r:?}"));
+            if r.is_ok() {
+                retired_lease =
+                    std::mem::replace(&mut p.legacy_proxy_lease, legacy_proxy_lease.take());
+            }
         } else {
-            rp_log(&format!("cmd {name} {rest:?} -> {r:?}"));
+            rp_log(&format!("cmd {name} {rest_refs:?} -> {r:?}"));
         }
         r
-    })
+    });
+    drop(retired_lease);
+    result
 }
 
 #[tauri::command]
@@ -1149,7 +1183,10 @@ fn build_track_list(mpv: &Mpv) -> Value {
     let count = mpv.get_property::<i64>("track-list/count").unwrap_or(0);
     let mut arr = Vec::new();
     for i in 0..count {
-        let s = |p: &str| mpv.get_property::<String>(&format!("track-list/{i}/{p}")).ok();
+        let s = |p: &str| {
+            mpv.get_property::<String>(&format!("track-list/{i}/{p}"))
+                .ok()
+        };
         let b = |p: &str| {
             mpv.get_property::<bool>(&format!("track-list/{i}/{p}"))
                 .unwrap_or(false)
@@ -1182,23 +1219,29 @@ fn build_chapter_list(mpv: &Mpv) -> Value {
 #[cfg(test)]
 mod tests {
     use super::best_in_class_options;
+    use super::cloudflare_access_cookie_header;
     use super::command_args_for_runtime;
+    use super::cookie_path_matches;
     use super::is_forced_mpv_option;
     use super::loadfile_args_with_authorization;
+    use super::loadfile_args_with_proxy;
     use super::mpv_supports_loadfile_index;
+    use super::same_http_origin;
     use super::validate_mpv_command;
     use super::validate_mpv_init_options;
     use super::validate_mpv_observation;
     use super::validate_mpv_property;
+    use super::validate_player_command_request;
     use super::validate_stream_authorization;
     use super::ObserveSpec;
+    use super::MAX_ACCESS_COOKIE_VALUE_BYTES;
     use std::collections::HashMap;
 
     #[test]
     fn stream_authorization_is_scoped_and_file_local() {
         let token = "A".repeat(43);
         let authorization = format!("Bearer {token}");
-        let url = "https://stream.example/yawf/api/stream/stream_123";
+        let url = "https://stream.example/yawf/api/stream/stream_0123456789abcdef0123456789abcdef";
         assert_eq!(
             validate_stream_authorization(url, Some(&authorization)),
             Ok(Some(authorization.clone()))
@@ -1206,14 +1249,14 @@ mod tests {
         for rejected in [
             "https://stream.example/api/streams/resolve",
             "https://stream.example/api/stream/",
-            "https://user@stream.example/api/stream/stream_123",
-            "file:///api/stream/stream_123",
+            "https://user@stream.example/api/stream/stream_0123456789abcdef0123456789abcdef",
+            "file:///api/stream/stream_0123456789abcdef0123456789abcdef",
         ] {
             assert!(validate_stream_authorization(rejected, Some(&authorization)).is_err());
         }
         assert!(validate_stream_authorization(url, Some("Bearer bad\r\nX-Leak: yes")).is_err());
 
-        let fresh = loadfile_args_with_authorization(&[url], Some(&authorization));
+        let fresh = loadfile_args_with_authorization(&[url], Some(&authorization), None);
         assert_eq!(fresh[0], url);
         assert_eq!(fresh[1], "replace");
         assert_eq!(fresh[2], "-1");
@@ -1223,10 +1266,227 @@ mod tests {
         let resumed = loadfile_args_with_authorization(
             &[url, "replace", "-1", "start=+125"],
             Some(&authorization),
+            None,
         );
         assert!(resumed[3].starts_with("start=+125,"));
-        let no_auth = loadfile_args_with_authorization(&[url], None);
+        let no_auth = loadfile_args_with_authorization(&[url], None, Some("CF_Session=ignored"));
         assert_eq!(no_auth, vec![url.to_string()]);
+    }
+
+    #[test]
+    fn access_cookies_require_the_exact_http_origin() {
+        let target = tauri::Url::parse(
+            "https://db.tgk30.com/api/stream/stream_0123456789abcdef0123456789abcdef",
+        )
+        .unwrap();
+        for same_origin in [
+            "https://db.tgk30.com/",
+            "https://db.tgk30.com:443/watch/episode",
+        ] {
+            assert!(same_http_origin(
+                &tauri::Url::parse(same_origin).unwrap(),
+                &target
+            ));
+        }
+        for rejected in [
+            "http://db.tgk30.com/",
+            "https://db.tgk30.com:444/",
+            "https://evil.example/",
+            "tauri://localhost/",
+        ] {
+            assert!(!same_http_origin(
+                &tauri::Url::parse(rejected).unwrap(),
+                &target
+            ));
+        }
+    }
+
+    #[test]
+    fn access_cookie_header_is_strictly_filtered_and_formatted() {
+        let cookies = [
+            ("ds_session", "must-not-leak", Some("/")),
+            ("CF_Authorization", "auth.token-_~", Some("/")),
+            ("CF_Session", "session=value", Some("/api")),
+            ("CF_AppSession", "app-session", Some("/api/stream/")),
+            ("CF_AppSession", "unsafe;injected=yes", Some("/")),
+            ("CF_Session\r\nX-Leak", "bad-name", Some("/")),
+        ];
+        assert_eq!(
+            cloudflare_access_cookie_header("/api/stream/stream_0123456789abcdef0123456789abcdef", cookies),
+            Some(
+                "CF_Authorization=auth.token-_~; CF_Session=session=value; CF_AppSession=app-session"
+                    .to_string()
+            )
+        );
+
+        for unsafe_value in [
+            "line\rbreak",
+            "line\nbreak",
+            "nul\0byte",
+            "mpv,option",
+            "cookie;separator",
+            "has space",
+            "has\\slash",
+            "has\"quote",
+        ] {
+            assert_eq!(
+                cloudflare_access_cookie_header(
+                    "/api/stream/stream_0123456789abcdef0123456789abcdef",
+                    [("CF_Session", unsafe_value, Some("/"))]
+                ),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn access_cookie_path_match_enforces_segment_boundaries() {
+        for cookie_path in [
+            "/",
+            "/api",
+            "/api/",
+            "/api/stream/stream_0123456789abcdef0123456789abcdef",
+        ] {
+            assert!(cookie_path_matches(
+                "/api/stream/stream_0123456789abcdef0123456789abcdef",
+                Some(cookie_path)
+            ));
+        }
+        for cookie_path in ["/ap", "/api/stream/stream", "/other"] {
+            assert!(!cookie_path_matches(
+                "/api/stream/stream_0123456789abcdef0123456789abcdef",
+                Some(cookie_path)
+            ));
+        }
+        assert!(!cookie_path_matches(
+            "/api/stream/stream_0123456789abcdef0123456789abcdef",
+            None
+        ));
+        assert!(!cookie_path_matches(
+            "/api/stream/stream_0123456789abcdef0123456789abcdef",
+            Some("api")
+        ));
+    }
+
+    #[test]
+    fn access_cookie_duplicates_use_the_longest_matching_path() {
+        let cookies = [
+            ("CF_Session", "root", Some("/")),
+            ("CF_Session", "api", Some("/api")),
+            (
+                "CF_Session",
+                "z-stream-specific",
+                Some("/api/stream/stream_0123456789abcdef0123456789abcdef"),
+            ),
+            (
+                "CF_Session",
+                "stream-specific",
+                Some("/api/stream/stream_0123456789abcdef0123456789abcdef"),
+            ),
+            ("CF_Session", "wrong-boundary", Some("/api/stream/stream")),
+        ];
+        assert_eq!(
+            cloudflare_access_cookie_header(
+                "/api/stream/stream_0123456789abcdef0123456789abcdef",
+                cookies
+            ),
+            Some("CF_Session=stream-specific".to_string())
+        );
+    }
+
+    #[test]
+    fn access_cookie_header_rejects_oversize_values_and_totals() {
+        let oversized = "A".repeat(MAX_ACCESS_COOKIE_VALUE_BYTES + 1);
+        assert_eq!(
+            cloudflare_access_cookie_header(
+                "/api/stream/id",
+                [("CF_Session", oversized.as_str(), Some("/"))]
+            ),
+            None
+        );
+
+        let maximum = "A".repeat(MAX_ACCESS_COOKIE_VALUE_BYTES);
+        assert_eq!(
+            cloudflare_access_cookie_header(
+                "/api/stream/id",
+                [
+                    ("CF_Authorization", maximum.as_str(), Some("/")),
+                    ("CF_Session", maximum.as_str(), Some("/")),
+                ]
+            ),
+            None,
+            "the combined Cookie header must also stay within its bound"
+        );
+    }
+
+    #[test]
+    fn malformed_loadfile_is_rejected_before_stream_cookie_eligibility() {
+        let malformed_count = vec![
+            "loadfile".to_string(),
+            "https://db.tgk30.com/api/stream/id".to_string(),
+            "replace".to_string(),
+        ];
+        let error =
+            validate_player_command_request(&malformed_count, Some("not-a-bearer")).unwrap_err();
+        assert_eq!(
+            error,
+            "mpv command rejected: loadfile requires a URL, optionally with resume options"
+        );
+
+        let malformed_options = vec![
+            "loadfile".to_string(),
+            "https://db.tgk30.com/api/stream/id".to_string(),
+            "replace".to_string(),
+            "-1".to_string(),
+            "http-header-fields=Cookie: ds_session".to_string(),
+        ];
+        let error =
+            validate_player_command_request(&malformed_options, Some("not-a-bearer")).unwrap_err();
+        assert_eq!(
+            error,
+            "mpv command rejected: loadfile option is not allowed"
+        );
+    }
+
+    #[test]
+    fn synthesized_authenticated_loadfile_options_append_access_cookie() {
+        let url = "https://db.tgk30.com/api/stream/stream_0123456789abcdef0123456789abcdef";
+        let authorization = format!("Bearer {}", "A".repeat(43));
+        let args = loadfile_args_with_authorization(
+            &[url, "replace", "-1", "start=+125"],
+            Some(&authorization),
+            Some("CF_Session=access-session"),
+        );
+        assert_eq!(
+            args,
+            vec![
+                url.to_string(),
+                "replace".to_string(),
+                "-1".to_string(),
+                format!(
+                    "start=+125,http-header-fields=Authorization: {authorization},http-header-fields-append=Cookie: CF_Session=access-session,stream-lavf-o=max_redirects=0"
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_proxy_rewrites_only_the_loadfile_url() {
+        let args = [
+            "https://server.example/api/stream/stream_0123456789abcdef0123456789abcdef",
+            "replace",
+            "-1",
+            "start=+125",
+        ];
+        assert_eq!(
+            loadfile_args_with_proxy(&args, "http://127.0.0.1:1234/capability"),
+            vec![
+                "http://127.0.0.1:1234/capability",
+                "replace",
+                "-1",
+                "start=+125",
+            ]
+        );
     }
 
     #[test]
@@ -1336,7 +1596,7 @@ mod tests {
         assert!(!is_forced_mpv_option("cache"));
     }
 
-    /// The best-in-class defaults are stable + platform-correct. Pure/headless - 
+    /// The best-in-class defaults are stable + platform-correct. Pure/headless -
     /// no GPU, no mpv instance - so it runs on every CI runner.
     #[test]
     fn best_in_class_options_are_quality_and_platform_correct() {
@@ -1357,7 +1617,10 @@ mod tests {
         assert_eq!(map.get("sub-ass-override"), Some(&"yes"));
         assert_eq!(map.get("audio-normalize-downmix"), Some(&"yes"));
         assert_eq!(map.get("cache-pause-initial"), Some(&"yes"));
-        assert!(map.contains_key("hwdec"), "hwdec must be set on every platform");
+        assert!(
+            map.contains_key("hwdec"),
+            "hwdec must be set on every platform"
+        );
 
         // Per-platform decode + output.
         #[cfg(target_os = "macos")]
@@ -1384,10 +1647,7 @@ mod tests {
 
     #[test]
     fn maximum_quality_profile_preserves_previous_expensive_settings() {
-        let map: HashMap<&str, &str> = super::MAXIMUM_QUALITY_PROFILE
-            .iter()
-            .copied()
-            .collect();
+        let map: HashMap<&str, &str> = super::MAXIMUM_QUALITY_PROFILE.iter().copied().collect();
         assert_eq!(map.get("scale"), Some(&"ewa_lanczossharp"));
         assert_eq!(map.get("cscale"), Some(&"ewa_lanczossharp"));
         assert_eq!(map.get("deband-iterations"), Some(&"2"));

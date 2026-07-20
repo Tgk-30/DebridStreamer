@@ -21,6 +21,7 @@ const app = read("src/App.tsx");
 const hero = read("src/pages/home/Hero.tsx");
 const features = read("src/pages/features/shared.tsx");
 const footer = read("src/components/Footer.tsx");
+const themeConfig = read("src/theme.config.ts");
 const styles = read("src/index.css");
 const site = read("src/lib/site.ts");
 const streamPicker = read("src/pages/download/StreamPicker.tsx");
@@ -33,6 +34,11 @@ check(hero.includes("Your Accounts. Watch Freely."), "home hero must use the YAW
 check(hero.includes("A private streaming hub for the services you already use."), "home hero must use the private-hub positioning");
 check(!features.includes("id: 'assistant'"), "features must not expose the Assistant chapter by default");
 check(footer.includes("YAWF Group. All rights reserved."), "footer must include the YAWF Group copyright");
+check(footer.includes("theme.brandMeaning"), "footer must include the YAWF Group brand meaning");
+check(
+  themeConfig.includes("brandMeaning: 'Yours. Always. Wherever. Forever.'"),
+  "theme config must define the YAWF Group brand meaning",
+);
 check(styles.includes(".char-space") && styles.includes("white-space: pre"), "animated headlines must preserve word spacing");
 check(packageJson.version === tauri.version, "website package version must match the Tauri release version");
 check(site.includes(`APP_VERSION = '${tauri.version}'`), "website release constants must match the Tauri release version");

@@ -25,6 +25,7 @@ export function isTauri(): boolean {
 export async function openInExternalPlayer(
   url: string,
   preferred?: string | null,
+  streamAuthorization?: string | null,
 ): Promise<string> {
   if (/^https?:\/\//i.test(url) && !isRequestExempt(url)) {
     assertNetworkAllowed("streaming", "external player");
@@ -38,6 +39,7 @@ export async function openInExternalPlayer(
   return invoke<string>("open_in_external_player", {
     url,
     preferred: preferred != null && preferred.length > 0 ? preferred : null,
+    streamAuthorization: streamAuthorization ?? null,
   });
 }
 
@@ -209,7 +211,10 @@ export interface MpvPlayResult {
  * raw VLC hand-off (which relies on a user-installed VLC). Throws if not under
  * Tauri or if the sidecar isn't bundled / fails to spawn - callers should fall
  * back to {@link openInExternalPlayer} (VLC) in that case. */
-export async function playWithMpv(url: string): Promise<MpvPlayResult> {
+export async function playWithMpv(
+  url: string,
+  streamAuthorization?: string | null,
+): Promise<MpvPlayResult> {
   if (/^https?:\/\//i.test(url) && !isRequestExempt(url)) {
     assertNetworkAllowed("streaming", "mpv");
   }
@@ -217,7 +222,10 @@ export async function playWithMpv(url: string): Promise<MpvPlayResult> {
     throw new Error("Not running under Tauri - no bundled mpv available.");
   }
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<MpvPlayResult>("mpv_play", { url });
+  return invoke<MpvPlayResult>("mpv_play", {
+    url,
+    streamAuthorization: streamAuthorization ?? null,
+  });
 }
 
 /** Pause the bundled-mpv playback. */

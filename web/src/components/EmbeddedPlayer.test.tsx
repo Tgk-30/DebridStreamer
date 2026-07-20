@@ -12,6 +12,7 @@ const renderPlayerMock = vi.hoisted(() => ({
   getProperty: vi.fn(),
 }));
 const iconMock = vi.hoisted(() => vi.fn(({ name }: { name: string }) => <span data-icon={name} />));
+const openInExternalPlayerMock = vi.hoisted(() => vi.fn(async () => "opened"));
 
 const tauriWindowMock = vi.hoisted(() => ({
   setFullscreen: vi.fn(async () => {}),
@@ -34,7 +35,7 @@ vi.mock("@tauri-apps/api/window", () => {
 });
 
 vi.mock("../lib/tauri", () => ({
-  openInExternalPlayer: vi.fn(async () => "opened"),
+  openInExternalPlayer: openInExternalPlayerMock,
   isTauri: () => false,
 }));
 
@@ -83,6 +84,7 @@ beforeEach(() => {
   tauriWindowMock.isFullscreen.mockResolvedValue(false);
   tauriWindowMock.onResized.mockResolvedValue(() => {});
   iconMock.mockClear();
+  openInExternalPlayerMock.mockClear();
   setViewport(1024, 768);
 });
 
@@ -602,6 +604,33 @@ describe("EmbeddedPlayer decode-failure fallback", () => {
       ),
     );
     expect("https://stream.example/api/stream/stream_123").not.toContain(authorization);
+  });
+
+  it("passes stream authorization to the external-player error fallback", async () => {
+    renderPlayerMock.command.mockRejectedValue(new Error("load failed"));
+    const authorization = `Bearer ${"A".repeat(43)}`;
+    render(
+      <EmbeddedPlayer
+        url="https://stream.example/api/stream/stream_0123456789abcdef0123456789abcdef"
+        title="Server stream"
+        playbackAuthorization={authorization}
+        onClose={() => {}}
+      />,
+    );
+
+    const button = await screen.findByRole(
+      "button",
+      { name: "Open in external player" },
+      { timeout: 4000 },
+    );
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(openInExternalPlayerMock).toHaveBeenCalledWith(
+        "https://stream.example/api/stream/stream_0123456789abcdef0123456789abcdef",
+        undefined,
+        authorization,
+      ),
+    );
   });
 
   it("routes a persistent loadfile rejection through native fallback", async () => {

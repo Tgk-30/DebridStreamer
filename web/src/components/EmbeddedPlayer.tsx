@@ -1210,7 +1210,11 @@ export function EmbeddedPlayer({
               onClick={() => {
                 void (async () => {
                   try {
-                    await openInExternalPlayer(url);
+                    await openInExternalPlayer(
+                      url,
+                      undefined,
+                      playbackAuthorization,
+                    );
                     onClose(); // handed off - close the built-in player.
                   } catch (err) {
                     // The fallback failed too (no external player, not under

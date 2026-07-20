@@ -12,6 +12,9 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+mod playback_auth;
+mod playback_proxy;
+
 // Bundled-mpv player (Phase 3 P1): spawns the mpv sidecar and drives it over
 // JSON IPC. See player.rs for the `--wid` in-window-embedding caveat (macOS).
 mod player;
@@ -416,12 +419,30 @@ fn open_in_external_player_blocking(
 
 #[tauri::command]
 async fn open_in_external_player(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, playback_proxy::ExternalPlaybackState>,
     url: String,
     preferred: Option<String>,
+    stream_authorization: Option<String>,
 ) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || open_in_external_player_blocking(url, preferred))
-        .await
-        .map_err(|error| error.to_string())?
+    let lease = playback_auth::authenticated_playback_for_window(
+        &window,
+        &url,
+        stream_authorization.as_deref(),
+    )?
+    .map(playback_proxy::start)
+    .transpose()?;
+    let handoff_url = lease
+        .as_ref()
+        .map(|lease| lease.url().to_string())
+        .unwrap_or(url);
+    let status = tokio::task::spawn_blocking(move || {
+        open_in_external_player_blocking(handoff_url, preferred)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    state.set(lease);
+    Ok(status)
 }
 
 /// Reveal a completed download without opening the media file. Every platform
@@ -525,6 +546,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         // At-most-one mpv instance, shared across the mpv_* commands.
         .manage(player::MpvState::default())
+        // Authenticated external-player handoffs use one revocable loopback
+        // capability at a time, without exporting server credentials.
+        .manage(playback_proxy::ExternalPlaybackState::default())
         // At-most-one in-window render-API player (v0.5).
         .manage(render_player::PlayerState::default())
         // At-most-one local DebridStreamer server process.

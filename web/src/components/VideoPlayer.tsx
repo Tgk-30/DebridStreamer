@@ -533,7 +533,7 @@ export function VideoPlayer({
     let cancelled = false;
     startedMpvRef.current = false;
 
-    playWithMpv(effectiveUrl)
+    playWithMpv(effectiveUrl, playbackAuthorization)
       .then((res) => {
         if (cancelled) return;
         startedMpvRef.current = true;
@@ -553,7 +553,11 @@ export function VideoPlayer({
         // mpv missing / failed to spawn - fall back to the VLC/IINA hand-off.
         if (cancelled) return;
         recordDiagnostic("player", "mpv.start_failed", "warning");
-        openInExternalPlayer(effectiveUrl, preferredPlayer)
+        openInExternalPlayer(
+          effectiveUrl,
+          preferredPlayer,
+          playbackAuthorization,
+        )
           .then((status) => {
             if (!cancelled) {
               setExternalStatus(status);
@@ -575,7 +579,14 @@ export function VideoPlayer({
         mpvStop().catch(() => {});
       }
     };
-  }, [mode, underTauri, effectiveUrl, preferredPlayer, useEmbedded]);
+  }, [
+    mode,
+    underTauri,
+    effectiveUrl,
+    preferredPlayer,
+    playbackAuthorization,
+    useEmbedded,
+  ]);
 
   useEffect(() => {
     if (mode !== "external" || useEmbedded || !startedMpvRef.current) return;

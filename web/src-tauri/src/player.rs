@@ -32,7 +32,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde_json::Value;
-use tauri::{AppHandle, Manager, Runtime, State, Window};
+use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
@@ -48,6 +48,9 @@ pub struct MpvInstance {
     /// frontend is `MpvPlayResult.embedded` at spawn time.
     #[allow(dead_code)]
     embedded: bool,
+    /// Keeps an authenticated loopback handoff alive only as long as this mpv.
+    #[allow(dead_code)]
+    proxy_lease: Option<crate::playback_proxy::ProxyLease>,
 }
 
 /// Tauri-managed player state: at most one mpv at a time.
@@ -58,7 +61,7 @@ pub struct MpvState(pub Mutex<Option<MpvInstance>>);
 #[derive(serde::Serialize)]
 pub struct MpvPlayResult {
     /// True iff we passed `--wid` to attempt in-window embedding. On macOS this
-    /// does NOT guarantee the video actually rendered inside the app window - 
+    /// does NOT guarantee the video actually rendered inside the app window -
     /// mpv may still use its own window. The frontend should treat mpv playback
     /// as "handled" either way and not show the in-webview <video>.
     pub embedded: bool,
@@ -69,11 +72,10 @@ pub struct MpvPlayResult {
 impl MpvState {
     /// Kill any current mpv and clear the slot.
     fn kill_current(&self) {
-        if let Ok(mut guard) = self.0.lock() {
-            if let Some(inst) = guard.take() {
-                let _ = inst.child.kill();
-                let _ = std::fs::remove_file(&inst.ipc_path);
-            }
+        let current = self.0.lock().ok().and_then(|mut guard| guard.take());
+        if let Some(inst) = current {
+            let _ = inst.child.kill();
+            let _ = std::fs::remove_file(&inst.ipc_path);
         }
     }
 }
@@ -83,8 +85,8 @@ impl MpvState {
 /// (non-macOS, or the handle isn't an AppKit one). The address is mpv's expected
 /// `--wid` value (the NSView object pointer as an integer).
 #[cfg(target_os = "macos")]
-fn ns_view_wid<R: Runtime>(window: &Window<R>) -> Option<usize> {
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+fn ns_view_wid(window: &impl raw_window_handle::HasWindowHandle) -> Option<usize> {
+    use raw_window_handle::RawWindowHandle;
     let handle = window.window_handle().ok()?;
     match handle.as_raw() {
         RawWindowHandle::AppKit(h) => Some(h.ns_view.as_ptr() as usize),
@@ -93,7 +95,7 @@ fn ns_view_wid<R: Runtime>(window: &Window<R>) -> Option<usize> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn ns_view_wid<R: Runtime>(_window: &Window<R>) -> Option<usize> {
+fn ns_view_wid<T>(_window: &T) -> Option<usize> {
     None
 }
 
@@ -118,14 +120,24 @@ fn ipc_socket_path<R: Runtime>(app: &AppHandle<R>) -> PathBuf {
 /// `--force-window=yes` so mpv plays even if `--wid` is ignored. Replaces any
 /// previously-playing mpv. Returns whether embedding was attempted + a status.
 #[tauri::command]
-pub fn mpv_play<R: Runtime>(
+pub async fn mpv_play<R: Runtime>(
     app: AppHandle<R>,
-    window: Window<R>,
+    window: WebviewWindow<R>,
     state: State<'_, MpvState>,
     url: String,
+    stream_authorization: Option<String>,
 ) -> Result<MpvPlayResult, String> {
-    // One mpv at a time: tear down any previous instance first.
-    state.kill_current();
+    let proxy_lease = crate::playback_auth::authenticated_playback_for_window(
+        &window,
+        &url,
+        stream_authorization.as_deref(),
+    )?
+    .map(crate::playback_proxy::start)
+    .transpose()?;
+    let handoff_url = proxy_lease
+        .as_ref()
+        .map(|lease| lease.url().to_string())
+        .unwrap_or(url);
 
     let ipc_path = ipc_socket_path(&app);
     // Stale socket from a crashed run would block bind; remove proactively.
@@ -154,7 +166,7 @@ pub fn mpv_play<R: Runtime>(
         args.push(format!("--wid={w}"));
     }
     // The stream URL last (positional).
-    args.push(url);
+    args.push(handoff_url);
 
     let (_rx, child) = sidecar
         .args(args)
@@ -167,12 +179,20 @@ pub fn mpv_play<R: Runtime>(
         "mpv launched in its own window".to_string()
     };
 
-    if let Ok(mut guard) = state.0.lock() {
-        *guard = Some(MpvInstance {
-            child,
-            ipc_path,
-            embedded,
-        });
+    let new_instance = MpvInstance {
+        child,
+        ipc_path,
+        embedded,
+        proxy_lease,
+    };
+    let previous = state
+        .0
+        .lock()
+        .map_err(|_| "player state poisoned".to_string())?
+        .replace(new_instance);
+    if let Some(previous) = previous {
+        let _ = previous.child.kill();
+        let _ = std::fs::remove_file(&previous.ipc_path);
     }
 
     Ok(MpvPlayResult { embedded, status })

@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Runtime, State, Window};
+use tauri::{AppHandle, Runtime, State, WebviewWindow, Window};
 
 #[derive(Default)]
 pub struct PlayerState(pub Mutex<Option<()>>);
@@ -33,7 +33,8 @@ pub fn player_load<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn player_command(
+pub async fn player_command<R: Runtime>(
+    _window: WebviewWindow<R>,
     _state: State<'_, PlayerState>,
     _args: Vec<String>,
     _stream_authorization: Option<String>,
