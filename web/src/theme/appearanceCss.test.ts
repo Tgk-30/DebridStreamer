@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function cssFiles(root: string): string[] {
   return readdirSync(root).flatMap((entry) => {
@@ -13,7 +14,7 @@ function cssFiles(root: string): string[] {
   });
 }
 
-const sourceRoot = new URL("..", import.meta.url).pathname;
+const sourceRoot = fileURLToPath(new URL("..", import.meta.url));
 const css = cssFiles(sourceRoot)
   .map((path) => `${path}\n${readFileSync(path, "utf8")}`)
   .join("\n");
