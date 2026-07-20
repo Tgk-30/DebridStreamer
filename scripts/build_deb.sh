@@ -5,7 +5,7 @@
 #
 # The server ships as a Node bundle (server/dist/index.cjs) plus the static web
 # app (web/dist) - no native code - so the package is Architecture: all: one
-# .deb runs on amd64 and arm64 alike (it just Depends on nodejs). Run
+# .deb runs on amd64 and arm64 alike (it depends on Node.js and FFmpeg). Run
 # `(cd web && npm ci && npm run build)` and `(cd server && npm ci && npm run
 # build)` first; this script only packages the already-built output. Needs
 # dpkg-deb (present on Ubuntu / any Debian host and CI runner).
@@ -41,7 +41,7 @@ Package: ${PKG}
 Version: ${VERSION}
 Architecture: all
 Maintainer: DebridStreamer <noreply@users.noreply.github.com>
-Depends: nodejs (>= 22)
+Depends: nodejs (>= 22), ffmpeg
 Section: web
 Priority: optional
 Installed-Size: ${INSTALLED_KB}

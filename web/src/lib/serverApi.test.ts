@@ -294,6 +294,28 @@ describe("resolveServerStream", () => {
     expect(info.streamURL).toBe("https://server.example/play/abc/index.m3u8");
   });
 
+  it("converts an existing proxy session to HLS without double-appending", () => {
+    const direct = {
+      streamURL: "https://server.example/api/stream/session-1/",
+      fileName: "movie.mkv",
+    } as never;
+    const hls = api.asServerTranscodeStream(direct);
+    expect(hls.streamURL).toBe(
+      "https://server.example/api/stream/session-1/index.m3u8",
+    );
+    expect(api.asServerTranscodeStream(hls)).toBe(hls);
+  });
+
+  it("preserves a proxy session query while adding its HLS manifest", () => {
+    const direct = {
+      streamURL: "https://server.example/api/stream/session-1/?token=abc",
+      fileName: "movie.mkv",
+    } as never;
+    expect(api.asServerTranscodeStream(direct).streamURL).toBe(
+      "https://server.example/api/stream/session-1/index.m3u8?token=abc",
+    );
+  });
+
   it("preserves an already-absolute streamURL (absoluteServerURL passthrough)", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({

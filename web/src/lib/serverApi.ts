@@ -157,16 +157,27 @@ export async function resolveServerStream(
         : {}),
     },
   );
-  // When transcoding is requested, point the player at the session's HLS manifest
-  // variant of the same playback URL. VideoPlayer sniffs the ".m3u8" suffix and
-  // plays it via hls.js - so no player change is needed.
-  const path = opts.transcode
-    ? `${response.stream.streamURL}/index.m3u8`
-    : response.stream.streamURL;
-  return {
+  const stream = {
     ...response.stream,
-    streamURL: absoluteServerURL(path),
+    streamURL: absoluteServerURL(response.stream.streamURL),
   };
+  // Reuse the session's HLS manifest when the user explicitly requested lower
+  // data use. The hosted web compatibility path calls the same helper when the
+  // original format cannot be decoded by browsers.
+  return opts.transcode ? asServerTranscodeStream(stream) : stream;
+}
+
+/** Point an existing Server Mode proxy session at its HLS compatibility
+ * manifest without resolving the torrent a second time. The server creates the
+ * transcode lazily when this URL is first requested. */
+export function asServerTranscodeStream(stream: StreamInfo): StreamInfo {
+  const suffixAt = stream.streamURL.search(/[?#]/);
+  const base = (
+    suffixAt < 0 ? stream.streamURL : stream.streamURL.slice(0, suffixAt)
+  ).replace(/\/+$/, "");
+  if (base.toLowerCase().endsWith("/index.m3u8")) return stream;
+  const suffix = suffixAt < 0 ? "" : stream.streamURL.slice(suffixAt);
+  return { ...stream, streamURL: `${base}/index.m3u8${suffix}` };
 }
 
 export async function searchServerMedia(input: {

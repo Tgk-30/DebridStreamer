@@ -26,6 +26,7 @@ let inWatchlistResult = false;
 let mockCached: { stream: any } | null = null;
 let mockContinueWatching: any[] = [];
 let serverModeOn = false;
+let transcodeAvailable = false;
 const tauriState = vi.hoisted(() => ({ on: false }));
 const downloadsFfmpegAvailable = vi.hoisted(() => vi.fn(async () => true));
 const downloadsRuntime = vi.hoisted(() => ({
@@ -101,7 +102,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
 }));
 
 vi.mock("../lib/ServerSessionContext", () => ({
-  useTranscodeAvailable: () => false,
+  useTranscodeAvailable: () => transcodeAvailable,
 }));
 
 vi.mock("../lib/downloadsBridge", () => ({
@@ -115,6 +116,10 @@ const createRequest = vi.fn<(...a: any[]) => any>();
 const resolveServerStream = vi.fn<(...a: any[]) => any>();
 const fetchServerEpisodes = vi.fn<(...a: any[]) => any>();
 vi.mock("../lib/serverApi", () => ({
+  asServerTranscodeStream: (stream: any) => ({
+    ...stream,
+    streamURL: `${stream.streamURL.replace(/\/+$/, "")}/index.m3u8`,
+  }),
   createRequest: (...a: unknown[]) => createRequest(...a),
   fetchServerEpisodes: (...a: unknown[]) => fetchServerEpisodes(...a),
   resolveServerStream: (...a: unknown[]) => resolveServerStream(...a),
@@ -205,7 +210,7 @@ vi.mock("../components/OmdbRatings", () => ({
 }));
 
 vi.mock("../components/StreamPicker", () => ({
-  StreamPicker: ({ onOpenSettings, onPlay }: any) => (
+  StreamPicker: ({ onOpenSettings, onPlay, resolveStream }: any) => (
     <div data-testid="streampicker">
       <button onClick={onOpenSettings}>open-settings</button>
       <button
@@ -218,6 +223,21 @@ vi.mock("../components/StreamPicker", () => ({
         }
       >
         play-stream
+      </button>
+      <button
+        data-testid="resolve-and-play-stream"
+        onClick={() => {
+          const source = {
+            infoHash: "HASH",
+            title: "show.mkv",
+            codec: "H.265",
+          };
+          void resolveStream({ result: source, cachedOn: "real_debrid" }).then(
+            (stream: any) => onPlay(stream, source),
+          );
+        }}
+      >
+        resolve-and-play-stream
       </button>
     </div>
   ),
@@ -272,6 +292,7 @@ vi.mock("../components/Spinner", () => ({
 
 vi.mock("../components/VideoPlayer", () => ({
   VideoPlayer: ({
+    url,
     title,
     subtitle,
     nowPlaying,
@@ -286,6 +307,7 @@ vi.mock("../components/VideoPlayer", () => ({
   }: any) => (
     <div
       data-testid="player"
+      data-url={url}
       data-title={title}
       data-subtitle={subtitle ?? ""}
       data-source-file={sourceFileName ?? ""}
@@ -389,6 +411,7 @@ beforeEach(() => {
   mockCached = null;
   mockContinueWatching = [];
   serverModeOn = false;
+  transcodeAvailable = false;
   tauriState.on = false;
   mockServices = {
     tmdb: null,
@@ -502,7 +525,7 @@ describe("Detail base render", () => {
     expect(episodeTrigger).toHaveFocus();
   });
 
-  it("keeps the streams page open while Escape reaches the player", async () => {
+  it("closes the streams page before the player opens", async () => {
     mockDetailItem = preview("s1", { type: "series", title: "The Series", tmdbId: 200 });
     mockDetail = detailState({ item: mediaItem({ type: "series", id: "s1", tmdbId: 200 }) });
     render(<Detail />);
@@ -510,14 +533,8 @@ describe("Detail base render", () => {
     await userEvent.click(screen.getByTestId("play-stream"));
     expect(await screen.findByTestId("player")).toBeInTheDocument();
 
-    const playerKeydown = vi.fn();
-    window.addEventListener("keydown", playerKeydown);
-    fireEvent.keyDown(document.body, { key: "Escape" });
-
-    expect(playerKeydown).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("dialog", { name: /Streams/ })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /Streams/ })).not.toBeInTheDocument();
     expect(screen.getByTestId("player")).toBeInTheDocument();
-    window.removeEventListener("keydown", playerKeydown);
   });
 
   it("closes the streams page on Escape when no player is mounted", async () => {
@@ -769,7 +786,7 @@ describe("Detail play", () => {
     );
   });
 
-  it("falls back to the external player when HLS transcode is unavailable", async () => {
+  it("still attempts the custom web player when HLS transcode is unavailable", async () => {
     const getTranscodeHLS = vi.fn(async () => null);
     mockServices.debrid = { getTranscodeHLS };
     mockCached = {
@@ -787,8 +804,40 @@ describe("Detail play", () => {
     expect(getTranscodeHLS).toHaveBeenCalled();
     expect(screen.getByTestId("player")).toHaveAttribute(
       "data-engine",
-      "native-mpv",
+      "webview-direct",
     );
+  });
+
+  it("automatically uses server HLS for an incompatible source in the hosted web app", async () => {
+    serverModeOn = true;
+    transcodeAvailable = true;
+    resolveServerStream.mockResolvedValue({
+      fileName: "show.mkv",
+      streamURL: "https://server.example/api/stream/session-1",
+      codec: "H.265",
+    });
+    mockDetailItem = preview("s1", { type: "series", title: "Obsession", tmdbId: 200 });
+    mockDetail = detailState({
+      item: mediaItem({ id: "s1", type: "series", title: "Obsession", tmdbId: 200 }),
+    });
+    mockServices.tmdb = { getEpisodes: vi.fn(async () => []), getSeasons: vi.fn(async () => []) };
+
+    render(<Detail />);
+    await userEvent.click(screen.getByTestId("pick-episode"));
+    expect(document.querySelector(".episode-streams")).not.toBeNull();
+    await userEvent.click(screen.getByTestId("resolve-and-play-stream"));
+
+    const player = await screen.findByTestId("player");
+    expect(player).toHaveAttribute("data-engine", "webview-hls-transcode");
+    expect(player).toHaveAttribute(
+      "data-url",
+      "https://server.example/api/stream/session-1/index.m3u8",
+    );
+    expect(player).toHaveAttribute(
+      "data-source-file",
+      "show.mkv",
+    );
+    expect(document.querySelector(".episode-streams")).toBeNull();
   });
 
   it("routes 2160p DV/HDR H265-in-MP4 straight to native mpv on desktop", async () => {

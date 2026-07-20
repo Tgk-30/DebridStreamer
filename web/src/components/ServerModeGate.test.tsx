@@ -37,6 +37,13 @@ vi.mock("../lib/serverSession", () => ({
   onUnauthorized: (handler: () => void) => onUnauthorized(handler),
 }));
 
+const needsCloudflareAccessLogin = vi.fn<() => Promise<boolean>>();
+const openServerAccessLogin = vi.fn<() => Promise<void>>();
+vi.mock("../lib/serverAccess", () => ({
+  needsCloudflareAccessLogin: () => needsCloudflareAccessLogin(),
+  openServerAccessLogin: () => openServerAccessLogin(),
+}));
+
 // Render the provider as a simple wrapper that exposes its props for assertions.
 vi.mock("../lib/ServerSessionContext", () => ({
   ServerSessionProvider: ({
@@ -93,6 +100,8 @@ beforeEach(() => {
   configuredServerURL.mockReset();
   unauthorizedHandler = null;
   configuredServerURL.mockReturnValue("https://srv.test");
+  needsCloudflareAccessLogin.mockResolvedValue(false);
+  openServerAccessLogin.mockResolvedValue();
   vi.stubGlobal("fetch", fetchMock);
   // Keep the URL clean between tests (invite/setup token readers parse it).
   window.history.replaceState({}, "", "/");
@@ -216,6 +225,41 @@ describe("ServerModeGate", () => {
 
     expect(await screen.findByText("Server unavailable")).toBeInTheDocument();
     expect(screen.getByText("Cannot reach server.")).toBeInTheDocument();
+  });
+
+  it("recognizes Cloudflare Access and opens a desktop sign-in window", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("Load failed"));
+    needsCloudflareAccessLogin.mockResolvedValueOnce(true);
+
+    const user = userEvent.setup();
+    render(<ServerModeGate>{CHILD}</ServerModeGate>);
+
+    expect(
+      await screen.findByText("Cloudflare Access sign-in required"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Server unavailable")).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Sign in to Cloudflare Access" }),
+    );
+    expect(openServerAccessLogin).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("surfaces a Cloudflare sign-in window error without losing Retry", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("Load failed"));
+    needsCloudflareAccessLogin.mockResolvedValueOnce(true);
+    openServerAccessLogin.mockRejectedValueOnce(new Error("window blocked"));
+
+    const user = userEvent.setup();
+    render(<ServerModeGate>{CHILD}</ServerModeGate>);
+    await screen.findByText("Cloudflare Access sign-in required");
+    await user.click(
+      screen.getByRole("button", { name: "Sign in to Cloudflare Access" }),
+    );
+
+    expect(await screen.findByText("window blocked")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
   it("surfaces a status-based error message for a non-ok bootstrap with no JSON error", async () => {

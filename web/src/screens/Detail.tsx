@@ -49,6 +49,7 @@ import {
 } from "../services/indexers/models";
 import type { StreamRow } from "../data/streams";
 import {
+  asServerTranscodeStream,
   createRequest,
   fetchServerEpisodes,
   resolveServerStream,
@@ -154,6 +155,12 @@ function needsTranscodeOrExternal(
   stream: StreamInfo,
   source?: TorrentResult,
 ): boolean {
+  // A Server Mode compatibility transcode keeps the original filename and
+  // codec as diagnostics, so its HLS URL is the authoritative playability
+  // signal.
+  if (stream.streamURL.split("?")[0].toLowerCase().endsWith(".m3u8")) {
+    return false;
+  }
   const name = stream.fileName.toLowerCase();
   const badContainer =
     name.endsWith(".mkv") ||
@@ -772,6 +779,10 @@ export function Detail() {
     engine: PlaybackEngine,
     fallbackStream: StreamInfo | null = null,
   ): void {
+    // The series stream picker is a body-level portal above Detail. Close it
+    // before mounting the player portal so playback and error states cannot
+    // start invisibly behind that page until the user presses Back.
+    setStreamsPageOpen(false);
     const metadataTitle = item?.title?.trim() || detailItem?.title?.trim() || "";
     const metadataYear = item?.year ?? detailItem?.year ?? null;
     const episodeMetadata =
@@ -984,7 +995,10 @@ export function Detail() {
       }
     }
     if (!needsTranscodeOrExternal(stream, source)) {
-      openPlayer(stream.streamURL, sourceFileName, "webview-direct");
+      const engine = stream.streamURL.split("?")[0].toLowerCase().endsWith(".m3u8")
+        ? "webview-hls-transcode"
+        : "webview-direct";
+      openPlayer(stream.streamURL, sourceFileName, engine);
       return;
     }
 
@@ -998,7 +1012,10 @@ export function Detail() {
       openPlayer(hlsUrl, sourceFileName, "webview-hls-transcode");
       return;
     }
-    openPlayer(stream.streamURL, sourceFileName, "native-mpv");
+    // No compatibility transcode is available. Still enter the custom web
+    // player and let the browser attempt the source; a decode failure remains
+    // inside the player with Retry/direct-link fallbacks.
+    openPlayer(stream.streamURL, sourceFileName, "webview-direct");
   }
 
   /** Play an already-resolved StreamInfo (the instant-play path). */
@@ -1027,11 +1044,20 @@ export function Detail() {
       const media =
         detailItem != null ? { id: detailItem.id, type: detailItem.type } : undefined;
       try {
-        return await resolveServerStream(row, {
+        const stream = await resolveServerStream(row, {
           transcode: settings.transcode && transcodeAvailable,
           media,
           fileHint,
         });
+        // Hosted browsers should enter the custom player immediately, not an
+        // external-vs-browser decision. When the server has ffmpeg, route only
+        // incompatible MKV/HEVC/AV1 sources through this proxy session's HLS
+        // manifest. Compatible MP4/WebM stays direct at original quality.
+        return !isTauri() &&
+          transcodeAvailable &&
+          needsTranscodeOrExternal(stream, row.result)
+          ? asServerTranscodeStream(stream)
+          : stream;
       } catch (err) {
         // A 403 here means the title is over the active profile's maturity cap.
         // Surface a friendly message (StreamPicker renders the thrown .message)

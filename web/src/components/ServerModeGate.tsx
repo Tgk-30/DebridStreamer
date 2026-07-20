@@ -10,6 +10,10 @@ import {
   type ServerProfileSummary,
   type ServerSession,
 } from "../lib/ServerSessionContext";
+import {
+  needsCloudflareAccessLogin,
+  openServerAccessLogin,
+} from "../lib/serverAccess";
 import { AmbientVideo } from "./AmbientVideo";
 import "./ServerModeGate.css";
 
@@ -44,6 +48,7 @@ type GateState =
   | { kind: "setup"; baseURL: string; setupTokenRequired: boolean; setupToken: string | null }
   | { kind: "invite"; baseURL: string; token: string }
   | { kind: "login"; baseURL: string }
+  | { kind: "cloudflare-access"; baseURL: string }
   | { kind: "error"; baseURL: string; message: string };
 
 function setupTokenFromURL(): string | null {
@@ -200,8 +205,12 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         }
         else setState({ kind: "login", baseURL });
       })
-      .catch((error) => {
+      .catch(async (error) => {
         if (cancelled) return;
+        if (await needsCloudflareAccessLogin(baseURL)) {
+          if (!cancelled) setState({ kind: "cloudflare-access", baseURL });
+          return;
+        }
         const message = error instanceof Error ? error.message : "Cannot reach server.";
         setState({ kind: "error", baseURL, message });
       });
@@ -232,6 +241,18 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         title="Server unavailable"
         copy={state.message}
         baseURL={state.baseURL}
+        onRetry={() => setAttempt((n) => n + 1)}
+      />
+    );
+  }
+  if (state.kind === "cloudflare-access") {
+    return (
+      <GateShell
+        title="Cloudflare Access sign-in required"
+        copy="The server is online, but Cloudflare Access needs a separate desktop session. Sign in in the window that opens, close it when the server loads, then retry."
+        baseURL={state.baseURL}
+        actionLabel="Sign in to Cloudflare Access"
+        onAction={() => openServerAccessLogin(state.baseURL)}
         onRetry={() => setAttempt((n) => n + 1)}
       />
     );
@@ -306,23 +327,62 @@ function GateShell({
   title,
   copy,
   baseURL,
+  actionLabel,
+  onAction,
   onRetry,
 }: {
   title: string;
   copy: string;
   baseURL: string;
+  actionLabel?: string;
+  onAction?: () => Promise<void>;
   onRetry?: () => void;
 }) {
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  function runAction(): void {
+    if (onAction == null) return;
+    setActionBusy(true);
+    setActionError(null);
+    void onAction()
+      .catch((error) => {
+        setActionError(
+          error instanceof Error ? error.message : "Could not open the sign-in window.",
+        );
+      })
+      .finally(() => setActionBusy(false));
+  }
+
   return (
     <div className="server-gate">
       <AmbientVideo name="aurora" opacity={0.32} />
       <div className="server-gate-card">
         <h1 className="server-gate-title">{title}</h1>
         <p className="server-gate-copy">{copy}</p>
-        {onRetry != null && (
-          <button className="server-gate-button" type="button" onClick={onRetry}>
-            Retry
-          </button>
+        {actionError != null && <p className="server-gate-error">{actionError}</p>}
+        {(onAction != null || onRetry != null) && (
+          <div className="server-gate-actions">
+            {onAction != null && actionLabel != null && (
+              <button
+                className="server-gate-button"
+                type="button"
+                disabled={actionBusy}
+                onClick={runAction}
+              >
+                {actionBusy ? "Opening sign-in" : actionLabel}
+              </button>
+            )}
+            {onRetry != null && (
+              <button
+                className="server-gate-button server-gate-button-secondary"
+                type="button"
+                onClick={onRetry}
+              >
+                Retry
+              </button>
+            )}
+          </div>
         )}
         <div className="server-gate-meta">{baseURL || window.location.origin}</div>
       </div>

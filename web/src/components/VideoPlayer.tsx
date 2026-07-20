@@ -728,6 +728,7 @@ export function VideoPlayer({
             onOpenShortcuts={() => setDetailsSection("shortcuts")}
             onSourceSize={setSourceSize}
             onProgress={onProgress}
+            savedPrefs={savedPrefs}
             startPositionSeconds={startPositionSeconds}
             onPlaybackError={(message) => {
               recordDiagnostic("player", "webview.playback_failed", "error", message);
@@ -789,6 +790,7 @@ function WebviewPlayer({
   onOpenShortcuts,
   onSourceSize,
   onProgress,
+  savedPrefs,
   startPositionSeconds,
   onPlaybackError,
   subtitleClient,
@@ -819,7 +821,12 @@ function WebviewPlayer({
   onActiveSubtitleUrlChange: (url: string | null) => void;
   onOpenShortcuts: () => void;
   onSourceSize: (size: PixelSize | null) => void;
-  onProgress?: (currentSeconds: number, durationSeconds: number | null) => void;
+  onProgress?: (
+    currentSeconds: number,
+    durationSeconds: number | null,
+    prefs?: PlaybackPrefs,
+  ) => void;
+  savedPrefs?: PlaybackPrefs | null;
   startPositionSeconds?: number;
   onPlaybackError: (message: string) => void;
   subtitleClient: SubtitleClient | null;
@@ -833,6 +840,7 @@ function WebviewPlayer({
   autoCountdown?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const autoplayAttemptedRef = useRef(false);
   const pausedForCastRef = useRef(false);
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
@@ -842,6 +850,13 @@ function WebviewPlayer({
   const [paused, setPaused] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [playbackRate, setPlaybackRate] = useState(() => {
+    const saved = savedPrefs?.playbackSpeed;
+    return saved != null && Number.isFinite(saved) && saved >= 0.5 && saved <= 2
+      ? saved
+      : 1;
+  });
   const [scrubbing, setScrubbing] = useState(false);
   // Set when the video reaches its natural end - drives the Up-next card.
   const [ended, setEnded] = useState(false);
@@ -1165,7 +1180,12 @@ function WebviewPlayer({
 
     const report = () => {
       const d = Number.isFinite(video.duration) ? video.duration : null;
-      onProgressRef.current?.(video.currentTime, d);
+      onProgressRef.current?.(video.currentTime, d, {
+        playbackSpeed:
+          Number.isFinite(video.playbackRate) && video.playbackRate > 0
+            ? video.playbackRate
+            : 1,
+      });
     };
     const onTimeUpdate = () => {
       scrubberRef.current?.setCurrentTime(video.currentTime);
@@ -1245,6 +1265,31 @@ function WebviewPlayer({
     };
     const onVolumeChange = () => {
       setMuted(video.muted || video.volume === 0);
+      setVolume(video.volume);
+    };
+    const onRateChange = () => setPlaybackRate(video.playbackRate);
+    const savedRate = savedPrefs?.playbackSpeed;
+    if (
+      savedRate != null &&
+      Number.isFinite(savedRate) &&
+      savedRate >= 0.5 &&
+      savedRate <= 2
+    ) {
+      video.playbackRate = savedRate;
+    }
+    const attemptAutoplay = () => {
+      if (autoplayAttemptedRef.current || suspendedRef.current) return;
+      autoplayAttemptedRef.current = true;
+      if (!video.paused) return;
+      // Stream resolution is asynchronous, so some browsers no longer treat
+      // the later player mount as part of the original click. Retry explicitly
+      // when media is playable. If policy still blocks it, the Play control is
+      // already visible and no external-player decision interrupts the flow.
+      try {
+        void video.play().catch(() => {});
+      } catch {
+        // Older WebKit versions can throw synchronously instead of rejecting.
+      }
     };
     setEnded(false); // a new URL is a new playback - clear any stale end state
     setPaused(false);
@@ -1255,23 +1300,27 @@ function WebviewPlayer({
     video.addEventListener("loadedmetadata", onLoadedMeta);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("canplay", applyResume);
+    video.addEventListener("canplay", attemptAutoplay);
     video.addEventListener("ended", onEnded);
     video.addEventListener("pause", onPause);
     video.addEventListener("play", onPlay);
     video.addEventListener("volumechange", onVolumeChange);
+    video.addEventListener("ratechange", onRateChange);
     return () => {
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMeta);
       video.removeEventListener("durationchange", onDurationChange);
       video.removeEventListener("canplay", applyResume);
+      video.removeEventListener("canplay", attemptAutoplay);
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("volumechange", onVolumeChange);
+      video.removeEventListener("ratechange", onRateChange);
       if (onProgressRef.current != null && video.currentTime > 0) report();
       if (scrobbleContext != null) scrobblePlaybackStop(scrobbleContext, progressPct());
     };
-  }, [onPausedChange, scrobbleContext, url]);
+  }, [onPausedChange, savedPrefs?.playbackSpeed, scrobbleContext, url]);
 
   // Wire hls.js for HLS streams when the browser can't play them natively.
   useEffect(() => {
@@ -1564,6 +1613,23 @@ function WebviewPlayer({
     setMuted(video.muted || video.volume === 0);
   }, []);
 
+  const changeVolume = useCallback((next: number) => {
+    const video = videoRef.current;
+    if (video == null) return;
+    const clamped = Math.max(0, Math.min(1, next));
+    video.volume = clamped;
+    video.muted = clamped === 0;
+    setVolume(clamped);
+    setMuted(video.muted || clamped === 0);
+  }, []);
+
+  const changePlaybackRate = useCallback((next: number) => {
+    const video = videoRef.current;
+    if (video == null || !Number.isFinite(next)) return;
+    video.playbackRate = next;
+    setPlaybackRate(next);
+  }, []);
+
   return (
     <div
       className={`webview-player${suspended ? " is-casting" : ""}`}
@@ -1660,6 +1726,32 @@ function WebviewPlayer({
           >
             <Icon name={muted ? "volume-muted" : "volume"} size={17} />
           </button>
+          <label className="player-volume-control" aria-label="Volume">
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={muted ? 0 : volume}
+              onChange={(event) => changeVolume(Number(event.target.value))}
+              tabIndex={chromeVisible ? undefined : -1}
+            />
+          </label>
+          <label className="player-speed-control">
+            <span className="sr-only">Playback speed</span>
+            <select
+              aria-label="Playback speed"
+              value={playbackRate}
+              onChange={(event) => changePlaybackRate(Number(event.target.value))}
+              tabIndex={chromeVisible ? undefined : -1}
+            >
+              {[0.5, 0.75, 1, 1.25, 1.5, 2].map((speed) => (
+                <option value={speed} key={speed}>
+                  {speed}×
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
             className={`chip${captionsOpen || subs.activeTrackId != null ? " is-active" : ""}`}
@@ -1845,9 +1937,21 @@ function ExternalPanel({
         <p className="player-external-err" role="alert">
           {error ?? "Playback could not continue."}
         </p>
-        <button type="button" className="btn btn-prominent" onClick={onRetry}>
-          Retry playback
-        </button>
+        <div className="player-external-actions">
+          <button type="button" className="btn btn-prominent" onClick={onRetry}>
+            Retry playback
+          </button>
+          {!underTauri && (
+            <a
+              className="btn"
+              href={url}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Open direct link
+            </a>
+          )}
+        </div>
       </div>
     );
   }

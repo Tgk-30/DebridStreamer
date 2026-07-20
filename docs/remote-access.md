@@ -117,6 +117,13 @@ can even load the page:
 
 - <https://developers.cloudflare.com/cloudflare-one/policies/access/>
 
+The desktop app keeps a separate browser session from Chrome, Safari, and
+Firefox. If the server is protected by Cloudflare Access, YAWF Stream detects
+the Access redirect and offers **Sign in to Cloudflare Access**. Complete that
+sign-in in the desktop window, close it after the server loads, then select
+**Retry** in the main app. Opening the URL in an external browser does not sign
+in the desktop app because the two applications do not share cookies.
+
 > **Important:** Cloudflare Access and Tailscale are *outer* protection layers.
 > They control who can reach the server. They do **not** replace DebridStreamer's
 > own logins and profiles, which keep each person's history, credentials, and

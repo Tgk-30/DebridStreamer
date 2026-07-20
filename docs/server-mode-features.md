@@ -105,15 +105,14 @@ The hosted app is installable on iPhone, iPad, Android, and desktop browsers via
 - **Debrid Library screen is desktop-only.** The dedicated "Debrid" file-library
   browser is a desktop (Tauri) feature and is hidden in Server Mode. Streaming
   itself still works through the proxy.
-- **Server-side transcoding is opt-in (operator).** By default the server relays
-  the original video bytes and the cached-only / max-quality / max-size controls
-  (plus Data Saver) shape bandwidth by *choosing a smaller source*. An operator
-  who runs `DS_SERVER_ENABLE_TRANSCODE=true` on a box with **ffmpeg** installed
-  unlocks a "Reduce playback bitrate (server transcode)" toggle (Settings →
-  Playback) that re-encodes playback to a 720p HLS stream - true bitrate
-  reduction, at the cost of server CPU. Not recommended on a Raspberry Pi; left
-  off by default. Multi-rendition adaptive bitrate + hardware encoding are future
-  work.
+- **Server-side transcoding requires FFmpeg and server CPU.** Official Docker and
+  Debian/Ubuntu deployments include FFmpeg and enable the capability. The hosted
+  web app automatically uses 720p H.264/AAC HLS only when an original MKV/HEVC/
+  AV1 source is not browser-compatible; compatible MP4/WebM sources remain direct
+  at original quality. The "Reduce playback bitrate (server transcode)" toggle
+  (Settings → Playback) can also request HLS for compatible sources to reduce
+  data use. CPU-constrained operators can set `DS_SERVER_ENABLE_TRANSCODE=false`.
+  Multi-rendition adaptive bitrate and hardware encoding are future work.
 - **A feature needs its credential configured.** Each capability requires the
   matching credential to be present (shared or per-profile): metadata needs a
   TMDB key, AI needs an AI provider key, subtitles need an OpenSubtitles key,

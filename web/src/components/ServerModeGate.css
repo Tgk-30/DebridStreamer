@@ -78,6 +78,17 @@
   opacity: 0.62;
 }
 
+.server-gate-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.server-gate-button-secondary {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
 .server-gate-error {
   margin: 2px 0 0;
   color: #fecaca;

@@ -124,6 +124,8 @@ environment variables (or in your Docker `.env`).
 | `DS_SERVER_TRUST_PROXY` | `false` | Set `true` behind a trusted reverse proxy / tunnel. |
 | `DS_SERVER_CORS_ORIGIN` | unset | Comma-separated browser origins allowed to call the API with cookies. Usually leave blank when the server also serves the web app. |
 | `DS_SERVER_ALLOW_RAW_STREAM_URLS` | off in production | Lets the server fetch raw upstream URLs, **including private/LAN/loopback addresses**. Keep **disabled** on any public deployment - see warning below. |
+| `DS_SERVER_ENABLE_TRANSCODE` | `true` in official deployments, otherwise `false` | Enables FFmpeg HLS fallback for browser-incompatible streams. Set `false` on CPU-constrained hosts. |
+| `DS_SERVER_MAX_TRANSCODES` | `1` | Maximum simultaneous FFmpeg HLS jobs. |
 
 ### About `DS_SERVER_SECRET_KEY`
 

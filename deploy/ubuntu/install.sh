@@ -28,6 +28,11 @@ if [[ "${NODE_MAJOR}" -lt 22 ]]; then
   echo "Node ${NODE_MAJOR} is too old - install Node 24+ (see README Option B)." >&2
   exit 1
 fi
+if ! command -v ffmpeg >/dev/null; then
+  echo "==> Installing FFmpeg for hosted browser compatibility"
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg
+fi
 
 echo "==> Building web app"
 ( cd web && npm ci && npm run build )

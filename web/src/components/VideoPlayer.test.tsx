@@ -391,8 +391,71 @@ describe("WebviewPlayer", () => {
     expect(screen.getByTestId("scrub-bar")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Mute" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Volume" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Playback speed" })).toHaveValue("1");
     // CC button lives in the OSD row.
     expect(screen.getByRole("button", { name: "Subtitles" })).toBeInTheDocument();
+  });
+
+  it("retries autoplay when the resolved media becomes playable", () => {
+    render(
+      <VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />,
+    );
+    const video = document.querySelector("video.player-video") as HTMLVideoElement;
+
+    fireEvent.canPlay(video);
+    fireEvent.canPlay(video);
+
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores and changes playback speed in the web player", async () => {
+    render(
+      <VideoPlayer
+        url="https://x/test.mp4"
+        title="T"
+        savedPrefs={{ playbackSpeed: 1.25 }}
+        onClose={() => {}}
+      />,
+    );
+    const video = document.querySelector("video.player-video") as HTMLVideoElement;
+    const speed = screen.getByRole("combobox", { name: "Playback speed" });
+    expect(video.playbackRate).toBe(1.25);
+    expect(speed).toHaveValue("1.25");
+
+    await userEvent.selectOptions(speed, "1.5");
+
+    expect(video.playbackRate).toBe(1.5);
+    expect(speed).toHaveValue("1.5");
+  });
+
+  it("changes browser playback volume from the custom control", () => {
+    render(
+      <VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />,
+    );
+    const video = document.querySelector("video.player-video") as HTMLVideoElement;
+
+    fireEvent.change(screen.getByRole("slider", { name: "Volume" }), {
+      target: { value: "0.35" },
+    });
+
+    expect(video.volume).toBeCloseTo(0.35);
+  });
+
+  it("keeps direct-link recovery inside the player after a browser media error", () => {
+    render(
+      <VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />,
+    );
+    const video = document.querySelector("video.player-video") as HTMLVideoElement;
+
+    fireEvent.error(video);
+
+    expect(screen.getByText("Playback interrupted")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry playback" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open direct link" })).toHaveAttribute(
+      "href",
+      "https://x/test.mp4",
+    );
   });
 
   it("syncs Media Session metadata, transport handlers, and playback position", () => {

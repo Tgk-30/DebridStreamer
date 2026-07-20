@@ -167,6 +167,15 @@
   margin-top: var(--sp-sm);
   text-decoration: none;
 }
+.player-external-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-sm);
+}
+.player-external-actions a.btn {
+  margin-top: 0;
+}
 
 /* ---------------------------------------------------------------------------
  * In-webview player controls: one custom control surface for play, audio,
@@ -176,6 +185,36 @@
   position: absolute;
   inset: 0;
   background: #000;
+}
+.player-volume-control {
+  display: inline-flex;
+  align-items: center;
+  width: clamp(64px, 9vw, 112px);
+}
+.player-volume-control input {
+  width: 100%;
+  accent-color: rgb(var(--accent-rgb));
+}
+.player-speed-control select {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(8, 10, 18, 0.72);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 0 9px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.player-volume-control input:focus-visible,
+.player-speed-control select:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb));
+  outline-offset: 3px;
+}
+@media (max-width: 560px) {
+  .player-volume-control {
+    display: none;
+  }
 }
 .webview-player.is-casting .player-stage,
 .webview-player.is-casting .player-osd {

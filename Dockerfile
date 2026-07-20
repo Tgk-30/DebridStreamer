@@ -23,17 +23,20 @@ COPY server/ ./server/
 COPY web/src ./web/src
 RUN cd server && npm run build
 
-# NOTE: the optional server-side HLS transcoding feature (DS_SERVER_TRANSCODE…,
-# default OFF) shells out to `ffmpeg`. This slim image does NOT ship ffmpeg; if
-# you enable transcoding, base the runtime stage on an ffmpeg-equipped image or
-# add `RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg`.
 FROM node:24-bookworm-slim AS runtime
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=43110
 ENV DS_SERVER_DATA_DIR=/data
 ENV DS_SERVER_DB_PATH=/data/debridstreamer.sqlite
 ENV DS_WEB_DIST=/app/web-dist
+# Hosted browsers use this only when a source container or codec is not
+# browser-compatible. Direct MP4/WebM playback remains untouched. Operators can
+# override this to false on CPU-constrained servers.
+ENV DS_SERVER_ENABLE_TRANSCODE=true
 WORKDIR /app
 
 COPY --from=server-build /repo/server/dist ./server/dist
