@@ -832,14 +832,19 @@ mod tests {
         drop(lease);
         upstream.join().unwrap();
 
-        let (url, _captured, _upstream) = upstream_once(Vec::new());
         let lease = start_with_timeouts(
-            playback(url),
+            // No downstream request is made, so the upstream address is never
+            // contacted. Use a closed local port instead of leaking an accept
+            // thread that cannot be joined.
+            playback("http://127.0.0.1:9/media".to_string()),
             Duration::from_millis(30),
             Duration::from_secs(1),
         )
         .unwrap();
-        thread::sleep(Duration::from_millis(100));
-        assert!(lease.is_finished());
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !lease.is_finished() {
+            assert!(Instant::now() < deadline, "idle proxy did not retire");
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }
