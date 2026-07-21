@@ -166,14 +166,16 @@
 
 @media (max-width: 699px) {
   .detail {
-    inset: 0 0 calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + var(--sp-xs)) 0;
+    /* NavRail is hidden whenever an overlay is open. Cover the whole viewport;
+       reserving the hidden nav exposed the underlying screen as a live strip. */
+    inset: 0;
     padding-bottom: 0;
   }
 
   .detail-inner {
     gap: var(--sp-lg);
     padding: var(--sp-lg);
-    padding-bottom: var(--sp-xl);
+    padding-bottom: max(var(--sp-xl), env(safe-area-inset-bottom));
   }
 }
 

@@ -18,19 +18,66 @@ function check(label, condition, fix) {
 const appCss = read("web/src/App.css");
 const navCss = read("web/src/components/NavRail.css");
 const heroCss = read("web/src/components/HeroSpotlight.css");
+const themeCss = read("web/src/theme/theme.css");
 const moodCss = read("web/src/components/MoodStrip.css");
 const settingsCss = read("web/src/screens/Settings.css");
+const detailCss = read("web/src/screens/Detail.css");
+const browseCss = read("web/src/screens/Browse.css");
+const setupNudgeCss = read("web/src/components/SetupNudge.css");
+const installPromptCss = read("web/src/components/InstallPrompt.css");
+const appSource = read("web/src/App.tsx");
 const setupCredentials = read("web/src/lib/serverSetupCredentials.ts");
 const setupInvite = read("web/src/lib/serverSetupInvite.ts");
 const serverSetupWizard = read("web/src/components/ServerSetupWizard.tsx");
 const ciWorkflow = read(".github/workflows/ci.yml");
 
 check(
-  "mobile app viewport reserves bottom navigation space",
+  "mobile app viewport reserves bottom navigation space exactly once",
   /--mobile-nav-reserve:\s*calc\(var\(--mobile-nav-height\)\s*\+\s*var\(--mobile-nav-bottom\)\s*\+\s*30px\)/.test(appCss) &&
+    /height:\s*100dvh/.test(appCss) &&
     /padding-bottom:\s*var\(--mobile-nav-reserve\)/.test(appCss) &&
-    /scroll-padding-bottom:\s*var\(--mobile-nav-reserve\)/.test(appCss),
-  "web/src/App.css must reserve scroll and content space for the floating bottom nav.",
+    /scroll-padding-bottom:\s*var\(--mobile-nav-reserve\)/.test(appCss) &&
+    !/height:\s*calc\(100d?vh\s*-\s*var\(--mobile-nav-reserve\)\)/.test(appCss),
+  "web/src/App.css must keep a full viewport scrollport and reserve the floating bottom nav only with padding.",
+);
+
+check(
+  "short landscape phones cannot inherit the desktop side gutter",
+  /@media\s*\(min-width:\s*700px\)\s*and\s*\(max-width:\s*950px\)\s*and\s*\(max-height:\s*500px\)[\s\S]*--nav-rail-width:\s*0px[\s\S]*--nav-safe-left:\s*0px/.test(appCss),
+  "web/src/App.css must zero both desktop rail variables when the short-landscape bottom nav is active.",
+);
+
+check(
+  "mobile Discover uses one horizontal inset layer",
+  /@media\s*\(max-width:\s*767px\)[\s\S]*\.discover\s*\{[\s\S]*padding:\s*0;[\s\S]*\.discover-body\s*\{[\s\S]*padding:\s*0\s+var\(--sp-md\)/.test(read("web/src/screens/Discover.css")),
+  "Discover.css must not stack parent, hero, and body padding on phone-width content.",
+);
+
+check(
+  "mobile Settings does not duplicate the app nav reserve",
+  !/\.settings-screen\s*\{[\s\S]{0,300}padding-bottom:\s*calc\(var\(--mobile-nav-reserve\)/.test(settingsCss),
+  "Settings.css must leave the shared mobile navigation reserve to App.css.",
+);
+
+check(
+  "mobile overlays cover the hidden bottom-nav region",
+  /@media\s*\(max-width:\s*699px\)[\s\S]*\.detail\s*\{[\s\S]{0,220}inset:\s*0;/.test(detailCss) &&
+    /@media\s*\(max-width:\s*699px\)[\s\S]*\.browse\s*\{[\s\S]{0,220}inset:\s*0;/.test(browseCss) &&
+    !/inset:\s*0\s+0\s+calc\(var\(--mobile-nav-height\)/.test(`${detailCss}\n${browseCss}`),
+  "Detail.css and Browse.css must cover the entire phone viewport while NavRail is hidden.",
+);
+
+check(
+  "mobile setup and install cards stay above navigation without clipping",
+  /@media\s*\(max-width:\s*640px\)[\s\S]*bottom:\s*calc\(var\(--mobile-nav-bottom\)\s*\+\s*var\(--mobile-nav-height\)[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/.test(setupNudgeCss) &&
+    /@media\s*\(max-width:\s*699px\)[\s\S]*bottom:\s*calc\(var\(--mobile-nav-bottom\)\s*\+\s*var\(--mobile-nav-height\)/.test(installPromptCss),
+  "SetupNudge.css and InstallPrompt.css must clear the floating nav and keep phone actions within their cards.",
+);
+
+check(
+  "bottom cards do not pierce Browse or Detail modal state",
+  (appSource.match(/detailItem\s*==\s*null\s*&&\s*browseContext\s*==\s*null/g)?.length ?? 0) >= 2,
+  "App.tsx must hide both setup and install cards while either full-screen overlay is open.",
 );
 
 check(
@@ -68,6 +115,12 @@ check(
   /:root\[data-suspended\][\s\S]*:root\[data-unfocused\][\s\S]*\.hero-backdrop-layer[\s\S]*animation:\s*none\s*!important[\s\S]*opacity:\s*1\s*!important/.test(heroCss) &&
     /:root\[data-input-idle\][\s\S]*\.hero-content[\s\S]*animation:\s*none\s*!important[\s\S]*opacity:\s*1\s*!important/.test(heroCss),
   "HeroSpotlight.css must settle animated hero layers into a visible state when the window is suspended, unfocused, or idle.",
+);
+
+check(
+  "interactive overlays cannot freeze on an invisible entrance frame",
+  /:root\[data-suspended\]\s*:is\([\s\S]*\.detail[\s\S]*\.player-backdrop[\s\S]*:root\[data-unfocused\]\s*:is\([\s\S]*animation:\s*none\s*!important/.test(themeCss),
+  "theme.css must settle Detail, Browse, and player/dialog entrances while global animation work is parked.",
 );
 
 check(

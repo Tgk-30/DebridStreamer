@@ -77,12 +77,17 @@
   }
 
   .app-content {
-    height: calc(100vh - var(--mobile-nav-reserve));
-    height: calc(100dvh - var(--mobile-nav-reserve));
+    /* Keep one full viewport scrollport. The bottom padding is the single nav
+       reserve; subtracting it from height as well cuts usable space twice and
+       makes short phones and landscape layouts look vertically broken. */
+    height: 100vh;
+    height: 100dvh;
     min-height: 0;
     overflow-y: auto;
     padding-bottom: var(--mobile-nav-reserve);
     scroll-padding-bottom: var(--mobile-nav-reserve);
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* On mobile the nudge wraps its action row, so reserve more. */
@@ -132,7 +137,8 @@
 }
 
 /* Desktop "bottom bar" nav position: no left gutter, reserve room at the bottom
-   for the floating bar (the rail's own layout lives in NavRail.css). */@media (min-width: 700px) {
+   for the floating bar (the rail's own layout lives in NavRail.css). */
+@media (min-width: 700px) {
   :root[data-nav-position="bottom"] .app {
     --nav-safe-left: 0px;
   }
@@ -148,5 +154,16 @@
 @media (min-width: 700px) {
   :root[data-nav-collapsed="true"] .app {
     --nav-rail-width: 76px;
+  }
+}
+
+/* Short landscape phones use the bottom nav even when their CSS width exceeds
+   the portrait breakpoint. Reassert a zero side gutter after the tablet rules,
+   otherwise both the 152px desktop rail inset and the mobile bar apply. */
+@media (min-width: 700px) and (max-width: 950px) and (max-height: 500px) {
+  .app,
+  :root[data-nav-collapsed="true"] .app {
+    --nav-rail-width: 0px;
+    --nav-safe-left: 0px;
   }
 }

@@ -187,12 +187,14 @@
 
 @media (max-width: 699px) {
   .browse {
-    inset: 0 0 calc(var(--mobile-nav-height) + var(--mobile-nav-bottom) + var(--sp-xs)) 0;
+    /* The bottom nav is hidden under overlays, so Browse must cover the space
+       it occupied rather than reveal an interactive strip of the route below. */
+    inset: 0;
   }
 
   .browse-inner {
     padding: var(--sp-lg);
-    padding-bottom: var(--sp-xl);
+    padding-bottom: max(var(--sp-xl), env(safe-area-inset-bottom));
   }
 
   .browse-head {
