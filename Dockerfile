@@ -5,6 +5,7 @@ WORKDIR /repo/web
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./
+COPY scripts/check_bundle_budgets.mjs /repo/scripts/check_bundle_budgets.mjs
 RUN npm run build
 
 FROM node:24-bookworm-slim AS server-build

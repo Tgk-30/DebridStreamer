@@ -329,6 +329,39 @@ struct MetadataProviderTypesTests {
         #expect(ids.imdbId == "tt1234567")
         #expect(ids.tvdbId == 54321)
     }
+
+    @Test("ExternalIds decoding supports camelCase keys")
+    func externalIdsCodableFromCamelCase() throws {
+        let json = """
+        {"imdbId": "tt7654321", "tvdbId": 98765}
+        """.data(using: .utf8)!
+
+        let ids = try JSONDecoder().decode(ExternalIds.self, from: json)
+        #expect(ids.imdbId == "tt7654321")
+        #expect(ids.tvdbId == 98765)
+    }
+
+    @Test("ExternalIds encodes snake_case keys")
+    func externalIdsEncodesSnakeCaseKeys() throws {
+        let ids = ExternalIds(imdbId: "tt24680", tvdbId: 11111)
+        let data = try JSONEncoder().encode(ids)
+        let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+        #expect(payload?["imdb_id"] as? String == "tt24680")
+        #expect(payload?["tvdb_id"] as? Int == 11111)
+        #expect(payload?["imdbId"] == nil)
+        #expect(payload?["tvdbId"] == nil)
+    }
+
+    @Test("ExternalIds omits nil values when encoding")
+    func externalIdsOmitsNilValuesWhenEncoding() throws {
+        let ids = ExternalIds(imdbId: nil, tvdbId: nil)
+        let data = try JSONEncoder().encode(ids)
+        let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+        #expect(payload?["imdb_id"] == nil)
+        #expect(payload?["tvdb_id"] == nil)
+    }
 }
 
 @Suite("Array Chunking Tests")

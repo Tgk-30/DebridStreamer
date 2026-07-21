@@ -50,6 +50,7 @@ const ciWorkflow = read(".github/workflows/ci.yml");
 const cloudflareSiteWorkflow = read(".github/workflows/cloudflare-site.yml");
 const desktopBuildWorkflow = read(".github/workflows/desktop-build.yml");
 const dockerIgnore = read(".dockerignore");
+const dockerfile = read("Dockerfile");
 const publicRepoPreflight = read("scripts/public_repo_preflight.mjs");
 const cloudflareDeployHelper = read("scripts/deploy_website_cloudflare.mjs");
 const swiftTestVerifier = read("scripts/check_swift_tests.mjs");
@@ -59,6 +60,8 @@ const desktopServerSmoke = read("scripts/smoke_tauri_server_bundle.mjs");
 const localPackage = read("scripts/package_tauri_local.mjs");
 const localArtifactVerifier = read("scripts/check_local_package_artifact.mjs");
 const securityDecisionCheck = read("scripts/check_security_decisions.mjs");
+const windowsSigningConfig = read("scripts/generate_windows_signing_config.mjs");
+const linuxGtkMigration = read("docs/TAURI_LINUX_GTK_MIGRATION.md");
 const bundleBudgetCheck = read("scripts/check_bundle_budgets.mjs");
 const webPackage = JSON.parse(read("web/package.json"));
 const websitePackage = JSON.parse(read("website-app/package.json"));
@@ -150,14 +153,22 @@ check(
   ".github/workflows/web-release.yml must run the reusable clean-install workflow against tag assets",
 );
 check(
+  "Release workflow grants draft asset access to clean installs",
+  /clean-install:\s*[\s\S]{0,260}permissions:\s*[\s\S]{0,80}contents:\s*write/.test(
+    releaseWorkflow,
+  ),
+  ".github/workflows/web-release.yml must grant contents: write to the reusable clean-install job so it can download draft assets",
+);
+check(
   "Clean-install workflow covers release packages",
   existsSync(join(root, ".github/workflows/clean-install.yml")) &&
     /macos-15/.test(cleanInstallWorkflow) &&
     /macos-15-intel/.test(cleanInstallWorkflow) &&
     /x64_en-US\.msi/.test(cleanInstallWorkflow) &&
+    /x64-setup\.exe/.test(cleanInstallWorkflow) &&
     /amd64\.AppImage/.test(cleanInstallWorkflow) &&
     /amd64\.deb/.test(cleanInstallWorkflow),
-  ".github/workflows/clean-install.yml must install both macOS architectures, Windows MSI, Linux AppImage, and Linux deb assets",
+  ".github/workflows/clean-install.yml must install both macOS architectures, Windows MSI and NSIS, Linux AppImage, and Linux deb assets",
 );
 check(
   "Clean-install workflow verifies trust and first launch",
@@ -167,6 +178,17 @@ check(
     /smoke_tauri_server_bundle\.mjs/.test(cleanInstallWorkflow) &&
     /clean profile/i.test(cleanInstallWorkflow),
   ".github/workflows/clean-install.yml must verify package trust, bundled server boot, and a clean-profile desktop launch",
+);
+check(
+  "Clean-install workflow requires valid Windows signatures",
+  /Windows \$env:INSTALLER_KIND installer Authenticode signature is not valid/.test(
+    cleanInstallWorkflow,
+  ) &&
+    /Installed app Authenticode signature is not valid/.test(cleanInstallWorkflow) &&
+    /kind: msi/.test(cleanInstallWorkflow) &&
+    /kind: nsis/.test(cleanInstallWorkflow) &&
+    !/Unsigned Windows installer is an accepted/.test(cleanInstallWorkflow),
+  ".github/workflows/clean-install.yml must fail when either Windows installer format or the installed app lacks a valid Authenticode signature",
 );
 check(
   "Swift test verifier handles local VLCKit runtime",
@@ -195,6 +217,36 @@ check(
       "APPLE_TEAM_ID",
     ].every((secret) => releaseWorkflow.includes(secret)),
   ".github/workflows/web-release.yml must fail early when Developer ID/notarization secrets are missing",
+);
+check(
+  "Release workflow configures Windows Authenticode signing",
+  /Validate Windows signing secrets/.test(releaseWorkflow) &&
+    [
+      "AZURE_CLIENT_ID",
+      "AZURE_CLIENT_SECRET",
+      "AZURE_TENANT_ID",
+      "AZURE_ARTIFACT_SIGNING_ENDPOINT",
+      "AZURE_ARTIFACT_SIGNING_ACCOUNT",
+      "AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE",
+    ].every((secret) => releaseWorkflow.includes(secret)) &&
+    /cargo install artifact-signing-cli --version 0\.11\.0 --locked/.test(
+      releaseWorkflow,
+    ) &&
+    /generate_windows_signing_config\.mjs/.test(releaseWorkflow) &&
+    /signCommand/.test(windowsSigningConfig) &&
+    /"-a"/.test(windowsSigningConfig) &&
+    /"-c"/.test(windowsSigningConfig) &&
+    /AZURE_CLI_PATH=/.test(releaseWorkflow) &&
+    /SIGNTOOL_PATH=/.test(releaseWorkflow) &&
+    /WINDOWS_SIGN_CONFIG_ARG/.test(releaseWorkflow),
+  ".github/workflows/web-release.yml must fail early without Azure Artifact Signing secrets and pass a pinned custom sign command to Tauri",
+);
+check(
+  "Windows signing config generator fails closed without writing client credentials",
+  /codesigning\\\.azure\\\.net/.test(windowsSigningConfig) &&
+    /%1/.test(windowsSigningConfig) &&
+    !/AZURE_CLIENT_SECRET/.test(windowsSigningConfig),
+  "scripts/generate_windows_signing_config.mjs must validate the Azure endpoint, retain Tauri's file placeholder, and keep client credentials environment-only",
 );
 check(
   "Release workflow bundles macOS Node runtimes",
@@ -407,6 +459,13 @@ check(
   "Dockerfile and deploy/compose/docker-compose.yml are required for Server Mode",
 );
 check(
+  "Docker web build includes production bundle gate",
+  /COPY scripts\/check_bundle_budgets\.mjs \/repo\/scripts\/check_bundle_budgets\.mjs/.test(
+    dockerfile,
+  ) && /RUN npm run build/.test(dockerfile),
+  "Dockerfile must copy the production bundle-budget verifier before the web build invokes it",
+);
+check(
   "Docker user guide exists",
   existsSync(join(root, "docs/DOCKER.md")),
   "docs/DOCKER.md should explain Docker/GHCR setup and persistent data",
@@ -417,6 +476,13 @@ check(
     /platforms:\s*linux\/amd64,linux\/arm64/.test(dockerWorkflow) &&
     /ghcr\.io/.test(dockerWorkflow),
   ".github/workflows/docker-image.yml must publish linux/amd64 and linux/arm64 images to GHCR",
+);
+check(
+  "Pull requests build Docker images without publishing",
+  /pull_request:\s*[\s\S]{0,80}branches:\s*\n\s*- main/.test(dockerWorkflow) &&
+    /if: github\.event_name != 'pull_request'/.test(dockerWorkflow) &&
+    /push: \$\{\{ github\.event_name != 'pull_request' \}\}/.test(dockerWorkflow),
+  ".github/workflows/docker-image.yml must build changed images on pull requests and publish only outside pull requests",
 );
 check(
   "Docker workflow runs public preflight",
@@ -555,6 +621,16 @@ check(
     /cargo test --locked/.test(ciWorkflow) &&
     /cargo audit/.test(ciWorkflow),
   ".github/workflows/ci.yml must keep the Tauri Rust crate formatted, warning-free, tested, and vulnerability-audited",
+);
+check(
+  "Tauri Linux GTK and glib migration risk is recorded",
+  /tauri 2\.11\.2/.test(linuxGtkMigration) &&
+    /gtk 0\.18\.2/.test(linuxGtkMigration) &&
+    /glib 0\.18\.5/.test(linuxGtkMigration) &&
+    /RUSTSEC-2024-0415/.test(linuxGtkMigration) &&
+    /RUSTSEC-2024-0429/.test(linuxGtkMigration) &&
+    /Wayland and X11/.test(linuxGtkMigration),
+  "docs/TAURI_LINUX_GTK_MIGRATION.md must preserve the verified dependency versions, audit warnings, and cross-session migration acceptance criteria",
 );
 check(
   "Desktop server resource scripts exist",

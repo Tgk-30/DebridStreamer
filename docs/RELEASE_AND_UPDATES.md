@@ -41,6 +41,27 @@ listed in `web/PACKAGING.md`. The release workflow fails early if the updater
 private key is missing, and the macOS job fails early if Developer ID /
 notarization secrets are missing.
 
+Windows public releases use Azure Artifact Signing through Tauri's custom sign
+command. The Windows release job requires these GitHub Actions secrets:
+
+```text
+AZURE_CLIENT_ID
+AZURE_CLIENT_SECRET
+AZURE_TENANT_ID
+AZURE_ARTIFACT_SIGNING_ENDPOINT
+AZURE_ARTIFACT_SIGNING_ACCOUNT
+AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE
+```
+
+The service principal must have permission to use the named certificate profile.
+The workflow installs the pinned `artifact-signing-cli` 0.11.0 release, signs
+the Windows application, MSI, and NSIS setup executable during bundling, and
+uses `scripts/generate_windows_signing_config.mjs` to validate the endpoint and
+generate a test-covered Tauri config. The generator never writes Azure client
+identity credentials into that file. See the
+[Tauri Windows signing guide](https://v2.tauri.app/distribute/sign/windows/) and
+[Microsoft Artifact Signing documentation](https://learn.microsoft.com/azure/artifact-signing/).
+
 GitHub Actions must be able to start hosted runners before any of those release
 steps can run. If CI, Docker, Pages, and Cloudflare workflows all fail before
 checkout with empty step logs, inspect the check-run annotations. A message
@@ -87,8 +108,10 @@ artifacts will be produced until that is resolved.
 
 4. Wait for the `Verify clean installs` job. It downloads the completed draft
    assets on fresh GitHub runners, installs both macOS DMGs, the Windows MSI,
-   the Linux AppImage, and the Linux deb package, boots the bundled server, and
-   launches each installed app with an empty profile.
+   the Windows NSIS setup executable, the Linux AppImage, and the Linux deb
+   package, boots the bundled server, and launches each installed app with an
+   empty profile. The Windows checks fail unless each installer and installed
+   application has a valid Authenticode signature.
 5. Review the draft GitHub Release created by `web-release`.
 6. Publish only after all build and clean-install jobs pass. The latest
    published release becomes the OTA target.
@@ -96,12 +119,12 @@ artifacts will be produced until that is resolved.
 To repeat installer verification without rebuilding the release:
 
 ```sh
-gh workflow run clean-install.yml -f tag=v0.9.20-web
+gh workflow run clean-install.yml -f tag=vX.Y.Z-web
 ```
 
-The accepted trust boundaries and beta risks are recorded in
-`docs/SECURITY_DECISIONS.md`. The Windows unknown-publisher warning remains an
-explicit v0.9 beta risk and a v1 blocker.
+The accepted trust boundaries and remaining release blockers are recorded in
+`docs/SECURITY_DECISIONS.md`. A credentialed Windows build with valid MSI and
+application signatures must be observed before v1 can ship.
 
 ## Download Website
 

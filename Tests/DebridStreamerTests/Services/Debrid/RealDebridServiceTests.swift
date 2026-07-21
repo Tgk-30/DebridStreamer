@@ -450,6 +450,191 @@ struct RealDebridServiceTests {
         // Keys are normalized to lowercase.
         #expect(result["ABCD"] == nil)
     }
+
+    @Test("addMagnet sends a canonical magnet payload and returns the returned torrent id")
+    func addMagnetReturnsTorrentID() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var seenBody: String?
+        var seenMethod: String?
+        var seenURL: String?
+
+        MockURLProtocol.setHandler({ request in
+            if request.url?.path == "/rest/1.0/torrents/addMagnet" {
+                seenMethod = request.httpMethod
+                seenURL = request.url?.absoluteString
+                seenBody = rdRequestBodyString(from: request)
+                return try rdResponse(for: request, statusCode: 200, body: #"{"id":"TOR123","uri":"magnet:?xt=urn:btih:DEADBEEF"}"#)
+            }
+            return try rdResponse(for: request, statusCode: 404, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let rd = RealDebridService(apiToken: "rd-token", session: session)
+        let torrentID = try await rd.addMagnet(hash: "DEADBEEF")
+
+        #expect(torrentID == "TOR123")
+        let body = try #require(seenBody)
+        #expect(seenMethod == "POST", "method=\(seenMethod ?? "<nil>"), url=\(seenURL ?? "<nil>")")
+        #expect(seenURL?.hasSuffix("/rest/1.0/torrents/addMagnet") == true)
+        #expect(!body.isEmpty)
+        #expect(body.hasPrefix("magnet="))
+        #expect(body.contains("urn:btih:DEADBEEF"))
+    }
+
+    @Test("addMagnet retries transient 5xx and still succeeds")
+    func addMagnetRetriesOnTransientError() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var calls = 0
+
+        MockURLProtocol.setHandler({ request in
+            if request.url?.path == "/rest/1.0/torrents/addMagnet" {
+                calls += 1
+                if calls == 1 {
+                    return try rdResponse(for: request, statusCode: 500, body: "temporary")
+                }
+                return try rdResponse(for: request, statusCode: 200, body: #"{"id":"TOR-RETRY","uri":"magnet:?xt=urn:btih:abc"}"#)
+            }
+            return try rdResponse(for: request, statusCode: 404, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let rd = RealDebridService(apiToken: "rd-token", session: session)
+        let torrentID = try await rd.addMagnet(hash: "abc")
+
+        #expect(torrentID == "TOR-RETRY")
+        #expect(calls >= 2)
+    }
+
+    @Test("addMagnet throws when parser cannot extract torrent id")
+    func addMagnetInvalidResponseThrows() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            if request.url?.path == "/rest/1.0/torrents/addMagnet" {
+                return try rdResponse(for: request, statusCode: 200, body: #"{"uri":"magnet:?xt=urn:btih:missing"}"#)
+            }
+            return try rdResponse(for: request, statusCode: 404, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let rd = RealDebridService(apiToken: "rd-token", session: session)
+        await #expect(throws: DebridError.self) {
+            _ = try await rd.addMagnet(hash: "missing")
+        }
+    }
+
+    @Test("selectFiles posts selected ids and accepts 204 No Content")
+    func selectFilesSendsFileList() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var seenBody: String?
+        var seenPath: String?
+
+        MockURLProtocol.setHandler({ request in
+            let path = request.url?.path ?? ""
+            if path.hasPrefix("/rest/1.0/torrents/selectFiles/") {
+                seenPath = path
+                seenBody = rdRequestBodyString(from: request)
+                return try rdResponse(for: request, statusCode: 204, body: "")
+            }
+            return try rdResponse(for: request, statusCode: 404, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let rd = RealDebridService(apiToken: "rd-token", session: session)
+        try await rd.selectFiles(torrentId: "T1", fileIds: [7, 3, 9])
+
+        #expect(seenPath == "/rest/1.0/torrents/selectFiles/T1")
+        let body = try #require(seenBody)
+        #expect(!body.isEmpty)
+        #expect(body == "files=7,3,9")
+    }
+
+    @Test("getStreamURL waits for file-selection status and selects all files")
+    func getStreamURLSelectsFilesWhenWaitingForSelection() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var attempt = 0
+        var selectCalled = false
+
+        MockURLProtocol.setHandler({ request in
+            let path = request.url?.path ?? ""
+            if path.hasPrefix("/rest/1.0/torrents/info/") {
+                attempt += 1
+                if attempt == 1 {
+                    let body = #"{"id":"T1","status":"waiting_files_selection","links":["https://rd.example/one"]}"#
+                    return try rdResponse(for: request, statusCode: 200, body: body)
+                }
+                let body = #"{"id":"T1","status":"downloaded","filename":"Pick.mkv","links":["https://rd.example/two"],"files":[{"id":4,"path":"Pick.mkv","bytes":2048,"selected":1}]}"#
+                return try rdResponse(for: request, statusCode: 200, body: body)
+            }
+            if path.hasPrefix("/rest/1.0/torrents/selectFiles/") {
+                selectCalled = true
+                return try rdResponse(for: request, statusCode: 204, body: "")
+            }
+            if path == "/rest/1.0/unrestrict/link" {
+                return try rdResponse(for: request, statusCode: 200, body: #"{"download":"https://rd.example/direct/ready.mp4"}"#)
+            }
+            return try rdResponse(for: request, statusCode: 404, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let rd = RealDebridService(apiToken: "rd-token", session: session)
+        let stream = try await rd.getStreamURL(torrentId: "T1")
+
+        #expect(selectCalled == true)
+        #expect(stream.streamURL == "https://rd.example/direct/ready.mp4")
+        #expect(stream.fileName == "Pick.mkv")
+        #expect(stream.sizeBytes == 2048)
+    }
+
+    @Test("unrestrict retries transient 5xx and then parses the direct URL")
+    func unrestrictRetriesAndParses() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var calls = 0
+
+        MockURLProtocol.setHandler({ request in
+            if request.url?.path == "/rest/1.0/unrestrict/link" {
+                calls += 1
+                if calls == 1 {
+                    return try rdResponse(for: request, statusCode: 502, body: "retry")
+                }
+                return try rdResponse(for: request, statusCode: 200, body: #"{"download":"https://rd.example/direct/final.mkv"}"#
+                )
+            }
+            return try rdResponse(for: request, statusCode: 404, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let rd = RealDebridService(apiToken: "rd-token", session: session)
+        let url = try await rd.unrestrict(link: "https://rd.example/restricted")
+
+        #expect(url.absoluteString == "https://rd.example/direct/final.mkv")
+        #expect(calls >= 2)
+    }
+
+    @Test("unrestrict fails when response cannot be parsed")
+    func unrestrictRejectsMissingDownload() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            if request.url?.path == "/rest/1.0/unrestrict/link" {
+                return try rdResponse(for: request, statusCode: 200, body: #"{"download_url":"https://rd.example/alt"}"#)
+            }
+            return try rdResponse(for: request, statusCode: 404, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let rd = RealDebridService(apiToken: "rd-token", session: session)
+        await #expect(throws: DebridError.self) {
+            _ = try await rd.unrestrict(link: "https://rd.example/restricted")
+        }
+    }
 }
 
 // MARK: - Helpers (fileprivate to avoid cross-file symbol collisions)

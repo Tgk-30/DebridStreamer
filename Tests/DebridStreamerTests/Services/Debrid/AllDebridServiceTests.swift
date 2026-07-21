@@ -316,6 +316,69 @@ struct AllDebridServiceTests {
         let service = AllDebridService(apiToken: "ad-token", session: makeMockSession())
         #expect(await service.serviceType == .allDebrid)
     }
+
+    @Test("addMagnet posts body and returns torrent id")
+    func addMagnetPostsAndReturnsId() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var seenAuthHeader = ""
+        var seenApiKeyHeader = ""
+        var seenMethod = ""
+        var seenPath = ""
+        var seenBody = ""
+
+        MockURLProtocol.setHandler({ request in
+            seenAuthHeader = request.value(forHTTPHeaderField: "Authorization") ?? ""
+            seenApiKeyHeader = request.value(forHTTPHeaderField: "X-API-Key") ?? ""
+            seenMethod = request.httpMethod ?? ""
+            seenPath = request.url?.path ?? ""
+            seenBody = adRequestBody(from: request)
+            let body = """
+            {"data":{"magnets":[{"id":987654}]}}
+            """
+            return try adMakeResponse(for: request, statusCode: 200, body: body)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let service = AllDebridService(apiToken: "ad-token", session: session)
+        let torrentId = try await service.addMagnet(hash: "123ABC")
+
+        #expect(seenPath == "/v4/magnet/upload")
+        #expect(seenMethod == "POST")
+        #expect(seenAuthHeader == "Bearer ad-token")
+        #expect(seenApiKeyHeader == "ad-token")
+        #expect(seenBody.contains("magnets[]="))
+        #expect(seenBody.contains("magnets[]=magnet:?xt=urn:btih:123ABC"))
+        #expect(torrentId == "987654")
+    }
+
+    @Test("addMagnet throws downloadFailed when response is malformed")
+    func addMagnetThrowsOnMalformedResponse() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            let body = """
+            {"data":{"mismatched_field":true}}
+            """
+            return try adMakeResponse(for: request, statusCode: 200, body: body)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let service = AllDebridService(apiToken: "ad-token", session: session)
+        do {
+            _ = try await service.addMagnet(hash: "123ABC")
+            Issue.record("Expected addMagnet malformed response failure")
+        } catch let error as DebridError {
+            if case .downloadFailed = error {
+                // expected
+            } else {
+                Issue.record("Expected DebridError.downloadFailed, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected DebridError, got \(error)")
+        }
+    }
 }
 
 // MARK: - fileprivate helpers

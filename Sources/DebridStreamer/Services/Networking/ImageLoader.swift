@@ -17,18 +17,22 @@ actor ImageLoader {
     private var inFlight: [URL: Task<NSImage?, Never>] = [:]
     private let session: URLSession
 
-    init() {
+    init(session: URLSession? = nil) {
         cache.countLimit = 500
         cache.totalCostLimit = 80 * 1024 * 1024 // ~80MB of decoded bitmaps
 
-        let config = URLSessionConfiguration.default
-        config.urlCache = URLCache(
-            memoryCapacity: 16 * 1024 * 1024,
-            diskCapacity: 256 * 1024 * 1024
-        )
-        config.requestCachePolicy = .returnCacheDataElseLoad
-        config.httpMaximumConnectionsPerHost = 6
-        self.session = URLSession(configuration: config)
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.urlCache = URLCache(
+                memoryCapacity: 16 * 1024 * 1024,
+                diskCapacity: 256 * 1024 * 1024
+            )
+            config.requestCachePolicy = .returnCacheDataElseLoad
+            config.httpMaximumConnectionsPerHost = 6
+            self.session = URLSession(configuration: config)
+        }
     }
 
     /// Returns a decoded image for `url`, served from memory when possible and

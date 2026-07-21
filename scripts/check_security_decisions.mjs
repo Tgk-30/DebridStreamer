@@ -24,6 +24,10 @@ const decisions = read(decisionsPath);
 for (let id = 1; id <= 11; id += 1) {
   check(decisions.includes(`SEC-${String(id).padStart(3, "0")}`), `Security decision SEC-${String(id).padStart(3, "0")} is recorded`);
 }
+check(
+  /SEC-008[^\n]*NSIS[^\n]*config generator/.test(decisions),
+  "Security decision SEC-008 covers NSIS and generated signing config",
+);
 
 const capability = JSON.parse(read("web/src-tauri/capabilities/default.json"));
 const remoteCapability = JSON.parse(
@@ -133,6 +137,26 @@ check(csp.includes("frame-ancestors 'none'"), "Desktop CSP blocks framing");
 check(!csp.includes("'unsafe-eval'"), "Desktop CSP blocks eval");
 check(tauri.bundle?.createUpdaterArtifacts === true, "Updater artifacts remain enabled");
 check((tauri.plugins?.updater?.pubkey ?? "").length > 40, "Updater public key is configured");
+
+const releaseWorkflow = read(".github/workflows/web-release.yml");
+const cleanInstallWorkflow = read(".github/workflows/clean-install.yml");
+const windowsSigningConfig = read("scripts/generate_windows_signing_config.mjs");
+check(
+  /artifact-signing-cli --version 0\.11\.0 --locked/.test(releaseWorkflow) &&
+    /AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE/.test(releaseWorkflow) &&
+    /codesigning\\\.azure\\\.net/.test(windowsSigningConfig) &&
+    !/AZURE_CLIENT_SECRET/.test(windowsSigningConfig),
+  "Windows release signing uses the pinned Azure Artifact Signing path",
+);
+check(
+  /Windows \$env:INSTALLER_KIND installer Authenticode signature is not valid/.test(
+    cleanInstallWorkflow,
+  ) &&
+    /Installed app Authenticode signature is not valid/.test(cleanInstallWorkflow) &&
+    /kind: msi/.test(cleanInstallWorkflow) &&
+    /kind: nsis/.test(cleanInstallWorkflow),
+  "Windows clean installs require valid MSI, NSIS, and app signatures",
+);
 
 const serverConfig = read("server/src/config.ts");
 const serverCrypto = read("server/src/crypto.ts");

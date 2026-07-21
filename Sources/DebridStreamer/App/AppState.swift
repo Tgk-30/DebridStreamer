@@ -41,8 +41,12 @@ final class AppState {
     private(set) var traktCoordinator: TraktCoordinator?
     private var playerWindowController: PlayerWindowController?
 
-    init(secretStore: any SecretStore = KeychainSecretStore()) {
+    init(
+        secretStore: any SecretStore = KeychainSecretStore(),
+        databaseManager: DatabaseManager? = nil
+    ) {
         self.secretStore = secretStore
+        self.databaseManager = databaseManager
     }
 
     func openPlayer(_ request: PlayerSessionRequest) {
@@ -75,7 +79,7 @@ final class AppState {
     }
 
     func initialize() async throws {
-        let dbManager = try DatabaseManager()
+        let dbManager = try databaseManager ?? DatabaseManager()
         self.databaseManager = dbManager
         try await dbManager.ensureDefaultBehaviorFolders()
 
@@ -123,8 +127,9 @@ final class AppState {
     }
 
     func updateTMDBService(apiKey: String) {
-        if !apiKey.isEmpty {
-            self.metadataService = TMDBService(apiKey: apiKey)
+        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            self.metadataService = TMDBService(apiKey: trimmed)
         } else {
             self.metadataService = nil
         }

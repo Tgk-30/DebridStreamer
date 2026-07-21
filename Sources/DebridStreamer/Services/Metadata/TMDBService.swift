@@ -627,6 +627,17 @@ struct TMDBEpisode: Decodable {
 struct TMDBFindResponse: Decodable {
     let movieResults: [TMDBSearchResult]
     let tvResults: [TMDBSearchResult]
+
+    private enum CodingKeys: String, CodingKey {
+        case movieResults
+        case tvResults
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.movieResults = try container.decodeIfPresent([TMDBSearchResult].self, forKey: .movieResults) ?? []
+        self.tvResults = try container.decodeIfPresent([TMDBSearchResult].self, forKey: .tvResults) ?? []
+    }
 }
 
 // MARK: - Person responses

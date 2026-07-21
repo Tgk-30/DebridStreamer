@@ -36,6 +36,41 @@ struct AIModelCatalogServiceTests {
         #expect(models.contains("text-embedding-3-large") == false)
     }
 
+    @Test("Caches OpenAI catalog and deduplicates sorted results")
+    func openAICachesDeduplicatedResults() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var callCount = 0
+
+        MockURLProtocol.setHandler({ request in
+            callCount += 1
+            let body = """
+            {
+              "data": {
+                "models": [
+                  {"id":"gpt-4o-mini"},
+                  {"id":"gpt-4o-mini"},
+                  {"id":" gpt-4.1 "},
+                  {"id":"text-embedding-3-large"}
+                ]
+              }
+            }
+            """
+            return try makeResponse(for: request, statusCode: 200, body: body)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let service = AIModelCatalogService(session: session)
+
+        let first = try await service.fetchOpenAIModelIDs(apiKey: "test-openai")
+        #expect(callCount == 1)
+        #expect(first == ["gpt-4o-mini", "gpt-4.1"])
+
+        let second = try await service.fetchOpenAIModelIDs(apiKey: "test-openai")
+        #expect(callCount == 1)
+        #expect(second == first)
+    }
+
     @Test("Fetches Anthropic model IDs from models array")
     func fetchAnthropicModels() async throws {
         let sessionID = UUID().uuidString
@@ -64,6 +99,64 @@ struct AIModelCatalogServiceTests {
         #expect(models.contains("claude-3-5-haiku-latest"))
         #expect(models.contains("claude-sonnet-4-0"))
         #expect(models.contains("some-other-model") == false)
+    }
+
+    @Test("Anthropic catalog non-2xx response throws requestFailed")
+    func fetchAnthropicNon2xxThrows() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            #expect(request.url?.absoluteString == "https://api.anthropic.com/v1/models")
+            return try makeResponse(for: request, statusCode: 503, body: "unavailable")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let service = AIModelCatalogService(session: session)
+
+        do {
+            _ = try await service.fetchAnthropicModelIDs(apiKey: "test-anthropic")
+            Issue.record("Expected requestFailed")
+        } catch let error as AIModelCatalogServiceError {
+            #expect(error == .requestFailed(provider: "Anthropic", statusCode: 503))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("Invalid catalog payload throws decodingFailed")
+    func decodingFailureThrows() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            let body = """
+            {
+              "status": "ok"
+            }
+            """
+            return try makeResponse(for: request, statusCode: 200, body: body)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let service = AIModelCatalogService(session: session)
+
+        do {
+            _ = try await service.fetchOpenAIModelIDs(apiKey: "test-openai")
+            Issue.record("Expected decodingFailed")
+        } catch let error as AIModelCatalogServiceError {
+            #expect(error == .decodingFailed(provider: "AI"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("Error descriptions are descriptive")
+    func errorDescriptionsAreInformative() {
+        #expect((AIModelCatalogServiceError.missingAPIKey(provider: "OpenAI").errorDescription ?? "").contains("API key is required"))
+        #expect((AIModelCatalogServiceError.invalidResponse(provider: "OpenAI").errorDescription ?? "").contains("Invalid OpenAI response"))
+        #expect((AIModelCatalogServiceError.requestFailed(provider: "Anthropic", statusCode: 401).errorDescription ?? "").contains("request failed with status 401"))
+        #expect((AIModelCatalogServiceError.decodingFailed(provider: "AI").errorDescription ?? "").contains("Unable to decode"))
     }
 
     @Test("Non-2xx responses surface request failure")

@@ -91,6 +91,57 @@ private final class StubDebridService: DebridServiceProtocol, @unchecked Sendabl
     }
 }
 
+private final class StubDebridServiceWithCache: DebridServiceProtocol, @unchecked Sendable {
+    let serviceType: DebridServiceType
+    private let cacheResult: Result<[String: CacheStatus], Error>
+
+    private(set) var checkCacheCalls: Int = 0
+    private(set) var addMagnetCalls: [String] = []
+    private(set) var selectFilesCalls: [(String, [Int])] = []
+    private(set) var getStreamURLCalls: [String] = []
+
+    init(serviceType: DebridServiceType, cacheResult: Result<[String: CacheStatus], Error>) {
+        self.serviceType = serviceType
+        self.cacheResult = cacheResult
+    }
+
+    func checkCache(hashes: [String]) async throws -> [String: CacheStatus] {
+        checkCacheCalls += 1
+        switch cacheResult {
+        case .success(let cache):
+            return cache.filter { key, _ in hashes.contains(key) }
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func addMagnet(hash: String) async throws -> String {
+        addMagnetCalls.append(hash)
+        return "torrent-\(serviceType.rawValue)"
+    }
+
+    func selectFiles(torrentId: String, fileIds: [Int]) async throws {
+        selectFilesCalls.append((torrentId, fileIds))
+    }
+
+    func getStreamURL(torrentId: String) async throws -> StreamInfo {
+        getStreamURLCalls.append(torrentId)
+        throw DebridError.noFilesAvailable
+    }
+
+    func unrestrict(link: String) async throws -> URL {
+        throw DebridError.networkError("not implemented in stub")
+    }
+
+    func validateToken() async throws -> Bool {
+        return true
+    }
+
+    func getAccountInfo() async throws -> DebridAccountInfo {
+        DebridAccountInfo(username: "stub", email: nil, premiumExpiry: nil, isPremium: true, points: nil)
+    }
+}
+
 // MARK: - Tests
 
 @Suite("DebridManager Fallback Tests")
@@ -228,5 +279,116 @@ struct DebridManagerFallbackTests {
         let manager = DebridManager()
         let results = await manager.validateAll()
         #expect(results.isEmpty)
+    }
+
+    @Test("checkCacheAll favors cached status over non-cached status")
+    func checkCacheAllPrefersCachedStatus() async throws {
+        let cached = CacheStatus.cached(fileId: "shared-file", fileName: "movie.mkv", fileSize: 1_000_000)
+        let fast = StubDebridServiceWithCache(
+            serviceType: .torBox,
+            cacheResult: .success(["hash1": .notCached])
+        )
+        let smart = StubDebridServiceWithCache(
+            serviceType: .premiumize,
+            cacheResult: .success(["hash1": cached, "hash2": cached])
+        )
+
+        let manager = DebridManager()
+        await manager.addService(fast)
+        await manager.addService(smart)
+
+        let result = try await manager.checkCacheAll(hashes: ["hash1", "hash2"])
+
+        #expect(result["hash1"]?.service == .premiumize)
+        #expect(result["hash1"]?.status == cached)
+        #expect(result["hash2"]?.service == .premiumize)
+        #expect(result["hash2"]?.status == cached)
+    }
+
+    @Test("checkCacheAll keeps service order when cache states are equal")
+    func checkCacheAllUsesPriorityForEqualCacheState() async throws {
+        let cached = CacheStatus.cached(fileId: "shared-file", fileName: "movie.mkv", fileSize: 1_000_000)
+        let first = StubDebridServiceWithCache(
+            serviceType: .allDebrid,
+            cacheResult: .success(["shared": cached])
+        )
+        let second = StubDebridServiceWithCache(
+            serviceType: .realDebrid,
+            cacheResult: .success(["shared": cached])
+        )
+
+        let manager = DebridManager()
+        await manager.addService(first)
+        await manager.addService(second)
+
+        let result = try await manager.checkCacheAll(hashes: ["shared"])
+
+        #expect(result["shared"]?.service == .allDebrid)
+    }
+
+    @Test("checkCacheAll preserves service order when both report non-cached status")
+    func checkCacheAllUsesPriorityWhenAllStatusesAreNonCached() async throws {
+        let first = StubDebridServiceWithCache(
+            serviceType: .allDebrid,
+            cacheResult: .success(["shared": .notCached])
+        )
+        let second = StubDebridServiceWithCache(
+            serviceType: .realDebrid,
+            cacheResult: .success(["shared": .notCached])
+        )
+
+        let manager = DebridManager()
+        await manager.addService(first)
+        await manager.addService(second)
+
+        let result = try await manager.checkCacheAll(hashes: ["shared"])
+
+        #expect(result["shared"]?.service == .allDebrid)
+        #expect(result["shared"]?.status == .notCached)
+    }
+
+    @Test("checkCacheAll ignores services that throw while checking cache")
+    func checkCacheAllIgnoresThrownCacheChecks() async throws {
+        let cached = CacheStatus.cached(fileId: "cached-file", fileName: "movie.mkv", fileSize: 1_000_000)
+        let failing = StubDebridServiceWithCache(
+            serviceType: .allDebrid,
+            cacheResult: .failure(DebridError.networkError("network unavailable"))
+        )
+        let healthy = StubDebridServiceWithCache(
+            serviceType: .torBox,
+            cacheResult: .success(["hash": cached])
+        )
+
+        let manager = DebridManager()
+        await manager.addService(failing)
+        await manager.addService(healthy)
+
+        let result = try await manager.checkCacheAll(hashes: ["hash"])
+
+        #expect(result["hash"]?.service == .torBox)
+        #expect(result["hash"]?.status == cached)
+        #expect(failing.getStreamURLCalls.isEmpty)
+    }
+
+    @Test("checkCacheAll propagates no result when every check fails")
+    func checkCacheAllReturnsEmptyWhenAllChecksFail() async throws {
+        let first = StubDebridServiceWithCache(
+            serviceType: .allDebrid,
+            cacheResult: .failure(DebridError.networkError("network unavailable"))
+        )
+        let second = StubDebridServiceWithCache(
+            serviceType: .realDebrid,
+            cacheResult: .failure(DebridError.networkError("service down"))
+        )
+
+        let manager = DebridManager()
+        await manager.addService(first)
+        await manager.addService(second)
+
+        let result = try await manager.checkCacheAll(hashes: ["missing"])
+
+        #expect(result.isEmpty)
+        #expect(first.getStreamURLCalls.isEmpty)
+        #expect(second.getStreamURLCalls.isEmpty)
     }
 }

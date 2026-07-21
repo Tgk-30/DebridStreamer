@@ -5,6 +5,45 @@ import Foundation
 @Suite("DiscoverAICurationStore Tests")
 @MainActor
 struct DiscoverAICurationStoreTests {
+    @Test("Reset clears recommendation and state flags")
+    func resetClearsState() async throws {
+        let db = try makeTestDatabase()
+        let settings = SettingsManager(database: db, secretStore: InMemorySecretStore())
+        let cached = [
+            AIMovieRecommendation(title: "Cached Film", year: 2026, reason: "Cached", score: 0.8)
+        ]
+        try await db.saveDiscoverAICacheEntry(
+            AICurationCacheEntry(
+                cacheKey: "discover-launch-curated",
+                payload: try JSONEncoder().encode(cached),
+                model: "cache",
+                expiresAt: Date().addingTimeInterval(60)
+            )
+        )
+        let service = DiscoverAICurationService(
+            assistantManager: nil,
+            database: db,
+            settings: settings,
+            metadataProvider: nil
+        )
+        let store = DiscoverAICurationStore()
+        store.recommendations = [
+            AIMovieRecommendation(title: "Old", year: 2024, reason: "Reason", score: 0.7)
+        ]
+        store.lastError = "previous error"
+
+        await store.load(service: service, forceRefresh: false)
+        #expect(store.hasLoaded == true)
+        #expect(!store.recommendations.isEmpty)
+        store.isLoading = true
+        store.reset()
+
+        #expect(store.recommendations.isEmpty)
+        #expect(store.isLoading == false)
+        #expect(store.lastError == nil)
+        #expect(store.hasLoaded == false)
+    }
+
     @Test("Preload marks loaded without generation when feature is disabled")
     func disabledFeatureDoesNotGenerate() async throws {
         let db = try makeTestDatabase()

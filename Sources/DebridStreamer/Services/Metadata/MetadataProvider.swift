@@ -183,7 +183,28 @@ struct ExternalIds: Codable, Sendable {
     var tvdbId: Int?
 
     enum CodingKeys: String, CodingKey {
-        case imdbId = "imdb_id"
-        case tvdbId = "tvdb_id"
+        case imdbId
+        case tvdbId
+        case imdb_id
+        case tvdb_id
+    }
+
+    init(imdbId: String? = nil, tvdbId: Int? = nil) {
+        self.imdbId = imdbId
+        self.tvdbId = tvdbId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.imdbId = try container.decodeIfPresent(String.self, forKey: .imdbId)
+            ?? container.decodeIfPresent(String.self, forKey: .imdb_id)
+        self.tvdbId = try container.decodeIfPresent(Int.self, forKey: .tvdbId)
+            ?? container.decodeIfPresent(Int.self, forKey: .tvdb_id)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(imdbId, forKey: .imdb_id)
+        try container.encodeIfPresent(tvdbId, forKey: .tvdb_id)
     }
 }
