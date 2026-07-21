@@ -392,7 +392,7 @@ fn open_in_external_player_blocking(
             .arg(&url)
             .spawn()
             .map_err(|e| e.to_string())?;
-        return Ok("Opened with the system default handler".into());
+        Ok("Opened with the system default handler".into())
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -458,7 +458,7 @@ fn reveal_in_file_manager_blocking(path: String) -> Result<(), String> {
         if status.success() {
             return Ok(());
         }
-        return Err(format!("open -R exited with {status}"));
+        Err(format!("open -R exited with {status}"))
     }
 
     #[cfg(target_os = "windows")]
@@ -518,18 +518,12 @@ fn opaque_window_background<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let Ok(ns) = win.ns_window() else { return };
     // Setup runs on the main thread; NSWindow properties must be set there.
     let ns_window: &NSWindow = unsafe { &*(ns as *const NSWindow) };
-    unsafe {
-        // The default Midnight --bg-1, shared with the WKWebView fallback.
-        let (red, green, blue) = render_player::APP_BASE_BACKGROUND_RGB;
-        let color = NSColor::colorWithSRGBRed_green_blue_alpha(
-            red / 255.0,
-            green / 255.0,
-            blue / 255.0,
-            1.0,
-        );
-        ns_window.setBackgroundColor(Some(&color));
-        ns_window.setOpaque(true);
-    }
+    // The default Midnight --bg-1, shared with the WKWebView fallback.
+    let (red, green, blue) = render_player::APP_BASE_BACKGROUND_RGB;
+    let color =
+        NSColor::colorWithSRGBRed_green_blue_alpha(red / 255.0, green / 255.0, blue / 255.0, 1.0);
+    ns_window.setBackgroundColor(Some(&color));
+    ns_window.setOpaque(true);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -596,8 +590,7 @@ pub fn run() {
                     let state = handle.state::<render_player::PlayerState>();
                     let guard = state.0.lock().ok();
                     if let Some(p) = guard.as_ref().and_then(|g| g.as_ref()) {
-                        if let Err(e) =
-                            render_player::run_mpv_command(&p.mpv, "loadfile", &[&url])
+                        if let Err(e) = render_player::run_mpv_command(&p.mpv, "loadfile", &[&url])
                         {
                             eprintln!("DS_PLAYER_SMOKE loadfile failed: {e}");
                         }
@@ -663,12 +656,16 @@ mod tests {
 
     #[test]
     fn finds_the_nearest_macos_app_bundle_ancestor() {
-        let executable = Path::new("/Applications/DebridStreamer.app/Contents/MacOS/DebridStreamer");
+        let executable =
+            Path::new("/Applications/DebridStreamer.app/Contents/MacOS/DebridStreamer");
         assert_eq!(
             nearest_app_bundle_ancestor(executable).as_deref(),
             Some("/Applications/DebridStreamer.app")
         );
-        assert_eq!(nearest_app_bundle_ancestor(Path::new("/usr/local/bin/debridstreamer")), None);
+        assert_eq!(
+            nearest_app_bundle_ancestor(Path::new("/usr/local/bin/debridstreamer")),
+            None
+        );
     }
 
     #[test]
@@ -676,19 +673,34 @@ mod tests {
         assert_eq!(
             classify_install_format(
                 "macos",
-                Some(Path::new("/Applications/DebridStreamer.app/Contents/MacOS/DebridStreamer")),
+                Some(Path::new(
+                    "/Applications/DebridStreamer.app/Contents/MacOS/DebridStreamer"
+                )),
                 None,
                 Some("/Applications/DebridStreamer.app"),
             ),
             "macos-app"
         );
-        assert_eq!(classify_install_format("windows", None, None, None), "windows");
         assert_eq!(
-            classify_install_format("linux", Some(Path::new("/tmp/DebridStreamer")), Some("/tmp/DebridStreamer.AppImage"), None),
+            classify_install_format("windows", None, None, None),
+            "windows"
+        );
+        assert_eq!(
+            classify_install_format(
+                "linux",
+                Some(Path::new("/tmp/DebridStreamer")),
+                Some("/tmp/DebridStreamer.AppImage"),
+                None
+            ),
             "linux-appimage"
         );
         assert_eq!(
-            classify_install_format("linux", Some(Path::new("/usr/bin/debridstreamer")), None, None),
+            classify_install_format(
+                "linux",
+                Some(Path::new("/usr/bin/debridstreamer")),
+                None,
+                None
+            ),
             "linux-deb"
         );
         assert_eq!(
@@ -706,7 +718,10 @@ mod tests {
         );
         assert_eq!(info.format, "linux-appimage");
         assert_eq!(info.app_bundle_path, None);
-        assert_eq!(info.appimage_path.as_deref(), Some("/tmp/DebridStreamer.AppImage"));
+        assert_eq!(
+            info.appimage_path.as_deref(),
+            Some("/tmp/DebridStreamer.AppImage")
+        );
     }
 }
 

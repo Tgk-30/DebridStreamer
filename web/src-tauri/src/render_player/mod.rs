@@ -26,9 +26,9 @@ pub(crate) fn debug_log_startup() {
 #[cfg(target_os = "macos")]
 mod surface_macos;
 #[cfg(target_os = "macos")]
-use surface_macos::{surface_attach, surface_pre_init};
-#[cfg(target_os = "macos")]
 pub(crate) use surface_macos::set_initial_webview_opaque;
+#[cfg(target_os = "macos")]
+use surface_macos::{surface_attach, surface_pre_init};
 
 // Keep the native window and WKWebView fallbacks aligned with the current
 // default Midnight `--bg-1` token in web/src/theme/theme.css.
@@ -38,16 +38,16 @@ pub(crate) const APP_BASE_BACKGROUND_RGB: (f64, f64, f64) = (6.0, 7.0, 10.0);
 #[cfg(target_os = "windows")]
 mod surface_windows;
 #[cfg(target_os = "windows")]
-use surface_windows::{surface_attach, surface_pre_init};
-#[cfg(target_os = "windows")]
 pub(crate) use surface_windows::set_initial_webview_opaque;
+#[cfg(target_os = "windows")]
+use surface_windows::{surface_attach, surface_pre_init};
 
 #[cfg(target_os = "linux")]
 mod surface_linux;
 #[cfg(target_os = "linux")]
-use surface_linux::{surface_attach, surface_pre_init};
-#[cfg(target_os = "linux")]
 pub(crate) use surface_linux::set_initial_webview_opaque;
+#[cfg(target_os = "linux")]
+use surface_linux::{surface_attach, surface_pre_init};
 
 // ── Platforms WITHOUT a surface yet: libmpv-free stubs (mobile/other). ─────
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]

@@ -38,6 +38,10 @@ function expectedArtifact() {
 const packageInputs = [
   "web/src",
   "web/src-tauri/src",
+  "web/src-tauri/build.rs",
+  "web/src-tauri/Cargo.toml",
+  "web/src-tauri/Cargo.lock",
+  "web/src-tauri/scripts/bundle-mpv-deps.sh",
   "web/src-tauri/tauri.conf.json",
   "web/package.json",
   "web/package-lock.json",
@@ -47,6 +51,7 @@ const packageInputs = [
   "scripts/package_tauri_local.mjs",
   "scripts/prepare_tauri_server_resources.mjs",
   "scripts/download_tauri_node_runtime.mjs",
+  "scripts/download_ffmpeg.mjs",
   "scripts/smoke_tauri_server_bundle.mjs",
 ];
 

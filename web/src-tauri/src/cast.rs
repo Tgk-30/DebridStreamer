@@ -17,8 +17,7 @@ const SSDP_ST: &str = "urn:schemas-upnp-org:device:MediaRenderer:1";
 const AV_TRANSPORT: &str = "urn:schemas-upnp-org:service:AVTransport:1";
 const RENDERING_CONTROL: &str = "urn:schemas-upnp-org:service:RenderingControl:1";
 const AV_TRANSPORT_PREFIX: &str = "urn:schemas-upnp-org:service:AVTransport:";
-const RENDERING_CONTROL_PREFIX: &str =
-    "urn:schemas-upnp-org:service:RenderingControl:";
+const RENDERING_CONTROL_PREFIX: &str = "urn:schemas-upnp-org:service:RenderingControl:";
 const DEFAULT_DISCOVERY_MS: u64 = 2_500;
 const MAX_DISCOVERY_MS: u64 = 10_000;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(3);
@@ -113,10 +112,7 @@ fn service_type(service: roxmltree::Node<'_, '_>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn service_control_url(
-    root: roxmltree::Node<'_, '_>,
-    service_prefix: &str,
-) -> Option<String> {
+fn service_control_url(root: roxmltree::Node<'_, '_>, service_prefix: &str) -> Option<String> {
     root.descendants()
         .filter(|node| node.is_element() && node.tag_name().name() == "service")
         .find_map(|service| {
@@ -148,8 +144,7 @@ fn parse_device_description(xml: &str, base_url: &str) -> Option<CastDevice> {
         .descendants()
         .filter(|node| node.is_element() && node.tag_name().name() == "service")
         .find(|service| {
-            service_type(*service)
-                .is_some_and(|value| value.starts_with(AV_TRANSPORT_PREFIX))
+            service_type(*service).is_some_and(|value| value.starts_with(AV_TRANSPORT_PREFIX))
         })?;
     let renderer = av_service
         .ancestors()
@@ -192,9 +187,7 @@ fn build_didl(url: &str, title: &str, subtitle_url: Option<&str>) -> String {
     let subtitle_attributes = subtitle_url
         .map(|subtitle| {
             let escaped = xml_escape(subtitle);
-            format!(
-                " sec:CaptionInfoEx=\"{escaped}\" pv:subtitleFileUri=\"{escaped}\""
-            )
+            format!(" sec:CaptionInfoEx=\"{escaped}\" pv:subtitleFileUri=\"{escaped}\"")
         })
         .unwrap_or_default();
     let subtitle_resource = subtitle_url
@@ -268,8 +261,8 @@ fn hms_to_secs(value: &str) -> Option<u64> {
 }
 
 fn parse_position_info(xml: &str) -> Result<(u64, u64), String> {
-    let document = Document::parse(xml)
-        .map_err(|error| format!("Invalid position XML: {error}"))?;
+    let document =
+        Document::parse(xml).map_err(|error| format!("Invalid position XML: {error}"))?;
     let parse_time = |name: &str| -> Result<u64, String> {
         let value = element_text(&document, name)
             .ok_or_else(|| format!("Position response did not contain {name}"))?;
@@ -285,7 +278,8 @@ fn parse_position_info(xml: &str) -> Result<(u64, u64), String> {
 }
 
 fn parse_transport_info(xml: &str) -> Result<String, String> {
-    let document = Document::parse(xml).map_err(|error| format!("Invalid transport XML: {error}"))?;
+    let document =
+        Document::parse(xml).map_err(|error| format!("Invalid transport XML: {error}"))?;
     element_text(&document, "CurrentTransportState")
         .ok_or_else(|| "Transport response did not contain CurrentTransportState".to_string())
 }
@@ -660,19 +654,26 @@ mod tests {
 
     #[test]
     fn skips_ssdp_without_location_or_with_junk() {
-        assert_eq!(parse_ssdp_response("HTTP/1.1 200 OK\r\nST: renderer\r\n"), None);
+        assert_eq!(
+            parse_ssdp_response("HTTP/1.1 200 OK\r\nST: renderer\r\n"),
+            None
+        );
         assert_eq!(parse_ssdp_response("not even an HTTP response"), None);
         assert_eq!(parse_ssdp_response("LOCATION:   \r\n"), None);
     }
 
     #[test]
     fn parses_renderer_description_and_resolves_url_base() {
-        let device = parse_device_description(
-            SONY_DESCRIPTION,
-            "http://192.168.1.40:52323/device/dmr.xml",
+        let device =
+            parse_device_description(SONY_DESCRIPTION, "http://192.168.1.40:52323/device/dmr.xml");
+        assert_eq!(
+            device.as_ref().map(|value| value.name.as_str()),
+            Some("BRAVIA XR Living Room")
         );
-        assert_eq!(device.as_ref().map(|value| value.name.as_str()), Some("BRAVIA XR Living Room"));
-        assert_eq!(device.as_ref().map(|value| value.id.as_str()), Some("uuid:sony-bravia-123"));
+        assert_eq!(
+            device.as_ref().map(|value| value.id.as_str()),
+            Some("uuid:sony-bravia-123")
+        );
         assert_eq!(
             device.as_ref().map(|value| value.av_control_url.as_str()),
             Some("http://192.168.1.40:52323/base/control/AVTransport1")
@@ -691,15 +692,15 @@ mod tests {
             MINIMAL_DESCRIPTION,
             "http://10.0.0.18:8080/description/device.xml",
         );
-        assert_eq!(device.as_ref().map(|value| value.name.as_str()), Some("LG webOS TV"));
+        assert_eq!(
+            device.as_ref().map(|value| value.name.as_str()),
+            Some("LG webOS TV")
+        );
         assert_eq!(
             device.as_ref().map(|value| value.av_control_url.as_str()),
             Some("http://10.0.0.18:8080/MediaRenderer/AVTransport/Control")
         );
-        assert_eq!(
-            device.and_then(|value| value.rendering_control_url),
-            None
-        );
+        assert_eq!(device.and_then(|value| value.rendering_control_url), None);
     }
 
     #[test]
@@ -737,11 +738,12 @@ mod tests {
         let envelope = soap_envelope(
             AV_TRANSPORT,
             "SetAVTransportURI",
-            &[("InstanceID", "0"), ("CurrentURI", "https://x.test/a?x=1&y=<2>")],
+            &[
+                ("InstanceID", "0"),
+                ("CurrentURI", "https://x.test/a?x=1&y=<2>"),
+            ],
         );
-        assert!(envelope.contains(&format!(
-            "<u:SetAVTransportURI xmlns:u=\"{AV_TRANSPORT}\">"
-        )));
+        assert!(envelope.contains(&format!("<u:SetAVTransportURI xmlns:u=\"{AV_TRANSPORT}\">")));
         assert!(envelope.contains("<InstanceID>0</InstanceID>"));
         assert!(envelope.contains("https://x.test/a?x=1&amp;y=&lt;2&gt;"));
         assert!(Document::parse(&envelope).is_ok());
@@ -761,7 +763,10 @@ mod tests {
     #[test]
     fn parses_real_position_and_transport_responses() {
         assert_eq!(parse_position_info(POSITION_RESPONSE), Ok((754, 6_127)));
-        assert_eq!(parse_transport_info(TRANSPORT_RESPONSE), Ok("PLAYING".to_string()));
+        assert_eq!(
+            parse_transport_info(TRANSPORT_RESPONSE),
+            Ok("PLAYING".to_string())
+        );
         assert_eq!(
             parse_position_info(
                 "<root><RelTime>NOT_IMPLEMENTED</RelTime><TrackDuration>00:00:00</TrackDuration></root>"

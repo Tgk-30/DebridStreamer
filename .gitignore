@@ -45,3 +45,5 @@ embedded-secrets.json
 
 # Local output of scripts/build_deb.sh
 dist-deb/
+# Generated local macOS libmpv dependency bundle.
+/web/src-tauri/Frameworks/

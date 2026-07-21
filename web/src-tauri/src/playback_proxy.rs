@@ -740,7 +740,11 @@ mod tests {
             playback("http://127.0.0.1:9/media".to_string()),
             Duration::from_secs(5),
             Duration::from_secs(5),
-            Duration::from_millis(300),
+            // Keep the deliberately idle held sockets alive while the excess
+            // connection reaches the accept loop. A short timeout races the
+            // assertion on loaded CI runners and can admit the excess socket
+            // after one holder retires.
+            Duration::from_secs(5),
         )
         .unwrap();
         let parsed = tauri::Url::parse(lease.url()).unwrap();

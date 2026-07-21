@@ -17,9 +17,7 @@ use reqwest::header::{
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tokio::io::{
-    AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter,
-};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::Command;
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
@@ -157,11 +155,7 @@ fn emit_progress_if_current<R: Runtime>(
     }
 }
 
-fn finish_if_current<R: Runtime>(
-    app: &AppHandle<R>,
-    generation: u64,
-    payload: DownloadProgress,
-) {
+fn finish_if_current<R: Runtime>(app: &AppHandle<R>, generation: u64, payload: DownloadProgress) {
     let should_emit = app
         .state::<DownloadsState>()
         .jobs
@@ -223,22 +217,11 @@ fn spawn_download_worker<R: Runtime>(
 ) {
     tauri::async_runtime::spawn(async move {
         let worker = async {
-            let result = transfer_download(
-                &app,
-                &args,
-                generation,
-                offset,
-                Arc::clone(&last_done),
-            )
-            .await;
+            let result =
+                transfer_download(&app, &args, generation, offset, Arc::clone(&last_done)).await;
             match result {
                 Ok((bytes_done, bytes_total)) => {
-                    let mut terminal = progress(
-                        &args.job_id,
-                        "completed",
-                        bytes_done,
-                        bytes_total,
-                    );
+                    let mut terminal = progress(&args.job_id, "completed", bytes_done, bytes_total);
                     terminal.output_path = Some(args.dest_path.clone());
                     finish_if_current(&app, generation, terminal);
                 }
@@ -301,10 +284,7 @@ pub fn download_start<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn download_pause(
-    state: State<'_, DownloadsState>,
-    job_id: String,
-) -> Result<(), String> {
+pub fn download_pause(state: State<'_, DownloadsState>, job_id: String) -> Result<(), String> {
     let abort = {
         let mut jobs = state.jobs.lock().map_err(|e| e.to_string())?;
         let Some(job) = jobs.get_mut(&job_id) else {
@@ -429,11 +409,7 @@ fn redact_url(url: &str) -> String {
             parsed.to_string()
         }
         // Not a parseable absolute URL: drop everything from the first `?`/`#`.
-        Err(_) => url
-            .split(|c| c == '?' || c == '#')
-            .next()
-            .unwrap_or("")
-            .to_string(),
+        Err(_) => url.split(['?', '#']).next().unwrap_or("").to_string(),
     }
 }
 
@@ -580,7 +556,12 @@ fn parse_unsatisfied_total(value: &str) -> Option<u64> {
 }
 
 fn parse_content_range_start(value: &str) -> Option<u64> {
-    value.strip_prefix("bytes ")?.split('-').next()?.parse().ok()
+    value
+        .strip_prefix("bytes ")?
+        .split('-')
+        .next()?
+        .parse()
+        .ok()
 }
 
 fn ffmpeg_layout() -> Option<(&'static str, &'static str, &'static str)> {
@@ -655,7 +636,9 @@ fn materialized_tool_path<R: Runtime>(
     }
     #[cfg(unix)]
     {
-        let mut permissions = fs::metadata(&dest).map_err(|e| e.to_string())?.permissions();
+        let mut permissions = fs::metadata(&dest)
+            .map_err(|e| e.to_string())?
+            .permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&dest, permissions).map_err(|e| e.to_string())?;
     }
@@ -833,8 +816,8 @@ fn ffmpeg_args(args: &TranscodeStartArgs, probe: &ProbeOutput) -> Vec<OsString> 
         TranscodeProfile::H265 => {
             result.extend(
                 [
-                    "-c:v", "libx265", "-crf", "23", "-preset", "medium", "-c:a", "copy",
-                    "-c:s", "copy",
+                    "-c:v", "libx265", "-crf", "23", "-preset", "medium", "-c:a", "copy", "-c:s",
+                    "copy",
                 ]
                 .into_iter()
                 .map(OsString::from),
@@ -867,13 +850,7 @@ fn spawn_transcode_worker<R: Runtime>(
 ) {
     tauri::async_runtime::spawn(async move {
         let worker = async {
-            let result = run_transcode(
-                &app,
-                &args,
-                generation,
-                Arc::clone(&last_done),
-            )
-            .await;
+            let result = run_transcode(&app, &args, generation, Arc::clone(&last_done)).await;
             match result {
                 Ok(()) => {
                     last_done.store(100, Ordering::Relaxed);
@@ -1006,16 +983,10 @@ pub async fn download_force_stop<R: Runtime>(
     // its own field, a download reports real bytes. Do not infer the phase from
     // the byte fields.
     let (partial_path, is_transcode, failure_context) = match job.spec {
-        JobSpec::Download(args) => (
-            PathBuf::from(args.dest_path),
-            false,
-            "partial download",
-        ),
-        JobSpec::Transcode { output_path } => (
-            PathBuf::from(output_path),
-            true,
-            "partial transcode",
-        ),
+        JobSpec::Download(args) => (PathBuf::from(args.dest_path), false, "partial download"),
+        JobSpec::Transcode { output_path } => {
+            (PathBuf::from(output_path), true, "partial transcode")
+        }
     };
     if let Err(error) = remove_partial_file(&partial_path).await {
         let message = format!("Failed to remove {failure_context}: {error}");
