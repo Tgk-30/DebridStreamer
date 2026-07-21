@@ -12,6 +12,8 @@ on:
       - "scripts/check_website_static.mjs"
       - "scripts/check_website_path_mount.mjs"
       - "scripts/check_website_app.mjs"
+      - "scripts/check_bundle_budgets.mjs"
+      - "scripts/check_bundle_budgets.test.mjs"
       - "scripts/deploy_website_cloudflare.mjs"
       - "scripts/public_repo_preflight.mjs"
       - ".github/workflows/cloudflare-site.yml"

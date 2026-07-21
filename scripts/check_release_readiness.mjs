@@ -48,6 +48,7 @@ const cleanInstallWorkflow = read(".github/workflows/clean-install.yml");
 const dockerWorkflow = read(".github/workflows/docker-image.yml");
 const ciWorkflow = read(".github/workflows/ci.yml");
 const cloudflareSiteWorkflow = read(".github/workflows/cloudflare-site.yml");
+const desktopBuildWorkflow = read(".github/workflows/desktop-build.yml");
 const dockerIgnore = read(".dockerignore");
 const publicRepoPreflight = read("scripts/public_repo_preflight.mjs");
 const cloudflareDeployHelper = read("scripts/deploy_website_cloudflare.mjs");
@@ -58,6 +59,9 @@ const desktopServerSmoke = read("scripts/smoke_tauri_server_bundle.mjs");
 const localPackage = read("scripts/package_tauri_local.mjs");
 const localArtifactVerifier = read("scripts/check_local_package_artifact.mjs");
 const securityDecisionCheck = read("scripts/check_security_decisions.mjs");
+const bundleBudgetCheck = read("scripts/check_bundle_budgets.mjs");
+const webPackage = JSON.parse(read("web/package.json"));
+const websitePackage = JSON.parse(read("website-app/package.json"));
 check(
   "Release workflow emits updater JSON",
   /includeUpdaterJson:\s*true/.test(releaseWorkflow),
@@ -77,6 +81,18 @@ check(
     /platform:\s*windows-latest/.test(releaseWorkflow) &&
     /runs-on:\s*\$\{\{\s*matrix\.platform\s*\}\}/.test(releaseWorkflow),
   ".github/workflows/web-release.yml must run the desktop release job on macOS, Linux, and Windows",
+);
+check(
+  "Pull requests build Windows and Linux desktop packages",
+  /pull_request:/.test(desktopBuildWorkflow) &&
+    /branches:\s*\n\s*- main/.test(desktopBuildWorkflow) &&
+    /platform:\s*windows-latest/.test(desktopBuildWorkflow) &&
+    /platform:\s*ubuntu-\d+\.\d+/.test(desktopBuildWorkflow) &&
+    /bundles:\s*msi,nsis/.test(desktopBuildWorkflow) &&
+    /Verify Windows bundles and clean-install MSI/.test(desktopBuildWorkflow) &&
+    /Verify Linux packages on clean profiles/.test(desktopBuildWorkflow) &&
+    /actions\/upload-artifact@v4/.test(desktopBuildWorkflow),
+  ".github/workflows/desktop-build.yml must build, clean-launch, and retain unsigned Windows and Linux packages for relevant pull requests",
 );
 check(
   "Release workflow builds per-arch macOS targets",
@@ -507,6 +523,25 @@ check(
   "CI runs app responsive contract",
   /check_app_responsive_contract\.mjs/.test(ciWorkflow),
   ".github/workflows/ci.yml must run scripts/check_app_responsive_contract.mjs so mobile nav, settings selectors, and setup wizard defaults cannot regress",
+);
+check(
+  "Production builds enforce bundle budgets",
+  existsSync(join(root, "scripts/check_bundle_budgets.test.mjs")) &&
+    existsSync(join(root, "docs/PERFORMANCE_BUDGETS.md")) &&
+    /check_bundle_budgets\.mjs web/.test(webPackage.scripts?.["check:bundle"] ?? "") &&
+    /check_bundle_budgets\.mjs website-app/.test(
+      websitePackage.scripts?.["check:bundle"] ?? "",
+    ) &&
+    /npm run check:bundle/.test(webPackage.scripts?.build ?? "") &&
+    /npm run check:bundle/.test(websitePackage.scripts?.build ?? "") &&
+    /initialGzip/.test(bundleBudgetCheck) &&
+    /largestJsGzip/.test(bundleBudgetCheck),
+  "web and website production builds must enforce tested and documented initial-load and route-chunk raw/gzip budgets",
+);
+check(
+  "CI tests the bundle budget verifier",
+  /node --test scripts\/check_bundle_budgets\.test\.mjs/.test(ciWorkflow),
+  ".github/workflows/ci.yml must test the bundle budget verifier before production builds rely on it",
 );
 check(
   "CI runs Swift test verifier",
