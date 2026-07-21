@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Link } from 'react-router';
-import { AppWindow, Apple, ChevronDown, Smartphone, Terminal } from 'lucide-react';
+import { Apple, ChevronDown, Smartphone, Terminal } from 'lucide-react';
 import { gsap, useGSAP } from '@/lib/gsap';
 import { usePrefersReducedMotion } from '@/lib/motion';
 import { scrollToTarget } from '@/lib/scroll';
@@ -14,7 +14,6 @@ import { GhostButton, PrimaryButton } from '@/components/Buttons';
 
 const QUICK_LINKS = [
   { label: 'macOS', icon: Apple, href: DOWNLOAD_LINKS.macos },
-  { label: 'Windows', icon: AppWindow, href: DOWNLOAD_LINKS.windows },
   { label: 'Linux', icon: Terminal, href: DOWNLOAD_LINKS.linux },
   { label: 'Phone & tablet PWA', icon: Smartphone, href: '/devices' },
 ];

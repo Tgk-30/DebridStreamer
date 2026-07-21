@@ -26,7 +26,7 @@ encryption key. Public multi-tenant hosting is not supported.
 | SEC-005 | Accepted | Diagnostics contain capability state and bounded event codes, never configured secrets, provider URLs, raw stream URLs, cookies, or CSRF tokens. | diagnostics redaction tests |
 | SEC-006 | Accepted | The desktop webview may contact user-configured HTTP and HTTPS providers, but it receives no shell or filesystem plugin permission. Follow-mode HTTP and HTTPS origins, including custom ports, use a separate capability with explicitly enumerated non-secret app commands; keychain commands remain local-only. External URL opening is scoped to HTTP, HTTPS, and the Windows installed-app settings page. Process control is limited to restart for the signed updater. | Tauri capability and app permission files, plus the security decision check |
 | SEC-007 | Accepted | Desktop updates require the configured Tauri public key. Public macOS builds also require Developer ID signing and notarization. | release readiness and release workflow secret gates |
-| SEC-008 | Open v1 gate | The release pipeline requires Azure Artifact Signing for the Windows application, MSI, and NSIS setup executable. The generated signing config validates the Azure origin and never serializes client identity credentials. Clean-install verification fails unless each installer and installed application has a valid signature. v1 remains blocked until the Azure account and repository secrets are provisioned and a credentialed release run proves every signature. | Windows signing secret gate, pinned signing CLI, tested Tauri config generator, MSI and NSIS clean-install verification |
+| SEC-008 | Windows channel gate | The release pipeline requires Azure Artifact Signing for the Windows application, MSI, and NSIS setup executable. The generated signing config validates the Azure origin and never serializes client identity credentials. Windows artifacts stay disabled unless `YAWF_RELEASE_WINDOWS=true`; when enabled, clean-install verification fails unless each installer and installed application has a valid signature. The macOS, Linux, and server v1 channels may ship while Windows remains held. | Explicit Windows release variable, Windows signing secret gate, pinned signing CLI, tested Tauri config generator, MSI and NSIS clean-install verification |
 | SEC-009 | Accepted | macOS disables library validation and allows JIT only because the built-in libmpv player loads a bundled signed dependency graph and compiles GPU shaders. No additional entitlement is granted. | `entitlements.plist`, notarization, clean-install verification |
 | SEC-010 | Accepted | Released database migrations are append-only, transactional, fixture-tested, and refuse databases created by a newer unsupported app. | migration hashes and server migration tests |
 | SEC-011 | Accepted | Native playback of Server Mode proxy URLs uses a short-lived bearer capability bound to one stream session. The bearer is attached as a file-local libmpv header with redirects disabled, never placed in the URL or stored as a global player property. Follow-mode pages can use only the explicitly allowlisted player commands, properties, observations, and initialization options. | server route tests, native player unit tests, Tauri ACL test, and the security decision check |
@@ -37,18 +37,21 @@ encryption key. Public multi-tenant hosting is not supported.
    release workflow.
 2. A released migration string must never be edited. Add the next numbered
    migration instead.
-3. Clean-install jobs must pass for both macOS architectures, the Windows MSI
-   and NSIS installers, the Linux AppImage, and the Linux deb package before a
-   draft release is published.
+3. Clean-install jobs must pass for both macOS architectures, the Linux
+   AppImage, the Linux desktop deb, and the self-hosted server deb before a
+   draft release is published. When `YAWF_RELEASE_WINDOWS=true`, both Windows
+   installer formats and the installed application must also pass signature and
+   clean-launch verification.
 4. Any change to cookie flags, CSRF enforcement, CSP, Tauri capabilities,
    updater keys, encryption, diagnostics export, or install verification needs
    a matching test and a decision-log update.
 
-## v1 security blocker
+## Windows v1 security blocker
 
-- Provision the Azure Artifact Signing account, certificate profile, service
-  principal permissions, and six repository secrets documented in
-  `docs/RELEASE_AND_UPDATES.md`.
+- Windows v1 remains held while `YAWF_RELEASE_WINDOWS` is absent or false.
+- Before setting it to true, provision the Azure Artifact Signing account,
+  certificate profile, service principal permissions, and six repository
+  secrets documented in `docs/RELEASE_AND_UPDATES.md`.
 - Complete one Windows draft release and observe valid Authenticode signatures
   for the MSI, NSIS setup executable, and installed application in the
-  clean-install jobs.
+  clean-install jobs. An unsigned Windows v1 artifact must never be published.

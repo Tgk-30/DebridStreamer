@@ -11,12 +11,14 @@ interface TrustRow {
   icon: LucideIcon;
   label: string;
   note: string;
+  held?: boolean;
 }
 
 const TRUST_ROWS: TrustRow[] = [
   { icon: ShieldCheck, label: 'signed update manifest', note: 'latest.json · GitHub Releases' },
   { icon: Apple, label: 'macOS notarized builds', note: 'Gatekeeper-approved' },
-  { icon: PackageCheck, label: 'Windows & Linux installers', note: 'signed updater inside' },
+  { icon: PackageCheck, label: 'Linux installer', note: 'signed updater inside' },
+  { icon: Clock, label: 'Windows v1 signing gate', note: 'held until Authenticode is proven', held: true },
   { icon: Clock, label: 'update on your schedule', note: 'auto-check can be disabled in Settings' },
 ];
 
@@ -58,8 +60,8 @@ export default function TrustPanel() {
             <code className="rounded border border-line bg-[var(--surface-glass)] px-1.5 py-0.5 font-mono text-[0.85em] text-brand">
               latest.json
             </code>{' '}
-            from GitHub Releases. macOS builds are notarized; Windows and Linux ship signed updaters. Updates install
-            when you say so.
+            from GitHub Releases. macOS builds are notarized and Linux ships a signed updater. Windows v1 remains
+            held until Authenticode signing and clean-install verification pass. Updates install when you say so.
           </motion.p>
         </div>
 
@@ -108,7 +110,11 @@ export default function TrustPanel() {
                           : { type: 'spring', stiffness: 300, damping: 16, delay: i * 0.13 + 0.7 }
                       }
                     >
-                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                      {row.held ? (
+                        <Clock className="h-3.5 w-3.5" strokeWidth={2.5} />
+                      ) : (
+                        <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                      )}
                     </motion.span>
                   </motion.div>
                 );

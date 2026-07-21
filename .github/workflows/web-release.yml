@@ -23,7 +23,8 @@
 #   APPLE_TEAM_ID              Your 10-char Apple Developer Team ID.
 #
 # Windows Authenticode signing through Azure Artifact Signing (REQUIRED for a
-# public Windows release):
+# public Windows release). Windows artifacts are held unless the repository
+# variable YAWF_RELEASE_WINDOWS is set to true:
 #   AZURE_CLIENT_ID
 #   AZURE_CLIENT_SECRET
 #   AZURE_TENANT_ID
@@ -156,7 +157,7 @@ jobs:
           exit "$missing"
 
       - name: Validate Windows signing secrets
-        if: matrix.os == 'windows'
+        if: matrix.os == 'windows' && vars.YAWF_RELEASE_WINDOWS == 'true'
         shell: pwsh
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -193,7 +194,7 @@ jobs:
           workspaces: "web/src-tauri -> target"
 
       - name: Set up .NET 8 for Windows signing
-        if: matrix.os == 'windows'
+        if: matrix.os == 'windows' && vars.YAWF_RELEASE_WINDOWS == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -217,11 +218,11 @@ jobs:
       # is delay-loaded + preloaded from resources/lib at runtime (see build.rs +
       # render_player/core.rs ensure_libmpv_loaded).
       - name: Set up MSVC (lib.exe/dumpbin on PATH)
-        if: matrix.os == 'windows'
+        if: matrix.os == 'windows' && vars.YAWF_RELEASE_WINDOWS == 'true'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Azure Artifact Signing CLI
-        if: matrix.os == 'windows'
+        if: matrix.os == 'windows' && vars.YAWF_RELEASE_WINDOWS == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -250,7 +251,7 @@ jobs:
           $signTool.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       - name: Provision libmpv (Windows)
-        if: matrix.os == 'windows'
+        if: matrix.os == 'windows' && vars.YAWF_RELEASE_WINDOWS == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -380,15 +381,15 @@ jobs:
         run: node scripts/download_ffmpeg.mjs linux-x64
 
       - name: Bundle Node runtime for Windows
-        if: matrix.os == 'windows'
+        if: matrix.os == 'windows' && vars.YAWF_RELEASE_WINDOWS == 'true'
         run: node scripts/download_tauri_node_runtime.mjs win-x64
 
       - name: Bundle ffmpeg for Windows
-        if: matrix.os == 'windows'
+        if: matrix.os == 'windows' && vars.YAWF_RELEASE_WINDOWS == 'true'
         run: node scripts/download_ffmpeg.mjs win-x64
 
       - name: Configure Windows Authenticode signing
-        if: matrix.os == 'windows'
+        if: matrix.os == 'windows' && vars.YAWF_RELEASE_WINDOWS == 'true'
         shell: pwsh
         env:
           AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ secrets.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
@@ -402,9 +403,21 @@ jobs:
             Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Smoke desktop server resources
+        if: matrix.os != 'windows' || vars.YAWF_RELEASE_WINDOWS == 'true'
         run: node scripts/smoke_tauri_server_bundle.mjs web/src-tauri/resources/server
 
+      - name: Set release channel summary
+        if: matrix.os != 'windows' || vars.YAWF_RELEASE_WINDOWS == 'true'
+        shell: bash
+        run: |
+          if [ "${{ vars.YAWF_RELEASE_WINDOWS }}" = "true" ]; then
+            echo "RELEASE_BODY=Signed macOS, Linux, and Windows desktop builds, plus self-hosted server packages. Your Accounts. Watch Freely." >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_BODY=Signed macOS and Linux desktop builds, plus self-hosted server packages. Windows v1 is held until Authenticode signing is proven. Your Accounts. Watch Freely." >> "$GITHUB_ENV"
+          fi
+
       - name: Build, bundle, sign & release
+        if: matrix.os != 'windows' || vars.YAWF_RELEASE_WINDOWS == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -434,7 +447,7 @@ jobs:
           projectPath: web
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__-web' }}
           releaseName: "YAWF Stream v__VERSION__"
-          releaseBody: "Your Accounts. Watch Freely. Download the installer for your platform from the assets below."
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
@@ -477,3 +490,4 @@ jobs:
     uses: ./.github/workflows/clean-install.yml
     with:
       tag: ${{ github.ref_name }}
+      include_windows: ${{ vars.YAWF_RELEASE_WINDOWS == 'true' }}

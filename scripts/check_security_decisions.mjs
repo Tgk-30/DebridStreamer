@@ -28,6 +28,12 @@ check(
   /SEC-008[^\n]*NSIS[^\n]*config generator/.test(decisions),
   "Security decision SEC-008 covers NSIS and generated signing config",
 );
+check(
+  /SEC-008[^\n]*YAWF_RELEASE_WINDOWS=true[^\n]*macOS, Linux, and server v1 channels may ship/.test(
+    decisions,
+  ),
+  "Security decision SEC-008 records the held Windows channel without weakening its signing gate",
+);
 
 const capability = JSON.parse(read("web/src-tauri/capabilities/default.json"));
 const remoteCapability = JSON.parse(
@@ -156,6 +162,16 @@ check(
     /kind: msi/.test(cleanInstallWorkflow) &&
     /kind: nsis/.test(cleanInstallWorkflow),
   "Windows clean installs require valid MSI, NSIS, and app signatures",
+);
+check(
+  /if:\s*matrix\.os == 'windows' && vars\.YAWF_RELEASE_WINDOWS == 'true'/.test(
+    releaseWorkflow,
+  ) &&
+    /include_windows:\s*\$\{\{\s*vars\.YAWF_RELEASE_WINDOWS == 'true'\s*\}\}/.test(
+      releaseWorkflow,
+    ) &&
+    /windows:[\s\S]{0,120}if:\s*inputs\.include_windows/.test(cleanInstallWorkflow),
+  "Held Windows releases emit no artifact while enabled releases retain clean-install enforcement",
 );
 
 const serverConfig = read("server/src/config.ts");
