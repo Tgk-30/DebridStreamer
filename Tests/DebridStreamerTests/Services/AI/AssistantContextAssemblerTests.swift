@@ -4,6 +4,114 @@ import Foundation
 
 @Suite("AssistantContextAssembler Tests")
 struct AssistantContextAssemblerTests {
+    @Test("Taste profile notes reflect liked genres, disliked genres, and eras")
+    func contextIncludesTasteProfileSignals() async throws {
+        let db = try makeTestDatabase()
+        try await db.saveUserTasteProfile(
+            UserTasteProfile(
+                likedGenres: ["Sci-Fi", "Drama"],
+                dislikedGenres: ["Romance", "Horror"],
+                preferredDecades: [1980, 1990]
+            )
+        )
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "true")
+        let assembler = AssistantContextAssembler(database: db, metadataProvider: nil)
+
+        let context = await assembler.buildContext(prompt: "recommend", folderId: nil)
+        #expect(context.contextNotes.contains("Liked genres: Sci-Fi, Drama"))
+        #expect(context.contextNotes.contains("Avoid genres: Romance, Horror"))
+        #expect(context.contextNotes.contains("Preferred eras: 1980, 1990"))
+    }
+
+    @Test("Context adds watchlist titles and watchlist branch notes")
+    func contextIncludesWatchlistBranch() async throws {
+        let db = try makeTestDatabase()
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "false")
+        let watchlistRootID = try await db.fetchSystemLibraryFolderID(listType: .watchlist)
+
+        try await db.saveMedia(MediaItem(id: "tt-watchlist-one", type: .movie, title: "Watchlist Hit", year: 2026))
+        try await db.saveMedia(MediaItem(id: "tt-watchlist-two", type: .series, title: "Watchlist Show", year: 2022))
+        try await db.addToLibrary(
+            UserLibraryEntry(
+                id: "watchlist-one",
+                mediaId: "tt-watchlist-one",
+                folderId: watchlistRootID,
+                listType: .watchlist
+            )
+        )
+        try await db.addToLibrary(
+            UserLibraryEntry(
+                id: "watchlist-two",
+                mediaId: "tt-watchlist-two",
+                folderId: watchlistRootID,
+                listType: .watchlist
+            )
+        )
+
+        let assembler = AssistantContextAssembler(database: db, metadataProvider: nil)
+        let context = await assembler.buildContext(prompt: "discover", folderId: nil)
+
+        #expect(context.candidateTitles.contains("Watchlist Hit"))
+        #expect(context.candidateTitles.contains("Watchlist Show"))
+        #expect(context.contextNotes.contains("Watchlist context includes 2 titles."))
+    }
+
+    @Test("Context includes both watchedState and preference taste event notes")
+    func contextIncludesTasteEventBranches() async throws {
+        let db = try makeTestDatabase()
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "true")
+        let assembler = AssistantContextAssembler(database: db, metadataProvider: nil)
+
+        try await db.saveTasteEvent(
+            TasteEvent(
+                id: "taste-watched",
+                eventType: .rated,
+                watchedState: .watched,
+                metadata: ["title": "Known Watch State"]
+            )
+        )
+        try await db.saveTasteEvent(
+            TasteEvent(
+                id: "taste-liked",
+                eventType: .liked,
+                feedbackValue: 0.8,
+                metadata: ["title": "Preferred Event"]
+            )
+        )
+
+        let context = await assembler.buildContext(prompt: "recommend", folderId: nil)
+        #expect(context.contextNotes.contains(where: { $0.hasPrefix("Feedback Known Watch State: watched") }))
+        #expect(context.contextNotes.contains(where: { $0.hasPrefix("Preference Preferred Event: liked") }))
+    }
+
+    @Test("Context uses assistant memory chunks when personalization is enabled")
+    func contextIncludesAssistantMemoryChunks() async throws {
+        let db = try makeTestDatabase()
+        try await db.setSetting(key: SettingsKeys.personalizationEnabled, value: "true")
+
+        let fresh = AssistantMemoryChunk(
+            id: "memory-fresh",
+            content: "The user keeps watching noir and mystery films.",
+            summary: "Noir and mystery are strong recurring themes for this user.",
+            importance: 0.9,
+            createdAt: Date()
+        )
+        let stale = AssistantMemoryChunk(
+            id: "memory-stale",
+            content: "Unrelated context for unrelated prompt.",
+            summary: "Unrelated trivia.",
+            importance: 0.1,
+            createdAt: Date().addingTimeInterval(-60 * 60 * 24 * 90)
+        )
+        try await db.saveAssistantMemoryChunk(fresh)
+        try await db.saveAssistantMemoryChunk(stale)
+
+        let assembler = AssistantContextAssembler(database: db, metadataProvider: nil)
+        let context = await assembler.buildContext(prompt: "recommend some noir mystery picks", folderId: nil)
+
+        #expect(context.contextNotes.contains("Noir and mystery are strong recurring themes for this user."))
+    }
+
     @Test("Recency sensitivity affects history weighting")
     func recencySensitivityAffectsWeighting() async throws {
         let db = try makeTestDatabase()

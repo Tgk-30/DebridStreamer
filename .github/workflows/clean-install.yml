@@ -107,8 +107,18 @@ jobs:
           echo "ok   Signed DMG installed and launched with a clean profile"
 
   windows:
-    name: Windows MSI clean install
+    name: Windows ${{ matrix.label }} clean install
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: MSI
+            kind: msi
+            pattern: YAWF.Stream_*_x64_en-US.msi
+          - label: NSIS
+            kind: nsis
+            pattern: YAWF.Stream_*_x64-setup.exe
     steps:
       - name: Checkout release source
         uses: actions/checkout@v4
@@ -120,37 +130,48 @@ jobs:
         with:
           node-version: 24
 
-      - name: Download MSI
+      - name: Download Windows installer
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
+          INSTALLER_PATTERN: ${{ matrix.pattern }}
         run: |
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\release-assets" | Out-Null
           gh release download $env:RELEASE_TAG `
             --repo $env:GITHUB_REPOSITORY `
-            --pattern "YAWF.Stream_*_x64_en-US.msi" `
+            --pattern $env:INSTALLER_PATTERN `
             --dir "$env:RUNNER_TEMP\release-assets"
-          $assets = @(Get-ChildItem "$env:RUNNER_TEMP\release-assets" -Filter *.msi)
-          if ($assets.Count -ne 1) { throw "Expected one MSI, found $($assets.Count)" }
-
-      - name: Install and verify MSI
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $msi = (Get-ChildItem "$env:RUNNER_TEMP\release-assets" -Filter *.msi | Select-Object -First 1).FullName
-          $installerSignature = Get-AuthenticodeSignature $msi
-          Write-Host "MSI Authenticode status: $($installerSignature.Status)"
-          if ($installerSignature.Status -ne "Valid") {
-            Write-Warning "Unsigned Windows installer is an accepted v0.9 beta risk tracked as SEC-008."
+          $assets = @(Get-ChildItem "$env:RUNNER_TEMP\release-assets" -File)
+          if ($assets.Count -ne 1) {
+            throw "Expected one Windows installer, found $($assets.Count)"
           }
 
-          $install = Start-Process msiexec.exe `
-            -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart') `
-            -Wait -PassThru
-          if ($install.ExitCode -notin @(0, 3010)) {
-            throw "MSI installation failed with exit code $($install.ExitCode)"
+      - name: Install and verify Windows package
+        shell: pwsh
+        env:
+          INSTALLER_KIND: ${{ matrix.kind }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = (Get-ChildItem "$env:RUNNER_TEMP\release-assets" -File | Select-Object -First 1).FullName
+          $installerSignature = Get-AuthenticodeSignature $installer
+          Write-Host "$env:INSTALLER_KIND Authenticode status: $($installerSignature.Status)"
+          if ($installerSignature.Status -ne "Valid") {
+            throw "Windows $env:INSTALLER_KIND installer Authenticode signature is not valid: $($installerSignature.Status)"
+          }
+
+          if ($env:INSTALLER_KIND -eq "msi") {
+            $install = Start-Process msiexec.exe `
+              -ArgumentList @('/i', "`"$installer`"", '/qn', '/norestart') `
+              -Wait -PassThru
+            $acceptedExitCodes = @(0, 3010)
+          } else {
+            $install = Start-Process $installer -ArgumentList @('/S') -Wait -PassThru
+            $acceptedExitCodes = @(0)
+          }
+          if ($install.ExitCode -notin $acceptedExitCodes) {
+            throw "Windows $env:INSTALLER_KIND installation failed with exit code $($install.ExitCode)"
           }
 
           $roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA) |
@@ -167,6 +188,11 @@ jobs:
           $exe = Get-ChildItem -Path $appRoot -Filter debridstreamer.exe -File -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if (-not $exe) { throw "Installed desktop executable was not found" }
+          $appSignature = Get-AuthenticodeSignature $exe.FullName
+          Write-Host "App Authenticode status: $($appSignature.Status)"
+          if ($appSignature.Status -ne "Valid") {
+            throw "Installed app Authenticode signature is not valid: $($appSignature.Status)"
+          }
           $mpvDll = Get-ChildItem -Path $appRoot -Filter libmpv-2.dll -File -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if (-not $mpvDll) {
@@ -182,7 +208,7 @@ jobs:
           $process.Refresh()
           if ($process.HasExited) { throw "Installed app exited during first launch" }
           Stop-Process -Id $process.Id -Force
-          Write-Host "ok   MSI installed and launched with a clean profile"
+          Write-Host "ok   $env:INSTALLER_KIND installed and launched with a clean profile"
 
   linux:
     name: Linux AppImage and deb clean install

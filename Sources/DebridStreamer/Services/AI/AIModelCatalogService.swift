@@ -75,7 +75,8 @@ actor AIModelCatalogService {
 
         let ids = try parseModelIDs(data: data, preferredRootKeys: ["data", "models"])
         let filtered = ids.filter { id in
-            let lower = id.lowercased()
+            let normalized = id.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lower = normalized.lowercased()
             if lower.hasPrefix("gpt") || lower.hasPrefix("o1") || lower.hasPrefix("o3") || lower.hasPrefix("o4") {
                 return true
             }

@@ -67,6 +67,25 @@ struct DiscoverFeedbackViewModelTests {
         #expect(model.statusMessage != nil)
     }
 
+    @Test("Submit watched without service records failure state")
+    func submitWatchedWithoutServiceFails() async throws {
+        let model = DiscoverFeedbackViewModel()
+        let recommendation = AIMovieRecommendation(
+            title: "No Service",
+            year: 2025,
+            reason: "Reason",
+            score: 0.9
+        )
+
+        await model.submitWatched(
+            recommendation: recommendation,
+            mode: .likeDislike,
+            value: 1,
+            service: nil
+        )
+        #expect(model.cardState(for: recommendation) == .failed("Feedback service unavailable."))
+    }
+
     @Test("Mark not watched updates card state")
     func markNotWatchedUpdatesState() async throws {
         let db = try makeTestDatabase()
@@ -83,6 +102,50 @@ struct DiscoverFeedbackViewModelTests {
         #expect(model.cardState(for: recommendation) == .notWatched)
         #expect(model.visibleRecommendations(from: [recommendation]).isEmpty)
         #expect(model.statusMessage == "Marked as not watched.")
+    }
+
+    @Test("Mark not watched without service records failure state")
+    func markNotWatchedWithoutServiceFails() async throws {
+        let model = DiscoverFeedbackViewModel()
+        let recommendation = AIMovieRecommendation(
+            title: "No Service",
+            year: 2025,
+            reason: "Reason",
+            score: 0.5
+        )
+
+        await model.markNotWatched(recommendation: recommendation, service: nil)
+        #expect(model.cardState(for: recommendation) == .failed("Feedback service unavailable."))
+    }
+
+    @Test("cardMessage returns last status for recommendation")
+    func cardMessageReturnsStatus() async throws {
+        let db = try makeTestDatabase()
+        let service = UserFeedbackService(database: db, metadataService: nil)
+        let model = DiscoverFeedbackViewModel()
+        let notWatched = AIMovieRecommendation(
+            title: "Hidden Message",
+            year: 2024,
+            reason: "Reason",
+            score: 0.5
+        )
+        let watched = AIMovieRecommendation(
+            title: "Watched Message",
+            year: 2024,
+            reason: "Reason",
+            score: 0.6
+        )
+
+        await model.markNotWatched(recommendation: notWatched, service: service)
+        #expect(model.cardMessage(for: notWatched) == "Marked as not watched.")
+
+        await model.submitWatched(
+            recommendation: watched,
+            mode: .likeDislike,
+            value: 1,
+            service: service
+        )
+        #expect(model.cardMessage(for: watched) == "Marked watched.")
     }
 
     @Test("Reset hidden state keeps only currently visible recommendation IDs")

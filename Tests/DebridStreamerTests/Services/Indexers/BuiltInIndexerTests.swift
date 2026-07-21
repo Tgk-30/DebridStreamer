@@ -52,6 +52,25 @@ struct BuiltInIndexerTests {
         #expect(didCall == false)
     }
 
+    @Test("APIBay search(imdbId:) returns [] for blank imdbId without network")
+    func apiBaySearchImdbBlankNoNetwork() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var didCall = false
+
+        MockURLProtocol.setHandler({ request in
+            didCall = true
+            return try self.response(for: request, statusCode: 200, body: "[]")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = APIBayIndexer(session: session)
+        let results = try await indexer.search(imdbId: "   ", type: .movie, season: nil, episode: nil)
+
+        #expect(results.isEmpty)
+        #expect(didCall == false)
+    }
+
     @Test("APIBay returns [] for the no-results sentinel with HTTP 200")
     func apiBayEmptySentinelReturnsEmpty() async throws {
         let sessionID = UUID().uuidString
@@ -109,13 +128,17 @@ struct BuiltInIndexerTests {
 
             if q == "tt987" {
                 sawTT = true
-                let body = "[{\"id\":\"0\",\"name\":\"No results returned\",\"info_hash\":\"0000000000000000000000000000000000000000\",\"seeders\":\"0\",\"leechers\":\"0\",\"size\":\"0\",\"category\":\"0\",\"imdb\":\"\"}]"
+                let body = """
+                [{"id":"0","name":"No results returned","info_hash":"0000000000000000000000000000000000000000","seeders":"0","leechers":"0","size":"0","category":"0","imdb":""}]
+                """
                 return try self.response(for: request, statusCode: 200, body: body)
             }
 
             if q == "987" {
                 sawNumeric = true
-                let body = "[{\"id\":\"1\",\"name\":\"Fallback Movie\",\"info_hash\":\"ABCDEF1234567890ABCDEF1234567890ABCDEF12\",\"seeders\":\"9\",\"leechers\":\"0\",\"size\":\"0\"}]"
+                let body = """
+                [{"id":"1","name":"Fallback Movie","info_hash":"ABCDEF1234567890ABCDEF1234567890ABCDEF12","seeders":"9","leechers":"0","size":"0"}]
+                """
                 return try self.response(for: request, statusCode: 200, body: body)
             }
 
@@ -167,6 +190,62 @@ struct BuiltInIndexerTests {
         #expect(results.isEmpty)
     }
 
+    @Test("YTS search ignores non-movie lookups and avoids network")
+    func ytsIgnoresNonMovieLookup() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var requestHit = false
+
+        MockURLProtocol.setHandler({ _ in
+            requestHit = true
+            return try self.response(for: URLRequest(url: URL(string: "https://example.com")!), statusCode: 200, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = YTSIndexer(session: session)
+        let noResults = try await indexer.search(imdbId: "tt999", type: .series, season: nil, episode: nil)
+        let noResultsByQuery = try await indexer.searchByQuery(query: "tv", type: .series)
+
+        #expect(noResults.isEmpty)
+        #expect(noResultsByQuery.isEmpty)
+        #expect(requestHit == false)
+    }
+
+    @Test("YTS search requires valid hashes and filters by torrent metadata")
+    func ytsFiltersMissingHashesAndBuildsTitles() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        let body = """
+        {
+          "status":"ok",
+          "data":{"movie_count":2,"movies":[
+            {
+              "title_long":"Some Movie",
+              "torrents":[
+                {"hash":null,"quality":"1080p","type":"bluray","size_bytes":1234,"seeds":1,"peers":2},
+                {"hash":"GOODHASH","quality":"720p","type":"web","size_bytes":54321,"seeds":3,"peers":4}
+              ]
+            }
+          ]}
+        }
+        """
+
+        MockURLProtocol.setHandler({ request in
+            try self.response(for: request, statusCode: 200, body: body)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = YTSIndexer(session: session)
+        let results = try await indexer.search(imdbId: "tt888", type: .movie, season: nil, episode: nil)
+        let resultsByQuery = try await indexer.searchByQuery(query: "movie", type: .movie)
+
+        #expect(results.count == 1)
+        #expect(results.first?.infoHash == "goodhash")
+        #expect(results.first?.title == "Some Movie [720p] [web]")
+        #expect(resultsByQuery.count == 1)
+        #expect(resultsByQuery.first?.seeders == 3)
+    }
+
     // MARK: - EZTV
 
     @Test("EZTV throws on non-2xx response")
@@ -199,5 +278,99 @@ struct BuiltInIndexerTests {
         let indexer = EZTVIndexer(session: session)
         let results = try await indexer.searchByQuery(query: "nothing", type: .series)
         #expect(results.isEmpty)
+    }
+
+    @Test("EZTV search ignores non-series lookups and avoids network")
+    func eztvIgnoresNonSeriesLookup() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var requestHit = false
+
+        MockURLProtocol.setHandler({ request in
+            requestHit = true
+            return try self.response(for: request, statusCode: 200, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = EZTVIndexer(session: session)
+        let noSeries = try await indexer.search(imdbId: "tt888", type: .movie, season: nil, episode: nil)
+        let noByQuery = try await indexer.searchByQuery(query: "movie", type: .movie)
+        #expect(noSeries.isEmpty)
+        #expect(noByQuery.isEmpty)
+        #expect(requestHit == false)
+    }
+
+    @Test("EZTV searchByQuery trims whitespace and returns [] when blank")
+    func eztvSearchByQueryIgnoresBlankInput() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var requestHit = false
+
+        MockURLProtocol.setHandler({ request in
+            requestHit = true
+            return try self.response(for: request, statusCode: 200, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = EZTVIndexer(session: session)
+        #expect(try await indexer.searchByQuery(query: "  \t\n", type: .series).isEmpty)
+        #expect(requestHit == false)
+    }
+
+    @Test("EZTV can filter by season and episode and paginates until short page")
+    func eztvFiltersAndPaginates() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        var callCount = 0
+        let onePage: [[String: Any]] = (0..<100).map { index in
+            [
+                "hash": "page1-\(index)",
+                "filename": "show s01e\(String(format: "%02d", index + 1))",
+                "season": "1",
+                "episode": "\(index + 1)",
+                "seeds": 1,
+                "peers": 1,
+                "size_bytes": "1024"
+            ]
+        }
+        let finalPage: [[String: Any]] = [[
+            "hash": "page2-101",
+            "filename": "show s01e101",
+            "season": "1",
+            "episode": "101",
+            "seeds": 9,
+            "peers": 2,
+            "size_bytes": "2048"
+        ]]
+
+        MockURLProtocol.setHandler({ request in
+            callCount += 1
+            let pageOne = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == "page" })?
+                .value == "1"
+
+            let payload: [String: Any] = if pageOne {
+                ["torrents_count": 100, "page": 1, "torrents": onePage]
+            } else {
+                ["torrents_count": 1, "page": 2, "torrents": finalPage]
+            }
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            guard let url = request.url else {
+                throw NSError(domain: "BuiltInIndexerTests", code: 1)
+            }
+            guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil) else {
+                throw NSError(domain: "BuiltInIndexerTests", code: 2)
+            }
+            return (response, data)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let indexer = EZTVIndexer(session: session)
+        let results = try await indexer.search(imdbId: "tt123", type: .series, season: 1, episode: 101)
+        #expect(callCount == 2)
+        #expect(results.count == 1)
+        #expect(results.first?.infoHash == "page2-101")
     }
 }

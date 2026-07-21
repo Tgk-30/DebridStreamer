@@ -54,7 +54,12 @@ struct OpenAIProvider: AIAssistantProvider {
             throw AIAssistantProviderError.apiError(errorText)
         }
 
-        let decoded = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
+        let decoded: OpenAIChatResponse
+        do {
+            decoded = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
+        } catch {
+            throw AIAssistantProviderError.invalidResponse
+        }
         guard let content = decoded.choices.first?.message.content else {
             throw AIAssistantProviderError.invalidResponse
         }
@@ -110,7 +115,12 @@ struct OpenAIProvider: AIAssistantProvider {
         guard (200...299).contains(http.statusCode) else {
             throw AIAssistantProviderError.apiError(String(data: data, encoding: .utf8) ?? "OpenAI error")
         }
-        let decoded = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
+        let decoded: OpenAIChatResponse
+        do {
+            decoded = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
+        } catch {
+            throw AIAssistantProviderError.invalidResponse
+        }
         guard let content = decoded.choices.first?.message.content else {
             throw AIAssistantProviderError.invalidResponse
         }

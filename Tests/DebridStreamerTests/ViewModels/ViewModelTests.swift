@@ -147,10 +147,56 @@ struct SearchViewModelTests {
         let refine = model.buildRefinePrompt(query: "cyberpunk thriller", scope: .library)
         let mood = model.buildMoodPrompt(mood: "brooding", scope: .watchlist)
         let profile = model.buildProfileMatchPrompt(query: "slow-burn noir")
+        let similar = model.buildSimilarPrompt(selected: nil, scope: .discover)
 
         #expect(refine.contains("Scope: Library"))
         #expect(mood.contains("watchlist"))
         #expect(profile.contains("slow-burn noir"))
+        #expect(similar.contains("recent searches"))
+    }
+
+    @Test("startSearch clears state for blank input")
+    func startSearchOnBlankQueryClearsState() async {
+        enum SearchError: Error { case failed }
+        let model = SearchViewModel()
+        let failingProvider = StubMetadataProvider(searchError: SearchError.failed)
+        let baseline = MediaPreview(id: "tmdb-legacy", type: .movie, title: "Legacy", year: 2024, posterPath: nil, imdbRating: nil, tmdbId: 1)
+        var message: String?
+
+        await model.performSearch(query: "movie", type: .movie, provider: failingProvider) { errorMessage in
+            message = errorMessage
+        }
+        #expect(model.isSearching == false)
+        #expect(model.results.isEmpty)
+        #expect(message != nil)
+        #expect(model.lastErrorMessage != nil)
+
+        model.results = [baseline]
+        model.startSearch(query: "   ", type: .movie, provider: nil) { _ in
+            Issue.record("Error callback should not run for blank search")
+        }
+
+        #expect(model.results.isEmpty)
+        #expect(model.isSearching == false)
+        #expect(model.lastErrorMessage == nil)
+    }
+
+    @Test("startSearch with discover scope and missing provider clears results")
+    func startSearchWithMissingProviderIsNoop() async {
+        let model = SearchViewModel()
+        let baseline = MediaPreview(id: "tmdb-legacy", type: .movie, title: "Legacy", year: 2024, posterPath: nil, imdbRating: nil, tmdbId: 1)
+        var errorMessage: String?
+
+        model.results = [baseline]
+        model.isSearching = false
+        model.startSearch(query: "discover", type: .movie, provider: nil) { message in
+            errorMessage = message
+        }
+
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(model.isSearching == false)
+        #expect(model.results.isEmpty)
+        #expect(errorMessage == nil)
     }
 
     @Test("Local scopes respect selected media type")
@@ -191,6 +237,33 @@ struct SearchViewModelTests {
         #expect(model.results.first?.id == "tt-movie")
     }
 
+    @Test("Local scopes return no results without a database")
+    func localSearchWithoutDatabaseReturnsEmpty() async {
+        let model = SearchViewModel()
+        let modelWithResults = MediaPreview(
+            id: "tmdb-none",
+            type: .movie,
+            title: "Missing",
+            year: 2020,
+            posterPath: nil,
+            imdbRating: nil,
+            tmdbId: 77
+        )
+        model.results = [modelWithResults]
+
+        await model.performSearch(query: "Missing", type: nil, provider: nil, scope: .library, database: nil) { _ in
+            Issue.record("Error callback should not run when database is absent")
+        }
+        #expect(model.results.isEmpty)
+        #expect(model.lastErrorMessage == nil)
+
+        await model.performSearch(query: "Missing", type: nil, provider: nil, scope: .folder, database: nil) { _ in
+            Issue.record("Error callback should not run when folder database is absent")
+        }
+        #expect(model.results.isEmpty)
+        #expect(model.lastErrorMessage == nil)
+    }
+
     @Test("Cancel stops manual in-flight search task")
     func cancelStopsManualSearchTask() async throws {
         let model = SearchViewModel()
@@ -223,6 +296,34 @@ struct SearchViewModelTests {
 
         #expect(model.isSearching == false)
         #expect(model.results.isEmpty)
+    }
+
+    @Test("folder prompt falls back when folder name is blank")
+    func folderPromptUsesActiveFolderFallback() {
+        let model = SearchViewModel()
+        #expect(model.buildFolderPrompt(folderName: "   ").contains("active folder context"))
+        #expect(!model.buildFolderPrompt(folderName: "SciFi").contains("active folder context"))
+    }
+
+    @Test("buildSimilarPrompt includes selected title when available")
+    func similarPromptIncludesSelection() {
+        let model = SearchViewModel()
+        let selected = MediaPreview(
+            id: "tmdb-123",
+            type: .movie,
+            title: "Dune",
+            year: 2021,
+            posterPath: nil,
+            imdbRating: nil,
+            tmdbId: 123
+        )
+
+        let withSelection = model.buildSimilarPrompt(selected: selected, scope: .watchlist)
+        let withoutSelection = model.buildSimilarPrompt(selected: nil, scope: .watchlist)
+
+        #expect(withSelection.contains("Dune"))
+        #expect(withSelection.contains("Scope: Watchlist"))
+        #expect(withoutSelection.contains("recent searches"))
     }
 }
 

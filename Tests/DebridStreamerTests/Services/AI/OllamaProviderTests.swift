@@ -32,6 +32,50 @@ struct OllamaProviderTests {
         #expect((result.usage?.safeTotalTokens ?? 0) > 0)
     }
 
+    @Test("Recommend maps non-2xx to apiError")
+    func recommendMapsHTTPError() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            return try makeResponse(for: request, statusCode: 500, body: "error")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let provider = OllamaProvider(endpoint: URL(string: "http://localhost:11434/api/chat")!, session: session)
+
+        do {
+            _ = try await provider.recommend(prompt: "x", candidateTitles: [], maxResults: 1)
+            Issue.record("Expected apiError")
+        } catch let error as AIAssistantProviderError {
+            #expect(error == .apiError("error"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("Recommend rejects missing message payload")
+    func recommendRejectsMissingMessage() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            return try makeResponse(for: request, statusCode: 200, body: "{}")
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let provider = OllamaProvider(endpoint: URL(string: "http://localhost:11434/api/chat")!, session: session)
+
+        do {
+            _ = try await provider.recommend(prompt: "x", candidateTitles: [], maxResults: 1)
+            Issue.record("Expected invalidResponse")
+        } catch let error as AIAssistantProviderError {
+            #expect(error == .invalidResponse)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     private func makeResponse(for request: URLRequest, statusCode: Int, body: String) throws -> (HTTPURLResponse, Data) {
         guard let url = request.url else {
             throw NSError(domain: "OllamaProviderTests", code: 1)

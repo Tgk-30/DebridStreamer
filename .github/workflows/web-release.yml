@@ -22,6 +22,15 @@
 #   APPLE_PASSWORD             App-specific password for that Apple ID.
 #   APPLE_TEAM_ID              Your 10-char Apple Developer Team ID.
 #
+# Windows Authenticode signing through Azure Artifact Signing (REQUIRED for a
+# public Windows release):
+#   AZURE_CLIENT_ID
+#   AZURE_CLIENT_SECRET
+#   AZURE_TENANT_ID
+#   AZURE_ARTIFACT_SIGNING_ENDPOINT
+#   AZURE_ARTIFACT_SIGNING_ACCOUNT
+#   AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE
+#
 # macOS shipping is PER-ARCH (see web/src-tauri/DEPLOYMENT.md): arm64 builds on
 # an Apple-Silicon runner and x86_64 on an Intel runner, each bundling its NATIVE
 # Homebrew libmpv + full dependency tree (relocated to @rpath by
@@ -146,6 +155,33 @@ jobs:
           done
           exit "$missing"
 
+      - name: Validate Windows signing secrets
+        if: matrix.os == 'windows'
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ secrets.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ secrets.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE: ${{ secrets.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $required = @(
+            "AZURE_CLIENT_ID",
+            "AZURE_CLIENT_SECRET",
+            "AZURE_TENANT_ID",
+            "AZURE_ARTIFACT_SIGNING_ENDPOINT",
+            "AZURE_ARTIFACT_SIGNING_ACCOUNT",
+            "AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE"
+          )
+          $missing = @($required | Where-Object {
+            [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_))
+          })
+          if ($missing.Count -gt 0) {
+            throw "Missing Windows signing secrets: $($missing -join ', '). Configure Azure Artifact Signing before creating a public release."
+          }
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -155,6 +191,12 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "web/src-tauri -> target"
+
+      - name: Set up .NET 8 for Windows signing
+        if: matrix.os == 'windows'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
 
       # Linux system deps for the Tauri (webkit2gtk) build + libmpv for the
       # in-window player (the shared core links libmpv on Linux now).
@@ -177,6 +219,35 @@ jobs:
       - name: Set up MSVC (lib.exe/dumpbin on PATH)
         if: matrix.os == 'windows'
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Azure Artifact Signing CLI
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          cargo install artifact-signing-cli --version 0.11.0 --locked
+          artifact-signing-cli --version
+          if (-not (Get-Command az.cmd -ErrorAction SilentlyContinue)) {
+            throw "Azure CLI is required for Windows signing."
+          }
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+            -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending |
+            Select-Object -First 1
+          if (-not $signTool) {
+            throw "Windows SDK signtool.exe was not found."
+          }
+          $signToolVersion = [version]$signTool.Directory.Parent.Name
+          if ($signToolVersion -lt [version]"10.0.26100.0") {
+            throw "Windows SDK 10.0.26100.0 or newer is required for Azure Artifact Signing. Found $signToolVersion."
+          }
+          $azureCli = (Get-Command az.cmd -ErrorAction Stop).Source
+          "AZURE_CLI_PATH=$azureCli" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SIGNTOOL_PATH=$($signTool.FullName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $signTool.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       - name: Provision libmpv (Windows)
         if: matrix.os == 'windows'
@@ -316,6 +387,20 @@ jobs:
         if: matrix.os == 'windows'
         run: node scripts/download_ffmpeg.mjs win-x64
 
+      - name: Configure Windows Authenticode signing
+        if: matrix.os == 'windows'
+        shell: pwsh
+        env:
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ secrets.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ secrets.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE: ${{ secrets.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $configPath = Join-Path $env:RUNNER_TEMP "windows-signing.conf.json"
+          node scripts/generate_windows_signing_config.mjs $configPath
+          "WINDOWS_SIGN_CONFIG_ARG=--config $configPath" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Smoke desktop server resources
         run: node scripts/smoke_tauri_server_bundle.mjs web/src-tauri/resources/server
 
@@ -338,6 +423,13 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Azure client credentials remain environment-only. The generated
+          # Tauri config contains the endpoint but no authentication secret.
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ secrets.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE: ${{ secrets.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
         with:
           projectPath: web
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__-web' }}
@@ -346,7 +438,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
-          args: ${{ matrix.args }} ${{ env.FW_CONFIG_ARG }}
+          args: ${{ matrix.args }} ${{ env.FW_CONFIG_ARG }} ${{ env.WINDOWS_SIGN_CONFIG_ARG }}
 
       # tauri-action notarizes + staples the .app but NOT the .dmg container.
       # Notarize + staple the .dmg here, then replace the asset tauri-action
@@ -380,8 +472,7 @@ jobs:
     needs: release
     if: github.ref_type == 'tag'
     permissions:
-      # Draft release assets require push-level repository access. Reusable
-      # workflows cannot elevate beyond the permission granted by this caller.
+      # The reusable workflow must download assets from the draft release.
       contents: write
     uses: ./.github/workflows/clean-install.yml
     with:

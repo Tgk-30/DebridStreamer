@@ -28,6 +28,21 @@ struct DebridManagerTests {
         #expect(types.contains(.allDebrid))
     }
 
+    @Test("Configure sorts by priority and keeps only active configs")
+    func configureOrdersByPriority() async {
+        let manager = DebridManager()
+        let configs = [
+            DebridConfig(id: "low", service: .allDebrid, apiToken: "token2", isActive: true, priority: 10),
+            DebridConfig(id: "high", service: .realDebrid, apiToken: "token1", isActive: true, priority: 1),
+            DebridConfig(id: "mid", service: .torBox, apiToken: "token3", isActive: false, priority: 5),
+        ]
+
+        await manager.configure(configs: configs)
+
+        let types = await manager.activeServiceTypes
+        #expect(types == [.realDebrid, .allDebrid])
+    }
+
     @Test("Inactive configs are filtered out")
     func inactiveFiltered() async {
         let manager = DebridManager()
@@ -112,6 +127,23 @@ struct DebridManagerTests {
         ]
         await manager.configure(configs: configs)
 
+        let types = await manager.activeServiceTypes
+        #expect(types == [.realDebrid])
+    }
+
+    @Test("Configure accepts non-secret token strings without secret lookup")
+    func configureAcceptsRawTokenWithoutDecoding() async {
+        let manager = DebridManager(secretStore: InMemorySecretStore())
+        let configs = [
+            DebridConfig(
+                id: "rd",
+                service: .realDebrid,
+                apiToken: "not-a-secret-reference",
+                isActive: true
+            )
+        ]
+
+        await manager.configure(configs: configs)
         let types = await manager.activeServiceTypes
         #expect(types == [.realDebrid])
     }

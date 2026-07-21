@@ -86,6 +86,63 @@ struct PremiumizeServiceTests {
         #expect(directQuery?.contains("apikey=") != true)
     }
 
+    @Test("addMagnet posts body and returns transfer id")
+    func addMagnetPostsAndReturnsId() async throws {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+        var seenMethod = ""
+        var seenAuth = ""
+        var seenApiKey = ""
+        var seenBody = ""
+
+        MockURLProtocol.setHandler({ request in
+            seenMethod = request.httpMethod ?? ""
+            seenAuth = request.value(forHTTPHeaderField: "Authorization") ?? ""
+            seenApiKey = request.value(forHTTPHeaderField: "X-API-Key") ?? ""
+            seenBody = pmRequestBody(from: request)
+
+            let body = #"{"id":"pm-transfer-123"}"#
+            return try pmMakeResponse(for: request, statusCode: 200, body: body)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let service = PremiumizeService(apiToken: "pm-token", session: session)
+        let transferId = try await service.addMagnet(hash: "ABCDEF")
+
+        #expect(seenMethod == "POST")
+        #expect(seenAuth == "Bearer pm-token")
+        #expect(seenApiKey == "pm-token")
+        #expect(seenBody.contains("src=magnet:?xt=urn:btih:ABCDEF"))
+        #expect(seenBody.contains("apikey=pm-token"))
+        #expect(transferId == "pm-transfer-123")
+    }
+
+    @Test("addMagnet throws downloadFailed when response is malformed")
+    func addMagnetThrowsOnMalformedResponse() async {
+        let sessionID = UUID().uuidString
+        let session = makeMockSession(sessionID: sessionID)
+
+        MockURLProtocol.setHandler({ request in
+            let body = #"{"data":{"id":"pm-transfer-123"}}"#
+            return try pmMakeResponse(for: request, statusCode: 200, body: body)
+        }, for: sessionID)
+        defer { MockURLProtocol.removeHandler(for: sessionID) }
+
+        let service = PremiumizeService(apiToken: "pm-token", session: session)
+
+        do {
+            _ = try await service.addMagnet(hash: "ABCDEF")
+            Issue.record("Expected addMagnet malformed response failure")
+        } catch let error as DebridError {
+            guard case .downloadFailed = error else {
+                Issue.record("Expected .downloadFailed, got \(error)")
+                return
+            }
+        } catch {
+            Issue.record("Expected DebridError, got \(error)")
+        }
+    }
+
     // MARK: - checkCache
 
     @Test("checkCache maps response flags to cached/notCached with filename and size")
