@@ -59,8 +59,9 @@
   }
 }
 
-/* Mobile: inset hero card inside side padding (the pre-restructure look). */
-@media (max-width: 767px) {
+/* Mobile: one inset around the hero. Short landscape phones use the mobile
+   bottom nav too, so they need the same card treatment despite their width. */
+@media (max-width: 767px), (max-width: 950px) and (max-height: 500px) {
   .discover > .hero {
     margin: var(--sp-md) var(--sp-md) 0;
     border-radius: var(--r-lg);
@@ -115,19 +116,24 @@
 @media (max-width: 767px) {
   .discover {
     gap: var(--sp-lg);
-    padding: var(--sp-lg);
-    padding-top: var(--sp-lg);
+    padding: 0;
     max-width: none;
   }
 
+  .discover-body {
+    padding: 0 var(--sp-md) var(--sp-lg);
+  }
 }
 
 @media (max-width: 950px) and (max-height: 500px) {
   .discover {
     gap: var(--sp-md);
-    padding: var(--sp-md);
-    padding-top: var(--sp-md);
+    padding: 0;
     max-width: none;
+  }
+
+  .discover-body {
+    padding: 0 var(--sp-md) var(--sp-md);
   }
 }
 
@@ -140,8 +146,15 @@
 @media (max-width: 380px) {
   .discover {
     gap: var(--sp-md);
-    padding: var(--sp-md);
-    padding-top: var(--sp-lg);
+    padding: 0;
+  }
+
+  .discover > .hero {
+    margin-inline: var(--sp-sm);
+  }
+
+  .discover-body {
+    padding-inline: var(--sp-sm);
   }
 }
 

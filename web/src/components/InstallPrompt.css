@@ -70,3 +70,27 @@
   background: var(--glass-tint-control);
   color: var(--text-primary);
 }
+
+@media (max-width: 699px) {
+  .install-prompt {
+    bottom: calc(var(--mobile-nav-bottom) + var(--mobile-nav-height) + var(--sp-sm));
+    width: calc(100% - var(--sp-md));
+    gap: var(--sp-sm);
+    padding: var(--sp-md);
+  }
+
+  .install-prompt-text {
+    padding-right: calc(32px * var(--density-scale));
+  }
+
+  .install-prompt-dismiss {
+    position: absolute;
+    top: var(--sp-sm);
+    right: var(--sp-sm);
+  }
+
+  .install-prompt-actions,
+  .install-prompt-actions .btn {
+    width: 100%;
+  }
+}

@@ -470,6 +470,7 @@ export function App() {
     !nudgeDismissed &&
     route !== "settings" &&
     detailItem == null &&
+    browseContext == null &&
     !welcomeGuideOpen &&
     !tierWelcomeOpen &&
     !firstRunOpen &&
@@ -500,6 +501,7 @@ export function App() {
     !showSetupNudge &&
     route !== "settings" &&
     detailItem == null &&
+    browseContext == null &&
     !welcomeGuideOpen &&
     !tierWelcomeOpen &&
     !firstRunOpen &&

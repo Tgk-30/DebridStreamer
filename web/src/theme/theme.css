@@ -658,6 +658,60 @@ textarea::placeholder {
   animation-play-state: paused !important;
 }
 
+/* Interactive surfaces can mount after focus is lost, for example while a
+   native-player handoff or asynchronous stream failure is resolving. Their
+   one-shot entrance keyframes start at opacity: 0, so merely pausing all
+   animation work can leave the dialog completely invisible until Back or a
+   later focus event. Disable keyframes inside mounted surfaces instead: their
+   normal CSS is the fully visible resting state, while background loops remain
+   parked by the rules above. */
+:root[data-suspended] :is(
+    .detail,
+    .browse,
+    .player-backdrop,
+    .episode-streams,
+    .trailer-backdrop,
+    .profile-picker,
+    .welcome-scrim,
+    .first-run,
+    .cmdk-scrim
+  ),
+:root[data-suspended] :is(
+    .detail,
+    .browse,
+    .player-backdrop,
+    .episode-streams,
+    .trailer-backdrop,
+    .profile-picker,
+    .welcome-scrim,
+    .first-run,
+    .cmdk-scrim
+  ) *,
+:root[data-unfocused] :is(
+    .detail,
+    .browse,
+    .player-backdrop,
+    .episode-streams,
+    .trailer-backdrop,
+    .profile-picker,
+    .welcome-scrim,
+    .first-run,
+    .cmdk-scrim
+  ),
+:root[data-unfocused] :is(
+    .detail,
+    .browse,
+    .player-backdrop,
+    .episode-streams,
+    .trailer-backdrop,
+    .profile-picker,
+    .welcome-scrim,
+    .first-run,
+    .cmdk-scrim
+  ) * {
+  animation: none !important;
+}
+
 /* After input has been idle, park only the route under the interactive chrome.
    Overlays and player controls stay live for someone reading a long synopsis. */
 :root[data-input-idle] .route-frame *,

@@ -424,6 +424,15 @@ describe("Setup nudge", () => {
     render(<App />);
     expect(screen.queryByText("Let's get you streaming")).toBeNull();
   });
+
+  it("hides the nudge while the full-screen Browse overlay is open", () => {
+    store = makeStore({
+      browseContext: { kind: "category" },
+      services: { debrid: null, indexers: { activeIndexers: [] } },
+    });
+    render(<App />);
+    expect(screen.queryByText("Let's get you streaming")).toBeNull();
+  });
 });
 
 describe("GlobalSearch visibility", () => {

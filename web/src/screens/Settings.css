@@ -1830,7 +1830,9 @@
     gap: calc(10px * var(--density-scale));
     padding: var(--sp-md);
     padding-top: var(--sp-md);
-    padding-bottom: calc(var(--mobile-nav-reserve) + calc(42px * var(--density-scale)));
+    /* App.css owns the one shared bottom-nav reserve. Keep only local breathing
+       room here so Settings does not create a second empty nav-sized block. */
+    padding-bottom: calc(42px * var(--density-scale));
     width: 100%;
   }
 
