@@ -472,6 +472,11 @@ check(
   ".github/workflows/cloudflare-site.yml must validate the Cloudflare token secret and run the Cloudflare deploy helper for tgk30.com/debridstreamer",
 );
 check(
+  "Cloudflare site workflow supports release publication holds",
+  /if:\s*vars\.YAWF_HOLD_WEBSITE_DEPLOY != 'true'/.test(cloudflareSiteWorkflow),
+  ".github/workflows/cloudflare-site.yml must allow a version-bump merge to hold deployment until its release assets are public",
+);
+check(
   "Cloudflare site workflow watches site dependencies",
   [
     "website/**",

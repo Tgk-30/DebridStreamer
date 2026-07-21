@@ -107,6 +107,10 @@ artifacts will be produced until that is resolved.
    failures. It tolerates only the known SwiftPM/VLCKit process teardown signal
    after all assertions have passed.
 
+   Before merging a version-bump pull request, set the Actions repository
+   variable `YAWF_HOLD_WEBSITE_DEPLOY=true`. This keeps the currently published
+   download page live while the new versioned assets are still in a draft.
+
 3. Tag and push:
 
    ```sh
@@ -124,6 +128,9 @@ artifacts will be produced until that is resolved.
 5. Review the draft GitHub Release created by `web-release`.
 6. Publish only after all build and clean-install jobs pass. The latest
    published release becomes the OTA target.
+7. Delete `YAWF_HOLD_WEBSITE_DEPLOY`, manually dispatch `cloudflare-site.yml`,
+   and verify the live version and every visible download link. Do not leave the
+   hold variable configured after the release is public.
 
 To repeat installer verification without rebuilding the release:
 

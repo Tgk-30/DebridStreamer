@@ -28,6 +28,10 @@ concurrency:
 
 jobs:
   deploy:
+    # During a draft release build, keep the currently published download page
+    # live until its versioned assets exist. Remove the variable and dispatch
+    # this workflow immediately after publishing the release.
+    if: vars.YAWF_HOLD_WEBSITE_DEPLOY != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
