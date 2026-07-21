@@ -60,10 +60,7 @@ pub fn player_get_property(
 }
 
 #[tauri::command]
-pub fn player_set_video_margin(
-    _state: State<'_, PlayerState>,
-    _bottom: f64,
-) -> Result<(), String> {
+pub fn player_set_video_margin(_state: State<'_, PlayerState>, _bottom: f64) -> Result<(), String> {
     Err(UNSUPPORTED.into())
 }
 

@@ -204,24 +204,12 @@ fn node_runtime_layout() -> Option<(&'static str, &'static [&'static str], &'sta
     let arch = std::env::consts::ARCH;
 
     match (os, arch) {
-        ("macos", "aarch64") => Some((
-            "darwin-arm64",
-            &["darwin-arm64", "bin", "node"],
-            "node",
-        )),
+        ("macos", "aarch64") => Some(("darwin-arm64", &["darwin-arm64", "bin", "node"], "node")),
         ("macos", "x86_64") => Some(("darwin-x64", &["darwin-x64", "bin", "node"], "node")),
         ("linux", "x86_64") => Some(("linux-x64", &["linux-x64", "bin", "node"], "node")),
         ("linux", "aarch64") => Some(("linux-arm64", &["linux-arm64", "bin", "node"], "node")),
-        ("windows", "x86_64") => Some((
-            "win-x64",
-            &["win-x64", "node.exe"],
-            "node.exe",
-        )),
-        ("windows", "aarch64") => Some((
-            "win-arm64",
-            &["win-arm64", "node.exe"],
-            "node.exe",
-        )),
+        ("windows", "x86_64") => Some(("win-x64", &["win-x64", "node.exe"], "node.exe")),
+        ("windows", "aarch64") => Some(("win-arm64", &["win-arm64", "node.exe"], "node.exe")),
         _ => None,
     }
 }
@@ -232,7 +220,9 @@ fn bundled_node_path<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
 
     for server_dir in server_dirs {
         let base = server_dir.join("node");
-        let candidate = relative.iter().fold(base, |path, segment| path.join(segment));
+        let candidate = relative
+            .iter()
+            .fold(base, |path, segment| path.join(segment));
         if candidate.is_file() {
             return Some(candidate);
         }
@@ -273,7 +263,9 @@ fn materialized_node_path<R: Runtime>(
 
     #[cfg(unix)]
     {
-        let mut permissions = fs::metadata(&dest).map_err(|e| e.to_string())?.permissions();
+        let mut permissions = fs::metadata(&dest)
+            .map_err(|e| e.to_string())?
+            .permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&dest, permissions).map_err(|e| e.to_string())?;
     }
@@ -291,10 +283,7 @@ fn node_executable_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, Strin
     }
 }
 
-fn spawn_server_process(
-    launch: &ServerLaunch,
-    generation: u64,
-) -> Result<ServerProcess, String> {
+fn spawn_server_process(launch: &ServerLaunch, generation: u64) -> Result<ServerProcess, String> {
     let (stdout, stderr) = server_log_files(&launch.log_path)?;
     let mut command = Command::new(&launch.node_path);
     command
@@ -397,7 +386,9 @@ fn read_or_create_setup_token(data_dir: &Path) -> Result<String, String> {
 
     #[cfg(unix)]
     {
-        let mut permissions = fs::metadata(&path).map_err(|e| e.to_string())?.permissions();
+        let mut permissions = fs::metadata(&path)
+            .map_err(|e| e.to_string())?
+            .permissions();
         permissions.set_mode(0o600);
         fs::set_permissions(&path, permissions).map_err(|e| e.to_string())?;
     }
@@ -575,17 +566,9 @@ fn spawn_server_monitor(
                         *guard = Some(process);
                         drop(guard);
 
-                        if wait_for_port_while_desired(
-                            launch.port,
-                            &desired_generation,
-                            generation,
-                        )
+                        if wait_for_port_while_desired(launch.port, &desired_generation, generation)
                         {
-                            append_server_log(
-                                &launch.log_path,
-                                "monitor",
-                                "server respawned",
-                            );
+                            append_server_log(&launch.log_path, "monitor", "server respawned");
                             // A confirmed-healthy respawn resets the budget so
                             // the cap counts consecutive failures in one crash
                             // burst, not the lifetime total; otherwise a
@@ -623,11 +606,11 @@ fn status_for<R: Runtime>(
 ) -> DesktopServerStatus {
     state.prune_exited();
     let port = configured_port();
-    let running_process = state
-        .process
-        .lock()
-        .ok()
-        .and_then(|guard| guard.as_ref().map(|process| (process.port, process.setup_token.clone())));
+    let running_process = state.process.lock().ok().and_then(|guard| {
+        guard
+            .as_ref()
+            .map(|process| (process.port, process.setup_token.clone()))
+    });
     let running = running_process.is_some();
     let server_entry = server_entry_path(app);
     let web_dist = web_dist_path(app);
@@ -685,20 +668,11 @@ pub fn desktop_server_start<R: Runtime>(
     state: State<'_, ServerState>,
 ) -> Result<DesktopServerStatus, String> {
     state.prune_exited();
-    let has_process = state
-        .process
-        .lock()
-        .map_err(|e| e.to_string())?
-        .is_some();
+    let has_process = state.process.lock().map_err(|e| e.to_string())?.is_some();
     if has_process || state.desired_generation.load(Ordering::Acquire) != 0 {
         return Ok(status_for(&app, &state, None));
     }
-    if let Some(handle) = state
-        .monitor
-        .lock()
-        .map_err(|e| e.to_string())?
-        .take()
-    {
+    if let Some(handle) = state.monitor.lock().map_err(|e| e.to_string())?.take() {
         let _ = handle.join();
     }
 
@@ -782,12 +756,7 @@ pub fn desktop_server_stop<R: Runtime>(
         let mut guard = state.process.lock().map_err(|e| e.to_string())?;
         *guard = None;
     }
-    if let Some(handle) = state
-        .monitor
-        .lock()
-        .map_err(|e| e.to_string())?
-        .take()
-    {
+    if let Some(handle) = state.monitor.lock().map_err(|e| e.to_string())?.take() {
         let _ = handle.join();
     }
     Ok(status_for(

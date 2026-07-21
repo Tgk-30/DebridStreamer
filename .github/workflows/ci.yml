@@ -5,6 +5,46 @@ on:
   pull_request:
 
 jobs:
+  rust:
+    name: Rust format, lint, test, and audit
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install libmpv
+        run: brew install mpv
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "web/src-tauri -> target"
+
+      - name: Check Rust formatting
+        working-directory: web/src-tauri
+        run: cargo fmt --check
+
+      - name: Run strict Rust lints
+        working-directory: web/src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run Rust tests
+        working-directory: web/src-tauri
+        run: cargo test --locked
+
+      - name: Audit Rust dependencies
+        working-directory: web/src-tauri
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo audit
+
   test:
     runs-on: macos-14
     steps:

@@ -34,6 +34,29 @@ into a `CAMetalLayer` behind the transparent webview) - how IINA does it - which
 this plugin does not provide. That is the remaining (large) piece for true
 in-window on macOS.
 
+## Current macOS surface and deprecation boundary
+
+The shipped player now uses libmpv's render API with a layer-backed
+`CAOpenGLLayer` in `src/render_player/surface_macos.rs`. OpenGL and
+`CAOpenGLLayer` are deprecated by Apple but remain available on the supported
+macOS versions. The Rust deprecation allowance is intentionally scoped to that
+single platform module so new deprecations elsewhere still fail strict Clippy.
+
+The replacement plan is to move the same libmpv lifecycle and authorization
+boundary to a non-deprecated presentation surface. Prefer a supported native
+mpv Metal render API if one becomes available. Otherwise, evaluate libmpv's
+software render API feeding a Metal-backed texture without moving decoding or
+authorization into the webview. The replacement must preserve fullscreen,
+Retina scaling, subtitles, HDR/color behavior, pause efficiency, and the
+existing playback authorization tests before the OpenGL allowance is removed.
+
+Revisit this boundary when any of these triggers occurs:
+
+1. the minimum supported macOS release no longer loads the OpenGL framework;
+2. Xcode changes the deprecation into a build or notarization failure;
+3. mpv exposes a supported Metal render API; or
+4. the surface fails the release playback matrix on a supported Mac.
+
 ---
 
 Status: **SHIPPED and default-on** (`builtInPlayer` defaults to `true`). libmpv
@@ -45,6 +68,12 @@ step (import lib + runtime DLL, delay-loaded by `build.rs` and `LoadLibrary`'d f
 can't init (Wayland, or a missing lib) playback falls back automatically to the
 webview HLS transcode (resume preserved), then to an external player. The
 graduation checklist below is DONE; it is kept for the bundling reference.
+
+`npm --prefix web run package:local` follows the same macOS dependency-bundling
+path, includes ffmpeg/ffprobe, and rejects any app executable or bundled dylib
+that still references `/opt/homebrew` or `/usr/local`. Local release rehearsals
+therefore exercise a self-contained app instead of silently using the build
+machine's Homebrew installation.
 
 ## Architecture
 

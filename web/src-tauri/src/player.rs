@@ -311,10 +311,7 @@ pub fn mpv_get_position(state: State<'_, MpvState>) -> Result<f64, String> {
         &state,
         serde_json::json!({ "command": ["get_property", "time-pos"] }),
     )?;
-    Ok(reply
-        .get("data")
-        .and_then(|d| d.as_f64())
-        .unwrap_or(0.0))
+    Ok(reply.get("data").and_then(|d| d.as_f64()).unwrap_or(0.0))
 }
 
 /// Stop playback and kill the mpv process.

@@ -9,12 +9,10 @@ fn main() {
         // CGL functions (CGLChoosePixelFormat/CGLLockContext/…) used by the
         // CAOpenGLLayer video surface live in the OpenGL framework.
         println!("cargo:rustc-link-lib=framework=OpenGL");
-        // Runtime search path for the BUNDLED libmpv + its deps. In a release
-        // .app they live in Contents/Frameworks (relocated to @rpath by
-        // scripts/bundle-mpv-deps.sh); the binary is in Contents/MacOS, so
-        // @executable_path/../Frameworks points at them. Harmless in dev (there
-        // libmpv is linked by its absolute Homebrew path and found directly).
-        println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
+        // Tauri's macOS framework bundler adds the runtime search path for
+        // Contents/Frameworks. Adding the same path here produces a duplicate
+        // linker warning in release packages. Development links Homebrew's
+        // absolute libmpv path and does not need a bundle rpath.
     }
 
     // Windows: libmpv2-sys emits `cargo:rustc-link-lib=mpv`, so the MSVC linker
@@ -108,7 +106,5 @@ fn emit_mpv_link_search() {
         }
     }
 
-    println!(
-        "cargo:warning=libmpv link path not found; set MPV_LIB_DIR or `brew install mpv`"
-    );
+    println!("cargo:warning=libmpv link path not found; set MPV_LIB_DIR or `brew install mpv`");
 }

@@ -1,3 +1,8 @@
+// The mpv render API currently exposes an OpenGL surface on macOS. Keep the
+// platform deprecation allowance confined to this module while the migration
+// described in EMBEDDED_PLAYER.md remains open.
+#![allow(deprecated)]
+
 // macOS video surface: mpv render API into a layer-backed CAOpenGLLayer,
 // composited BEHIND the transparent WKWebView.
 //
@@ -40,8 +45,7 @@ use objc2_app_kit::{
 use objc2_core_foundation::CFTimeInterval;
 use objc2_core_video::CVTimeStamp;
 use objc2_foundation::{
-    ns_string, NSNumber, NSNotification, NSNotificationCenter, NSObject, NSPoint, NSRect,
-    NSSize,
+    ns_string, NSNotification, NSNotificationCenter, NSNumber, NSObject, NSPoint, NSRect, NSSize,
 };
 use objc2_open_gl::{
     CGLChoosePixelFormat, CGLContextObj, CGLLockContext, CGLPixelFormatAttribute,
@@ -70,17 +74,12 @@ const VIDEO_RENDER_SUPERSAMPLE: f64 = 1.5;
 /// for transparent windows. `underPageBackgroundColor` is public on macOS 12+.
 /// Every caller reaches this function on AppKit's main thread.
 fn set_webview_opaque(webview: &WKWebView, opaque: bool) {
-    let _mtm = MainThreadMarker::new()
-        .expect("WKWebView opacity must be changed on the main thread");
+    let _mtm =
+        MainThreadMarker::new().expect("WKWebView opacity must be changed on the main thread");
     let draws_background = NSNumber::new_bool(opaque);
     let color = if opaque {
         let (red, green, blue) = APP_BASE_BACKGROUND_RGB;
-        NSColor::colorWithSRGBRed_green_blue_alpha(
-            red / 255.0,
-            green / 255.0,
-            blue / 255.0,
-            1.0,
-        )
+        NSColor::colorWithSRGBRed_green_blue_alpha(red / 255.0, green / 255.0, blue / 255.0, 1.0)
     } else {
         NSColor::clearColor()
     };
@@ -210,12 +209,8 @@ fn capped_render_target_dimensions(
     video_width: i64,
     video_height: i64,
 ) -> (i32, i32) {
-    let factor = render_target_budget_factor(
-        backing_width,
-        backing_height,
-        video_width,
-        video_height,
-    );
+    let factor =
+        render_target_budget_factor(backing_width, backing_height, video_width, video_height);
     (
         safe_render_dimension(backing_width * factor),
         safe_render_dimension(backing_height * factor),
@@ -238,12 +233,8 @@ fn effective_contents_scale(
     }
     let backing_width = bounds.width * safe_backing_scale;
     let backing_height = bounds.height * safe_backing_scale;
-    let factor = render_target_budget_factor(
-        backing_width,
-        backing_height,
-        video_width,
-        video_height,
-    );
+    let factor =
+        render_target_budget_factor(backing_width, backing_height, video_width, video_height);
     let scale = safe_backing_scale * factor;
     if positive_finite(scale) {
         scale
@@ -528,10 +519,7 @@ fn note_fullscreen_did_exit(surface: &SurfaceState) -> bool {
     surface
         .fullscreen_exit_in_flight
         .store(false, Ordering::Release);
-    if surface
-        .fullscreen_enter_in_flight
-        .load(Ordering::Acquire)
-    {
+    if surface.fullscreen_enter_in_flight.load(Ordering::Acquire) {
         return false;
     }
     surface
@@ -547,13 +535,10 @@ fn note_fullscreen_did_exit(surface: &SurfaceState) -> bool {
 // inherited teardown-cleanup state. Revalidate shortly after the latch is set:
 // if no Will/Did notification has arrived and the styleMask FullScreen bit is
 // still clear, release the stale latch.
-const FULLSCREEN_ENTER_REVALIDATE_DELAY: std::time::Duration =
-    std::time::Duration::from_secs(2);
+const FULLSCREEN_ENTER_REVALIDATE_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
 
 fn schedule_fullscreen_enter_revalidation(surface: Arc<SurfaceState>) {
-    let expected_seq = surface
-        .fullscreen_transition_seq
-        .load(Ordering::Acquire);
+    let expected_seq = surface.fullscreen_transition_seq.load(Ordering::Acquire);
     let Ok(when) = DispatchTime::try_from(FULLSCREEN_ENTER_REVALIDATE_DELAY) else {
         return;
     };
@@ -564,17 +549,10 @@ fn schedule_fullscreen_enter_revalidation(surface: Arc<SurfaceState>) {
 
 fn revalidate_fullscreen_enter_on_main(surface: &SurfaceState, expected_seq: usize) {
     // Any Will/Did fullscreen notification since scheduling owns the state now.
-    if surface
-        .fullscreen_transition_seq
-        .load(Ordering::Acquire)
-        != expected_seq
-    {
+    if surface.fullscreen_transition_seq.load(Ordering::Acquire) != expected_seq {
         return;
     }
-    if !surface
-        .fullscreen_enter_in_flight
-        .load(Ordering::Acquire)
-    {
+    if !surface.fullscreen_enter_in_flight.load(Ordering::Acquire) {
         return;
     }
     if surface.window_ptr == 0 {
@@ -900,7 +878,7 @@ fn sync_layer_render_scale(
     if (layer.contentsScale() - expected).abs() <= 0.001 {
         return false;
     }
-    unsafe { layer.setContentsScale(expected) };
+    layer.setContentsScale(expected);
     true
 }
 
@@ -910,7 +888,7 @@ fn display_layer_forced(layer: &VideoLayer) {
         .callback
         .force_render
         .store(true, Ordering::Release);
-    unsafe { layer.display() };
+    layer.display();
 }
 
 // ---- Host view: redraws the video layer on every resize -----------------
@@ -954,9 +932,7 @@ define_class!(
             // its GL drawable at the new size (a plain setNeedsDisplay does not
             // reliably grow it). Wrapped so the geometry change doesn't animate.
             layer.setFrame(b);
-            unsafe {
-                layer.setBounds(NSRect::new(NSPoint::new(0.0, 0.0), b.size));
-            };
+            layer.setBounds(NSRect::new(NSPoint::new(0.0, 0.0), b.size));
             log_geometry_on_main(
                 "set-frame-size",
                 surface,
@@ -984,9 +960,7 @@ define_class!(
             let b = self.bounds();
             sync_layer_render_scale(layer, &self.ivars().surface, b.size, scale);
             layer.setFrame(b);
-            unsafe {
-                layer.setBounds(NSRect::new(NSPoint::new(0.0, 0.0), b.size));
-            };
+            layer.setBounds(NSRect::new(NSPoint::new(0.0, 0.0), b.size));
             log_geometry_on_main(
                 "backing-change",
                 &self.ivars().surface,
@@ -1114,8 +1088,7 @@ fn log_geometry_on_main(event: &str, surface: &SurfaceState, extra: &str) {
         ("?".to_string(), "?".to_string())
     };
     let (sibling_frame, sibling_bounds) = if surface.webview_sibling_ptr != 0 {
-        let sibling: &NSView =
-            unsafe { &*(surface.webview_sibling_ptr as *const NSView) };
+        let sibling: &NSView = unsafe { &*(surface.webview_sibling_ptr as *const NSView) };
         (rect_text(sibling.frame()), rect_text(sibling.bounds()))
     } else {
         ("?".to_string(), "?".to_string())
@@ -1133,21 +1106,20 @@ fn log_geometry_on_main(event: &str, surface: &SurfaceState, extra: &str) {
     };
 
     let layer_ptr = surface.layer_ptr.load(Ordering::Acquire);
-    let (layer_frame, layer_bounds, scale, target_width, target_height) =
-        if layer_ptr != 0 {
-            let layer: &VideoLayer = unsafe { &*(layer_ptr as *const VideoLayer) };
-            let bounds = layer.bounds();
-            let scale = layer.contentsScale();
-            (
-                rect_text(layer.frame()),
-                rect_text(bounds),
-                scale,
-                (bounds.size.width * scale).round().max(1.0) as i32,
-                (bounds.size.height * scale).round().max(1.0) as i32,
-            )
-        } else {
-            ("?".to_string(), "?".to_string(), 0.0, 0, 0)
-        };
+    let (layer_frame, layer_bounds, scale, target_width, target_height) = if layer_ptr != 0 {
+        let layer: &VideoLayer = unsafe { &*(layer_ptr as *const VideoLayer) };
+        let bounds = layer.bounds();
+        let scale = layer.contentsScale();
+        (
+            rect_text(layer.frame()),
+            rect_text(bounds),
+            scale,
+            (bounds.size.width * scale).round().max(1.0) as i32,
+            (bounds.size.height * scale).round().max(1.0) as i32,
+        )
+    } else {
+        ("?".to_string(), "?".to_string(), 0.0, 0, 0)
+    };
     let content_aspect = window.contentAspectRatio();
     let fullscreen = window.styleMask().contains(NSWindowStyleMask::FullScreen);
     let (dwidth, dheight) = surface.dimension_text();
@@ -1201,9 +1173,7 @@ fn log_geometry_on_main(event: &str, surface: &SurfaceState, extra: &str) {
 
 fn queue_geometry_check(surface: Arc<SurfaceState>, log_first_draw_result: bool) {
     if surface.dead.load(Ordering::Acquire)
-        || surface
-            .geometry_check_queued
-            .swap(true, Ordering::AcqRel)
+        || surface.geometry_check_queued.swap(true, Ordering::AcqRel)
     {
         return;
     }
@@ -1238,11 +1208,7 @@ fn verify_and_repair_geometry_on_main(
     }
     let host_ptr = surface.host_ptr.load(Ordering::Acquire);
     let layer_ptr = surface.layer_ptr.load(Ordering::Acquire);
-    if surface.window_ptr == 0
-        || surface.content_view_ptr == 0
-        || host_ptr == 0
-        || layer_ptr == 0
-    {
+    if surface.window_ptr == 0 || surface.content_view_ptr == 0 || host_ptr == 0 || layer_ptr == 0 {
         if let Some(event) = log_event {
             log_geometry_on_main(event, surface, "correction=unavailable");
         }
@@ -1279,7 +1245,7 @@ fn verify_and_repair_geometry_on_main(
         corrections.push("layer-frame");
     }
     if !rect_matches(layer.bounds(), expected_layer_bounds) {
-        unsafe { layer.setBounds(expected_layer_bounds) };
+        layer.setBounds(expected_layer_bounds);
         corrections.push("layer-bounds");
     }
     if sync_layer_render_scale(
@@ -1321,16 +1287,11 @@ fn gcd(mut a: i64, mut b: i64) -> i64 {
 }
 
 fn positive_finite_size(size: NSSize) -> bool {
-    size.width.is_finite()
-        && size.height.is_finite()
-        && size.width > 0.0
-        && size.height > 0.0
+    size.width.is_finite() && size.height.is_finite() && size.width > 0.0 && size.height > 0.0
 }
 
 fn positive_finite_rect(rect: NSRect) -> bool {
-    rect.origin.x.is_finite()
-        && rect.origin.y.is_finite()
-        && positive_finite_size(rect.size)
+    rect.origin.x.is_finite() && rect.origin.y.is_finite() && positive_finite_size(rect.size)
 }
 
 fn normalized_aspect(width: i64, height: i64) -> Option<NSSize> {
@@ -1364,10 +1325,7 @@ fn validated_content_minimum(minimum: NSSize) -> Option<NSSize> {
     {
         return None;
     }
-    Some(NSSize::new(
-        minimum.width.max(1.0),
-        minimum.height.max(1.0),
-    ))
+    Some(NSSize::new(minimum.width.max(1.0), minimum.height.max(1.0)))
 }
 
 fn size_meets_minimum(size: NSSize, minimum: NSSize) -> bool {
@@ -1399,11 +1357,7 @@ fn aspect_preserving_screen_clamp(size: NSSize, maximum: NSSize) -> NSSize {
     NSSize::new(size.width * scale, size.height * scale)
 }
 
-fn exact_size_or_letterbox(
-    exact: NSSize,
-    minimum: NSSize,
-    maximum: NSSize,
-) -> (NSSize, bool) {
+fn exact_size_or_letterbox(exact: NSSize, minimum: NSSize, maximum: NSSize) -> (NSSize, bool) {
     let fitted = aspect_preserving_screen_clamp(exact, maximum);
     if fitted.width + 0.01 >= minimum.width.max(1.0)
         && fitted.height + 0.01 >= minimum.height.max(1.0)
@@ -1544,8 +1498,7 @@ fn set_window_content_aspect_if_valid_on_main(
 // one post-fullscreen cleanup alive per NSWindow without placing it on the host
 // view that teardown removes. The registry contains raw retained pointers only;
 // all insertion/removal and Objective-C dereferences happen on the main thread.
-static POST_FULLSCREEN_CLEANUPS: OnceLock<Mutex<HashMap<usize, usize>>> =
-    OnceLock::new();
+static POST_FULLSCREEN_CLEANUPS: OnceLock<Mutex<HashMap<usize, usize>>> = OnceLock::new();
 
 fn post_fullscreen_cleanup_registry() -> &'static Mutex<HashMap<usize, usize>> {
     POST_FULLSCREEN_CLEANUPS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -1574,9 +1527,7 @@ fn discard_window_wrap_state(surface: &SurfaceState) {
         .wrap_constraint_applied
         .store(false, Ordering::Release);
     surface.wrap_has_applied.store(false, Ordering::Release);
-    surface
-        .wrap_restore_pending
-        .store(false, Ordering::Release);
+    surface.wrap_restore_pending.store(false, Ordering::Release);
     surface
         .fullscreen_session_active
         .store(false, Ordering::Release);
@@ -1595,22 +1546,14 @@ fn cancel_post_fullscreen_cleanup_on_main(
     window_ptr: usize,
     reason: &str,
 ) -> Option<(bool, bool, bool, bool)> {
-    let Some(observer) = take_post_fullscreen_cleanup_on_main(window_ptr, None) else {
-        return None;
-    };
+    let observer = take_post_fullscreen_cleanup_on_main(window_ptr, None)?;
     let center = NSNotificationCenter::defaultCenter();
-    unsafe { center.removeObserver(&*observer) };
+    unsafe { center.removeObserver(&observer) };
     let surface = &observer.ivars().surface;
     let transition_state = (
-        surface
-            .fullscreen_session_active
-            .load(Ordering::Acquire),
-        surface
-            .fullscreen_enter_in_flight
-            .load(Ordering::Acquire),
-        surface
-            .fullscreen_exit_in_flight
-            .load(Ordering::Acquire),
+        surface.fullscreen_session_active.load(Ordering::Acquire),
+        surface.fullscreen_enter_in_flight.load(Ordering::Acquire),
+        surface.fullscreen_exit_in_flight.load(Ordering::Acquire),
         surface.webview_transparent.load(Ordering::Acquire),
     );
     discard_window_wrap_state(surface);
@@ -1634,31 +1577,31 @@ fn register_post_fullscreen_cleanup_on_main(surface: Arc<SurfaceState>) {
     let center = NSNotificationCenter::defaultCenter();
     unsafe {
         center.addObserver_selector_name_object(
-            &*observer,
+            &observer,
             objc2::sel!(windowWillEnterFullScreen:),
             Some(NSWindowWillEnterFullScreenNotification),
             Some(window),
         );
         center.addObserver_selector_name_object(
-            &*observer,
+            &observer,
             objc2::sel!(windowDidEnterFullScreen:),
             Some(NSWindowDidEnterFullScreenNotification),
             Some(window),
         );
         center.addObserver_selector_name_object(
-            &*observer,
+            &observer,
             objc2::sel!(windowWillExitFullScreen:),
             Some(NSWindowWillExitFullScreenNotification),
             Some(window),
         );
         center.addObserver_selector_name_object(
-            &*observer,
+            &observer,
             objc2::sel!(windowDidExitFullScreen:),
             Some(NSWindowDidExitFullScreenNotification),
             Some(window),
         );
         center.addObserver_selector_name_object(
-            &*observer,
+            &observer,
             objc2::sel!(windowWillClose:),
             Some(NSWindowWillCloseNotification),
             Some(window),
@@ -1682,9 +1625,7 @@ fn finish_post_fullscreen_cleanup_on_main(
 ) {
     let window_ptr = observer.ivars().surface.window_ptr;
     let observer_ptr = observer as *const PostFullscreenCleanup as usize;
-    let Some(owner) =
-        take_post_fullscreen_cleanup_on_main(window_ptr, Some(observer_ptr))
-    else {
+    let Some(owner) = take_post_fullscreen_cleanup_on_main(window_ptr, Some(observer_ptr)) else {
         return;
     };
 
@@ -1742,26 +1683,14 @@ fn save_pre_wrap_frame_on_main(surface: &SurfaceState, frame: NSRect) -> bool {
 /// transition intervals. The session latch deliberately stays set from
 /// WillEnter through DidExit as a conservative fallback if WillExit is late or
 /// absent while AppKit has already cleared the style bit.
-fn in_fullscreen_or_transition_on_main(
-    surface: &SurfaceState,
-    window: &NSWindow,
-) -> bool {
+fn in_fullscreen_or_transition_on_main(surface: &SurfaceState, window: &NSWindow) -> bool {
     window.styleMask().contains(NSWindowStyleMask::FullScreen)
-        || surface
-            .fullscreen_session_active
-            .load(Ordering::Acquire)
-        || surface
-            .fullscreen_enter_in_flight
-            .load(Ordering::Acquire)
-        || surface
-            .fullscreen_exit_in_flight
-            .load(Ordering::Acquire)
+        || surface.fullscreen_session_active.load(Ordering::Acquire)
+        || surface.fullscreen_enter_in_flight.load(Ordering::Acquire)
+        || surface.fullscreen_exit_in_flight.load(Ordering::Acquire)
 }
 
-fn window_property_mutation_allowed_on_main(
-    surface: &SurfaceState,
-    window: &NSWindow,
-) -> bool {
+fn window_property_mutation_allowed_on_main(surface: &SurfaceState, window: &NSWindow) -> bool {
     !in_fullscreen_or_transition_on_main(surface, window)
 }
 
@@ -1770,18 +1699,10 @@ fn log_fullscreen_state_on_main(surface: &SurfaceState, event: &str) {
         return;
     }
     let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
-    let style_fullscreen = window
-        .styleMask()
-        .contains(NSWindowStyleMask::FullScreen);
-    let session_active = surface
-        .fullscreen_session_active
-        .load(Ordering::Acquire);
-    let enter_in_flight = surface
-        .fullscreen_enter_in_flight
-        .load(Ordering::Acquire);
-    let exit_in_flight = surface
-        .fullscreen_exit_in_flight
-        .load(Ordering::Acquire);
+    let style_fullscreen = window.styleMask().contains(NSWindowStyleMask::FullScreen);
+    let session_active = surface.fullscreen_session_active.load(Ordering::Acquire);
+    let enter_in_flight = surface.fullscreen_enter_in_flight.load(Ordering::Acquire);
+    let exit_in_flight = surface.fullscreen_exit_in_flight.load(Ordering::Acquire);
     log_geometry_on_main(
         "window-wrap",
         surface,
@@ -1792,21 +1713,13 @@ fn log_fullscreen_state_on_main(surface: &SurfaceState, event: &str) {
 }
 
 fn restore_pre_wrap_frame_on_main(surface: &SurfaceState, reason: &str) -> bool {
-    let saved = surface
-        .pre_wrap_frame
-        .lock()
-        .ok()
-        .and_then(|frame| *frame);
+    let saved = surface.pre_wrap_frame.lock().ok().and_then(|frame| *frame);
     let Some(saved) = saved else {
-        surface
-            .wrap_restore_pending
-            .store(false, Ordering::Release);
+        surface.wrap_restore_pending.store(false, Ordering::Release);
         return false;
     };
     if surface.window_ptr == 0 {
-        surface
-            .wrap_restore_pending
-            .store(true, Ordering::Release);
+        surface.wrap_restore_pending.store(true, Ordering::Release);
         return false;
     }
     let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
@@ -1815,9 +1728,7 @@ fn restore_pre_wrap_frame_on_main(surface: &SurfaceState, reason: &str) -> bool 
         if let Ok(mut frame) = surface.pre_wrap_frame.lock() {
             *frame = None;
         }
-        surface
-            .wrap_restore_pending
-            .store(false, Ordering::Release);
+        surface.wrap_restore_pending.store(false, Ordering::Release);
         log_geometry_on_main(
             "window-wrap",
             surface,
@@ -1831,9 +1742,7 @@ fn restore_pre_wrap_frame_on_main(surface: &SurfaceState, reason: &str) -> bool 
     // Re-evaluate the complete predicate immediately before setFrame. Queued
     // reconciliation may have been requested before a transition began.
     if !window_property_mutation_allowed_on_main(surface, window) {
-        surface
-            .wrap_restore_pending
-            .store(true, Ordering::Release);
+        surface.wrap_restore_pending.store(true, Ordering::Release);
         log_geometry_on_main(
             "window-wrap",
             surface,
@@ -1847,9 +1756,7 @@ fn restore_pre_wrap_frame_on_main(surface: &SurfaceState, reason: &str) -> bool 
     if let Ok(mut saved_frame) = surface.pre_wrap_frame.lock() {
         *saved_frame = None;
     }
-    surface
-        .wrap_restore_pending
-        .store(false, Ordering::Release);
+    surface.wrap_restore_pending.store(false, Ordering::Release);
     log_geometry_on_main(
         "window-wrap",
         surface,
@@ -1894,10 +1801,7 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
     // Fullscreen state gates NSWindow properties only. Host/layer/FBO geometry
     // remains live and is reconciled before any fullscreen early return below.
     verify_and_repair_geometry_on_main(surface, None, false);
-    if surface
-        .wrap_reconciling
-        .swap(true, Ordering::AcqRel)
-    {
+    if surface.wrap_reconciling.swap(true, Ordering::AcqRel) {
         return;
     }
 
@@ -2009,12 +1913,7 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
                     surface.wrap_needs_resize.store(true, Ordering::Release);
                     return;
                 }
-                if !set_window_frame_if_valid_on_main(
-                    surface,
-                    window,
-                    centered,
-                    "video-wrap",
-                ) {
+                if !set_window_frame_if_valid_on_main(surface, window, centered, "video-wrap") {
                     surface.wrap_needs_resize.store(true, Ordering::Release);
                     return;
                 }
@@ -2067,23 +1966,17 @@ fn reconcile_window_wrap_on_main(surface: &SurfaceState) {
         }
     };
     reconcile();
-    surface
-        .wrap_reconciling
-        .store(false, Ordering::Release);
+    surface.wrap_reconciling.store(false, Ordering::Release);
 }
 
 fn queue_window_wrap_reconcile(surface: Arc<SurfaceState>) {
     if surface.dead.load(Ordering::Acquire)
-        || surface
-            .wrap_dispatch_queued
-            .swap(true, Ordering::AcqRel)
+        || surface.wrap_dispatch_queued.swap(true, Ordering::AcqRel)
     {
         return;
     }
     DispatchQueue::main().exec_async(move || {
-        surface
-            .wrap_dispatch_queued
-            .store(false, Ordering::Release);
+        surface.wrap_dispatch_queued.store(false, Ordering::Release);
         if !surface.dead.load(Ordering::Acquire) {
             reconcile_window_wrap_on_main(&surface);
         }
@@ -2148,11 +2041,7 @@ fn remove_window_observers(host: &HostView) {
     unsafe { center.removeObserver(host) };
 }
 
-fn teardown_surface_on_main(
-    surface: &Arc<SurfaceState>,
-    reason: &str,
-    restore_window_frame: bool,
-) {
+fn teardown_surface_on_main(surface: &Arc<SurfaceState>, reason: &str, restore_window_frame: bool) {
     if surface.dead.swap(true, Ordering::AcqRel) {
         return;
     }
@@ -2166,8 +2055,7 @@ fn teardown_surface_on_main(
     }
 
     let window_cleanup_deferred = if restore_window_frame && surface.window_ptr != 0 {
-        let window: &NSWindow =
-            unsafe { &*(surface.window_ptr as *const NSWindow) };
+        let window: &NSWindow = unsafe { &*(surface.window_ptr as *const NSWindow) };
         if in_fullscreen_or_transition_on_main(surface, window) {
             // Register before removing the host's observers. The independent
             // helper owns an Arc<SurfaceState>, so the saved frame and transition
@@ -2250,9 +2138,7 @@ impl VideoSurface for MacosSurface {
         if let Ok(mut saved) = self.state.pre_wrap_frame.lock() {
             *saved = None;
         }
-        self.state
-            .wrap_needs_resize
-            .store(true, Ordering::Release);
+        self.state.wrap_needs_resize.store(true, Ordering::Release);
         queue_window_wrap_reconcile(self.state.clone());
     }
 
@@ -2267,20 +2153,12 @@ impl VideoSurface for MacosSurface {
         let old_height = self.state.dheight.load(Ordering::Acquire);
         let aspect_changed = old_width <= 0
             || old_height <= 0
-            || (old_width as i128 * height as i128)
-                != (width as i128 * old_height as i128);
+            || (old_width as i128 * height as i128) != (width as i128 * old_height as i128);
         self.state.dwidth.store(width, Ordering::Release);
         self.state.dheight.store(height, Ordering::Release);
         self.state.wrap_active.store(true, Ordering::Release);
-        if aspect_changed
-            || !self
-                .state
-                .wrap_constraint_applied
-                .load(Ordering::Acquire)
-        {
-            self.state
-                .wrap_needs_resize
-                .store(true, Ordering::Release);
+        if aspect_changed || !self.state.wrap_constraint_applied.load(Ordering::Acquire) {
+            self.state.wrap_needs_resize.store(true, Ordering::Release);
         }
         queue_window_wrap_reconcile(self.state.clone());
     }
@@ -2292,9 +2170,7 @@ impl VideoSurface for MacosSurface {
             .store(true, Ordering::Release);
         // A later keep-open replay is a subsequent wrap in this player session,
         // so it uses the width-preserving policy after this frame restoration.
-        self.state
-            .wrap_needs_resize
-            .store(true, Ordering::Release);
+        self.state.wrap_needs_resize.store(true, Ordering::Release);
         queue_window_wrap_reconcile(self.state.clone());
     }
 
@@ -2333,9 +2209,7 @@ pub fn surface_attach<R: Runtime>(
         .get_webview_window("main")
         .or_else(|| app.webview_windows().into_values().next())
         .ok_or("no app webview window for the video surface")?;
-    let (tx, rx) = std::sync::mpsc::channel::<
-        Result<(usize, usize, Arc<SurfaceState>), String>,
-    >();
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(usize, usize, Arc<SurfaceState>), String>>();
     webview_window
         .with_webview(move |webview| {
             let window_ptr = webview.ns_window() as usize;
@@ -2351,9 +2225,9 @@ pub fn surface_attach<R: Runtime>(
             }
         })
         .map_err(|e| format!("could not access the native webview: {e}"))?;
-    let (_host_view_ptr, layer_ptr, state) = rx
-        .recv_timeout(std::time::Duration::from_secs(8))
-        .map_err(|_| "timed out setting up the video surface".to_string())??;
+    let (_host_view_ptr, layer_ptr, state) =
+        rx.recv_timeout(std::time::Duration::from_secs(8))
+            .map_err(|_| "timed out setting up the video surface".to_string())??;
 
     // Wait for the CA layer's first draw to create the mpv RenderContext BEFORE we
     // return - so mpv's vo=libmpv finds it the moment a file is loaded. Without
@@ -2433,24 +2307,14 @@ fn setup_on_main(
     let webview_sibling_ptr = top_level_content_sibling(content_ptr, webview_ptr);
     let backing_scale = ns_window.backingScaleFactor();
     let bounds = content.bounds();
-    let state = SurfaceState::new(
-        window_ptr,
-        content_ptr,
-        webview_ptr,
-        webview_sibling_ptr,
-    );
+    let state = SurfaceState::new(window_ptr, content_ptr, webview_ptr, webview_sibling_ptr);
     // A newly attached live surface supersedes any cleanup left by an older
     // surface on the same window. Cancel only after all fallible discovery is
     // complete, then carry its transition and opacity ownership into this state.
     // The new surface observes and reconciles the eventual DidExit itself.
     let inherited_fullscreen_state =
         cancel_post_fullscreen_cleanup_on_main(window_ptr, "surface-reattach");
-    if let Some((
-        session_active,
-        enter_in_flight,
-        exit_in_flight,
-        webview_transparent,
-    )) =
+    if let Some((session_active, enter_in_flight, exit_in_flight, webview_transparent)) =
         inherited_fullscreen_state
     {
         state
@@ -2503,7 +2367,7 @@ fn setup_on_main(
     // video always refreshes at its current capped resolution instead of keeping
     // a stretched stale texture.
     layer.setAsynchronous(false);
-    unsafe { layer.setNeedsDisplayOnBoundsChange(true) };
+    layer.setNeedsDisplayOnBoundsChange(true);
     layer.setAutoresizingMask(
         CAAutoresizingMask::LayerWidthSizable | CAAutoresizingMask::LayerHeightSizable,
     );
@@ -2515,20 +2379,16 @@ fn setup_on_main(
         .store(Retained::as_ptr(&host) as usize, Ordering::Release);
     host.setWantsLayer(true);
     layer.setFrame(host.bounds());
-    unsafe {
-        layer.setBounds(NSRect::new(NSPoint::new(0.0, 0.0), host.bounds().size));
-    }
+    layer.setBounds(NSRect::new(NSPoint::new(0.0, 0.0), host.bounds().size));
 
     // Configure autoresizing before insertion, then set the frame again after
     // insertion. This avoids an attach-time snapshot becoming permanent if Wry
     // lays out the content hierarchy in the same run-loop turn.
-    unsafe {
-        content.setAutoresizesSubviews(true);
-        host.setAutoresizingMask(
-            objc2_app_kit::NSAutoresizingMaskOptions::ViewWidthSizable
-                | objc2_app_kit::NSAutoresizingMaskOptions::ViewHeightSizable,
-        );
-    }
+    content.setAutoresizesSubviews(true);
+    host.setAutoresizingMask(
+        objc2_app_kit::NSAutoresizingMaskOptions::ViewWidthSizable
+            | objc2_app_kit::NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
 
     // Add the video layer as a sublayer of the host's backing layer.
     let backing: *mut AnyObject = unsafe { msg_send![&*host, layer] };
@@ -2573,7 +2433,12 @@ fn setup_on_main(
     display_layer_forced(&layer);
     rp_log(&format!(
         "setup_on_main: layer host inserted below webview; render_ready={}",
-        layer.ivars().render.lock().map(|g| g.is_some()).unwrap_or(false)
+        layer
+            .ivars()
+            .render
+            .lock()
+            .map(|g| g.is_some())
+            .unwrap_or(false)
     ));
     Ok((
         Retained::as_ptr(&host) as usize,
@@ -2585,9 +2450,8 @@ fn setup_on_main(
 #[cfg(test)]
 mod tests {
     use super::{
-        capped_render_target_dimensions, claim_webview_opacity_restore,
-        claim_webview_transparency, mpv_render_update, render_update_has_frame,
-        should_queue_callback_redraw, SurfaceState,
+        capped_render_target_dimensions, claim_webview_opacity_restore, claim_webview_transparency,
+        mpv_render_update, render_update_has_frame, should_queue_callback_redraw, SurfaceState,
     };
 
     #[test]

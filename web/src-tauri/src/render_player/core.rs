@@ -443,6 +443,7 @@ fn video_quality_options(profile: VideoQualityProfile) -> &'static [(&'static st
 ///     quality options below still tune the gpu renderer the render API drives.
 ///     (gpu-next-as-a-vo does not apply under the render API - see the memory.)
 ///   * Windows wid-embeds mpv → it owns a native `vo=gpu-next` + d3d11.
+///
 /// hwdec is per-OS: zero-copy `videotoolbox` on macOS, `d3d11va` on Windows,
 /// `auto-copy` (vaapi/nvdec) on Linux - all fall back to software automatically,
 /// so they can't break playback. It is set ONLY here (the webview no longer

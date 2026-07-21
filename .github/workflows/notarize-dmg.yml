@@ -63,7 +63,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          dmg="$(ls ./*_universal.dmg | head -1)"
+          dmg="$(find . -maxdepth 1 -type f -name '*_universal.dmg' -print -quit)"
           echo "Before:"; xcrun stapler validate "$dmg" || true
           xcrun notarytool submit "$dmg" \
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_PASSWORD" --wait
@@ -77,6 +77,6 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          dmg="$(ls ./*_universal.dmg | head -1)"
+          dmg="$(find . -maxdepth 1 -type f -name '*_universal.dmg' -print -quit)"
           gh release upload "$TAG" "$dmg" --clobber --repo "$GITHUB_REPOSITORY"
           echo "Replaced $dmg on $TAG."

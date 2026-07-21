@@ -55,6 +55,8 @@ const swiftTestVerifier = read("scripts/check_swift_tests.mjs");
 const nodeRuntimeDownloader = read("scripts/download_tauri_node_runtime.mjs");
 const serverResourcePrep = read("scripts/prepare_tauri_server_resources.mjs");
 const desktopServerSmoke = read("scripts/smoke_tauri_server_bundle.mjs");
+const localPackage = read("scripts/package_tauri_local.mjs");
+const localArtifactVerifier = read("scripts/check_local_package_artifact.mjs");
 const securityDecisionCheck = read("scripts/check_security_decisions.mjs");
 check(
   "Release workflow emits updater JSON",
@@ -217,22 +219,32 @@ check(
 );
 check(
   "Local package script bundles current-platform Node",
-  /download_tauri_node_runtime\.mjs/.test(read("scripts/package_tauri_local.mjs")) &&
-    /nodeRuntimePlatform/.test(read("scripts/package_tauri_local.mjs")),
+  /download_tauri_node_runtime\.mjs/.test(localPackage) &&
+    /nodeRuntimePlatform/.test(localPackage),
   "scripts/package_tauri_local.mjs must bundle the current-platform Node runtime before Tauri packaging",
 );
 check(
+  "Local macOS package is self-contained for playback",
+  /download_ffmpeg\.mjs/.test(localPackage) &&
+    /"bundle-mpv-deps\.sh"/.test(localPackage) &&
+    /MPV_LIB_DIR/.test(localPackage) &&
+    /otool/.test(localPackage) &&
+    /\/opt\/homebrew/.test(localPackage) &&
+    /\/usr\/local/.test(localPackage),
+  "scripts/package_tauri_local.mjs must bundle ffmpeg and libmpv, link through the bundled tree, and reject build-machine paths",
+);
+check(
   "Local package script creates macOS app zip",
-  /--bundles/.test(read("scripts/package_tauri_local.mjs")) &&
-    /app\.zip/.test(read("scripts/package_tauri_local.mjs")) &&
-    /ditto/.test(read("scripts/package_tauri_local.mjs")),
+  /--bundles/.test(localPackage) &&
+    /app\.zip/.test(localPackage) &&
+    /ditto/.test(localPackage),
   "scripts/package_tauri_local.mjs must build a local macOS .app bundle and zip it without relying on DMG post-processing",
 );
 check(
   "Local package artifact verifier exists",
   existsSync(join(root, "scripts/check_local_package_artifact.mjs")) &&
-    /--require-current/.test(read("scripts/check_local_package_artifact.mjs")) &&
-    /sha256/.test(read("scripts/check_local_package_artifact.mjs")),
+    /--require-current/.test(localArtifactVerifier) &&
+    /sha256/.test(localArtifactVerifier),
   "scripts/check_local_package_artifact.mjs must verify local package artifact freshness, size, and checksum",
 );
 check(
@@ -500,6 +512,14 @@ check(
   "CI runs Swift test verifier",
   /check_swift_tests\.mjs/.test(ciWorkflow),
   ".github/workflows/ci.yml must run scripts/check_swift_tests.mjs for native Swift tests",
+);
+check(
+  "CI enforces Rust format, lint, tests, and dependency audit",
+  /cargo fmt --check/.test(ciWorkflow) &&
+    /cargo clippy --locked --all-targets -- -D warnings/.test(ciWorkflow) &&
+    /cargo test --locked/.test(ciWorkflow) &&
+    /cargo audit/.test(ciWorkflow),
+  ".github/workflows/ci.yml must keep the Tauri Rust crate formatted, warning-free, tested, and vulnerability-audited",
 );
 check(
   "Desktop server resource scripts exist",
