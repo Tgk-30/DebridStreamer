@@ -242,6 +242,44 @@ check(
   ".github/workflows/web-release.yml must fail early without Azure Artifact Signing secrets and pass a pinned custom sign command to Tauri",
 );
 check(
+  "Windows release channel is explicitly held by default",
+  /YAWF_RELEASE_WINDOWS/.test(releaseWorkflow) &&
+    /if:\s*matrix\.os == 'windows' && vars\.YAWF_RELEASE_WINDOWS == 'true'/.test(
+      releaseWorkflow,
+    ) &&
+    /if:\s*matrix\.os != 'windows' \|\| vars\.YAWF_RELEASE_WINDOWS == 'true'[\s\S]{0,180}uses:\s*tauri-apps\/tauri-action@v0/.test(
+      releaseWorkflow,
+    ) &&
+    /include_windows:\s*\$\{\{\s*vars\.YAWF_RELEASE_WINDOWS == 'true'\s*\}\}/.test(
+      releaseWorkflow,
+    ) &&
+    /include_windows:[\s\S]{0,160}default:\s*false[\s\S]{0,80}type:\s*boolean/.test(
+      cleanInstallWorkflow,
+    ) &&
+    /windows:[\s\S]{0,120}if:\s*inputs\.include_windows/.test(cleanInstallWorkflow),
+  "Windows artifacts must remain disabled unless YAWF_RELEASE_WINDOWS is explicitly true, while enabled releases retain signing and clean-install gates",
+);
+check(
+  "Clean-install workflow verifies the self-hosted server deb",
+  /server-deb:/.test(cleanInstallWorkflow) &&
+    /ubuntu-22\.04/.test(cleanInstallWorkflow) &&
+    /ubuntu-24\.04/.test(cleanInstallWorkflow) &&
+    /debridstreamer-server_\$\{version\}_all\.deb/.test(cleanInstallWorkflow) &&
+    /\/api\/health/.test(cleanInstallWorkflow) &&
+    /\/opt\/debridstreamer\/web-dist\/index\.html/.test(cleanInstallWorkflow),
+  ".github/workflows/clean-install.yml must install the versioned server deb on supported Ubuntu runners and verify health plus the hosted web app",
+);
+check(
+  "Clean-install workflow verifies updater channel isolation",
+  /manifest:/.test(cleanInstallWorkflow) &&
+    /darwin-aarch64-app/.test(cleanInstallWorkflow) &&
+    /linux-x86_64-appimage/.test(cleanInstallWorkflow) &&
+    /latest\.json is missing an updater signature/.test(cleanInstallWorkflow) &&
+    /Held Windows channel leaked into latest\.json/.test(cleanInstallWorkflow) &&
+    /Held Windows channel leaked an asset into the draft release/.test(cleanInstallWorkflow),
+  ".github/workflows/clean-install.yml must require signed macOS and Linux updater entries and reject Windows manifest entries or assets while that channel is held",
+);
+check(
   "Windows signing config generator fails closed without writing client credentials",
   /codesigning\\\.azure\\\.net/.test(windowsSigningConfig) &&
     /%1/.test(windowsSigningConfig) &&
@@ -476,6 +514,15 @@ check(
     /platforms:\s*linux\/amd64,linux\/arm64/.test(dockerWorkflow) &&
     /ghcr\.io/.test(dockerWorkflow),
   ".github/workflows/docker-image.yml must publish linux/amd64 and linux/arm64 images to GHCR",
+);
+check(
+  "Desktop release tags publish stable server image versions",
+  /version="\$\{REF_NAME#v\}"/.test(dockerWorkflow) &&
+    /version="\$\{version%-web\}"/.test(dockerWorkflow) &&
+    /major_minor=\$\{version%\.\*\}/.test(dockerWorkflow) &&
+    /steps\.release-version\.outputs\.version/.test(dockerWorkflow) &&
+    /steps\.release-version\.outputs\.major_minor/.test(dockerWorkflow),
+  ".github/workflows/docker-image.yml must turn vX.Y.Z-web into X.Y.Z and X.Y server image tags",
 );
 check(
   "Pull requests build Docker images without publishing",

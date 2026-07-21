@@ -46,12 +46,16 @@ check(site.includes(`APP_VERSION = '${tauri.version}'`), "website release consta
 for (const assetTemplate of [
   "YAWF.Stream_${APP_VERSION}_aarch64.dmg",
   "YAWF.Stream_${APP_VERSION}_x64.dmg",
-  "YAWF.Stream_${APP_VERSION}_x64_en-US.msi",
   "YAWF.Stream_${APP_VERSION}_amd64.AppImage",
   "debridstreamer-server_${APP_VERSION}_all.deb",
 ]) {
   check(site.includes(assetTemplate), `direct release link missing: ${assetTemplate}`);
 }
+
+check(site.includes("WINDOWS_RELEASE_AVAILABLE = false"), "website must record that the Windows v1 channel is held");
+check(!site.includes("YAWF.Stream_${APP_VERSION}_x64_en-US.msi"), "website must not publish a broken Windows v1 installer link");
+check(!hero.includes("DOWNLOAD_LINKS.windows"), "home hero must not link to an unavailable Windows v1 asset");
+check(streamPicker.includes("Windows v1 is held"), "download picker must explain the held Windows v1 channel");
 
 check(!/checking caches|sources found|sort: instant/i.test(streamPicker), "download picker must not simulate cache or source status");
 check(streamPicker.includes("Choose your platform"), "download picker must explain the platform choice directly");

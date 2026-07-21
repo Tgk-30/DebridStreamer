@@ -185,8 +185,7 @@ export default function DeployTabs() {
                   {t.id === 'deb' && (
                     <div>
                       <p className="mb-5 max-w-[640px] font-body text-[1rem] leading-[1.7] text-ink-2">
-                        Debian/Ubuntu desktop? Install the .deb and YAWF Stream lives in your app menu like
-                        anything else.
+                        Install the self-hosted server directly on Debian or Ubuntu without Docker.
                       </p>
                       <StreamRow
                         icon={<Package className="h-5 w-5" strokeWidth={1.75} />}
@@ -201,7 +200,7 @@ export default function DeployTabs() {
                       />
                       <div className="mt-4 flex flex-wrap gap-2.5">
                         <Chip variant="outline">apt install ./debridstreamer-server_{APP_VERSION}_all.deb</Chip>
-                        <Chip variant="outline">auto-starts the server on login</Chip>
+                        <Chip variant="outline">systemd service ready</Chip>
                       </div>
                     </div>
                   )}

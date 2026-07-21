@@ -37,16 +37,6 @@ const ROWS: PickerRow[] = [
     href: DOWNLOAD_LINKS.macosIntel,
   },
   {
-    icon: <AppWindow className="h-5 w-5" />,
-    title: 'Windows installer',
-    meta: [
-      { label: 'Direct download', variant: 'instant' },
-      { label: 'signed updater', variant: 'dim' },
-    ],
-    size: '.msi',
-    href: DOWNLOAD_LINKS.windowsMsi,
-  },
-  {
     icon: <Terminal className="h-5 w-5" />,
     title: 'Linux - AppImage',
     meta: [
@@ -153,6 +143,23 @@ export default function StreamPicker() {
             </motion.div>
           ))}
         </div>
+
+        <motion.div
+          className="mt-3 flex items-start gap-3 rounded-row border border-line bg-[var(--surface-glass)] px-4 py-3 text-left"
+          initial={reduced ? { opacity: 0 } : { opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.7 }}
+          transition={{ duration: reduced ? 0.2 : 0.5, ease: EASE_EXPO }}
+        >
+          <AppWindow className="mt-0.5 h-5 w-5 shrink-0 text-ink-3" />
+          <div>
+            <p className="font-body text-[0.95rem] font-semibold text-ink-1">Windows v1 is held</p>
+            <p className="mt-1 font-mono text-[0.75rem] leading-relaxed tracking-[0.04em] text-ink-3">
+              It will ship after Authenticode signing and clean-install verification pass. No unsigned v1 installer
+              will be published.
+            </p>
+          </div>
+        </motion.div>
 
         <motion.p
           className="mt-6 text-center font-mono text-[0.8125rem] leading-relaxed tracking-[0.04em] text-ink-3"

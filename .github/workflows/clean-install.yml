@@ -7,12 +7,22 @@ on:
         description: Release tag whose draft assets should be installed
         required: true
         type: string
+      include_windows:
+        description: Verify signed Windows installers for this release
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       tag:
         description: Release tag whose assets should be installed
         required: true
         type: string
+      include_windows:
+        description: Verify signed Windows installers for this release
+        required: false
+        default: false
+        type: boolean
 
 # Draft releases are visible only to tokens with push access. The release stays
 # draft until this workflow has installed and verified every platform package.
@@ -20,6 +30,110 @@ permissions:
   contents: write
 
 jobs:
+  manifest:
+    name: Release manifest and asset inventory
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download updater manifest and inventory assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern latest.json \
+            --dir "$RUNNER_TEMP/release-assets"
+          gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '.assets[].name' \
+            | sort > "$RUNNER_TEMP/release-assets/names.txt"
+
+      - name: Verify updater channels and signed assets
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          INCLUDE_WINDOWS: ${{ inputs.include_windows }}
+          LATEST_JSON: ${{ runner.temp }}/release-assets/latest.json
+          ASSET_NAMES: ${{ runner.temp }}/release-assets/names.txt
+        run: |
+          set -euo pipefail
+          expected_version="${RELEASE_TAG#v}"
+          expected_version="${expected_version%-web}"
+          node <<'NODE'
+          const { readFileSync } = require("node:fs");
+          const manifest = JSON.parse(readFileSync(process.env.LATEST_JSON, "utf8"));
+          const expectedVersion = process.env.RELEASE_TAG.replace(/^v/, "").replace(/-web$/, "");
+          if (manifest.version !== expectedVersion) {
+            throw new Error(`latest.json version ${manifest.version} does not match ${expectedVersion}`);
+          }
+          const platforms = manifest.platforms ?? {};
+          const required = [
+            "darwin-aarch64",
+            "darwin-aarch64-app",
+            "darwin-x86_64",
+            "darwin-x86_64-app",
+            "linux-x86_64",
+            "linux-x86_64-appimage",
+            "linux-x86_64-deb",
+          ];
+          for (const key of required) {
+            const entry = platforms[key];
+            if (!entry?.url?.includes(`/releases/download/${process.env.RELEASE_TAG}/`)) {
+              throw new Error(`latest.json is missing a release-scoped URL for ${key}`);
+            }
+            if (typeof entry.signature !== "string" || entry.signature.length < 40) {
+              throw new Error(`latest.json is missing an updater signature for ${key}`);
+            }
+          }
+          const windows = Object.keys(platforms).filter((key) => key.startsWith("windows-"));
+          if (process.env.INCLUDE_WINDOWS === "true") {
+            for (const key of ["windows-x86_64", "windows-x86_64-msi", "windows-x86_64-nsis"]) {
+              if (!windows.includes(key)) throw new Error(`latest.json is missing ${key}`);
+            }
+          } else if (windows.length > 0) {
+            throw new Error(`Held Windows channel leaked into latest.json: ${windows.join(", ")}`);
+          }
+          NODE
+
+          for asset in \
+            "YAWF.Stream_${expected_version}_aarch64.dmg" \
+            "YAWF.Stream_${expected_version}_x64.dmg" \
+            "YAWF.Stream_${expected_version}_amd64.AppImage" \
+            "YAWF.Stream_${expected_version}_amd64.AppImage.sig" \
+            "YAWF.Stream_${expected_version}_amd64.deb" \
+            "YAWF.Stream_${expected_version}_amd64.deb.sig" \
+            "YAWF.Stream_aarch64.app.tar.gz" \
+            "YAWF.Stream_aarch64.app.tar.gz.sig" \
+            "YAWF.Stream_x64.app.tar.gz" \
+            "YAWF.Stream_x64.app.tar.gz.sig" \
+            "latest.json"; do
+            grep -Fxq "$asset" "$ASSET_NAMES" || {
+              echo "Required release asset is missing: $asset" >&2
+              exit 1
+            }
+          done
+
+          if [ "$INCLUDE_WINDOWS" = "true" ]; then
+            for asset in \
+              "YAWF.Stream_${expected_version}_x64_en-US.msi" \
+              "YAWF.Stream_${expected_version}_x64_en-US.msi.sig" \
+              "YAWF.Stream_${expected_version}_x64-setup.exe" \
+              "YAWF.Stream_${expected_version}_x64-setup.exe.sig"; do
+              grep -Fxq "$asset" "$ASSET_NAMES" || {
+                echo "Required Windows asset is missing: $asset" >&2
+                exit 1
+              }
+            done
+          elif grep -Eiq '\.(msi|exe)(\.sig)?$|windows' "$ASSET_NAMES"; then
+            echo "Held Windows channel leaked an asset into the draft release" >&2
+            grep -Ei '\.(msi|exe)(\.sig)?$|windows' "$ASSET_NAMES" >&2
+            exit 1
+          fi
+
   macos:
     name: macOS ${{ matrix.arch }} clean install
     strategy:
@@ -108,6 +222,7 @@ jobs:
 
   windows:
     name: Windows ${{ matrix.label }} clean install
+    if: inputs.include_windows
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -326,3 +441,113 @@ jobs:
           kill -- -"$pid"
           wait "$pid" 2>/dev/null || true
           echo "ok   deb installed and launched with a clean profile"
+
+  server-deb:
+    name: Server deb clean install (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-22.04
+          - ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Install Node 24 and FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+          sudo apt-get install -y nodejs ffmpeg
+          node --version
+          ffmpeg -version | head -1
+
+      - name: Download server package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          version="${version%-web}"
+          asset="debridstreamer-server_${version}_all.deb"
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          for attempt in $(seq 1 30); do
+            rm -f "$RUNNER_TEMP/release-assets/$asset"
+            if gh release download "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset" \
+              --dir "$RUNNER_TEMP/release-assets"; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "Server package $asset was not attached to the draft release" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          test -f "$RUNNER_TEMP/release-assets/$asset"
+          echo "SERVER_DEB=$RUNNER_TEMP/release-assets/$asset" >> "$GITHUB_ENV"
+
+      - name: Install and boot server package
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y "$SERVER_DEB"
+          expected_version="${RELEASE_TAG#v}"
+          expected_version="${expected_version%-web}"
+          test "$(dpkg-deb -f "$SERVER_DEB" Architecture)" = "all"
+          test "$(dpkg-deb -f "$SERVER_DEB" Version)" = "$expected_version"
+          test -f /opt/debridstreamer/server/dist/index.cjs
+          test -f /opt/debridstreamer/web-dist/index.html
+          test -f /lib/systemd/system/debridstreamer.service
+
+          data_dir="$RUNNER_TEMP/server-data"
+          mkdir -p "$data_dir"
+          port="$(node -e "const s=require('net').createServer();s.listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close()})")"
+          env \
+            NODE_ENV=production \
+            HOST=127.0.0.1 \
+            PORT="$port" \
+            DS_SERVER_SECRET_KEY="$(openssl rand -base64 32)" \
+            DS_SERVER_DATA_DIR="$data_dir" \
+            DS_SERVER_DB_PATH="$data_dir/debridstreamer.sqlite" \
+            DS_SERVER_COOKIE_SECURE=false \
+            DS_SERVER_COOKIE_SAMESITE=lax \
+            DS_WEB_DIST=/opt/debridstreamer/web-dist \
+            node /opt/debridstreamer/server/dist/index.cjs \
+            >"$RUNNER_TEMP/server-deb.log" 2>&1 &
+          pid=$!
+          cleanup() {
+            kill "$pid" >/dev/null 2>&1 || true
+            wait "$pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 80); do
+            if curl --fail --silent "http://127.0.0.1:${port}/api/health" \
+              | grep -q '"ok":true'; then
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/server-deb.log"
+              echo "Installed server exited before becoming healthy" >&2
+              exit 1
+            fi
+            if [ "$attempt" -eq 80 ]; then
+              cat "$RUNNER_TEMP/server-deb.log"
+              echo "Installed server did not become healthy" >&2
+              exit 1
+            fi
+            sleep 0.25
+          done
+          curl --fail --silent "http://127.0.0.1:${port}/" -o "$RUNNER_TEMP/server-home.html"
+          grep -qi '<html\|<!doctype html' "$RUNNER_TEMP/server-home.html"
+          echo "ok   Server deb installed and served health + HTML"

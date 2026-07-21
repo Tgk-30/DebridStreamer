@@ -42,7 +42,9 @@ private key is missing, and the macOS job fails early if Developer ID /
 notarization secrets are missing.
 
 Windows public releases use Azure Artifact Signing through Tauri's custom sign
-command. The Windows release job requires these GitHub Actions secrets:
+command. Windows artifacts are held by default. The Windows release job runs
+only when the repository Actions variable `YAWF_RELEASE_WINDOWS` is exactly
+`true`, and then requires these GitHub Actions secrets:
 
 ```text
 AZURE_CLIENT_ID
@@ -61,6 +63,12 @@ generate a test-covered Tauri config. The generator never writes Azure client
 identity credentials into that file. See the
 [Tauri Windows signing guide](https://v2.tauri.app/distribute/sign/windows/) and
 [Microsoft Artifact Signing documentation](https://learn.microsoft.com/azure/artifact-signing/).
+
+Do not enable `YAWF_RELEASE_WINDOWS` until all six secrets are provisioned. A
+true value deliberately fails closed when any signing credential, installer
+signature, or installed application signature is missing. Leaving the variable
+absent or false publishes no Windows v1 artifact and does not weaken the future
+Windows gate.
 
 GitHub Actions must be able to start hosted runners before any of those release
 steps can run. If CI, Docker, Pages, and Cloudflare workflows all fail before
@@ -107,11 +115,12 @@ artifacts will be produced until that is resolved.
    ```
 
 4. Wait for the `Verify clean installs` job. It downloads the completed draft
-   assets on fresh GitHub runners, installs both macOS DMGs, the Windows MSI,
-   the Windows NSIS setup executable, the Linux AppImage, and the Linux deb
-   package, boots the bundled server, and launches each installed app with an
-   empty profile. The Windows checks fail unless each installer and installed
-   application has a valid Authenticode signature.
+   assets on fresh GitHub runners, installs both macOS DMGs, the Linux AppImage,
+   the Linux desktop deb, and the self-hosted server deb on Ubuntu 22.04 and
+   24.04. It boots every bundled or installed server and launches each desktop
+   app with an empty profile. When `YAWF_RELEASE_WINDOWS=true`, it also installs
+   the Windows MSI and NSIS setup executable and fails unless each installer and
+   installed application has a valid Authenticode signature.
 5. Review the draft GitHub Release created by `web-release`.
 6. Publish only after all build and clean-install jobs pass. The latest
    published release becomes the OTA target.
@@ -119,20 +128,22 @@ artifacts will be produced until that is resolved.
 To repeat installer verification without rebuilding the release:
 
 ```sh
-gh workflow run clean-install.yml -f tag=vX.Y.Z-web
+gh workflow run clean-install.yml -f tag=vX.Y.Z-web -f include_windows=false
 ```
 
-The accepted trust boundaries and remaining release blockers are recorded in
-`docs/SECURITY_DECISIONS.md`. A credentialed Windows build with valid MSI and
-application signatures must be observed before v1 can ship.
+Use `include_windows=true` only for a release that actually contains the signed
+Windows assets. The accepted trust boundaries and remaining Windows blocker are
+recorded in `docs/SECURITY_DECISIONS.md`. macOS, Linux, and server v1 artifacts
+may ship while the Windows v1 channel remains held.
 
 ## Download Website
 
-The static website lives in `website/`.
+The production website lives in `website-app/`; `website/` is the legacy static
+fallback.
 
-It detects macOS, Windows, and Linux in the browser, fetches the latest GitHub
-Release via the public GitHub API, and points users to the best matching asset.
-If the API fails, it falls back to the latest release page.
+It publishes direct versioned links for the available macOS, Linux, and server
+artifacts plus a GitHub Releases fallback. A held platform must be presented as
+unavailable instead of linking to an asset that was not published.
 
 Cloudflare deployment is handled by `.github/workflows/cloudflare-site.yml`.
 
@@ -178,10 +189,11 @@ The root `Dockerfile` builds:
 runs. Compose examples live in `deploy/compose/`, and the Docker user guide is
 `docs/DOCKER.md`.
 
-The image name is derived from the repository in lowercase:
+The image name is derived from the repository in lowercase. A desktop release
+tag such as `v1.0.0-web` also publishes server image tags `1.0.0` and `1.0`:
 
 ```text
-ghcr.io/<owner>/<repo>
+ghcr.io/<owner>/<repo>:1.0.0
 ```
 
 ## Desktop Host Mode Packaging

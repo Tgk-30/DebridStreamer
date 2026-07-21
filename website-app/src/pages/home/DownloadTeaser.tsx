@@ -20,16 +20,6 @@ const ROWS = [
     href: DOWNLOAD_LINKS.macosArm,
   },
   {
-    icon: <AppWindow className="h-5 w-5" />,
-    title: 'Windows installer',
-    meta: [
-      { label: 'Direct download', variant: 'instant' as const },
-      { label: 'signed updater', variant: 'dim' as const },
-    ],
-    size: '.msi',
-    href: DOWNLOAD_LINKS.windowsMsi,
-  },
-  {
     icon: <Terminal className="h-5 w-5" />,
     title: 'Linux - AppImage',
     meta: [
@@ -90,6 +80,15 @@ export default function DownloadTeaser() {
               <StreamRow icon={row.icon} title={row.title} meta={row.meta} size={row.size} href={row.href} />
             </motion.div>
           ))}
+          <div className="flex items-start gap-3 rounded-row border border-line bg-[var(--surface-glass)] px-4 py-3">
+            <AppWindow className="mt-0.5 h-5 w-5 shrink-0 text-ink-3" />
+            <div>
+              <p className="font-body text-[0.9rem] font-semibold text-ink-1">Windows v1 is held</p>
+              <p className="mt-1 font-mono text-[0.75rem] leading-relaxed tracking-[0.04em] text-ink-3">
+                Publishing after Authenticode signing passes.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </section>
