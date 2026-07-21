@@ -163,6 +163,9 @@ jobs:
       - name: Provider smoke contract tests
         run: node --test scripts/provider_smoke.test.mjs
 
+      - name: Bundle budget verifier tests
+        run: node --test scripts/check_bundle_budgets.test.mjs
+
       - name: Release readiness
         run: node scripts/check_release_readiness.mjs
 
