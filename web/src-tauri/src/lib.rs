@@ -1,6 +1,6 @@
-// DebridStreamer - Tauri player POC.
+// DebridStreamer desktop player commands.
 //
-// Proves the two-backend player plan from COMPETITION_AND_ARCHITECTURE.md:
+// Two playback backends cover browser-native and desktop-native formats:
 //   1. In-webview playback (hls.js / native <video>) for HLS/MP4 - the browser path.
 //   2. Desktop hand-off to a native player (VLC/mpv) for MKV/HEVC the webview can't decode.
 // This command is the desktop direct-play seam: hand a Real-Debrid direct link to a
@@ -21,7 +21,7 @@ mod player;
 
 // In-window mpv render-API player (v0.5): drives mpv's render API into our own
 // NSOpenGLView composited behind the transparent webview. The real "beyond IINA"
-// in-window path - see render_player.rs (macOS) + RENDER_PLAYER_PLAN.md.
+// in-window path is implemented in render_player.rs on macOS.
 mod render_player;
 
 // OS-keychain SecretStore backend (keychain_get / keychain_set / keychain_delete).

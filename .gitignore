@@ -15,6 +15,8 @@ node_modules/
 .gemini/
 .opencode/
 .aider*
+AI-WORKFLOW.md
+ai-workflow.md
 CLAUDE.md
 claude.md
 CODEX.md
@@ -28,12 +30,47 @@ agent.md
 transcripts/
 conversation*.md
 *transcript*.md
+TARGET.md
+TARGETS.md
+target.md
+targets.md
+targets/
+PROBLEMS.md
+problems.md
+NOTES.md
+notes.md
+notes/
+handoff*.md
+HANDOFF*.md
+.git-commit-template.txt
+docs/verification/
+docs/ai-scoreboard.md
+docs/UX-AUDIT.md
+docs/feature-gap-audit.md
+web/src-tauri/RENDER_PLAYER_PLAN.md
+poc-tauri/
 
 # local secrets
 .env
 .env.local
 .env.*
 .env.*.local
+.netrc
+.npmrc
+.pypirc
+credentials.json
+service-account*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+
+# Local deployment state and provider metadata
+.wrangler/
 
 # macOS Finder metadata
 .DS_Store
