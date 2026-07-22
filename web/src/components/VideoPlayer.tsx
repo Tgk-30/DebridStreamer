@@ -1,6 +1,6 @@
 // In-app player.
 //
-// Two-backend playback (the plan proven by poc-tauri):
+// Two-backend playback:
 //   1. In-webview <video> for HLS (.m3u8, via hls.js when the browser lacks
 //      native HLS) and progressive MP4/WebM - the browser path.
 //   2. Desktop hand-off to a native player (VLC/mpv/IINA) for containers/codecs

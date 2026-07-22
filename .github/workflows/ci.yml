@@ -154,6 +154,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Public repo preflight tests
+        run: node --test scripts/public_repo_preflight.test.mjs
+
       - name: Public repo preflight
         run: node scripts/public_repo_preflight.mjs
 

@@ -4,9 +4,9 @@
  * Activity Monitor (the app's renderer process + WindowServer) to find what is
  * actually burning. Every toggle is reversible and touches nothing on disk.
  *
- * NOTE: run this in the REAL app (right-click > Inspect Element in a dev build).
- * The Claude browser preview reports visibilityState=hidden, which freezes all
- * CSS animations - measurements there are meaningless.
+ * NOTE: run this in the real app (right-click > Inspect Element in a dev build).
+ * Hidden browser previews freeze CSS animations, so measurements there are
+ * meaningless.
  *
  * Usage:
  *   gpu.status()          what is currently killed
@@ -15,7 +15,7 @@
  *   gpu.fps()             frame meter overlay    gpu.fps() again to remove
  *   gpu.reset()           restore everything
  *
- * Suspects (from the 2026-07-15 render-path audit; see docs/ai-scoreboard.md):
+ * Suspects from the render-path audit:
  *   blur     every backdrop-filter (nav rail 24px, detail 28px, glass-*)
  *   anim     pause ALL CSS animations (the biggest single lever)
  *   hero     the Discover hero: Ken Burns + crossfade (4s of every 7s, full-bleed

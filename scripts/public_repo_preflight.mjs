@@ -85,15 +85,15 @@ const tracked = trackedFiles();
 const untracked = unignoredUntrackedFiles();
 const publishCandidateFiles = [...new Set([...tracked, ...untracked])];
 
-const forbiddenTrackedPathPatterns = [
+const forbiddenHistoricalPathPatterns = [
   {
     label: "assistant instruction file",
     pattern:
-      /(^|\/)(CLAUDE|claude|CODEX|codex|GEMINI|gemini|AGENT|agent|AGENTS|agents)\.md$/,
+      /(^|\/)(?:AI-WORKFLOW|ai-workflow|CLAUDE|claude|CODEX|codex|GEMINI|gemini|AGENT|agent|AGENTS|agents)\.md$/,
   },
   {
     label: "assistant workspace directory",
-    pattern: /(^|\/)\.(claude|codex|cursor|windsurf|continue|gemini|opencode)(\/|$)/,
+    pattern: /(^|\/)\.(agents|claude|codex|cursor|windsurf|continue|gemini|opencode)(\/|$)/,
   },
   {
     label: "assistant CLI artifact",
@@ -109,8 +109,39 @@ const forbiddenTrackedPathPatterns = [
   },
 ];
 
+const forbiddenPublishPathPatterns = [
+  ...forbiddenHistoricalPathPatterns,
+  {
+    label: "local planning or handoff artifact",
+    pattern:
+      /(^|\/)(?:TARGETS?|targets?|PROBLEMS?|problems?|NOTES?|notes?|HANDOFF[^/]*|handoff[^/]*)\.md$/,
+  },
+  {
+    label: "internal audit or verification artifact",
+    pattern:
+      /^(?:docs\/(?:verification\/|ai-scoreboard\.md$|UX-AUDIT\.md$|feature-gap-audit\.md$)|web\/src-tauri\/RENDER_PLAYER_PLAN\.md$)/,
+  },
+  {
+    label: "local deployment state",
+    pattern: /(^|\/)\.wrangler(\/|$)/,
+  },
+  {
+    label: "obsolete proof-of-concept workspace",
+    pattern: /^poc-tauri(\/|$)/,
+  },
+  {
+    label: "local commit template",
+    pattern: /(^|\/)\.git-commit-template\.txt$/,
+  },
+  {
+    label: "credential or signing material",
+    pattern:
+      /(^|\/)(?:\.netrc|\.npmrc|\.pypirc|credentials\.json|service-account[^/]*\.json|[^/]+\.(?:pem|key|p12|pfx|jks|keystore|mobileprovision|provisionprofile))$/i,
+  },
+];
+
 for (const file of publishCandidateFiles) {
-  const issue = forbiddenTrackedPathPatterns.find((entry) => entry.pattern.test(file));
+  const issue = forbiddenPublishPathPatterns.find((entry) => entry.pattern.test(file));
   if (issue) {
     const scope = tracked.includes(file) ? "Tracked" : "Unignored untracked";
     fail(`${scope} ${issue.label}: ${file}`);
@@ -118,7 +149,7 @@ for (const file of publishCandidateFiles) {
 }
 
 function checkForbiddenPath(file, scope) {
-  const issue = forbiddenTrackedPathPatterns.find((entry) => entry.pattern.test(file));
+  const issue = forbiddenHistoricalPathPatterns.find((entry) => entry.pattern.test(file));
   if (issue) fail(`${scope} ${issue.label}: ${file}`);
 }
 
@@ -134,6 +165,30 @@ const secretPatterns = [
   {
     label: "Cloudflare API token",
     pattern: /\bcfat_[A-Za-z0-9_-]{20,}\b/,
+  },
+  {
+    label: "GitHub token",
+    pattern: /\b(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255})\b/,
+  },
+  {
+    label: "GitLab token",
+    pattern: /\bglpat-[A-Za-z0-9_-]{20,}\b/,
+  },
+  {
+    label: "AWS access key",
+    pattern: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/,
+  },
+  {
+    label: "Slack token",
+    pattern: /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/,
+  },
+  {
+    label: "npm access token",
+    pattern: /\bnpm_[A-Za-z0-9]{36,}\b/,
+  },
+  {
+    label: "Stripe live secret key",
+    pattern: /\bsk_live_[A-Za-z0-9]{20,}\b/,
   },
   {
     label: "private key block",
@@ -316,6 +371,8 @@ const requiredIgnorePatterns = [
   ".gemini",
   ".opencode",
   ".aider*",
+  "AI-WORKFLOW.md",
+  "ai-workflow.md",
   "CLAUDE.md",
   "claude.md",
   "CODEX.md",
@@ -329,8 +386,41 @@ const requiredIgnorePatterns = [
   "transcripts",
   "conversation*.md",
   "*transcript*.md",
+  "TARGET.md",
+  "TARGETS.md",
+  "target.md",
+  "targets.md",
+  "targets",
+  "PROBLEMS.md",
+  "problems.md",
+  "NOTES.md",
+  "notes.md",
+  "notes",
+  "handoff*.md",
+  "HANDOFF*.md",
+  ".git-commit-template.txt",
+  "docs/verification",
+  "docs/ai-scoreboard.md",
+  "docs/UX-AUDIT.md",
+  "docs/feature-gap-audit.md",
+  "web/src-tauri/RENDER_PLAYER_PLAN.md",
+  "poc-tauri",
   ".env",
   ".env.*",
+  ".netrc",
+  ".npmrc",
+  ".pypirc",
+  "credentials.json",
+  "service-account*.json",
+  "*.pem",
+  "*.key",
+  "*.p12",
+  "*.pfx",
+  "*.jks",
+  "*.keystore",
+  "*.mobileprovision",
+  "*.provisionprofile",
+  ".wrangler",
 ];
 
 function normalizedIgnorePatterns(body) {

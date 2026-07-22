@@ -581,8 +581,9 @@ check(
 );
 check(
   "Public repo security preflight exists",
-  existsSync(join(root, "scripts/public_repo_preflight.mjs")),
-  "scripts/public_repo_preflight.mjs must exist to scan for tracked assistant files, transcripts, and likely credentials",
+  existsSync(join(root, "scripts/public_repo_preflight.mjs")) &&
+    existsSync(join(root, "scripts/public_repo_preflight.test.mjs")),
+  "The public repo preflight and its regression tests must exist",
 );
 check(
   "App responsive contract exists",
@@ -611,12 +612,13 @@ check(
 );
 check(
   "CI runs public and website gates",
-  /public_repo_preflight\.mjs/.test(ciWorkflow) &&
+  /node --test scripts\/public_repo_preflight\.test\.mjs/.test(ciWorkflow) &&
+    /public_repo_preflight\.mjs/.test(ciWorkflow) &&
     /check_release_readiness\.mjs/.test(ciWorkflow) &&
     /check_website_download_logic\.mjs/.test(ciWorkflow) &&
     /check_website_static\.mjs/.test(ciWorkflow) &&
     /check_website_path_mount\.mjs/.test(ciWorkflow),
-  ".github/workflows/ci.yml must run public repo, release readiness, website download, static website, and mounted-path checks",
+  ".github/workflows/ci.yml must test and run the public repo gate plus release readiness and website checks",
 );
 check(
   "CI runs security decisions",
