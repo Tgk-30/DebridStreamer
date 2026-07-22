@@ -154,6 +154,15 @@ jobs:
         with:
           node-version: 24
 
+      - name: Commit privacy gate tests
+        run: node --test scripts/check_commit_privacy.test.mjs
+
+      - name: Commit privacy gate
+        env:
+          COMMIT_PRIVACY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          COMMIT_PRIVACY_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/check_commit_privacy.mjs
+
       - name: Public repo preflight tests
         run: node --test scripts/public_repo_preflight.test.mjs
 
