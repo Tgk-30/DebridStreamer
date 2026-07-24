@@ -79,7 +79,7 @@
 .phone-remote-progress {
   height: 0.45rem;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--radius-scale));
   background: var(--surface-3);
 }
 
@@ -121,7 +121,7 @@
 }
 
 html[data-tv-mode="true"] {
-  font-size: 19px;
+  font-size: calc(1.1875rem * var(--text-scale));
   scroll-behavior: smooth;
 }
 

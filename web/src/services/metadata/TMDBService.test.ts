@@ -558,7 +558,7 @@ describe("TMDBService search type=null (multi)", () => {
     expect(url.searchParams.get("include_adult")).toBe("false");
   });
 
-  it("omits the language param for a typed search", async () => {
+  it("adds the configured language param for a typed search", async () => {
     const mock = makeMockFetch(() => ok(searchBody));
     const service = new TMDBService("tmdb-key", mock.fetchImpl);
 
@@ -566,7 +566,7 @@ describe("TMDBService search type=null (multi)", () => {
 
     const url = mock.lastURL()!;
     expect(url.pathname).toBe("/3/search/tv");
-    expect(url.searchParams.get("language")).toBeNull();
+    expect(url.searchParams.get("language")).toBe("en-US");
   });
 
   it("drops person results and entries with no title, and infers type from title/name", async () => {
