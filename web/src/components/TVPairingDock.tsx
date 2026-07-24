@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createTVRemoteSession,
   revokeTVRemoteSession,
@@ -14,30 +14,41 @@ export function TVPairingDock() {
   const session = useTVRemoteSession();
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const refreshInFlight = useRef(false);
 
-  const create = useCallback(async () => {
-    if (!isServerMode()) return;
+  const refresh = useCallback(async () => {
+    if (!isServerMode() || refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    const previous = session;
     setError(null);
+    setTVRemoteSession(null);
     try {
+      if (previous != null) {
+        await revokeTVRemoteSession(previous.id).catch(() => {});
+      }
       const next = await createTVRemoteSession();
       setTVRemoteSession(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      refreshInFlight.current = false;
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
-    if (session == null) void create();
-  }, [create, session]);
+    if (session == null && !refreshInFlight.current) void refresh();
+  }, [refresh, session]);
 
-  const refresh = async () => {
-    const previous = session;
-    setTVRemoteSession(null);
-    if (previous != null) {
-      await revokeTVRemoteSession(previous.id).catch(() => {});
-    }
-    await create();
-  };
+  useEffect(() => {
+    if (session == null) return;
+    const expiresAt = Date.parse(session.pairingExpiresAt);
+    if (!Number.isFinite(expiresAt)) return;
+    const timer = window.setTimeout(
+      () => void refresh(),
+      Math.max(0, expiresAt - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [refresh, session]);
 
   if (!isServerMode()) {
     return (
@@ -78,7 +89,7 @@ export function TVPairingDock() {
           ) : (
             <>
               <p role="alert">{error}</p>
-              <button type="button" className="btn" onClick={() => void create()}>
+              <button type="button" className="btn" onClick={() => void refresh()}>
                 Retry
               </button>
             </>

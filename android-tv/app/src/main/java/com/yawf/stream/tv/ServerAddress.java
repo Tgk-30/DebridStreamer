@@ -54,6 +54,19 @@ final class ServerAddress {
         }
     }
 
+    static boolean isHttpOrHttps(String candidate) {
+        try {
+            URI uri = new URI(candidate);
+            String scheme = uri.getScheme();
+            return scheme != null &&
+                (scheme.equalsIgnoreCase("http") ||
+                    scheme.equalsIgnoreCase("https")) &&
+                uri.getHost() != null;
+        } catch (RuntimeException | URISyntaxException error) {
+            return false;
+        }
+    }
+
     private static int effectivePort(URI uri) {
         if (uri.getPort() >= 0) return uri.getPort();
         return uri.getScheme().equalsIgnoreCase("https") ? 443 : 80;

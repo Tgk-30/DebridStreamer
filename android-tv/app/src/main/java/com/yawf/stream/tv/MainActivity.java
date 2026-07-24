@@ -138,6 +138,14 @@ public final class MainActivity extends ComponentActivity {
             ) {
                 String target = request.getUrl().toString();
                 if (ServerAddress.sameOrigin(serverBase, target)) return false;
+                if (!ServerAddress.isHttpOrHttps(target)) {
+                    Toast.makeText(
+                        MainActivity.this,
+                        "This link type is not supported.",
+                        Toast.LENGTH_SHORT
+                    ).show();
+                    return true;
+                }
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, request.getUrl()));
                 } catch (RuntimeException error) {
@@ -301,8 +309,10 @@ public final class MainActivity extends ComponentActivity {
             if (authorization != null) {
                 headers.put("Authorization", authorization);
             }
-            String cookie = CookieManager.getInstance().getCookie(url);
-            if (cookie != null && cookie.length() <= 8_192) {
+            String cookie = PlaybackHeaders.cloudflareCookieHeader(
+                CookieManager.getInstance().getCookie(url)
+            );
+            if (cookie != null) {
                 headers.put("Cookie", cookie);
             }
 
@@ -464,8 +474,18 @@ public final class MainActivity extends ComponentActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        mainHandler.removeCallbacks(progressReporter);
         if (player != null) player.pause();
         CookieManager.getInstance().flush();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (player != null) {
+            mainHandler.removeCallbacks(progressReporter);
+            mainHandler.postDelayed(progressReporter, PROGRESS_INTERVAL_MS);
+        }
     }
 
     @Override

@@ -187,6 +187,9 @@ const androidMain = read(
 const androidNetwork = read(
   "android-tv/app/src/main/res/xml/network_security_config.xml",
 );
+const androidPlaybackHeaders = read(
+  "android-tv/app/src/main/java/com/yawf/stream/tv/PlaybackHeaders.java",
+);
 const remoteControl = read("server/src/remoteControl.ts");
 check(
   /allowRawStreamUrls:[\s\S]{0,160}process\.env\.NODE_ENV !== "production"/.test(serverConfig),
@@ -220,6 +223,11 @@ check(
     /setSupportMultipleWindows\(false\)/.test(androidMain) &&
     /setAcceptThirdPartyCookies\(webView, false\)/.test(androidMain) &&
     /!value\.startsWith\("Bearer "\)/.test(androidMain) &&
+    /PlaybackHeaders\.cloudflareCookieHeader/.test(androidMain) &&
+    /"CF_Authorization"/.test(androidPlaybackHeaders) &&
+    /"CF_Session"/.test(androidPlaybackHeaders) &&
+    /"CF_AppSession"/.test(androidPlaybackHeaders) &&
+    !/"ds_session"/.test(androidPlaybackHeaders) &&
     !/<certificates src="user"/.test(androidNetwork),
   "Android TV confines its WebView and native playback bridge to the configured server",
 );

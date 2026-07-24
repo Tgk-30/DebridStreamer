@@ -43,4 +43,13 @@ public class ServerAddressTest {
             )
         );
     }
+
+    @Test
+    public void recognizesOnlyHttpAndHttpsNavigationTargets() {
+        assertTrue(ServerAddress.isHttpOrHttps("https://yawf.example/help"));
+        assertTrue(ServerAddress.isHttpOrHttps("http://192.168.1.20:43110"));
+        assertFalse(ServerAddress.isHttpOrHttps("intent://open/player"));
+        assertFalse(ServerAddress.isHttpOrHttps("javascript:alert(1)"));
+        assertFalse(ServerAddress.isHttpOrHttps("not a URL"));
+    }
 }
