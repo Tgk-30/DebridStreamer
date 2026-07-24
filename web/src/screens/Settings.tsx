@@ -59,10 +59,12 @@ import { AppearanceSettings } from "./settings/AppearanceSettings";
 import { Field, SegmentedControl } from "./settings/SettingsControls";
 import type {
   AppSettings,
+  DefaultSubtitleBehavior,
   RatingScale,
   SourceEntry,
   StreamMaxQuality,
 } from "../data/settings";
+import { PLAYBACK_LANGUAGE_OPTIONS } from "../lib/languagePreference";
 import { DebridServiceType } from "../services/debrid/models";
 import { testServerDebridToken } from "../lib/serverApi";
 import { AIProviderKind } from "../services/ai/models";
@@ -1475,6 +1477,111 @@ function PlaybackTab({ draft, patch }: TabProps) {
               list.
             </InfoTip>
           </span>
+      </label>
+
+      <div className="settings-control-grid">
+        <Field
+          label="Default audio language"
+          hint="Used when a stream offers a matching audio track. Original keeps the stream's choice."
+        >
+          <select
+            aria-label="Default audio language"
+            value={draft.defaultAudioLanguage ?? ""}
+            onChange={(event) => patch({ defaultAudioLanguage: event.target.value })}
+          >
+            <option value="">Original / stream default</option>
+            {PLAYBACK_LANGUAGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field
+          label="Default playback speed"
+          hint="Used when this title has no remembered playback speed."
+        >
+          <select
+            aria-label="Default playback speed"
+            value={draft.defaultPlaybackSpeed ?? 1}
+            onChange={(event) => patch({ defaultPlaybackSpeed: Number(event.target.value) })}
+          >
+            {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((speed) => (
+              <option key={speed} value={speed}>
+                {speed === 1 ? "Normal (1x)" : `${speed}x`}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field
+          label="Default volume"
+          hint="Initial volume for a newly opened player."
+        >
+          <input
+            aria-label="Default volume"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={draft.defaultVolume ?? 100}
+            onChange={(event) => patch({ defaultVolume: Number(event.target.value) })}
+          />
+          <output>{draft.defaultVolume ?? 100}%</output>
+        </Field>
+
+        <Field
+          label="Default subtitles"
+          hint="Choose whether to automatically enable a matching subtitle track."
+        >
+          <select
+            aria-label="Default subtitles"
+            value={draft.defaultSubtitleBehavior ?? "off"}
+            onChange={(event) =>
+              patch({ defaultSubtitleBehavior: event.target.value as DefaultSubtitleBehavior })
+            }
+          >
+            <option value="off">Keep subtitles off</option>
+            <option value="preferred">Use preferred language</option>
+          </select>
+        </Field>
+
+        <Field
+          label="Preferred subtitle language"
+          hint="Applied only when Default subtitles is set to use a preferred language."
+        >
+          <select
+            aria-label="Preferred subtitle language"
+            value={draft.defaultSubtitleLanguage ?? ""}
+            disabled={(draft.defaultSubtitleBehavior ?? "off") !== "preferred"}
+            onChange={(event) => patch({ defaultSubtitleLanguage: event.target.value })}
+          >
+            <option value="">No language selected</option>
+            {PLAYBACK_LANGUAGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+
+      <label className="settings-toggle-row">
+        <input
+          type="checkbox"
+          checked={draft.rememberPerTitleTrackChoices ?? true}
+          onChange={(event) =>
+            patch({ rememberPerTitleTrackChoices: event.target.checked })
+          }
+        />
+        <span>
+          <strong>Remember audio and subtitle choices per title</strong>
+          <InfoTip label="About remembered track choices">
+            When enabled, a title's track choice takes priority over these
+            defaults the next time you play it.
+          </InfoTip>
+        </span>
       </label>
 
       <div className="settings-control-grid">

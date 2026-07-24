@@ -45,6 +45,7 @@ import { appFetch } from "../lib/http";
 import { isServerMode } from "../lib/serverMode";
 import type { NetworkMode } from "../lib/networkPolicy";
 import { DEFAULT_THEME_ID, resolveThemeId } from "../theme/themes";
+import { normalizeLanguagePreference } from "../lib/languagePreference";
 import {
   OpenSubtitlesClient,
   type SubtitleClient,
@@ -99,6 +100,12 @@ const SettingsKeys = {
   subtitleFontScale: "subtitle_font_scale",
   subtitleTextColor: "subtitle_text_color",
   subtitleBgOpacity: "subtitle_bg_opacity",
+  defaultAudioLanguage: "default_audio_language",
+  defaultSubtitleBehavior: "default_subtitle_behavior",
+  defaultSubtitleLanguage: "default_subtitle_language",
+  defaultPlaybackSpeed: "default_playback_speed",
+  defaultVolume: "default_volume",
+  rememberPerTitleTrackChoices: "remember_per_title_track_choices",
   openSubtitlesApiKey: "opensubtitles_api_key",
   autoUpdateChecks: "auto_update_checks",
   simpleMode: "simple_mode",
@@ -174,6 +181,7 @@ export type AppearanceNavLabels = "auto" | "labels" | "icons";
 export type AppearanceNavPosition = "side" | "bottom";
 export type AppearanceNavTint = "airy" | "balanced" | "solid";
 export type AppearancePosterSize = "compact" | "default" | "large";
+export type DefaultSubtitleBehavior = "off" | "preferred";
 
 /** Everything the user can configure, persisted to localStorage this phase. */
 /** How the user rates a title on Detail. "ten" = 1–10, "hundred" = 0–100
@@ -239,6 +247,18 @@ export interface AppSettings {
   subtitleFontScale: number;
   subtitleTextColor: string;
   subtitleBgOpacity: number;
+  /** Preferred audio language. Empty preserves the stream's original default. */
+  defaultAudioLanguage?: string;
+  /** Whether a preferred subtitle language should be selected automatically. */
+  defaultSubtitleBehavior?: DefaultSubtitleBehavior;
+  /** Preferred subtitle language. Empty preserves subtitles off by default. */
+  defaultSubtitleLanguage?: string;
+  /** Speed used when no remembered per-title speed is available. */
+  defaultPlaybackSpeed?: number;
+  /** Initial player volume as an integer percentage from 0 through 100. */
+  defaultVolume?: number;
+  /** Restore a title's prior audio and subtitle choice before applying defaults. */
+  rememberPerTitleTrackChoices?: boolean;
   /** OpenSubtitles REST API key (powers in-player subtitle search). */
   openSubtitlesApiKey: string;
   /** Progressive disclosure: Simple hides advanced tabs/controls. Local-Mode
@@ -472,6 +492,28 @@ function normalizeSubtitleTextColor(value: unknown): string {
     : "#ffffff";
 }
 
+const DEFAULT_PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const;
+
+export function normalizeDefaultPlaybackSpeed(value: unknown): number {
+  const speed = toFiniteNumber(value);
+  return speed != null && (DEFAULT_PLAYBACK_SPEEDS as readonly number[]).includes(speed)
+    ? speed
+    : 1;
+}
+
+export function normalizeDefaultVolume(value: unknown): number {
+  const volume = toFiniteNumber(value);
+  return volume == null ? 100 : Math.min(100, Math.max(0, Math.round(volume)));
+}
+
+function normalizeDefaultLanguage(value: unknown): string {
+  return normalizeLanguagePreference(value) ?? "";
+}
+
+function normalizeDefaultSubtitleBehavior(value: unknown): DefaultSubtitleBehavior {
+  return value === "preferred" ? "preferred" : "off";
+}
+
 /** Defaults: pull what we can from env so the app works with zero config. */
 export function defaultSettings(): AppSettings {
   return {
@@ -509,6 +551,12 @@ export function defaultSettings(): AppSettings {
     subtitleFontScale: 1,
     subtitleTextColor: "#ffffff",
     subtitleBgOpacity: 0.55,
+    defaultAudioLanguage: "",
+    defaultSubtitleBehavior: "off",
+    defaultSubtitleLanguage: "",
+    defaultPlaybackSpeed: 1,
+    defaultVolume: 100,
+    rememberPerTitleTrackChoices: true,
     openSubtitlesApiKey: env("VITE_OPENSUBTITLES_KEY"),
     simpleMode: false,
     autoUpdateChecks: true,
@@ -580,6 +628,17 @@ export function loadSettings(): AppSettings {
       subtitleFontScale: normalizeSubtitleFontScale(parsed.subtitleFontScale),
       subtitleTextColor: normalizeSubtitleTextColor(parsed.subtitleTextColor),
       subtitleBgOpacity: normalizeSubtitleBgOpacity(parsed.subtitleBgOpacity),
+      defaultAudioLanguage: normalizeDefaultLanguage(parsed.defaultAudioLanguage),
+      defaultSubtitleBehavior: normalizeDefaultSubtitleBehavior(
+        parsed.defaultSubtitleBehavior,
+      ),
+      defaultSubtitleLanguage: normalizeDefaultLanguage(parsed.defaultSubtitleLanguage),
+      defaultPlaybackSpeed: normalizeDefaultPlaybackSpeed(parsed.defaultPlaybackSpeed),
+      defaultVolume: normalizeDefaultVolume(parsed.defaultVolume),
+      rememberPerTitleTrackChoices:
+        typeof parsed.rememberPerTitleTrackChoices === "boolean"
+          ? parsed.rememberPerTitleTrackChoices
+          : base.rememberPerTitleTrackChoices,
       ratingScale: normalizeRatingScale(parsed.ratingScale),
       preferredExternalPlayer:
         typeof parsed.preferredExternalPlayer === "string"
@@ -812,6 +871,15 @@ function scalarSettingEntries(settings: AppSettings): Array<[string, string]> {
     [SettingsKeys.subtitleFontScale, String(normalizeSubtitleFontScale(settings.subtitleFontScale))],
     [SettingsKeys.subtitleTextColor, normalizeSubtitleTextColor(settings.subtitleTextColor)],
     [SettingsKeys.subtitleBgOpacity, String(normalizeSubtitleBgOpacity(settings.subtitleBgOpacity))],
+    [SettingsKeys.defaultAudioLanguage, normalizeDefaultLanguage(settings.defaultAudioLanguage)],
+    [SettingsKeys.defaultSubtitleBehavior, normalizeDefaultSubtitleBehavior(settings.defaultSubtitleBehavior)],
+    [SettingsKeys.defaultSubtitleLanguage, normalizeDefaultLanguage(settings.defaultSubtitleLanguage)],
+    [SettingsKeys.defaultPlaybackSpeed, String(normalizeDefaultPlaybackSpeed(settings.defaultPlaybackSpeed))],
+    [SettingsKeys.defaultVolume, String(normalizeDefaultVolume(settings.defaultVolume))],
+    [
+      SettingsKeys.rememberPerTitleTrackChoices,
+      (settings.rememberPerTitleTrackChoices ?? true) ? "true" : "false",
+    ],
     [SettingsKeys.autoUpdateChecks, settings.autoUpdateChecks ? "true" : "false"],
     [SettingsKeys.simpleMode, settings.simpleMode ? "true" : "false"],
     [SettingsKeys.autoInstallUpdates, settings.autoInstallUpdates ? "true" : "false"],
@@ -1006,6 +1074,12 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     subtitleFontScale,
     subtitleTextColor,
     subtitleBgOpacity,
+    defaultAudioLanguage,
+    defaultSubtitleBehavior,
+    defaultSubtitleLanguage,
+    defaultPlaybackSpeed,
+    defaultVolume,
+    rememberPerTitleTrackChoices,
     autoUpdateChecks,
     autoInstallUpdates,
     streamCachedOnly,
@@ -1050,6 +1124,12 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     settingsByKey.get(SettingsKeys.subtitleFontScale) ?? null,
     settingsByKey.get(SettingsKeys.subtitleTextColor) ?? null,
     settingsByKey.get(SettingsKeys.subtitleBgOpacity) ?? null,
+    settingsByKey.get(SettingsKeys.defaultAudioLanguage) ?? null,
+    settingsByKey.get(SettingsKeys.defaultSubtitleBehavior) ?? null,
+    settingsByKey.get(SettingsKeys.defaultSubtitleLanguage) ?? null,
+    settingsByKey.get(SettingsKeys.defaultPlaybackSpeed) ?? null,
+    settingsByKey.get(SettingsKeys.defaultVolume) ?? null,
+    settingsByKey.get(SettingsKeys.rememberPerTitleTrackChoices) ?? null,
     settingsByKey.get(SettingsKeys.autoUpdateChecks) ?? null,
     settingsByKey.get(SettingsKeys.autoInstallUpdates) ?? null,
     settingsByKey.get(SettingsKeys.streamCachedOnly) ?? null,
@@ -1174,6 +1254,23 @@ export async function loadSettingsFromStore(): Promise<AppSettings> {
     subtitleBgOpacity: normalizeSubtitleBgOpacity(
       subtitleBgOpacity ?? base.subtitleBgOpacity,
     ),
+    defaultAudioLanguage: normalizeDefaultLanguage(
+      defaultAudioLanguage ?? base.defaultAudioLanguage,
+    ),
+    defaultSubtitleBehavior: normalizeDefaultSubtitleBehavior(
+      defaultSubtitleBehavior ?? base.defaultSubtitleBehavior,
+    ),
+    defaultSubtitleLanguage: normalizeDefaultLanguage(
+      defaultSubtitleLanguage ?? base.defaultSubtitleLanguage,
+    ),
+    defaultPlaybackSpeed: normalizeDefaultPlaybackSpeed(
+      defaultPlaybackSpeed ?? base.defaultPlaybackSpeed,
+    ),
+    defaultVolume: normalizeDefaultVolume(defaultVolume ?? base.defaultVolume),
+    rememberPerTitleTrackChoices:
+      rememberPerTitleTrackChoices == null
+        ? base.rememberPerTitleTrackChoices
+        : rememberPerTitleTrackChoices === "true",
     openSubtitlesApiKey: openSubtitlesApiKey ?? base.openSubtitlesApiKey,
     simpleMode: simpleMode == null ? base.simpleMode : simpleMode === "true",
     autoUpdateChecks:

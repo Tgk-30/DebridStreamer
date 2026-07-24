@@ -56,6 +56,7 @@ import {
 import { registerPlayerMount } from "../lib/attention";
 import { recordDiagnostic } from "../lib/diagnostics";
 import { mediaErrorMessage, nextHlsRecovery } from "../lib/playerReliability";
+import { findPreferredLanguageMatch } from "../lib/languagePreference";
 import { useModalA11y } from "./useModalA11y";
 import {
   scrobblePlaybackPause,
@@ -66,6 +67,20 @@ import {
 import "./VideoPlayer.css";
 
 type Playability = "webview" | "external";
+
+/**
+ * Optional global defaults supplied by Settings. Per-title values take
+ * precedence only when `rememberPerTitleTrackChoices` is enabled.
+ */
+export interface PlayerPreferenceDefaults {
+  defaultAudioLanguage?: string | null;
+  defaultSubtitleLanguage?: string | null;
+  defaultSubtitleBehavior?: "off" | "preferred";
+  defaultPlaybackSpeed?: number | null;
+  /** 0 through 100. The web player converts this to HTMLMediaElement's 0..1. */
+  defaultVolume?: number | null;
+  rememberPerTitleTrackChoices?: boolean;
+}
 
 interface VideoPlayerProps {
   url: string;
@@ -106,6 +121,8 @@ interface VideoPlayerProps {
   startPositionSeconds?: number;
   /** Remembered audio/subtitle/speed for this title (in-window player only). */
   savedPrefs?: PlaybackPrefs | null;
+  /** Optional global player defaults. Settings owns persistence and supplies this. */
+  playerPreferences?: PlayerPreferenceDefaults | null;
   /** Subtitle source (local OpenSubtitles client or the Server-Mode client) when
    * available - powers subtitle search. Null disables the search UI. */
   subtitleClient?: SubtitleClient | null;
@@ -318,6 +335,7 @@ interface HlsLevelChoice {
 interface HlsAudioChoice {
   index: number;
   label: string;
+  language: string | null;
 }
 
 /** Keep media-clock updates local to the scrub bar. Browser `timeupdate` fires
@@ -381,6 +399,7 @@ export function VideoPlayer({
   upNext = null,
   onPlayNext,
   autoCountdown = true,
+  playerPreferences = null,
   preferredPlayer,
   useBuiltInPlayer = true,
 }: VideoPlayerProps) {
@@ -712,6 +731,7 @@ export function VideoPlayer({
     return (
       <EmbeddedPlayer
         savedPrefs={savedPrefs}
+        playerPreferences={playerPreferences}
         url={effectiveUrl}
         title={title}
         subtitle={subtitle ?? epLabel}
@@ -835,6 +855,7 @@ export function VideoPlayer({
             onSourceSize={setSourceSize}
             onProgress={onProgress}
             savedPrefs={savedPrefs}
+            playerPreferences={playerPreferences}
             startPositionSeconds={startPositionSeconds}
             onPlaybackError={(message) => void handleWebviewPlaybackError(message)}
             onOpenExternalPlayer={() => void openExternalPlayback()}
@@ -905,6 +926,7 @@ function WebviewPlayer({
   onSourceSize,
   onProgress,
   savedPrefs,
+  playerPreferences,
   startPositionSeconds,
   onPlaybackError,
   onOpenExternalPlayer,
@@ -944,6 +966,7 @@ function WebviewPlayer({
     prefs?: PlaybackPrefs,
   ) => void;
   savedPrefs?: PlaybackPrefs | null;
+  playerPreferences?: PlayerPreferenceDefaults | null;
   startPositionSeconds?: number;
   onPlaybackError: (message: string) => void;
   onOpenExternalPlayer: () => void;
@@ -960,6 +983,10 @@ function WebviewPlayer({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<HlsInstance | null>(null);
+  const lastAudibleVolumeRef = useRef(1);
+  const playerPreferencesRef = useRef(playerPreferences);
+  playerPreferencesRef.current = playerPreferences;
+  const appliedHlsAudioPreferenceRef = useRef(false);
   const autoplayAttemptedRef = useRef(false);
   const pausedForCastRef = useRef(false);
   const suspendedRef = useRef(suspended);
@@ -976,9 +1003,12 @@ function WebviewPlayer({
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [playbackRate, setPlaybackRate] = useState(() => {
-    const saved = savedPrefs?.playbackSpeed;
-    return saved != null && Number.isFinite(saved) && saved >= 0.5 && saved <= 2
-      ? saved
+    const saved = playerPreferences?.rememberPerTitleTrackChoices === false
+      ? null
+      : savedPrefs?.playbackSpeed;
+    const preferred = saved ?? playerPreferences?.defaultPlaybackSpeed;
+    return preferred != null && Number.isFinite(preferred) && preferred >= 0.5 && preferred <= 2
+      ? preferred
       : 1;
   });
   const [scrubbing, setScrubbing] = useState(false);
@@ -994,6 +1024,7 @@ function WebviewPlayer({
   const [hlsLevel, setHlsLevel] = useState(-1);
   const [hlsAudioTracks, setHlsAudioTracks] = useState<HlsAudioChoice[]>([]);
   const [hlsAudioTrack, setHlsAudioTrack] = useState(-1);
+  const volumeIsSilent = muted || volume === 0;
   const underTauri = isTauri();
   const mediaArtist = nowPlaying?.episodeLabel ?? subtitle ?? "";
   const mediaArtworkUrl = nowPlaying?.posterUrl ?? "";
@@ -1406,18 +1437,29 @@ function WebviewPlayer({
       }
     };
     const onVolumeChange = () => {
-      setMuted(video.muted || video.volume === 0);
+      if (video.volume > 0) lastAudibleVolumeRef.current = video.volume;
+      setMuted(video.muted);
       setVolume(video.volume);
     };
     const onRateChange = () => setPlaybackRate(video.playbackRate);
-    const savedRate = savedPrefs?.playbackSpeed;
+    const preferences = playerPreferencesRef.current;
+    const perTitlePrefs = preferences?.rememberPerTitleTrackChoices === false
+      ? null
+      : savedPrefs;
+    const preferredRate = perTitlePrefs?.playbackSpeed ?? preferences?.defaultPlaybackSpeed;
     if (
-      savedRate != null &&
-      Number.isFinite(savedRate) &&
-      savedRate >= 0.5 &&
-      savedRate <= 2
+      preferredRate != null &&
+      Number.isFinite(preferredRate) &&
+      preferredRate >= 0.5 &&
+      preferredRate <= 2
     ) {
-      video.playbackRate = savedRate;
+      video.playbackRate = preferredRate;
+    }
+    const configuredVolume = preferences?.defaultVolume;
+    if (configuredVolume != null && Number.isFinite(configuredVolume)) {
+      const volumePercent = Math.round(Math.min(100, Math.max(0, configuredVolume)));
+      video.volume = volumePercent / 100;
+      video.muted = volumePercent === 0;
     }
     const attemptAutoplay = () => {
       if (autoplayAttemptedRef.current || suspendedRef.current) return;
@@ -1463,7 +1505,7 @@ function WebviewPlayer({
       if (onProgressRef.current != null && video.currentTime > 0) report();
       if (scrobbleContext != null) scrobblePlaybackStop(scrobbleContext, progressPct());
     };
-  }, [onPausedChange, savedPrefs?.playbackSpeed, scrobbleContext, url]);
+  }, [onPausedChange, scrobbleContext, url]);
 
   // Wire hls.js for HLS streams when the browser can't play them natively.
   useEffect(() => {
@@ -1487,8 +1529,34 @@ function WebviewPlayer({
     // that return above and never touch it. Fetch it on demand instead.
     let cancelled = false;
     let instance: HlsInstance | null = null;
+    appliedHlsAudioPreferenceRef.current = false;
     let retryTimer: number | undefined;
     const recovery = { networkRetries: 0, mediaRecoveries: 0 };
+    const applyHlsAudioPreference = (tracks: HlsAudioChoice[]) => {
+      if (appliedHlsAudioPreferenceRef.current || instance == null) return;
+      const preferences = playerPreferencesRef.current;
+      const perTitlePrefs = preferences?.rememberPerTitleTrackChoices === false
+        ? null
+        : savedPrefs;
+      const matchLanguage = (preference: unknown) =>
+        findPreferredLanguageMatch(
+          preference,
+          tracks,
+          (track) => track.language,
+        ) ?? findPreferredLanguageMatch(
+          preference,
+          tracks,
+          (track) => track.label,
+        );
+      // A stale remembered language should not suppress the global fallback.
+      const match =
+        matchLanguage(perTitlePrefs?.preferredAudioLang) ??
+        matchLanguage(preferences?.defaultAudioLanguage);
+      if (match == null) return;
+      appliedHlsAudioPreferenceRef.current = true;
+      instance.audioTrack = match.index;
+      setHlsAudioTrack(match.index);
+    };
     void import("hls.js").then(({ default: Hls }) => {
       // The effect can be torn down (or the URL swapped) while the chunk is in
       // flight; without this we would attach a player to a stale <video>.
@@ -1559,12 +1627,13 @@ function WebviewPlayer({
                 : `Quality ${index + 1}`,
           })) ?? [],
         );
-        setHlsAudioTracks(
-          instance?.audioTracks.map((track, index) => ({
-            index,
-            label: track.name || track.lang || `Audio ${index + 1}`,
-          })) ?? [],
-        );
+        const audioChoices = instance?.audioTracks.map((track, index) => ({
+          index,
+          label: track.name || track.lang || `Audio ${index + 1}`,
+          language: track.lang ?? null,
+        })) ?? [];
+        setHlsAudioTracks(audioChoices);
+        applyHlsAudioPreference(audioChoices);
         setHlsLevel(instance?.currentLevel ?? -1);
         setHlsAudioTrack(instance?.audioTrack ?? -1);
       });
@@ -1572,12 +1641,13 @@ function WebviewPlayer({
         setHlsLevel(data.level);
       });
       instance.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
-        setHlsAudioTracks(
-          instance?.audioTracks.map((track, index) => ({
-            index,
-            label: track.name || track.lang || `Audio ${index + 1}`,
-          })) ?? [],
-        );
+        const audioChoices = instance?.audioTracks.map((track, index) => ({
+          index,
+          label: track.name || track.lang || `Audio ${index + 1}`,
+          language: track.lang ?? null,
+        })) ?? [];
+        setHlsAudioTracks(audioChoices);
+        applyHlsAudioPreference(audioChoices);
       });
       instance.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
         setHlsAudioTrack(data.id);
@@ -1844,18 +1914,31 @@ function WebviewPlayer({
   const toggleMuted = useCallback(() => {
     const video = videoRef.current;
     if (video == null) return;
-    video.muted = !video.muted;
-    setMuted(video.muted || video.volume === 0);
+    if (video.muted || video.volume === 0) {
+      const restored = video.volume > 0
+        ? video.volume
+        : Math.max(0.05, lastAudibleVolumeRef.current);
+      video.volume = restored;
+      video.muted = false;
+      lastAudibleVolumeRef.current = restored;
+      setVolume(restored);
+      setMuted(false);
+      return;
+    }
+    lastAudibleVolumeRef.current = video.volume;
+    video.muted = true;
+    setMuted(true);
   }, []);
 
   const changeVolume = useCallback((next: number) => {
     const video = videoRef.current;
     if (video == null) return;
     const clamped = Math.max(0, Math.min(1, next));
+    if (clamped > 0) lastAudibleVolumeRef.current = clamped;
     video.volume = clamped;
     video.muted = clamped === 0;
     setVolume(clamped);
-    setMuted(video.muted || clamped === 0);
+    setMuted(video.muted);
   }, []);
 
   const changePlaybackRate = useCallback((next: number) => {
@@ -1961,12 +2044,12 @@ function WebviewPlayer({
               type="button"
               className="chip player-osd-icon-button"
               onClick={toggleMuted}
-              aria-label={muted ? "Unmute" : "Mute"}
-              aria-pressed={muted}
-              title={muted ? "Unmute" : "Mute"}
+              aria-label={volumeIsSilent ? "Unmute" : "Mute"}
+              aria-pressed={volumeIsSilent}
+              title={volumeIsSilent ? "Unmute" : "Mute"}
               tabIndex={chromeVisible ? undefined : -1}
             >
-              <Icon name={muted ? "volume-muted" : "volume"} size={17} />
+              <Icon name={volumeIsSilent ? "volume-muted" : "volume"} size={17} />
             </button>
             <label className="player-volume-control" aria-label="Volume">
               <input
@@ -1974,7 +2057,7 @@ function WebviewPlayer({
                 min="0"
                 max="1"
                 step="0.05"
-                value={muted ? 0 : volume}
+                value={volume}
                 onChange={(event) => changeVolume(Number(event.target.value))}
                 tabIndex={chromeVisible ? undefined : -1}
               />

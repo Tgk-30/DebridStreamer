@@ -446,6 +446,21 @@ describe("WebviewPlayer", () => {
     expect(speed).toHaveValue("1.5");
   });
 
+  it("converts Settings volume percent and applies the configured web playback speed", () => {
+    render(
+      <VideoPlayer
+        url="https://x/test.mp4"
+        title="T"
+        playerPreferences={{ defaultVolume: 35, defaultPlaybackSpeed: 1.25 }}
+        onClose={() => {}}
+      />,
+    );
+    const video = document.querySelector("video.player-video") as HTMLVideoElement;
+    expect(video.volume).toBeCloseTo(0.35);
+    expect(screen.getByRole("slider", { name: "Volume" })).toHaveValue("0.35");
+    expect(screen.getByRole("combobox", { name: "Playback speed" })).toHaveValue("1.25");
+  });
+
   it("changes browser playback volume from the custom control", () => {
     render(
       <VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />,
@@ -456,6 +471,36 @@ describe("WebviewPlayer", () => {
       target: { value: "0.35" },
     });
 
+    expect(video.volume).toBeCloseTo(0.35);
+  });
+
+  it("reflects programmatic volume and mute changes without losing the actual slider value", () => {
+    render(
+      <VideoPlayer url="https://x/test.mp4" title="T" onClose={() => {}} />,
+    );
+    const video = document.querySelector("video.player-video") as HTMLVideoElement;
+    const slider = screen.getByRole("slider", { name: "Volume" });
+
+    video.volume = 0.35;
+    video.muted = true;
+    fireEvent.volumeChange(video);
+    expect(slider).toHaveValue("0.35");
+    expect(screen.getByRole("button", { name: "Unmute" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    video.volume = 0;
+    video.muted = false;
+    fireEvent.volumeChange(video);
+    expect(slider).toHaveValue("0");
+    expect(screen.getByRole("button", { name: "Unmute" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
+    expect(video.muted).toBe(false);
     expect(video.volume).toBeCloseTo(0.35);
   });
 
@@ -1131,6 +1176,33 @@ describe("HLS source attach", () => {
     expect(xhr.withCredentials).toBe(true);
   });
 
+  it("uses the global HLS audio default after track discovery without moving the control", async () => {
+    (HTMLMediaElement.prototype.canPlayType as ReturnType<typeof vi.fn>) = vi.fn(
+      () => "",
+    );
+    render(
+      <VideoPlayer
+        url="https://x/stream.m3u8"
+        title="T"
+        playerPreferences={{ defaultAudioLanguage: "Spanish" }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(hlsInstances).toHaveLength(1));
+    hlsInstances[0].audioTracks = [
+      { name: "English", lang: "eng" },
+      { name: "Spanish", lang: "und" },
+    ];
+    const manifestHandler = hlsInstances[0].on.mock.calls.find(
+      ([event]) => event === "manifestParsed",
+    )?.[1] as (() => void) | undefined;
+    if (manifestHandler == null) throw new Error("manifest handler missing");
+    act(manifestHandler);
+
+    expect(hlsInstances[0].audioTrack).toBe(1);
+    expect(screen.getByRole("button", { name: "Playback settings" })).toBeInTheDocument();
+  });
+
   it("retries bounded fatal HLS network errors before surfacing recovery UI", async () => {
     vi.useFakeTimers();
     try {
@@ -1156,6 +1228,29 @@ describe("HLS source attach", () => {
       act(() => handler("hlsError", { fatal: true, type: "networkError" }));
       expect(screen.getByRole("button", { name: "Retry playback" })).toBeInTheDocument();
       expect(screen.getByText(/after two retries/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears a pending HLS retry timer when the player unmounts", async () => {
+    vi.useFakeTimers();
+    try {
+      (HTMLMediaElement.prototype.canPlayType as ReturnType<typeof vi.fn>) = vi.fn(
+        () => "",
+      );
+      const { unmount } = render(
+        <VideoPlayer url="https://x/stream.m3u8" title="T" onClose={() => {}} />,
+      );
+      await act(async () => Promise.resolve());
+      const handler = hlsInstances[0].on.mock.calls[0]?.[1] as (
+        event: string,
+        data: { fatal: boolean; type: string },
+      ) => void;
+      act(() => handler("hlsError", { fatal: true, type: "networkError" }));
+      unmount();
+      act(() => vi.advanceTimersByTime(1000));
+      expect(hlsInstances[0].startLoad).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

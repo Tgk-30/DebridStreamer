@@ -95,6 +95,48 @@ afterEach(() => {
   setViewport(initialViewport.width, initialViewport.height, initialViewport.scale);
 });
 
+describe("EmbeddedPlayer listener cleanup", () => {
+  it("unsubscribes an observation listener that resolves after unmount", async () => {
+    let resolveObserve: ((unlisten: () => void) => void) | undefined;
+    const unlisten = vi.fn();
+    renderPlayerMock.observeProperties.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveObserve = resolve;
+      }),
+    );
+    const { unmount } = render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    await waitFor(() => expect(renderPlayerMock.observeProperties).toHaveBeenCalled());
+    unmount();
+    await act(async () => {
+      resolveObserve?.(unlisten);
+      await Promise.resolve();
+    });
+    expect(unlisten).toHaveBeenCalledTimes(1);
+  });
+
+  it("unsubscribes a late Tauri resize listener after unmount", async () => {
+    let resolveResize: ((unlisten: () => void) => void) | undefined;
+    const unlisten = vi.fn();
+    tauriWindowMock.onResized.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveResize = resolve;
+      }),
+    );
+    const { unmount } = render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    await waitFor(() => expect(tauriWindowMock.onResized).toHaveBeenCalled());
+    unmount();
+    await act(async () => {
+      resolveResize?.(unlisten);
+      await Promise.resolve();
+    });
+    expect(unlisten).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("EmbeddedPlayer control geometry", () => {
   it("keeps transport controls in the true center column", () => {
     render(
@@ -169,6 +211,224 @@ describe("EmbeddedPlayer playback controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
     expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("mute", false);
     expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("volume", 72);
+  });
+
+  it("keeps native mute state separate from the actual volume property events", async () => {
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    const slider = screen.getByRole("slider", { name: "Volume" });
+
+    emitProperty("volume", 64);
+    emitProperty("mute", true);
+    expect(slider).toHaveValue("64");
+    expect(screen.getByRole("button", { name: "Unmute" })).toBeInTheDocument();
+
+    emitProperty("volume", 0);
+    emitProperty("mute", false);
+    expect(slider).toHaveValue("0");
+    expect(screen.getByRole("button", { name: "Unmute" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
+    expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("volume", 64);
+    expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("mute", false);
+  });
+
+  it("keeps the Audio control in place while native track discovery is pending", () => {
+    render(
+      <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
+    );
+    expect(screen.getByRole("button", { name: "Audio" })).toBeInTheDocument();
+  });
+
+  it("refreshes tracks from the native track-list count event and matches a title when lang is und", async () => {
+    renderPlayerMock.getProperty.mockResolvedValue([
+      { id: 1, type: "audio", lang: "eng", title: "English 5.1", selected: true },
+      { id: 2, type: "audio", lang: "und", title: "Deutsch 5.1" },
+    ]);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/movie.mkv"
+        title="Movie"
+        playerPreferences={{ defaultAudioLanguage: "deu" }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("track-list/count", 2);
+
+    await waitFor(() =>
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("aid", "2"),
+    );
+  });
+
+  it("leaves the stream-selected native audio unchanged when no global language matches", async () => {
+    renderPlayerMock.getProperty.mockResolvedValue([
+      { id: 1, type: "audio", lang: "eng", title: "English", selected: true },
+    ]);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/movie.mkv"
+        title="Movie"
+        playerPreferences={{ defaultAudioLanguage: "Japanese" }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("track-list/count", 1);
+
+    await waitFor(() => expect(renderPlayerMock.getProperty).toHaveBeenCalled());
+    expect(renderPlayerMock.setProperty).not.toHaveBeenCalledWith("aid", "1");
+  });
+
+  it("prefers remembered audio only when remembering track choices is enabled", async () => {
+    const tracks = [
+      { id: 1, type: "audio", lang: "eng", title: "English", selected: true },
+      { id: 2, type: "audio", lang: "deu", title: "German" },
+    ];
+    renderPlayerMock.getProperty.mockResolvedValue(tracks);
+    const { rerender } = render(
+      <EmbeddedPlayer
+        url="https://example.test/remembered.mkv"
+        title="Movie"
+        savedPrefs={{ preferredAudioLang: "eng" }}
+        playerPreferences={{ defaultAudioLanguage: "deu", rememberPerTitleTrackChoices: true }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("track-list/count", 2);
+    await waitFor(() =>
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("aid", "1"),
+    );
+
+    renderPlayerMock.setProperty.mockClear();
+    rerender(
+      <EmbeddedPlayer
+        url="https://example.test/default.mkv"
+        title="Movie"
+        savedPrefs={{ preferredAudioLang: "eng" }}
+        playerPreferences={{ defaultAudioLanguage: "deu", rememberPerTitleTrackChoices: false }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("track-list/count", 2);
+    await waitFor(() =>
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("aid", "2"),
+    );
+  });
+
+  it("applies configured native volume and speed using Settings units", async () => {
+    renderPlayerMock.getProperty.mockResolvedValue([
+      { id: 1, type: "audio", lang: "eng", title: "English", selected: true },
+    ]);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/movie.mkv"
+        title="Movie"
+        playerPreferences={{ defaultVolume: 35, defaultPlaybackSpeed: 1.5 }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() =>
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("volume", 35),
+    );
+    expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("mute", false);
+    emitProperty("track-list/count", 1);
+    await waitFor(() =>
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("speed", 1.5),
+    );
+  });
+
+  it("keeps a remembered subtitle over a global subtitle-off default", async () => {
+    renderPlayerMock.getProperty.mockResolvedValue([
+      { id: 1, type: "audio", lang: "eng", title: "English", selected: true },
+      { id: 2, type: "sub", lang: "deu", title: "German subtitles" },
+    ]);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/subtitles.mkv"
+        title="Movie"
+        savedPrefs={{ preferredSubId: "2" }}
+        playerPreferences={{ defaultSubtitleBehavior: "off", rememberPerTitleTrackChoices: true }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("track-list/count", 2);
+    await waitFor(() =>
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("sid", "2"),
+    );
+    expect(renderPlayerMock.setProperty).not.toHaveBeenCalledWith("sid", "no");
+  });
+
+  it("sets native default volume before unpausing", async () => {
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/quiet.mkv"
+        title="Movie"
+        playerPreferences={{ defaultVolume: 0 }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() =>
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("pause", false),
+    );
+    const calls = renderPlayerMock.setProperty.mock.calls;
+    const volumeAt = calls.findIndex(([name, value]) => name === "volume" && value === 0);
+    const muteAt = calls.findIndex(([name, value]) => name === "mute" && value === true);
+    const unpauseAt = calls.findIndex(([name, value]) => name === "pause" && value === false);
+    expect(volumeAt).toBeGreaterThanOrEqual(0);
+    expect(muteAt).toBeGreaterThanOrEqual(0);
+    expect(volumeAt).toBeLessThan(unpauseAt);
+    expect(muteAt).toBeLessThan(unpauseAt);
+  });
+
+  it("does not let an empty stream-default language delay the configured speed", async () => {
+    renderPlayerMock.getProperty.mockResolvedValue([{ id: 9, type: "video", title: "Video" }]);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/video-only.mkv"
+        title="Movie"
+        playerPreferences={{ defaultAudioLanguage: "", defaultPlaybackSpeed: 1.25 }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() =>
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("speed", 1.25),
+    );
+    emitProperty("track-list/count", 1);
+    expect(renderPlayerMock.setProperty).not.toHaveBeenCalledWith("aid", "9");
+  });
+
+  it("does not consume the restore when a video-only track list arrives first", async () => {
+    renderPlayerMock.getProperty.mockResolvedValue([{ id: 9, type: "video", title: "Video" }]);
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/movie.mkv"
+        title="Movie"
+        playerPreferences={{ defaultAudioLanguage: "German" }}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    emitProperty("track-list/count", 1);
+    await waitFor(() => expect(renderPlayerMock.getProperty).toHaveBeenCalled());
+    expect(renderPlayerMock.setProperty).not.toHaveBeenCalledWith("aid", "2");
+
+    renderPlayerMock.getProperty.mockResolvedValue([
+      { id: 1, type: "video", title: "Video" },
+      { id: 2, type: "audio", lang: "deu", title: "German" },
+    ]);
+    emitProperty("track-list/count", 2);
+    await waitFor(() =>
+      expect(renderPlayerMock.setProperty).toHaveBeenCalledWith("aid", "2"),
+    );
   });
 
   it("draws the buffered range from the absolute demuxer cache timestamp", async () => {

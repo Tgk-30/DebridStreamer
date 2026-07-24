@@ -24,6 +24,20 @@ interface PlayerEvent {
   data: unknown;
 }
 
+// Keep redundant geometry IPC out of resize-heavy paths. The native core owns the
+// actual surface size, so only a changed margin needs to cross the bridge.
+let lastVideoMarginBottom: number | undefined;
+// Tauri commands are asynchronous. Serialize lifecycle transitions so a rapid
+// close and reopen cannot let an older destroy tear down a newer player.
+let lifecycleTail: Promise<void> = Promise.resolve();
+
+function enqueueLifecycle<T>(operation: () => Promise<T>): Promise<T> {
+  const queued = lifecycleTail.then(operation, operation);
+  // Keep the next lifecycle operation usable even when this one fails.
+  lifecycleTail = queued.then(() => undefined, () => undefined);
+  return queued;
+}
+
 function stringifyOptions(
   opts: Record<string, string | number | boolean> | undefined,
 ): Record<string, string> {
@@ -41,16 +55,22 @@ function toObserveSpecs(
 }
 
 /** Create the player (mpv + native surface + event stream). No file is loaded. */
-export async function init(config: MpvConfig): Promise<void> {
-  await invoke("player_init", {
-    options: stringifyOptions(config.initialOptions),
-    observed: toObserveSpecs(config.observedProperties),
+export function init(config: MpvConfig): Promise<void> {
+  return enqueueLifecycle(async () => {
+    lastVideoMarginBottom = undefined;
+    await invoke("player_init", {
+      options: stringifyOptions(config.initialOptions),
+      observed: toObserveSpecs(config.observedProperties),
+    });
   });
 }
 
 /** Tear the player down and remove the native surface. */
-export async function destroy(): Promise<void> {
-  await invoke("player_destroy");
+export function destroy(): Promise<void> {
+  return enqueueLifecycle(async () => {
+    lastVideoMarginBottom = undefined;
+    await invoke("player_destroy");
+  });
 }
 
 /** Run an mpv command, e.g. command("loadfile", [url, "replace"]). */
@@ -105,5 +125,14 @@ export async function observeProperties(
 export async function setVideoMarginRatio(margin: {
   bottom?: number;
 }): Promise<void> {
-  await invoke("player_set_video_margin", { bottom: margin.bottom ?? 0 });
+  const bottom = margin.bottom ?? 0;
+  if (lastVideoMarginBottom === bottom) return;
+  lastVideoMarginBottom = bottom;
+  try {
+    await invoke("player_set_video_margin", { bottom });
+  } catch (error) {
+    // Allow a later retry when the native surface was not ready yet.
+    lastVideoMarginBottom = undefined;
+    throw error;
+  }
 }

@@ -262,6 +262,24 @@ export function Detail() {
     clientSecret: settings.traktClientSecret,
   });
   const transcodeAvailable = useTranscodeAvailable();
+  const playerPreferences = useMemo(
+    () => ({
+      defaultAudioLanguage: settings.defaultAudioLanguage ?? "",
+      defaultSubtitleLanguage: settings.defaultSubtitleLanguage ?? "",
+      defaultSubtitleBehavior: settings.defaultSubtitleBehavior ?? "off",
+      defaultPlaybackSpeed: settings.defaultPlaybackSpeed ?? 1,
+      defaultVolume: settings.defaultVolume ?? 100,
+      rememberPerTitleTrackChoices: settings.rememberPerTitleTrackChoices ?? true,
+    }),
+    [
+      settings.defaultAudioLanguage,
+      settings.defaultSubtitleLanguage,
+      settings.defaultSubtitleBehavior,
+      settings.defaultPlaybackSpeed,
+      settings.defaultVolume,
+      settings.rememberPerTitleTrackChoices,
+    ],
+  );
 
   const detail = useDetail(detailItem, services.tmdb);
 
@@ -1675,6 +1693,7 @@ export function Detail() {
             useBuiltInPlayer={settings.builtInPlayer}
             startPositionSeconds={player.startPositionSeconds}
             savedPrefs={player.savedPrefs}
+            playerPreferences={playerPreferences}
             scrobbleContext={player.scrobbleContext}
             onClose={closePlayer}
             onProgress={(current, duration, prefs) => {

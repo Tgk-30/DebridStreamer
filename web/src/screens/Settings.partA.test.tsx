@@ -766,6 +766,40 @@ describe("Settings · Appearance", () => {
 // ============================================================================
 
 describe("Settings · Playback (local caps)", () => {
+  it("offers safe defaults and updates each player preference in the draft", () => {
+    renderAt("playback");
+
+    expect(screen.getByRole("combobox", { name: "Default audio language" })).toHaveValue("");
+    expect(screen.getByRole("option", { name: "Original / stream default" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Preferred subtitle language" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Default playback speed" })).toHaveValue("1");
+    expect(screen.getByRole("slider", { name: "Default volume" })).toHaveValue("100");
+    expect(screen.getByRole("checkbox", { name: /Remember audio and subtitle choices per title/ })).toBeChecked();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Default audio language" }), {
+      target: { value: "ja" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Default subtitles" }), {
+      target: { value: "preferred" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Preferred subtitle language" }), {
+      target: { value: "en" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Default playback speed" }), {
+      target: { value: "1.5" },
+    });
+    fireEvent.change(screen.getByRole("slider", { name: "Default volume" }), {
+      target: { value: "35" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Remember audio and subtitle choices per title/ }));
+
+    expect(screen.getByRole("combobox", { name: "Default audio language" })).toHaveValue("ja");
+    expect(screen.getByRole("combobox", { name: "Preferred subtitle language" })).toHaveValue("en");
+    expect(screen.getByRole("combobox", { name: "Default playback speed" })).toHaveValue("1.5");
+    expect(screen.getByRole("slider", { name: "Default volume" })).toHaveValue("35");
+    expect(screen.getByRole("checkbox", { name: /Remember audio and subtitle choices per title/ })).not.toBeChecked();
+  });
+
   it("defaults cached-only on for new settings", () => {
     renderAt("playback");
     const cachedOnly = screen
