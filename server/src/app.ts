@@ -417,17 +417,49 @@ const portableLibrarySchema = z.object({
   preview: boundedPreview,
 });
 
-const portableProfileBundleSchema = z.object({
-  product: z.literal("YAWF Stream"),
-  format: z.literal("yawf-profile-portable"),
-  version: z.literal(1),
-  createdAt: z.string().datetime(),
-  settings: z.array(portableSettingSchema).max(300),
-  watchlist: z.array(portableWatchlistSchema).max(10_000),
-  history: z.array(portableHistorySchema).max(20_000),
-  folders: z.array(portableFolderSchema).max(5_000),
-  library: z.array(portableLibrarySchema).max(20_000),
-});
+const portableProfileBundleSchema = z
+  .object({
+    product: z.literal("YAWF Stream"),
+    format: z.literal("yawf-profile-portable"),
+    version: z.literal(1),
+    createdAt: z.string().datetime(),
+    settings: z.array(portableSettingSchema).max(300),
+    watchlist: z.array(portableWatchlistSchema).max(10_000),
+    history: z.array(portableHistorySchema).max(20_000),
+    folders: z.array(portableFolderSchema).max(5_000),
+    library: z.array(portableLibrarySchema).max(20_000),
+  })
+  .superRefine((bundle, context) => {
+    const folderIds = new Set<string>();
+    bundle.folders.forEach((folder, index) => {
+      if (folderIds.has(folder.id)) {
+        context.addIssue({
+          code: "custom",
+          message: "Folder IDs must be unique.",
+          path: ["folders", index, "id"],
+        });
+      }
+      folderIds.add(folder.id);
+      if (folder.isSystem !== (folder.folderKind !== "manual")) {
+        context.addIssue({
+          code: "custom",
+          message: "Folder system state does not match its kind.",
+          path: ["folders", index, "isSystem"],
+        });
+      }
+      if (
+        (folder.folderKind === "watched" ||
+          folder.folderKind === "release_wait") &&
+        folder.listType !== "favorites"
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Favorite system folders must use the favorites list.",
+          path: ["folders", index, "listType"],
+        });
+      }
+    });
+  });
 
 const portableImportSchema = z.object({
   mode: z.enum(["merge", "replace"]).default("merge"),
@@ -4569,6 +4601,9 @@ function registerRoutes(
           counts.history += 1;
         }
 
+        const portableFolders = new Map(
+          body.bundle.folders.map((folder) => [folder.id, folder]),
+        );
         const folderMap = new Map<string, string>();
         for (const folder of body.bundle.folders) {
           if (folder.folderKind === "system_root") {
@@ -4595,14 +4630,39 @@ function registerRoutes(
              parent_id = excluded.parent_id,
              updated_at = excluded.updated_at`,
         );
-        for (const folder of body.bundle.folders) {
-          if (folder.isSystem || folder.folderKind !== "manual") continue;
-          const id = folderMap.get(folder.id)!;
+        const pendingFolders = body.bundle.folders.filter(
+          (folder) => !folder.isSystem && folder.folderKind === "manual",
+        );
+        const insertedFolders = new Set<string>();
+        while (pendingFolders.length > 0) {
+          let nextIndex = pendingFolders.findIndex((folder) => {
+            if (folder.parentId == null) return true;
+            const parent = portableFolders.get(folder.parentId);
+            return (
+              parent == null ||
+              parent.folderKind !== "manual" ||
+              parent.listType !== folder.listType ||
+              insertedFolders.has(parent.id)
+            );
+          });
+          // A remaining cycle is still recoverable. Break one edge by attaching
+          // the first stable entry to its list root, then continue in dependency
+          // order so the rest of the hierarchy is preserved.
+          if (nextIndex < 0) nextIndex = 0;
+          const [folder] = pendingFolders.splice(nextIndex, 1);
+          const parent =
+            folder.parentId == null
+              ? null
+              : portableFolders.get(folder.parentId) ?? null;
           const parentId =
-            (folder.parentId == null ? null : folderMap.get(folder.parentId)) ??
-            systemRootId(auth.profileId, folder.listType);
+            parent != null &&
+            parent.listType === folder.listType &&
+            (parent.folderKind !== "manual" || insertedFolders.has(parent.id))
+              ? (folderMap.get(parent.id) ??
+                systemRootId(auth.profileId, folder.listType))
+              : systemRootId(auth.profileId, folder.listType);
           saveFolder.run(
-            id,
+            folderMap.get(folder.id)!,
             auth.profileId,
             folder.name,
             parentId,
@@ -4610,6 +4670,7 @@ function registerRoutes(
             folder.createdAt,
             folder.updatedAt,
           );
+          insertedFolders.add(folder.id);
           counts.folders += 1;
         }
 
@@ -4626,9 +4687,15 @@ function registerRoutes(
              preview_json = excluded.preview_json`,
         );
         for (const entry of body.bundle.library) {
+          const sourceFolder =
+            entry.folderId == null
+              ? null
+              : portableFolders.get(entry.folderId) ?? null;
           const folderId =
-            (entry.folderId == null ? null : folderMap.get(entry.folderId)) ??
-            systemRootId(auth.profileId, entry.listType);
+            sourceFolder != null && sourceFolder.listType === entry.listType
+              ? (folderMap.get(sourceFolder.id) ??
+                systemRootId(auth.profileId, entry.listType))
+              : systemRootId(auth.profileId, entry.listType);
           saveLibrary.run(
             randomId("lib"),
             auth.profileId,

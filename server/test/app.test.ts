@@ -481,6 +481,110 @@ describe("DebridStreamer server", () => {
     );
   });
 
+  it("restores child-first folder trees and safely breaks imported cycles", async () => {
+    const owner = await setupOwner(app);
+    const now = new Date().toISOString();
+    const folder = (
+      id: string,
+      name: string,
+      parentId: string | null,
+    ) => ({
+      id,
+      name,
+      parentId,
+      listType: "favorites" as const,
+      folderKind: "manual" as const,
+      isSystem: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const bundle = {
+      product: "YAWF Stream" as const,
+      format: "yawf-profile-portable" as const,
+      version: 1 as const,
+      createdAt: now,
+      settings: [],
+      watchlist: [],
+      history: [],
+      folders: [
+        folder("child", "Child", "parent"),
+        folder("parent", "Parent", null),
+        folder("cycle-a", "Cycle A", "cycle-b"),
+        folder("cycle-b", "Cycle B", "cycle-a"),
+      ],
+      library: [
+        {
+          mediaId: "tt-nested",
+          folderId: "child",
+          listType: "favorites" as const,
+          addedAt: now,
+          customListName: null,
+          releaseDateHint: null,
+          renewalStatus: null,
+          preview: { id: "tt-nested", title: "Nested title" },
+        },
+      ],
+    };
+
+    const imported = await request(owner, {
+      method: "POST",
+      url: "/api/portability/import",
+      csrf: true,
+      payload: { mode: "merge", bundle },
+    });
+    expect(imported.statusCode, imported.body).toBe(200);
+    expect(
+      json<{ counts: { folders: number; library: number } }>(imported).counts,
+    ).toMatchObject({
+      folders: 4,
+      library: 1,
+    });
+
+    const exported = json<{
+      bundle: {
+        folders: Array<{
+          id: string;
+          name: string;
+          parentId: string | null;
+        }>;
+        library: Array<{ mediaId: string; folderId: string | null }>;
+      };
+    }>(
+      await request(owner, {
+        method: "GET",
+        url: "/api/portability/export",
+      }),
+    ).bundle;
+    const byName = new Map(exported.folders.map((entry) => [entry.name, entry]));
+    expect(byName.get("Child")?.parentId).toBe(byName.get("Parent")?.id);
+    expect(byName.get("Cycle A")?.parentId).not.toBe(byName.get("Cycle B")?.id);
+    expect(byName.get("Cycle B")?.parentId).toBe(byName.get("Cycle A")?.id);
+    expect(exported.library).toContainEqual(
+      expect.objectContaining({
+        mediaId: "tt-nested",
+        folderId: byName.get("Child")?.id,
+      }),
+    );
+
+    const duplicateFolders = await request(owner, {
+      method: "POST",
+      url: "/api/portability/import",
+      csrf: true,
+      payload: {
+        mode: "merge",
+        bundle: {
+          ...bundle,
+          library: [],
+          folders: [
+            folder("duplicate", "First", null),
+            folder("duplicate", "Second", null),
+          ],
+        },
+      },
+    });
+    expect(duplicateFolders.statusCode).toBe(400);
+  });
+
   it("reissues an invite with the same policy and revokes the old token", async () => {
     const owner = await setupOwner(app);
     const created = await request(owner, {
