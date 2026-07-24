@@ -15,7 +15,7 @@ const iconMock = vi.hoisted(() => vi.fn(({ name }: { name: string }) => <span da
 const openInExternalPlayerMock = vi.hoisted(() => vi.fn(async () => "opened"));
 
 const tauriWindowMock = vi.hoisted(() => ({
-  setFullscreen: vi.fn(async () => {}),
+  setFullscreen: vi.fn(async (_fullscreen: boolean) => {}),
   isFullscreen: vi.fn(async () => false),
   onResized: vi.fn(async () => () => {}),
 }));
@@ -567,14 +567,19 @@ describe("EmbeddedPlayer playback controls", () => {
   });
 
   it("uses the Tauri window API from the fullscreen button in both directions", async () => {
+    let fullscreenState = false;
+    tauriWindowMock.isFullscreen.mockImplementation(async () => fullscreenState);
+    tauriWindowMock.setFullscreen.mockImplementation(async (next) => {
+      fullscreenState = next;
+    });
     render(
       <EmbeddedPlayer url="https://example.test/movie.mkv" title="Movie" onClose={() => {}} />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Fullscreen" }));
     await waitFor(() => expect(tauriWindowMock.setFullscreen).toHaveBeenCalledWith(true));
+    await screen.findByRole("button", { name: "Exit fullscreen" });
 
-    tauriWindowMock.isFullscreen.mockResolvedValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
     await waitFor(() => expect(tauriWindowMock.setFullscreen).toHaveBeenCalledWith(false));
   });
