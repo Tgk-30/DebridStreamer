@@ -401,6 +401,64 @@ describe("StreamPicker", () => {
     expect(screen.getByText("Uncached default 1080p")).toBeInTheDocument();
   });
 
+  it("shows progressive sources without discarding the saved cached-only preference", () => {
+    storeSettings = {
+      dataSaver: false,
+      streamCachedOnly: true,
+      streamMaxQuality: "any",
+      streamMaxSizeGB: 0,
+    };
+    const preliminary = [
+      makeRow({
+        hash: "A",
+        title: "Eventually cached 1080p H264 AAC mp4",
+        cacheStatus: "unavailable",
+      }),
+      makeRow({
+        hash: "B",
+        title: "Eventually uncached 1080p H264 AAC mp4",
+        cacheStatus: "unavailable",
+      }),
+    ];
+    const props = {
+      resolveStream: neverResolve,
+      onPlay: noop,
+    };
+    const { rerender } = render(
+      <StreamPicker
+        {...props}
+        state={baseState({
+          rows: preliminary,
+          loading: true,
+          phase: "checking_availability",
+        })}
+      />,
+    );
+
+    const toggle = screen.getByRole("checkbox", { name: /Cached only/ });
+    expect(toggle).toBeChecked();
+    expect(toggle).toBeDisabled();
+    expect(screen.getByText("Eventually cached 1080p H264 AAC mp4")).toBeInTheDocument();
+    expect(screen.getByText("Eventually uncached 1080p H264 AAC mp4")).toBeInTheDocument();
+
+    rerender(
+      <StreamPicker
+        {...props}
+        state={baseState({
+          rows: [
+            { ...preliminary[0]!, cachedOn: DebridServiceType.realDebrid, cacheStatus: "cached" },
+            { ...preliminary[1]!, cacheStatus: "not_cached" },
+          ],
+          phase: "ready",
+        })}
+      />,
+    );
+    expect(toggle).toBeChecked();
+    expect(toggle).not.toBeDisabled();
+    expect(screen.getByText("Eventually cached 1080p H264 AAC mp4")).toBeInTheDocument();
+    expect(screen.queryByText("Eventually uncached 1080p H264 AAC mp4")).toBeNull();
+  });
+
   it("renders 10 streams initially and expands by 20 at a time", () => {
     const rows = Array.from({ length: 31 }, (_, index) =>
       makeRow({ hash: `page-${index}`, title: `Paged stream ${index + 1} 1080p` }),
@@ -569,7 +627,13 @@ describe("StreamPicker", () => {
 
     fireEvent.click(screen.getByText("Bad Pick 1080p").closest("button")!);
 
-    await waitFor(() => expect(screen.getByText("Debrid 429")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "The provider rate limit was reached. Wait a minute, then retry this source.",
+        ),
+      ).toBeInTheDocument(),
+    );
     // Row is interactive again (resolving cleared).
     expect(screen.getByText("Bad Pick 1080p").closest("button")!).not.toBeDisabled();
     expect(screen.getByText("Failed · Retry")).toBeInTheDocument();

@@ -241,12 +241,31 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+.stream-title-line {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--density-scale));
+  min-width: 0;
+}
 .stream-name {
+  min-width: 0;
   font-size: 0.8125rem;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.stream-recommended-chip {
+  flex: 0 0 auto;
+  color: var(--success);
+  background: rgba(92, 217, 140, 0.13);
+  border: 0.75px solid rgba(92, 217, 140, 0.38);
+  border-radius: var(--r-pill);
+  padding: calc(2px * var(--density-scale)) calc(6px * var(--density-scale));
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 .stream-meta {
   display: flex;
@@ -254,6 +273,39 @@
   gap: calc(6px * var(--density-scale));
   font-size: 0.75rem;
   margin-top: calc(2px * var(--density-scale));
+}
+.stream-recommendation-reason {
+  margin-top: calc(4px * var(--density-scale));
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+.streams-phase {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--density-scale));
+  margin-bottom: calc(8px * var(--density-scale));
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+.streams-phase-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.12);
+  animation: stream-phase-pulse 1.2s ease-in-out infinite;
+}
+@keyframes stream-phase-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .streams-phase-dot {
+    animation: none;
+  }
 }
 
 .stream-badge {

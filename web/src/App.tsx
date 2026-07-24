@@ -41,6 +41,18 @@ const TOUR_STEPS: TourStep[] = [
     placement: "right",
   },
 ];
+const ROUTE_TITLES: Record<ScreenId, string> = {
+  discover: "Discover",
+  search: "Search",
+  library: "Library",
+  watchlist: "Watchlist",
+  calendar: "Calendar",
+  history: "History",
+  assistant: "Assistant",
+  debrid: "Debrid library",
+  downloads: "Downloads",
+  settings: "Settings",
+};
 import { GlobalSearch } from "./components/GlobalSearch";
 import { ProfileMenu } from "./components/ProfileMenu";
 import { Spinner } from "./components/Spinner";
@@ -568,11 +580,26 @@ export function App() {
     route !== "assistant" &&
     detailItem == null &&
     browseContext == null;
+  const routeFrameRef = useRef<HTMLDivElement | null>(null);
+  const initialRouteRef = useRef(true);
+  useEffect(() => {
+    const title = ROUTE_TITLES[route];
+    document.title = `${title} | YAWF Stream`;
+    if (initialRouteRef.current) {
+      initialRouteRef.current = false;
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => routeFrameRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [route]);
 
   return (
     // data-setup-nudge reserves scroll room under the fixed get-started card
     // (App.css) so the last content row is never stranded behind it.
     <div className="app" data-setup-nudge={showSetupNudge || showInstallPrompt || undefined}>
+      <a className="skip-to-content" href="#main-content">
+        Skip to content
+      </a>
       <div className="aurora-glow" />
       <BandwidthWarningBanner />
 
@@ -589,7 +616,10 @@ export function App() {
         calendarBadgeCount={calendarBadgeCount}
       />
 
-      <main className="app-content">
+      <main id="main-content" className="app-content" tabIndex={-1}>
+        <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {ROUTE_TITLES[route]} page
+        </span>
         {showsGlobalSearch && <GlobalSearch />}
         {showsGlobalSearch && (
           <ProfileMenu
@@ -609,7 +639,10 @@ export function App() {
         <div
           key={route}
           className="route-frame"
+          tabIndex={-1}
+          aria-label={`${ROUTE_TITLES[route]} page`}
           ref={(element) => {
+            routeFrameRef.current = element;
             element?.toggleAttribute(
               "inert",
               detailItem != null || browseContext != null,

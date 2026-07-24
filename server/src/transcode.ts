@@ -7,13 +7,101 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 
+export type TranscodeVideoEncoder =
+  | "libx264"
+  | "h264_videotoolbox"
+  | "h264_nvenc"
+  | "h264_qsv";
+
+export interface TranscoderCapabilities {
+  toneMapping: boolean;
+  videoEncoders?: TranscodeVideoEncoder[];
+  subtitleSidecar?: boolean;
+}
+
+export interface TranscoderStreamProbe {
+  audio: boolean;
+  subtitle: boolean;
+}
+
 export interface Transcoder {
   /** Resolves true iff `ffmpeg -version` exits 0 within a short timeout. Run once
    *  at boot and cached - never per request. */
   detect(): Promise<boolean>;
+  /** Detect optional filters used by advanced profiles. */
+  capabilities?(): Promise<TranscoderCapabilities>;
+  /** Read only the source stream table. The main FFmpeg process still performs
+   * the single full media pass, including optional subtitle extraction. */
+  probeStreams?(upstreamUrl: string): Promise<TranscoderStreamProbe | null>;
   /** Spawn an ffmpeg process for the given argv (which encodes the HLS output
    *  paths). Returns the child handle so the registry can manage its lifecycle. */
   spawnHls(args: string[]): ChildProcess;
+}
+
+function captureFfmpegList(argument: "-filters" | "-encoders"): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let output = "";
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      if (timer != null) clearTimeout(timer);
+      resolve(value);
+    };
+    try {
+      const probe = spawn("ffmpeg", ["-hide_banner", argument], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const collect = (chunk: Buffer) => {
+        if (output.length < 1_000_000) output += chunk.toString("utf8");
+      };
+      probe.stdout?.on("data", collect);
+      probe.stderr?.on("data", collect);
+      probe.once("error", () => finish(null));
+      probe.once("close", (code) => finish(code === 0 ? output : null));
+      timer = setTimeout(() => {
+        try {
+          probe.kill("SIGKILL");
+        } catch {
+          /* already stopped */
+        }
+        finish(null);
+      }, 2000);
+      timer.unref?.();
+    } catch {
+      finish(null);
+    }
+  });
+}
+
+function detectFfprobe(): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const finish = (available: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (timer != null) clearTimeout(timer);
+      resolve(available);
+    };
+    try {
+      const probe = spawn("ffprobe", ["-version"], { stdio: "ignore" });
+      probe.once("error", () => finish(false));
+      probe.once("close", (code) => finish(code === 0));
+      timer = setTimeout(() => {
+        try {
+          probe.kill("SIGKILL");
+        } catch {
+          /* already stopped */
+        }
+        finish(false);
+      }, 2000);
+      timer.unref?.();
+    } catch {
+      finish(false);
+    }
+  });
 }
 
 export const realTranscoder: Transcoder = {
@@ -44,9 +132,94 @@ export const realTranscoder: Transcoder = {
       }
     });
   },
+  async capabilities() {
+    const [filters, encoders, ffprobeAvailable] = await Promise.all([
+      captureFfmpegList("-filters"),
+      captureFfmpegList("-encoders"),
+      detectFfprobe(),
+    ]);
+    const videoEncoders = [
+      "libx264",
+      "h264_videotoolbox",
+      "h264_nvenc",
+      "h264_qsv",
+    ].filter((encoder) =>
+      new RegExp(`(?:^|\\s)${encoder}(?:\\s|$)`, "m").test(encoders ?? ""),
+    ) as TranscodeVideoEncoder[];
+    return {
+      toneMapping: /(?:^|\s)zscale(?:\s|$)/m.test(filters ?? ""),
+      videoEncoders,
+      subtitleSidecar:
+        ffprobeAvailable &&
+        /(?:^|\s)webvtt(?:\s|$)/m.test(encoders ?? ""),
+    };
+  },
+  probeStreams(upstreamUrl) {
+    return new Promise<TranscoderStreamProbe | null>((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let output = "";
+      const finish = (result: TranscoderStreamProbe | null) => {
+        if (settled) return;
+        settled = true;
+        if (timer != null) clearTimeout(timer);
+        resolve(result);
+      };
+      try {
+        const probe = spawn(
+          "ffprobe",
+          [
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+            upstreamUrl,
+          ],
+          { stdio: ["ignore", "pipe", "ignore"] },
+        );
+        probe.stdout?.on("data", (chunk: Buffer) => {
+          if (output.length < 65_536) output += chunk.toString("utf8");
+        });
+        probe.once("error", () => finish(null));
+        probe.once("close", (code) => {
+          if (code !== 0) {
+            finish(null);
+            return;
+          }
+          const kinds = new Set(
+            output
+              .split(/\r?\n/)
+              .map((value) => value.trim().toLowerCase())
+              .filter(Boolean),
+          );
+          finish({
+            audio: kinds.has("audio"),
+            subtitle: kinds.has("subtitle"),
+          });
+        });
+        timer = setTimeout(() => {
+          try {
+            probe.kill("SIGKILL");
+          } catch {
+            /* already stopped */
+          }
+          finish(null);
+        }, 5000);
+        timer.unref?.();
+      } catch {
+        finish(null);
+      }
+    });
+  },
   spawnHls(args) {
-    // stdin ignored, stdout ignored (HLS goes to files), stderr piped so a future
-    // hardening pass can capture ffmpeg errors.
-    return spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+    // HLS goes to files. Drain stderr so a noisy FFmpeg failure can never fill
+    // the pipe buffer and stall the child while the registry waits for output.
+    const child = spawn("ffmpeg", args, {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    child.stderr?.resume();
+    return child;
   },
 };

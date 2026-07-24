@@ -28,6 +28,13 @@ import {
 } from "../data/streams";
 import { formatSize } from "../data/debridLibrary";
 import { useAppStore } from "../store/AppStore";
+import {
+  actionableProviderError,
+  rankSources,
+  type RankedSource,
+  type SourceAssessment,
+} from "../data/sourceIntelligence";
+import { isTauri } from "../lib/tauri";
 import { Icon } from "./Icon";
 import { ErrorNote } from "./ErrorNote";
 import "./StreamPicker.css";
@@ -87,6 +94,12 @@ interface StreamPickerProps {
   episodeLabel?: string | null;
   /** The selected episode, for tagging season-pack releases. Null for movies. */
   episodeContext?: { season: number; episode: number } | null;
+  /** Runtime enables a conservative bitrate estimate instead of guessing from
+   * file size alone. */
+  runtimeMinutes?: number | null;
+  /** True when the connected server can adapt a source the browser cannot
+   * direct play. */
+  transcodeAvailable?: boolean;
 }
 
 export function StreamPicker({
@@ -96,6 +109,8 @@ export function StreamPicker({
   onOpenSettings,
   episodeLabel = null,
   episodeContext = null,
+  runtimeMinutes = null,
+  transcodeAvailable = false,
 }: StreamPickerProps) {
   const { settings } = useAppStore();
   // Settings supplies the initial preference for each picker. The local state
@@ -107,6 +122,11 @@ export function StreamPicker({
   const [visibleCount, setVisibleCount] = useState(10);
   const [resolutionStates, setResolutionStates] = useState<Record<string, ResolutionStatus>>({});
   const [resolveError, setResolveError] = useState<string | null>(null);
+  const playbackProfile = isTauri()
+    ? "native" as const
+    : transcodeAvailable
+      ? "browser-transcode" as const
+      : "browser-direct" as const;
 
   // Clear the resolution/codec chips whenever the underlying results change
   // (a new title is opened). A stale value is already ignored if it no longer
@@ -126,6 +146,7 @@ export function StreamPicker({
     [state.rows, settings],
   );
   const cacheCheckUnavailable =
+    state.phase !== "checking_availability" &&
     state.hasDebrid &&
     baseRows.length > 0 &&
     baseRows.every((row) => cacheStatusFor(row) === "unavailable");
@@ -163,16 +184,26 @@ export function StreamPicker({
   const rows = useMemo(() => {
     const filtered = baseRows.filter(
       (r) =>
-        (!cachedOnly || r.cachedOn != null) &&
+        (!cachedOnly ||
+          state.phase === "checking_availability" ||
+          r.cachedOn != null) &&
         (effRes == null || r.result.quality === effRes) &&
         (effCodec == null || r.result.codec === effCodec),
     );
-    return [...filtered].sort((a, b) => {
-      const aCached = a.cachedOn != null ? 1 : 0;
-      const bCached = b.cachedOn != null ? 1 : 0;
-      return bCached - aCached;
+    return rankSources(filtered, {
+      profile: playbackProfile,
+      runtimeMinutes,
     });
-  }, [baseRows, cachedOnly, effRes, effCodec]);
+  }, [
+    baseRows,
+    cachedOnly,
+    effRes,
+    effCodec,
+    playbackProfile,
+    runtimeMinutes,
+    state.phase,
+  ]);
+  const rowValues = useMemo(() => rows.map((entry) => entry.row), [rows]);
 
   // A filter change is a fresh result set, so the next view starts at the fast
   // initial mount size rather than retaining a previous "show more" expansion.
@@ -204,7 +235,7 @@ export function StreamPicker({
       assertPackEpisodeMatch(row, stream, episodeContext);
       onPlay(stream, row.result);
     } catch (err) {
-      setResolveError(err instanceof Error ? err.message : String(err));
+      setResolveError(actionableProviderError(err));
       setResolutionStates((current) => ({ ...current, [hash]: "failed" }));
     } finally {
       // A failed resolve stays visibly terminal and retryable. A successful
@@ -245,7 +276,10 @@ export function StreamPicker({
               <input
                 type="checkbox"
                 checked={cachedOnly}
-                disabled={cacheCheckUnavailable}
+                disabled={
+                  cacheCheckUnavailable ||
+                  state.phase === "checking_availability"
+                }
                 onChange={(e) => setCachedOnly(e.target.checked)}
               />
               Cached only
@@ -306,7 +340,7 @@ export function StreamPicker({
 
       <StreamBody
         state={state}
-        rows={rows}
+        rows={rowValues}
         visibleRows={visibleRows}
         cachedOnly={cachedOnly}
         filteredCount={filteredCount}
@@ -345,7 +379,7 @@ function StreamBody({
 }: {
   state: StreamsState;
   rows: StreamRow[];
-  visibleRows: StreamRow[];
+  visibleRows: RankedSource[];
   cachedOnly: boolean;
   filteredCount: number;
   chipFiltersActive: boolean;
@@ -358,7 +392,7 @@ function StreamBody({
   episodeLabel?: string | null;
   episodeContext?: { season: number; episode: number } | null;
 }) {
-  if (state.loading) {
+  if (state.loading && rows.length === 0) {
     return (
       <ul className="streams-list streams-skeleton" aria-busy="true" aria-label="Searching sources">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -522,11 +556,24 @@ function StreamBody({
 
   return (
     <>
+      {state.loading && state.phase === "checking_availability" && (
+        <div
+          className="streams-phase"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span className="streams-phase-dot" aria-hidden="true" />
+          Checking provider availability. Sources are ready to review now.
+        </div>
+      )}
       <ul className="streams-list">
-        {visibleRows.map((row) => (
+        {visibleRows.map(({ row, assessment, recommended }) => (
           <StreamRowItem
             key={row.result.infoHash}
             row={row}
+            assessment={assessment}
+            recommended={recommended}
             resolutionStatus={resolutionStates[row.result.infoHash] ?? null}
             onSelect={() => onSelect(row)}
             pack={
@@ -550,11 +597,15 @@ function StreamBody({
 
 function StreamRowItem({
   row,
+  assessment,
+  recommended,
   resolutionStatus,
   onSelect,
   pack = false,
 }: {
   row: StreamRow;
+  assessment: SourceAssessment;
+  recommended: boolean;
   resolutionStatus: ResolutionStatus | null;
   onSelect: () => void;
   /** The release is a whole-season pack (not an exact episode file). */
@@ -578,8 +629,9 @@ function StreamRowItem({
         <span className="stream-quality">{result.quality}</span>
 
         <div className="stream-main">
-          <div className="stream-name">
-            {result.title}
+          <div className="stream-title-line">
+            <div className="stream-name">{result.title}</div>
+            {recommended && <span className="stream-recommended-chip">Recommended</span>}
             {pack && <span className="stream-pack-chip">Season pack</span>}
           </div>
           <div className="stream-meta t-secondary">
@@ -590,7 +642,33 @@ function StreamRowItem({
             <span>{result.seeders} seeders</span>
             <span>·</span>
             <span>{result.indexerName}</span>
+            {assessment.signals.hdr != null && (
+              <>
+                <span>·</span>
+                <span>{assessment.signals.hdr}</span>
+              </>
+            )}
+            {assessment.signals.remux && (
+              <>
+                <span>·</span>
+                <span>REMUX</span>
+              </>
+            )}
+            {assessment.signals.estimatedMbps != null && (
+              <>
+                <span>·</span>
+                <span>~{Math.round(assessment.signals.estimatedMbps)} Mbps</span>
+              </>
+            )}
           </div>
+          {recommended && (
+            <div className="stream-recommendation-reason">
+              Why: {assessment.reasons.join(", ")}.
+              {assessment.warnings.length > 0
+                ? ` Note: ${assessment.warnings.join(", ")}.`
+                : ""}
+            </div>
+          )}
         </div>
 
         {resolving ? (

@@ -33,13 +33,44 @@ function makeFakeTranscoder(opts: { detect?: boolean; writeOutput?: boolean } = 
       return opts.detect ?? true;
     },
     spawnHls(args: string[]) {
-      const manifestPath = args[args.length - 1] as string;
-      const dir = dirname(manifestPath);
+      const outputPath = args[args.length - 1] as string;
+      const dir = dirname(outputPath);
       // writeOutput:false simulates an ffmpeg that never produces a manifest (so
       // ensureJob's start-timeout → 504 can be exercised).
       if (opts.writeOutput !== false) {
-        writeFileSync(manifestPath, FAKE_MANIFEST);
-        writeFileSync(join(dir, "seg_00000.ts"), Buffer.from([0, 0, 0, 0]));
+        if (args.includes("webvtt")) {
+          writeFileSync(
+            join(dir, "subtitles.vtt"),
+            "WEBVTT\n\n00:00.000 --> 00:01.000\nHello\n",
+          );
+        } else if (args.includes("-master_pl_name")) {
+          writeFileSync(
+            join(dir, "stream.m3u8"),
+            [
+              "#EXTM3U",
+              "#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080",
+              "1080p.m3u8",
+              "#EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=1280x720",
+              "720p.m3u8",
+              "#EXT-X-STREAM-INF:BANDWIDTH=1800000,RESOLUTION=854x480",
+              "480p.m3u8",
+              "",
+            ].join("\n"),
+          );
+          for (const rendition of ["1080p", "720p", "480p"]) {
+            writeFileSync(
+              join(dir, `${rendition}.m3u8`),
+              FAKE_MANIFEST.replaceAll("seg_00000.ts", `${rendition}_seg_00000.ts`),
+            );
+            writeFileSync(
+              join(dir, `${rendition}_seg_00000.ts`),
+              Buffer.from([0, 0, 0, 0]),
+            );
+          }
+        } else {
+          writeFileSync(join(dir, "stream.m3u8"), FAKE_MANIFEST);
+          writeFileSync(join(dir, "seg_00000.ts"), Buffer.from([0, 0, 0, 0]));
+        }
       }
       const child = new EventEmitter() as EventEmitter & {
         kill: (signal?: string) => boolean;
@@ -230,6 +261,40 @@ describe("DebridStreamer server", () => {
       upstream = null;
     }
     await app.close();
+  });
+
+  it("compresses large JSON responses when the client accepts gzip", async () => {
+    app.get("/test/compression", async () => ({
+      items: Array.from({ length: 300 }, (_, index) => ({
+        id: index,
+        title: `Playback source ${index}`,
+      })),
+    }));
+    const response = await app.inject({
+      method: "GET",
+      url: "/test/compression",
+      headers: { "accept-encoding": "gzip" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-encoding"]).toBe("gzip");
+    expect(response.rawPayload.byteLength).toBeLessThan(2_000);
+  });
+
+  it("completes a progressive stream search when no indexer is configured", async () => {
+    const owner = await setupOwner(app);
+    const response = await request(owner, {
+      method: "GET",
+      url: "/api/streams/tt1234567?type=movie&progressive=1",
+    });
+    expect(response.statusCode).toBe(200);
+    const phases = response.body
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { phase: string; rows: unknown[] });
+    expect(phases).toEqual([
+      expect.objectContaining({ phase: "sources", rows: [] }),
+      expect.objectContaining({ phase: "ready", rows: [] }),
+    ]);
   });
 
   it("creates the first owner, starts a session, and rejects unsafe writes without CSRF", async () => {
@@ -2159,6 +2224,39 @@ describe("DebridStreamer server", () => {
         title: "Example.Movie.2026.1080p.WEB-DL.x264",
       });
 
+      const progressiveStreams = await request(owner, {
+        method: "GET",
+        url: "/api/streams/tt1234567?type=movie&progressive=1",
+      });
+      expect(progressiveStreams.statusCode).toBe(200);
+      expect(progressiveStreams.headers["content-type"]).toContain(
+        "application/x-ndjson",
+      );
+      const streamPhases = progressiveStreams.body
+        .trim()
+        .split("\n")
+        .map((line) =>
+          JSON.parse(line) as {
+            phase: string;
+            rows: Array<{
+              cachedOn: string | null;
+              cacheStatus: string;
+            }>;
+          },
+        );
+      expect(streamPhases.map((phase) => phase.phase)).toEqual([
+        "sources",
+        "ready",
+      ]);
+      expect(streamPhases[0]?.rows[0]).toMatchObject({
+        cachedOn: null,
+        cacheStatus: "unavailable",
+      });
+      expect(streamPhases[1]?.rows[0]).toMatchObject({
+        cachedOn: null,
+        cacheStatus: "unavailable",
+      });
+
       const resolved = await request(owner, {
         method: "POST",
         url: "/api/streams/resolve",
@@ -2541,6 +2639,45 @@ describe("DebridStreamer server", () => {
     }
   });
 
+  it("transcode: reports detected encoders and safely falls back to software", async () => {
+    const base = makeFakeTranscoder();
+    const detected: Transcoder = {
+      ...base,
+      async capabilities() {
+        return {
+          toneMapping: true,
+          videoEncoders: ["libx264"],
+        };
+      },
+    };
+    const fallback = await buildTranscodeApp(
+      {
+        enableTranscode: true,
+        transcodeVideoEncoder: "h264_nvenc",
+      },
+      detected,
+    );
+    try {
+      const owner = await setupOwner(fallback);
+      const bootstrap = json<{
+        transcodeAvailable: boolean;
+        transcodeCapabilities: {
+          hardwareEncoder: string;
+          availableVideoEncoders: string[];
+          toneMapping: boolean;
+        };
+      }>(await request(owner, { method: "GET", url: "/api/bootstrap" }));
+      expect(bootstrap.transcodeAvailable).toBe(true);
+      expect(bootstrap.transcodeCapabilities).toMatchObject({
+        hardwareEncoder: "libx264",
+        availableVideoEncoders: ["libx264"],
+        toneMapping: true,
+      });
+    } finally {
+      await fallback.close();
+    }
+  });
+
   it("transcode ON (+ffmpeg): advertises the capability and serves an HLS manifest + segment", async () => {
     const on = await buildTranscodeApp({ enableTranscode: true });
     try {
@@ -2554,12 +2691,48 @@ describe("DebridStreamer server", () => {
       expect(manifest.statusCode).toBe(200);
       expect(String(manifest.headers["content-type"])).toContain("application/vnd.apple.mpegurl");
       expect(manifest.body).toContain("#EXTM3U");
-      // Segment URI rewritten to the absolute, auth'd API path.
-      expect(manifest.body).toContain(`/api/stream/${session.id}/seg_00000.ts`);
+      // The adaptive master exposes three auth-scoped renditions.
+      expect(manifest.body).toContain(`/api/stream/${session.id}/1080p.m3u8`);
+      expect(manifest.body).toContain(`/api/stream/${session.id}/720p.m3u8`);
+      expect(manifest.body).toContain(`/api/stream/${session.id}/480p.m3u8`);
 
-      const seg = await request(owner, { method: "GET", url: `/api/stream/${session.id}/seg_00000.ts` });
+      const variant = await request(owner, {
+        method: "GET",
+        url: `/api/stream/${session.id}/1080p.m3u8`,
+      });
+      expect(variant.statusCode).toBe(200);
+      expect(variant.body).toContain(
+        `/api/stream/${session.id}/1080p_seg_00000.ts`,
+      );
+
+      const seg = await request(owner, { method: "GET", url: `/api/stream/${session.id}/1080p_seg_00000.ts` });
       expect(seg.statusCode).toBe(200);
       expect(String(seg.headers["content-type"])).toContain("video/mp2t");
+    } finally {
+      await on.close();
+    }
+  });
+
+  it("transcode: applies the client profile and start offset, and exposes a subtitle sidecar", async () => {
+    const on = await buildTranscodeApp({ enableTranscode: true });
+    try {
+      const owner = await setupOwner(on);
+      const session = await createRawSession(owner);
+      const manifest = await request(owner, {
+        method: "GET",
+        url: `/api/stream/${session.id}/index.m3u8?profile=data-saver&start=120&hdr=preserve&subtitles=preserve`,
+      });
+      expect(manifest.statusCode).toBe(200);
+      expect(manifest.headers["x-yawf-playback-decision"]).toBe("transcode");
+      expect(manifest.headers["x-yawf-transcode-profile"]).toBe("data-saver");
+      expect(manifest.headers["x-yawf-transcode-start"]).toBe("120");
+      const subtitles = await request(owner, {
+        method: "GET",
+        url: `/api/stream/${session.id}/subtitles.vtt`,
+      });
+      expect(subtitles.statusCode).toBe(200);
+      expect(String(subtitles.headers["content-type"])).toContain("text/vtt");
+      expect(subtitles.body).toContain("WEBVTT");
     } finally {
       await on.close();
     }

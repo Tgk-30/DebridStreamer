@@ -48,6 +48,7 @@ import {
   type VideoQuality as VideoQualityValue,
 } from "../services/indexers/models";
 import type { StreamRow } from "../data/streams";
+import { rankSources } from "../data/sourceIntelligence";
 import {
   asServerTranscodeStream,
   createRequest,
@@ -64,7 +65,10 @@ import {
   startDownloadsRuntime,
   type EnqueueDownloadInput,
 } from "../services/downloads";
-import { useTranscodeAvailable } from "../lib/ServerSessionContext";
+import {
+  useTranscodeAvailable,
+  useTranscodeCapabilities,
+} from "../lib/ServerSessionContext";
 import { getStore } from "../storage";
 import {
   hasResumePoint,
@@ -147,6 +151,10 @@ interface ActivePlayer {
   episode: number | null;
   /** Immutable TMDB identity for the item actually handed to the player. */
   scrobbleContext: TraktScrobbleContext | null;
+  /** Torrent identity used by one-click source recovery. */
+  sourceHash: string | null;
+  /** Original timeline position represented by HLS time zero. */
+  timelineOffsetSeconds: number;
 }
 
 /** True when the resolved file is a container/codec the webview can't decode
@@ -231,7 +239,7 @@ function downloadEstimate(
   return {
     summary: `Planning estimate: about ${formatDownloadSize(sourceSizeBytes * 0.5)}`,
     detail:
-      `The ${sourceSize} source will be re-encoded to H.265. Final size can vary, but should be substantially smaller.`,
+      `The ${sourceSize} source will be re-encoded to H.265. Final size can vary, and processing can take as long as the video or longer on some computers.`,
   };
 }
 
@@ -262,6 +270,9 @@ export function Detail() {
     clientSecret: settings.traktClientSecret,
   });
   const transcodeAvailable = useTranscodeAvailable();
+  const transcodeCapabilities = useTranscodeCapabilities();
+  const triedSourceHashesRef = useRef<Set<string>>(new Set());
+  const lastPlayerProgressRef = useRef(0);
   const playerPreferences = useMemo(
     () => ({
       defaultAudioLanguage: settings.defaultAudioLanguage ?? "",
@@ -787,6 +798,8 @@ export function Detail() {
       preferredAudioLang: record.preferredAudioLang,
       preferredSubId: record.preferredSubId,
       playbackSpeed: record.playbackSpeed,
+      subtitleDelay: record.subtitleDelay,
+      subtitlePosition: record.subtitlePosition,
     };
   }
 
@@ -797,6 +810,9 @@ export function Detail() {
     sourceFileName: string | null,
     engine: PlaybackEngine,
     fallbackStream: StreamInfo | null = null,
+    sourceHash: string | null = null,
+    startPositionOverride: number | null = null,
+    timelineOffsetSeconds = 0,
   ): void {
     // The series stream picker is a body-level portal above Detail. Close it
     // before mounting the player portal so playback and error states cannot
@@ -864,13 +880,18 @@ export function Detail() {
       sourceFileName,
       engine,
       fallbackStream,
-      startPositionSeconds: resumeSecondsFor(),
+      startPositionSeconds: Math.max(
+        0,
+        (startPositionOverride ?? resumeSecondsFor()) - timelineOffsetSeconds,
+      ),
       savedPrefs: prefsFor(),
       episodeId:
         selected != null ? episodeIdFor(selected.season, selected.episode) : null,
       season: selected?.season ?? null,
       episode: selected?.episode ?? null,
       scrobbleContext,
+      sourceHash,
+      timelineOffsetSeconds,
     });
     openDetailPlayer();
   }
@@ -1004,7 +1025,10 @@ export function Detail() {
     stream: StreamInfo,
     sourceFileName: string | null = stream.fileName,
     source?: TorrentResult,
+    startPositionOverride: number | null = null,
   ): Promise<void> {
+    const sourceHash = source?.infoHash ?? null;
+    const timelineOffsetSeconds = stream.timelineOffsetSeconds ?? 0;
     if (/^https?:\/\//i.test(stream.streamURL) && !isRequestExempt(stream.streamURL)) {
       try {
         assertNetworkAllowed("streaming", "player");
@@ -1023,24 +1047,56 @@ export function Detail() {
       const engine = stream.streamURL.split("?")[0].toLowerCase().endsWith(".m3u8")
         ? "webview-hls-transcode"
         : "webview-direct";
-      openPlayer(stream.streamURL, sourceFileName, engine, serverSource);
+      openPlayer(
+        stream.streamURL,
+        sourceFileName,
+        engine,
+        serverSource,
+        sourceHash,
+        startPositionOverride,
+        timelineOffsetSeconds,
+      );
       return;
     }
 
     if (isTauri()) {
-      openPlayer(stream.streamURL, sourceFileName, "native-mpv", stream);
+      openPlayer(
+        stream.streamURL,
+        sourceFileName,
+        "native-mpv",
+        stream,
+        sourceHash,
+        startPositionOverride,
+        timelineOffsetSeconds,
+      );
       return;
     }
 
     const hlsUrl = await services.debrid?.getTranscodeHLS(stream).catch(() => null);
     if (hlsUrl != null) {
-      openPlayer(hlsUrl, sourceFileName, "webview-hls-transcode", serverSource);
+      openPlayer(
+        hlsUrl,
+        sourceFileName,
+        "webview-hls-transcode",
+        serverSource,
+        sourceHash,
+        startPositionOverride,
+        timelineOffsetSeconds,
+      );
       return;
     }
     // No compatibility transcode is available. Still enter the custom web
     // player and let the browser attempt the source; a decode failure remains
     // inside the player with Retry/direct-link fallbacks.
-    openPlayer(stream.streamURL, sourceFileName, "webview-direct", serverSource);
+    openPlayer(
+      stream.streamURL,
+      sourceFileName,
+      "webview-direct",
+      serverSource,
+      sourceHash,
+      startPositionOverride,
+      timelineOffsetSeconds,
+    );
   }
 
   /** Play an already-resolved StreamInfo (the instant-play path). */
@@ -1051,6 +1107,7 @@ export function Detail() {
   async function resolveSelectedStream(
     row: StreamRow,
     hintOverride?: { season: number; episode: number } | null,
+    startSecondsOverride?: number | null,
   ): Promise<StreamInfo> {
     // Episode context (series only): steers season-pack torrents to the exact
     // episode's file. Exact single-episode torrents either match (same pick)
@@ -1069,8 +1126,29 @@ export function Detail() {
       const media =
         detailItem != null ? { id: detailItem.id, type: detailItem.type } : undefined;
       try {
+        const startSeconds = Math.max(
+          0,
+          startSecondsOverride ?? resumeSecondsFor(),
+        );
+        const sourceLooksHdr =
+          /(?:^|[^a-z0-9])(?:dv|dovi|dolby[ ._-]?vision|hdr10\+?|hdr|hlg)(?:[^a-z0-9]|$)/i.test(
+            row.result.title,
+          );
+        const transcodeOptions = {
+          profile: settings.dataSaver
+            ? "data-saver" as const
+            : "adaptive" as const,
+          startSeconds:
+            transcodeCapabilities.seekOffset ? startSeconds : 0,
+          hdrPolicy:
+            sourceLooksHdr && transcodeCapabilities.toneMapping
+              ? "tone-map" as const
+              : "auto" as const,
+          preserveSubtitles: transcodeCapabilities.subtitleSidecar,
+        };
         const stream = await resolveServerStream(row, {
           transcode: settings.transcode && transcodeAvailable,
+          transcodeOptions,
           media,
           fileHint,
         });
@@ -1081,7 +1159,7 @@ export function Detail() {
         return !isTauri() &&
           transcodeAvailable &&
           needsTranscodeOrExternal(stream, row.result)
-          ? asServerTranscodeStream(stream)
+          ? asServerTranscodeStream(stream, transcodeOptions)
           : stream;
       } catch (err) {
         // A 403 here means the title is over the active profile's maturity cap.
@@ -1128,7 +1206,63 @@ export function Detail() {
   }
 
   async function handlePlay(stream: StreamInfo, source: TorrentResult) {
+    const sourceHash = source.infoHash?.toLowerCase();
+    triedSourceHashesRef.current = new Set(
+      sourceHash != null ? [sourceHash] : [],
+    );
+    lastPlayerProgressRef.current = resumeSecondsFor();
     await playResolvedStream(stream, stream.fileName || source.title, source);
+  }
+
+  async function handleTryNextSource(): Promise<void> {
+    if (player == null) throw new Error("No active source is available to replace.");
+    const runtimeMinutes =
+      player.nowPlaying?.runtimeMinutes ?? item?.runtime ?? null;
+    const profile = isTauri()
+      ? "native" as const
+      : transcodeAvailable
+        ? "browser-transcode" as const
+        : "browser-direct" as const;
+    const ranked = rankSources(filterStreamRows(streams.rows, settings), {
+      profile,
+      runtimeMinutes,
+    });
+    const next = ranked.find(({ row, assessment }) => {
+      const hash = row.result.infoHash.toLowerCase();
+      return (
+        row.cachedOn != null &&
+        assessment.compatibility !== "risky" &&
+        !triedSourceHashesRef.current.has(hash)
+      );
+    });
+    if (next == null) {
+      throw new Error(
+        "No other instant source is compatible with this device. Return to the source list to cache or choose another release.",
+      );
+    }
+    const hash = next.row.result.infoHash.toLowerCase();
+    triedSourceHashesRef.current.add(hash);
+    const episodeHint =
+      player.season != null && player.episode != null
+        ? { season: player.season, episode: player.episode }
+        : null;
+    try {
+      const stream = await resolveSelectedStream(
+        next.row,
+        episodeHint,
+        Math.max(0, lastPlayerProgressRef.current),
+      );
+      await playResolvedStream(
+        stream,
+        stream.fileName || next.row.result.title,
+        next.row.result,
+        Math.max(0, lastPlayerProgressRef.current),
+      );
+    } catch (error) {
+      throw new Error(
+        `The next source could not be prepared. ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   const downloadDisabledReason =
@@ -1376,7 +1510,7 @@ export function Detail() {
               className={`chip${downloadMode === "full" ? " is-active dl-chip-active" : ""}`}
               onClick={() => setDownloadMode("full")}
             >
-              Full download
+              Original file (as-is)
             </button>
             <button
               type="button"
@@ -1385,7 +1519,7 @@ export function Detail() {
               disabled={ffmpegAvailable !== true}
               title={ffmpegAvailable === false ? "FFmpeg is unavailable on this desktop." : "Checking FFmpeg…"}
             >
-              Optimized
+              Optimized copy
             </button>
           </div>
           <label className="detail-download-field">
@@ -1412,7 +1546,7 @@ export function Detail() {
                   aria-pressed={downloadProfile === "remux"}
                   onClick={() => setDownloadProfile("remux")}
                 >
-                  Remux
+                  Repackaged (fast)
                 </button>
                 <button
                   type="button"
@@ -1420,7 +1554,7 @@ export function Detail() {
                   aria-pressed={downloadProfile === "h265"}
                   onClick={() => setDownloadProfile("h265")}
                 >
-                  H.265 re-encode
+                  Smaller file (slow)
                 </button>
               </div>
               <div className="detail-download-language-fields">
@@ -1448,6 +1582,10 @@ export function Detail() {
               </p>
             </div>
           )}
+          <p className="detail-download-track-note t-secondary">
+            Downloads are permanent files on this device. You can play or move
+            them with other apps.
+          </p>
           {selectedDownloadSource != null ? (
             <div className="detail-download-estimate" role="status">
               {selectedDownloadEstimate != null ? (
@@ -1607,6 +1745,8 @@ export function Detail() {
             onPlay={handlePlay}
             episodeLabel={null}
             episodeContext={null}
+            runtimeMinutes={item?.runtime ?? null}
+            transcodeAvailable={transcodeAvailable}
             onOpenSettings={() => {
               navigate("settings");
             }}
@@ -1657,6 +1797,14 @@ export function Detail() {
                 onPlay={handlePlay}
                 episodeLabel={episodeLabel(selected.season, selected.episode)}
                 episodeContext={selected}
+                runtimeMinutes={
+                  selectedSeasonEpisodes.episodes.find(
+                    (episode) =>
+                      episode.seasonNumber === selected.season &&
+                      episode.episodeNumber === selected.episode,
+                  )?.runtime ?? item?.runtime ?? null
+                }
+                transcodeAvailable={transcodeAvailable}
                 onOpenSettings={() => {
                   navigate("settings");
                 }}
@@ -1670,6 +1818,7 @@ export function Detail() {
       {player && (
         <Suspense fallback={<Spinner variant="overlay" label="Loading player…" />}>
           <VideoPlayer
+            key={player.sourceHash ?? player.url}
             url={player.url}
             title={player.title}
             subtitle={player.subtitle}
@@ -1691,12 +1840,15 @@ export function Detail() {
             }
             preferredPlayer={settings.preferredExternalPlayer}
             useBuiltInPlayer={settings.builtInPlayer}
+            timelineOffsetSeconds={player.timelineOffsetSeconds}
+            onTryNextSource={handleTryNextSource}
             startPositionSeconds={player.startPositionSeconds}
             savedPrefs={player.savedPrefs}
             playerPreferences={playerPreferences}
             scrobbleContext={player.scrobbleContext}
             onClose={closePlayer}
             onProgress={(current, duration, prefs) => {
+              lastPlayerProgressRef.current = current;
               // Persist a resume position against the title (movies) or the
               // SNAPSHOTTED episode (series) so Continue Watching resumes the
               // right thing even if the picker changed mid-playback. `prefs`

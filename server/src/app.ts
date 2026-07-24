@@ -3,6 +3,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import cookie from "@fastify/cookie";
+import compress from "@fastify/compress";
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -58,7 +59,12 @@ import { embeddedSecret } from "./embeddedSecrets.js";
 import { bandwidthCapStatus, type BandwidthCapStatus } from "./bandwidth.js";
 import { readFile } from "node:fs/promises";
 import { realTranscoder } from "./transcode.js";
-import { MANIFEST_NAME, TranscodeRegistry } from "./transcodeSession.js";
+import {
+  MANIFEST_NAME,
+  TranscodeRegistry,
+  type TranscodeClientProfile,
+  type TranscodeHdrPolicy,
+} from "./transcodeSession.js";
 import { SERVER_VERSION } from "./version.js";
 import {
   CREDENTIAL_PROVIDERS,
@@ -68,6 +74,14 @@ import {
   type ServerConfig,
   type UserRole,
 } from "./types.js";
+
+function rewriteTranscodeManifest(manifest: string, sessionId: string): string {
+  const base = `/api/stream/${encodeURIComponent(sessionId)}/`;
+  return manifest.replace(
+    /^(?!#)((?:1080p|720p|480p)\.m3u8|(?:1080p|720p|480p)_seg_\d{5}\.ts|seg_\d{5}\.ts|subtitles\.vtt)$/gm,
+    (_line, asset: string) => `${base}${asset}`,
+  );
+}
 
 const SESSION_COOKIE = "ds_session";
 const CSRF_COOKIE = "ds_csrf";
@@ -370,6 +384,10 @@ const streamSearchQuerySchema = z.object({
   // a filter). `.catch(undefined)`: a malformed/blank `year=` must degrade to
   // "no year hint", never 400 the whole stream search over ranking metadata.
   year: z.coerce.number().int().min(1800).max(3000).optional().catch(undefined),
+  // Opt-in newline-delimited response. Older clients keep receiving one JSON
+  // document, while current clients can render indexer results before the
+  // provider cache checks complete.
+  progressive: z.literal("1").optional().catch(undefined),
 });
 
 const mediaSearchQuerySchema = z.object({
@@ -2207,7 +2225,13 @@ function registerRoutes(
   app: FastifyInstance,
   db: AppDatabase,
   config: ServerConfig,
-  transcode: { ready: boolean; registry: TranscodeRegistry },
+  transcode: {
+    ready: boolean;
+    toneMappingAvailable: boolean;
+    subtitleSidecarAvailable: boolean;
+    availableVideoEncoders: ServerConfig["transcodeVideoEncoder"][];
+    registry: TranscodeRegistry;
+  },
 ): void {
   const rateLimit = createRateLimiter();
   const loginFailures = new Map<string, LoginFailureState>();
@@ -2235,6 +2259,17 @@ function registerRoutes(
       // Whether server-side transcoding is actually usable (operator flag on AND
       // ffmpeg present at boot), so the client only offers it when it'll work.
       transcodeAvailable: transcode.ready,
+      transcodeCapabilities: {
+        adaptive: transcode.ready,
+        seekOffset: transcode.ready,
+        subtitleSidecar:
+          transcode.ready && transcode.subtitleSidecarAvailable,
+        hardwareEncoder: config.transcodeVideoEncoder,
+        availableVideoEncoders: transcode.ready
+          ? transcode.availableVideoEncoders
+          : [],
+        toneMapping: transcode.ready && transcode.toneMappingAvailable,
+      },
       // Whether the server can supply OMDb ratings for this profile (a profile,
       // server, or env OMDb key is configured). The key itself is never sent - 
       // the client only learns that the /api/omdb proxy will return ratings.
@@ -4392,7 +4427,7 @@ function registerRoutes(
     return { ratings: await fetchOmdbRatings(key, imdbId) };
   });
 
-  app.get("/api/streams/:imdbId", async (request) => {
+  app.get("/api/streams/:imdbId", async (request, reply) => {
     const auth = requireAuth(db, request);
     rateLimit(request, `streams:search:${auth.profileId}`, 60, 60 * 1000);
     const imdbId = z
@@ -4412,7 +4447,7 @@ function registerRoutes(
     // accept name-matched hashes would weaken the child-safety guarantee. So kids
     // stay imdb-exact end-to-end; only normal profiles get the extra pass.
     const capped = auth.isKid || auth.maturityMax != null;
-    return searchServerStreams(db, config, auth.profileId, {
+    const searchInput = {
       imdbId,
       type: query.type,
       season: query.season ?? null,
@@ -4421,7 +4456,50 @@ function registerRoutes(
       // The year passes through even for capped profiles: it only REORDERS the
       // imdb-exact results (wrong-year noise sinks), it never widens the set.
       year: query.year ?? null,
-    });
+    };
+    if (query.progressive !== "1") {
+      return searchServerStreams(db, config, auth.profileId, searchInput);
+    }
+
+    reply
+      .header("content-type", "application/x-ndjson; charset=utf-8")
+      .header("cache-control", "no-store")
+      .header("x-accel-buffering", "no");
+    const headers = reply.getHeaders();
+    reply.hijack();
+    reply.raw.statusCode = 200;
+    for (const [name, value] of Object.entries(headers)) {
+      if (value != null) reply.raw.setHeader(name, value);
+    }
+    reply.raw.flushHeaders();
+    const sendPhase = (
+      phase: "sources" | "ready",
+      result: Awaited<ReturnType<typeof searchServerStreams>>,
+    ) => {
+      if (reply.raw.destroyed || reply.raw.writableEnded) return;
+      reply.raw.write(`${JSON.stringify({ phase, ...result })}\n`);
+    };
+    try {
+      await searchServerStreams(db, config, auth.profileId, {
+        ...searchInput,
+        onPhase: sendPhase,
+      });
+    } catch (error) {
+      if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+        reply.raw.write(
+          `${JSON.stringify({
+            phase: "error",
+            error:
+              error instanceof Error && "statusCode" in error
+                ? error.message
+                : "Stream search failed. Retry or check the configured indexers.",
+          })}\n`,
+        );
+      }
+    } finally {
+      if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.end();
+    }
+    return reply;
   });
 
   // Validates a candidate debrid token SERVER-side. Debrid hosts (TorBox in
@@ -4829,37 +4907,100 @@ function registerRoutes(
     // terminal URL is deferred because it would re-fetch (and could consume)
     // single-use debrid links. Hardening follow-up: resolve+pin the final hop.
     await assertSafeUpstream(upstreamUrl, config.allowRawStreamUrls);
-    const dir = await transcode.registry.ensureJob(row.id, upstreamUrl);
-    const manifest = await readFile(join(dir, MANIFEST_NAME), "utf8");
-    const rewritten = manifest.replace(
-      /^seg_\d{5}\.ts$/gm,
-      (name) => `/api/stream/${encodeURIComponent(row.id)}/${name}`,
-    );
+    const query = request.query as {
+      profile?: string;
+      start?: string;
+      hdr?: string;
+      subtitles?: string;
+    };
+    const profile: TranscodeClientProfile =
+      query.profile === "high" || query.profile === "data-saver"
+        ? query.profile
+        : "adaptive";
+    const startValue = Number(query.start);
+    const startSeconds =
+      Number.isFinite(startValue) && startValue > 0
+        ? Math.min(86_400, Math.floor(startValue))
+        : 0;
+    // A browser H.264 transcode cannot preserve the source HDR metadata through
+    // its yuv420p output. Accept the older `preserve` query as automatic
+    // compatibility handling rather than advertising an HDR guarantee the
+    // pipeline cannot make.
+    const hdrPolicy: TranscodeHdrPolicy =
+      query.hdr === "tone-map" ? "tone-map" : "auto";
+    if (hdrPolicy === "tone-map" && !transcode.toneMappingAvailable) {
+      throw httpError(
+        501,
+        "HDR tone mapping requires an ffmpeg build with the zscale filter.",
+      );
+    }
+    const preserveSubtitles = query.subtitles === "preserve";
+    const dir = await transcode.registry.ensureJob(row.id, upstreamUrl, {
+      profile,
+      startSeconds,
+      hdrPolicy,
+      preserveSubtitles,
+    });
+    let manifest = await readFile(join(dir, MANIFEST_NAME), "utf8");
+    if (
+      preserveSubtitles &&
+      manifest.includes("#EXT-X-STREAM-INF")
+    ) {
+      const subtitleUri = `/api/stream/${encodeURIComponent(row.id)}/subtitles.vtt`;
+      manifest = manifest.replace(
+        /^#EXTM3U$/m,
+        `#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Embedded",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,URI="${subtitleUri}"`,
+      );
+      manifest = manifest.replace(
+        /^#EXT-X-STREAM-INF:(.+)$/gm,
+        (_line, attributes: string) =>
+          `#EXT-X-STREAM-INF:${attributes},SUBTITLES="subs"`,
+      );
+    }
+    const rewritten = rewriteTranscodeManifest(manifest, row.id);
     reply.header("content-type", "application/vnd.apple.mpegurl");
     reply.header("cache-control", "no-store");
+    reply.header("x-yawf-playback-decision", "transcode");
+    reply.header("x-yawf-transcode-profile", profile);
+    reply.header("x-yawf-transcode-start", String(startSeconds));
     return reply.send(rewritten);
   });
 
-  // HLS segment: strict `seg_NNNNN.ts` only (no path traversal), served from the
-  // session's transcode dir.
-  app.get("/api/stream/:id/:segment", async (request, reply) => {
+  // HLS child manifests, segments, and the optional subtitle sidecar. The
+  // strict filename grammar rejects traversal and arbitrary files.
+  app.get("/api/stream/:id/:asset", async (request, reply) => {
     if (!transcode.ready) throw httpError(404, "Transcoding is not available.");
-    const segment = (request.params as { segment: string }).segment;
-    if (!/^seg_\d{5}\.ts$/.test(segment)) throw httpError(404, "Not found.");
+    const asset = (request.params as { asset: string }).asset;
+    if (
+      !/^(?:(?:1080p|720p|480p)\.m3u8|(?:1080p|720p|480p)_seg_\d{5}\.ts|seg_\d{5}\.ts|subtitles\.vtt)$/.test(
+        asset,
+      )
+    ) {
+      throw httpError(404, "Not found.");
+    }
     const row = loadTranscodeSession(request);
     if (row == null) throw httpError(404, "Stream session not found.");
     const dir = transcode.registry.dirFor(row.id);
-    if (dir == null) throw httpError(404, "Segment not found.");
-    const path = join(dir, segment);
-    if (!existsSync(path)) throw httpError(404, "Segment not ready.");
-    reply.header("content-type", "video/mp2t");
+    if (dir == null) throw httpError(404, "Transcode asset not found.");
+    const path = join(dir, asset);
+    if (!existsSync(path)) throw httpError(404, "Transcode asset not ready.");
     reply.header("cache-control", "no-store");
+    if (asset.endsWith(".m3u8")) {
+      const manifest = await readFile(path, "utf8");
+      reply.header("content-type", "application/vnd.apple.mpegurl");
+      return reply.send(rewriteTranscodeManifest(manifest, row.id));
+    }
+    if (asset.endsWith(".vtt")) {
+      reply.header("content-type", "text/vtt; charset=utf-8");
+      return reply.send(await readFile(path, "utf8"));
+    }
+    reply.header("content-type", "video/mp2t");
     return reply.send(createReadStream(path));
   });
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
-  const config = loadConfig(options.config);
+  let config = loadConfig(options.config);
   const db = new AppDatabase(config.databasePath);
 
   // Transcoding (Phase 3b): probe ffmpeg ONLY when the operator opted in (zero
@@ -4867,7 +5008,37 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   // capability; the registry owns ffmpeg processes + temp dirs.
   const transcoder = options.transcoder ?? realTranscoder;
   const ffmpegPresent = config.enableTranscode ? await transcoder.detect() : false;
-  const transcodeReady = config.enableTranscode && ffmpegPresent;
+  const transcodeCapabilities =
+    config.enableTranscode && ffmpegPresent && transcoder.capabilities != null
+      ? await transcoder.capabilities().catch(() => ({
+          toneMapping: false,
+          videoEncoders: [],
+          subtitleSidecar: false,
+        }))
+      : { toneMapping: false, subtitleSidecar: false };
+  const availableVideoEncoders =
+    transcodeCapabilities.videoEncoders ??
+    (ffmpegPresent ? [config.transcodeVideoEncoder] : []);
+  const effectiveVideoEncoder = availableVideoEncoders.includes(
+    config.transcodeVideoEncoder,
+  )
+    ? config.transcodeVideoEncoder
+    : availableVideoEncoders.includes("libx264")
+      ? "libx264"
+      : null;
+  const transcodeReady =
+    config.enableTranscode &&
+    ffmpegPresent &&
+    effectiveVideoEncoder != null;
+  if (
+    effectiveVideoEncoder != null &&
+    effectiveVideoEncoder !== config.transcodeVideoEncoder
+  ) {
+    config = {
+      ...config,
+      transcodeVideoEncoder: effectiveVideoEncoder,
+    };
+  }
   const transcodeRegistry = new TranscodeRegistry(db, config, transcoder);
   if (transcodeReady) transcodeRegistry.start();
 
@@ -4877,6 +5048,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   await app.register(cookie);
+  await app.register(compress, {
+    global: true,
+    threshold: 1_024,
+  });
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header(
@@ -4963,7 +5138,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     db.close();
   });
 
-  registerRoutes(app, db, config, { ready: transcodeReady, registry: transcodeRegistry });
+  registerRoutes(app, db, config, {
+    ready: transcodeReady,
+    toneMappingAvailable: transcodeCapabilities.toneMapping,
+    subtitleSidecarAvailable:
+      transcodeCapabilities.subtitleSidecar === true,
+    availableVideoEncoders,
+    registry: transcodeRegistry,
+  });
   registerStaticApp(app, config);
   return app;
 }

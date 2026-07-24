@@ -33,6 +33,18 @@ function buildProfileEnv(): "family" | "friends" | "public" {
   return value === "family" || value === "friends" ? value : "public";
 }
 
+function transcodeVideoEncoderEnv(): ServerConfig["transcodeVideoEncoder"] {
+  const value = process.env.DS_SERVER_TRANSCODE_VIDEO_ENCODER?.trim().toLowerCase();
+  if (
+    value === "h264_videotoolbox" ||
+    value === "h264_nvenc" ||
+    value === "h264_qsv"
+  ) {
+    return value;
+  }
+  return "libx264";
+}
+
 function loadOrCreateSecretKey(dataDir: string): Buffer {
   const envSecret = process.env.DS_SERVER_SECRET_KEY;
   if (envSecret && envSecret.trim().length > 0) {
@@ -98,6 +110,8 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
       overrides.enableTranscode ?? boolEnv("DS_SERVER_ENABLE_TRANSCODE", false),
     maxTranscodes:
       overrides.maxTranscodes ?? numberEnv("DS_SERVER_MAX_TRANSCODES", 1),
+    transcodeVideoEncoder:
+      overrides.transcodeVideoEncoder ?? transcodeVideoEncoderEnv(),
     transcodeStartTimeoutMs:
       overrides.transcodeStartTimeoutMs ??
       numberEnv("DS_SERVER_TRANSCODE_START_TIMEOUT_MS", 30_000),

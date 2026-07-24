@@ -48,6 +48,9 @@ export interface StreamRow {
 export interface StreamsState {
   rows: StreamRow[];
   loading: boolean;
+  /** Current progressive resolution phase. Rows may already be visible while
+   * provider cache availability is still being checked. */
+  phase?: "searching_sources" | "checking_availability" | "ready";
   error: string | null;
   /** Whether any indexer is configured (drives the empty state copy). */
   hasIndexers: boolean;
@@ -65,6 +68,7 @@ export interface StreamsState {
 const EMPTY: StreamsState = {
   rows: [],
   loading: false,
+  phase: "ready",
   error: null,
   hasIndexers: false,
   hasDebrid: false,
@@ -227,6 +231,10 @@ async function resolveStreams(
   indexers: IndexerManager,
   debrid: DebridManager | null,
   signal?: AbortSignal,
+  onResults?: (update: {
+    rows: StreamRow[];
+    sourceErrors: IndexerSearchError[];
+  }) => void,
 ): Promise<{
   rows: StreamRow[];
   sourceErrors: IndexerSearchError[];
@@ -297,6 +305,21 @@ async function resolveStreams(
   );
   if (results.length === 0) {
     return { rows: [], sourceErrors, allSourcesFailed };
+  }
+
+  const preliminaryRows = filterAndRankForEpisode(
+    dedupeStreamRows(
+      results.map((result) => ({
+        result,
+        cachedOn: null,
+        cacheStatus: "unavailable" as const,
+      })),
+    ),
+    season,
+    episode,
+  );
+  if (!signal?.aborted) {
+    onResults?.({ rows: preliminaryRows, sourceErrors });
   }
 
   // Check cache across all configured debrid services for every infoHash.
@@ -406,18 +429,18 @@ export function useStreams(
         });
         return;
       }
-      setState((s) => ({ ...s, loading: true, error: null, hasIndexers, hasDebrid }));
+      setState((s) => ({
+        ...s,
+        rows: [],
+        loading: true,
+        phase: "searching_sources",
+        error: null,
+        hasIndexers,
+        hasDebrid,
+      }));
       try {
         if (serverMode) {
-          const remote = await (fetchServerStreams as unknown as (input: {
-            imdbId: string;
-            type: MediaType;
-            season: number | null;
-            episode: number | null;
-            title: string | null;
-            year: number | null;
-            signal: AbortSignal;
-          }) => ReturnType<typeof fetchServerStreams>)({
+          const remote = await fetchServerStreams({
             imdbId,
             type,
             season,
@@ -425,6 +448,23 @@ export function useStreams(
             title,
             year,
             signal,
+            onPhase: (phase, partial) => {
+              if (phase !== "sources" || signal.aborted) return;
+              setState({
+                rows: filterAndRankForEpisode(
+                  dedupeStreamRows(partial.rows),
+                  season,
+                  episode,
+                ),
+                loading: true,
+                phase: "checking_availability",
+                error: null,
+                hasIndexers: partial.hasIndexers,
+                hasDebrid: partial.hasDebrid,
+                missingImdbId: false,
+                sourceErrors: partial.sourceErrors ?? [],
+              });
+            },
           });
           if (!signal.aborted) {
             setState({
@@ -434,11 +474,12 @@ export function useStreams(
                 episode,
               ),
               loading: false,
+              phase: "ready",
               error: null,
               hasIndexers: remote.hasIndexers,
               hasDebrid: remote.hasDebrid,
               missingImdbId: false,
-              sourceErrors: [],
+              sourceErrors: remote.sourceErrors ?? [],
             });
           }
           return;
@@ -453,6 +494,19 @@ export function useStreams(
           indexers,
           debrid,
           signal,
+          ({ rows, sourceErrors }) => {
+            if (signal.aborted) return;
+            setState({
+              rows,
+              loading: true,
+              phase: "checking_availability",
+              error: null,
+              hasIndexers,
+              hasDebrid,
+              missingImdbId: false,
+              sourceErrors,
+            });
+          },
         );
         const { rows, sourceErrors, allSourcesFailed } = resolved;
         if (
@@ -470,6 +524,7 @@ export function useStreams(
           setState({
             rows,
             loading: false,
+            phase: "ready",
             error: null,
             hasIndexers,
             hasDebrid,
@@ -483,6 +538,7 @@ export function useStreams(
           setState({
             rows: [],
             loading: false,
+            phase: "ready",
             error: message,
             hasIndexers,
             hasDebrid,

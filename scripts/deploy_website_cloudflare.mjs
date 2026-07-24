@@ -192,6 +192,19 @@ async function handleRequest(request) {
   const response = await fetch(proxied);
   const headers = new Headers(response.headers);
   headers.set("X-YAWF-Stream-Site", "cloudflare-pages");
+  if (response.ok && (request.method === "GET" || request.method === "HEAD")) {
+    if (incoming.pathname.startsWith("/assets/")) {
+      // Vite fingerprints production bundles, so a new deployment always
+      // receives a new URL and can safely use immutable browser caching.
+      headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    } else if (/\\.(?:mp4|webm|png|jpe?g|webp|svg|ico|woff2?)$/i.test(incoming.pathname)) {
+      // Public media keeps stable filenames. Revalidate daily so replacements
+      // propagate without forcing every page visit to download them again.
+      headers.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+    } else {
+      headers.set("Cache-Control", "public, max-age=0, must-revalidate");
+    }
+  }
 
   return new Response(response.body, {
     status: response.status,

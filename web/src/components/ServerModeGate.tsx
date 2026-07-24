@@ -9,6 +9,7 @@ import {
   ServerSessionProvider,
   type ServerProfileSummary,
   type ServerSession,
+  type ServerTranscodeCapabilities,
 } from "../lib/ServerSessionContext";
 import {
   needsCloudflareAccessLogin,
@@ -34,6 +35,7 @@ interface BootstrapResponse {
   profiles?: ProfileState | null;
   csrfToken?: string | null;
   transcodeAvailable?: boolean;
+  transcodeCapabilities?: ServerTranscodeCapabilities;
   omdbProxy?: boolean;
   buildProfile?: "family" | "friends" | "public";
 }
@@ -136,6 +138,15 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<ServerSession | null>(null);
   const [profiles, setProfiles] = useState<ServerProfileSummary[]>([]);
   const [transcodeAvailable, setTranscodeAvailable] = useState(false);
+  const [transcodeCapabilities, setTranscodeCapabilities] =
+    useState<ServerTranscodeCapabilities>({
+      adaptive: false,
+      seekOffset: false,
+      subtitleSidecar: false,
+      hardwareEncoder: "libx264",
+      availableVideoEncoders: [],
+      toneMapping: false,
+    });
   const [omdbProxy, setOmdbProxy] = useState(false);
   const [buildProfile, setBuildProfile] = useState<"family" | "friends" | "public">("public");
   const [state, setState] = useState<GateState>(() =>
@@ -186,6 +197,16 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         // document.cookie can't see ds_csrf).
         setCsrfToken(bootstrap.csrfToken);
         setTranscodeAvailable(bootstrap.transcodeAvailable ?? false);
+        setTranscodeCapabilities(
+          bootstrap.transcodeCapabilities ?? {
+            adaptive: false,
+            seekOffset: false,
+            subtitleSidecar: false,
+            hardwareEncoder: "libx264",
+            availableVideoEncoders: [],
+            toneMapping: false,
+          },
+        );
         setOmdbProxy(bootstrap.omdbProxy ?? false);
         setBuildProfile(bootstrap.buildProfile ?? "public");
         if (bootstrap.setupRequired) {
@@ -227,6 +248,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
         initial={session}
         initialProfiles={profiles}
         initialTranscodeAvailable={transcodeAvailable}
+        initialTranscodeCapabilities={transcodeCapabilities}
         initialOmdbProxy={omdbProxy}
         initialBuildProfile={buildProfile}
       >

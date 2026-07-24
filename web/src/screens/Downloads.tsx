@@ -36,6 +36,17 @@ function statusLabel(status: DownloadRecord["status"]): string {
   return status === "resolving" ? "Resolving" : `${status[0].toUpperCase()}${status.slice(1)}`;
 }
 
+function formatEta(seconds: number): string {
+  if (seconds < 60) return "less than a minute";
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `about ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0
+    ? `about ${hours} hr`
+    : `about ${hours} hr ${remainder} min`;
+}
+
 function progressLabel(record: DownloadRecord, speedBps?: number): string {
   const progress = percent(record);
   if (record.status === "optimizing") {
@@ -47,7 +58,14 @@ function progressLabel(record: DownloadRecord, speedBps?: number): string {
       ? `${formatBytes(record.bytesDone)} / ${formatBytes(record.bytesTotal)}`
       : formatBytes(record.bytesDone);
   const speed = speedBps != null && speedBps > 0 ? ` · ${formatBytes(speedBps)}/s` : "";
-  return `${progress == null ? amount : `${progress}% · ${amount}`}${speed}`;
+  const eta =
+    speedBps != null &&
+    speedBps >= 100 * 1024 &&
+    record.bytesTotal != null &&
+    record.bytesTotal > record.bytesDone
+      ? ` · ${formatEta((record.bytesTotal - record.bytesDone) / speedBps)} left`
+      : "";
+  return `${progress == null ? amount : `${progress}% · ${amount}`}${speed}${eta}`;
 }
 
 interface DownloadSeriesGroup {
@@ -429,6 +447,7 @@ function DownloadSection({
           const progress = knownProgress ?? 0;
           const canPause = ["resolving", "downloading", "optimizing"].includes(record.status);
           const canResume = record.status === "paused";
+          const canRetry = record.status === "failed";
           const canForceStop = !["completed", "canceled"].includes(record.status);
           // A completed record's destination is the durable proof of the local
           // file we created. Do not offer either action for partial/failed rows
@@ -506,8 +525,54 @@ function DownloadSection({
                     <Icon name="play" size={14} />
                   </button>
                 )}
+                {canRetry && (
+                  <button
+                    type="button"
+                    className="dl-icon-btn"
+                    onClick={() => void manager.retry(record.jobId)}
+                    aria-label={`Retry ${record.title}`}
+                    title="Retry"
+                  >
+                    <Icon name="refresh" size={14} />
+                  </button>
+                )}
+                {canOpenLocalFile && (
+                  <button
+                    type="button"
+                    className="dl-icon-btn downloads-cancel"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Delete the downloaded file for ${record.title}? This cannot be undone.`,
+                        )
+                      ) {
+                        void manager.deleteCompletedFile(record.jobId);
+                      }
+                    }}
+                    aria-label={`Delete downloaded file for ${record.title}`}
+                    title="Delete file"
+                  >
+                    <Icon name="trash" size={14} />
+                  </button>
+                )}
                 {canForceStop && (
-                  <button type="button" className="dl-icon-btn downloads-cancel" onClick={() => void manager.forceStop(record.jobId)} aria-label={`Force stop ${record.title}`} title="Force stop">
+                  <button
+                    type="button"
+                    className="dl-icon-btn downloads-cancel"
+                    onClick={() => {
+                      const progress = percent(record) ?? 0;
+                      if (
+                        progress < 10 ||
+                        window.confirm(
+                          `Stop ${record.title} and delete its partial file? This cannot be undone.`,
+                        )
+                      ) {
+                        void manager.forceStop(record.jobId);
+                      }
+                    }}
+                    aria-label={`Stop ${record.title} and delete partial file`}
+                    title="Stop & delete partial"
+                  >
                     <Icon name="xmark" size={15} />
                   </button>
                 )}

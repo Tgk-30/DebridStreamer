@@ -380,6 +380,24 @@ describe("VideoPlayer shell", () => {
     Object.defineProperties(video, {
       videoWidth: { configurable: true, value: 1920 },
       videoHeight: { configurable: true, value: 1080 },
+      currentTime: { configurable: true, value: 10 },
+      buffered: {
+        configurable: true,
+        value: {
+          length: 1,
+          start: () => 0,
+          end: () => 25,
+        },
+      },
+      getVideoPlaybackQuality: {
+        configurable: true,
+        value: () => ({
+          creationTime: 0,
+          totalVideoFrames: 240,
+          droppedVideoFrames: 2,
+          corruptedVideoFrames: 0,
+        }),
+      },
     });
     fireEvent(video, new Event("loadedmetadata"));
 
@@ -389,6 +407,10 @@ describe("VideoPlayer shell", () => {
     const info = screen.getByRole("dialog", { name: "Player details and shortcuts" });
     expect(info).toHaveTextContent("Webview direct");
     expect(info).toHaveTextContent("1920 × 1080 px");
+    expect(info).toHaveTextContent("Buffer health");
+    expect(info).toHaveTextContent("15.0 s");
+    expect(info).toHaveTextContent("Dropped frames");
+    expect(info).toHaveTextContent("2");
     expect(info).toHaveTextContent(
       `${Math.round(window.innerWidth * window.devicePixelRatio)} × ${Math.round(window.innerHeight * window.devicePixelRatio)} px`,
     );
@@ -805,6 +827,39 @@ describe("WebviewPlayer", () => {
     );
     expect(scrubBarMock).toHaveBeenCalled();
     expect(iconMock).not.toHaveBeenCalled();
+  });
+
+  it("maps seek-offset HLS progress back to the original media timeline", () => {
+    const onProgress = vi.fn();
+    render(
+      <VideoPlayer
+        url="https://x/movie.m3u8"
+        title="T"
+        timelineOffsetSeconds={700}
+        onProgress={onProgress}
+        onClose={() => {}}
+      />,
+    );
+    const video = document.querySelector("video.player-video") as HTMLVideoElement;
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      value: 12,
+    });
+    Object.defineProperty(video, "duration", {
+      configurable: true,
+      value: 100,
+    });
+
+    fireEvent.timeUpdate(video);
+
+    expect(onProgress).toHaveBeenCalledWith(
+      712,
+      800,
+      expect.objectContaining({ playbackSpeed: 1 }),
+    );
+    expect(document.querySelector(".player-time")).toHaveTextContent(
+      "11:52 / 13:20",
+    );
   });
 
   it("hides inactive web chrome, preserves it for pause or menus, and reveals it on pointer activity", () => {

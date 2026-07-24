@@ -56,6 +56,13 @@ export interface ServerConfig {
   enableTranscode: boolean;
   /** Max concurrent ffmpeg transcode jobs. Default 1 (Pi-friendly). */
   maxTranscodes: number;
+  /** Bounded H.264 encoder selected by the server operator. Software is the
+   * portable default; supported hardware encoders can be enabled explicitly. */
+  transcodeVideoEncoder:
+    | "libx264"
+    | "h264_videotoolbox"
+    | "h264_nvenc"
+    | "h264_qsv";
   /** How long to wait for ffmpeg to produce the first HLS manifest+segment
    *  before giving up with a 504. Default 30s (raise on slow disks/CPUs). */
   transcodeStartTimeoutMs: number;

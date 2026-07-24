@@ -26,6 +26,9 @@ import {
   getProperty,
   observeProperties,
   setVideoMarginRatio,
+  addSubtitleTrack,
+  setAudioPassthrough,
+  setHdrPolicy,
   type MpvConfig,
   type MpvObservableProperty,
 } from "../lib/renderPlayer";
@@ -42,8 +45,13 @@ import {
   type PlaybackEngine,
 } from "../lib/playbackEngine";
 import type { PlaybackPrefs } from "../storage/models";
+import type { SubtitleClient } from "../services/subtitles/OpenSubtitlesClient";
+import type { Translator } from "../services/subtitles/SubtitleTranslator";
+import { cuesToVTT } from "../services/subtitles/cues";
 import { Icon } from "./Icon";
 import { CastControls } from "./CastControls";
+import { CaptionsMenu } from "./player/CaptionsMenu";
+import { useSubtitleTracks } from "./player/useSubtitleTracks";
 import { PlayerInfoPopover } from "./player/PlayerInfoPopover";
 import {
   PlayerPauseOverlay,
@@ -70,18 +78,30 @@ interface Props {
   /** Short-lived server stream capability, passed outside the media URL. */
   playbackAuthorization?: string;
   startPositionSeconds?: number;
+  /** Original-media time represented by native time zero for a seek-offset
+   * server transcode. */
+  timelineOffsetSeconds?: number;
   /** Remembered audio/subtitle/speed for this title, restored after load. */
   savedPrefs?: PlaybackPrefs | null;
   /** Optional global defaults supplied by Settings. This component does not persist them. */
   playerPreferences?: PlayerPreferenceDefaults | null;
+  /** Subtitle search and translation providers shared with the web player. */
+  subtitleClient?: SubtitleClient | null;
+  translator?: Translator | null;
+  imdbId?: string | null;
+  season?: number | null;
+  episode?: number | null;
   /** Throttled progress + the current player prefs - feeds Continue Watching and
    * persists the audio/sub/speed choices for next time. */
   onProgress?: (current: number, duration: number, prefs?: PlaybackPrefs) => void;
   /** Present for a series with a next episode - shows an "Up next" affordance. */
   onPlayNext?: () => void;
+  /** Continue at the current position with the next compatible instant source. */
+  onTryNextSource?: () => Promise<void>;
   nextLabel?: string | null;
   /** Renderer identity shown in the permanent playback-info popover. */
   engine?: PlaybackEngine;
+  playbackDecision?: "Direct Play" | "Transcode";
   /** Give the parent one chance to switch to a compatible webview source when
    * native initialization or loading fails. Returning true means it recovered. */
   onPlaybackError?: (error: Error) => boolean | Promise<boolean>;
@@ -104,6 +124,10 @@ interface Track {
 interface Chapter {
   title: string;
   time: number;
+}
+interface AudioDevice {
+  name: string;
+  description: string;
 }
 
 const OBSERVED: readonly MpvObservableProperty[] = [
@@ -129,6 +153,14 @@ const OBSERVED: readonly MpvObservableProperty[] = [
   ["video-params/h", "int64", "none"],
   ["dwidth", "int64", "none"],
   ["dheight", "int64", "none"],
+  ["container-fps", "double", "none"],
+  ["estimated-vf-fps", "double", "none"],
+  ["decoder-frame-drop-count", "int64", "none"],
+  ["frame-drop-count", "int64", "none"],
+  ["hwdec-current", "string", "none"],
+  ["video-params/primaries", "string", "none"],
+  ["video-params/gamma", "string", "none"],
+  ["audio-device", "string", "none"],
 ];
 
 const MPV_CONFIG: MpvConfig = {
@@ -243,6 +275,22 @@ function parseChapters(raw: unknown): Chapter[] {
     .filter((c) => Number.isFinite(c.time));
 }
 
+function parseAudioDevices(raw: unknown): AudioDevice[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((value) => {
+    if (value == null || typeof value !== "object") return [];
+    const row = value as Record<string, unknown>;
+    if (typeof row.name !== "string" || row.name.length === 0) return [];
+    return [{
+      name: row.name,
+      description:
+        typeof row.description === "string" && row.description.length > 0
+          ? row.description
+          : row.name,
+    }];
+  });
+}
+
 /** Let focused sliders, menu buttons, and text inputs keep their native keys.
  * Escape remains global so overlay layering is predictable. */
 function isInteractiveTarget(target: EventTarget | null): boolean {
@@ -268,6 +316,7 @@ interface NativeScrubberHandle {
 
 interface NativeScrubberProps {
   duration: number;
+  timelineOffsetSeconds: number;
   chapters: Chapter[];
   active: boolean;
   onSeek: (time: number) => void;
@@ -283,7 +332,14 @@ interface NativeScrubberProps {
  */
 const NativeScrubber = memo(
   forwardRef<NativeScrubberHandle, NativeScrubberProps>(function NativeScrubber(
-    { duration, chapters, active, onSeek, onScrubbingChange },
+    {
+      duration,
+      timelineOffsetSeconds,
+      chapters,
+      active,
+      onSeek,
+      onScrubbingChange,
+    },
     ref,
   ) {
     const [playback, setPlayback] = useState({ pos: 0, bufferedTo: 0 });
@@ -350,7 +406,9 @@ const NativeScrubber = memo(
 
     return (
       <div className="embed-scrub-row">
-        <span className="embed-time">{fmt(playback.pos)}</span>
+        <span className="embed-time">
+          {fmt(playback.pos + timelineOffsetSeconds)}
+        </span>
         <div
           className="embed-scrub"
           ref={scrubRef}
@@ -372,9 +430,9 @@ const NativeScrubber = memo(
           }}
           role="slider"
           aria-label="Seek"
-          aria-valuemin={0}
-          aria-valuemax={Math.round(duration)}
-          aria-valuenow={Math.round(playback.pos)}
+          aria-valuemin={Math.round(timelineOffsetSeconds)}
+          aria-valuemax={Math.round(duration + timelineOffsetSeconds)}
+          aria-valuenow={Math.round(playback.pos + timelineOffsetSeconds)}
           tabIndex={0}
         >
           <div className="embed-scrub-track">
@@ -399,7 +457,7 @@ const NativeScrubber = memo(
               className="embed-scrub-hover"
               style={{ left: `${Math.min(100, Math.max(0, pct(hover.t)))}%` }}
             >
-              {fmt(hover.t)}
+              {fmt(hover.t + timelineOffsetSeconds)}
             </div>
           )}
         </div>
@@ -411,7 +469,7 @@ const NativeScrubber = memo(
           title={showTotalDuration ? "Show remaining time" : "Show total duration"}
         >
           {showTotalDuration
-            ? fmt(duration)
+            ? fmt(duration + timelineOffsetSeconds)
             : `-${fmt(Math.max(0, duration - playback.pos))}`}
         </button>
       </div>
@@ -434,12 +492,20 @@ export function EmbeddedPlayer({
   sourceFileName,
   playbackAuthorization,
   startPositionSeconds = 0,
+  timelineOffsetSeconds = 0,
   savedPrefs,
   playerPreferences = null,
+  subtitleClient = null,
+  translator = null,
+  imdbId = null,
+  season = null,
+  episode = null,
   onProgress,
   onPlayNext,
+  onTryNextSource,
   nextLabel,
   engine = "native-mpv",
+  playbackDecision = "Direct Play",
   onPlaybackError,
   scrobbleContext = null,
   onClose,
@@ -458,15 +524,38 @@ export function EmbeddedPlayer({
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [activeAid, setActiveAid] = useState<string>("auto");
   const [activeSid, setActiveSid] = useState<string>("auto");
-  const [subDelay, setSubDelay] = useState(0);
+  const [subDelay, setSubDelay] = useState(() => savedPrefs?.subtitleDelay ?? 0);
+  const [subPosition, setSubPosition] = useState(
+    () => savedPrefs?.subtitlePosition ?? 90,
+  );
   const [audioDelay, setAudioDelay] = useState(0);
   const [subScale, setSubScale] = useState(1);
+  const [videoZoom, setVideoZoom] = useState(0);
+  const [videoPanX, setVideoPanX] = useState(0);
+  const [videoPanY, setVideoPanY] = useState(0);
+  const [videoAspect, setVideoAspect] = useState("-1");
   const [ended, setEnded] = useState(false);
   const [activeChapterIndex, setActiveChapterIndex] = useState(-1);
   const [detailsSection, setDetailsSection] = useState<"info" | "shortcuts" | null>(null);
   const [scrubbing, setScrubbing] = useState(false);
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
   const [castSuspended, setCastSuspended] = useState(false);
+  const [captionsSearchOpen, setCaptionsSearchOpen] = useState(false);
+  const [subtitleAttachError, setSubtitleAttachError] = useState<string | null>(null);
+  const [playbackSettingError, setPlaybackSettingError] = useState<string | null>(null);
+  const [nativeReadyUrl, setNativeReadyUrl] = useState<string | null>(null);
+  const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
+  const [audioDevice, setAudioDevice] = useState("auto");
+  const [audioPassthrough, setAudioPassthroughEnabled] = useState(false);
+  const [hdrPolicy, setHdrPolicyValue] = useState<"auto" | "preserve" | "tone-map">("auto");
+  const [containerFps, setContainerFps] = useState(0);
+  const [outputFps, setOutputFps] = useState(0);
+  const [decoderDrops, setDecoderDrops] = useState(0);
+  const [displayDrops, setDisplayDrops] = useState(0);
+  const [hardwareDecoder, setHardwareDecoder] = useState("");
+  const [colorPrimaries, setColorPrimaries] = useState("");
+  const [transferFunction, setTransferFunction] = useState("");
+  const subtitleSearch = useSubtitleTracks(subtitleClient, translator);
   // Source dimensions are diagnostic only. Player chrome is deliberately never
   // fitted to this rectangle: it belongs to the window, while mpv owns genuine
   // source-aspect letterboxing inside its full-window native surface.
@@ -486,6 +575,11 @@ export function EmbeddedPlayer({
   const lastReportRef = useRef(0);
   const posRef = useRef(0);
   const durRef = useRef(0);
+  const timelineOffsetRef = useRef(0);
+  timelineOffsetRef.current =
+    Number.isFinite(timelineOffsetSeconds) && timelineOffsetSeconds > 0
+      ? timelineOffsetSeconds
+      : 0;
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
   const onPlaybackErrorRef = useRef(onPlaybackError);
@@ -500,16 +594,28 @@ export function EmbeddedPlayer({
   const endedRef = useRef(false);
   const lastAudibleVolume = useRef(100);
   const menuOpenRef = useRef(false);
+  const nativeSubtitleIdsRef = useRef<Map<string, number>>(new Map());
+  const nativeCustomSubtitleActiveRef = useRef(false);
   const wasCastSuspendedRef = useRef(false);
   const castSuspendedRef = useRef(castSuspended);
   const pausedBeforeCastRef = useRef(false);
-  menuOpenRef.current = menu != null || detailsSection != null;
+  menuOpenRef.current =
+    menu != null || detailsSection != null || captionsSearchOpen;
   const chaptersRef = useRef(chapters);
   chaptersRef.current = chapters;
 
   durRef.current = dur;
   pausedRef.current = paused;
   castSuspendedRef.current = castSuspended;
+
+  const reportedPosition = () =>
+    posRef.current + timelineOffsetRef.current;
+  const reportedDuration = () =>
+    durRef.current > 0
+      ? durRef.current + timelineOffsetRef.current
+      : durRef.current;
+  const reportedProgressPct = () =>
+    playbackProgressPct(reportedPosition(), reportedDuration());
 
   const audioTracks = useMemo(() => tracks.filter((t) => t.type === "audio"), [tracks]);
   const volumeIsSilent = muted || volume === 0;
@@ -592,10 +698,92 @@ export function EmbeddedPlayer({
       /* ignore */
     }
   }, []);
+  const refreshAudioDevices = useCallback(async () => {
+    try {
+      const raw = await getProperty("audio-device-list", "node");
+      setAudioDevices(parseAudioDevices(raw));
+    } catch {
+      setAudioDevices([]);
+    }
+  }, []);
+
+  // A URL change creates a new mpv instance and removes the old process-owned
+  // subtitle directory. Clear the old id map before the attachment effect runs
+  // so an active searched track is materialized again for the new source.
+  useEffect(() => {
+    nativeSubtitleIdsRef.current.clear();
+    nativeCustomSubtitleActiveRef.current = false;
+    setSubtitleAttachError(null);
+  }, [url]);
+
+  // OpenSubtitles and translated tracks are generated as browser Blob URLs by
+  // the shared subtitle hook. Materialize each active WebVTT track through the
+  // dedicated native command once, then select the returned mpv track id.
+  useEffect(() => {
+    let cancelled = false;
+    if (nativeReadyUrl !== url) return;
+    const active = subtitleSearch.tracks.find(
+      (track) => track.id === subtitleSearch.activeTrackId,
+    );
+    if (active == null) {
+      if (nativeCustomSubtitleActiveRef.current) {
+        nativeCustomSubtitleActiveRef.current = false;
+        setActiveSid("no");
+        void setProperty("sid", "no");
+      }
+      return () => {
+        cancelled = true;
+      };
+    }
+    void (async () => {
+      try {
+        let nativeId = nativeSubtitleIdsRef.current.get(active.id);
+        if (nativeId == null) {
+          nativeId = await addSubtitleTrack(
+            cuesToVTT(active.cues),
+            active.label,
+            normalizeLanguagePreference(active.language) ?? "und",
+          );
+          nativeSubtitleIdsRef.current.set(active.id, nativeId);
+          await refreshTracks();
+        }
+        if (cancelled) return;
+        nativeCustomSubtitleActiveRef.current = true;
+        setSubtitleAttachError(null);
+        setActiveSid(String(nativeId));
+        setSubDelay(active.delayMs / 1000);
+        await Promise.all([
+          setProperty("sid", String(nativeId)),
+          setProperty("sub-delay", active.delayMs / 1000),
+        ]);
+      } catch (error) {
+        if (!cancelled) {
+          setSubtitleAttachError(
+            error instanceof Error
+              ? error.message
+              : "The subtitle track could not be attached.",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    refreshTracks,
+    nativeReadyUrl,
+    subtitleSearch.activeTrackId,
+    subtitleSearch.tracks,
+    url,
+  ]);
 
   // ── libmpv lifecycle: init → observe → load; destroy on unmount ────────────
   useEffect(() => {
     let cancelled = false;
+    setError(null);
+    setBuffering(true);
+    setPaused(false);
+    setNativeReadyUrl(null);
     // A single gate so the three native-failure signals - an init/loadfile throw,
     // an mpv end-file ERROR event, and the first-frame watchdog - can each request
     // the webview fallback, but only the FIRST one does (later ones no-op).
@@ -605,6 +793,8 @@ export function EmbeddedPlayer({
     let retryTimer: number | undefined;
     let trackRefreshTimer: number | undefined;
     firstFrameRef.current = false; // new file: show the initial spinner again
+    startedRef.current = false;
+    lastReportRef.current = 0;
     endedRef.current = false;
     posRef.current = 0;
     durRef.current = 0;
@@ -615,6 +805,13 @@ export function EmbeddedPlayer({
     setSourceH(0);
     setVideoW(0);
     setVideoH(0);
+    setContainerFps(0);
+    setOutputFps(0);
+    setDecoderDrops(0);
+    setDisplayDrops(0);
+    setHardwareDecoder("");
+    setColorPrimaries("");
+    setTransferFunction("");
     let unlisten: (() => void) | undefined;
 
     // Route every native-failure signal through one place: ask the parent to
@@ -670,12 +867,12 @@ export function EmbeddedPlayer({
                   if (ev.data === true && !endedRef.current) {
                     scrobblePlaybackPause(
                       scrobbleContext,
-                      playbackProgressPct(posRef.current, durRef.current),
+                      reportedProgressPct(),
                     );
                   } else if (ev.data === false && startedRef.current) {
                     scrobblePlaybackStart({
                       ...scrobbleContext,
-                      progressPct: playbackProgressPct(posRef.current, durRef.current),
+                      progressPct: reportedProgressPct(),
                     });
                   }
                 }
@@ -705,7 +902,7 @@ export function EmbeddedPlayer({
                     if (scrobbleContext != null) {
                       scrobblePlaybackStart({
                         ...scrobbleContext,
-                        progressPct: playbackProgressPct(posRef.current, durRef.current),
+                        progressPct: reportedProgressPct(),
                       });
                     }
                   }
@@ -717,8 +914,8 @@ export function EmbeddedPlayer({
                   ) {
                     lastReportRef.current = now;
                     onProgressRef.current?.(
-                      posRef.current,
-                      durRef.current,
+                      reportedPosition(),
+                      reportedDuration(),
                       prefsRef.current,
                     );
                   }
@@ -778,7 +975,7 @@ export function EmbeddedPlayer({
                   if (scrobbleContext != null) {
                     scrobblePlaybackStop(
                       scrobbleContext,
-                      playbackProgressPct(posRef.current, durRef.current),
+                      reportedProgressPct(),
                     );
                   }
                 }
@@ -811,6 +1008,34 @@ export function EmbeddedPlayer({
                 break;
               case "dheight":
                 if (typeof ev.data === "number") setVideoH(ev.data);
+                break;
+              case "container-fps":
+                if (typeof ev.data === "number") setContainerFps(ev.data);
+                break;
+              case "estimated-vf-fps":
+                if (typeof ev.data === "number") setOutputFps(ev.data);
+                break;
+              case "decoder-frame-drop-count":
+                if (typeof ev.data === "number") setDecoderDrops(ev.data);
+                break;
+              case "frame-drop-count":
+                if (typeof ev.data === "number") setDisplayDrops(ev.data);
+                break;
+              case "hwdec-current":
+                setHardwareDecoder(typeof ev.data === "string" ? ev.data : "");
+                break;
+              case "video-params/primaries":
+                setColorPrimaries(typeof ev.data === "string" ? ev.data : "");
+                break;
+              case "video-params/gamma":
+                setTransferFunction(typeof ev.data === "string" ? ev.data : "");
+                break;
+              case "audio-device":
+                setAudioDevice(
+                  typeof ev.data === "string" && ev.data.length > 0
+                    ? ev.data
+                    : "auto",
+                );
                 break;
             }
           },
@@ -867,6 +1092,21 @@ export function EmbeddedPlayer({
           setSpeed(initialSpeed);
           await setProperty("speed", initialSpeed);
         }
+        const restoredSubDelay = savedPrefs?.subtitleDelay;
+        if (restoredSubDelay != null && Number.isFinite(restoredSubDelay)) {
+          setSubDelay(restoredSubDelay);
+          await setProperty("sub-delay", restoredSubDelay);
+        }
+        const restoredSubPosition = savedPrefs?.subtitlePosition;
+        if (
+          restoredSubPosition != null &&
+          Number.isFinite(restoredSubPosition) &&
+          restoredSubPosition >= 0 &&
+          restoredSubPosition <= 100
+        ) {
+          setSubPosition(restoredSubPosition);
+          await setProperty("sub-pos", restoredSubPosition);
+        }
         // Configure gain before unpausing so a non-default stream never emits a
         // frame of loud audio while the volume preference is still in flight.
         await setProperty("pause", false);
@@ -874,6 +1114,7 @@ export function EmbeddedPlayer({
           await setProperty("pause", true);
         }
         startedRef.current = true;
+        setNativeReadyUrl(url);
         // Arm the first-frame watchdog. loadfile has been accepted, but mpv can
         // still stall forever without ever decoding a frame; if we're still
         // pre-first-frame after the window (and no demuxer progress re-arms
@@ -902,7 +1143,7 @@ export function EmbeddedPlayer({
       if (scrobbleContext != null) {
         scrobblePlaybackStop(
           scrobbleContext,
-          playbackProgressPct(posRef.current, durRef.current),
+          reportedProgressPct(),
         );
       }
     };
@@ -925,8 +1166,10 @@ export function EmbeddedPlayer({
         audioTracks.find((t) => String(t.id) === activeAid)?.lang ?? null,
       preferredSubId: activeSid,
       playbackSpeed: speed,
+      subtitleDelay: subDelay,
+      subtitlePosition: subPosition,
     };
-  }, [activeAid, activeSid, speed, audioTracks]);
+  }, [activeAid, activeSid, speed, subDelay, subPosition, audioTracks]);
 
   // ── Auto-hide controls + cursor while playing (kept up while a menu is open)
   const nudgeControls = useCallback(() => {
@@ -1028,9 +1271,11 @@ export function EmbeddedPlayer({
     void setProperty("aid", id);
   }, []);
   const selectSub = useCallback((id: string) => {
+    nativeCustomSubtitleActiveRef.current = false;
+    subtitleSearch.setActiveTrack(null);
     setActiveSid(id);
     void setProperty("sid", id);
-  }, []);
+  }, [subtitleSearch.setActiveTrack]);
 
   // Restore remembered audio/subtitle/speed once, after the track list loads.
   const restoredAudioRef = useRef(false);
@@ -1124,6 +1369,54 @@ export function EmbeddedPlayer({
     setSubScale(s);
     void setProperty("sub-scale", s);
   }, []);
+  const applySubPosition = useCallback((position: number) => {
+    setSubPosition(position);
+    void setProperty("sub-pos", position);
+  }, []);
+  const applyVideoZoom = useCallback((zoom: number) => {
+    setVideoZoom(zoom);
+    void setProperty("video-zoom", zoom);
+  }, []);
+  const applyVideoPanX = useCallback((pan: number) => {
+    setVideoPanX(pan);
+    void setProperty("video-pan-x", pan);
+  }, []);
+  const applyVideoPanY = useCallback((pan: number) => {
+    setVideoPanY(pan);
+    void setProperty("video-pan-y", pan);
+  }, []);
+  const applyVideoAspect = useCallback((aspect: string) => {
+    setVideoAspect(aspect);
+    void setProperty("video-aspect-override", aspect);
+  }, []);
+  const applyAudioDevice = useCallback((device: string) => {
+    setAudioDevice(device);
+    setPlaybackSettingError(null);
+    void setProperty("audio-device", device).catch((error) => {
+      setPlaybackSettingError(
+        `Audio output could not be changed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+  }, []);
+  const applyAudioPassthrough = useCallback((enabled: boolean) => {
+    setAudioPassthroughEnabled(enabled);
+    setPlaybackSettingError(null);
+    void setAudioPassthrough(enabled).catch((error) => {
+      setAudioPassthroughEnabled(!enabled);
+      setPlaybackSettingError(
+        `Audio passthrough could not be changed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+  }, []);
+  const applyHdrPolicy = useCallback((policy: "auto" | "preserve" | "tone-map") => {
+    setHdrPolicyValue(policy);
+    setPlaybackSettingError(null);
+    void setHdrPolicy(policy).catch((error) => {
+      setPlaybackSettingError(
+        `HDR policy could not be changed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+  }, []);
 
   const syncFullscreen = useCallback(async () => {
     const actual = await getCurrentWindow().isFullscreen();
@@ -1195,12 +1488,16 @@ export function EmbeddedPlayer({
       });
     }
     if (startedRef.current && durRef.current > 0) {
-      onProgress?.(posRef.current, durRef.current, prefsRef.current);
+      onProgress?.(
+        reportedPosition(),
+        reportedDuration(),
+        prefsRef.current,
+      );
     }
     if (scrobbleContext != null) {
       scrobblePlaybackStop(
         scrobbleContext,
-        playbackProgressPct(posRef.current, durRef.current),
+        reportedProgressPct(),
       );
     }
     onClose();
@@ -1238,9 +1535,10 @@ export function EmbeddedPlayer({
       setMenu((cur) => (cur === id ? null : id));
       if (id === "audio" || id === "sub") void refreshTracks();
       if (id === "chapters") void refreshChapters();
+      if (id === "settings") void refreshAudioDevices();
       nudgeControls();
     },
-    [refreshTracks, refreshChapters, nudgeControls],
+    [refreshTracks, refreshChapters, refreshAudioDevices, nudgeControls],
   );
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
@@ -1269,17 +1567,17 @@ export function EmbeddedPlayer({
           break;
         case "ArrowRight":
           e.preventDefault();
-          relSeek(e.shiftKey ? 60 : 10);
+          relSeek(e.shiftKey ? 60 : 5);
           break;
         case "ArrowLeft":
           e.preventDefault();
-          relSeek(e.shiftKey ? -60 : -10);
+          relSeek(e.shiftKey ? -60 : -5);
           break;
         case "l":
-          relSeek(30);
+          relSeek(10);
           break;
         case "j":
-          relSeek(-30);
+          relSeek(-10);
           break;
         case "ArrowUp":
           e.preventDefault();
@@ -1333,6 +1631,49 @@ export function EmbeddedPlayer({
     const height = sourceH > 0 ? sourceH : videoH;
     return width > 0 && height > 0 ? { width, height } : null;
   }, [sourceW, sourceH, videoW, videoH]);
+  const selectedVideoCodec =
+    tracks.find((track) => track.type === "video" && track.selected)?.codec ??
+    tracks.find((track) => track.type === "video")?.codec ??
+    "";
+  const selectedAudioCodec =
+    audioTracks.find((track) => String(track.id) === activeAid)?.codec ??
+    audioTracks.find((track) => track.selected)?.codec ??
+    "";
+  const nativeTechnicalStats = useMemo<Array<readonly [string, string]>>(() => {
+    const stats: Array<readonly [string, string]> = [];
+    if (selectedVideoCodec) stats.push(["Video codec", selectedVideoCodec]);
+    if (selectedAudioCodec) stats.push(["Audio codec", selectedAudioCodec]);
+    if (containerFps > 0) stats.push(["Source frame rate", `${containerFps.toFixed(3)} fps`]);
+    if (outputFps > 0) stats.push(["Output frame rate", `${outputFps.toFixed(3)} fps`]);
+    stats.push(["Dropped frames", `${decoderDrops + displayDrops}`]);
+    if (hardwareDecoder) stats.push(["Hardware decode", hardwareDecoder]);
+    if (colorPrimaries || transferFunction) {
+      stats.push([
+        "Color",
+        [colorPrimaries, transferFunction].filter(Boolean).join(" / "),
+      ]);
+    }
+    stats.push([
+      "HDR policy",
+      hdrPolicy === "tone-map"
+        ? "Tone map to SDR"
+        : hdrPolicy === "preserve"
+          ? "Preserve HDR"
+          : "Automatic",
+    ]);
+    return stats;
+  }, [
+    colorPrimaries,
+    containerFps,
+    decoderDrops,
+    displayDrops,
+    hardwareDecoder,
+    hdrPolicy,
+    outputFps,
+    selectedAudioCodec,
+    selectedVideoCodec,
+    transferFunction,
+  ]);
 
   if (error) {
     return createPortal(
@@ -1343,9 +1684,27 @@ export function EmbeddedPlayer({
           <p>Couldn’t play this stream in the built-in player.</p>
           <p className="embed-error-detail">{error}</p>
           <div className="embed-error-actions">
+            {onTryNextSource != null && (
+              <button
+                type="button"
+                className="btn btn-prominent"
+                onClick={() => {
+                  setError("Preparing the next compatible source.");
+                  void onTryNextSource().catch((nextError) => {
+                    setError(
+                      nextError instanceof Error
+                        ? nextError.message
+                        : String(nextError),
+                    );
+                  });
+                }}
+              >
+                Try next source
+              </button>
+            )}
             <button
               type="button"
-              className="btn btn-prominent"
+              className={onTryNextSource == null ? "btn btn-prominent" : "btn"}
               onClick={() => {
                 void (async () => {
                   try {
@@ -1395,6 +1754,25 @@ export function EmbeddedPlayer({
       }`}
       onMouseMove={nudgeControls}
     >
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {ended
+          ? "Playback ended"
+          : buffering
+            ? "Playback buffering"
+            : paused
+              ? "Playback paused"
+              : "Playback playing"}
+      </span>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        Playback speed {speed} times. Audio{" "}
+        {audioTracks.find((track) => String(track.id) === activeAid)?.title ??
+          audioTracks.find((track) => String(track.id) === activeAid)?.lang ??
+          (activeAid === "auto" ? "automatic" : activeAid)}. Subtitles{" "}
+        {subTracks.find((track) => String(track.id) === activeSid)?.title ??
+          subTracks.find((track) => String(track.id) === activeSid)?.lang ??
+          (activeSid === "no" ? "off" : activeSid)}. Subtitle delay{" "}
+        {subDelay.toFixed(1)} seconds.
+      </span>
       {/* Transparent stage - the native mpv surface shows through. Clicking it
           (not the controls) toggles play/pause. */}
       <div
@@ -1479,9 +1857,11 @@ export function EmbeddedPlayer({
         {detailsSection != null && (
           <PlayerInfoPopover
             engine={engine}
+            playbackDecision={playbackDecision}
             sourceSize={nativeSourceSize}
             displaySize={displaySize}
             sourceFileName={sourceFileName}
+            technicalStats={nativeTechnicalStats}
             section={detailsSection}
             onSectionChange={setDetailsSection}
             shortcuts={NATIVE_SHORTCUTS}
@@ -1500,6 +1880,7 @@ export function EmbeddedPlayer({
           <NativeScrubber
             ref={scrubberRef}
             duration={dur}
+            timelineOffsetSeconds={timelineOffsetRef.current}
             chapters={chapters}
             active={controlsVisible || menu != null || detailsSection != null}
             onSeek={seekTo}
@@ -1735,6 +2116,23 @@ export function EmbeddedPlayer({
                 </button>
               );
             })}
+            <button
+              type="button"
+              className="embed-menu-item"
+              role="menuitem"
+              onClick={() => {
+                setMenu(null);
+                setCaptionsSearchOpen(true);
+              }}
+            >
+              <span>Search and translate subtitles</span>
+              <Icon name="search" size={14} />
+            </button>
+            {subtitleAttachError != null && (
+              <p className="embed-menu-error" role="alert">
+                {subtitleAttachError}
+              </p>
+            )}
           </Popover>
         )}
 
@@ -1781,6 +2179,15 @@ export function EmbeddedPlayer({
               onChange={applySubDelay}
             />
             <Slider
+              label="Subtitle position"
+              value={subPosition}
+              min={0}
+              max={100}
+              step={1}
+              format={(v) => `${Math.round(v)}%`}
+              onChange={applySubPosition}
+            />
+            <Slider
               label="Audio delay"
               value={audioDelay}
               min={-10}
@@ -1789,7 +2196,132 @@ export function EmbeddedPlayer({
               format={(v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}s`}
               onChange={applyAudioDelay}
             />
+            <Slider
+              label="Zoom"
+              value={videoZoom}
+              min={-1}
+              max={2}
+              step={0.05}
+              format={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`}
+              onChange={applyVideoZoom}
+            />
+            <Slider
+              label="Pan horizontally"
+              value={videoPanX}
+              min={-1}
+              max={1}
+              step={0.05}
+              format={(v) => v.toFixed(2)}
+              onChange={applyVideoPanX}
+            />
+            <Slider
+              label="Pan vertically"
+              value={videoPanY}
+              min={-1}
+              max={1}
+              step={0.05}
+              format={(v) => v.toFixed(2)}
+              onChange={applyVideoPanY}
+            />
+            <div className="embed-setting">
+              <span className="embed-setting-head">
+                <span>Aspect ratio</span>
+                <span className="embed-setting-val">
+                  {videoAspect === "-1" ? "Auto" : videoAspect}
+                </span>
+              </span>
+              <div className="embed-menu-choice-row">
+                {[
+                  ["-1", "Auto"],
+                  ["1.777778", "16:9"],
+                  ["1.333333", "4:3"],
+                  ["2.333333", "21:9"],
+                ].map(([value, label]) => (
+                  <button
+                    type="button"
+                    className={`chip${videoAspect === value ? " is-active" : ""}`}
+                    onClick={() => applyVideoAspect(value)}
+                    key={value}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="embed-setting">
+              <span className="embed-setting-head">
+                <span>Audio output device</span>
+              </span>
+              <select
+                className="embed-setting-select"
+                value={audioDevice}
+                onChange={(event) => applyAudioDevice(event.target.value)}
+              >
+                <option value="auto">System default</option>
+                {audioDevices.map((device) => (
+                  <option value={device.name} key={device.name}>
+                    {device.description}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="embed-setting embed-setting-toggle">
+              <span>
+                <strong>Audio passthrough</strong>
+                <small>Send Dolby and DTS bitstreams to a compatible receiver.</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={audioPassthrough}
+                onChange={(event) => applyAudioPassthrough(event.target.checked)}
+              />
+            </label>
+            <div className="embed-setting">
+              <span className="embed-setting-head">
+                <span>HDR output</span>
+                <span className="embed-setting-val">
+                  {hdrPolicy === "tone-map"
+                    ? "Tone map"
+                    : hdrPolicy === "preserve"
+                      ? "Preserve"
+                      : "Auto"}
+                </span>
+              </span>
+              <div className="embed-menu-choice-row">
+                {[
+                  ["auto", "Auto"],
+                  ["preserve", "Preserve HDR"],
+                  ["tone-map", "Tone map to SDR"],
+                ].map(([value, label]) => (
+                  <button
+                    type="button"
+                    className={`chip${hdrPolicy === value ? " is-active" : ""}`}
+                    onClick={() =>
+                      applyHdrPolicy(value as "auto" | "preserve" | "tone-map")
+                    }
+                    key={value}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {playbackSettingError != null && (
+              <p className="embed-menu-error" role="alert">
+                {playbackSettingError}
+              </p>
+            )}
           </Popover>
+        )}
+        {captionsSearchOpen && (
+          <CaptionsMenu
+            subs={subtitleSearch}
+            seedTitle={title}
+            seedImdbId={imdbId}
+            seedSeason={season}
+            seedEpisode={episode}
+            onClose={() => setCaptionsSearchOpen(false)}
+          />
         )}
       </div>
 
@@ -1921,8 +2453,8 @@ function Slider({
 
 const NATIVE_SHORTCUTS: Array<[string, string]> = [
   ["Space / K", "Play / pause"],
-  ["← / →", "Seek ∓10s"],
-  ["J / L", "Seek ∓30s"],
+  ["← / →", "Seek ∓5s"],
+  ["J / L", "Seek ∓10s"],
   ["↑ / ↓", "Volume"],
   ["0 – 9", "Jump to 0–90%"],
   ["< / >", "Speed down / up"],

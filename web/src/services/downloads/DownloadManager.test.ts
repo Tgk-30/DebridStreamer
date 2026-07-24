@@ -94,6 +94,8 @@ function makeBridge() {
     }),
     downloadsFfmpegAvailable: vi.fn(async () => true),
     downloadsDefaultDir: vi.fn(async () => "/Downloads"),
+    downloadsAvailableSpace: vi.fn(async () => Number.MAX_SAFE_INTEGER),
+    downloadDeleteFile: vi.fn(async () => {}),
     listenDownloadProgress: vi.fn(async (callback) => {
       emit = callback;
       return () => {
@@ -242,6 +244,12 @@ describe("DownloadManager", () => {
     });
 
     await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("downloading"));
+    expect(native.bridge.downloadStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: record.jobId,
+        reserveOutputCopy: true,
+      }),
+    );
     native.emit({ jobId: record.jobId, phase: "downloading", bytesDone: 20, bytesTotal: 100 });
     native.emit({ jobId: record.jobId, phase: "completed", bytesDone: 100, bytesTotal: 100 });
     await waitUntil(() => expect(status(store, record.jobId)).resolves.toBe("optimizing"));
@@ -668,6 +676,217 @@ describe("DownloadManager", () => {
     managers.push(manager);
     await manager.start();
     expect(await status(store, "restart")).toBe("paused");
+  });
+
+  it("resumes a durable partial file after an app restart", async () => {
+    const store = new DownloadStore();
+    await store.saveDownload({
+      ...makeDownloadRecord({
+        jobId: "restart-resume",
+        mediaId: "m",
+        title: "Interrupted",
+        infoHash: "hash",
+        mode: "full",
+        sizeBytes: 100,
+      }),
+      status: "paused",
+      bytesDone: 12,
+      destPath: "/Downloads/Interrupted.mp4",
+    });
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    await manager.resume("restart-resume");
+
+    await waitUntil(async () => {
+      expect(native.bridge.downloadStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobId: "restart-resume",
+          destPath: "/Downloads/Interrupted.mp4",
+          resumeFromExisting: true,
+        }),
+      );
+    });
+    expect(await status(store, "restart-resume")).toBe("downloading");
+  });
+
+  it("fails before transfer when the destination lacks working space", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    vi.mocked(native.bridge.downloadsAvailableSpace!).mockResolvedValue(1);
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "no-space",
+      mediaId: "m",
+      title: "Large",
+      infoHash: "hash",
+      mode: "full",
+      sizeBytes: 1_000_000_000,
+    });
+
+    await waitUntil(async () => {
+      expect(await status(store, record.jobId)).toBe("failed");
+    });
+    expect(native.bridge.downloadStart).not.toHaveBeenCalled();
+    expect((await store.listDownloads())[0]?.error).toContain(
+      "Not enough free disk space",
+    );
+  });
+
+  it("persists terminal bytes so an immediate failure can resume the partial file", async () => {
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "partial-failure",
+      mediaId: "m",
+      title: "Partial",
+      infoHash: "hash",
+      mode: "full",
+      sizeBytes: 100,
+    });
+    await waitUntil(async () => {
+      expect(await status(store, record.jobId)).toBe("downloading");
+    });
+    native.emit({
+      jobId: record.jobId,
+      phase: "failed",
+      bytesDone: 17,
+      bytesTotal: 100,
+      error: "Disk full",
+    });
+    await waitUntil(async () => {
+      const saved = (await store.listDownloads()).find(
+        (item) => item.jobId === record.jobId,
+      );
+      expect(saved).toMatchObject({ status: "failed", bytesDone: 17 });
+    });
+  });
+
+  it("automatically retries transient failures twice with bounded backoff", async () => {
+    vi.useFakeTimers();
+    const store = new DownloadStore();
+    const native = makeBridge();
+    const resolveStream = vi
+      .fn<DownloadDebridResolver["resolveStream"]>()
+      .mockRejectedValue(new Error("network timeout"));
+    const manager = new DownloadManager(
+      store as unknown as Store,
+      { resolveStream },
+      { bridge: native.bridge },
+    );
+    managers.push(manager);
+    await manager.start();
+    const record = await manager.enqueue({
+      jobId: "automatic-retry",
+      mediaId: "m",
+      title: "Automatic retry",
+      infoHash: "hash",
+      mode: "full",
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resolveStream).toHaveBeenCalledTimes(1);
+    expect(await status(store, record.jobId)).toBe("failed");
+
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(resolveStream).toHaveBeenCalledTimes(2);
+    expect(await status(store, record.jobId)).toBe("failed");
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(resolveStream).toHaveBeenCalledTimes(3);
+    expect(await status(store, record.jobId)).toBe("failed");
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(resolveStream).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries a failed record and deletes a completed file on request", async () => {
+    const store = new DownloadStore();
+    await store.saveDownload({
+      ...makeDownloadRecord({
+        jobId: "retry",
+        mediaId: "m",
+        title: "Retry",
+        infoHash: "hash",
+        mode: "full",
+      }),
+      status: "failed",
+      error: "Network failed",
+    });
+    await store.saveDownload({
+      ...makeDownloadRecord({
+        jobId: "delete",
+        mediaId: "m2",
+        title: "Delete",
+        infoHash: "hash2",
+        mode: "full",
+      }),
+      status: "completed",
+      destPath: "/Downloads/Delete.mp4",
+    });
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+
+    await manager.retry("retry");
+    await waitUntil(async () => {
+      expect(native.bridge.downloadStart).toHaveBeenCalledWith(
+        expect.objectContaining({ jobId: "retry" }),
+      );
+    });
+    await manager.deleteCompletedFile("delete");
+    expect(native.bridge.downloadDeleteFile).toHaveBeenCalledWith(
+      "/Downloads/Delete.mp4",
+    );
+    expect((await store.listDownloads()).some((record) => record.jobId === "delete")).toBe(
+      false,
+    );
+  });
+
+  it("force-stops a failed durable job and deletes its orphaned partial file", async () => {
+    const store = new DownloadStore();
+    await store.saveDownload({
+      ...makeDownloadRecord({
+        jobId: "orphaned-partial",
+        mediaId: "m",
+        title: "Orphaned partial",
+        infoHash: "hash",
+        mode: "full",
+      }),
+      status: "failed",
+      bytesDone: 42,
+      destPath: "/Downloads/Orphaned.partial.mkv",
+      error: "Network failed",
+    });
+    const native = makeBridge();
+    const manager = new DownloadManager(store as unknown as Store, resolver(), {
+      bridge: native.bridge,
+    });
+    managers.push(manager);
+    await manager.start();
+
+    await manager.forceStop("orphaned-partial");
+
+    expect(native.bridge.downloadForceStop).toHaveBeenCalledWith("orphaned-partial");
+    expect(native.bridge.downloadDeleteFile).toHaveBeenCalledWith(
+      "/Downloads/Orphaned.partial.mkv",
+    );
+    expect(await status(store, "orphaned-partial")).toBe("canceled");
   });
 
   it("coalesces byte persistence while keeping the live UI fed between writes", async () => {

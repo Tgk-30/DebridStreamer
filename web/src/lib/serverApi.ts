@@ -88,11 +88,30 @@ export async function fetchServerStreams(input: {
    *  from a different year (movies only). Optional - older servers ignore the
    *  extra query param and keep the unranked-by-year order. */
   year?: number | null;
+  /** Abort both source discovery and provider availability work when the title
+   * changes or its Detail view closes. */
+  signal?: AbortSignal;
+  /** Receives indexer rows as soon as they are known, before provider cache
+   * availability finishes. Current servers stream this in one request. */
+  onPhase?: (
+    phase: "sources" | "ready",
+    result: ServerStreamsResponse,
+  ) => void;
 }): Promise<{
   rows: StreamRow[];
   hasIndexers: boolean;
   hasDebrid: boolean;
+  sourceErrors?: Array<{ indexer: string; error: string }>;
 }> {
+  type ProgressiveEnvelope =
+    | ({ phase: "sources" | "ready" } & ServerStreamsResponse)
+    | { phase: "error"; error?: string };
+  const normalize = (response: ServerStreamsResponse): ServerStreamsResponse => ({
+    rows: response.rows ?? [],
+    hasIndexers: response.hasIndexers === true,
+    hasDebrid: response.hasDebrid === true,
+    sourceErrors: response.sourceErrors ?? response.indexerErrors ?? [],
+  });
   const params = new URLSearchParams({ type: input.type });
   if (input.season != null) params.set("season", String(input.season));
   if (input.episode != null) params.set("episode", String(input.episode));
@@ -100,19 +119,94 @@ export async function fetchServerStreams(input: {
     params.set("title", input.title.trim());
   }
   if (input.year != null) params.set("year", String(input.year));
-  const response = await serverRequest<{
-    rows: StreamRow[];
-    hasIndexers: boolean;
-    hasDebrid: boolean;
-  }>(
-    "GET",
-    `/api/streams/${encodeURIComponent(input.imdbId)}?${params.toString()}`,
-  );
-  return {
-    rows: response.rows,
-    hasIndexers: response.hasIndexers,
-    hasDebrid: response.hasDebrid,
+  if (input.onPhase != null) params.set("progressive", "1");
+  const path = `/api/streams/${encodeURIComponent(input.imdbId)}?${params.toString()}`;
+
+  if (input.onPhase == null) {
+    const response = await serverRequest<ServerStreamsResponse>("GET", path);
+    return normalize(response);
+  }
+
+  const response = await fetch(`${serverBaseURL()}${path}`, {
+    method: "GET",
+    credentials: "include",
+    signal: input.signal,
+  });
+  if (!response.ok) {
+    if (response.status === 401) notifyUnauthorized();
+    const text = await response.text();
+    let message = `Server request failed (${response.status}).`;
+    try {
+      const parsed = JSON.parse(text) as { error?: unknown };
+      if (typeof parsed.error === "string") message = parsed.error;
+    } catch {
+      // A reverse proxy can return HTML. Keep the status-based message.
+    }
+    const error = new Error(message) as Error & { status: number };
+    error.status = response.status;
+    throw error;
+  }
+
+  const decoder = new TextDecoder();
+  const reader = response.body?.getReader();
+  if (reader == null) {
+    throw new Error("The server returned an empty stream-search response.");
+  }
+  let buffer = "";
+  let totalBytes = 0;
+  let complete: ServerStreamsResponse | null = null;
+  const consume = (text: string) => {
+    const parsed = JSON.parse(text) as ProgressiveEnvelope | ServerStreamsResponse;
+    if ("phase" in parsed && parsed.phase === "error") {
+      throw new Error(
+        typeof parsed.error === "string"
+          ? parsed.error
+          : "Stream search failed. Retry or check the configured indexers.",
+      );
+    }
+    if ("phase" in parsed) {
+      const phase = parsed.phase;
+      const result = normalize(parsed);
+      input.onPhase?.(phase, result);
+      if (phase === "ready") complete = result;
+      return;
+    }
+    // Compatibility with a server that ignores `progressive=1` and returns the
+    // established one-document JSON response.
+    complete = normalize(parsed);
+    input.onPhase?.("ready", complete);
   };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    totalBytes += value?.byteLength ?? 0;
+    if (totalBytes > 10_000_000) {
+      await reader.cancel();
+      throw new Error("The server returned an oversized stream-search response.");
+    }
+    buffer += decoder.decode(value, { stream: !done });
+    let newline = buffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (line.length > 0) consume(line);
+      newline = buffer.indexOf("\n");
+    }
+    if (done) break;
+  }
+  if (buffer.trim().length > 0) consume(buffer.trim());
+  if (complete == null) {
+    throw new Error("The server ended stream search before availability was ready.");
+  }
+  return complete;
+}
+
+interface ServerStreamsResponse {
+  rows: StreamRow[];
+  hasIndexers: boolean;
+  hasDebrid: boolean;
+  sourceErrors?: Array<{ indexer: string; error: string }>;
+  indexerErrors?: Array<{ indexer: string; error: string }>;
 }
 
 /** Validates a candidate debrid token against the provider SERVER-side.
@@ -135,6 +229,7 @@ export async function resolveServerStream(
   row: StreamRow,
   opts: {
     transcode?: boolean;
+    transcodeOptions?: ServerTranscodeOptions;
     media?: { id: string; type: MediaType };
     /** Episode context (series) - steers season-pack file selection on the
      *  server. Omitted for movies / older servers (unknown fields ignored). */
@@ -164,20 +259,60 @@ export async function resolveServerStream(
   // Reuse the session's HLS manifest when the user explicitly requested lower
   // data use. The hosted web compatibility path calls the same helper when the
   // original format cannot be decoded by browsers.
-  return opts.transcode ? asServerTranscodeStream(stream) : stream;
+  return opts.transcode
+    ? asServerTranscodeStream(stream, opts.transcodeOptions)
+    : stream;
 }
 
 /** Point an existing Server Mode proxy session at its HLS compatibility
  * manifest without resolving the torrent a second time. The server creates the
  * transcode lazily when this URL is first requested. */
-export function asServerTranscodeStream(stream: StreamInfo): StreamInfo {
+export interface ServerTranscodeOptions {
+  profile?: "adaptive" | "high" | "data-saver";
+  startSeconds?: number;
+  hdrPolicy?: "auto" | "preserve" | "tone-map";
+  preserveSubtitles?: boolean;
+}
+
+export function asServerTranscodeStream(
+  stream: StreamInfo,
+  options: ServerTranscodeOptions = {},
+): StreamInfo {
   const suffixAt = stream.streamURL.search(/[?#]/);
   const base = (
     suffixAt < 0 ? stream.streamURL : stream.streamURL.slice(0, suffixAt)
   ).replace(/\/+$/, "");
-  if (base.toLowerCase().endsWith("/index.m3u8")) return stream;
-  const suffix = suffixAt < 0 ? "" : stream.streamURL.slice(suffixAt);
-  return { ...stream, streamURL: `${base}/index.m3u8${suffix}` };
+  const manifestBase = base.toLowerCase().endsWith("/index.m3u8")
+    ? base
+    : `${base}/index.m3u8`;
+  const params = new URLSearchParams(
+    suffixAt < 0 ? "" : stream.streamURL.slice(suffixAt).replace(/^[?#]/, ""),
+  );
+  if (options.profile != null) params.set("profile", options.profile);
+  const startSeconds =
+    options.startSeconds != null &&
+    Number.isFinite(options.startSeconds) &&
+    options.startSeconds > 0
+      ? Math.min(86_400, Math.floor(options.startSeconds))
+      : 0;
+  if (startSeconds > 0) params.set("start", String(startSeconds));
+  else params.delete("start");
+  if (options.hdrPolicy != null) params.set("hdr", options.hdrPolicy);
+  if (options.preserveSubtitles) params.set("subtitles", "preserve");
+  else params.delete("subtitles");
+  const query = params.toString();
+  const streamURL = query.length > 0 ? `${manifestBase}?${query}` : manifestBase;
+  if (
+    stream.streamURL === streamURL &&
+    (stream.timelineOffsetSeconds ?? 0) === startSeconds
+  ) {
+    return stream;
+  }
+  return {
+    ...stream,
+    streamURL,
+    timelineOffsetSeconds: startSeconds,
+  };
 }
 
 /** Build the capability URL consumed by native players launched from a hosted

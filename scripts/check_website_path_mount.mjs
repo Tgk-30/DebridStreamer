@@ -126,6 +126,18 @@ check(/status === 401 \|\| status === 403/.test(deployHelper), "Cloudflare helpe
 check(!/console\.error\(config\.token/.test(deployHelper), "Cloudflare helper must not print the token");
 check(!/headersForOrigin\.set\(["']Host["']/.test(deployHelper), "Cloudflare Worker should let fetch derive the Host header from the Pages origin URL");
 check(/headersForOrigin\.delete\(["']Host["']/.test(deployHelper), "Cloudflare Worker should strip the incoming Host header before proxying to Pages");
+check(
+  /max-age=31536000, immutable/.test(deployHelper),
+  "Cloudflare Worker must cache fingerprinted bundles immutably",
+);
+check(
+  /max-age=86400, stale-while-revalidate=604800/.test(deployHelper),
+  "Cloudflare Worker must cache stable media with bounded revalidation",
+);
+check(
+  /max-age=0, must-revalidate/.test(deployHelper),
+  "Cloudflare Worker must keep route HTML revalidating",
+);
 
 if (failures.length > 0) {
   console.error("Website mounted-path check failed:");

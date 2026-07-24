@@ -39,6 +39,24 @@ export interface ServerProfileSummary {
   bandwidthStatus?: "ok" | "approaching" | "over";
 }
 
+export interface ServerTranscodeCapabilities {
+  adaptive: boolean;
+  seekOffset: boolean;
+  subtitleSidecar: boolean;
+  hardwareEncoder: string;
+  availableVideoEncoders: string[];
+  toneMapping: boolean;
+}
+
+const NO_TRANSCODE_CAPABILITIES: ServerTranscodeCapabilities = {
+  adaptive: false,
+  seekOffset: false,
+  subtitleSidecar: false,
+  hardwareEncoder: "libx264",
+  availableVideoEncoders: [],
+  toneMapping: false,
+};
+
 interface ServerSessionContextValue {
   session: ServerSession | null;
   setSession: (session: ServerSession | null) => void;
@@ -48,6 +66,7 @@ interface ServerSessionContextValue {
   /** Whether the server can transcode (operator flag on + ffmpeg present). A
    *  static server capability captured once at bootstrap. */
   transcodeAvailable: boolean;
+  transcodeCapabilities: ServerTranscodeCapabilities;
   /** Whether the server can supply OMDb ratings for this profile (a profile,
    *  server, or env OMDb key is configured server-side). The key itself never
    *  reaches the client - this only says the /api/omdb proxy will answer. */
@@ -64,6 +83,7 @@ const ServerSessionCtx = createContext<ServerSessionContextValue>({
   profiles: [],
   setProfiles: () => {},
   transcodeAvailable: false,
+  transcodeCapabilities: NO_TRANSCODE_CAPABILITIES,
   omdbProxy: false,
   buildProfile: "public",
 });
@@ -72,6 +92,7 @@ export function ServerSessionProvider({
   initial,
   initialProfiles = [],
   initialTranscodeAvailable = false,
+  initialTranscodeCapabilities = NO_TRANSCODE_CAPABILITIES,
   initialOmdbProxy = false,
   initialBuildProfile = "public",
   children,
@@ -79,6 +100,7 @@ export function ServerSessionProvider({
   initial: ServerSession | null;
   initialProfiles?: ServerProfileSummary[];
   initialTranscodeAvailable?: boolean;
+  initialTranscodeCapabilities?: ServerTranscodeCapabilities;
   initialOmdbProxy?: boolean;
   initialBuildProfile?: BuildProfile;
   children: ReactNode;
@@ -98,6 +120,7 @@ export function ServerSessionProvider({
         profiles,
         setProfiles: setList,
         transcodeAvailable: initialTranscodeAvailable,
+        transcodeCapabilities: initialTranscodeCapabilities,
         omdbProxy: initialOmdbProxy,
         buildProfile: initialBuildProfile,
       }}
@@ -110,6 +133,10 @@ export function ServerSessionProvider({
 /** Whether the server advertises transcoding (Server Mode capability). */
 export function useTranscodeAvailable(): boolean {
   return useContext(ServerSessionCtx).transcodeAvailable;
+}
+
+export function useTranscodeCapabilities(): ServerTranscodeCapabilities {
+  return useContext(ServerSessionCtx).transcodeCapabilities;
 }
 
 /** Whether the server can supply OMDb ratings (Server Mode "hidden key" path). */

@@ -119,6 +119,10 @@ interface VideoPlayerProps {
    * player seeks here once, on first metadata load - making cross-device resume
    * actually pick up where you left off. 0/undefined starts from the beginning. */
   startPositionSeconds?: number;
+  /** Original-media time represented by time zero in a seek-offset server
+   * transcode. Progress, clocks, and scrobbling are mapped back to the original
+   * timeline while the media element continues to seek within the HLS window. */
+  timelineOffsetSeconds?: number;
   /** Remembered audio/subtitle/speed for this title (in-window player only). */
   savedPrefs?: PlaybackPrefs | null;
   /** Optional global player defaults. Settings owns persistence and supplies this. */
@@ -140,6 +144,9 @@ interface VideoPlayerProps {
   upNext?: { label: string } | null;
   /** Play the next episode (the card's action + the countdown target). */
   onPlayNext?: () => void;
+  /** Resolve and continue with the next compatible instant source after a
+   * playback failure. */
+  onTryNextSource?: () => Promise<void>;
   /** Whether the card auto-plays after a countdown (false under Data Saver - 
    *  nothing plays without a click). */
   autoCountdown?: boolean;
@@ -149,6 +156,19 @@ interface VideoPlayerProps {
   /** Desktop only: use the in-window libmpv player for containers the webview
    *  cannot decode. When false, use the bundled mpv or an external player. */
   useBuiltInPlayer?: boolean;
+}
+
+function playbackDecisionFor(
+  engine: PlaybackEngine,
+  url: string,
+): "Direct Play" | "Transcode" {
+  if (
+    engine === "webview-hls-transcode" ||
+    /\/api\/stream\/[^/?#]+\/index\.m3u8(?:[?#]|$)/i.test(url)
+  ) {
+    return "Transcode";
+  }
+  return "Direct Play";
 }
 
 interface WebKitVideoElement extends HTMLVideoElement {
@@ -389,6 +409,7 @@ export function VideoPlayer({
   onClose,
   onProgress,
   startPositionSeconds,
+  timelineOffsetSeconds = 0,
   savedPrefs,
   subtitleClient,
   translator,
@@ -398,6 +419,7 @@ export function VideoPlayer({
   scrobbleContext = null,
   upNext = null,
   onPlayNext,
+  onTryNextSource,
   autoCountdown = true,
   playerPreferences = null,
   preferredPlayer,
@@ -437,6 +459,17 @@ export function VideoPlayer({
   const [externalError, setExternalError] = useState<string | null>(null);
   const [detailsSection, setDetailsSection] = useState<"info" | "shortcuts" | null>(null);
   const [sourceSize, setSourceSize] = useState<PixelSize | null>(null);
+  const [webTechnicalStats, setWebTechnicalStats] = useState<
+    ReadonlyArray<readonly [string, string]>
+  >([]);
+  const updateWebTechnicalStats = useCallback(
+    (next: ReadonlyArray<readonly [string, string]>) => {
+      setWebTechnicalStats((current) =>
+        JSON.stringify(current) === JSON.stringify(next) ? current : next,
+      );
+    },
+    [],
+  );
   const [displaySize, setDisplaySize] = useState<PixelSize | null>(() =>
     currentViewportPixelSize(),
   );
@@ -541,6 +574,7 @@ export function VideoPlayer({
 
   useEffect(() => {
     setSourceSize(null);
+    setWebTechnicalStats([]);
     setDetailsSection(null);
   }, [effectiveUrl]);
 
@@ -732,6 +766,11 @@ export function VideoPlayer({
       <EmbeddedPlayer
         savedPrefs={savedPrefs}
         playerPreferences={playerPreferences}
+        subtitleClient={subtitleClient}
+        translator={translator}
+        imdbId={imdbId ?? null}
+        season={season ?? null}
+        episode={episode ?? null}
         url={effectiveUrl}
         title={title}
         subtitle={subtitle ?? epLabel}
@@ -741,11 +780,14 @@ export function VideoPlayer({
         engine={effectiveEngine}
         onPlaybackError={recoverNativeInWebview}
         startPositionSeconds={startPositionSeconds}
+        timelineOffsetSeconds={timelineOffsetSeconds}
+        playbackDecision={playbackDecisionFor(effectiveEngine, effectiveUrl)}
         onProgress={(current, duration, prefs) =>
           onProgress?.(current, duration, prefs)
         }
         scrobbleContext={scrobbleContext}
         onPlayNext={upNext != null ? onPlayNext : undefined}
+        onTryNextSource={onTryNextSource}
         nextLabel={upNext?.label ?? null}
         onClose={onClose}
       />
@@ -768,6 +810,17 @@ export function VideoPlayer({
         onClick={(e) => e.stopPropagation()}
         onPointerMove={mode === "webview" ? nudgeChrome : undefined}
       >
+        <span className="sr-only" aria-live="polite" aria-atomic="true">
+          {externalError != null
+            ? "Playback stopped because of an error"
+            : webRecoveryPending
+              ? "Preparing a compatible stream"
+              : mode === "webview"
+                ? webviewPaused
+                  ? "Playback paused"
+                  : "Playback playing"
+                : "Opening native playback"}
+        </span>
         <div
           className={`player-bar${webChromeShown ? " is-visible" : ""}`}
           aria-hidden={hiddenWebChrome || undefined}
@@ -824,6 +877,8 @@ export function VideoPlayer({
             sourceSize={sourceSize}
             displaySize={displaySize}
             sourceFileName={sourceFileName}
+            technicalStats={webTechnicalStats}
+            playbackDecision={playbackDecisionFor(effectiveEngine, effectiveUrl)}
             section={detailsSection}
             onSectionChange={setDetailsSection}
             shortcuts={WEBVIEW_SHORTCUTS}
@@ -853,10 +908,12 @@ export function VideoPlayer({
             onActiveSubtitleUrlChange={setActiveSubtitleUrl}
             onOpenShortcuts={() => setDetailsSection("shortcuts")}
             onSourceSize={setSourceSize}
+            onTechnicalStats={updateWebTechnicalStats}
             onProgress={onProgress}
             savedPrefs={savedPrefs}
             playerPreferences={playerPreferences}
             startPositionSeconds={startPositionSeconds}
+            timelineOffsetSeconds={timelineOffsetSeconds}
             onPlaybackError={(message) => void handleWebviewPlaybackError(message)}
             onOpenExternalPlayer={() => void openExternalPlayback()}
             externalActionStatus={externalActionStatus}
@@ -878,6 +935,7 @@ export function VideoPlayer({
             error={externalError}
             externalStatus={externalActionStatus}
             onOpenExternal={() => void openExternalPlayback()}
+            onTryNextSource={onTryNextSource}
             onRetry={
               mode === "webview" && externalError != null
                 ? () => {
@@ -924,10 +982,12 @@ function WebviewPlayer({
   onActiveSubtitleUrlChange,
   onOpenShortcuts,
   onSourceSize,
+  onTechnicalStats,
   onProgress,
   savedPrefs,
   playerPreferences,
   startPositionSeconds,
+  timelineOffsetSeconds,
   onPlaybackError,
   onOpenExternalPlayer,
   externalActionStatus,
@@ -960,6 +1020,9 @@ function WebviewPlayer({
   onActiveSubtitleUrlChange: (url: string | null) => void;
   onOpenShortcuts: () => void;
   onSourceSize: (size: PixelSize | null) => void;
+  onTechnicalStats: (
+    stats: ReadonlyArray<readonly [string, string]>,
+  ) => void;
   onProgress?: (
     currentSeconds: number,
     durationSeconds: number | null,
@@ -968,6 +1031,7 @@ function WebviewPlayer({
   savedPrefs?: PlaybackPrefs | null;
   playerPreferences?: PlayerPreferenceDefaults | null;
   startPositionSeconds?: number;
+  timelineOffsetSeconds: number;
   onPlaybackError: (message: string) => void;
   onOpenExternalPlayer: () => void;
   externalActionStatus: string | null;
@@ -998,6 +1062,14 @@ function WebviewPlayer({
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [videoFit, setVideoFit] = useState<"contain" | "cover" | "fill">("contain");
+  const [videoZoom, setVideoZoom] = useState(1);
+  const [videoPanX, setVideoPanX] = useState(0);
+  const [videoPanY, setVideoPanY] = useState(0);
+  const [subtitlePosition, setSubtitlePosition] = useState(
+    () => savedPrefs?.subtitlePosition ?? 90,
+  );
+  const subtitlePositionRef = useRef(subtitlePosition);
+  subtitlePositionRef.current = subtitlePosition;
   const [paused, setPaused] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -1029,6 +1101,76 @@ function WebviewPlayer({
   const mediaArtist = nowPlaying?.episodeLabel ?? subtitle ?? "";
   const mediaArtworkUrl = nowPlaying?.posterUrl ?? "";
 
+  useEffect(() => {
+    if (!detailsOpen) {
+      onTechnicalStats([]);
+      return;
+    }
+    const video = videoRef.current;
+    if (video == null) return;
+    const report = () => {
+      const stats: Array<readonly [string, string]> = [];
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        stats.push([
+          "Video",
+          `${video.videoWidth} × ${video.videoHeight} px`,
+        ]);
+      }
+      let bufferedAhead = 0;
+      for (let index = 0; index < video.buffered.length; index += 1) {
+        if (
+          video.buffered.start(index) <= video.currentTime &&
+          video.buffered.end(index) >= video.currentTime
+        ) {
+          bufferedAhead = video.buffered.end(index) - video.currentTime;
+          break;
+        }
+      }
+      stats.push(["Buffer health", `${bufferedAhead.toFixed(1)} s`]);
+      const quality = video.getVideoPlaybackQuality?.();
+      if (quality != null) {
+        stats.push(["Decoded frames", String(quality.totalVideoFrames)]);
+        stats.push(["Dropped frames", String(quality.droppedVideoFrames)]);
+      }
+      const hls = hlsRef.current;
+      if (hls != null) {
+        const level = hls.levels[hls.currentLevel];
+        if (level != null) {
+          const rendition =
+            level.height > 0
+              ? `${level.height}p`
+              : level.bitrate > 0
+                ? `${Math.round(level.bitrate / 1000)} kbps`
+                : `Level ${hls.currentLevel + 1}`;
+          stats.push(["HLS rendition", rendition]);
+        } else {
+          stats.push(["HLS rendition", "Automatic"]);
+        }
+        if (hls.bandwidthEstimate > 0) {
+          stats.push([
+            "Estimated bandwidth",
+            `${(hls.bandwidthEstimate / 1_000_000).toFixed(1)} Mbps`,
+          ]);
+        }
+      }
+      if (timelineOffsetSeconds > 0) {
+        stats.push([
+          "Resume offset",
+          clockLabel(timelineOffsetSeconds),
+        ]);
+      }
+      onTechnicalStats(stats);
+    };
+    report();
+    const timer = window.setInterval(report, 1000);
+    return () => window.clearInterval(timer);
+  }, [
+    detailsOpen,
+    onTechnicalStats,
+    timelineOffsetSeconds,
+    url,
+  ]);
+
   // A wake lock is acquired only after the media element emits play, rather
   // than merely while the player is open or autoplay is being attempted.
   useWakeLock(playing && !suspended);
@@ -1042,6 +1184,29 @@ function WebviewPlayer({
   }, [onMenuOpenChange, optionsOpen]);
 
   const subs = useSubtitleTracks(subtitleClient, translator);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video == null) return;
+    const apply = () => {
+      for (const track of Array.from(video.textTracks)) {
+        if (track.mode !== "showing" || track.cues == null) continue;
+        for (const cue of Array.from(track.cues)) {
+          const positioned = cue as TextTrackCue & {
+            line?: number | "auto";
+            snapToLines?: boolean;
+          };
+          positioned.snapToLines = false;
+          positioned.line = subtitlePosition;
+        }
+      }
+    };
+    const tracks = Array.from(video.textTracks);
+    for (const track of tracks) track.addEventListener("cuechange", apply);
+    apply();
+    return () => {
+      for (const track of tracks) track.removeEventListener("cuechange", apply);
+    };
+  }, [subtitlePosition, subs.activeTrackId]);
   useEffect(() => {
     const activeTrack = subs.tracks.find(
       (track) => track.id === subs.activeTrackId,
@@ -1334,6 +1499,14 @@ function WebviewPlayer({
   // once, when metadata first loads, without re-subscribing the effect.
   const startPositionRef = useRef(startPositionSeconds);
   startPositionRef.current = startPositionSeconds;
+  const timelineOffsetRef = useRef(
+    Number.isFinite(timelineOffsetSeconds)
+      ? Math.max(0, timelineOffsetSeconds)
+      : 0,
+  );
+  timelineOffsetRef.current = Number.isFinite(timelineOffsetSeconds)
+    ? Math.max(0, timelineOffsetSeconds)
+    : 0;
   const didSeekRef = useRef(false);
   useEffect(() => {
     const video = videoRef.current;
@@ -1343,12 +1516,18 @@ function WebviewPlayer({
 
     const report = () => {
       const d = Number.isFinite(video.duration) ? video.duration : null;
-      onProgressRef.current?.(video.currentTime, d, {
+      const offset = timelineOffsetRef.current;
+      onProgressRef.current?.(
+        video.currentTime + offset,
+        d == null ? null : d + offset,
+        {
         playbackSpeed:
           Number.isFinite(video.playbackRate) && video.playbackRate > 0
             ? video.playbackRate
             : 1,
-      });
+        subtitlePosition: subtitlePositionRef.current,
+        },
+      );
     };
     const onTimeUpdate = () => {
       scrubberRef.current?.setCurrentTime(video.currentTime);
@@ -1356,7 +1535,8 @@ function WebviewPlayer({
       if (wholeSecond !== lastClockSecondRef.current) {
         lastClockSecondRef.current = wholeSecond;
         if (clockRef.current != null) {
-          clockRef.current.textContent = `${clockLabel(video.currentTime)} / ${clockLabel(video.duration)}`;
+          const offset = timelineOffsetRef.current;
+          clockRef.current.textContent = `${clockLabel(video.currentTime + offset)} / ${clockLabel(video.duration + offset)}`;
         }
       }
       const now = Date.now();
@@ -1397,7 +1577,8 @@ function WebviewPlayer({
     const onLoadedMeta = () => {
       if (Number.isFinite(video.duration)) setDuration(video.duration);
       if (clockRef.current != null) {
-        clockRef.current.textContent = `${clockLabel(video.currentTime)} / ${clockLabel(video.duration)}`;
+        const offset = timelineOffsetRef.current;
+        clockRef.current.textContent = `${clockLabel(video.currentTime + offset)} / ${clockLabel(video.duration + offset)}`;
       }
       const width = video.videoWidth;
       const height = video.videoHeight;
@@ -1410,7 +1591,13 @@ function WebviewPlayer({
       if (Number.isFinite(video.duration)) setDuration(video.duration);
       applyResume();
     };
-    const progressPct = () => playbackProgressPct(video.currentTime, video.duration);
+    const progressPct = () => {
+      const offset = timelineOffsetRef.current;
+      return playbackProgressPct(
+        video.currentTime + offset,
+        video.duration + offset,
+      );
+    };
     const onEnded = () => {
       setEnded(true);
       setPlaying(false);
@@ -1967,11 +2154,21 @@ function WebviewPlayer({
       className={`webview-player${suspended ? " is-casting" : ""}`}
       onPointerMove={onActivity}
     >
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        Playback speed {playbackRate} times. Subtitles{" "}
+        {activeSubtitle == null ? "off" : activeSubtitle.label}.
+        {activeSubtitle != null
+          ? ` Subtitle delay ${(activeSubtitle.delayMs / 1000).toFixed(1)} seconds.`
+          : ""}
+      </span>
       <div className="player-stage">
         <video
           ref={videoRef}
           className="player-video"
-          style={{ objectFit: videoFit }}
+          style={{
+            objectFit: videoFit,
+            transform: `translate(${videoPanX}%, ${videoPanY}%) scale(${videoZoom})`,
+          }}
           autoPlay
           playsInline
           crossOrigin={url.includes("/api/stream/") ? "use-credentials" : undefined}
@@ -2235,6 +2432,58 @@ function WebviewPlayer({
               ))}
             </div>
           </div>
+          <div className="player-options-section player-options-sliders">
+            <label>
+              <span className="t-secondary">Zoom</span>
+              <span className="player-options-output">{Math.round(videoZoom * 100)}%</span>
+              <input
+                type="range"
+                min={1}
+                max={2.5}
+                step={0.05}
+                value={videoZoom}
+                onChange={(event) => setVideoZoom(Number(event.currentTarget.value))}
+              />
+            </label>
+            <label>
+              <span className="t-secondary">Pan horizontally</span>
+              <span className="player-options-output">{videoPanX}%</span>
+              <input
+                type="range"
+                min={-50}
+                max={50}
+                step={1}
+                value={videoPanX}
+                onChange={(event) => setVideoPanX(Number(event.currentTarget.value))}
+              />
+            </label>
+            <label>
+              <span className="t-secondary">Pan vertically</span>
+              <span className="player-options-output">{videoPanY}%</span>
+              <input
+                type="range"
+                min={-50}
+                max={50}
+                step={1}
+                value={videoPanY}
+                onChange={(event) => setVideoPanY(Number(event.currentTarget.value))}
+              />
+            </label>
+            <label>
+              <span className="t-secondary">Subtitle position</span>
+              <span className="player-options-output">{subtitlePosition}%</span>
+              <input
+                type="range"
+                min={10}
+                max={95}
+                step={1}
+                value={subtitlePosition}
+                onChange={(event) =>
+                  setSubtitlePosition(Number(event.currentTarget.value))
+                }
+              />
+            </label>
+          </div>
           {hlsLevels.length > 1 && (
             <div className="player-options-section">
               <span className="t-secondary">Quality</span>
@@ -2421,6 +2670,7 @@ function ExternalPanel({
   error,
   externalStatus,
   onOpenExternal,
+  onTryNextSource,
   onRetry,
 }: {
   underTauri: boolean;
@@ -2429,8 +2679,12 @@ function ExternalPanel({
   error: string | null;
   externalStatus: string | null;
   onOpenExternal: () => void;
+  onTryNextSource?: () => Promise<void>;
   onRetry?: () => void;
 }) {
+  const [tryNextState, setTryNextState] = useState<
+    { kind: "idle" } | { kind: "loading" } | { kind: "error"; message: string }
+  >({ kind: "idle" });
   if (onRetry != null) {
     return (
       <div className="player-external">
@@ -2440,6 +2694,29 @@ function ExternalPanel({
           {error ?? "Playback could not continue."}
         </p>
         <div className="player-external-actions">
+          {onTryNextSource != null && (
+            <button
+              type="button"
+              className="btn btn-prominent"
+              disabled={tryNextState.kind === "loading"}
+              onClick={() => {
+                setTryNextState({ kind: "loading" });
+                void onTryNextSource().catch((nextError) => {
+                  setTryNextState({
+                    kind: "error",
+                    message:
+                      nextError instanceof Error
+                        ? nextError.message
+                        : String(nextError),
+                  });
+                });
+              }}
+            >
+              {tryNextState.kind === "loading"
+                ? "Preparing next source"
+                : "Try next source"}
+            </button>
+          )}
           <button type="button" className="btn btn-prominent" onClick={onRetry}>
             Retry playback
           </button>
@@ -2447,6 +2724,11 @@ function ExternalPanel({
             Open in external player
           </button>
         </div>
+        {tryNextState.kind === "error" && (
+          <p className="player-external-err" role="alert">
+            {tryNextState.message}
+          </p>
+        )}
         {externalStatus && <p className="player-external-sub" role="status">{externalStatus}</p>}
       </div>
     );

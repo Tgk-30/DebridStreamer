@@ -106,6 +106,31 @@ export async function getProperty(
   return invoke("player_get_property", { name });
 }
 
+/** Attach a downloaded or translated WebVTT track to the native player. */
+export async function addSubtitleTrack(
+  contents: string,
+  label: string,
+  language: string,
+): Promise<number> {
+  return invoke<number>("player_add_subtitle", {
+    contents,
+    label,
+    language,
+  });
+}
+
+/** Enable or disable codec passthrough on the selected native audio device. */
+export async function setAudioPassthrough(enabled: boolean): Promise<void> {
+  await invoke("player_set_audio_passthrough", { enabled });
+}
+
+/** Apply an explicit native HDR output policy. */
+export async function setHdrPolicy(
+  policy: "auto" | "preserve" | "tone-map",
+): Promise<void> {
+  await invoke("player_set_hdr_policy", { policy });
+}
+
 /**
  * Register a callback for observed property changes. The properties themselves
  * are already observed by `init` (from config.observedProperties); this attaches

@@ -107,12 +107,15 @@ The hosted app is installable on iPhone, iPad, Android, and desktop browsers via
   itself still works through the proxy.
 - **Server-side transcoding requires FFmpeg and server CPU.** Official Docker and
   Debian/Ubuntu deployments include FFmpeg and enable the capability. The hosted
-  web app automatically uses 720p H.264/AAC HLS only when an original MKV/HEVC/
-  AV1 source is not browser-compatible; compatible MP4/WebM sources remain direct
-  at original quality. The "Reduce playback bitrate (server transcode)" toggle
-  (Settings → Playback) can also request HLS for compatible sources to reduce
-  data use. CPU-constrained operators can set `DS_SERVER_ENABLE_TRANSCODE=false`.
-  Multi-rendition adaptive bitrate and hardware encoding are future work.
+  web app uses an adaptive 1080p, 720p, and 480p H.264/AAC ladder for
+  browser-incompatible sources, or a bounded 480p profile in Data Saver mode.
+  Compatible MP4/WebM sources remain direct at original quality. Resume can
+  start the server job at the saved offset, embedded subtitles are exposed as a
+  WebVTT sidecar when FFprobe is available, and HDR tone mapping is offered only
+  when FFmpeg reports the required `zscale` filter. Operators can choose `libx264`,
+  `h264_videotoolbox`, `h264_nvenc`, or `h264_qsv`; unsupported selections fall
+  back to detected `libx264`. CPU-constrained operators can set
+  `DS_SERVER_ENABLE_TRANSCODE=false`.
 - **A feature needs its credential configured.** Each capability requires the
   matching credential to be present (shared or per-profile): metadata needs a
   TMDB key, AI needs an AI provider key, subtitles need an OpenSubtitles key,
@@ -138,4 +141,4 @@ The hosted app is installable on iPhone, iPad, Android, and desktop browsers via
 | Debrid streaming via single-IP proxy (Range/seek) | Works |
 | Per-profile cached-only / quality / size filters | Works |
 | Debrid Library file browser | Desktop only |
-| Server-side transcoding (720p HLS) | Opt-in (operator flag + ffmpeg) |
+| Server-side transcoding (adaptive HLS) | Opt-in (operator flag + FFmpeg) |
