@@ -76,6 +76,15 @@ check(
   "TAURI_SIGNING_PRIVATE_KEY must be wired into the release workflow",
 );
 check(
+  "Release workflow publishes checksums and provenance",
+  /finalize-release-assets:/.test(releaseWorkflow) &&
+    /SHA256SUMS/.test(releaseWorkflow) &&
+    /actions\/attest@v4/.test(releaseWorkflow) &&
+    /attestations:\s*write/.test(releaseWorkflow) &&
+    /id-token:\s*write/.test(releaseWorkflow),
+  ".github/workflows/web-release.yml must checksum and attest the completed release asset set",
+);
+check(
   "Release workflow builds macOS, Linux, and Windows",
   // A pinned stable macOS (macos-15/14/13) is REQUIRED - `macos-latest` moved to
   // the macOS 26 beta, whose SDK/codesign makes bundles "damaged" on older macOS.
@@ -147,7 +156,9 @@ check(
 );
 check(
   "Release workflow gates drafts on clean installs",
-  /needs:\s*release/.test(releaseWorkflow) &&
+  /clean-install:\s*[\s\S]{0,120}needs:\s*finalize-release-assets/.test(
+    releaseWorkflow,
+  ) &&
     /uses:\s*\.\/\.github\/workflows\/clean-install\.yml/.test(releaseWorkflow) &&
     /tag:\s*\$\{\{\s*github\.ref_name\s*\}\}/.test(releaseWorkflow),
   ".github/workflows/web-release.yml must run the reusable clean-install workflow against tag assets",

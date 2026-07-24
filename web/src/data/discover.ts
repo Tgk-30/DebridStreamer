@@ -17,6 +17,7 @@ import { fetchServerDiscoverHome } from "../lib/serverApi";
 import { isServerMode } from "../lib/serverMode";
 import { getNetworkMode, NetworkBlockedError } from "../lib/networkPolicy";
 import { loadDiscoverFixtures } from "./fixtures";
+import { recordDiagnostic } from "../lib/diagnostics";
 
 export interface DiscoverData {
   hero: MediaPreview | null;
@@ -158,6 +159,7 @@ export function useDiscover(tmdb: TMDBService | null): DiscoverState {
           return;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
+          recordDiagnostic("catalog", "discover.server_failed", "error", message);
           if (!cancelled) {
             setState(
               isOfflineFailure(err)
@@ -210,6 +212,14 @@ export function useDiscover(tmdb: TMDBService | null): DiscoverState {
             // fall back to fixtures for the WHOLE screen and suppress any later
             // category results so they can't clobber the fallback.
             failed = true;
+            recordDiagnostic(
+              "catalog",
+              isOfflineFailure(err)
+                ? "discover.offline"
+                : "discover.tmdb_failed",
+              isOfflineFailure(err) ? "warning" : "error",
+              err instanceof Error ? err.message : String(err),
+            );
             if (!cancelled) {
               setState(
                 isOfflineFailure(err)

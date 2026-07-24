@@ -257,7 +257,7 @@ export default function ProfilesGrid() {
         <SectionHeading
           eyebrow="// PROFILES"
           title="Yours is yours."
-          lede="Each profile keeps its own watchlist, history, resume bars, and recommendations - with an optional password, and optional per-profile credential overrides for power users."
+          lede="Each profile keeps its own watchlist, history, resume bars, and recommendations - with an optional household password and optional credential overrides. The server operator can administer profiles and view operational activity."
         />
 
         <div className="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-3">

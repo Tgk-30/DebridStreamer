@@ -19,6 +19,8 @@ let mockDiscover: {
   data: DiscoverData | null;
   loading: boolean;
   railsLoading?: boolean;
+  error?: string | null;
+  source?: "live" | "fixtures" | "offline" | null;
 } = {
   data: null,
   loading: true,
@@ -26,6 +28,7 @@ let mockDiscover: {
 
 const openBrowse = vi.fn();
 const openDetail = vi.fn();
+const navigate = vi.fn();
 let mockContinueWatching: WatchHistoryRecord[] = [];
 let mockServices: {
   tmdb: unknown;
@@ -43,6 +46,7 @@ vi.mock("../store/AppStore", () => ({
     services: mockServices,
     openBrowse,
     openDetail,
+    navigate,
     continueWatching: mockContinueWatching,
   }),
 }));
@@ -146,6 +150,7 @@ beforeEach(() => {
   serverModeOn = false;
   openBrowse.mockReset();
   openDetail.mockReset();
+  navigate.mockReset();
   curateServerAI.mockReset();
 });
 
@@ -172,6 +177,39 @@ describe("Discover skeleton", () => {
 });
 
 describe("Discover loaded", () => {
+  it("labels fixture content and routes to metadata settings", async () => {
+    mockDiscover = {
+      data: fullData(),
+      loading: false,
+      source: "fixtures",
+      error: "TMDB rejected the configured key.",
+    };
+    render(<Discover />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Sample catalog");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "TMDB rejected the configured key.",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open metadata settings" }),
+    );
+    expect(navigate).toHaveBeenCalledWith("settings");
+  });
+
+  it("shows the honest Offline state with a Downloads recovery action", async () => {
+    mockDiscover = {
+      data: fullData(),
+      loading: false,
+      source: "offline",
+      error: "Offline mode is active.",
+    };
+    render(<Discover />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Offline catalog");
+    await userEvent.click(screen.getByRole("button", { name: "Open Downloads" }));
+    expect(navigate).toHaveBeenCalledWith("downloads");
+  });
+
   it("renders hero and all rails when data is present", () => {
     mockDiscover = { data: fullData(), loading: false };
     render(<Discover />);
@@ -361,4 +399,3 @@ describe("Discover See all", () => {
     });
   });
 });
-

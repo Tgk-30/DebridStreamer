@@ -209,7 +209,7 @@ describe("defaultSettings", () => {
     const d = defaultSettings();
     expect(d.debridTokens).toEqual([]);
     expect(d.sources).toEqual([]);
-    expect(d.builtInIndexersEnabled).toBe(true);
+    expect(d.builtInIndexersEnabled).toBe(false);
     expect(d.aiProvider).toBe("anthropic");
     expect(d.ollamaEndpoint).toBe("http://localhost:11434");
     expect(d.theme).toBe("midnight");
@@ -229,7 +229,7 @@ describe("defaultSettings", () => {
     expect(d.defaultPlaybackSpeed).toBe(1);
     expect(d.defaultVolume).toBe(100);
     expect(d.rememberPerTitleTrackChoices).toBe(true);
-    expect(d.simpleMode).toBe(false);
+    expect(d.simpleMode).toBe(true);
     expect(d.autoUpdateChecks).toBe(true);
     expect(d.autoInstallUpdates).toBe(false);
     expect(d.streamCachedOnly).toBe(true);
@@ -718,8 +718,8 @@ describe("loadSettingsFromStore - established store", () => {
   it("returns merged defaults when the store is otherwise empty", async () => {
     const s = await loadSettingsFromStore();
     expect(s.tmdbKey).toBe("");
-    expect(s.builtInIndexersEnabled).toBe(true); // null -> base default
-    expect(s.simpleMode).toBe(false);
+    expect(s.builtInIndexersEnabled).toBe(false); // null -> privacy-safe default
+    expect(s.simpleMode).toBe(true);
     expect(s.theme).toBe(DEFAULT_THEME_ID);
     expect(s.streamCachedOnly).toBe(true);
     expect(s.streamMaxQuality).toBe("any");

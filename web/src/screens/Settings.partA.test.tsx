@@ -233,11 +233,11 @@ describe("Settings shell", () => {
     expect(clearPendingSettingsSection).toHaveBeenCalledTimes(1);
   });
 
-  it("collapses to the simple tab set in Simple mode (no Sources/Updates)", () => {
+  it("keeps Help and diagnostics visible in Simple mode while hiding Sources", () => {
     mockSimpleMode = true;
     renderAt();
     expect(document.querySelector('button[data-tab="sources"]')).toBeNull();
-    expect(document.querySelector('button[data-tab="updates"]')).toBeNull();
+    expect(document.querySelector('button[data-tab="updates"]')).not.toBeNull();
     // Essentials remain.
     expect(document.querySelector('button[data-tab="appearance"]')).not.toBeNull();
     expect(document.querySelector('button[data-tab="keys"]')).not.toBeNull();
@@ -503,15 +503,17 @@ describe("Settings · Sources", () => {
       .getByText("Built-in scrapers")
       .closest("label")!
       .querySelector('input[type="checkbox"]') as HTMLInputElement;
-    expect(builtIn.checked).toBe(true);
-    await user.click(builtIn);
     expect(builtIn.checked).toBe(false);
+    await user.click(builtIn);
+    expect(builtIn.checked).toBe(true);
   });
 
   it("shows the empty-state hint when there are no external indexers", () => {
     renderAt("sources");
     expect(
-      screen.getByText(/No external sources. The built-in scrapers cover most titles\./),
+      screen.getByText(
+        /No external sources. Add a source or explicitly enable the public built-in scrapers\./,
+      ),
     ).toBeInTheDocument();
   });
 

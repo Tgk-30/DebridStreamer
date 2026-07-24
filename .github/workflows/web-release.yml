@@ -480,9 +480,53 @@ jobs:
           fi
           gh release upload "$tag" "$dmg" --clobber --repo "$GITHUB_REPOSITORY"
 
+  finalize-release-assets:
+    name: Checksums and provenance
+    needs: release
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download draft release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir artifacts
+
+      - name: Create SHA256SUMS
+        run: |
+          set -euo pipefail
+          (
+            cd artifacts
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\0' \
+              | sort -z \
+              | xargs -0 sha256sum
+          ) > artifacts/SHA256SUMS
+          (cd artifacts && sha256sum --check SHA256SUMS)
+
+      - name: Attest release artifacts
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/*
+
+      - name: Upload SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" artifacts/SHA256SUMS \
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"
+
   clean-install:
     name: Verify clean installs
-    needs: release
+    needs: finalize-release-assets
     if: github.ref_type == 'tag'
     permissions:
       # The reusable workflow must download assets from the draft release.

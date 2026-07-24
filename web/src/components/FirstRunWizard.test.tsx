@@ -66,18 +66,11 @@ const testTmdbKeyMock = vi.mocked(testTmdbKey);
 const testOmdbKeyMock = vi.mocked(testOmdbKey);
 const testDebridTokenMock = vi.mocked(testDebridToken);
 
-/** After the streaming step completes, the optional AI step appears - dismiss
- *  it so the wizard finishes (finishDevice runs on skip). */
+/** After the streaming step completes, the optional AI step appears. Dismiss
+ *  it so the wizard finishes directly without blocking first play on profiles. */
 async function skipAi(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { name: "Add AI recommendations" });
   await user.click(screen.getByRole("button", { name: /Skip - add AI later/ }));
-  await screen.findByRole("heading", { name: "Set up profiles" });
-  await user.click(screen.getByRole("button", { name: "Continue" }));
-}
-
-async function finishProfiles(user: ReturnType<typeof userEvent.setup>) {
-  await screen.findByRole("heading", { name: "Set up profiles" });
-  await user.click(screen.getByRole("button", { name: "Continue" }));
 }
 
 /** Click through choose → catalog with a validated key, landing on streaming. */
@@ -125,14 +118,14 @@ describe("FirstRunWizard", () => {
     expect(
       screen.getByText("How do you want to use YAWF Stream?"),
     ).toBeInTheDocument();
-    // Skip anyway completes without touching settings.
+    // Skip anyway completes in Simple mode without adding another setup screen.
     await user.click(screen.getByRole("button", { name: "Skip for now" }));
     await user.click(screen.getByRole("button", { name: "Skip anyway" }));
-    await screen.findByRole("heading", { name: "Set up profiles" });
-    await user.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(markOnboardingComplete).toHaveBeenCalledTimes(1);
-    expect(updateSettings).not.toHaveBeenCalled();
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ simpleMode: true }),
+    );
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -348,8 +341,6 @@ describe("FirstRunWizard", () => {
     const onDone = vi.fn();
     render(<FirstRunWizard onDone={onDone} />);
     await user.click(screen.getByText("Advanced setup"));
-    await screen.findByRole("heading", { name: "Set up profiles" });
-    await user.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ simpleMode: false }),
@@ -507,7 +498,9 @@ describe("FirstRunWizard", () => {
     expect(
       screen.getByRole("heading", { name: "Host for your household" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Hosting runs in the desktop app/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/released macOS and Linux desktop apps/),
+    ).toBeInTheDocument();
   });
 
   it("'host' persona shows the desktop copy under Tauri", async () => {
@@ -537,8 +530,6 @@ describe("FirstRunWizard", () => {
     render(<FirstRunWizard onDone={onDone} />);
     await user.click(screen.getByRole("button", { name: /Host for my family/i }));
     await user.click(screen.getByRole("button", { name: "Open Settings" }));
-    await screen.findByRole("heading", { name: "Set up profiles" });
-    await user.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ simpleMode: true }),
@@ -766,7 +757,6 @@ describe("FirstRunWizard - optional AI step", () => {
     render(<FirstRunWizard onDone={onDone} />);
     await reachAiStep(user);
     await user.click(screen.getByRole("button", { name: /Skip - add AI later/ }));
-    await finishProfiles(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     // AI key left untouched (empty), and Save & finish was disabled while empty.
     expect(updateSettings).toHaveBeenCalledWith(
@@ -781,7 +771,6 @@ describe("FirstRunWizard - optional AI step", () => {
     await reachAiStep(user);
     await user.type(screen.getByLabelText("API key"), "sk-ant-123");
     await user.click(screen.getByRole("button", { name: "Save & finish" }));
-    await finishProfiles(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ aiProvider: "anthropic", aiApiKey: "sk-ant-123" }),
@@ -800,7 +789,6 @@ describe("FirstRunWizard - optional AI step", () => {
     await user.clear(endpoint);
     await user.type(endpoint, "http://localhost:1234");
     await user.click(screen.getByRole("button", { name: "Save & finish" }));
-    await finishProfiles(user);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({

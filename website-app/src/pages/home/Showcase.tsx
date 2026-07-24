@@ -19,7 +19,7 @@ const STEPS = [
   {
     index: '02',
     title: 'Personalize',
-    text: 'Give everyone their own watchlist, history, resume points, profile color, and private space.',
+    text: 'Give everyone their own watchlist, history, resume points, profile color, and household profile. Server operators can administer profiles and view operational activity.',
   },
   {
     index: '03',

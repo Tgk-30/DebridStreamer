@@ -17,6 +17,7 @@
 
 import { isTauri } from "./tauri";
 import { isNetworkAllowed } from "./networkPolicy";
+import { recordDiagnostic } from "./diagnostics";
 
 const LAST_CHECK_KEY = "ds_last_update_check";
 
@@ -96,29 +97,45 @@ export async function checkForUpdates(): Promise<PendingUpdate | null> {
         let contentLength = 0;
         // downloadAndInstall streams progress events; translate them to a 0..1
         // fraction (or null when the server didn't send a content length).
-        await update.downloadAndInstall((event) => {
-          switch (event.event) {
-            case "Started":
-              contentLength = event.data.contentLength ?? 0;
-              onProgress?.(contentLength > 0 ? 0 : null);
-              break;
-            case "Progress":
-              downloaded += event.data.chunkLength;
-              onProgress?.(
-                contentLength > 0 ? downloaded / contentLength : null,
-              );
-              break;
-            case "Finished":
-              onProgress?.(1);
-              break;
-          }
-        });
+        try {
+          await update.downloadAndInstall((event) => {
+            switch (event.event) {
+              case "Started":
+                contentLength = event.data.contentLength ?? 0;
+                onProgress?.(contentLength > 0 ? 0 : null);
+                break;
+              case "Progress":
+                downloaded += event.data.chunkLength;
+                onProgress?.(
+                  contentLength > 0 ? downloaded / contentLength : null,
+                );
+                break;
+              case "Finished":
+                onProgress?.(1);
+                break;
+            }
+          });
+        } catch (error) {
+          recordDiagnostic(
+            "update",
+            "install.failed",
+            "error",
+            error instanceof Error ? error.message : String(error),
+          );
+          throw error;
+        }
         // Apply by relaunching the freshly-installed binary.
         const { relaunch } = await import("@tauri-apps/plugin-process");
         await relaunch();
       },
     };
   } catch (err) {
+    recordDiagnostic(
+      "update",
+      "check.failed",
+      "warning",
+      err instanceof Error ? err.message : String(err),
+    );
     // eslint-disable-next-line no-console
     console.warn("[updater] Update check failed (ignored):", err);
     return null;

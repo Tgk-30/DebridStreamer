@@ -2167,7 +2167,7 @@ function newerVersion(latest: string, current: string): boolean {
 }
 
 async function serverUpdateStatus(enabled: boolean) {
-  const url = "https://github.com/TGK-30/DebridStreamer/releases/latest";
+  const url = "https://github.com/Tgk-30/YAWF-Stream/releases/latest";
   if (!enabled) {
     return { currentVersion: SERVER_VERSION, latestVersion: null, available: false, url };
   }
@@ -2175,7 +2175,7 @@ async function serverUpdateStatus(enabled: boolean) {
   let latestVersion: string | null = null;
   try {
     const response = await fetch(
-      "https://api.github.com/repos/TGK-30/DebridStreamer/releases/latest",
+      "https://api.github.com/repos/Tgk-30/YAWF-Stream/releases/latest",
       {
         headers: { accept: "application/vnd.github+json", "user-agent": "YAWF-Stream-Server" },
         signal: AbortSignal.timeout(3_000),

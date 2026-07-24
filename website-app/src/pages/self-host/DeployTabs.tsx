@@ -13,19 +13,19 @@ import DeviceFrame from '@/components/DeviceFrame';
 import Chip from '@/components/Chip';
 
 const EASE_EXPO = [0.16, 1, 0.3, 1] as [number, number, number, number];
-const UBUNTU_GUIDE = 'https://github.com/Tgk-30/DebridStreamer/blob/main/deploy/ubuntu/README.md';
+const UBUNTU_GUIDE = 'https://github.com/Tgk-30/YAWF-Stream/blob/main/deploy/ubuntu/README.md';
 
 const DOCKER_LINES = [
   { text: 'mkdir debridstreamer && cd debridstreamer' },
-  { text: 'curl -fsSLO https://raw.githubusercontent.com/Tgk-30/DebridStreamer/main/deploy/compose/docker-compose.ghcr.yml' },
-  { text: 'curl -fsSL https://raw.githubusercontent.com/Tgk-30/DebridStreamer/main/deploy/compose/.env.example -o .env' },
+  { text: 'curl -fsSLO https://raw.githubusercontent.com/Tgk-30/YAWF-Stream/main/deploy/compose/docker-compose.ghcr.yml' },
+  { text: 'curl -fsSL https://raw.githubusercontent.com/Tgk-30/YAWF-Stream/main/deploy/compose/.env.example -o .env' },
   { text: 'docker compose -f docker-compose.ghcr.yml up -d' },
   { text: '[+] Running 1/1  ✓ Container debridstreamer  Started', output: true },
   { text: '→ serving on http://localhost:7878', output: true },
 ];
 
 const NATIVE_LINES = [
-  { text: 'git clone https://github.com/Tgk-30/DebridStreamer.git && cd DebridStreamer' },
+  { text: 'git clone https://github.com/Tgk-30/YAWF-Stream.git && cd YAWF-Stream' },
   { text: 'npm ci && npm run build' },
   { text: 'sudo cp deploy/systemd/debridstreamer.service /etc/systemd/system/' },
   { text: 'sudo systemctl enable --now debridstreamer' },

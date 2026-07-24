@@ -73,6 +73,32 @@
   color: var(--danger);
 }
 
+.search-catalog-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-lg);
+  padding: var(--sp-md) var(--sp-lg);
+  border: 1px solid rgba(var(--accent-rgb), 0.42);
+  border-radius: var(--r-md);
+}
+
+.search-catalog-notice.is-error {
+  border-color: color-mix(in srgb, var(--danger) 58%, transparent);
+}
+
+.search-catalog-notice strong {
+  display: block;
+  margin-bottom: calc(4px * var(--density-scale));
+}
+
+.search-catalog-notice p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
 /* Active-search skeleton - mirrors the .media-grid results layout (same
    columns + gap) so real posters swap in with no layout shift. */
 .search-skel-grid {
@@ -173,6 +199,11 @@
   .search-field {
     max-width: none;
     min-height: 48px;
+  }
+
+  .search-catalog-notice {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .search-screen .media-grid,

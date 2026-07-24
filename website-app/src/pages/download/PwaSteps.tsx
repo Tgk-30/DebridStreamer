@@ -128,7 +128,7 @@ const DesktopLoop = memo(function DesktopLoop({ active }: { active: boolean }) {
           <span className="h-2 w-2 rounded-full bg-[rgba(var(--warm-rgb),0.6)]" />
           <span className="ml-2 flex h-6 flex-1 items-center rounded-md bg-bg-0 px-2 font-mono text-[0.6875rem] tracking-[0.02em] text-brand">
             <span data-anim className="inline-block whitespace-nowrap" style={{ animationName: 'dl-type' }}>
-              http://your-server:9696
+              http://your-server:43110
             </span>
             <span data-anim className="ml-0.5 inline-block h-[1em] w-[6px] bg-brand" style={{ animationName: 'dl-caret' }} />
           </span>
@@ -152,7 +152,7 @@ function StaticScene({ kind }: { kind: 'ios' | 'android' | 'desktop' }) {
             <span className="h-2 w-2 rounded-full bg-[rgba(var(--accent-rgb),0.6)]" />
             <span className="h-2 w-2 rounded-full bg-[rgba(var(--warm-rgb),0.6)]" />
             <span className="ml-2 flex h-6 flex-1 items-center truncate rounded-md bg-bg-0 px-2 font-mono text-[0.6875rem] text-brand">
-              http://your-server:9696
+              http://your-server:43110
             </span>
           </div>
           <div className="flex h-14 items-center justify-center">
@@ -219,7 +219,7 @@ const STEPS = [
     icon: Globe,
     title: 'Desktop browser',
     body: 'Use the desktop app - or just point any browser at your server URL.',
-    hint: 'http://your-server:9696',
+    hint: 'http://your-server:43110',
     kind: 'desktop' as const,
   },
 ];

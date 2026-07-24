@@ -60,7 +60,7 @@ To use the prebuilt multi-arch image instead of building locally, replace the
 service `build:` block in `docker-compose.yml` with:
 
 ```yaml
-image: ghcr.io/tgk-30/debridstreamer:latest
+image: ghcr.io/tgk-30/yawf-stream:latest
 ```
 
 See [`DOCKER.md`](DOCKER.md) for the full Docker reference.

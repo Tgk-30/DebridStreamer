@@ -56,6 +56,7 @@ import {
   type ServerUsage,
 } from "./settings/ServerStatusPanels";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
+import { BUG_REPORT_URL } from "../lib/projectLinks";
 import { Field, SegmentedControl } from "./settings/SettingsControls";
 import type {
   AppSettings,
@@ -144,6 +145,13 @@ import {
 import { TraktConnectDialog } from "../components/TraktConnectDialog";
 import { useModalA11y } from "../components/useModalA11y";
 import { factoryReset } from "../data/factoryReset";
+import {
+  exportPortableBackup,
+  parsePortableBackup,
+  portableBackupFilename,
+  restorePortableBackup,
+  type PortableBackup,
+} from "../data/portableBackup";
 import "./Settings.css";
 
 /** The selectable external-source types. */
@@ -253,7 +261,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "privacy", label: "Privacy" },
   { id: "install", label: "Install & setup" },
   { id: "profiles", label: "Profiles" },
-  { id: "updates", label: "Updates" },
+  { id: "updates", label: "Help & updates" },
   { id: "server", label: "Server" },
   { id: "keys", label: "API keys" },
   { id: "debrid", label: "Providers" },
@@ -266,7 +274,7 @@ const TAB_DESCRIPTIONS: Record<Tab, string> = {
   privacy: "Network access, local storage, and data controls for this device.",
   install: "Install YAWF Stream and finish setup on this device.",
   profiles: "Names, avatars, colors, and sign-in protection for this device.",
-  updates: "Version checks, update channels, and release status.",
+  updates: "Troubleshooting, diagnostics, version checks, and release status.",
   server: "Hosting, remote access, and shared server settings.",
   keys: "Metadata, subtitle, and optional service credentials.",
   debrid: "Connect and verify the streaming accounts you already use.",
@@ -274,7 +282,8 @@ const TAB_DESCRIPTIONS: Record<Tab, string> = {
 };
 
 // Tabs visible in Simple mode (progressive disclosure). Advanced unlocks the
-// rest (Updates, Server, Sources). Server is also hidden in Local Mode.
+// rest (Server and Sources). Help, diagnostics, and updates stay visible so
+// Simple-mode users can recover from failures without changing experience mode.
 const SIMPLE_TABS = new Set<Tab>([
   "appearance",
   "playback",
@@ -283,6 +292,7 @@ const SIMPLE_TABS = new Set<Tab>([
   "keys",
   "debrid",
   "profiles",
+  "updates",
 ]);
 
 /** Pure, testable tab filter for the current modes. */
@@ -1150,6 +1160,22 @@ function UpdatesTab({
         and PWA installs update through the web server instead.
       </SettingsInfo>
 
+      <section className="settings-section">
+        <h2>Credits</h2>
+        <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer">
+          <img
+            src="/tmdb.svg"
+            alt="The Movie Database (TMDB)"
+            width="74"
+            height="54"
+          />
+        </a>
+        <p className="settings-hint">
+          This product uses the TMDB API but is not endorsed or certified by
+          TMDB.
+        </p>
+      </section>
+
       <label className="settings-toggle-row">
         <input
           type="checkbox"
@@ -1205,6 +1231,14 @@ function UpdatesTab({
           <button type="button" className="btn" onClick={exportDiagnostics}>
             Export diagnostics
           </button>
+          <a
+            className="btn"
+            href={BUG_REPORT_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Report a bug
+          </a>
         </div>
 
         {!desktop && (
@@ -1249,6 +1283,8 @@ interface TabProps {
 }
 
 function PrivacyTab({ draft, patch }: TabProps) {
+  const restoreInput = useRef<HTMLInputElement>(null);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const modes: Array<{
     value: AppSettings["networkMode"];
     label: string;
@@ -1275,6 +1311,61 @@ function PrivacyTab({ draft, patch }: TabProps) {
     },
   ];
 
+  const downloadBackup = useCallback(
+    (backup: PortableBackup, kind: "backup" | "pre-restore") => {
+      const blob = new Blob([JSON.stringify(backup, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = portableBackupFilename(kind);
+      link.click();
+      URL.revokeObjectURL(url);
+    },
+    [],
+  );
+
+  const exportLocalData = useCallback(async () => {
+    setBackupStatus("Preparing local backup…");
+    try {
+      const backup = await exportPortableBackup();
+      downloadBackup(backup, "backup");
+      setBackupStatus(
+        `Backup downloaded for ${backup.profiles.length} local profile(s). ` +
+          "Credentials, profile locks, stream URLs, and device paths were excluded.",
+      );
+    } catch (error) {
+      setBackupStatus(error instanceof Error ? error.message : String(error));
+    }
+  }, [downloadBackup]);
+
+  const restoreLocalData = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (file == null) return;
+      setBackupStatus("Verifying backup…");
+      try {
+        const backup = parsePortableBackup(await file.text());
+        const result = await restorePortableBackup(backup);
+        downloadBackup(result.preRestoreBackup, "pre-restore");
+        setBackupStatus(
+          `Restored ${result.restoredRows} record(s) across ` +
+            `${result.restoredProfiles} profile(s). ` +
+            (result.unlockedProfiles > 0
+              ? `${result.unlockedProfiles} new profile(s) were restored without a lock. `
+              : "") +
+            "Reloading with the restored data…",
+        );
+        window.setTimeout(() => window.location.reload(), 250);
+      } catch (error) {
+        setBackupStatus(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [downloadBackup],
+  );
+
   return (
     <div className="settings-fields">
       <SettingsInfo label="Privacy mode">
@@ -1297,6 +1388,48 @@ function PrivacyTab({ draft, patch }: TabProps) {
           </div>
         ))}
       </div>
+      <section className="settings-section">
+        <SettingsInfo label="Local backup and restore">
+          Export every local profile's settings, watchlist, history, library,
+          taste data, and media cache. Credentials, profile password hashes,
+          temporary stream URLs, and device-specific download paths are never
+          included. Existing profile locks remain in place during restore. New
+          profiles are restored unlocked so you can set a new local password.
+        </SettingsInfo>
+        <div className="settings-action-row">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void exportLocalData()}
+            disabled={isServerMode()}
+          >
+            Export local backup
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => restoreInput.current?.click()}
+            disabled={isServerMode()}
+          >
+            Restore local backup
+          </button>
+          <input
+            ref={restoreInput}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(event) => void restoreLocalData(event)}
+          />
+        </div>
+        {isServerMode() && (
+          <p className="settings-hint">
+            Server Mode data is protected by the server backup tools instead.
+          </p>
+        )}
+        <p className="settings-status" aria-live="polite">
+          {backupStatus ?? ""}
+        </p>
+      </section>
     </div>
   );
 }
@@ -1380,7 +1513,8 @@ function PlaybackTab({ draft, patch }: TabProps) {
             <InfoTip label="About the built-in player">
               Play MKV and HEVC right inside the window with native libmpv. Turn
               it off to open your chosen external player instead. It works on
-              macOS, Windows, and Linux with X11.
+              released macOS and Linux builds. Windows remains held until its
+              signing gate passes.
             </InfoTip>
           </span>
         </label>
@@ -1798,7 +1932,7 @@ function InstallTab() {
     {
       id: "downloads",
       label: "Desktop downloads",
-      summary: "Get native Mac, Windows, and Linux builds.",
+      summary: "Get released macOS and Linux builds. Windows is still held.",
     },
     {
       id: "deploy",
@@ -1875,13 +2009,14 @@ function InstallTab() {
           <div className="settings-install-grid">
             <a
               className="settings-install-card glass-rest"
-              href="https://github.com/Tgk-30/DebridStreamer/releases/latest"
+              href="https://github.com/Tgk-30/YAWF-Stream/releases/latest"
               target="_blank"
               rel="noreferrer"
             >
               <strong>Desktop downloads</strong>
               <span className="t-secondary">
-                Mac, Windows, and Linux release assets with signed update support.
+                Released macOS and Linux assets with signed update support.
+                Windows remains held until Authenticode verification passes.
               </span>
             </a>
           </div>
@@ -1891,7 +2026,7 @@ function InstallTab() {
           <div className="settings-install-grid">
             <a
               className="settings-install-card glass-rest"
-              href="https://github.com/Tgk-30/DebridStreamer/tree/main/deploy/compose"
+              href="https://github.com/Tgk-30/YAWF-Stream/tree/main/deploy/compose"
               target="_blank"
               rel="noreferrer"
             >
@@ -2585,6 +2720,8 @@ function ServerTab() {
     label: "Shared",
     value: "",
   });
+  const [sharedCredentialTermsConfirmed, setSharedCredentialTermsConfirmed] =
+    useState(false);
   // Which async save is in flight, so its submit button can disable + show
   // progress (prevents duplicate submissions / unclear final state).
   const [saving, setSaving] = useState<
@@ -2729,6 +2866,7 @@ function ServerTab() {
         value: sharedCredential.value,
       });
       setSharedCredential((current) => ({ ...current, value: "" }));
+      setSharedCredentialTermsConfirmed(false);
       setMessage("Shared credential saved.");
       // Refresh so the credential-overrides list + health counts reflect the
       // new provider immediately (mirrors saveProfileCredential et al.).
@@ -3023,6 +3161,37 @@ function ServerTab() {
       <ServerConnectionPanel />
 
       <RemoteAccessPanel />
+
+      <section className="settings-section" aria-labelledby="server-visibility-title">
+        <h2 id="server-visibility-title">Who can see what</h2>
+        <div className="settings-diagnostic-results">
+          <p>
+            <strong>Server owner and admins</strong>
+            <span>
+              Profiles, active stream filenames, usage totals, requests, health
+              warnings, and audit events.
+            </span>
+          </p>
+          <p>
+            <strong>Profile members</strong>
+            <span>
+              Their own history, library, sessions, personal credentials, and
+              household resources allowed by their role.
+            </span>
+          </p>
+          <p>
+            <strong>Configured providers</strong>
+            <span>
+              Requests and credentials sent to that provider when its service is
+              used.
+            </span>
+          </p>
+        </div>
+        <p className="settings-hint">
+          A profile password controls household access. It does not hide activity
+          from the server operator.
+        </p>
+      </section>
 
       {session != null && (
         <div className="settings-profile-row glass-rest">
@@ -3371,13 +3540,34 @@ function ServerTab() {
                 type="button"
                 className="btn"
                 onClick={() => void saveSharedCredential()}
-                disabled={saving != null}
+                disabled={
+                  saving != null ||
+                  sharedCredential.value.trim().length === 0 ||
+                  !sharedCredentialTermsConfirmed
+                }
               >
                 {saving === "shared-credential"
                   ? "Saving…"
                   : "Save shared credential"}
               </button>
             </div>
+            <label className="settings-toggle-row">
+              <input
+                type="checkbox"
+                checked={sharedCredentialTermsConfirmed}
+                onChange={(event) =>
+                  setSharedCredentialTermsConfirmed(event.target.checked)
+                }
+              />
+              <span>
+                <strong>Provider terms confirmed</strong>
+                <span className="t-secondary">
+                  I am authorized to use this credential for every profile that
+                  can access this server. Some providers prohibit account or
+                  credential sharing.
+                </span>
+              </span>
+            </label>
           </div>
         </>
       )}
@@ -4202,7 +4392,9 @@ function DebridTab({ draft, patch }: TabProps) {
         <strong>{CONCEPTS.debrid.term}:</strong> {CONCEPTS.debrid.blurb} Choose
         one provider at a time. Saved providers are tried in priority order; the
         first that has a cached result wins. Tokens stay in this profile, with
-        secure device storage in desktop builds when available.
+        secure device storage in desktop builds when available. Use only
+        provider accounts and content you are authorized to access. Provider
+        terms can restrict credential sharing, automation, or household use.
       </SettingsInfo>
 
       <Field label="Provider" hint="Real-Debrid is selected first by default.">
@@ -4341,7 +4533,7 @@ function SourcesTab({ draft, patch }: TabProps) {
           <span className="settings-built-in-list t-secondary">
             Torrentio, APIBay, YTS, EZTV
           </span>
-          <span className="settings-pill">No setup needed</span>
+          <span className="settings-pill">Off until you opt in</span>
         </span>
       </label>
 
@@ -4373,7 +4565,8 @@ function SourcesTab({ draft, patch }: TabProps) {
 
       {draft.sources.length === 0 ? (
         <p className="settings-hint t-secondary">
-          No external sources. The built-in scrapers cover most titles.
+          No external sources. Add a source or explicitly enable the public
+          built-in scrapers.
         </p>
       ) : (
         draft.sources.map((s, i) => {
@@ -4515,6 +4708,12 @@ function SourcesTab({ draft, patch }: TabProps) {
           );
         })
       )}
+      <p className="settings-hint">
+        YAWF Stream does not host or supply media. Source availability does not
+        establish permission to access a title. You are responsible for the
+        sources you configure and for following applicable provider terms and
+        law.
+      </p>
     </div>
   );
 }

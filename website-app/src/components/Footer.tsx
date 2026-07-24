@@ -14,6 +14,7 @@ const COLUMNS: { heading: string; links: { label: string; to: string; external?:
       { label: 'Download', to: '/download' },
       { label: 'Devices', to: '/devices' },
       { label: 'Household', to: '/household' },
+      { label: 'Help & FAQ', to: '/help' },
     ],
   },
   {
@@ -117,6 +118,14 @@ export default function Footer() {
               />
             ))}
           </div>
+        </div>
+        <div className="mt-6 flex max-w-[720px] items-center gap-4 text-ink-3">
+          <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer">
+            <img src="/debridstreamer/tmdb.svg" alt="The Movie Database (TMDB)" className="h-10 w-auto" />
+          </a>
+          <p className="font-body text-xs leading-relaxed">
+            This product uses the TMDB API but is not endorsed or certified by TMDB.
+          </p>
         </div>
       </div>
 

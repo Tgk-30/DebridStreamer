@@ -13,6 +13,7 @@ const SelfHost = lazy(() => import('@/pages/SelfHost'));
 const Devices = lazy(() => import('@/pages/Devices'));
 const Household = lazy(() => import('@/pages/Household'));
 const Brand = lazy(() => import('@/pages/Brand'));
+const Help = lazy(() => import('@/pages/Help'));
 
 function RouteLoading() {
   return (
@@ -63,6 +64,7 @@ export default function App() {
             <Route path="devices" element={<Devices />} />
             <Route path="household" element={<Household />} />
             <Route path="brand" element={<Brand />} />
+            <Route path="help" element={<Help />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

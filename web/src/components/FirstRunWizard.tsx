@@ -22,12 +22,7 @@ import {
   signupUrl,
 } from "../data/onboardingHelp";
 import { testDebridToken, testOmdbKey, testTmdbKey } from "../lib/onboardingValidation";
-import { hashPassword } from "../lib/passwordHash";
-import {
-  ensureDefaultProfile,
-  setMultiUserEnabled,
-  updateProfileRecord,
-} from "../storage/ProfileRegistry";
+import { ensureDefaultProfile } from "../storage/ProfileRegistry";
 import { Icon, type IconName } from "./Icon";
 import "./FirstRunWizard.css";
 
@@ -44,9 +39,9 @@ const PERSONAS: Persona[] = [
   {
     id: "device",
     title: "Just watch on this device",
-    copy: "Start with a catalog key and your debrid service. No account needed.",
+    copy: "Connect a catalog key and a debrid account before playback.",
     icon: "play",
-    badge: "Most popular",
+    badge: "Recommended",
   },
   {
     id: "connect",
@@ -135,7 +130,6 @@ export function FirstRunWizard({
     | "catalog"
     | "streaming"
     | "ai"
-    | "profiles"
     | "skip-confirm"
   >("choose");
   // Debrid entry carried from the streaming step into the optional AI step, so
@@ -152,20 +146,15 @@ export function FirstRunWizard({
   const [exitPersona, setExitPersona] = useState<"device" | "advanced" | "host">(
     "device",
   );
-  const [profilesContinuation, setProfilesContinuation] = useState<null | (() => Promise<void>)>(null);
-
-  function continueThroughProfiles(next: () => Promise<void>) {
-    setProfilesContinuation(() => next);
-    setStep("profiles");
-  }
-
   async function finish(simple: boolean, andThen?: () => void) {
-    continueThroughProfiles(async () => {
-      updateSettings({ ...settings, simpleMode: simple });
-      await markOnboardingComplete();
-      andThen?.();
-      onDone();
+    await updateSettings({ ...settings, simpleMode: simple });
+    await ensureDefaultProfile({
+      name: settings.userName || "You",
+      avatar: settings.userAvatar || "😀",
     });
+    await markOnboardingComplete();
+    andThen?.();
+    onDone();
   }
 
   /** The device path's SINGLE settings write: catalog keys, the debrid entry,
@@ -201,13 +190,15 @@ export function FirstRunWizard({
         next.ollamaEndpoint = ai.ollamaEndpoint.trim();
       }
     }
-    continueThroughProfiles(async () => {
-      updateSettings(next);
-      await markOnboardingComplete();
-      // Advanced and host asked for Settings, land them there once keys are in.
-      if (exitPersona !== "device") navigate("settings");
-      onDone();
+    await updateSettings(next);
+    await ensureDefaultProfile({
+      name: settings.userName || "You",
+      avatar: settings.userAvatar || "😀",
     });
+    await markOnboardingComplete();
+    // Advanced and host asked for Settings, land them there once keys are in.
+    if (exitPersona !== "device") navigate("settings");
+    onDone();
   }
 
   async function choose(id: Persona["id"]) {
@@ -229,10 +220,13 @@ export function FirstRunWizard({
   }
 
   async function skip() {
-    continueThroughProfiles(async () => {
-      await markOnboardingComplete();
-      onDone();
+    await updateSettings({ ...settings, simpleMode: true });
+    await ensureDefaultProfile({
+      name: settings.userName || "You",
+      avatar: settings.userAvatar || "😀",
     });
+    await markOnboardingComplete();
+    onDone();
   }
 
   if (step === "connect") {
@@ -297,21 +291,6 @@ export function FirstRunWizard({
       />
     );
   }
-  if (step === "profiles") {
-    return (
-      <ProfilesStep
-        initialName={settings.userName || "You"}
-        initialAvatar={settings.userAvatar || "😀"}
-        onDone={async ({ name, avatar, color, enabled, password }) => {
-          const profile = await ensureDefaultProfile({ name, avatar });
-          const passwordHash = password.trim().length > 0 ? await hashPassword(password) : undefined;
-          await updateProfileRecord(profile.id, { name: name.trim() || "You", avatar, color, passwordHash });
-          await setMultiUserEnabled(enabled);
-          await profilesContinuation?.();
-        }}
-      />
-    );
-  }
   if (step === "skip-confirm") {
     return (
       <SkipConfirmStep onBack={() => setStep("choose")} onSkip={() => void skip()} />
@@ -365,42 +344,6 @@ export function FirstRunWizard({
             Skip for now
           </button>
         )}
-      </div>
-    </div>
-  );
-}
-
-function ProfilesStep({
-  initialName,
-  initialAvatar,
-  onDone,
-}: {
-  initialName: string;
-  initialAvatar: string;
-  onDone: (choice: { name: string; avatar: string; color: string; enabled: boolean; password: string }) => Promise<void>;
-}) {
-  const [name, setName] = useState(initialName);
-  const [avatar, setAvatar] = useState(initialAvatar);
-  const [color, setColor] = useState("#6366f1");
-  const [enabled, setEnabled] = useState(true);
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const finish = async () => {
-    setBusy(true);
-    await onDone({ name, avatar, color, enabled, password });
-  };
-  return (
-    <div className="first-run">
-      <div className="first-run-card">
-        <p className="first-run-eyebrow"><Icon name="watchlist" size={13} /> Shared device</p>
-        <h1 className="first-run-title">Set up profiles</h1>
-        <p className="first-run-sub">Multiple people can share this app on one device. Each profile gets its own library, history, and watchlist.</p>
-        <label className="profile-field">Your name<input value={name} maxLength={40} onChange={(event) => setName(event.target.value)} autoFocus /></label>
-        <label className="profile-field">Avatar<input value={avatar} maxLength={80} onChange={(event) => setAvatar(event.target.value)} /></label>
-        <label className="profile-field">Profile color<input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label>
-        <label className="profile-field">Optional password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-        <label className="profile-field"><span><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /> Enable multiple profiles</span></label>
-        <div className="profile-picker-foot"><button type="button" className="profile-solid-btn" disabled={busy} onClick={() => void finish()}>Continue</button></div>
       </div>
     </div>
   );
@@ -1023,7 +966,7 @@ function HostStep({ onBack, onContinue }: { onBack: () => void; onContinue: () =
         <p className="first-run-sub">
           {desktop
             ? "This computer can serve YAWF Stream to your other devices. Open Settings → Install & setup to start hosting and get a link + QR code to share."
-            : "Hosting runs in the desktop app (Mac/Windows/Linux) or via Docker on a server. Download the desktop app, or self-host with Docker, then share the link with your household."}
+            : "Hosting runs in the released macOS and Linux desktop apps or via Docker on a server. Windows remains held until its signing gate passes."}
         </p>
         <div className="first-run-actions">
           <button type="button" className="first-run-secondary" onClick={onBack}>

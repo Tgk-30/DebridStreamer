@@ -1,9 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { AppDatabase, migrateDatabase } from "../src/db.js";
+import { AppDatabase, databaseLockPath, migrateDatabase } from "../src/db.js";
 import {
   createLegacyServerFixture,
   LEGACY_SERVER_FIXTURES,
@@ -25,6 +25,19 @@ describe("AppDatabase", () => {
     } finally {
       db.close();
     }
+  });
+
+  it("releases its lock only once and never removes a replacement lock", () => {
+    const path = temporaryDatabasePath(tempDirs);
+    const db = new AppDatabase(path);
+    const lockPath = databaseLockPath(path);
+    expect(existsSync(lockPath)).toBe(true);
+    db.close();
+    expect(existsSync(lockPath)).toBe(false);
+
+    writeFileSync(lockPath, "999999\n", { mode: 0o600 });
+    db.close();
+    expect(existsSync(lockPath)).toBe(true);
   });
 
   it("removes expired audit records while retaining recent records", () => {
@@ -66,6 +79,11 @@ describe("AppDatabase", () => {
 
       const db = new AppDatabase(path);
       try {
+        const snapshots = readdirSync(join(path, "..", "backups"));
+        expect(snapshots).toHaveLength(1);
+        expect(snapshots[0]).toMatch(
+          new RegExp(`^pre-upgrade-v${fixture.version}-to-v9-.*\\.sqlite$`),
+        );
         const versions = db.sqlite
           .prepare("SELECT version FROM schema_migrations ORDER BY version")
           .all() as Array<{ version: number }>;
@@ -100,6 +118,7 @@ describe("AppDatabase", () => {
 
       const reopened = new AppDatabase(path);
       try {
+        expect(readdirSync(join(path, "..", "backups"))).toHaveLength(1);
         expect(
           reopened.sqlite.prepare("SELECT COUNT(*) AS count FROM watchlist WHERE media_id = 'tt-fixture'").get(),
         ).toEqual({ count: 1 });

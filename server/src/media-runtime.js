@@ -165,7 +165,7 @@ function parseIndexerConfigs(raw) {
 function buildIndexerManager(db, profileId) {
   const configs = [];
   const builtIn = settingValue(db, profileId, BUILT_IN_INDEXERS_ENABLED_KEY);
-  if (builtIn === "false") {
+  if (builtIn !== "true") {
     configs.push(
       makeIndexerConfig({
         id: "built-in",

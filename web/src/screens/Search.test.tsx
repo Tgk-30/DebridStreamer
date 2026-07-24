@@ -34,6 +34,7 @@ let mockPendingSearch: string | null = null;
 const consumePendingSearch = vi.fn();
 const openDetail = vi.fn();
 const openBrowse = vi.fn();
+const navigate = vi.fn();
 let mockServices: {
   tmdb: { search: typeof tmdbSearch } | null;
   ai: { recommend: ReturnType<typeof vi.fn> } | null;
@@ -49,6 +50,7 @@ vi.mock("../store/AppStore", () => ({
     consumePendingSearch,
     openDetail,
     openBrowse,
+    navigate,
   }),
 }));
 
@@ -182,6 +184,19 @@ describe("Search - idle state", () => {
   it("does not show a clear button when the field is empty", () => {
     render(<Search />);
     expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+  });
+
+  it("labels bundled starters as samples when no TMDB key is configured", async () => {
+    mockServices = { tmdb: null, ai: null };
+    render(<Search />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Sample catalog");
+    expect(screen.getByText("Sample titles")).toBeInTheDocument();
+    expect(screen.queryByText("Trending now")).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open metadata settings" }),
+    );
+    expect(navigate).toHaveBeenCalledWith("settings");
   });
 });
 
@@ -319,18 +334,24 @@ describe("Search - pending search handoff", () => {
 });
 
 describe("Search - no TMDB key fallback", () => {
-  it("filters the bundled starters locally when there is no tmdb service", async () => {
+  it("requires a catalog key instead of presenting bundled samples as results", async () => {
     mockServices = { tmdb: null, ai: null };
     render(<Search />);
     const input = fieldInput();
     await userEvent.type(input, "incep");
     fireEvent.keyDown(input, { key: "Enter" });
 
-    await screen.findByTestId("media-grid");
-    expect(screen.getByText("Inception")).toBeInTheDocument();
-    expect(screen.queryByText("Severance")).not.toBeInTheDocument();
+    await screen.findByRole("alert");
+    expect(screen.getByRole("alert")).toHaveTextContent("Catalog key needed");
+    expect(screen.getByTestId("empty-state")).toHaveTextContent(
+      "Add a TMDB key in Settings",
+    );
+    expect(screen.queryByText("Inception")).not.toBeInTheDocument();
     // No live service was hit.
     expect(tmdbSearch).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Add a TMDB key" }));
+    expect(navigate).toHaveBeenCalledWith("settings");
   });
 });
 

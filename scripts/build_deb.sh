@@ -45,7 +45,7 @@ Depends: nodejs (>= 22), ffmpeg
 Section: web
 Priority: optional
 Installed-Size: ${INSTALLED_KB}
-Homepage: https://github.com/Tgk-30/DebridStreamer
+Homepage: https://github.com/Tgk-30/YAWF-Stream
 Description: DebridStreamer self-host server
  Self-hosted debrid streaming server: serves the built web app and JSON API on
  one port (default 43110) with multi-profile households, storing state in

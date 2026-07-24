@@ -13,7 +13,6 @@ import { loadDiscoverFixtures } from "../data/fixtures";
 import { MediaGrid } from "../components/MediaGrid";
 import { GenreCatalogGrid } from "../components/GenreCatalogGrid";
 import { EmptyState } from "../components/EmptyState";
-import { ErrorNote } from "../components/ErrorNote";
 import { Icon } from "../components/Icon";
 import { MoodStrip } from "../components/MoodStrip";
 import { Rail } from "../components/Rail";
@@ -23,6 +22,7 @@ import { useAttentionParked } from "../lib/attention";
 import { emptyBrowseFilters, type BrowseFilters } from "../data/browse";
 import { resolveAIRecommendation } from "../data/aiRecommendations";
 import { SortOption } from "../services/metadata/types";
+import { recordDiagnostic } from "../lib/diagnostics";
 import "./Search.css";
 
 type TypeFilter = "all" | "movie" | "series";
@@ -102,6 +102,7 @@ function SearchSkeleton() {
 export function Search() {
   const {
     services,
+    navigate,
     pendingSearch,
     consumePendingSearch,
     openDetail,
@@ -118,6 +119,7 @@ export function Search() {
   const [results, setResults] = useState<MediaPreview[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [catalogKeyRequired, setCatalogKeyRequired] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Client-side result ordering. "relevance" preserves the search API's own
@@ -243,12 +245,14 @@ export function Search() {
       // searching skeleton would stay up forever over the idle view.
       setLoading(false);
       setResults(null);
+      setCatalogKeyRequired(false);
       return;
     }
 
     const myRun = ++runIdRef.current;
     setLoading(true);
     setError(null);
+    setCatalogKeyRequired(false);
     try {
       const tmdbType: MediaType | null = type === "all" ? null : type;
       const result = serverMode
@@ -268,21 +272,20 @@ export function Search() {
       }
     } catch (err) {
       if (myRun !== runIdRef.current) return;
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      recordDiagnostic("catalog", "search.failed", "error", message);
+      setError(message);
       setResults([]);
       return;
     } finally {
       if (myRun === runIdRef.current) setLoading(false);
     }
 
-    // No key / no server → filter the fixtures locally so the screen still works.
+    // No key / no server: never pass bundled samples off as search results.
     if (myRun === runIdRef.current && services.tmdb == null && !serverMode) {
-      const matches = starters.filter(
-        (s) =>
-          s.title.toLowerCase().includes(trimmed.toLowerCase()) &&
-          (type === "all" || s.type === type),
-      );
-      setResults(matches);
+      recordDiagnostic("catalog", "search.key_missing", "warning");
+      setResults([]);
+      setCatalogKeyRequired(true);
       setError(null);
       setLoading(false);
     }
@@ -319,6 +322,7 @@ export function Search() {
                 setLoading(false); // see runSearch's empty-query branch
                 setQuery("");
                 setResults(null);
+                setCatalogKeyRequired(false);
                 inputRef.current?.focus();
               }}
               aria-label="Clear"
@@ -354,7 +358,44 @@ export function Search() {
         )}
       </div>
 
-      {error && <ErrorNote className="search-status search-error">{error}</ErrorNote>}
+      {!serverMode && services.tmdb == null && results == null && !loading && (
+        <section className="search-catalog-notice glass-rest" role="status">
+          <div>
+            <strong>Sample catalog</strong>
+            <p>
+              The titles below are bundled examples. Add a TMDB key to load live
+              categories, trending titles, and search results.
+            </p>
+          </div>
+          <button type="button" className="btn" onClick={() => navigate("settings")}>
+            Open metadata settings
+          </button>
+        </section>
+      )}
+
+      {catalogKeyRequired && (
+        <section className="search-catalog-notice glass-rest" role="alert">
+          <div>
+            <strong>Catalog key needed</strong>
+            <p>Search needs a TMDB key. Bundled sample titles are never returned as live results.</p>
+          </div>
+          <button type="button" className="btn" onClick={() => navigate("settings")}>
+            Add a TMDB key
+          </button>
+        </section>
+      )}
+
+      {error && (
+        <section className="search-catalog-notice is-error glass-rest" role="alert">
+          <div>
+            <strong>Search unavailable</strong>
+            <p>{error}</p>
+          </div>
+          <button type="button" className="btn" onClick={() => void runSearch(query, filter)}>
+            Retry
+          </button>
+        </section>
+      )}
 
       {loading ? (
         <SearchSkeleton />
@@ -379,7 +420,7 @@ export function Search() {
             suspended={browseContext != null || detailItem != null || attentionParked}
           />
           <h2 className="search-section-title search-section-title-spaced">
-            Trending now
+            {services.tmdb != null || serverMode ? "Trending now" : "Sample titles"}
           </h2>
           <MediaGrid
             items={starters}
@@ -433,8 +474,12 @@ export function Search() {
               !loading ? (
                 <EmptyState
                   icon="search"
-                  title="No results"
-                  subtitle={`Nothing matched “${query.trim()}”. Try a different title or filter.`}
+                  title={catalogKeyRequired ? "Catalog key needed" : "No results"}
+                  subtitle={
+                    catalogKeyRequired
+                      ? "Add a TMDB key in Settings to search the live catalog."
+                      : `Nothing matched “${query.trim()}”. Try a different title or filter.`
+                  }
                 />
               ) : null
             }

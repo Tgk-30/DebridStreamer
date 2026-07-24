@@ -46,7 +46,7 @@ const IosMedia = memo(function IosMedia({ active }: { active: boolean }) {
         {/* URL bar typing */}
         <span className="absolute inset-x-3 top-8 flex h-6 items-center rounded-md bg-bg-0 px-2 font-mono text-[0.5625rem] text-brand">
           <span data-anim className="inline-block whitespace-nowrap" style={{ animationName: 'dv-url-type' }}>
-            192.168.1.20:9696
+            192.168.1.20:43110
           </span>
         </span>
         {/* home grid with dashed target slot */}

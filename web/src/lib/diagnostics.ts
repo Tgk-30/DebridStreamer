@@ -1,6 +1,14 @@
 import type { AppSettings } from "../data/settings";
 
-export type DiagnosticArea = "app" | "player" | "provider" | "storage";
+export type DiagnosticArea =
+  | "app"
+  | "catalog"
+  | "download"
+  | "network"
+  | "player"
+  | "provider"
+  | "storage"
+  | "update";
 export type DiagnosticLevel = "info" | "warning" | "error";
 
 export interface DiagnosticEvent {

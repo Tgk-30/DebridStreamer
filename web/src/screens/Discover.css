@@ -34,6 +34,28 @@
   contain-intrinsic-size: auto 390px;
 }
 
+.discover-catalog-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-lg);
+  padding: var(--sp-md) var(--sp-lg);
+  border-radius: var(--r-md);
+  border-color: rgba(var(--accent-rgb), 0.42);
+}
+
+.discover-catalog-notice strong {
+  display: block;
+  margin-bottom: calc(4px * var(--density-scale));
+}
+
+.discover-catalog-notice p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
 /* Without a hero above it (cold start / no artwork), the first block must still
    clear the floating global search field. */
 .discover > .discover-body:first-child {
@@ -122,6 +144,11 @@
 
   .discover-body {
     padding: 0 var(--sp-md) var(--sp-lg);
+  }
+
+  .discover-catalog-notice {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
