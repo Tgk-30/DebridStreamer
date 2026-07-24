@@ -76,6 +76,19 @@ describe("TMDBService privacy gate", () => {
   });
 });
 
+describe("TMDBService locale", () => {
+  it("applies the configured language and region to catalog requests", async () => {
+    const mock = makeMockFetch(() => ok(searchBody));
+    const service = new TMDBService("key", mock.fetchImpl, {
+      language: "pt-BR",
+      region: "BR",
+    });
+    await service.search("Cidade de Deus", "movie");
+    expect(mock.lastURL()?.searchParams.get("language")).toBe("pt-BR");
+    expect(mock.lastURL()?.searchParams.get("region")).toBe("BR");
+  });
+});
+
 /** A fetch stub that dispatches per-path so a single service can answer the
  * multi-request flows (getDetail-via-find, etc.). Routes on URL.pathname. */
 function makeRoutedFetch(routes: Record<string, MockResponse>): MockFetch {
