@@ -32,6 +32,11 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openInExternalPlayer } from "../lib/tauri";
 import {
+  findPreferredLanguageMatch,
+  normalizeLanguagePreference,
+} from "../lib/languagePreference";
+import type { PlayerPreferenceDefaults } from "./VideoPlayer";
+import {
   currentViewportPixelSize,
   type PixelSize,
   type PlaybackEngine,
@@ -67,6 +72,8 @@ interface Props {
   startPositionSeconds?: number;
   /** Remembered audio/subtitle/speed for this title, restored after load. */
   savedPrefs?: PlaybackPrefs | null;
+  /** Optional global defaults supplied by Settings. This component does not persist them. */
+  playerPreferences?: PlayerPreferenceDefaults | null;
   /** Throttled progress + the current player prefs - feeds Continue Watching and
    * persists the audio/sub/speed choices for next time. */
   onProgress?: (current: number, duration: number, prefs?: PlaybackPrefs) => void;
@@ -114,6 +121,7 @@ const OBSERVED: readonly MpvObservableProperty[] = [
   ["demuxer-cache-time", "double", "none"],
   ["aid", "string", "none"],
   ["sid", "string", "none"],
+  ["track-list/count", "int64", "none"],
   ["eof-reached", "flag"],
   // Raw decoded dimensions power the permanent diagnostics. dwidth/dheight are
   // retained as a fallback for mpv builds that do not emit video-params subkeys.
@@ -203,6 +211,16 @@ function parseTracks(raw: unknown): Track[] {
     });
   }
   return out;
+}
+
+/** Match language metadata first, then fall back to the human track title.
+ * Providers often emit `und` even when a useful title is present. */
+function findPreferredTrack(
+  preference: unknown,
+  tracks: readonly Track[],
+): Track | null {
+  return findPreferredLanguageMatch(preference, tracks, (track) => track.lang)
+    ?? findPreferredLanguageMatch(preference, tracks, (track) => track.title);
 }
 
 /** A human label for a track: its title, else language, else "Track N". */
@@ -417,6 +435,7 @@ export function EmbeddedPlayer({
   playbackAuthorization,
   startPositionSeconds = 0,
   savedPrefs,
+  playerPreferences = null,
   onProgress,
   onPlayNext,
   nextLabel,
@@ -458,6 +477,7 @@ export function EmbeddedPlayer({
   const [displaySize, setDisplaySize] = useState<PixelSize | null>(() =>
     currentViewportPixelSize(),
   );
+  const displaySizeRef = useRef<PixelSize | null>(displaySize);
 
   const startedRef = useRef(false);
   // Cleared once the first frame is shown; until then the initial buffering=true
@@ -470,6 +490,8 @@ export function EmbeddedPlayer({
   onProgressRef.current = onProgress;
   const onPlaybackErrorRef = useRef(onPlaybackError);
   onPlaybackErrorRef.current = onPlaybackError;
+  const playerPreferencesRef = useRef(playerPreferences);
+  playerPreferencesRef.current = playerPreferences;
   const hideTimer = useRef<number | undefined>(undefined);
   const stageClickTimer = useRef<number | undefined>(undefined);
   const scrubberRef = useRef<NativeScrubberHandle | null>(null);
@@ -490,6 +512,7 @@ export function EmbeddedPlayer({
   castSuspendedRef.current = castSuspended;
 
   const audioTracks = useMemo(() => tracks.filter((t) => t.type === "audio"), [tracks]);
+  const volumeIsSilent = muted || volume === 0;
   const subTracks = useMemo(() => tracks.filter((t) => t.type === "sub"), [tracks]);
   const activeSubtitleUrl = useMemo(
     () =>
@@ -518,11 +541,32 @@ export function EmbeddedPlayer({
 
   // Track the full-window native surface for the diagnostic popover. Backing
   // pixels make this directly comparable to mpv's decoded source dimensions.
+  // Browser resize events can arrive in bursts, so coalesce them and skip state
+  // work when the native surface's backing-pixel geometry has not changed.
   useEffect(() => {
-    const measure = () => setDisplaySize(currentViewportPixelSize());
+    let frame: number | undefined;
+    const measure = () => {
+      frame = undefined;
+      const next = currentViewportPixelSize();
+      const previous = displaySizeRef.current;
+      if (
+        previous?.width === next?.width &&
+        previous?.height === next?.height
+      ) {
+        return;
+      }
+      displaySizeRef.current = next;
+      setDisplaySize(next);
+    };
+    const scheduleMeasure = () => {
+      if (frame == null) frame = window.requestAnimationFrame(measure);
+    };
     measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    window.addEventListener("resize", scheduleMeasure);
+    return () => {
+      window.removeEventListener("resize", scheduleMeasure);
+      if (frame != null) window.cancelAnimationFrame(frame);
+    };
   }, []);
 
   // Refresh the track + chapter lists from mpv (after load, and on menu open).
@@ -558,6 +602,8 @@ export function EmbeddedPlayer({
     let fallbackTried = false;
     // Armed after loadfile; fires if no first frame arrives in time.
     let watchdog: number | undefined;
+    let retryTimer: number | undefined;
+    let trackRefreshTimer: number | undefined;
     firstFrameRef.current = false; // new file: show the initial spinner again
     endedRef.current = false;
     posRef.current = 0;
@@ -608,11 +654,10 @@ export function EmbeddedPlayer({
       try {
         await init(MPV_CONFIG);
         if (cancelled) {
-          void destroy().catch(() => {});
           return;
         }
         await setVideoMarginRatio({ bottom: VIDEO_MARGIN_BOTTOM });
-        unlisten = await observeProperties(
+        const observedUnlisten = await observeProperties(
           OBSERVED,
           (ev: { name: string; data: unknown }) => {
             // A late event can arrive after unmount (before unlisten lands) or
@@ -723,6 +768,9 @@ export function EmbeddedPlayer({
               case "sid":
                 setActiveSid(ev.data == null ? "no" : String(ev.data));
                 break;
+              case "track-list/count":
+                void refreshTracks();
+                break;
               case "eof-reached":
                 if (ev.data === true) {
                   endedRef.current = true;
@@ -767,6 +815,11 @@ export function EmbeddedPlayer({
             }
           },
         );
+        if (cancelled) {
+          observedUnlisten();
+          return;
+        }
+        unlisten = observedUnlisten;
         const resumeSeconds =
           Number.isFinite(startPositionSeconds) && startPositionSeconds > 5
             ? Math.floor(startPositionSeconds)
@@ -789,10 +842,33 @@ export function EmbeddedPlayer({
           // One silent retry: debrid CDNs and proxies throw transient errors on
           // first touch (cold cache, 502s) that a fresh attempt clears, and
           // these used to count as instant player failures.
-          await new Promise((r) => setTimeout(r, 800));
+          await new Promise<void>((resolve) => {
+            retryTimer = window.setTimeout(resolve, 800);
+          });
+          retryTimer = undefined;
           if (cancelled) return;
           await loadOnce();
         }
+        const configuredPreferences = playerPreferencesRef.current;
+        const configuredVolume = configuredPreferences?.defaultVolume;
+        if (configuredVolume != null && Number.isFinite(configuredVolume)) {
+          const initialVolume = Math.round(Math.min(100, Math.max(0, configuredVolume)));
+          setVolume(initialVolume);
+          setMuted(initialVolume === 0);
+          if (initialVolume > 0) lastAudibleVolume.current = initialVolume;
+          await setProperty("volume", initialVolume);
+          await setProperty("mute", initialVolume === 0);
+        }
+        const titleSpeed = configuredPreferences?.rememberPerTitleTrackChoices === false
+          ? null
+          : savedPrefs?.playbackSpeed;
+        const initialSpeed = titleSpeed ?? configuredPreferences?.defaultPlaybackSpeed;
+        if (initialSpeed != null && Number.isFinite(initialSpeed) && initialSpeed > 0) {
+          setSpeed(initialSpeed);
+          await setProperty("speed", initialSpeed);
+        }
+        // Configure gain before unpausing so a non-default stream never emits a
+        // frame of loud audio while the volume preference is still in flight.
         await setProperty("pause", false);
         if (castSuspendedRef.current) {
           await setProperty("pause", true);
@@ -804,7 +880,8 @@ export function EmbeddedPlayer({
         // it), hand off to the webview transcode.
         armWatchdog();
         // Tracks/chapters populate a beat after the file loads.
-        window.setTimeout(() => {
+        trackRefreshTimer = window.setTimeout(() => {
+          trackRefreshTimer = undefined;
           if (!cancelled) {
             void refreshTracks();
             void refreshChapters();
@@ -818,6 +895,8 @@ export function EmbeddedPlayer({
     return () => {
       cancelled = true;
       window.clearTimeout(watchdog);
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(trackRefreshTimer);
       unlisten?.();
       void destroy().catch(() => {});
       if (scrobbleContext != null) {
@@ -925,8 +1004,9 @@ export function EmbeddedPlayer({
     void setProperty("mute", next === 0);
   }, []);
   const toggleMute = useCallback(() => {
-    if (muted || volume === 0) {
-      const restored = Math.max(1, lastAudibleVolume.current);
+    if (volumeIsSilent) {
+      const restored = volume > 0 ? volume : Math.max(1, lastAudibleVolume.current);
+      lastAudibleVolume.current = restored;
       setMuted(false);
       setVolume(restored);
       void setProperty("mute", false);
@@ -936,7 +1016,7 @@ export function EmbeddedPlayer({
     lastAudibleVolume.current = volume;
     setMuted(true);
     void setProperty("mute", true);
-  }, [muted, volume]);
+  }, [volume, volumeIsSilent]);
 
   const applySpeed = useCallback((s: number) => {
     setSpeed(s);
@@ -953,32 +1033,79 @@ export function EmbeddedPlayer({
   }, []);
 
   // Restore remembered audio/subtitle/speed once, after the track list loads.
-  const restoredRef = useRef(false);
+  const restoredAudioRef = useRef(false);
+  const restoredSubtitleRef = useRef(false);
   useEffect(() => {
-    restoredRef.current = false;
+    restoredAudioRef.current = false;
+    restoredSubtitleRef.current = false;
   }, [url]);
   useEffect(() => {
-    if (restoredRef.current || !savedPrefs || tracks.length === 0) return;
-    restoredRef.current = true;
-    if (savedPrefs.playbackSpeed && savedPrefs.playbackSpeed > 0) {
-      applySpeed(savedPrefs.playbackSpeed);
+    const perTitlePrefs = playerPreferences?.rememberPerTitleTrackChoices === false
+      ? null
+      : savedPrefs;
+
+    if (!restoredAudioRef.current) {
+      const rememberedLanguage = perTitlePrefs?.preferredAudioLang;
+      const rememberedId = perTitlePrefs?.preferredAudioId;
+      const defaultLanguage = playerPreferences?.defaultAudioLanguage;
+      const needsAudioTracks =
+        normalizeLanguagePreference(rememberedLanguage) != null ||
+        (typeof rememberedId === "string" && rememberedId.length > 0) ||
+        normalizeLanguagePreference(defaultLanguage) != null;
+      if (!needsAudioTracks || audioTracks.length > 0) {
+        const rememberedByLanguage = findPreferredTrack(rememberedLanguage, audioTracks);
+        const rememberedById = rememberedId != null
+          ? audioTracks.find((track) => String(track.id) === rememberedId) ?? null
+          : null;
+        const defaultMatch = findPreferredTrack(defaultLanguage, audioTracks);
+        const wantedAudio = rememberedByLanguage ?? rememberedById ?? defaultMatch;
+        if (wantedAudio != null) selectAudio(String(wantedAudio.id));
+        restoredAudioRef.current = true;
+      }
     }
-    // Audio: match by language first (survives id re-ordering across sources),
-    // then by exact id.
-    const wantAudio =
-      audioTracks.find((t) => t.lang && t.lang === savedPrefs.preferredAudioLang) ??
-      audioTracks.find((t) => String(t.id) === savedPrefs.preferredAudioId);
-    if (wantAudio) selectAudio(String(wantAudio.id));
-    // Subtitle: "no" = explicitly off; otherwise match id, else language.
-    if (savedPrefs.preferredSubId === "no") {
-      selectSub("no");
-    } else if (savedPrefs.preferredSubId != null) {
-      const wantSub =
-        subTracks.find((t) => String(t.id) === savedPrefs.preferredSubId) ??
-        subTracks.find((t) => t.lang && t.lang === savedPrefs.preferredSubId);
-      if (wantSub) selectSub(String(wantSub.id));
+
+    if (!restoredSubtitleRef.current) {
+      const rememberedSubtitle = perTitlePrefs?.preferredSubId;
+      const defaultBehavior = playerPreferences?.defaultSubtitleBehavior;
+      const defaultLanguage = playerPreferences?.defaultSubtitleLanguage;
+      if (rememberedSubtitle === "no") {
+        selectSub("no");
+        restoredSubtitleRef.current = true;
+      } else {
+        const needsRememberedSubtitle =
+          typeof rememberedSubtitle === "string" && rememberedSubtitle.length > 0;
+        const needsDefaultSubtitle =
+          defaultBehavior === "preferred" &&
+          normalizeLanguagePreference(defaultLanguage) != null;
+        if (
+          (!needsRememberedSubtitle && !needsDefaultSubtitle) ||
+          subTracks.length > 0
+        ) {
+          const rememberedById = rememberedSubtitle != null
+            ? subTracks.find((track) => String(track.id) === rememberedSubtitle) ?? null
+            : null;
+          const rememberedByLanguage = findPreferredTrack(rememberedSubtitle, subTracks);
+          const rememberedMatch = rememberedById ?? rememberedByLanguage;
+          if (rememberedMatch != null) {
+            selectSub(String(rememberedMatch.id));
+          } else if (defaultBehavior === "off" || defaultLanguage === "") {
+            selectSub("no");
+          } else if (defaultBehavior === "preferred") {
+            const defaultMatch = findPreferredTrack(defaultLanguage, subTracks);
+            if (defaultMatch != null) selectSub(String(defaultMatch.id));
+          }
+          restoredSubtitleRef.current = true;
+        }
+      }
     }
-  }, [tracks, savedPrefs, audioTracks, subTracks, applySpeed, selectAudio, selectSub]);
+  }, [
+    savedPrefs,
+    playerPreferences,
+    audioTracks,
+    subTracks,
+    selectAudio,
+    selectSub,
+  ]);
 
   const jumpChapter = useCallback((time: number) => {
     seekTo(time);
@@ -1081,17 +1208,29 @@ export function EmbeddedPlayer({
 
   // Keep the current window's real fullscreen state in sync (Esc, green button).
   useEffect(() => {
+    let disposed = false;
+    let frame: number | undefined;
     let unlisten: (() => void) | undefined;
-    void syncFullscreen().catch(() => {});
-    void getCurrentWindow()
-      .onResized(() => {
+    const scheduleFullscreenSync = () => {
+      if (frame != null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = undefined;
         void syncFullscreen().catch(() => {});
-      })
-      .then((u) => {
-        unlisten = u;
+      });
+    };
+    scheduleFullscreenSync();
+    void getCurrentWindow()
+      .onResized(scheduleFullscreenSync)
+      .then((nextUnlisten) => {
+        if (disposed) nextUnlisten();
+        else unlisten = nextUnlisten;
       })
       .catch(() => {});
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      if (frame != null) window.cancelAnimationFrame(frame);
+      unlisten?.();
+    };
   }, [syncFullscreen]);
 
   const openMenu = useCallback(
@@ -1374,28 +1513,29 @@ export function EmbeddedPlayer({
               <div
                 className="embed-volume"
                 onWheel={(e) => {
-                  changeVolume((muted ? lastAudibleVolume.current : volume) + (e.deltaY < 0 ? 5 : -5));
+                  changeVolume((volumeIsSilent ? lastAudibleVolume.current : volume) + (e.deltaY < 0 ? 5 : -5));
                 }}
               >
                 <button
                   type="button"
                   className="embed-icon-btn"
                   onClick={toggleMute}
-                  aria-label={muted ? "Unmute" : "Mute"}
-                  title={muted ? "Unmute (M)" : "Mute (M)"}
+                  aria-label={volumeIsSilent ? "Unmute" : "Mute"}
+                  aria-pressed={volumeIsSilent}
+                  title={volumeIsSilent ? "Unmute (M)" : "Mute (M)"}
                 >
-                  <Icon name={muted || volume === 0 ? "volume-muted" : "volume"} size={20} />
+                  <Icon name={volumeIsSilent ? "volume-muted" : "volume"} size={20} />
                 </button>
                 <input
                   className="embed-vol-range"
                   type="range"
                   min={0}
                   max={130}
-                  value={muted ? 0 : volume}
+                  value={volume}
                   onChange={(e) => changeVolume(Number(e.target.value))}
                   aria-label="Volume"
                   title="Volume (Up / Down or scroll)"
-                  style={{ ["--v" as string]: `${(muted ? 0 : volume) / 1.3}%` }}
+                  style={{ ["--v" as string]: `${volume / 1.3}%` }}
                 />
               </div>
             </div>
@@ -1465,15 +1605,13 @@ export function EmbeddedPlayer({
               >
                 <Icon name="speed" size={18} />
               </MenuButton>
-              {audioTracks.length > 0 && (
-                <MenuButton
-                  label="Audio"
-                  active={menu === "audio"}
-                  onClick={() => openMenu("audio")}
-                >
-                  <Icon name="audio" size={18} />
-                </MenuButton>
-              )}
+              <MenuButton
+                label="Audio"
+                active={menu === "audio"}
+                onClick={() => openMenu("audio")}
+              >
+                <Icon name="audio" size={18} />
+              </MenuButton>
               <MenuButton
                 label="Subtitles"
                 active={menu === "sub"}

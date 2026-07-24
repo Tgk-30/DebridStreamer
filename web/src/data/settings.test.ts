@@ -90,6 +90,8 @@ import {
   normalizeStreamMaxQuality,
   normalizeStreamMaxSizeGB,
   normalizeRatingScale,
+  normalizeDefaultPlaybackSpeed,
+  normalizeDefaultVolume,
   normalizeAppearanceNavOrder,
   normalizeAppearanceNavHidden,
   defaultSettings,
@@ -136,6 +138,18 @@ describe("normalizeStreamMaxQuality", () => {
     expect(normalizeStreamMaxQuality(undefined)).toBe("any");
     expect(normalizeStreamMaxQuality(1080)).toBe("any");
     expect(normalizeStreamMaxQuality("1080P")).toBe("any"); // case-sensitive
+  });
+});
+
+describe("default playback preference normalizers", () => {
+  it("accepts supported speeds and clamps volume to a percentage", () => {
+    expect(normalizeDefaultPlaybackSpeed(1.25)).toBe(1.25);
+    expect(normalizeDefaultPlaybackSpeed("2")).toBe(2);
+    expect(normalizeDefaultPlaybackSpeed(1.1)).toBe(1);
+    expect(normalizeDefaultVolume(67.6)).toBe(68);
+    expect(normalizeDefaultVolume(-2)).toBe(0);
+    expect(normalizeDefaultVolume(150)).toBe(100);
+    expect(normalizeDefaultVolume("garbage")).toBe(100);
   });
 });
 
@@ -209,6 +223,12 @@ describe("defaultSettings", () => {
     expect(d.subtitleFontScale).toBe(1);
     expect(d.subtitleTextColor).toBe("#ffffff");
     expect(d.subtitleBgOpacity).toBe(0.55);
+    expect(d.defaultAudioLanguage).toBe("");
+    expect(d.defaultSubtitleBehavior).toBe("off");
+    expect(d.defaultSubtitleLanguage).toBe("");
+    expect(d.defaultPlaybackSpeed).toBe(1);
+    expect(d.defaultVolume).toBe(100);
+    expect(d.rememberPerTitleTrackChoices).toBe(true);
     expect(d.simpleMode).toBe(false);
     expect(d.autoUpdateChecks).toBe(true);
     expect(d.autoInstallUpdates).toBe(false);
@@ -333,6 +353,12 @@ describe("loadSettings", () => {
         subtitleFontScale: 99,
         subtitleTextColor: "red",
         subtitleBgOpacity: 5,
+        defaultAudioLanguage: "engagement",
+        defaultSubtitleBehavior: "always",
+        defaultSubtitleLanguage: "???",
+        defaultPlaybackSpeed: 1.1,
+        defaultVolume: 999,
+        rememberPerTitleTrackChoices: "true",
         ratingScale: "eleven",
       }),
     });
@@ -357,6 +383,12 @@ describe("loadSettings", () => {
     expect(s.subtitleFontScale).toBe(1.8); // clamped to max
     expect(s.subtitleTextColor).toBe("#ffffff");
     expect(s.subtitleBgOpacity).toBe(0.95); // clamped to max
+    expect(s.defaultAudioLanguage).toBe("");
+    expect(s.defaultSubtitleBehavior).toBe("off");
+    expect(s.defaultSubtitleLanguage).toBe("");
+    expect(s.defaultPlaybackSpeed).toBe(1);
+    expect(s.defaultVolume).toBe(100);
+    expect(s.rememberPerTitleTrackChoices).toBe(true);
     expect(s.ratingScale).toBe("ten"); // poisoned scale → 1–10 default
   });
 
@@ -376,6 +408,27 @@ describe("loadSettings", () => {
     expect(s.subtitleFontScale).toBe(1.25);
     expect(s.subtitleTextColor).toBe("#aabbcc");
     expect(s.subtitleBgOpacity).toBe(0.3);
+  });
+
+  it("normalizes stored default playback preferences without changing old blobs", () => {
+    stubLocalStorage({
+      [KEY]: JSON.stringify({
+        defaultAudioLanguage: "French (Canada)",
+        defaultSubtitleBehavior: "preferred",
+        defaultSubtitleLanguage: "spa",
+        defaultPlaybackSpeed: "1.5",
+        defaultVolume: "42.4",
+        rememberPerTitleTrackChoices: false,
+      }),
+    });
+    expect(loadSettings()).toMatchObject({
+      defaultAudioLanguage: "fr",
+      defaultSubtitleBehavior: "preferred",
+      defaultSubtitleLanguage: "es",
+      defaultPlaybackSpeed: 1.5,
+      defaultVolume: 42,
+      rememberPerTitleTrackChoices: false,
+    });
   });
 
   it("does not let a missing array clobber the [] defaults", () => {
@@ -670,6 +723,9 @@ describe("loadSettingsFromStore - established store", () => {
     expect(s.theme).toBe(DEFAULT_THEME_ID);
     expect(s.streamCachedOnly).toBe(true);
     expect(s.streamMaxQuality).toBe("any");
+    expect(s.defaultPlaybackSpeed).toBe(1);
+    expect(s.defaultVolume).toBe(100);
+    expect(s.rememberPerTitleTrackChoices).toBe(true);
     expect(s.debridTokens).toEqual([]);
     expect(s.sources).toEqual([]);
   });
@@ -729,6 +785,12 @@ describe("loadSettingsFromStore - established store", () => {
     settingsMap.set("data_saver", "true");
     settingsMap.set("transcode", "true");
     settingsMap.set("trakt_scrobble_enabled", "true");
+    settingsMap.set("default_audio_language", "jpn");
+    settingsMap.set("default_subtitle_behavior", "preferred");
+    settingsMap.set("default_subtitle_language", "en-GB");
+    settingsMap.set("default_playback_speed", "1.25");
+    settingsMap.set("default_volume", "45");
+    settingsMap.set("remember_per_title_track_choices", "false");
     const s = await loadSettingsFromStore();
     expect(s.builtInIndexersEnabled).toBe(false);
     expect(s.simpleMode).toBe(false);
@@ -738,6 +800,12 @@ describe("loadSettingsFromStore - established store", () => {
     expect(s.dataSaver).toBe(true);
     expect(s.transcode).toBe(true);
     expect(s.traktScrobbleEnabled).toBe(true);
+    expect(s.defaultAudioLanguage).toBe("ja");
+    expect(s.defaultSubtitleBehavior).toBe("preferred");
+    expect(s.defaultSubtitleLanguage).toBe("en");
+    expect(s.defaultPlaybackSpeed).toBe(1.25);
+    expect(s.defaultVolume).toBe(45);
+    expect(s.rememberPerTitleTrackChoices).toBe(false);
   });
 
   it("keeps an existing saved cached-only choice", async () => {
@@ -864,6 +932,12 @@ describe("saveSettingsToStore", () => {
         showPosterRatings: false,
         streamMaxSizeGB: 12.34,
         appearanceBlur: 999, // normalized on write
+        defaultAudioLanguage: "German",
+        defaultSubtitleBehavior: "preferred",
+        defaultSubtitleLanguage: "French",
+        defaultPlaybackSpeed: 1.5,
+        defaultVolume: 67,
+        rememberPerTitleTrackChoices: false,
       }),
     );
     expect(settingsMap.get("ai_provider")).toBe("openai");
@@ -875,6 +949,12 @@ describe("saveSettingsToStore", () => {
     expect(settingsMap.get("show_poster_ratings")).toBe("false");
     expect(settingsMap.get("stream_max_size_gb")).toBe("12.3");
     expect(settingsMap.get("appearance_blur")).toBe("28"); // clamped
+    expect(settingsMap.get("default_audio_language")).toBe("de");
+    expect(settingsMap.get("default_subtitle_behavior")).toBe("preferred");
+    expect(settingsMap.get("default_subtitle_language")).toBe("fr");
+    expect(settingsMap.get("default_playback_speed")).toBe("1.5");
+    expect(settingsMap.get("default_volume")).toBe("67");
+    expect(settingsMap.get("remember_per_title_track_choices")).toBe("false");
   });
 
   it("writes only a changed scalar when the caller supplies the prior settings", async () => {
@@ -1085,6 +1165,12 @@ describe("saveSettingsToStore", () => {
       streamMaxSizeGB: 20,
       appearanceAccent: "rose",
       subtitleTextColor: "#123456",
+      defaultAudioLanguage: "Spanish",
+      defaultSubtitleBehavior: "preferred",
+      defaultSubtitleLanguage: "English",
+      defaultPlaybackSpeed: 1.25,
+      defaultVolume: 35,
+      rememberPerTitleTrackChoices: false,
       debridTokens: [{ service: "real_debrid", apiToken: "rd-tok" }],
       sources: [{ id: "src1", type: "jackett", baseURL: "http://j", isActive: true, apiKey: "ak", displayName: "J", priority: 0 }],
     });
@@ -1101,6 +1187,12 @@ describe("saveSettingsToStore", () => {
     expect(loaded.streamMaxSizeGB).toBe(20);
     expect(loaded.appearanceAccent).toBe("rose");
     expect(loaded.subtitleTextColor).toBe("#123456");
+    expect(loaded.defaultAudioLanguage).toBe("es");
+    expect(loaded.defaultSubtitleBehavior).toBe("preferred");
+    expect(loaded.defaultSubtitleLanguage).toBe("en");
+    expect(loaded.defaultPlaybackSpeed).toBe(1.25);
+    expect(loaded.defaultVolume).toBe(35);
+    expect(loaded.rememberPerTitleTrackChoices).toBe(false);
     expect(loaded.debridTokens).toEqual([{ service: "real_debrid", apiToken: "rd-tok" }]);
     expect(loaded.sources).toEqual([
       {

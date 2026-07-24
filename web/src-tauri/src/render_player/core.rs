@@ -97,12 +97,16 @@ pub struct Player {
     event_stop: Arc<AtomicBool>,
     event_thread: Option<JoinHandle<()>>,
     legacy_proxy_lease: Option<crate::playback_proxy::ProxyLease>,
+    shutdown_started: bool,
 }
 
 impl Player {
     /// Stop the event thread, then tear the surface down. The surface's `detach`
     /// owns the ordered render-context-before-mpv teardown; `self.mpv` drops after.
     fn shutdown(&mut self) {
+        if std::mem::replace(&mut self.shutdown_started, true) {
+            return;
+        }
         self.event_stop.store(true, Ordering::Release);
         // The event thread blocks indefinitely in mpv_wait_event while quiet.
         // mpv_wakeup is the matching thread-safe interrupt and prevents shutdown
@@ -112,6 +116,12 @@ impl Player {
             let _ = t.join();
         }
         self.surface.detach();
+    }
+}
+
+impl Drop for Player {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 
@@ -125,7 +135,7 @@ pub struct ObserveSpec {
 
 /// Tauri-managed: at most one in-window player at a time.
 #[derive(Default)]
-pub struct PlayerState(pub std::sync::Mutex<Option<Player>>);
+pub struct PlayerState(pub std::sync::Mutex<Option<Player>>, std::sync::Mutex<()>);
 
 // ---- mpv event loop → webview events ------------------------------------
 // Uses raw libmpv2-sys `mpv_wait_event` (libmpv2's safe wrapper panics on a
@@ -583,12 +593,17 @@ pub fn create_player<R: Runtime>(
     options: HashMap<String, String>,
     observed: Vec<ObserveSpec>,
 ) -> Result<(), String> {
+    let state = app.state::<PlayerState>();
+    // Creation includes native surface attachment and can take multiple main-loop
+    // turns on macOS. Keep the lifecycle lock until the new Player is published
+    // so another create or destroy cannot interleave with any phase.
+    let _lifecycle = state.1.lock().map_err(|_| "player lifecycle poisoned")?;
+
     // Windows: guarantee libmpv is loaded before any mpv FFI, or bail cleanly
     // (never crash via the delay-load SEH). No-op elsewhere.
     #[cfg(target_os = "windows")]
     ensure_libmpv_loaded(&app)?;
 
-    let state = app.state::<PlayerState>();
     let old = {
         let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
         guard.take()
@@ -676,6 +691,7 @@ pub fn create_player<R: Runtime>(
         event_stop,
         event_thread,
         legacy_proxy_lease: None,
+        shutdown_started: false,
     };
     let mut guard = match state.0.lock() {
         Ok(guard) => guard,
@@ -882,7 +898,7 @@ fn validate_mpv_observation(spec: &ObserveSpec) -> Result<(), String> {
         "pause" | "paused-for-cache" | "mute" | "eof-reached" => "flag",
         "time-pos" | "duration" | "volume" | "speed" | "demuxer-cache-time" => "double",
         "aid" | "sid" => "string",
-        "video-params/w" | "video-params/h" | "dwidth" | "dheight" => "int64",
+        "video-params/w" | "video-params/h" | "dwidth" | "dheight" | "track-list/count" => "int64",
         _ => return Err(format!("observation {} is not allowed", spec.name)),
     };
     if spec.format != expected {
@@ -1170,6 +1186,7 @@ pub fn player_set_rect(
 #[tauri::command]
 pub async fn player_destroy<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let state = app.state::<PlayerState>();
+    let _lifecycle = state.1.lock().map_err(|_| "player lifecycle poisoned")?;
     let taken = {
         let mut guard = state.0.lock().map_err(|_| "player state poisoned")?;
         guard.take()
@@ -1580,6 +1597,18 @@ mod tests {
             }),
             Ok(())
         );
+        assert_eq!(
+            validate_mpv_observation(&ObserveSpec {
+                name: "track-list/count".to_string(),
+                format: "int64".to_string(),
+            }),
+            Ok(())
+        );
+        assert!(validate_mpv_observation(&ObserveSpec {
+            name: "track-list/count".to_string(),
+            format: "double".to_string(),
+        })
+        .is_err());
         assert!(validate_mpv_observation(&ObserveSpec {
             name: "http-header-fields".to_string(),
             format: "string".to_string(),

@@ -303,6 +303,7 @@ vi.mock("../components/VideoPlayer", () => ({
     requestWebviewFallback,
     upNext,
     autoCountdown,
+    playerPreferences,
     onClose,
     onProgress,
   }: any) => (
@@ -323,6 +324,14 @@ vi.mock("../components/VideoPlayer", () => ({
       data-has-fallback={String(requestWebviewFallback != null)}
       data-up-next={upNext?.label ?? ""}
       data-auto-countdown={String(autoCountdown)}
+      data-default-audio-language={playerPreferences?.defaultAudioLanguage ?? ""}
+      data-default-subtitle-language={playerPreferences?.defaultSubtitleLanguage ?? ""}
+      data-default-subtitle-behavior={playerPreferences?.defaultSubtitleBehavior ?? ""}
+      data-default-playback-speed={playerPreferences?.defaultPlaybackSpeed ?? ""}
+      data-default-volume={playerPreferences?.defaultVolume ?? ""}
+      data-remember-per-title-track-choices={String(
+        playerPreferences?.rememberPerTitleTrackChoices ?? "",
+      )}
     >
       <button type="button" onClick={() => onProgress?.(80, 100)}>
         report-progress
@@ -686,6 +695,16 @@ describe("Detail play", () => {
   });
 
   it("uses movie metadata in player chrome and keeps the resolved filename in diagnostics", async () => {
+    mockSettings = {
+      transcode: false,
+      ratingScale: "thumbs",
+      defaultAudioLanguage: "ja",
+      defaultSubtitleLanguage: "en",
+      defaultSubtitleBehavior: "preferred",
+      defaultPlaybackSpeed: 1.25,
+      defaultVolume: 40,
+      rememberPerTitleTrackChoices: false,
+    };
     mockDetail = detailState({
       item: mediaItem({
         backdropPath: "/backdrop.jpg",
@@ -723,6 +742,18 @@ describe("Detail play", () => {
     expect(screen.getByTestId("player")).toHaveAttribute(
       "data-pause-backdrop",
       "https://image.tmdb.org/t/p/w1280/backdrop.jpg",
+    );
+    expect(screen.getByTestId("player")).toHaveAttribute("data-default-audio-language", "ja");
+    expect(screen.getByTestId("player")).toHaveAttribute("data-default-subtitle-language", "en");
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-default-subtitle-behavior",
+      "preferred",
+    );
+    expect(screen.getByTestId("player")).toHaveAttribute("data-default-playback-speed", "1.25");
+    expect(screen.getByTestId("player")).toHaveAttribute("data-default-volume", "40");
+    expect(screen.getByTestId("player")).toHaveAttribute(
+      "data-remember-per-title-track-choices",
+      "false",
     );
   });
 

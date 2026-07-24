@@ -247,8 +247,13 @@ fn render_update_has_frame(flags: MpvRenderUpdate) -> bool {
     flags & mpv_render_update::Frame != 0
 }
 
-fn should_queue_callback_redraw(dead: bool, update_pending: bool, redraw_queued: bool) -> bool {
-    !dead && update_pending && !redraw_queued
+fn should_queue_callback_redraw(
+    dead: bool,
+    update_pending: bool,
+    force_render: bool,
+    redraw_queued: bool,
+) -> bool {
+    !dead && (update_pending || force_render) && !redraw_queued
 }
 
 // ---- The layer-backed video surface -------------------------------------
@@ -274,8 +279,9 @@ struct RenderCallbackState {
 fn queue_callback_redraw(callback: Arc<RenderCallbackState>) {
     let dead = callback.dead.load(Ordering::Acquire);
     let update_pending = callback.update_pending.load(Ordering::Acquire);
+    let force_render = callback.force_render.load(Ordering::Acquire);
     let redraw_queued = callback.redraw_queued.load(Ordering::Acquire);
-    if !should_queue_callback_redraw(dead, update_pending, redraw_queued)
+    if !should_queue_callback_redraw(dead, update_pending, force_render, redraw_queued)
         || callback
             .redraw_queued
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -305,9 +311,11 @@ fn queue_callback_redraw(callback: Arc<RenderCallbackState>) {
 
 fn finish_callback_redraw(callback: &Arc<RenderCallbackState>) {
     callback.redraw_queued.store(false, Ordering::Release);
-    // Close the race where an update arrived after draw swapped pending=false
-    // but before the outstanding-redraw latch was released.
-    if callback.update_pending.load(Ordering::Acquire) {
+    // Close the race where an update or forced redraw arrived after draw consumed
+    // its flags but before the outstanding-redraw latch was released.
+    if callback.update_pending.load(Ordering::Acquire)
+        || callback.force_render.load(Ordering::Acquire)
+    {
         queue_callback_redraw(callback.clone());
     }
 }
@@ -891,12 +899,18 @@ fn display_layer_forced(layer: &VideoLayer) {
     layer.display();
 }
 
-// ---- Host view: redraws the video layer on every resize -----------------
+fn queue_layer_forced_redraw(layer: &VideoLayer) {
+    let callback = layer.ivars().callback.clone();
+    callback.force_render.store(true, Ordering::Release);
+    queue_callback_redraw(callback);
+}
+
+// ---- Host view: coalesces video-layer redraws during resize -------------
 // The video layer autoresizes to fill this view, but CAOpenGLLayer only
 // reallocates its GL drawable + re-renders when explicitly asked. Overriding
-// setFrameSize (called by AppKit on every resize step) to poke the layer makes
-// the video re-render at the new capped resolution - even while paused/ended -
-// instead of stretching a stale texture.
+// setFrameSize (called by AppKit on every resize step) requests a forced redraw
+// at the new capped resolution, even while paused or ended. The callback latch
+// coalesces a resize burst instead of synchronously rendering inside AppKit.
 struct HostIvars {
     layer: Retained<VideoLayer>,
     surface: Arc<SurfaceState>,
@@ -923,7 +937,7 @@ define_class!(
             // A fullscreen transition can move the window to a screen with a
             // different backing scale without delivering the backing callback
             // before this resize. Always pair the resized bounds with the live
-            // window scale before the synchronous draw.
+            // window scale before requesting the redraw.
             let b = self.bounds();
             if let Some(window) = self.window() {
                 sync_layer_render_scale(layer, surface, b.size, window.backingScaleFactor());
@@ -938,7 +952,7 @@ define_class!(
                 surface,
                 &format!("requested={:.2}x{:.2}", size.width, size.height),
             );
-            display_layer_forced(layer);
+            queue_layer_forced_redraw(layer);
         }
 
         // AppKit fires this whenever the backing SCALE FACTOR changes - most often
@@ -966,7 +980,7 @@ define_class!(
                 &self.ivars().surface,
                 &format!("new_scale={scale:.3}"),
             );
-            display_layer_forced(layer);
+            queue_layer_forced_redraw(layer);
         }
 
         #[unsafe(method(windowWillEnterFullScreen:))]
@@ -1257,7 +1271,7 @@ fn verify_and_repair_geometry_on_main(
         corrections.push("contents-scale");
     }
     if force_display || !corrections.is_empty() {
-        display_layer_forced(layer);
+        queue_layer_forced_redraw(layer);
     }
     let correction = if corrections.is_empty() {
         "none".to_string()
@@ -2483,15 +2497,23 @@ mod tests {
     }
 
     #[test]
-    fn render_update_flags_and_queue_decisions_are_coalesced() {
+    fn render_update_flags_and_update_redraws_are_coalesced() {
         assert!(!render_update_has_frame(0));
         assert!(render_update_has_frame(mpv_render_update::Frame));
         assert!(render_update_has_frame(mpv_render_update::Frame | 0x80));
 
-        assert!(should_queue_callback_redraw(false, true, false));
-        assert!(!should_queue_callback_redraw(false, true, true));
-        assert!(!should_queue_callback_redraw(false, false, false));
-        assert!(!should_queue_callback_redraw(true, true, false));
+        assert!(should_queue_callback_redraw(false, true, false, false));
+        assert!(!should_queue_callback_redraw(false, true, false, true));
+        assert!(!should_queue_callback_redraw(false, false, false, false));
+        assert!(!should_queue_callback_redraw(true, true, false, false));
+    }
+
+    #[test]
+    fn forced_redraws_queue_without_updates_and_coalesce() {
+        assert!(should_queue_callback_redraw(false, false, true, false));
+        assert!(should_queue_callback_redraw(false, true, true, false));
+        assert!(!should_queue_callback_redraw(false, false, true, true));
+        assert!(!should_queue_callback_redraw(true, true, true, false));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 // metadata and resume bookkeeping; this host intentionally starts a downloaded
 // file at 0 and does not try to auto-advance a series pack.
 
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { useAppStore } from "../store/AppStore";
 import { Spinner } from "./Spinner";
 
@@ -19,6 +19,24 @@ function fileNameFromPath(path: string): string {
  * download's raw filesystem path straight to mpv instead of a webview URL. */
 export function LocalPlayerHost() {
   const { localFilePlayer, closeLocalFilePlayer, settings } = useAppStore();
+  const playerPreferences = useMemo(
+    () => ({
+      defaultAudioLanguage: settings.defaultAudioLanguage ?? "",
+      defaultSubtitleLanguage: settings.defaultSubtitleLanguage ?? "",
+      defaultSubtitleBehavior: settings.defaultSubtitleBehavior ?? "off",
+      defaultPlaybackSpeed: settings.defaultPlaybackSpeed ?? 1,
+      defaultVolume: settings.defaultVolume ?? 100,
+      rememberPerTitleTrackChoices: settings.rememberPerTitleTrackChoices ?? true,
+    }),
+    [
+      settings.defaultAudioLanguage,
+      settings.defaultSubtitleLanguage,
+      settings.defaultSubtitleBehavior,
+      settings.defaultPlaybackSpeed,
+      settings.defaultVolume,
+      settings.rememberPerTitleTrackChoices,
+    ],
+  );
   if (localFilePlayer == null) return null;
 
   return (
@@ -31,6 +49,7 @@ export function LocalPlayerHost() {
         preferredPlayer={settings.preferredExternalPlayer}
         useBuiltInPlayer={settings.builtInPlayer}
         startPositionSeconds={0}
+        playerPreferences={playerPreferences}
         onClose={closeLocalFilePlayer}
       />
     </Suspense>

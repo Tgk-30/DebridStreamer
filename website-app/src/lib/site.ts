@@ -5,7 +5,7 @@ export const GITHUB_RELEASES_LATEST = `${GITHUB_RELEASES}/latest`;
 export const GITHUB_ISSUES = `${GITHUB_REPO}/issues`;
 export const GITHUB_DOCKER = `${GITHUB_REPO}/tree/main/deploy/compose`;
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.0.1';
 export const VERSION = `v${APP_VERSION}-web`;
 export const RELEASE_ASSET_BASE = `${GITHUB_RELEASES}/download/${VERSION}`;
 export const WINDOWS_RELEASE_AVAILABLE = false;
