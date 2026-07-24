@@ -1,7 +1,8 @@
 // Cinematic billboard hero: auto-rotates through a few featured titles with a
 // crossfade + slow Ken Burns zoom on the backdrop, a layered scrim for legibility,
-// large title, badges, Play/Details, and bar indicators. Pauses on hover. Falls
-// back to a single item. Animation is pure CSS (see the route-frame note in App).
+// large title, badges, Play/Details, and bar indicators. Pauses on hover,
+// keyboard focus, or explicit request. Falls back to a single item. Animation
+// is pure CSS (see the route-frame note in App).
 
 import { useEffect, useRef, useState } from "react";
 import { MediaPreview as MediaPreviewNS } from "../models/media";
@@ -101,7 +102,9 @@ export function HeroSpotlight({
 }: HeroSpotlightProps) {
   const list = (items && items.length > 0 ? items : item ? [item] : []).slice(0, 6);
   const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
+  const [rotationPaused, setRotationPaused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
   // PERF: park the carousel entirely while the window is hidden - otherwise it
   // keeps rotating (and preloading + probing backdrops) forever in a window
   // nobody can see.
@@ -137,10 +140,27 @@ export function HeroSpotlight({
   }, []);
 
   useEffect(() => {
-    if (list.length <= 1 || paused || hidden || suspended) return;
+    if (
+      list.length <= 1 ||
+      rotationPaused ||
+      hovered ||
+      focusWithin ||
+      hidden ||
+      suspended
+    ) {
+      return;
+    }
     const t = setInterval(() => setIndex((i) => (i + 1) % list.length), intervalMs);
     return () => clearInterval(t);
-  }, [list.length, paused, hidden, suspended, intervalMs]);
+  }, [
+    list.length,
+    rotationPaused,
+    hovered,
+    focusWithin,
+    hidden,
+    suspended,
+    intervalMs,
+  ]);
 
   // Invisible polish: preload the next backdrop so the crossfade never flashes a
   // half-loaded image. This is a single image the carousel is about to show in
@@ -205,8 +225,14 @@ export function HeroSpotlight({
     <div
       className="hero"
       ref={heroRef}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocusWithin(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setFocusWithin(false);
+        }
+      }}
     >
       {/* Backdrop crossfade + Ken Burns, both pure CSS.
           PERF: the Ken Burns scale used to run `intervalMs/1000 + 1` = 8s - 
@@ -293,14 +319,26 @@ export function HeroSpotlight({
       </div>
 
       {list.length > 1 && (
-        <div className="hero-dots" role="tablist" aria-label="Featured titles">
+        <div className="hero-dots" role="group" aria-label="Featured titles">
+          <button
+            type="button"
+            className="hero-carousel-toggle"
+            aria-pressed={rotationPaused}
+            aria-label={
+              rotationPaused
+                ? "Resume featured title rotation"
+                : "Pause featured title rotation"
+            }
+            onClick={() => setRotationPaused((current) => !current)}
+          >
+            <Icon name={rotationPaused ? "play" : "pause"} size={12} />
+          </button>
           {list.map((it, i) => (
             <button
               key={it.id}
               type="button"
-              role="tab"
-              aria-selected={i === index}
               className={"hero-dot" + (i === index ? " is-active" : "")}
+              aria-pressed={i === index}
               aria-label={`${it.title}, featured ${i + 1} of ${list.length}`}
               onClick={() => setIndex(i)}
             />

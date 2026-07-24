@@ -11,6 +11,9 @@
 
 use std::collections::HashMap;
 use std::ffi::{c_void, CStr};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::thread::JoinHandle;
@@ -97,6 +100,7 @@ pub struct Player {
     event_stop: Arc<AtomicBool>,
     event_thread: Option<JoinHandle<()>>,
     legacy_proxy_lease: Option<crate::playback_proxy::ProxyLease>,
+    subtitle_dir: Option<PathBuf>,
     shutdown_started: bool,
 }
 
@@ -114,6 +118,13 @@ impl Player {
         unsafe { libmpv2_sys::mpv_wakeup(self.mpv.ctx.as_ptr()) };
         if let Some(t) = self.event_thread.take() {
             let _ = t.join();
+        }
+        if let Some(dir) = self.subtitle_dir.take() {
+            // Detach external subtitle tracks before removing their private
+            // temporary files. This is required on Windows, where mpv may keep
+            // an open file handle while the track is attached.
+            let _ = self.mpv.command("sub-remove", &["all"]);
+            let _ = fs::remove_dir_all(dir);
         }
         self.surface.detach();
     }
@@ -691,6 +702,7 @@ pub fn create_player<R: Runtime>(
         event_stop,
         event_thread,
         legacy_proxy_lease: None,
+        subtitle_dir: None,
         shutdown_started: false,
     };
     let mut guard = match state.0.lock() {
@@ -877,7 +889,23 @@ fn validate_mpv_property(name: &str, value: &str) -> Result<(), String> {
                 Err(format!("{name} must be auto, no, or a numeric track id"))
             }
         }
-        "volume" | "speed" | "sub-delay" | "audio-delay" | "sub-scale" => {
+        "audio-device" => {
+            if value.chars().count() > 256 {
+                Err("audio-device is too long".to_string())
+            } else {
+                Ok(())
+            }
+        }
+        "volume"
+        | "speed"
+        | "sub-delay"
+        | "audio-delay"
+        | "sub-scale"
+        | "sub-pos"
+        | "video-zoom"
+        | "video-pan-x"
+        | "video-pan-y"
+        | "video-aspect-override" => {
             let number = value
                 .parse::<f64>()
                 .map_err(|_| format!("{name} must be numeric"))?;
@@ -886,6 +914,18 @@ fn validate_mpv_property(name: &str, value: &str) -> Result<(), String> {
             }
             if matches!(name, "speed" | "sub-scale") && number <= 0.0 {
                 return Err(format!("{name} must be positive"));
+            }
+            if name == "sub-pos" && !(0.0..=100.0).contains(&number) {
+                return Err("sub-pos must be between 0 and 100".to_string());
+            }
+            if name == "video-zoom" && !(-2.0..=3.0).contains(&number) {
+                return Err("video-zoom must be between -2 and 3".to_string());
+            }
+            if matches!(name, "video-pan-x" | "video-pan-y") && !(-1.0..=1.0).contains(&number) {
+                return Err(format!("{name} must be between -1 and 1"));
+            }
+            if name == "video-aspect-override" && number != -1.0 && number <= 0.0 {
+                return Err("video-aspect-override must be -1 or positive".to_string());
             }
             Ok(())
         }
@@ -896,9 +936,23 @@ fn validate_mpv_property(name: &str, value: &str) -> Result<(), String> {
 fn validate_mpv_observation(spec: &ObserveSpec) -> Result<(), String> {
     let expected = match spec.name.as_str() {
         "pause" | "paused-for-cache" | "mute" | "eof-reached" => "flag",
-        "time-pos" | "duration" | "volume" | "speed" | "demuxer-cache-time" => "double",
-        "aid" | "sid" => "string",
-        "video-params/w" | "video-params/h" | "dwidth" | "dheight" | "track-list/count" => "int64",
+        "time-pos" | "duration" | "volume" | "speed" | "demuxer-cache-time" | "container-fps"
+        | "estimated-vf-fps" => "double",
+        "aid"
+        | "sid"
+        | "audio-device"
+        | "video-codec"
+        | "audio-codec-name"
+        | "hwdec-current"
+        | "video-params/primaries"
+        | "video-params/gamma" => "string",
+        "video-params/w"
+        | "video-params/h"
+        | "dwidth"
+        | "dheight"
+        | "track-list/count"
+        | "decoder-frame-drop-count"
+        | "frame-drop-count" => "int64",
         _ => return Err(format!("observation {} is not allowed", spec.name)),
     };
     if spec.format != expected {
@@ -1143,7 +1197,186 @@ pub fn player_get_property(state: State<'_, PlayerState>, name: String) -> Resul
     with_player(&state, |p| match name.as_str() {
         "track-list" => Ok(build_track_list(&p.mpv)),
         "chapter-list" => Ok(build_chapter_list(&p.mpv)),
+        "audio-device-list" => Ok(build_audio_device_list(&p.mpv)),
         _ => Err("property is not allowed".to_string()),
+    })
+}
+
+#[tauri::command]
+pub fn player_set_audio_passthrough(
+    state: State<'_, PlayerState>,
+    enabled: bool,
+) -> Result<(), String> {
+    with_player(&state, |player| {
+        let codecs = if enabled {
+            "ac3,dts,dts-hd,eac3,truehd"
+        } else {
+            ""
+        };
+        player
+            .mpv
+            .set_property("audio-spdif", codecs)
+            .map_err(|error| format!("could not change audio passthrough: {error}"))
+    })
+}
+
+#[tauri::command]
+pub fn player_set_hdr_policy(state: State<'_, PlayerState>, policy: String) -> Result<(), String> {
+    with_player(&state, |player| {
+        let (display_hint, tone_mapping) = match policy.as_str() {
+            "auto" => ("no", "auto"),
+            "preserve" => ("yes", "auto"),
+            "tone-map" => ("no", "bt.2390"),
+            _ => return Err("HDR policy is not allowed".to_string()),
+        };
+        player
+            .mpv
+            .set_property("target-colorspace-hint", display_hint)
+            .map_err(|error| format!("could not change HDR display policy: {error}"))?;
+        player
+            .mpv
+            .set_property("tone-mapping", tone_mapping)
+            .map_err(|error| format!("could not change HDR tone mapping: {error}"))
+    })
+}
+
+const MAX_SUBTITLE_BYTES: usize = 5 * 1024 * 1024;
+const MAX_SUBTITLE_LABEL_CHARS: usize = 120;
+const MAX_SUBTITLE_LANGUAGE_CHARS: usize = 32;
+
+fn validate_subtitle_payload(contents: &str, label: &str, language: &str) -> Result<(), String> {
+    if contents.is_empty() {
+        return Err("subtitle file is empty".to_string());
+    }
+    if contents.len() > MAX_SUBTITLE_BYTES {
+        return Err("subtitle file exceeds the 5 MB limit".to_string());
+    }
+    if contents.contains('\0') {
+        return Err("subtitle file contains NUL".to_string());
+    }
+    if !contents
+        .trim_start_matches('\u{feff}')
+        .starts_with("WEBVTT")
+    {
+        return Err("subtitle file must be WebVTT".to_string());
+    }
+    validate_nonempty_mpv_value("subtitle label", label)?;
+    validate_nonempty_mpv_value("subtitle language", language)?;
+    if label.chars().count() > MAX_SUBTITLE_LABEL_CHARS {
+        return Err("subtitle label is too long".to_string());
+    }
+    if language.chars().count() > MAX_SUBTITLE_LANGUAGE_CHARS {
+        return Err("subtitle language is too long".to_string());
+    }
+    Ok(())
+}
+
+fn create_private_subtitle_dir() -> Result<PathBuf, String> {
+    for _ in 0..8 {
+        let mut random = [0_u8; 16];
+        getrandom::getrandom(&mut random)
+            .map_err(|error| format!("could not generate subtitle path: {error}"))?;
+        let suffix = random
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let dir = std::env::temp_dir().join(format!("yawf-stream-subtitles-{suffix}"));
+        #[cfg(unix)]
+        let create_result = {
+            use std::os::unix::fs::DirBuilderExt;
+            let mut builder = fs::DirBuilder::new();
+            builder.mode(0o700);
+            builder.create(&dir)
+        };
+        #[cfg(not(unix))]
+        let create_result = fs::create_dir(&dir);
+        match create_result {
+            Ok(()) => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Err(error) = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))
+                    {
+                        let _ = fs::remove_dir(&dir);
+                        return Err(format!("could not secure subtitle directory: {error}"));
+                    }
+                }
+                return Ok(dir);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!("could not create subtitle directory: {error}"));
+            }
+        }
+    }
+    Err("could not allocate a unique subtitle directory".to_string())
+}
+
+fn external_subtitle_id(mpv: &Mpv, path: &Path) -> Option<i64> {
+    let path = path.to_string_lossy();
+    let count = mpv.get_property::<i64>("track-list/count").ok()?;
+    (0..count).find_map(|index| {
+        let kind = mpv
+            .get_property::<String>(&format!("track-list/{index}/type"))
+            .ok()?;
+        let external = mpv
+            .get_property::<String>(&format!("track-list/{index}/external-filename"))
+            .ok()?;
+        if kind == "sub" && external == path {
+            mpv.get_property::<i64>(&format!("track-list/{index}/id"))
+                .ok()
+        } else {
+            None
+        }
+    })
+}
+
+/// Materialize a downloaded or translated WebVTT track inside a private
+/// process-owned directory, attach it to mpv, and return its numeric track id.
+/// This dedicated command avoids exposing mpv's arbitrary `sub-add` path surface.
+#[tauri::command]
+pub fn player_add_subtitle(
+    state: State<'_, PlayerState>,
+    contents: String,
+    label: String,
+    language: String,
+) -> Result<i64, String> {
+    validate_subtitle_payload(&contents, &label, &language)?;
+    with_player(&state, |player| {
+        if player.subtitle_dir.is_none() {
+            player.subtitle_dir = Some(create_private_subtitle_dir()?);
+        }
+        let dir = player
+            .subtitle_dir
+            .as_ref()
+            .ok_or_else(|| "subtitle directory is unavailable".to_string())?;
+        let path = dir.join(format!(
+            "track-{}.vtt",
+            player
+                .mpv
+                .get_property::<i64>("track-list/count")
+                .unwrap_or(0)
+        ));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| format!("could not create subtitle file: {error}"))?;
+        file.write_all(contents.as_bytes())
+            .and_then(|_| file.flush())
+            .map_err(|error| format!("could not write subtitle file: {error}"))?;
+        let path_string = path
+            .to_str()
+            .ok_or_else(|| "subtitle path is not valid UTF-8".to_string())?;
+        if let Err(error) = player
+            .mpv
+            .command("sub-add", &[path_string, "select", &label, &language])
+        {
+            let _ = fs::remove_file(&path);
+            return Err(format!("could not attach subtitle track: {error}"));
+        }
+        external_subtitle_id(&player.mpv, &path)
+            .ok_or_else(|| "mpv did not expose the attached subtitle track".to_string())
     })
 }
 
@@ -1217,6 +1450,7 @@ fn build_track_list(mpv: &Mpv) -> Value {
             "selected": b("selected"),
             "codec": s("codec"),
             "external": b("external"),
+            "external-filename": s("external-filename"),
         }));
     }
     Value::Array(arr)
@@ -1232,6 +1466,28 @@ fn build_chapter_list(mpv: &Mpv) -> Value {
         }));
     }
     Value::Array(arr)
+}
+
+fn build_audio_device_list(mpv: &Mpv) -> Value {
+    let count = mpv
+        .get_property::<i64>("audio-device-list/count")
+        .unwrap_or(0);
+    let mut devices = Vec::new();
+    for index in 0..count {
+        let name = mpv
+            .get_property::<String>(&format!("audio-device-list/{index}/name"))
+            .ok();
+        let description = mpv
+            .get_property::<String>(&format!("audio-device-list/{index}/description"))
+            .ok();
+        if let Some(name) = name {
+            devices.push(json!({
+                "name": name,
+                "description": description,
+            }));
+        }
+    }
+    Value::Array(devices)
 }
 
 #[cfg(test)]
@@ -1251,9 +1507,26 @@ mod tests {
     use super::validate_mpv_property;
     use super::validate_player_command_request;
     use super::validate_stream_authorization;
+    use super::validate_subtitle_payload;
     use super::ObserveSpec;
     use super::MAX_ACCESS_COOKIE_VALUE_BYTES;
     use std::collections::HashMap;
+
+    #[test]
+    fn subtitle_payload_is_bounded_and_webvtt_only() {
+        assert!(validate_subtitle_payload(
+            "WEBVTT\n\n00:00.000 --> 00:01.000\nHello\n",
+            "English",
+            "en"
+        )
+        .is_ok());
+        assert!(
+            validate_subtitle_payload("1\n00:00:00,000 --> 00:00:01,000\nHi", "English", "en")
+                .is_err()
+        );
+        assert!(validate_subtitle_payload("WEBVTT\n\0", "English", "en").is_err());
+        assert!(validate_subtitle_payload("WEBVTT\n", "", "en").is_err());
+    }
 
     #[test]
     fn stream_authorization_is_scoped_and_file_local() {

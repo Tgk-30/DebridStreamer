@@ -38,6 +38,8 @@ export interface ServerStreamsResult {
   indexerErrors: Array<{ indexer: string; error: string }>;
 }
 
+export type ServerStreamsPhase = "sources" | "ready";
+
 export interface StreamFilters {
   cachedOnly: boolean;
   maxQuality: string;
@@ -90,6 +92,13 @@ export function searchServerStreams(
      *  drops) releases whose name carries an incompatible year. Ignored for
      *  series. */
     year?: number | null;
+    /** Called after indexers return and again after provider availability is
+     * known. The first result intentionally marks availability unavailable so
+     * clients can render releases without waiting for provider checks. */
+    onPhase?: (
+      phase: ServerStreamsPhase,
+      result: ServerStreamsResult,
+    ) => void | Promise<void>;
   },
 ): Promise<ServerStreamsResult>;
 

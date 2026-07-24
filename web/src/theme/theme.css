@@ -267,14 +267,14 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --accent: rgb(99, 91, 232);
+  --accent: rgb(82, 73, 208);
   --accent-secondary: rgb(36, 150, 214);
   --accent-tertiary: rgb(214, 74, 150);
   --success: rgb(34, 160, 94);
   --warning: rgb(196, 124, 24);
   --danger: rgb(206, 64, 64);
 
-  --accent-rgb: 99, 91, 232;
+  --accent-rgb: 82, 73, 208;
   --accent-secondary-rgb: 36, 150, 214;
   --accent-tertiary-rgb: 214, 74, 150;
   --warning-rgb: 196, 124, 24;

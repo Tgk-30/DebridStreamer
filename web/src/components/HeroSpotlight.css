@@ -225,12 +225,31 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: 0;
   padding: 0;
   background: transparent;
   cursor: pointer;
+}
+.hero-carousel-toggle {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0.75px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--r-pill);
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(6, 8, 16, 0.42);
+  cursor: pointer;
+}
+.hero-carousel-toggle:hover {
+  background: rgba(6, 8, 16, 0.7);
+}
+.hero-carousel-toggle:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.82);
+  outline-offset: 2px;
 }
 .hero-dot::before {
   content: "";

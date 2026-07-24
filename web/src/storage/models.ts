@@ -45,6 +45,8 @@ export interface WatchHistoryRecord {
   /** Subtitle track id as a string, or "no" for explicitly off, or null/unset. */
   preferredSubId?: string | null;
   playbackSpeed?: number | null;
+  subtitleDelay?: number | null;
+  subtitlePosition?: number | null;
 }
 
 /** The in-window-player choices remembered per (media, episode). */
@@ -53,6 +55,8 @@ export interface PlaybackPrefs {
   preferredAudioLang?: string | null;
   preferredSubId?: string | null;
   playbackSpeed?: number | null;
+  subtitleDelay?: number | null;
+  subtitlePosition?: number | null;
 }
 
 /** Progress as a fraction 0..1. Mirrors `WatchHistory.progressPercent`. */

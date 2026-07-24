@@ -13,6 +13,9 @@ interface Props {
   /** Technical source name stays out of the playback chrome but remains
    * available in diagnostics for support and source selection checks. */
   sourceFileName?: string | null;
+  /** Renderer-specific, read-only playback measurements. */
+  technicalStats?: ReadonlyArray<readonly [string, string]>;
+  playbackDecision?: "Direct Play" | "Transcode";
   /** The panel opens to Info from the control and to Shortcuts from "?". */
   section: "info" | "shortcuts";
   onSectionChange: (section: "info" | "shortcuts") => void;
@@ -30,6 +33,10 @@ export function PlayerInfoPopover({
   sourceSize,
   displaySize,
   sourceFileName,
+  technicalStats = [],
+  playbackDecision = engine === "webview-hls-transcode"
+    ? "Transcode"
+    : "Direct Play",
   section,
   onSectionChange,
   shortcuts,
@@ -92,12 +99,20 @@ export function PlayerInfoPopover({
         <dl className="player-info-grid" role="tabpanel" aria-label="Info">
           <dt>Engine</dt>
           <dd>{PLAYBACK_ENGINE_LABEL[engine]}</dd>
+          <dt>Playback</dt>
+          <dd>{playbackDecision}</dd>
           <dt>Version</dt>
           <dd className="player-info-version">v{appVersion ?? "…"}</dd>
           <dt>Source</dt>
           <dd>{dimensions(sourceSize)}</dd>
           <dt>Display</dt>
           <dd>{dimensions(displaySize)}</dd>
+          {technicalStats.map(([label, value]) => (
+            <div className="player-info-stat" key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
           {sourceFileName != null && sourceFileName.length > 0 && (
             <>
               <dt>File</dt>

@@ -23,6 +23,7 @@ use tokio::process::Command;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 const PROGRESS_BYTES: u64 = 1024 * 1024;
 const DOWNLOAD_BUFFER_CAPACITY: usize = 1024 * 1024;
+const DOWNLOAD_FREE_SPACE_RESERVE_BYTES: u64 = 128 * 1024 * 1024;
 const DELETE_RETRY_INTERVAL: Duration = Duration::from_millis(50);
 const DELETE_RETRIES: usize = 20;
 
@@ -34,6 +35,10 @@ pub struct DownloadStartArgs {
     #[serde(default)]
     headers: HashMap<String, String>,
     dest_path: String,
+    #[serde(default)]
+    resume_from_existing: bool,
+    #[serde(default)]
+    reserve_output_copy: bool,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -74,7 +79,10 @@ struct DownloadProgress {
 #[derive(Clone)]
 enum JobSpec {
     Download(DownloadStartArgs),
-    Transcode { output_path: String },
+    Transcode {
+        input_path: String,
+        output_path: String,
+    },
 }
 
 struct JobHandle {
@@ -276,11 +284,18 @@ pub fn download_start<R: Runtime>(
     args: DownloadStartArgs,
 ) -> Result<(), String> {
     validate_download_args(&args)?;
-    // A start is always fresh: truncate from offset 0 so a stale or unrelated
-    // file already at destPath can never be appended onto or falsely completed.
-    // Continuing a partial transfer is the exclusive job of download_resume.
-    let last_done = Arc::new(AtomicU64::new(0));
-    insert_download_job(app, &state, args, 0, last_done)
+    // A recovered durable queue can explicitly resume an existing partial file
+    // after an app restart. Fresh jobs still start from zero, so a stale file is
+    // never appended to by accident.
+    let offset = if args.resume_from_existing {
+        fs::metadata(&args.dest_path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let last_done = Arc::new(AtomicU64::new(offset));
+    insert_download_job(app, &state, args, offset, last_done)
 }
 
 #[tauri::command]
@@ -498,6 +513,28 @@ async fn transfer_download<R: Runtime>(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok())
         .map(|length| offset.saturating_add(length));
+    if let Some(content_length) = response
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        let working_space = if args.reserve_output_copy {
+            offset.saturating_add(content_length)
+        } else {
+            DOWNLOAD_FREE_SPACE_RESERVE_BYTES
+        };
+        let required = content_length.saturating_add(working_space);
+        let probe = dest.parent().unwrap_or(dest);
+        if let Ok(available) = fs2::available_space(probe) {
+            if available < required {
+                return Err(format!(
+                    "Not enough free disk space to finish this download. At least {} bytes are required, including working space.",
+                    required
+                ));
+            }
+        }
+    }
 
     let mut file = tokio::fs::OpenOptions::new()
         .create(true)
@@ -505,7 +542,7 @@ async fn transfer_download<R: Runtime>(
         .truncate(offset == 0)
         .open(dest)
         .await
-        .map_err(|e| format!("Failed to open download destination: {e}"))?;
+        .map_err(|e| download_io_error("Failed to open download destination", &e))?;
     // Positioned writes (seek to the resume offset) rather than O_APPEND: if a
     // just-paused worker races one final chunk past cooperative abort while a
     // resumed worker is running, both write the same bytes at the same offsets,
@@ -526,7 +563,7 @@ async fn transfer_download<R: Runtime>(
         let chunk = chunk.map_err(|e| redact_reqwest_error("Download stream failed", &e))?;
         file.write_all(&chunk)
             .await
-            .map_err(|e| format!("Failed to write download: {e}"))?;
+            .map_err(|e| download_io_error("Failed to write download", &e))?;
         bytes_done = bytes_done.saturating_add(chunk.len() as u64);
         last_done.store(bytes_done, Ordering::Relaxed);
 
@@ -535,7 +572,7 @@ async fn transfer_download<R: Runtime>(
         if should_emit_download_progress(elapsed, delta) {
             file.flush()
                 .await
-                .map_err(|e| format!("Failed to flush download: {e}"))?;
+                .map_err(|e| download_io_error("Failed to flush download", &e))?;
             let mut payload = progress(&args.job_id, "downloading", bytes_done, bytes_total);
             if elapsed.as_secs_f64() > 0.0 {
                 payload.speed_bps = Some((delta as f64 / elapsed.as_secs_f64()) as u64);
@@ -547,8 +584,15 @@ async fn transfer_download<R: Runtime>(
     }
     file.flush()
         .await
-        .map_err(|e| format!("Failed to flush download: {e}"))?;
+        .map_err(|e| download_io_error("Failed to flush download", &e))?;
     Ok((bytes_done, bytes_total))
+}
+
+fn download_io_error(context: &str, error: &std::io::Error) -> String {
+    if matches!(error.raw_os_error(), Some(28 | 112)) {
+        return "Not enough free disk space to finish this download. Free space or choose another downloads folder, then retry.".to_string();
+    }
+    format!("{context}: {error}")
 }
 
 fn parse_unsatisfied_total(value: &str) -> Option<u64> {
@@ -683,6 +727,39 @@ pub async fn downloads_default_dir() -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to create downloads directory: {e}"))?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn downloads_available_space(path: String) -> Result<u64, String> {
+    validate_confined_path(&path, "path")?;
+    let requested = PathBuf::from(path);
+    let mut probe = if requested.is_dir() {
+        requested
+    } else {
+        requested
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| "Could not resolve the download destination directory.".to_string())?
+    };
+    while !probe.exists() {
+        probe = probe.parent().map(Path::to_path_buf).ok_or_else(|| {
+            "Could not find an existing parent for the downloads folder.".to_string()
+        })?;
+    }
+    tokio::task::spawn_blocking(move || {
+        fs2::available_space(&probe)
+            .map_err(|error| format!("Failed to inspect free disk space: {error}"))
+    })
+    .await
+    .map_err(|error| format!("Free-space check failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn download_delete_file(path: String) -> Result<(), String> {
+    validate_confined_path(&path, "path")?;
+    remove_partial_file(Path::new(&path))
+        .await
+        .map_err(|error| format!("Failed to delete downloaded file: {error}"))
 }
 
 #[derive(Deserialize)]
@@ -853,6 +930,21 @@ fn spawn_transcode_worker<R: Runtime>(
             let result = run_transcode(&app, &args, generation, Arc::clone(&last_done)).await;
             match result {
                 Ok(()) => {
+                    if Path::new(&args.input_path) != Path::new(&args.output_path) {
+                        if let Err(error) = remove_partial_file(Path::new(&args.input_path)).await {
+                            let mut terminal = progress(
+                                &args.job_id,
+                                "failed",
+                                last_done.load(Ordering::Relaxed),
+                                Some(100),
+                            );
+                            terminal.error = Some(format!(
+                                "Optimization finished, but the temporary source file could not be removed: {error}"
+                            ));
+                            finish_if_current(&app, generation, terminal);
+                            return;
+                        }
+                    }
                     last_done.store(100, Ordering::Relaxed);
                     let mut terminal = transcode_progress(&args.job_id, "completed", 100);
                     terminal.output_path = Some(args.output_path.clone());
@@ -899,6 +991,7 @@ pub fn transcode_start<R: Runtime>(
                 generation,
                 abort: Some(abort),
                 spec: JobSpec::Transcode {
+                    input_path: args.input_path.clone(),
                     output_path: args.output_path.clone(),
                 },
                 last_done: Arc::clone(&last_done),
@@ -929,7 +1022,7 @@ pub async fn transcode_cancel<R: Runtime>(
     if let Some(abort) = job.abort {
         abort.abort();
     }
-    let JobSpec::Transcode { output_path } = job.spec else {
+    let JobSpec::Transcode { output_path, .. } = job.spec else {
         unreachable!("transcode job checked above");
     };
     if let Err(error) = remove_partial_file(Path::new(&output_path)).await {
@@ -982,22 +1075,33 @@ pub async fn download_force_stop<R: Runtime>(
     // The spec is the honest discriminator: a transcode reports a percentage on
     // its own field, a download reports real bytes. Do not infer the phase from
     // the byte fields.
-    let (partial_path, is_transcode, failure_context) = match job.spec {
-        JobSpec::Download(args) => (PathBuf::from(args.dest_path), false, "partial download"),
-        JobSpec::Transcode { output_path } => {
-            (PathBuf::from(output_path), true, "partial transcode")
-        }
+    let (partial_paths, is_transcode, failure_context) = match job.spec {
+        JobSpec::Download(args) => (
+            vec![PathBuf::from(args.dest_path)],
+            false,
+            "partial download",
+        ),
+        JobSpec::Transcode {
+            input_path,
+            output_path,
+        } => (
+            vec![PathBuf::from(output_path), PathBuf::from(input_path)],
+            true,
+            "partial transcode and temporary source",
+        ),
     };
-    if let Err(error) = remove_partial_file(&partial_path).await {
-        let message = format!("Failed to remove {failure_context}: {error}");
-        let mut terminal = if is_transcode {
-            transcode_progress(&job_id, "failed", bytes_done.min(100) as u8)
-        } else {
-            progress(&job_id, "failed", bytes_done, None)
-        };
-        terminal.error = Some(message.clone());
-        let _ = app.emit("download-progress", terminal);
-        return Err(message);
+    for partial_path in partial_paths {
+        if let Err(error) = remove_partial_file(&partial_path).await {
+            let message = format!("Failed to remove {failure_context}: {error}");
+            let mut terminal = if is_transcode {
+                transcode_progress(&job_id, "failed", bytes_done.min(100) as u8)
+            } else {
+                progress(&job_id, "failed", bytes_done, None)
+            };
+            terminal.error = Some(message.clone());
+            let _ = app.emit("download-progress", terminal);
+            return Err(message);
+        }
     }
     let _ = app.emit(
         "download-progress",
@@ -1141,5 +1245,21 @@ mod tests {
             worker.as_mut().poll(&mut context),
             Poll::Ready(Err(_))
         ));
+    }
+
+    #[test]
+    fn disk_full_errors_are_actionable_and_other_io_errors_keep_context() {
+        let disk_full = std::io::Error::from_raw_os_error(28);
+        assert!(download_io_error("write", &disk_full).contains("Not enough free disk space"));
+
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert!(download_io_error("write", &denied).starts_with("write:"));
+    }
+
+    #[test]
+    fn native_file_commands_reject_relative_and_parent_paths() {
+        assert!(validate_confined_path("relative/movie.mkv", "path").is_err());
+        assert!(validate_confined_path("/tmp/../private/movie.mkv", "path").is_err());
+        assert!(validate_confined_path("/tmp/movie.mkv", "path").is_ok());
     }
 }

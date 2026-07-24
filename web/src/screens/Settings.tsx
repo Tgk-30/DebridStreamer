@@ -626,6 +626,7 @@ export function Settings() {
       </div>
 
       <div className="settings-panel glass-raised glass-lit">
+        <h2 className="sr-only">{selectedTab.label}</h2>
         {tab === "appearance" && (
           <AppearanceTab
             draft={draft}

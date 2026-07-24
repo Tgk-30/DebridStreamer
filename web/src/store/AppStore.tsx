@@ -1161,6 +1161,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           preferredAudioLang: prefs?.preferredAudioLang,
           preferredSubId: prefs?.preferredSubId,
           playbackSpeed: prefs?.playbackSpeed,
+          subtitleDelay: prefs?.subtitleDelay,
+          subtitlePosition: prefs?.subtitlePosition,
         })
         .catch(() => {
           // Progress persistence is best effort. The next tick and final close

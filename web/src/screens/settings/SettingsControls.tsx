@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { InfoTip } from "../../components/InfoTip";
 
 export function SegmentedControl({
@@ -14,6 +14,33 @@ export function SegmentedControl({
   onChange: (value: string) => void;
   infoTip?: ReactNode;
 }) {
+  const buttonsRef = useRef<Array<HTMLButtonElement | null>>([]);
+  const moveSelection = (
+    event: KeyboardEvent<HTMLDivElement>,
+  ): void => {
+    const current = buttonsRef.current.findIndex(
+      (button) => button === event.target,
+    );
+    if (current < 0 || options.length === 0) return;
+    let next = current;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      next = (current + 1) % options.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      next = (current - 1 + options.length) % options.length;
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = options.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    const option = options[next];
+    if (option == null) return;
+    onChange(option.value);
+    buttonsRef.current[next]?.focus();
+  };
+
   return (
     <div className="settings-segment-block">
       <span className="settings-label-line">
@@ -25,15 +52,20 @@ export function SegmentedControl({
         role="radiogroup"
         aria-label={label}
         data-option-count={options.length}
+        onKeyDown={moveSelection}
       >
-        {options.map((option) => (
+        {options.map((option, index) => (
           <button
             key={option.value}
+            ref={(element) => {
+              buttonsRef.current[index] = element;
+            }}
             type="button"
             className={value === option.value ? "is-active" : ""}
             onClick={() => onChange(option.value)}
             role="radio"
             aria-checked={value === option.value}
+            tabIndex={value === option.value ? 0 : -1}
           >
             {option.label}
           </button>

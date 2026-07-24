@@ -447,6 +447,8 @@ export class DexieStore extends Dexie implements Store, SecretStore {
         entry.preferredAudioLang ?? prev?.preferredAudioLang ?? null,
       preferredSubId: entry.preferredSubId ?? prev?.preferredSubId ?? null,
       playbackSpeed: entry.playbackSpeed ?? prev?.playbackSpeed ?? null,
+      subtitleDelay: entry.subtitleDelay ?? prev?.subtitleDelay ?? null,
+      subtitlePosition: entry.subtitlePosition ?? prev?.subtitlePosition ?? null,
     };
     await this.watchHistory.put(record);
     return record;

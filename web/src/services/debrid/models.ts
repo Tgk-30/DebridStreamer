@@ -214,6 +214,9 @@ export const SourceType = {
 /** A resolved stream ready for playback. Mirrors Swift `StreamInfo`. */
 export interface StreamInfo {
   streamURL: string; // Direct HTTPS URL from debrid
+  /** Original-media offset used by a seek-started server transcode. The HLS
+   * rendition starts at zero, so player progress adds this value back. */
+  timelineOffsetSeconds?: number;
   quality: VideoQuality;
   codec: VideoCodec;
   audio: AudioFormat;

@@ -8,6 +8,9 @@ export interface DownloadStartArgs {
   url: string;
   headers?: Record<string, string>;
   destPath: string;
+  resumeFromExisting?: boolean;
+  /** Reserve room for the post-download optimized output as well as the source. */
+  reserveOutputCopy?: boolean;
 }
 
 export interface TranscodeStartArgs {
@@ -46,6 +49,8 @@ export interface DownloadsBridge {
   transcodeCancel(jobId: string): Promise<void>;
   downloadsFfmpegAvailable(): Promise<boolean>;
   downloadsDefaultDir(): Promise<string>;
+  downloadsAvailableSpace?(path: string): Promise<number>;
+  downloadDeleteFile?(path: string): Promise<void>;
   listenDownloadProgress(
     callback: (progress: DownloadProgress) => void,
   ): Promise<DownloadProgressUnlisten>;
@@ -65,6 +70,8 @@ const nativeDownloadsBridge: DownloadsBridge = {
   transcodeCancel: (jobId) => tauriDownloads.transcodeCancel(jobId),
   downloadsFfmpegAvailable: () => tauriDownloads.downloadsFfmpegAvailable(),
   downloadsDefaultDir: () => tauriDownloads.downloadsDefaultDir(),
+  downloadsAvailableSpace: (path) => tauriDownloads.downloadsAvailableSpace!(path),
+  downloadDeleteFile: (path) => tauriDownloads.downloadDeleteFile!(path),
   listenDownloadProgress: (callback) => tauriDownloads.listenDownloadProgress(callback),
 };
 

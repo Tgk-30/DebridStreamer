@@ -95,8 +95,8 @@ describe("HeroSpotlight empty / single-item guards", () => {
       container.querySelectorAll(".hero-dot")[0],
     );
     expect(
-      screen.getByRole("tab", { name: "Alpha, featured 1 of 3" }),
-    ).toHaveAttribute("aria-selected", "true");
+      screen.getByRole("button", { name: "Alpha, featured 1 of 3" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("caps the rotation list at 6 items", () => {
@@ -195,6 +195,31 @@ describe("HeroSpotlight dot navigation & hover pause", () => {
       vi.advanceTimersByTime(1000);
     });
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Bravo");
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it("pauses on keyboard focus and offers an explicit rotation toggle", () => {
+    vi.useFakeTimers();
+    render(<HeroSpotlight items={items} intervalMs={1000} />);
+    const toggle = screen.getByRole("button", {
+      name: "Pause featured title rotation",
+    });
+    fireEvent.focus(toggle);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Alpha");
+
+    fireEvent.click(toggle);
+    fireEvent.blur(toggle, { relatedTarget: document.body });
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Alpha");
+    expect(
+      screen.getByRole("button", { name: "Resume featured title rotation" }),
+    ).toHaveAttribute("aria-pressed", "true");
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
   });

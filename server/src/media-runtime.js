@@ -271,7 +271,7 @@ export async function searchServerStreams(db, config, profileId, input) {
   );
   const activeIndexers = indexers.activeIndexers;
   if (activeIndexers.length === 0) {
-    return {
+    const empty = {
       rows: [],
       hasIndexers: false,
       hasDebrid: debrid != null,
@@ -279,6 +279,9 @@ export async function searchServerStreams(db, config, profileId, input) {
       activeDebridServices: activeServices,
       indexerErrors: [],
     };
+    await input.onPhase?.("sources", empty);
+    await input.onPhase?.("ready", empty);
+    return empty;
   }
 
   // Two complementary passes, merged identically to Local Mode via the shared
@@ -322,6 +325,25 @@ export async function searchServerStreams(db, config, profileId, input) {
     input.type === "movie" ? input.year ?? null : null,
   );
 
+  const filters = profileStreamFilters(db, profileId);
+  const preliminaryRows = results
+    .map((result) => ({
+      result,
+      cachedOn: null,
+      cacheStatus: "unavailable",
+    }))
+    .filter((row) =>
+      rowMatchesStreamFilters(row, { ...filters, cachedOnly: false }),
+    );
+  await input.onPhase?.("sources", {
+    rows: preliminaryRows,
+    hasIndexers: activeIndexers.length > 0,
+    hasDebrid: debrid != null,
+    activeIndexers,
+    activeDebridServices: activeServices,
+    indexerErrors: indexers.lastSearchErrors,
+  });
+
   let cacheByHash = {};
   if (debrid != null) {
     try {
@@ -335,7 +357,6 @@ export async function searchServerStreams(db, config, profileId, input) {
     }
   }
 
-  const filters = profileStreamFilters(db, profileId);
   const allRows = results.map((result) => {
     // checkCacheAll canonicalizes to lowercase; match it so a case difference
     // between the indexer hash and the provider's echo can't make a cached
@@ -363,7 +384,7 @@ export async function searchServerStreams(db, config, profileId, input) {
     : { ...filters, cachedOnly: false };
   const rows = allRows.filter((row) => rowMatchesStreamFilters(row, effectiveFilters));
 
-  return {
+  const complete = {
     rows,
     hasIndexers: activeIndexers.length > 0,
     hasDebrid: debrid != null,
@@ -371,6 +392,8 @@ export async function searchServerStreams(db, config, profileId, input) {
     activeDebridServices: activeServices,
     indexerErrors: indexers.lastSearchErrors,
   };
+  await input.onPhase?.("ready", complete);
+  return complete;
 }
 
 export async function resolveServerStream(db, config, profileId, input) {

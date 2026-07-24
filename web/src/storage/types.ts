@@ -201,6 +201,8 @@ export interface WatchHistoryUpsert {
   preferredAudioLang?: string | null;
   preferredSubId?: string | null;
   playbackSpeed?: number | null;
+  subtitleDelay?: number | null;
+  subtitlePosition?: number | null;
 }
 
 /** The fields a caller provides to upsert a library entry. */

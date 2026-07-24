@@ -103,6 +103,14 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
 
 vi.mock("../lib/ServerSessionContext", () => ({
   useTranscodeAvailable: () => transcodeAvailable,
+  useTranscodeCapabilities: () => ({
+    adaptive: transcodeAvailable,
+    seekOffset: transcodeAvailable,
+    subtitleSidecar: transcodeAvailable,
+    hardwareEncoder: "libx264",
+    availableVideoEncoders: transcodeAvailable ? ["libx264"] : [],
+    toneMapping: false,
+  }),
 }));
 
 vi.mock("../lib/downloadsBridge", () => ({
@@ -1047,14 +1055,14 @@ describe("Detail downloads", () => {
     });
     expect(screen.getByText("Estimated total: 1.5 GB")).toBeInTheDocument();
 
-    const optimized = screen.getByRole("button", { name: "Optimized" });
+    const optimized = screen.getByRole("button", { name: "Optimized copy" });
     await waitFor(() => expect(optimized).toBeEnabled());
     await userEvent.click(optimized);
     expect(screen.getByText("Estimated total: up to 1.5 GB")).toBeInTheDocument();
     expect(screen.getByLabelText("Audio languages to keep")).toBeInTheDocument();
     expect(screen.getByLabelText("Subtitle languages to keep")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "H.265 re-encode" }));
+    await userEvent.click(screen.getByRole("button", { name: "Smaller file (slow)" }));
     expect(screen.getByText("Planning estimate: about 768 MB")).toBeInTheDocument();
   });
 });

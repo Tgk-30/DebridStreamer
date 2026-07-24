@@ -464,6 +464,42 @@ describe("EmbeddedPlayer playback controls", () => {
     );
   });
 
+  it("maps seek-offset native progress back to the original timeline", async () => {
+    const onProgress = vi.fn();
+    render(
+      <EmbeddedPlayer
+        url="https://example.test/stream/index.m3u8"
+        title="Movie"
+        timelineOffsetSeconds={700}
+        onProgress={onProgress}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(renderPlayerMock.callback).not.toBeNull());
+    await waitFor(() =>
+      expect(renderPlayerMock.command).toHaveBeenCalledWith("loadfile", [
+        "https://example.test/stream/index.m3u8",
+      ]),
+    );
+    emitProperty("duration", 100);
+    emitProperty("time-pos", 12);
+
+    await waitFor(() =>
+      expect(onProgress).toHaveBeenCalledWith(
+        712,
+        800,
+        expect.any(Object),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("slider", { name: "Seek" })).toHaveAttribute(
+        "aria-valuenow",
+        "712",
+      ),
+    );
+    expect(document.querySelector(".embed-time")).toHaveTextContent("11:52");
+  });
+
   it("coalesces rapid native clock/cache events into scrubber-only updates", async () => {
     vi.useFakeTimers();
     render(

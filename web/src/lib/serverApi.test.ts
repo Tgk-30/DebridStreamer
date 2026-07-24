@@ -232,6 +232,7 @@ describe("fetchServerStreams", () => {
       rows: [{ id: "r1" }],
       hasIndexers: true,
       hasDebrid: false,
+      sourceErrors: [],
     });
   });
 
@@ -248,6 +249,89 @@ describe("fetchServerStreams", () => {
     expect(lastCall().url).toBe(
       "https://server.example/api/streams/tt99?type=movie",
     );
+  });
+
+  it("streams source rows before provider availability in one request", async () => {
+    const source = {
+      rows: [{ result: { infoHash: "a".repeat(40) }, cachedOn: null }],
+      hasIndexers: true,
+      hasDebrid: true,
+      indexerErrors: [],
+    };
+    const ready = {
+      rows: [{ result: { infoHash: "a".repeat(40) }, cachedOn: "real_debrid" }],
+      hasIndexers: true,
+      hasDebrid: true,
+      indexerErrors: [],
+    };
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        `${JSON.stringify({ phase: "sources", ...source })}\n${JSON.stringify({
+          phase: "ready",
+          ...ready,
+        })}\n`,
+        {
+          status: 200,
+          headers: { "content-type": "application/x-ndjson" },
+        },
+      ) as never,
+    );
+    const phases = vi.fn();
+    const result = await api.fetchServerStreams({
+      imdbId: "tt99",
+      type: "movie",
+      onPhase: phases,
+    });
+    expect(lastCall().url).toBe(
+      "https://server.example/api/streams/tt99?type=movie&progressive=1",
+    );
+    expect(phases).toHaveBeenNthCalledWith(
+      1,
+      "sources",
+      expect.objectContaining({ rows: source.rows }),
+    );
+    expect(phases).toHaveBeenNthCalledWith(
+      2,
+      "ready",
+      expect.objectContaining({ rows: ready.rows }),
+    );
+    expect(result.rows).toEqual(ready.rows);
+  });
+
+  it("rejects a progressive response whose cumulative chunks exceed the limit", async () => {
+    const chunk = new TextEncoder().encode(
+      `${JSON.stringify({
+        phase: "sources",
+        rows: [],
+        hasIndexers: true,
+        hasDebrid: true,
+        padding: "x".repeat(1_000_000),
+      })}\n`,
+    );
+    let reads = 0;
+    const cancel = vi.fn(async () => undefined);
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: async () =>
+            reads++ < 10
+              ? { done: false, value: chunk }
+              : { done: true, value: undefined },
+          cancel,
+        }),
+      },
+    } as never);
+
+    await expect(
+      api.fetchServerStreams({
+        imdbId: "tt99",
+        type: "movie",
+        onPhase: vi.fn(),
+      }),
+    ).rejects.toThrow("oversized stream-search response");
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });
 
@@ -313,6 +397,23 @@ describe("resolveServerStream", () => {
     } as never;
     expect(api.asServerTranscodeStream(direct).streamURL).toBe(
       "https://server.example/api/stream/session-1/index.m3u8?token=abc",
+    );
+  });
+
+  it("adds bounded client profile, resume, HDR, and subtitle options", () => {
+    const direct = {
+      streamURL: "https://server.example/api/stream/session-1",
+      fileName: "movie.mkv",
+    } as never;
+    expect(
+      api.asServerTranscodeStream(direct, {
+        profile: "data-saver",
+        startSeconds: 731.8,
+        hdrPolicy: "tone-map",
+        preserveSubtitles: true,
+      }).streamURL,
+    ).toBe(
+      "https://server.example/api/stream/session-1/index.m3u8?profile=data-saver&start=731&hdr=tone-map&subtitles=preserve",
     );
   });
 

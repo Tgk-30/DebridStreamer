@@ -50,6 +50,12 @@ function makeJobId(): string {
   return `download-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
+function formatBytesForError(bytes: number): string {
+  if (bytes < 1024 ** 2) return `${Math.ceil(bytes / 1024)} KB`;
+  if (bytes < 1024 ** 3) return `${Math.ceil(bytes / 1024 ** 2)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+}
+
 /** Create a complete, durable queue record from a Detail action. */
 export function makeDownloadRecord(
   input: EnqueueDownloadInput,
@@ -117,6 +123,55 @@ type DownloadRecordsListener = (records: DownloadRecord[]) => void;
  * aligns with durable persistence; terminal events bypass the throttle. */
 const PROGRESS_PERSIST_INTERVAL_MS = 1000;
 const PROGRESS_UI_INTERVAL_MS = 1000;
+const DOWNLOAD_FREE_SPACE_RESERVE_BYTES = 128 * 1024 * 1024;
+const MAX_AUTOMATIC_RETRIES = 2;
+const AUTOMATIC_RETRY_BASE_DELAY_MS = 1_500;
+
+function isTransientDownloadFailure(message: string): boolean {
+  const value = message.toLowerCase();
+  if (
+    /disk|space|permission|denied|unsupported|no playable|configure a debrid|ffmpeg is unavailable/.test(
+      value,
+    )
+  ) {
+    return false;
+  }
+  return /timed? out|timeout|temporar|network|connection|reset|unreachable|download stream failed|expired link|\b429\b|\b50[234]\b/.test(
+    value,
+  );
+}
+
+function requestDownloadNotificationPermission(): void {
+  const NotificationApi = globalThis.Notification;
+  if (NotificationApi == null || NotificationApi.permission !== "default") return;
+  void NotificationApi.requestPermission().catch(() => {});
+}
+
+export function notifyDownloadCompleted(title: string): void {
+  const NotificationApi = globalThis.Notification;
+  if (NotificationApi == null || NotificationApi.permission !== "granted") return;
+  try {
+    new NotificationApi("Download complete", {
+      body: `${title} is ready to watch.`,
+      tag: `yawf-download-${title}`,
+    });
+  } catch {
+    // Native notification permission and platform support are best effort.
+  }
+}
+
+function notifyDownloadFailed(title: string): void {
+  const NotificationApi = globalThis.Notification;
+  if (NotificationApi == null || NotificationApi.permission !== "granted") return;
+  try {
+    new NotificationApi("Download needs attention", {
+      body: `${title} could not finish. Open Downloads to retry.`,
+      tag: `yawf-download-${title}`,
+    });
+  } catch {
+    // Native notification permission and platform support are best effort.
+  }
+}
 
 type ProgressMeasurements = Partial<
   Pick<DownloadRecord, "bytesDone" | "bytesTotal" | "optimizePercent">
@@ -164,7 +219,8 @@ function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
  * A job starts in queued, resolves a fresh debrid URL, then waits for native
  * progress. Optimized jobs turn the native download terminal event into a
  * second optimizing phase and only complete after ffmpeg emits its terminal
- * event. Paused and terminal records never enter the scheduler automatically.
+ * event. Paused records stay paused. Transient failures receive two bounded,
+ * delayed retries before remaining terminal for user recovery.
  */
 export class DownloadManager {
   private readonly bridge: DownloadsBridge;
@@ -190,6 +246,11 @@ export class DownloadManager {
   private readonly progressNotificationTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly lastProgressNotifiedAt = new Map<string, number>();
   private readonly recordUpdateTails = new Map<string, Promise<void>>();
+  private readonly automaticRetryAttempts = new Map<string, number>();
+  private readonly automaticRetryTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   private ffmpegAvailability: Promise<boolean> | null = null;
 
   constructor(
@@ -252,6 +313,9 @@ export class DownloadManager {
     this.progressNotificationTimers.clear();
     this.pendingProgressNotifications.clear();
     this.lastProgressNotifiedAt.clear();
+    this.automaticRetryTimers.forEach((timer) => clearTimeout(timer));
+    this.automaticRetryTimers.clear();
+    this.automaticRetryAttempts.clear();
   }
 
   subscribeProgress(listener: ProgressListener): () => void {
@@ -271,12 +335,14 @@ export class DownloadManager {
   }
 
   async enqueue(input: EnqueueDownloadInput): Promise<DownloadRecord> {
+    requestDownloadNotificationPermission();
     const record = await enqueueDownload(this.store, input);
     void this.pump();
     return record;
   }
 
   async enqueueSeason(inputs: EnqueueDownloadInput[]): Promise<DownloadRecord[]> {
+    requestDownloadNotificationPermission();
     const records = await enqueueSeasonDownloads(this.store, inputs);
     void this.pump();
     return records;
@@ -331,6 +397,38 @@ export class DownloadManager {
     void this.pump();
   }
 
+  async retry(jobId: string): Promise<void> {
+    const record = await this.recordForControl(jobId);
+    if (record == null || record.status !== "failed") return;
+    this.clearAutomaticRetry(jobId);
+    await this.updateRecord(jobId, {
+      status: "queued",
+      error: null,
+      optimizePercent: null,
+    });
+    void this.pump();
+  }
+
+  async deleteCompletedFile(jobId: string): Promise<void> {
+    const record = await this.recordForControl(jobId);
+    if (record == null || record.status !== "completed" || record.destPath == null) return;
+    if (this.bridge.downloadDeleteFile == null) {
+      await this.updateRecord(jobId, {
+        error: "This app build cannot delete downloaded files.",
+      });
+      return;
+    }
+    try {
+      this.clearAutomaticRetry(jobId);
+      await this.bridge.downloadDeleteFile(record.destPath);
+      await this.store.deleteDownload(jobId);
+    } catch (error) {
+      await this.updateRecord(jobId, {
+        error: `The downloaded file could not be deleted. ${errorMessage(error)}`,
+      });
+    }
+  }
+
   async cancel(jobId: string): Promise<void> {
     const record = await this.recordForControl(jobId);
     if (record == null || ["completed", "canceled"].includes(record.status)) return;
@@ -363,17 +461,41 @@ export class DownloadManager {
     const record = await this.recordForControl(jobId);
     if (record == null || ["completed", "canceled"].includes(record.status)) return;
     this.launches.get(jobId)?.abort();
-    this.pausing.delete(jobId);
+    this.clearAutomaticRetry(jobId);
+    this.pausing.add(jobId);
     this.clearPendingProgress(jobId);
+    let cleanupError: unknown = null;
+    let nativeStopFailed = false;
     try {
       await this.bridge.downloadForceStop(jobId);
-    } catch {
-      // The durable escape hatch must still work when a stale native job has
-      // already disappeared or IPC reports a cleanup error after aborting it.
-    } finally {
+    } catch (error) {
+      nativeStopFailed = true;
+      cleanupError = error;
+    }
+    // A terminal native failure removes its in-memory executor before the user
+    // can press Stop. Delete the durable row's known partial path explicitly so
+    // the action remains honest after a restart or a failed transfer.
+    if (record.destPath != null && this.bridge.downloadDeleteFile != null) {
+      try {
+        await this.bridge.downloadDeleteFile(record.destPath);
+        if (!nativeStopFailed) cleanupError = null;
+      } catch (error) {
+        cleanupError = error;
+      }
+    }
+    try {
       this.nativeJobs.delete(jobId);
       this.optimizingOutputs.delete(jobId);
-      await this.updateRecord(jobId, { status: "canceled", error: null });
+      if (cleanupError != null) {
+        await this.updateRecord(jobId, {
+          status: "failed",
+          error: `The partial file could not be removed. ${errorMessage(cleanupError)}`,
+        });
+      } else {
+        await this.updateRecord(jobId, { status: "canceled", error: null });
+      }
+    } finally {
+      this.pausing.delete(jobId);
       void this.pump();
     }
   }
@@ -445,11 +567,40 @@ export class DownloadManager {
       if (latest == null || latest.status !== "resolving") return;
       const directory = await downloadsDirectory(this.store, this.bridge);
       if (!this.isCurrentLaunch(record.jobId, controller)) return;
-      const destPath = rawDownloadPath(directory, latest, stream.fileName);
+      const resumeFromExisting =
+        latest.destPath != null && latest.bytesDone > 0;
+      const destPath =
+        resumeFromExisting && latest.destPath != null
+          ? latest.destPath
+          : rawDownloadPath(directory, latest, stream.fileName);
+      if (
+        this.bridge.downloadsAvailableSpace != null &&
+        latest.episodeId == null &&
+        latest.bytesTotal != null &&
+        latest.bytesTotal > 0
+      ) {
+        const available = await this.bridge.downloadsAvailableSpace(destPath);
+        const remaining = Math.max(
+          0,
+          latest.bytesTotal - (resumeFromExisting ? latest.bytesDone : 0),
+        );
+        // Optimized downloads temporarily need both the complete source and
+        // the output file. Budget one full source-sized output rather than
+        // discovering the shortage after the network transfer finishes.
+        const workingSpace =
+          latest.mode === "optimized"
+            ? latest.bytesTotal
+            : DOWNLOAD_FREE_SPACE_RESERVE_BYTES;
+        if (available < remaining + workingSpace) {
+          throw new Error(
+            `Not enough free disk space. This download needs about ${formatBytesForError(remaining)}, plus ${formatBytesForError(workingSpace)} of working space.`,
+          );
+        }
+      }
       await this.updateRecord(record.jobId, {
         status: "downloading",
         destPath,
-        bytesDone: 0,
+        bytesDone: resumeFromExisting ? latest.bytesDone : 0,
         bytesTotal: latest.bytesTotal,
         error: null,
       });
@@ -459,6 +610,8 @@ export class DownloadManager {
         jobId: record.jobId,
         url: stream.streamURL,
         destPath,
+        resumeFromExisting,
+        reserveOutputCopy: latest.mode === "optimized",
       });
       if (!this.isCurrentLaunch(record.jobId, controller)) {
         await this.bridge.downloadForceStop(record.jobId).catch(() => undefined);
@@ -494,7 +647,11 @@ export class DownloadManager {
       }
       case "failed":
         this.clearPendingProgress(record.jobId);
-        await this.fail(record.jobId, progress.error ?? "The native download failed.");
+        await this.fail(
+          record.jobId,
+          progress.error ?? "The native download failed.",
+          measurements,
+        );
         return;
       case "canceled":
         this.nativeJobs.delete(record.jobId);
@@ -524,6 +681,8 @@ export class DownloadManager {
         ...measurements,
         error: null,
       });
+      this.clearAutomaticRetry(record.jobId);
+      notifyDownloadCompleted(record.title);
       void this.pump();
       return;
     }
@@ -537,6 +696,8 @@ export class DownloadManager {
         ...measurements,
         error: null,
       });
+      this.clearAutomaticRetry(record.jobId);
+      notifyDownloadCompleted(record.title);
       void this.pump();
       return;
     }
@@ -604,13 +765,70 @@ export class DownloadManager {
     return this.ffmpegAvailability;
   }
 
-  private async fail(jobId: string, error: string): Promise<void> {
+  private async fail(
+    jobId: string,
+    error: string,
+    measurements: ProgressMeasurements = {},
+  ): Promise<void> {
     recordDiagnostic("download", "job.failed", "error", error);
     this.nativeJobs.delete(jobId);
     this.optimizingOutputs.delete(jobId);
     this.clearPendingProgress(jobId);
-    await this.updateRecord(jobId, { status: "failed", error });
+    await this.updateRecord(jobId, {
+      status: "failed",
+      ...measurements,
+      error,
+    });
+    const retryAttempt = this.scheduleAutomaticRetry(jobId, error);
+    if (retryAttempt != null) {
+      await this.updateRecord(
+        jobId,
+        {
+          error: `${error} Retrying automatically (attempt ${retryAttempt} of ${MAX_AUTOMATIC_RETRIES}).`,
+        },
+        ["failed"],
+      );
+    } else {
+      const record = this.recordsByJobId.get(jobId);
+      if (record != null) notifyDownloadFailed(record.title);
+    }
     void this.pump();
+  }
+
+  private scheduleAutomaticRetry(jobId: string, error: string): number | null {
+    if (!this.started || !isTransientDownloadFailure(error)) return null;
+    const attempts = this.automaticRetryAttempts.get(jobId) ?? 0;
+    if (
+      attempts >= MAX_AUTOMATIC_RETRIES ||
+      this.automaticRetryTimers.has(jobId)
+    ) {
+      return null;
+    }
+    const nextAttempt = attempts + 1;
+    this.automaticRetryAttempts.set(jobId, nextAttempt);
+    const timer = setTimeout(() => {
+      this.automaticRetryTimers.delete(jobId);
+      void (async () => {
+        if (!this.started) return;
+        const record = await this.recordForControl(jobId);
+        if (record == null || record.status !== "failed") return;
+        await this.updateRecord(jobId, {
+          status: "queued",
+          error: null,
+          optimizePercent: null,
+        });
+        void this.pump();
+      })();
+    }, AUTOMATIC_RETRY_BASE_DELAY_MS * 2 ** (nextAttempt - 1));
+    this.automaticRetryTimers.set(jobId, timer);
+    return nextAttempt;
+  }
+
+  private clearAutomaticRetry(jobId: string): void {
+    const timer = this.automaticRetryTimers.get(jobId);
+    if (timer != null) clearTimeout(timer);
+    this.automaticRetryTimers.delete(jobId);
+    this.automaticRetryAttempts.delete(jobId);
   }
 
   private syncRecords(records: DownloadRecord[]): boolean {

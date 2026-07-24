@@ -314,6 +314,8 @@ interface DownloadStartArgs {
   url: string;
   headers?: Record<string, string>;
   destPath: string;
+  resumeFromExisting?: boolean;
+  reserveOutputCopy?: boolean;
 }
 
 interface TranscodeStartArgs {
@@ -382,6 +384,16 @@ export async function downloadsFfmpegAvailable(): Promise<boolean> {
 export async function downloadsDefaultDir(): Promise<string> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<string>("downloads_default_dir");
+}
+
+export async function downloadsAvailableSpace(path: string): Promise<number> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<number>("downloads_available_space", { path });
+}
+
+export async function downloadDeleteFile(path: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("download_delete_file", { path });
 }
 
 export async function listenDownloadProgress(

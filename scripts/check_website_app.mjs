@@ -149,6 +149,26 @@ for (const asset of [
   if (existsSync(file)) check(statSync(file).size > 0, `website asset is empty: ${asset}`);
 }
 
+const ambientVideos = [
+  "hero-streams-loop.mp4",
+  "cinema-grain-loop.mp4",
+  "nebula-drift-loop.mp4",
+  "streamrings-loop.mp4",
+];
+let ambientVideoBytes = 0;
+for (const asset of ambientVideos) {
+  const file = join(source, "public", asset);
+  check(existsSync(file), `ambient website video missing: ${asset}`);
+  if (!existsSync(file)) continue;
+  const size = statSync(file).size;
+  ambientVideoBytes += size;
+  check(size <= 1_600_000, `ambient website video exceeds 1.6 MB: ${asset}`);
+}
+check(
+  ambientVideoBytes <= 3_000_000,
+  `ambient website videos exceed the 3 MB transfer budget (${ambientVideoBytes} bytes)`,
+);
+
 check(
   existsSync(join(root, "docs", "recovery.md")),
   "public recovery runbook must exist",

@@ -75,6 +75,10 @@
   font-size: 0.78125rem;
 }
 
+.player-info-stat {
+  display: contents;
+}
+
 .player-info-grid dt {
   color: rgba(255, 255, 255, 0.58);
 }

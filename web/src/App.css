@@ -30,6 +30,26 @@
   padding-left: var(--nav-safe-left);
 }
 
+.skip-to-content {
+  position: fixed;
+  z-index: 10000;
+  top: 10px;
+  left: 10px;
+  transform: translateY(-160%);
+  padding: calc(10px * var(--density-scale)) calc(14px * var(--density-scale));
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  background: var(--bg-elevated, #171926);
+  border: 1px solid var(--accent);
+}
+.skip-to-content:focus {
+  transform: translateY(0);
+}
+.route-frame:focus,
+.app-content:focus {
+  outline: none;
+}
+
 /* Room for the fixed SetupNudge card so the last row stays reachable while it
    shows (App.tsx sets data-setup-nudge only while the card is mounted - zero
    cost once dismissed or configured). */
