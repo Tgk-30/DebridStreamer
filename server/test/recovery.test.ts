@@ -134,7 +134,7 @@ describe("local owner recovery", () => {
   it("resolves the database path without creating server credentials", () => {
     process.env.DS_SERVER_DATA_DIR = "/srv/yawf";
     expect(configuredDatabasePath()).toBe(
-      "/srv/yawf/debridstreamer.sqlite",
+      join("/srv/yawf", "debridstreamer.sqlite"),
     );
     process.env.DS_SERVER_DB_PATH = "/data/custom.sqlite";
     expect(configuredDatabasePath()).toBe("/data/custom.sqlite");
