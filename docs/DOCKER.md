@@ -11,7 +11,7 @@ CI publishes multi-arch images to GHCR for:
 - `linux/arm64`
 
 ```text
-ghcr.io/tgk-30/debridstreamer:latest
+ghcr.io/tgk-30/yawf-stream:latest
 ```
 
 Tags are created from `main` and Git tags by `.github/workflows/docker-image.yml`.
@@ -54,7 +54,7 @@ The default compose file builds locally from the repo. To pull GHCR instead,
 replace the service `build:` block with:
 
 ```yaml
-image: ghcr.io/tgk-30/debridstreamer:latest
+image: ghcr.io/tgk-30/yawf-stream:latest
 ```
 
 Then run:

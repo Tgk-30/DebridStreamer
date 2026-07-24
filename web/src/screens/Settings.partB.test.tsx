@@ -587,6 +587,12 @@ describe("Admin: create profile, shared credential, invites", () => {
     const sharedForm = sharedBtn.closest(".settings-source")! as HTMLElement;
     const valueInput = sharedForm.querySelector('input[placeholder="Token or API key"]') as HTMLInputElement;
     await userEvent.type(valueInput, "shared-key");
+    expect(sharedBtn).toBeDisabled();
+    await userEvent.click(
+      within(sharedForm).getByRole("checkbox", {
+        name: /Provider terms confirmed/,
+      }),
+    );
     await userEvent.click(sharedBtn);
 
     await waitFor(() => {

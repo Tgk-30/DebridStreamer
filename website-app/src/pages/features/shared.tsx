@@ -33,7 +33,7 @@ export const CHAPTERS: ChapterDef[] = [
     id: 'profiles',
     nav: 'Profiles',
     title: 'Everyone gets their own seat.',
-    copy: 'Everyone gets their own library, history, and watchlist - with an optional password per profile. Movie night stops arguing with your recommendations.',
+    copy: 'Everyone gets their own library, history, and watchlist - with an optional household password per profile. The server operator can administer profiles and view operational activity.',
     chips: ['own watchlist + history', 'optional password', 'per-profile overrides'],
   },
   {
@@ -61,8 +61,8 @@ export const CHAPTERS: ChapterDef[] = [
     id: 'subtitles',
     nav: 'Subtitles',
     title: 'Subtitles that fit the film.',
-    copy: 'OpenSubtitles search built in with full size, color, position, and background controls right in the player.',
-    chips: ['OpenSubtitles', 'size controls', 'colors', 'positioning'],
+    copy: 'OpenSubtitles search built in with size, color, background, language, and timing controls right in the web player.',
+    chips: ['OpenSubtitles', 'size controls', 'colors', 'timing'],
   },
   {
     id: 'continue',

@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { AppWindow, Apple, Smartphone, Terminal } from 'lucide-react';
+import { AppWindow, Apple, Server, Smartphone, Terminal } from 'lucide-react';
 import BackgroundVideo from '@/components/BackgroundVideo';
 import StreamRow from '@/components/StreamRow';
 import type { StreamRowMeta } from '@/components/StreamRow';
@@ -8,6 +8,7 @@ import { DOWNLOAD_LINKS, GITHUB_RELEASES_LATEST, VERSION } from '@/lib/site';
 
 const EASE_EXPO = [0.16, 1, 0.3, 1] as [number, number, number, number];
 interface PickerRow {
+  id: 'mac-arm' | 'mac-intel' | 'linux' | 'server' | 'pwa';
   icon: ReactNode;
   title: string;
   meta: StreamRowMeta[];
@@ -17,6 +18,7 @@ interface PickerRow {
 
 const ROWS: PickerRow[] = [
   {
+    id: 'mac-arm',
     icon: <Apple className="h-5 w-5" />,
     title: 'macOS - Apple Silicon',
     meta: [
@@ -27,6 +29,7 @@ const ROWS: PickerRow[] = [
     href: DOWNLOAD_LINKS.macosArm,
   },
   {
+    id: 'mac-intel',
     icon: <Apple className="h-5 w-5" />,
     title: 'macOS - Intel',
     meta: [
@@ -37,6 +40,7 @@ const ROWS: PickerRow[] = [
     href: DOWNLOAD_LINKS.macosIntel,
   },
   {
+    id: 'linux',
     icon: <Terminal className="h-5 w-5" />,
     title: 'Linux - AppImage',
     meta: [
@@ -47,6 +51,18 @@ const ROWS: PickerRow[] = [
     href: DOWNLOAD_LINKS.linuxAppImage,
   },
   {
+    id: 'server',
+    icon: <Server className="h-5 w-5" />,
+    title: 'Server - Debian or Ubuntu',
+    meta: [
+      { label: 'Manual package update', variant: 'dim' },
+      { label: 'amd64 + arm64', variant: 'dim' },
+    ],
+    size: '.deb',
+    href: DOWNLOAD_LINKS.serverDeb,
+  },
+  {
+    id: 'pwa',
     icon: <Smartphone className="h-5 w-5" />,
     title: 'iPhone · iPad · Android - PWA',
     meta: [
@@ -63,6 +79,59 @@ const ROWS: PickerRow[] = [
  */
 export default function StreamPicker() {
   const reduced = useReducedMotion();
+  const [detected, setDetected] = useState<PickerRow['id'] | 'mac' | 'unknown'>('unknown');
+
+  useEffect(() => {
+    let active = true;
+    const detect = async () => {
+      const ua = navigator.userAgent;
+      if (/iPhone|iPad|iPod|Android/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+        if (active) setDetected('pwa');
+        return;
+      }
+      if (/Linux/i.test(navigator.platform) || /Linux/i.test(ua)) {
+        if (active) setDetected('linux');
+        return;
+      }
+      if (/Mac/i.test(navigator.platform) || /Mac OS/i.test(ua)) {
+        const uaData = (navigator as Navigator & {
+          userAgentData?: {
+            getHighEntropyValues?: (hints: string[]) => Promise<{ architecture?: string; bitness?: string }>;
+          };
+        }).userAgentData;
+        const values = await uaData?.getHighEntropyValues?.(['architecture', 'bitness']).catch(() => null);
+        const architecture = values?.architecture?.toLowerCase();
+        if (active) {
+          setDetected(
+            architecture?.includes('arm') === true
+              ? 'mac-arm'
+              : architecture?.includes('x86') === true
+                ? 'mac-intel'
+                : 'mac',
+          );
+        }
+        return;
+      }
+      if (active) setDetected('unknown');
+    };
+    void detect();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const detectedLabel =
+    detected === 'pwa'
+      ? 'Mobile browser detected: install the PWA from your server.'
+      : detected === 'linux'
+        ? 'Linux detected: the amd64 AppImage is the desktop option shown here.'
+        : detected === 'mac-arm'
+          ? 'Apple Silicon Mac detected.'
+          : detected === 'mac-intel'
+            ? 'Intel Mac detected.'
+            : detected === 'mac'
+              ? 'macOS detected. Your browser did not expose the CPU architecture.'
+              : 'Platform could not be detected. Choose the package manually.';
 
   return (
     <section className="relative overflow-hidden py-[clamp(88px,12vw,152px)]">
@@ -110,12 +179,22 @@ export default function StreamPicker() {
           </a>
         </motion.div>
 
+        <p className="mt-3 text-center font-mono text-[0.75rem] leading-relaxed tracking-[0.04em] text-ink-3" role="status">
+          {detectedLabel} Confirm the package and architecture before installing. The Debian server package has no
+          in-app updater.
+        </p>
+
         {/* the platform stream rows */}
         <div className="mt-4 flex flex-col gap-3">
           {ROWS.map((row, i) => (
             <motion.div
               key={row.title}
-              className="relative"
+              className={`relative rounded-row${
+                detected === row.id ||
+                (detected === 'mac' && (row.id === 'mac-arm' || row.id === 'mac-intel'))
+                  ? ' ring-1 ring-brand'
+                  : ''
+              }`}
               initial={reduced ? { opacity: 0 } : { opacity: 0, x: 80 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true, amount: 0.6 }}

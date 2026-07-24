@@ -13,7 +13,7 @@ the PWA - can connect to the same server.
 ## Option A - Docker Compose, prebuilt image (recommended)
 
 No source build: pulls the multi-arch image published to GitHub Container
-Registry (`ghcr.io/tgk-30/debridstreamer:latest`, built for linux/amd64 +
+Registry (`ghcr.io/tgk-30/yawf-stream:latest`, built for linux/amd64 +
 linux/arm64 on every release).
 
 ```bash
@@ -22,8 +22,8 @@ curl -fsSL https://get.docker.com | sh
 
 # 2. Fetch the compose file and an env template into an empty directory.
 mkdir -p ~/debridstreamer && cd ~/debridstreamer
-curl -fsSLO https://raw.githubusercontent.com/Tgk-30/DebridStreamer/main/deploy/compose/docker-compose.ghcr.yml
-curl -fsSL  https://raw.githubusercontent.com/Tgk-30/DebridStreamer/main/deploy/compose/.env.example -o .env
+curl -fsSLO https://raw.githubusercontent.com/Tgk-30/YAWF-Stream/main/deploy/compose/docker-compose.ghcr.yml
+curl -fsSL  https://raw.githubusercontent.com/Tgk-30/YAWF-Stream/main/deploy/compose/.env.example -o .env
 
 # 3. Set at least DS_SERVER_SECRET_KEY (and DS_SERVER_SETUP_TOKEN) in .env:
 #    openssl rand -base64 32   # -> DS_SERVER_SECRET_KEY
@@ -57,7 +57,7 @@ curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs git
 
 # 2. Get the source and build the server + web app.
-sudo git clone https://github.com/Tgk-30/DebridStreamer /opt/debridstreamer-src
+sudo git clone https://github.com/Tgk-30/YAWF-Stream /opt/debridstreamer-src
 cd /opt/debridstreamer-src
 ( cd web && npm ci && npm run build )
 ( cd server && npm ci && npm run build )
@@ -100,7 +100,7 @@ amd64 and arm64). It installs the built server + web app to
 ```bash
 # Requires Node.js 24+ (see Option B step 1 for NodeSource) - the package
 # depends on `nodejs (>= 22)`.
-curl -fsSLO https://github.com/Tgk-30/DebridStreamer/releases/latest/download/debridstreamer-server_all.deb
+curl -fsSLO https://github.com/Tgk-30/YAWF-Stream/releases/latest/download/debridstreamer-server_all.deb
 sudo apt-get install -y ./debridstreamer-server_all.deb
 
 # Set the secret key, then start.

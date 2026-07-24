@@ -21,11 +21,14 @@ The desktop app uses `tauri-plugin-updater`.
 - CI release workflow: `.github/workflows/web-release.yml`
 
 The Tauri bundler creates signed updater artifacts, and the release workflow
-publishes those bundles plus `latest.json` to GitHub Releases. Installed
-desktop apps read:
+publishes those bundles plus `latest.json` to GitHub Releases. After every
+platform job finishes, the workflow generates `SHA256SUMS` for the complete
+draft asset set and creates GitHub build-provenance attestations. Clean-install
+verification starts only after those trust files exist. Installed desktop apps
+read:
 
 ```text
-https://github.com/Tgk-30/DebridStreamer/releases/latest/download/latest.json
+https://github.com/Tgk-30/YAWF-Stream/releases/latest/download/latest.json
 ```
 
 The updater public key is committed in `tauri.conf.json`; the private key must
@@ -125,7 +128,9 @@ artifacts will be produced until that is resolved.
    app with an empty profile. When `YAWF_RELEASE_WINDOWS=true`, it also installs
    the Windows MSI and NSIS setup executable and fails unless each installer and
    installed application has a valid Authenticode signature.
-5. Review the draft GitHub Release created by `web-release`.
+5. Review the draft GitHub Release created by `web-release`. Confirm that
+   `SHA256SUMS` is present and that GitHub displays provenance for the release
+   artifacts.
 6. Publish only after all build and clean-install jobs pass. The latest
    published release becomes the OTA target.
 7. Delete `YAWF_HOLD_WEBSITE_DEPLOY`, manually dispatch `cloudflare-site.yml`,
@@ -142,6 +147,28 @@ Use `include_windows=true` only for a release that actually contains the signed
 Windows assets. The accepted trust boundaries and remaining Windows blocker are
 recorded in `docs/SECURITY_DECISIONS.md`. macOS, Linux, and server v1 artifacts
 may ship while the Windows v1 channel remains held.
+
+## Verify a downloaded artifact
+
+Download `SHA256SUMS` from the same release as the installer. Verify from the
+directory containing the downloaded files:
+
+```sh
+# Linux
+sha256sum -c SHA256SUMS --ignore-missing
+
+# macOS, for one file
+shasum -a 256 "YAWF.Stream_<version>_aarch64.dmg"
+
+# GitHub build provenance
+gh attestation verify "<downloaded-file>" --repo Tgk-30/YAWF-Stream
+```
+
+The computed value must match the complete value in `SHA256SUMS`. Also confirm
+the GitHub Release provenance and the platform trust signal. macOS packages
+must pass Gatekeeper and notarization. The Linux AppImage uses the signed
+desktop updater. The Debian desktop and server packages do not have an in-app
+updater and must be replaced manually with a newer verified package.
 
 ## Download Website
 

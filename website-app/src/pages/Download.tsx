@@ -1,6 +1,7 @@
 import Hero from '@/pages/download/Hero';
 import StreamPicker from '@/pages/download/StreamPicker';
 import TrustPanel from '@/pages/download/TrustPanel';
+import Verify from '@/pages/download/Verify';
 import PwaSteps from '@/pages/download/PwaSteps';
 import Updates from '@/pages/download/Updates';
 import ClosingCta from '@/pages/download/ClosingCta';
@@ -17,6 +18,7 @@ export default function Download() {
       <Hero />
       <StreamPicker />
       <TrustPanel />
+      <Verify />
       <PwaSteps />
       <Updates />
       <ClosingCta />

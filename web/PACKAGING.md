@@ -138,7 +138,7 @@ called from `App.tsx`) it checks the endpoint configured in
 `tauri.conf.json` → `plugins.updater.endpoints`:
 
 ```
-https://github.com/Tgk-30/DebridStreamer/releases/latest/download/latest.json
+https://github.com/Tgk-30/YAWF-Stream/releases/latest/download/latest.json
 ```
 
 The release workflow publishes `latest.json` alongside the bundles. The plugin

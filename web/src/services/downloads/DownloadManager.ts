@@ -10,6 +10,7 @@ import {
   optimizedOutputPath,
   rawDownloadPath,
 } from "./filename";
+import { recordDiagnostic } from "../../lib/diagnostics";
 
 /** Plain setting key on purpose: downloads do not need a global AppSettings
  * rebuild just to change their destination. */
@@ -604,6 +605,7 @@ export class DownloadManager {
   }
 
   private async fail(jobId: string, error: string): Promise<void> {
+    recordDiagnostic("download", "job.failed", "error", error);
     this.nativeJobs.delete(jobId);
     this.optimizingOutputs.delete(jobId);
     this.clearPendingProgress(jobId);

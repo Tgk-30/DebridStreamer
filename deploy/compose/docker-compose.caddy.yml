@@ -1,6 +1,6 @@
 services:
   debridstreamer:
-    image: ghcr.io/tgk-30/debridstreamer:latest
+    image: ghcr.io/tgk-30/yawf-stream:latest
     restart: unless-stopped
     env_file:
       - .env

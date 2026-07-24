@@ -5,7 +5,8 @@ and self-hosted server use.
 
 ## What It Is
 
-- **Desktop app**: a pre-bundled Tauri app for macOS, Windows, and Linux.
+- **Desktop app**: released Tauri builds for macOS and Linux. Windows remains
+  held until its Authenticode signing gate passes.
 - **Server Mode**: a self-hosted backend with login, profiles, separate history,
   invite links, shared credentials, profile credential overrides, and stream
   forwarding.
@@ -31,7 +32,7 @@ and self-hosted server use.
 Latest desktop builds are published on GitHub Releases:
 
 ```text
-https://github.com/Tgk-30/DebridStreamer/releases/latest
+https://github.com/Tgk-30/YAWF-Stream/releases/latest
 ```
 
 The static downloader website lives in `website/` and is deployed by the
@@ -103,6 +104,7 @@ node scripts/check_release_readiness.mjs
 - Self-hosting architecture: `docs/SELF_HOSTING_DESIGN.md`
 - Release and OTA updates: `docs/RELEASE_AND_UPDATES.md`
 - Docker server setup: `docs/DOCKER.md`
+- Recovery, backup, and owner reset: `docs/recovery.md`
 - Desktop packaging: `web/PACKAGING.md`
 - Docker Compose: `deploy/compose/README.md`
 

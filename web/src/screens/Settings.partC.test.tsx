@@ -312,6 +312,15 @@ afterEach(() => {
 // ============================================================================
 
 describe("Settings · Updates", () => {
+  it("offers a direct bug-report action beside diagnostics", () => {
+    renderAt("updates");
+
+    expect(screen.getByRole("link", { name: "Report a bug" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("issues/new?template=bug_report.yml"),
+    );
+  });
+
   it("toggles auto-check on, then enables auto-install", async () => {
     const user = userEvent.setup();
     renderAt("updates", { autoUpdateChecks: false, autoInstallUpdates: false });
@@ -386,7 +395,7 @@ describe("Settings · Install (setup paths)", () => {
     // Downloads → release link card.
     await user.click(screen.getByRole("button", { name: /Desktop downloads/ }));
     expect(
-      screen.getByText(/Mac, Windows, and Linux release assets/),
+      screen.getByText(/Released macOS and Linux assets/),
     ).toBeInTheDocument();
 
     // Deploy → docker compose card.
@@ -403,7 +412,7 @@ describe("Settings · Install (setup paths)", () => {
     const select = document.getElementById("settings-install-path") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "downloads" } });
     expect(
-      screen.getByText(/Mac, Windows, and Linux release assets/),
+      screen.getByText(/Released macOS and Linux assets/),
     ).toBeInTheDocument();
   });
 

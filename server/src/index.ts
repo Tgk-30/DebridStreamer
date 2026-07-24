@@ -1,8 +1,15 @@
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { randomToken } from "./crypto.js";
+import { runRecoveryCli } from "./recovery.js";
 
 async function main(): Promise<void> {
+  const recoveryExitCode = await runRecoveryCli(process.argv.slice(2));
+  if (recoveryExitCode != null) {
+    process.exitCode = recoveryExitCode;
+    return;
+  }
+
   const config = loadConfig();
   let generatedSetupToken: string | null = null;
   if (config.setupToken == null) {

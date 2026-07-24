@@ -17,7 +17,7 @@ function CascadeChars({ text }: { text: string }) {
   );
 }
 
-const PLATFORM_CHIPS = ['macOS', 'Windows', 'Linux', 'iPhone & iPad', 'Android', 'any browser'];
+const PLATFORM_CHIPS = ['macOS', 'Linux', 'Windows planned', 'iPhone & iPad', 'Android', 'any browser'];
 
 /**
  * Devices §1 - Page hero: "Every screen in the house, served."
@@ -103,8 +103,8 @@ export default function Hero() {
         </h1>
 
         <p className="dv-lede lede mx-auto mt-6 max-w-[720px]">
-          Desktop apps for macOS, Windows, and Linux. A mobile PWA your own server hosts. One library, one resume
-          position - wherever you sit down.
+          Desktop apps for macOS and Linux, with Windows held until its signing gate passes. A mobile PWA your own
+          server hosts. One library, one resume position - wherever you sit down.
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">

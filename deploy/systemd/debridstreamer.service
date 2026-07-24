@@ -1,6 +1,6 @@
 [Unit]
 Description=DebridStreamer self-host server
-Documentation=https://github.com/Tgk-30/DebridStreamer
+Documentation=https://github.com/Tgk-30/YAWF-Stream
 After=network-online.target
 Wants=network-online.target
 

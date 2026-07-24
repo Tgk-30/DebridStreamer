@@ -162,7 +162,7 @@ export default function HubSection() {
                 <ShieldCheck className="h-5 w-5" strokeWidth={1.75} />
               </span>
               <p className="font-body text-[1rem] font-semibold leading-[1.6] text-ink-1">
-                Your debrid keys never leave your network.
+                Credentials stay encrypted on your server and go only to the providers they belong to.
               </p>
             </div>
           </motion.div>

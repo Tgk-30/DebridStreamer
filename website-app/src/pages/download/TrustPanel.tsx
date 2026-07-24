@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import { Apple, Check, Clock, PackageCheck, ShieldCheck } from 'lucide-react';
+import { Apple, Check, Clock, Fingerprint, PackageCheck, ShieldCheck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import GlassCard from '@/components/GlassCard';
 
@@ -17,7 +17,8 @@ interface TrustRow {
 const TRUST_ROWS: TrustRow[] = [
   { icon: ShieldCheck, label: 'signed update manifest', note: 'latest.json · GitHub Releases' },
   { icon: Apple, label: 'macOS notarized builds', note: 'Gatekeeper-approved' },
-  { icon: PackageCheck, label: 'Linux installer', note: 'signed updater inside' },
+  { icon: PackageCheck, label: 'Linux AppImage', note: 'signed updater inside' },
+  { icon: Fingerprint, label: 'checksums and provenance', note: 'SHA256SUMS · GitHub attestations' },
   { icon: Clock, label: 'Windows v1 signing gate', note: 'held until Authenticode is proven', held: true },
   { icon: Clock, label: 'update on your schedule', note: 'auto-check can be disabled in Settings' },
 ];
@@ -60,8 +61,9 @@ export default function TrustPanel() {
             <code className="rounded border border-line bg-[var(--surface-glass)] px-1.5 py-0.5 font-mono text-[0.85em] text-brand">
               latest.json
             </code>{' '}
-            from GitHub Releases. macOS builds are notarized and Linux ships a signed updater. Windows v1 remains
-            held until Authenticode signing and clean-install verification pass. Updates install when you say so.
+            from GitHub Releases. macOS builds are notarized, the Linux AppImage has the signed updater, and release
+            artifacts include SHA-256 checksums and build provenance. Debian packages are updated manually. Windows
+            v1 remains held until Authenticode signing and clean-install verification pass.
           </motion.p>
         </div>
 

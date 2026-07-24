@@ -15,6 +15,7 @@ import {
   openServerAccessLogin,
 } from "../lib/serverAccess";
 import { AmbientVideo } from "./AmbientVideo";
+import { recordDiagnostic } from "../lib/diagnostics";
 import "./ServerModeGate.css";
 
 declare global {
@@ -212,6 +213,7 @@ export function ServerModeGate({ children }: { children: ReactNode }) {
           return;
         }
         const message = error instanceof Error ? error.message : "Cannot reach server.";
+        recordDiagnostic("network", "server.bootstrap_failed", "error", message);
         setState({ kind: "error", baseURL, message });
       });
     return () => {

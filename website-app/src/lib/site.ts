@@ -1,13 +1,15 @@
 /** Shared site constants - GitHub URLs, version, platform downloads. */
-export const GITHUB_REPO = 'https://github.com/Tgk-30/DebridStreamer';
+export const GITHUB_REPO = 'https://github.com/Tgk-30/YAWF-Stream';
 export const GITHUB_RELEASES = `${GITHUB_REPO}/releases`;
 export const GITHUB_RELEASES_LATEST = `${GITHUB_RELEASES}/latest`;
 export const GITHUB_ISSUES = `${GITHUB_REPO}/issues`;
+export const GITHUB_BUG_REPORT = `${GITHUB_ISSUES}/new?template=bug_report.yml`;
 export const GITHUB_DOCKER = `${GITHUB_REPO}/tree/main/deploy/compose`;
 
-export const APP_VERSION = '1.0.1';
+export const APP_VERSION = '1.0.2';
 export const VERSION = `v${APP_VERSION}-web`;
 export const RELEASE_ASSET_BASE = `${GITHUB_RELEASES}/download/${VERSION}`;
+export const RELEASE_CHECKSUMS = `${RELEASE_ASSET_BASE}/SHA256SUMS`;
 export const WINDOWS_RELEASE_AVAILABLE = false;
 
 export const DOWNLOAD_LINKS = {

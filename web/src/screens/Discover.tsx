@@ -24,6 +24,7 @@ interface DiscoverProps {
 export function Discover({ onSelect }: DiscoverProps) {
   const {
     services,
+    navigate,
     openBrowse,
     openDetail,
     continueWatching,
@@ -32,7 +33,7 @@ export function Discover({ onSelect }: DiscoverProps) {
     settings,
   } = useAppStore();
   const attentionParked = useAttentionParked();
-  const { data, loading, railsLoading } = useDiscover(services.tmdb);
+  const { data, loading, railsLoading, error, source } = useDiscover(services.tmdb);
 
   // Continue Watching - resumable history (>2% and <95%) surfaced at the top of
   // the home as wide banner cards. Only renders when there's something to resume,
@@ -104,6 +105,32 @@ export function Discover({ onSelect }: DiscoverProps) {
       )}
 
       <div className="discover-body">
+      {source === "fixtures" && (
+        <section className="discover-catalog-notice glass-rest" role="status">
+          <div>
+            <strong>Sample catalog</strong>
+            <p>
+              {error
+                ? `The live catalog could not be loaded: ${error} Showing bundled sample titles instead.`
+                : "No catalog key is configured. These are bundled sample titles, not live trending results."}
+            </p>
+          </div>
+          <button type="button" className="btn" onClick={() => navigate("settings")}>
+            Open metadata settings
+          </button>
+        </section>
+      )}
+      {source === "offline" && (
+        <section className="discover-catalog-notice glass-rest" role="status">
+          <div>
+            <strong>Offline catalog</strong>
+            <p>{error ?? "Live discovery is unavailable while Offline mode is active."}</p>
+          </div>
+          <button type="button" className="btn" onClick={() => navigate("downloads")}>
+            Open Downloads
+          </button>
+        </section>
+      )}
       {resumable.length > 0 && (
         <ContinueWatchingRail records={resumable} onResume={openDetail} />
       )}

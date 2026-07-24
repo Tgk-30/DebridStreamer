@@ -1,4 +1,4 @@
-const REPO = "Tgk-30/DebridStreamer";
+const REPO = "Tgk-30/YAWF-Stream";
 const releaseURL = `https://github.com/${REPO}/releases/latest`;
 const apiURL = `https://api.github.com/repos/${REPO}/releases/latest`;
 

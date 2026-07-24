@@ -10,7 +10,7 @@
 #     docker compose -f docker-compose.ghcr.yml up -d
 services:
   debridstreamer:
-    image: ghcr.io/tgk-30/debridstreamer:latest
+    image: ghcr.io/tgk-30/yawf-stream:latest
     restart: unless-stopped
     read_only: true
     cap_drop:

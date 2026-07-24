@@ -118,7 +118,7 @@ describe("DebridLibrary - gated states", () => {
     const link = screen.getByRole("link", { name: /download desktop app/i });
     expect(link).toHaveAttribute(
       "href",
-      "https://github.com/Tgk-30/DebridStreamer/releases/latest",
+      "https://github.com/Tgk-30/YAWF-Stream/releases/latest",
     );
     expect(screen.queryByLabelText("Search torrents")).not.toBeInTheDocument();
   });

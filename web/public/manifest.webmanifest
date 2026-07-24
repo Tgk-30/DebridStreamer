@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "DebridStreamer",
-  "short_name": "DebridStreamer",
+  "name": "YAWF Stream",
+  "short_name": "YAWF Stream",
   "description": "Stream debrid media from your own device or self-hosted server.",
   "lang": "en",
   "dir": "ltr",

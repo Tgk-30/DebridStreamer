@@ -8,8 +8,8 @@ const EASE_EXPO = [0.16, 1, 0.3, 1] as [number, number, number, number];
 
 const TERMINAL_LINES = [
   { text: 'mkdir debridstreamer && cd debridstreamer' },
-  { text: 'curl -fsSLO https://raw.githubusercontent.com/Tgk-30/DebridStreamer/main/deploy/compose/docker-compose.ghcr.yml' },
-  { text: 'curl -fsSL https://raw.githubusercontent.com/Tgk-30/DebridStreamer/main/deploy/compose/.env.example -o .env' },
+  { text: 'curl -fsSLO https://raw.githubusercontent.com/Tgk-30/YAWF-Stream/main/deploy/compose/docker-compose.ghcr.yml' },
+  { text: 'curl -fsSL https://raw.githubusercontent.com/Tgk-30/YAWF-Stream/main/deploy/compose/.env.example -o .env' },
   { text: 'docker compose -f docker-compose.ghcr.yml up -d' },
 ];
 
@@ -42,7 +42,7 @@ export default function SelfHostTeaser() {
         <SectionHeading
           eyebrow="// SELF-HOST"
           title="One server. Every screen."
-          lede="Run it on an always-on desktop, NAS, VPS, Raspberry Pi, or home server. Your debrid keys never leave your network."
+          lede="Run it on an always-on desktop, NAS, VPS, Raspberry Pi, or home server. Credentials stay encrypted on your server and are sent only to the providers they belong to."
           className="lg:order-first"
         >
           <div className="mt-8">

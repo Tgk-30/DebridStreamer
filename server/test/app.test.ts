@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { buildApp } from "../src/app.js";
@@ -829,20 +830,25 @@ describe("DebridStreamer server", () => {
         allowRawStreamUrls: true,
       },
     });
-    let database: AppDatabase | null = null;
+    let database: DatabaseSync | null = null;
     try {
       const owner = await setupOwner(healthApp);
-      database = new AppDatabase(databasePath);
-      database.sqlite.exec("DELETE FROM audit_log");
-      const insert = database.sqlite.prepare(
+      database = new DatabaseSync(databasePath);
+      database.exec("DELETE FROM audit_log");
+      const insert = database.prepare(
         `INSERT INTO audit_log
          (id, actor_user_id, actor_profile_id, action, target_type, target_id, metadata_json, created_at)
          VALUES (?, NULL, NULL, 'test', NULL, NULL, NULL, ?)`,
       );
       const createdAt = new Date().toISOString();
-      database.transaction(() => {
+      database.exec("BEGIN IMMEDIATE");
+      try {
         for (let i = 0; i < 9_999; i += 1) insert.run(`audit-${i}`, createdAt);
-      });
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
 
       const belowCap = json<{ counts: { auditEvents: number } }>(
         await request(owner, { method: "GET", url: "/api/admin/health" }),
@@ -1872,6 +1878,16 @@ describe("DebridStreamer server", () => {
     try {
       // Switch the owner's session into the kid sub-profile ("who's watching").
       expect((await request(owner, { method: "POST", url: "/api/profiles/switch", csrf: true, payload: { profileId: kid } })).statusCode).toBe(200);
+      expect(
+        (
+          await request(owner, {
+            method: "PUT",
+            url: "/api/settings/profile",
+            csrf: true,
+            payload: { key: "built_in_indexers_enabled", value: "true" },
+          })
+        ).statusCode,
+      ).toBe(200);
 
       // FixA: a kid-active session cannot lift its OWN cap (requireAdmin rejects
       // the kid profile even though the underlying account is the owner).
@@ -2104,6 +2120,16 @@ describe("DebridStreamer server", () => {
 
     try {
       const owner = await setupOwner(app);
+      expect(
+        (
+          await request(owner, {
+            method: "PUT",
+            url: "/api/settings/profile",
+            csrf: true,
+            payload: { key: "built_in_indexers_enabled", value: "true" },
+          })
+        ).statusCode,
+      ).toBe(200);
       const credential = await request(owner, {
         method: "PUT",
         url: "/api/profile/credentials",

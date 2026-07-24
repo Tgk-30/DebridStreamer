@@ -26,10 +26,18 @@ describe("visibleTabs", () => {
     expect(out).toContain("updates");
   });
 
-  it("Simple hides updates, server, and sources", () => {
+  it("Simple keeps help and diagnostics visible while hiding server and sources", () => {
     const out = ids({ serverMode: true, simpleMode: true });
-    expect(out).toEqual(["appearance", "playback", "privacy", "install", "keys", "debrid"]);
-    expect(out).not.toContain("updates");
+    expect(out).toEqual([
+      "appearance",
+      "playback",
+      "privacy",
+      "install",
+      "updates",
+      "keys",
+      "debrid",
+    ]);
+    expect(out).toContain("updates");
     expect(out).not.toContain("server");
     expect(out).not.toContain("sources");
   });

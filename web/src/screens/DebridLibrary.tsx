@@ -166,7 +166,7 @@ export function DebridLibrary() {
           actions={
             <a
               className="btn btn-prominent"
-              href="https://github.com/Tgk-30/DebridStreamer/releases/latest"
+              href="https://github.com/Tgk-30/YAWF-Stream/releases/latest"
               target="_blank"
               rel="noreferrer"
             >
