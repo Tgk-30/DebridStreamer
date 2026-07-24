@@ -187,6 +187,7 @@ const androidMain = read(
 const androidNetwork = read(
   "android-tv/app/src/main/res/xml/network_security_config.xml",
 );
+const androidSigningDigest = read("android-tv/SIGNING_CERT_SHA256");
 const androidPlaybackHeaders = read(
   "android-tv/app/src/main/java/com/yawf/stream/tv/PlaybackHeaders.java",
 );
@@ -228,6 +229,9 @@ check(
     /"CF_Session"/.test(androidPlaybackHeaders) &&
     /"CF_AppSession"/.test(androidPlaybackHeaders) &&
     !/"ds_session"/.test(androidPlaybackHeaders) &&
+    /^[0-9a-f]{64}\n?$/.test(androidSigningDigest) &&
+    /SIGNING_CERT_SHA256/.test(releaseWorkflow) &&
+    /SIGNING_CERT_SHA256/.test(cleanInstallWorkflow) &&
     !/<certificates src="user"/.test(androidNetwork),
   "Android TV confines its WebView and native playback bridge to the configured server",
 );

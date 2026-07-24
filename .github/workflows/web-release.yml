@@ -559,6 +559,18 @@ jobs:
           test -f "$source"
           cp "$source" "$asset"
           apksigner verify "$asset"
+          expected_digest="$(tr -d '[:space:]:' < android-tv/SIGNING_CERT_SHA256 | tr '[:upper:]' '[:lower:]')"
+          actual_digest="$(
+            apksigner verify --print-certs "$asset" \
+              | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
+              | head -1 \
+              | tr -d '[:space:]:' \
+              | tr '[:upper:]' '[:lower:]'
+          )"
+          if [ -z "$actual_digest" ] || [ "$actual_digest" != "$expected_digest" ]; then
+            echo "::error::Android TV signing certificate does not match android-tv/SIGNING_CERT_SHA256"
+            exit 1
+          fi
           gh release upload "$GITHUB_REF_NAME" "$asset" \
             --clobber \
             --repo "$GITHUB_REPOSITORY"

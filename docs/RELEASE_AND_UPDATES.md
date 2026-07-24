@@ -267,7 +267,17 @@ runs unit tests and release lint, verifies the APK signature, and uploads the
 APK before checksums and attestations are finalized.
 
 The clean-install workflow downloads the published APK, verifies its signature,
-and checks that the manifest requires Leanback, does not require a touchscreen,
+checks that the signing certificate matches `android-tv/SIGNING_CERT_SHA256`,
+and confirms that the manifest requires Leanback, does not require a touchscreen,
 and exposes the Leanback launcher activity. Never replace the production
 keystore: Android accepts updates only when the application ID and signing
 identity remain stable.
+
+The production certificate SHA-256 digest is:
+
+```text
+6d8ec5466423e10e5c751132bb0f6a6ddf95a8d9f3378772d7809fce616eec1e
+```
+
+Verify a downloaded APK with `apksigner verify --print-certs <file.apk>` and
+compare the reported signer certificate SHA-256 digest before installing it.

@@ -131,8 +131,19 @@ check(
     ) &&
     /YAWF\.Stream_Android\.TV_\$\{version\}\.apk/.test(releaseWorkflow) &&
     /apksigner verify/.test(releaseWorkflow) &&
+    /SIGNING_CERT_SHA256/.test(releaseWorkflow) &&
     /needs:\s*\[release, android-tv\]/.test(releaseWorkflow),
   ".github/workflows/web-release.yml must test, lint, sign, verify, and upload Android TV before checksums are finalized",
+);
+check(
+  "Android TV signing certificate is publicly pinned",
+  existsSync(join(root, "android-tv/SIGNING_CERT_SHA256")) &&
+    /^[0-9a-f]{64}\n?$/.test(read("android-tv/SIGNING_CERT_SHA256")) &&
+    /SIGNING_CERT_SHA256/.test(releaseWorkflow) &&
+    /SIGNING_CERT_SHA256/.test(cleanInstallWorkflow) &&
+    /apksigner verify --print-certs/.test(releaseWorkflow) &&
+    /apksigner verify --print-certs/.test(cleanInstallWorkflow),
+  "release and clean-install workflows must reject an Android APK signed by a different certificate",
 );
 check(
   "Release workflow builds macOS, Linux, and Windows",
@@ -236,6 +247,7 @@ check(
   /android-tv:/.test(cleanInstallWorkflow) &&
     /YAWF\.Stream_Android\.TV_\$\{version\}\.apk/.test(cleanInstallWorkflow) &&
     /apksigner verify/.test(cleanInstallWorkflow) &&
+    /SIGNING_CERT_SHA256/.test(cleanInstallWorkflow) &&
     /com\.yawf\.stream\.tv/.test(cleanInstallWorkflow) &&
     /android\.software\.leanback/.test(cleanInstallWorkflow) &&
     /android\.hardware\.touchscreen/.test(cleanInstallWorkflow),
